@@ -1,0 +1,174 @@
+.metric-selector {
+  position: relative;
+}
+
+.metric-selector-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 0.5rem;
+  color: #e2e8f0;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+}
+
+.metric-selector-toggle:hover {
+  background: #334155;
+}
+
+.metric-selector-toggle .arrow {
+  font-size: 0.625rem;
+  transition: transform 0.2s ease;
+}
+
+.metric-selector-toggle .arrow.open {
+  transform: rotate(180deg);
+}
+
+.metric-selector-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  min-width: 400px;
+  max-height: 500px;
+  overflow-y: auto;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 0.5rem;
+  margin-top: 0.5rem;
+  padding: 1rem;
+  z-index: 100;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+}
+
+.selected-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #334155;
+  margin-bottom: 1rem;
+  min-height: 2rem;
+}
+
+.selected-tag {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  background: #0f172a;
+  border: 1px solid;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.selected-tag:hover {
+  opacity: 0.8;
+}
+
+.selected-tag .remove {
+  margin-left: 0.25rem;
+  opacity: 0.6;
+}
+
+.metric-categories {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.metric-category {
+  background: #0f172a;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+}
+
+.category-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.category-name {
+  font-weight: 600;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.category-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.category-actions button {
+  padding: 0.125rem 0.5rem;
+  background: transparent;
+  border: 1px solid #334155;
+  border-radius: 0.25rem;
+  color: #64748b;
+  font-size: 0.625rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.category-actions button:hover {
+  background: #334155;
+  color: #e2e8f0;
+}
+
+.metric-options {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.25rem;
+}
+
+.metric-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  color: #94a3b8;
+  transition: all 0.2s ease;
+}
+
+.metric-option:hover {
+  background: #1e293b;
+  color: #e2e8f0;
+}
+
+.metric-option.selected {
+  background: #1e293b;
+  color: #e2e8f0;
+}
+
+.metric-option input[type="checkbox"] {
+  display: none;
+}
+
+.metric-option input[type="checkbox"]:disabled + .metric-color {
+  opacity: 0.3;
+}
+
+.metric-color {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 0.125rem;
+  flex-shrink: 0;
+}
+
+.metric-option.selected .metric-color {
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.3);
+}

@@ -1,0 +1,53 @@
+.watchlist-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 0.5rem;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.875rem;
+}
+
+.watchlist-btn:hover {
+  border-color: #f59e0b;
+  color: #f59e0b;
+}
+
+.watchlist-btn.active {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: #f59e0b;
+  color: #f59e0b;
+}
+
+.watchlist-btn .star {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.watchlist-btn.active .star {
+  color: #f59e0b;
+}
+
+/* Small variant */
+.watchlist-btn.small {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.watchlist-btn.small .star {
+  font-size: 0.875rem;
+}
+
+/* Large variant */
+.watchlist-btn.large {
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+}
+
+.watchlist-btn.large .star {
+  font-size: 1.25rem;
+}

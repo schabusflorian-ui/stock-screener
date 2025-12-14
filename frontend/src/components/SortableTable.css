@@ -1,0 +1,119 @@
+/* SortableTable.css */
+
+.sortable-table-wrapper {
+  overflow-x: auto;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 0.75rem;
+}
+
+.sortable-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 600px;
+}
+
+.sortable-table th,
+.sortable-table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid #334155;
+}
+
+.sortable-table th {
+  background: #0f172a;
+  color: #94a3b8;
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.sortable-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s ease;
+}
+
+.sortable-table th.sortable:hover {
+  background: #1e293b;
+  color: #e2e8f0;
+}
+
+.sortable-table th .th-content {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sortable-table .sort-indicator {
+  font-size: 0.625rem;
+  opacity: 0.3;
+  transition: opacity 0.2s ease;
+}
+
+.sortable-table .sort-indicator.active {
+  opacity: 1;
+  color: #8b5cf6;
+}
+
+.sortable-table tbody tr {
+  transition: background 0.2s ease;
+}
+
+.sortable-table tbody tr:hover {
+  background: rgba(139, 92, 246, 0.05);
+}
+
+.sortable-table tbody tr.clickable {
+  cursor: pointer;
+}
+
+.sortable-table tbody tr.clickable:hover {
+  background: rgba(139, 92, 246, 0.1);
+}
+
+/* Value classes */
+.sortable-table .positive {
+  color: #22c55e !important;
+}
+
+.sortable-table .negative {
+  color: #ef4444 !important;
+}
+
+/* Links */
+.sortable-table .table-link {
+  color: #8b5cf6;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.sortable-table .table-link:hover {
+  text-decoration: underline;
+}
+
+/* Text truncation */
+.sortable-table .truncate {
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Empty state */
+.sortable-table-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: #64748b;
+  font-size: 0.875rem;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 0.75rem;
+}

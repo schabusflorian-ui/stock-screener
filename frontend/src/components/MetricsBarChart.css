@@ -1,0 +1,88 @@
+/* MetricsBarChart.css */
+
+.metrics-bar-chart {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+}
+
+.metrics-bar-chart .chart-label {
+  font-size: 0.75rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+
+.bars-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.bar-row.clickable {
+  cursor: pointer;
+}
+
+.bar-row.clickable:hover .bar-fill {
+  filter: brightness(1.1);
+}
+
+.bar-row.clickable:hover .bar-name {
+  color: #e2e8f0;
+}
+
+.bar-name {
+  flex: 0 0 120px;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.2s ease;
+}
+
+.bar-track {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #0f172a;
+  border-radius: 0.25rem;
+  overflow: hidden;
+  position: relative;
+}
+
+.bar-fill {
+  border-radius: 0.25rem;
+  transition: width 0.3s ease;
+  min-width: 2px;
+}
+
+.bar-value {
+  position: absolute;
+  right: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .bar-name {
+    flex: 0 0 80px;
+    font-size: 0.625rem;
+  }
+
+  .bar-value {
+    font-size: 0.625rem;
+  }
+}

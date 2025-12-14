@@ -1,0 +1,534 @@
+/* frontend/src/pages/IPODetailPage.css */
+
+.ipo-detail-page {
+  padding-bottom: 2rem;
+}
+
+/* Back Link */
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+  transition: color 0.2s;
+}
+
+.back-link:hover {
+  color: var(--brand-primary);
+}
+
+.back-link::before {
+  content: '\2190';
+  margin-right: var(--radius-md);
+}
+
+/* Header */
+.ipo-detail-header {
+  margin-bottom: 2rem;
+}
+
+.header-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.header-title h1 {
+  font-size: 1.75rem;
+  margin: 0 0 var(--radius-lg) 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--radius-lg);
+}
+
+.header-title .ticker {
+  color: var(--brand-primary);
+  font-weight: 700;
+}
+
+.header-title .company-name {
+  color: #f1f5f9;
+  font-weight: 600;
+}
+
+.header-badges {
+  display: flex;
+  gap: var(--radius-lg);
+  flex-wrap: wrap;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: white;
+}
+
+.exchange-badge {
+  display: inline-block;
+  padding: 0.4rem 0.8rem;
+  background: var(--border-primary);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.status-description {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  margin-top: var(--radius-md);
+}
+
+.header-actions {
+  display: flex;
+  gap: var(--radius-lg);
+}
+
+.watchlist-button {
+  padding: 0.6rem 1.25rem;
+  border: 2px solid var(--brand-primary);
+  background: transparent;
+  color: var(--brand-primary);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.watchlist-button:hover {
+  background: rgba(139, 92, 246, 0.1);
+}
+
+.watchlist-button.in-watchlist {
+  background: var(--brand-primary);
+  color: white;
+}
+
+.watchlist-button.in-watchlist:hover {
+  background: var(--brand-tertiary);
+}
+
+.watchlist-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Timeline Progress */
+.timeline-section {
+  margin-bottom: 2rem;
+  padding: 1.5rem;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.timeline-progress {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  position: relative;
+}
+
+.timeline-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  position: relative;
+}
+
+.step-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--border-primary);
+  border: 3px solid transparent;
+  z-index: 1;
+  transition: all 0.2s;
+}
+
+.timeline-step.current .step-dot {
+  border-width: 3px;
+  border-style: solid;
+  box-shadow: 0 0 10px currentColor;
+}
+
+.step-label {
+  margin-top: var(--radius-lg);
+  font-size: var(--radius-lg);
+  color: var(--text-tertiary);
+  text-align: center;
+  max-width: 80px;
+}
+
+.timeline-step.complete .step-label,
+.timeline-step.current .step-label {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.step-line {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  width: 100%;
+  height: 2px;
+  background: var(--border-primary);
+  z-index: 0;
+}
+
+.timeline-step:last-child .step-line {
+  display: none;
+}
+
+.timeline-withdrawn {
+  text-align: center;
+  padding: 1rem;
+}
+
+.withdrawn-badge {
+  display: inline-block;
+  background: var(--negative);
+  color: white;
+  padding: var(--radius-md) 1rem;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 1rem;
+  margin-bottom: var(--radius-md);
+}
+
+.withdrawn-date {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+/* Watchlist Notes Section */
+.watchlist-notes-section {
+  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 2rem;
+}
+
+.watchlist-notes-section h3 {
+  font-size: 0.9rem;
+  color: var(--brand-primary);
+  margin: 0 0 var(--radius-lg) 0;
+}
+
+.notes-display {
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: var(--radius-md);
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.notes-display:hover {
+  background: rgba(139, 92, 246, 0.1);
+}
+
+.notes-input-area textarea {
+  width: 100%;
+  padding: var(--radius-lg);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.notes-input-area textarea:focus {
+  outline: none;
+  border-color: var(--brand-primary);
+}
+
+.notes-actions {
+  display: flex;
+  gap: var(--radius-md);
+  margin-top: var(--radius-lg);
+}
+
+.save-button,
+.cancel-button {
+  padding: 0.4rem 1rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.save-button {
+  background: var(--brand-primary);
+  color: white;
+}
+
+.cancel-button {
+  background: var(--border-primary);
+  color: var(--text-primary);
+}
+
+/* Detail Grid */
+.ipo-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.detail-card {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.detail-card h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #f1f5f9;
+  padding: 1rem;
+  margin: 0;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.card-content {
+  padding: 1rem;
+}
+
+/* Data Row */
+.data-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.data-row:last-child {
+  border-bottom: none;
+}
+
+.data-row.highlight {
+  background: rgba(139, 92, 246, 0.05);
+  margin: 0 -1rem;
+  padding: 0.6rem 1rem;
+}
+
+.data-label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.data-value {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  font-weight: 500;
+  text-align: right;
+}
+
+.data-value a {
+  color: var(--brand-primary);
+  text-decoration: none;
+}
+
+.data-value a:hover {
+  text-decoration: underline;
+}
+
+/* Business Description */
+.business-description {
+  padding: 1rem;
+  border-top: 1px solid var(--border-primary);
+}
+
+.business-description h4 {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin: 0 0 var(--radius-md) 0;
+}
+
+.business-description p {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Filings Section */
+.filings-section {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.filings-section h2 {
+  font-size: 1.1rem;
+  color: #f1f5f9;
+  margin: 0 0 1rem 0;
+}
+
+.filings-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.filings-table th,
+.filings-table td {
+  padding: var(--radius-lg) 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.filings-table th {
+  font-size: var(--radius-lg);
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.filings-table td {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.filings-table tr:hover td {
+  background: rgba(139, 92, 246, 0.05);
+}
+
+.form-type {
+  font-weight: 600;
+  color: var(--brand-primary);
+}
+
+.amendment-badge {
+  display: inline-block;
+  margin-left: var(--radius-md);
+  padding: 0.15rem 0.4rem;
+  background: var(--border-primary);
+  border-radius: 4px;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+.filing-price {
+  color: var(--positive);
+  font-weight: 500;
+}
+
+.filing-shares {
+  color: var(--text-secondary);
+}
+
+.filing-no-details {
+  color: var(--text-tertiary);
+}
+
+.filing-link {
+  color: var(--brand-primary);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.filing-link:hover {
+  text-decoration: underline;
+}
+
+.no-filings {
+  text-align: center;
+  color: var(--text-tertiary);
+  padding: 2rem;
+}
+
+/* Trading Link Section */
+.trading-link-section {
+  text-align: center;
+}
+
+.company-page-link {
+  display: inline-block;
+  padding: 1rem 2rem;
+  background: #059669;
+  color: white;
+  text-decoration: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 1rem;
+  transition: background 0.2s;
+}
+
+.company-page-link:hover {
+  background: #047857;
+}
+
+/* Error Page */
+.error-page {
+  text-align: center;
+  padding: 3rem;
+}
+
+.error-page h2 {
+  color: var(--negative);
+  margin-bottom: 1rem;
+}
+
+.error-page p {
+  color: var(--text-secondary);
+  margin-bottom: 1.5rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .header-main {
+    flex-direction: column;
+  }
+
+  .header-title h1 {
+    font-size: 1.4rem;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+
+  .timeline-progress {
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .timeline-step {
+    flex: 0 0 30%;
+  }
+
+  .step-line {
+    display: none;
+  }
+
+  .ipo-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .filings-table {
+    font-size: 0.8rem;
+  }
+
+  .filings-table th,
+  .filings-table td {
+    padding: var(--radius-md);
+  }
+}

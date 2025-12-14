@@ -1,0 +1,39 @@
+.period-toggle {
+  display: flex;
+  gap: 0.5rem;
+  background: #0f172a;
+  padding: 0.25rem;
+  border-radius: 0.5rem;
+}
+
+.period-btn {
+  padding: 0.5rem 1rem;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+}
+
+.period-btn:hover:not(:disabled) {
+  background: #1e293b;
+  color: #e2e8f0;
+}
+
+.period-btn.active {
+  background: #8b5cf6;
+  color: white;
+}
+
+.period-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.period-count {
+  margin-left: 0.25rem;
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
