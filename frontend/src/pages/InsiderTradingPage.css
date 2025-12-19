@@ -10,9 +10,16 @@
 }
 
 .page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
   margin-bottom: 1.5rem;
   padding-bottom: 1rem;
   border-bottom: 1px solid var(--border-primary);
+}
+
+.page-header .header-content {
+  flex: 1;
 }
 
 .page-header h1 {
@@ -26,6 +33,28 @@
   color: var(--text-tertiary);
   font-size: 0.875rem;
   margin: 0;
+}
+
+.page-header .update-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+}
+
+.page-header .update-label {
+  color: var(--text-tertiary);
+}
+
+.page-header .update-date {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.page-header .update-stats {
+  color: var(--text-tertiary);
+  font-size: 0.6875rem;
 }
 
 /* View Tabs */
@@ -50,7 +79,7 @@
 }
 
 .view-tabs button:hover {
-  background: var(--bg-hover);
+  background: rgba(99, 102, 241, 0.08);
   color: var(--text-primary);
 }
 
@@ -68,11 +97,14 @@
 }
 
 .stat-card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: var(--radius-lg);
   padding: 1rem;
   text-align: center;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
 }
 
 .stat-card .stat-value {
@@ -99,13 +131,16 @@
   margin-top: 0.25rem;
 }
 
-/* Cards */
+/* Cards - Liquid Glass */
 .card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: var(--radius-lg);
   padding: 1.5rem;
   margin-bottom: 1.5rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
 }
 
 .card h3 {
@@ -130,11 +165,11 @@
   padding: 1rem;
 }
 
-/* Period Selector */
+/* Period Selector - Liquid Glass */
 .period-selector {
   display: flex;
   gap: 0.25rem;
-  background: var(--bg-tertiary);
+  background: rgba(255, 255, 255, 0.5);
   padding: 0.25rem;
   border-radius: var(--radius-md);
 }
@@ -156,7 +191,7 @@
 }
 
 .period-selector button.active {
-  background: var(--bg-secondary);
+  background: rgba(255, 255, 255, 0.8);
   color: var(--text-primary);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
@@ -180,7 +215,7 @@
 }
 
 .data-table th {
-  background: var(--bg-tertiary);
+  background: rgba(255, 255, 255, 0.5);
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -188,12 +223,33 @@
   letter-spacing: 0.05em;
 }
 
+/* Sortable table headers */
+.sortable-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
+.sortable-table th.sortable:hover {
+  color: var(--brand-primary);
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.sortable-table th.sorted {
+  color: var(--brand-primary);
+}
+
+.sortable-table th .sort-arrow {
+  margin-left: 0.375rem;
+  font-size: 0.625rem;
+}
+
 .data-table td {
   color: var(--text-primary);
 }
 
 .data-table tbody tr:hover {
-  background: var(--bg-hover);
+  background: rgba(99, 102, 241, 0.04);
 }
 
 .data-table .symbol-link {
@@ -225,6 +281,18 @@
 .data-table .highlight {
   font-weight: 600;
   color: var(--brand-primary);
+}
+
+.data-table .price-cell {
+  font-weight: 600;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-size: 0.8125rem;
+}
+
+.data-table .change-cell {
+  font-weight: 500;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-size: 0.75rem;
 }
 
 .data-table .no-data {
@@ -279,7 +347,7 @@
 }
 
 .signal-neutral {
-  background: var(--bg-tertiary);
+  background: rgba(255, 255, 255, 0.5);
   color: var(--text-tertiary);
 }
 
@@ -314,7 +382,7 @@
 }
 
 .tx-other {
-  background: var(--bg-tertiary);
+  background: rgba(255, 255, 255, 0.5);
   color: var(--text-tertiary);
 }
 
@@ -329,10 +397,13 @@
 .signal-count {
   text-align: center;
   padding: 1.5rem 2rem;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: var(--radius-lg);
   min-width: 120px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
 }
 
 .signal-count .count {
@@ -369,10 +440,13 @@
 }
 
 .signal-column {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: var(--radius-lg);
   padding: 1rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
 }
 
 .column-title {
@@ -408,7 +482,7 @@
 }
 
 .signal-item:hover {
-  background: var(--bg-hover);
+  background: rgba(99, 102, 241, 0.04);
 }
 
 .signal-item .symbol-link {
@@ -434,16 +508,19 @@
   font-size: 0.875rem;
 }
 
-/* Filter Bar */
+/* Filter Bar - Liquid Glass */
 .filter-bar {
   display: flex;
   align-items: center;
   gap: 1rem;
   margin-bottom: 1.5rem;
   padding: 1rem;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: var(--radius-lg);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
 }
 
 .filter-bar label {
@@ -454,9 +531,9 @@
 
 .filter-bar select {
   padding: 0.5rem 1rem;
-  border: 1px solid var(--border-primary);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-md);
-  background: var(--bg-tertiary);
+  background: rgba(255, 255, 255, 0.5);
   color: var(--text-primary);
   font-size: 0.875rem;
   cursor: pointer;
@@ -569,6 +646,15 @@
 }
 
 @media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .page-header .update-info {
+    align-items: flex-start;
+  }
+
   .view-tabs {
     flex-wrap: wrap;
   }

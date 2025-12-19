@@ -1,0 +1,138 @@
+{
+  "timestamp": "2025-12-15T13:25:08.576Z",
+  "symbolsValidated": 8,
+  "byMetric": {
+    "gross_margin": {
+      "exact": 0,
+      "match": 0,
+      "close": 0,
+      "concerning": 0,
+      "major": 0,
+      "missing_ours": 0,
+      "missing_fmp": 0,
+      "comparisons": []
+    },
+    "operating_margin": {
+      "exact": 0,
+      "match": 0,
+      "close": 0,
+      "concerning": 0,
+      "major": 0,
+      "missing_ours": 0,
+      "missing_fmp": 0,
+      "comparisons": []
+    },
+    "net_margin": {
+      "exact": 0,
+      "match": 0,
+      "close": 0,
+      "concerning": 0,
+      "major": 0,
+      "missing_ours": 0,
+      "missing_fmp": 0,
+      "comparisons": []
+    },
+    "roe": {
+      "exact": 0,
+      "match": 0,
+      "close": 0,
+      "concerning": 0,
+      "major": 0,
+      "missing_ours": 0,
+      "missing_fmp": 0,
+      "comparisons": []
+    },
+    "roa": {
+      "exact": 0,
+      "match": 0,
+      "close": 0,
+      "concerning": 0,
+      "major": 0,
+      "missing_ours": 0,
+      "missing_fmp": 0,
+      "comparisons": []
+    },
+    "roic": {
+      "exact": 0,
+      "match": 0,
+      "close": 0,
+      "concerning": 0,
+      "major": 0,
+      "missing_ours": 0,
+      "missing_fmp": 0,
+      "comparisons": []
+    },
+    "current_ratio": {
+      "exact": 0,
+      "match": 0,
+      "close": 0,
+      "concerning": 0,
+      "major": 0,
+      "missing_ours": 0,
+      "missing_fmp": 0,
+      "comparisons": []
+    },
+    "quick_ratio": {
+      "exact": 0,
+      "match": 0,
+      "close": 0,
+      "concerning": 0,
+      "major": 0,
+      "missing_ours": 0,
+      "missing_fmp": 0,
+      "comparisons": []
+    },
+    "debt_to_equity": {
+      "exact": 0,
+      "match": 0,
+      "close": 0,
+      "concerning": 0,
+      "major": 0,
+      "missing_ours": 0,
+      "missing_fmp": 0,
+      "comparisons": []
+    },
+    "debt_to_assets": {
+      "exact": 0,
+      "match": 0,
+      "close": 0,
+      "concerning": 0,
+      "major": 0,
+      "missing_ours": 0,
+      "missing_fmp": 0,
+      "comparisons": []
+    },
+    "interest_coverage": {
+      "exact": 0,
+      "match": 0,
+      "close": 0,
+      "concerning": 0,
+      "major": 0,
+      "missing_ours": 0,
+      "missing_fmp": 0,
+      "comparisons": []
+    },
+    "asset_turnover": {
+      "exact": 0,
+      "match": 0,
+      "close": 0,
+      "concerning": 0,
+      "major": 0,
+      "missing_ours": 0,
+      "missing_fmp": 0,
+      "comparisons": []
+    },
+    "fcf_yield": {
+      "exact": 0,
+      "match": 0,
+      "close": 0,
+      "concerning": 0,
+      "major": 0,
+      "missing_ours": 0,
+      "missing_fmp": 0,
+      "comparisons": []
+    }
+  },
+  "bySymbol": [],
+  "issues": []
+}

@@ -293,6 +293,294 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_fetch_log_type ON data_fetch_log(endpoint_type, fetch_date DESC);
 `);
 
+// ============================================
+// TABLE 8: Tracked Subreddits (dynamic discovery)
+// ============================================
+db.exec(`
+  CREATE TABLE IF NOT EXISTS tracked_subreddits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,           -- subreddit name without r/
+    category TEXT DEFAULT 'general',     -- 'core', 'general', 'sector', 'discovered'
+    priority INTEGER DEFAULT 50,         -- 1-100, higher = scan first
+    is_active INTEGER DEFAULT 1,         -- whether to include in scans
+    quality_score REAL DEFAULT 50,       -- 0-100, based on post quality
+
+    -- Stats
+    total_posts_scanned INTEGER DEFAULT 0,
+    ticker_mentions_found INTEGER DEFAULT 0,
+    avg_post_score REAL DEFAULT 0,
+    avg_comments REAL DEFAULT 0,
+    last_scanned_at DATETIME,
+
+    -- Discovery metadata
+    discovered_from TEXT,                -- which subreddit led to discovery
+    discovered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_subreddits_active ON tracked_subreddits(is_active, priority DESC);
+  CREATE INDEX IF NOT EXISTS idx_subreddits_quality ON tracked_subreddits(quality_score DESC);
+`);
+
+// Seed default subreddits if table is empty
+const subredditCount = db.prepare('SELECT COUNT(*) as count FROM tracked_subreddits').get();
+if (subredditCount.count === 0) {
+  const seedSubreddits = db.prepare(`
+    INSERT OR IGNORE INTO tracked_subreddits (name, category, priority, quality_score)
+    VALUES (?, ?, ?, ?)
+  `);
+
+  // Core high-quality subreddits
+  const coreSubreddits = [
+    ['wallstreetbets', 'core', 100, 60],
+    ['stocks', 'core', 95, 75],
+    ['investing', 'core', 90, 80],
+    ['stockmarket', 'core', 85, 70],
+    ['options', 'core', 80, 65],
+    ['SecurityAnalysis', 'core', 75, 90],
+    ['ValueInvesting', 'core', 75, 85],
+    ['dividends', 'core', 70, 80],
+    ['thetagang', 'core', 65, 70],
+    ['smallstreetbets', 'core', 60, 55],
+  ];
+
+  // Additional quality subreddits
+  const additionalSubreddits = [
+    ['FluentInFinance', 'general', 55, 75],
+    ['Bogleheads', 'general', 50, 85],
+    ['personalfinance', 'general', 45, 70],
+    ['FinancialPlanning', 'general', 40, 75],
+    ['pennystocks', 'general', 35, 40],
+    ['RobinhoodTrade', 'general', 30, 50],
+    ['SPACs', 'sector', 35, 55],
+    ['weedstocks', 'sector', 25, 45],
+    ['biotech', 'sector', 30, 65],
+    ['semiconductor', 'sector', 30, 70],
+    ['energy_stocks', 'sector', 25, 60],
+    ['REITs', 'sector', 25, 70],
+  ];
+
+  for (const [name, category, priority, quality] of [...coreSubreddits, ...additionalSubreddits]) {
+    seedSubreddits.run(name, category, priority, quality);
+  }
+
+  console.log('🌱 Seeded default subreddits');
+}
+
+// ============================================
+// TABLE 9: StockTwits Messages
+// ============================================
+db.exec(`
+  CREATE TABLE IF NOT EXISTS stocktwits_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER,
+
+    message_id TEXT NOT NULL UNIQUE,
+    body TEXT NOT NULL,
+
+    user_id TEXT,
+    username TEXT,
+    user_followers INTEGER,
+    user_join_date TEXT,
+
+    user_sentiment TEXT,             -- 'Bullish', 'Bearish', or NULL
+
+    likes_count INTEGER DEFAULT 0,
+    reshares_count INTEGER DEFAULT 0,
+
+    posted_at DATETIME NOT NULL,
+    fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+    nlp_sentiment_score REAL,
+    nlp_sentiment_label TEXT,
+
+    FOREIGN KEY (company_id) REFERENCES companies(id)
+  );
+`);
+
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_stocktwits_company ON stocktwits_messages(company_id);
+  CREATE INDEX IF NOT EXISTS idx_stocktwits_posted ON stocktwits_messages(posted_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_stocktwits_sentiment ON stocktwits_messages(user_sentiment);
+`);
+
+// ============================================
+// TABLE 10: News Articles (Google/Yahoo RSS)
+// ============================================
+db.exec(`
+  CREATE TABLE IF NOT EXISTS news_articles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER,
+
+    source TEXT NOT NULL,            -- 'google_news', 'yahoo_finance', 'seeking_alpha'
+    source_name TEXT,                -- 'Reuters', 'Bloomberg', etc.
+
+    article_id TEXT,
+    title TEXT NOT NULL,
+    description TEXT,
+    url TEXT NOT NULL,
+
+    published_at DATETIME,
+    fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+    sentiment_score REAL,
+    sentiment_label TEXT,
+    sentiment_confidence REAL,
+
+    UNIQUE(source, url),
+    FOREIGN KEY (company_id) REFERENCES companies(id)
+  );
+`);
+
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_news_company ON news_articles(company_id);
+  CREATE INDEX IF NOT EXISTS idx_news_published ON news_articles(published_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_news_source ON news_articles(source);
+`);
+
+// ============================================
+// TABLE 11: Market Sentiment Indicators
+// ============================================
+db.exec(`
+  CREATE TABLE IF NOT EXISTS market_sentiment (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    indicator_type TEXT NOT NULL,    -- 'cnn_fear_greed', 'vix', 'overall_market'
+
+    indicator_value REAL,
+    indicator_label TEXT,            -- 'Extreme Fear', 'Fear', 'Neutral', 'Greed', 'Extreme Greed'
+    components TEXT,                 -- JSON of sub-components
+
+    previous_value REAL,
+    change_value REAL,
+
+    fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_market_sentiment_type ON market_sentiment(indicator_type);
+  CREATE INDEX IF NOT EXISTS idx_market_sentiment_date ON market_sentiment(fetched_at DESC);
+`);
+
+// ============================================
+// TABLE 12: Combined Sentiment Summary
+// ============================================
+db.exec(`
+  CREATE TABLE IF NOT EXISTS combined_sentiment (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL,
+
+    combined_score REAL,
+    combined_signal TEXT,
+    confidence REAL,
+
+    reddit_sentiment REAL,
+    reddit_signal TEXT,
+    reddit_confidence REAL,
+
+    stocktwits_sentiment REAL,
+    stocktwits_signal TEXT,
+    stocktwits_confidence REAL,
+
+    news_sentiment REAL,
+    news_signal TEXT,
+    news_confidence REAL,
+
+    market_sentiment REAL,
+    market_signal TEXT,
+    market_confidence REAL,
+
+    sources_used INTEGER,
+    agreement_score REAL,
+
+    calculated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    calculated_date TEXT GENERATED ALWAYS AS (date(calculated_at)) STORED,
+
+    UNIQUE(company_id, calculated_date),
+    FOREIGN KEY (company_id) REFERENCES companies(id)
+  );
+`);
+
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_combined_company ON combined_sentiment(company_id);
+  CREATE INDEX IF NOT EXISTS idx_combined_date ON combined_sentiment(calculated_at DESC);
+`);
+
+// ============================================
+// TABLE 13: Analyst Estimates (Yahoo Finance)
+// ============================================
+db.exec(`
+  CREATE TABLE IF NOT EXISTS analyst_estimates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL,
+    fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+    -- Price targets
+    current_price REAL,
+    target_high REAL,
+    target_low REAL,
+    target_mean REAL,
+    target_median REAL,
+    number_of_analysts INTEGER,
+    recommendation_key TEXT,           -- 'strong_buy', 'buy', 'hold', etc.
+    recommendation_mean REAL,          -- 1.0 = Strong Buy, 5.0 = Strong Sell
+    upside_potential REAL,             -- Percentage upside to mean target
+
+    -- Recommendation distribution
+    strong_buy INTEGER DEFAULT 0,
+    buy INTEGER DEFAULT 0,
+    hold INTEGER DEFAULT 0,
+    sell INTEGER DEFAULT 0,
+    strong_sell INTEGER DEFAULT 0,
+    buy_percent REAL,
+    hold_percent REAL,
+    sell_percent REAL,
+
+    -- Earnings track record
+    earnings_beat_rate REAL,           -- Percentage of quarters that beat estimates
+
+    -- Generated signal
+    signal TEXT,                       -- 'strong_buy', 'buy', 'hold', 'sell', 'strong_sell'
+    signal_strength INTEGER,           -- 1-5
+    signal_confidence REAL,            -- 0-1
+    signal_score INTEGER,              -- Raw score used to determine signal
+
+    -- Full raw data for detailed analysis
+    raw_data TEXT,                     -- JSON blob with complete response
+
+    UNIQUE(company_id),
+    FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+  );
+`);
+
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_analyst_company ON analyst_estimates(company_id);
+  CREATE INDEX IF NOT EXISTS idx_analyst_signal ON analyst_estimates(signal);
+  CREATE INDEX IF NOT EXISTS idx_analyst_upside ON analyst_estimates(upside_potential DESC);
+`);
+
+// Add sentiment columns to companies table if not exists
+try {
+  db.exec(`ALTER TABLE companies ADD COLUMN sentiment_signal TEXT`);
+} catch (e) { /* Column may already exist */ }
+
+try {
+  db.exec(`ALTER TABLE companies ADD COLUMN sentiment_score REAL`);
+} catch (e) { /* Column may already exist */ }
+
+try {
+  db.exec(`ALTER TABLE companies ADD COLUMN sentiment_confidence REAL`);
+} catch (e) { /* Column may already exist */ }
+
+try {
+  db.exec(`ALTER TABLE companies ADD COLUMN sentiment_updated_at DATETIME`);
+} catch (e) { /* Column may already exist */ }
+
 console.log('✅ Database schema created successfully!');
 console.log(`📁 Database location: ${dbPath}`);
 console.log('');

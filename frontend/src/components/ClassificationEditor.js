@@ -1,9 +1,12 @@
 // frontend/src/components/ClassificationEditor.js
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import { Settings, X } from 'lucide-react';
 import { classificationsAPI } from '../services/api';
 import './ClassificationEditor.css';
 
-function ClassificationEditor({ symbol, companyName, onUpdate }) {
+function ClassificationEditor({ symbol, companyName, onUpdate, mode = 'inline', compact = false }) {
+  const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -135,30 +138,9 @@ function ClassificationEditor({ symbol, companyName, onUpdate }) {
     }
   };
 
-  if (loading) {
-    return <div className="classification-editor loading">Loading...</div>;
-  }
-
-  return (
-    <div className="classification-editor">
-      <div className="ce-header">
-        <h4>Classifications</h4>
-        {!isEditing ? (
-          <button className="edit-btn" onClick={() => setIsEditing(true)}>
-            Edit
-          </button>
-        ) : (
-          <div className="edit-actions">
-            <button className="cancel-btn" onClick={handleCancel} disabled={saving}>
-              Cancel
-            </button>
-            <button className="save-btn" onClick={handleSave} disabled={saving}>
-              {saving ? 'Saving...' : 'Save'}
-            </button>
-          </div>
-        )}
-      </div>
-
+  // Render editor content (used by both modes)
+  const renderEditorContent = () => (
+    <>
       {error && <div className="ce-error">{error}</div>}
 
       {/* Default Classifications (read-only) */}
@@ -324,6 +306,86 @@ function ClassificationEditor({ symbol, companyName, onUpdate }) {
           </span>
         </div>
       </div>
+    </>
+  );
+
+  // Button mode - render just a button that opens modal
+  if (mode === 'button') {
+    const modalContent = showModal && createPortal(
+      <div className="ce-modal-overlay" onClick={() => setShowModal(false)}>
+        <div className="ce-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="ce-modal-header">
+            <h3>Classifications for {companyName || symbol}</h3>
+            <button className="ce-modal-close" onClick={() => setShowModal(false)}>
+              <X size={20} />
+            </button>
+          </div>
+          <div className="ce-modal-body">
+            {loading ? (
+              <div className="ce-loading">Loading classifications...</div>
+            ) : (
+              <div className="classification-editor modal-content">
+                <div className="ce-header">
+                  {!isEditing ? (
+                    <button className="edit-btn" onClick={() => setIsEditing(true)}>
+                      Edit
+                    </button>
+                  ) : (
+                    <div className="edit-actions">
+                      <button className="cancel-btn" onClick={handleCancel} disabled={saving}>
+                        Cancel
+                      </button>
+                      <button className="save-btn" onClick={handleSave} disabled={saving}>
+                        {saving ? 'Saving...' : 'Save'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {renderEditorContent()}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>,
+      document.body
+    );
+
+    return (
+      <>
+        <button className="ce-trigger-btn" onClick={() => setShowModal(true)} title="Edit Classifications">
+          <Settings size={16} />
+          {!compact && <span>Classify</span>}
+        </button>
+        {modalContent}
+      </>
+    );
+  }
+
+  if (loading) {
+    return <div className="classification-editor loading">Loading...</div>;
+  }
+
+  return (
+    <div className="classification-editor">
+      <div className="ce-header">
+        <h4>Classifications</h4>
+        {!isEditing ? (
+          <button className="edit-btn" onClick={() => setIsEditing(true)}>
+            Edit
+          </button>
+        ) : (
+          <div className="edit-actions">
+            <button className="cancel-btn" onClick={handleCancel} disabled={saving}>
+              Cancel
+            </button>
+            <button className="save-btn" onClick={handleSave} disabled={saving}>
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {renderEditorContent()}
     </div>
   );
 }

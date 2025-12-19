@@ -13,6 +13,8 @@ export { default as SortableTable } from './SortableTable';
 export { default as MetricsBarChart } from './MetricsBarChart';
 export { default as AnalysisDashboard } from './AnalysisDashboard';
 export { default as NewsAndEvents } from './NewsAndEvents';
+export { default as AnalystHistoryChart } from './AnalystHistoryChart';
+export { default as EarningsCalendar } from './EarningsCalendar';
 export {
   AVAILABLE_METRICS,
   DEFAULT_CHART_METRICS,

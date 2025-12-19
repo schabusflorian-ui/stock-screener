@@ -89,9 +89,22 @@ class SchemaManager {
       { name: 'revenue_growth_yoy', type: 'REAL' },
       { name: 'earnings_growth_yoy', type: 'REAL' },
       { name: 'fcf_growth_yoy', type: 'REAL' },
+      { name: 'revenue_growth_qoq', type: 'REAL' },
+      { name: 'earnings_growth_qoq', type: 'REAL' },
+      { name: 'revenue_cagr_3y', type: 'REAL' },
+      { name: 'revenue_cagr_5y', type: 'REAL' },
+      { name: 'earnings_cagr_3y', type: 'REAL' },
+      { name: 'earnings_cagr_5y', type: 'REAL' },
+      { name: 'equity_multiplier', type: 'REAL' },
+      { name: 'dupont_roe', type: 'REAL' },
       { name: 'data_quality_score', type: 'INTEGER', default: 100 },
       { name: 'asset_turnover', type: 'REAL' },
-      { name: 'owner_earnings', type: 'REAL' }
+      { name: 'owner_earnings', type: 'REAL' },
+      { name: 'graham_number', type: 'REAL' },
+      { name: 'dividend_yield', type: 'REAL' },
+      { name: 'buyback_yield', type: 'REAL' },
+      { name: 'shareholder_yield', type: 'REAL' },
+      { name: 'roce', type: 'REAL' }
     ];
     
     let added = 0;
@@ -194,11 +207,28 @@ class SchemaManager {
       peRatio: 'pe_ratio',
       pbRatio: 'pb_ratio',
       psRatio: 'ps_ratio',
+      pegRatio: 'peg_ratio',
+      evEbitda: 'ev_ebitda',
       earningsYield: 'earnings_yield',
       dataQualityScore: 'data_quality_score',
       tobins_q: 'tobins_q',
       msi: 'msi',
-      revenue_growth_yoy: 'revenue_growth_yoy'
+      revenue_growth_yoy: 'revenue_growth_yoy',
+      earnings_growth_yoy: 'earnings_growth_yoy',
+      fcf_growth_yoy: 'fcf_growth_yoy',
+      revenue_growth_qoq: 'revenue_growth_qoq',
+      earnings_growth_qoq: 'earnings_growth_qoq',
+      revenue_cagr_3y: 'revenue_cagr_3y',
+      revenue_cagr_5y: 'revenue_cagr_5y',
+      earnings_cagr_3y: 'earnings_cagr_3y',
+      earnings_cagr_5y: 'earnings_cagr_5y',
+      equityMultiplier: 'equity_multiplier',
+      dupontRoe: 'dupont_roe',
+      graham_number: 'graham_number',
+      dividend_yield: 'dividend_yield',
+      buyback_yield: 'buyback_yield',
+      shareholder_yield: 'shareholder_yield',
+      roce: 'roce'
     };
 
     for (const [metricKey, columnName] of Object.entries(metricMapping)) {

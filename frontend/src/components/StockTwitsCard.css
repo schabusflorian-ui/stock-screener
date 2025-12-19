@@ -1,0 +1,294 @@
+.stocktwits-card {
+  background: var(--bg-secondary, #1a1a2e);
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid var(--border-default, #2a2a4a);
+}
+
+.stocktwits-card--empty,
+.stocktwits-card--loading {
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+}
+
+.loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex: 1;
+  color: var(--text-tertiary, #6b7280);
+}
+
+.no-data-message {
+  color: var(--text-tertiary, #6b7280);
+  font-size: 14px;
+  text-align: center;
+  margin-top: auto;
+  margin-bottom: auto;
+}
+
+.stocktwits-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-title h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary, #ffffff);
+  margin: 0;
+}
+
+.header-title svg {
+  color: #00B2FF;
+}
+
+.external-link {
+  color: var(--text-tertiary, #6b7280);
+  margin-left: 4px;
+  transition: color 0.15s;
+}
+
+.external-link:hover {
+  color: #00B2FF;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.refresh-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  background: var(--bg-tertiary, #2a2a4a);
+  border: 1px solid var(--border-default, #3a3a5a);
+  border-radius: 6px;
+  color: var(--text-secondary, #a0a0b0);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.refresh-btn:hover:not(:disabled) {
+  background: var(--bg-hover, #3a3a5a);
+  color: var(--text-primary, #ffffff);
+}
+
+.refresh-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Signal Badge */
+.signal-badge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  margin-bottom: 16px;
+}
+
+.signal-label {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.signal-confidence {
+  margin-left: auto;
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+/* Sentiment Bar */
+.sentiment-bar-container {
+  margin-bottom: 16px;
+}
+
+.sentiment-bar {
+  display: flex;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.sentiment-bullish {
+  background: linear-gradient(90deg, #10B981, #34D399);
+  transition: width 0.3s ease;
+}
+
+.sentiment-bearish {
+  background: linear-gradient(90deg, #F87171, #EF4444);
+  transition: width 0.3s ease;
+}
+
+.sentiment-bar-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.bullish-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #10B981;
+}
+
+.bearish-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #EF4444;
+}
+
+/* Stats */
+.stocktwits-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px;
+  background: var(--bg-tertiary, #2a2a4a);
+  border-radius: 8px;
+}
+
+.stat-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary, #ffffff);
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--text-tertiary, #6b7280);
+}
+
+/* Recent Messages */
+.recent-messages {
+  border-top: 1px solid var(--border-subtle, #2a2a4a);
+  padding-top: 16px;
+}
+
+.recent-messages h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary, #a0a0b0);
+  margin: 0 0 12px 0;
+}
+
+.message-item {
+  padding: 12px;
+  margin-bottom: 8px;
+  background: var(--bg-tertiary, #2a2a4a);
+  border-radius: 8px;
+}
+
+.message-item:last-child {
+  margin-bottom: 0;
+}
+
+.message-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.message-sentiment {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.message-user {
+  font-size: 12px;
+  font-weight: 600;
+  color: #00B2FF;
+}
+
+.message-time {
+  font-size: 11px;
+  color: var(--text-tertiary, #6b7280);
+  margin-left: auto;
+}
+
+.message-body {
+  font-size: 13px;
+  color: var(--text-primary, #ffffff);
+  line-height: 1.5;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.message-likes {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-tertiary, #6b7280);
+  margin-top: 8px;
+}
+
+/* Timestamp */
+.stocktwits-timestamp {
+  font-size: 11px;
+  color: var(--text-tertiary, #6b7280);
+  text-align: center;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle, #2a2a4a);
+}
+
+/* Spinning animation */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .stocktwits-stats {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .signal-badge {
+    flex-wrap: wrap;
+  }
+
+  .signal-confidence {
+    width: 100%;
+    margin-left: 0;
+    margin-top: 8px;
+  }
+}

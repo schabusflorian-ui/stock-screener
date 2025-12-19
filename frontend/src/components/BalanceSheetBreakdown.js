@@ -38,9 +38,9 @@ function BalanceSheetBreakdown({ symbol, periodType }) {
           limit: 10,
           periodType
         });
-        setData(response.data.balanceSheet || []);
-        if (response.data.balanceSheet?.length > 0) {
-          setSelectedPeriod(response.data.balanceSheet[0].period);
+        setData(response.data.breakdown || []);
+        if (response.data.breakdown?.length > 0) {
+          setSelectedPeriod(response.data.breakdown[0].period);
         }
       } catch (error) {
         console.error('Error loading balance sheet:', error);
@@ -59,24 +59,35 @@ function BalanceSheetBreakdown({ symbol, periodType }) {
   // Get selected period data
   const selectedData = data.find(d => d.period === selectedPeriod);
 
+  // Helper to format period label - use fiscal label if available
+  const formatPeriodLabel = (item) => {
+    // Prefer fiscal_label (e.g., "FY2024 Q1") if available
+    if (item.fiscal_label) return item.fiscal_label;
+    // Fall back to fiscal_year for annual reports
+    if (item.fiscal_year) return `FY${item.fiscal_year}`;
+    // Fall back to period date
+    if (item.period) return item.period.substring(0, 4);
+    return item.fiscal_period || 'N/A';
+  };
+
   // Prepare trend chart data
   const trendData = [...data].reverse().map(item => ({
-    period: item.fiscal_period,
+    period: formatPeriodLabel(item),
     'Total Assets': item.summary.totalAssets / 1e9,
     'Total Liabilities': item.summary.totalLiabilities / 1e9,
-    'Shareholders Equity': item.summary.shareholdersEquity / 1e9
+    'Shareholders Equity': item.summary.shareholderEquity / 1e9
   }));
 
   // Asset composition over time
   const assetCompositionData = [...data].reverse().map(item => ({
-    period: item.fiscal_period,
-    'Current Assets': (item.assets?.currentAssets?.total || 0) / 1e9,
-    'Non-Current Assets': (item.assets?.nonCurrentAssets?.total || 0) / 1e9
+    period: formatPeriodLabel(item),
+    'Current Assets': (item.assets?.current?.total || 0) / 1e9,
+    'Non-Current Assets': (item.assets?.noncurrent?.total || 0) / 1e9
   }));
 
   // Ratio trends
   const ratioTrendData = [...data].reverse().map(item => ({
-    period: item.fiscal_period,
+    period: formatPeriodLabel(item),
     'Current Ratio': item.ratios?.currentRatio,
     'Quick Ratio': item.ratios?.quickRatio,
     'Debt to Equity': item.ratios?.debtToEquity
@@ -138,7 +149,7 @@ function BalanceSheetBreakdown({ symbol, periodType }) {
             >
               {data.map(d => (
                 <option key={d.period} value={d.period}>
-                  {d.fiscal_period} ({d.period_type})
+                  {formatPeriodLabel(d)}
                 </option>
               ))}
             </select>
@@ -156,7 +167,7 @@ function BalanceSheetBreakdown({ symbol, periodType }) {
             </div>
             <div className="bs-summary-card equity">
               <span className="card-label">Shareholders' Equity</span>
-              <span className="card-value">{formatCurrency(selectedData.summary.shareholdersEquity)}</span>
+              <span className="card-value">{formatCurrency(selectedData.summary.shareholderEquity)}</span>
             </div>
           </div>
 
@@ -168,15 +179,15 @@ function BalanceSheetBreakdown({ symbol, periodType }) {
                 <div className="bs-bar assets-bar">
                   <div
                     className="bs-segment current-assets"
-                    style={{ height: `${(selectedData.assets?.currentAssets?.total / selectedData.summary.totalAssets) * 100}%` }}
-                    title={`Current Assets: ${formatCurrency(selectedData.assets?.currentAssets?.total)}`}
+                    style={{ height: `${(selectedData.assets?.current?.total / selectedData.summary.totalAssets) * 100}%` }}
+                    title={`Current Assets: ${formatCurrency(selectedData.assets?.current?.total)}`}
                   >
                     <span>Current</span>
                   </div>
                   <div
                     className="bs-segment noncurrent-assets"
-                    style={{ height: `${(selectedData.assets?.nonCurrentAssets?.total / selectedData.summary.totalAssets) * 100}%` }}
-                    title={`Non-Current Assets: ${formatCurrency(selectedData.assets?.nonCurrentAssets?.total)}`}
+                    style={{ height: `${(selectedData.assets?.noncurrent?.total / selectedData.summary.totalAssets) * 100}%` }}
+                    title={`Non-Current Assets: ${formatCurrency(selectedData.assets?.noncurrent?.total)}`}
                   >
                     <span>Non-Current</span>
                   </div>
@@ -188,22 +199,22 @@ function BalanceSheetBreakdown({ symbol, periodType }) {
                 <div className="bs-bar liabilities-equity-bar">
                   <div
                     className="bs-segment current-liab"
-                    style={{ height: `${(selectedData.liabilities?.currentLiabilities?.total / selectedData.summary.totalAssets) * 100}%` }}
-                    title={`Current Liabilities: ${formatCurrency(selectedData.liabilities?.currentLiabilities?.total)}`}
+                    style={{ height: `${(selectedData.liabilities?.current?.total / selectedData.summary.totalAssets) * 100}%` }}
+                    title={`Current Liabilities: ${formatCurrency(selectedData.liabilities?.current?.total)}`}
                   >
                     <span>Current Liab.</span>
                   </div>
                   <div
                     className="bs-segment noncurrent-liab"
-                    style={{ height: `${(selectedData.liabilities?.nonCurrentLiabilities?.total / selectedData.summary.totalAssets) * 100}%` }}
-                    title={`Non-Current Liabilities: ${formatCurrency(selectedData.liabilities?.nonCurrentLiabilities?.total)}`}
+                    style={{ height: `${(selectedData.liabilities?.noncurrent?.total / selectedData.summary.totalAssets) * 100}%` }}
+                    title={`Non-Current Liabilities: ${formatCurrency(selectedData.liabilities?.noncurrent?.total)}`}
                   >
                     <span>Long-term Debt</span>
                   </div>
                   <div
                     className="bs-segment equity-segment"
-                    style={{ height: `${(selectedData.summary.shareholdersEquity / selectedData.summary.totalAssets) * 100}%` }}
-                    title={`Shareholders' Equity: ${formatCurrency(selectedData.summary.shareholdersEquity)}`}
+                    style={{ height: `${(selectedData.summary.shareholderEquity / selectedData.summary.totalAssets) * 100}%` }}
+                    title={`Shareholders' Equity: ${formatCurrency(selectedData.summary.shareholderEquity)}`}
                   >
                     <span>Equity</span>
                   </div>
@@ -253,7 +264,7 @@ function BalanceSheetBreakdown({ symbol, periodType }) {
             >
               {data.map(d => (
                 <option key={d.period} value={d.period}>
-                  {d.fiscal_period} ({d.period_type})
+                  {formatPeriodLabel(d)}
                 </option>
               ))}
             </select>
@@ -269,39 +280,39 @@ function BalanceSheetBreakdown({ symbol, periodType }) {
                 <h5>Current Assets</h5>
                 <table className="bs-table">
                   <tbody>
-                    {selectedData.assets?.currentAssets?.cashAndEquivalents > 0 && (
+                    {selectedData.assets?.current?.cashAndEquivalents > 0 && (
                       <tr>
                         <td>Cash & Equivalents</td>
-                        <td>{formatCurrency(selectedData.assets.currentAssets.cashAndEquivalents)}</td>
+                        <td>{formatCurrency(selectedData.assets.current.cashAndEquivalents)}</td>
                       </tr>
                     )}
-                    {selectedData.assets?.currentAssets?.shortTermInvestments > 0 && (
+                    {selectedData.assets?.current?.shortTermInvestments > 0 && (
                       <tr>
                         <td>Short-term Investments</td>
-                        <td>{formatCurrency(selectedData.assets.currentAssets.shortTermInvestments)}</td>
+                        <td>{formatCurrency(selectedData.assets.current.shortTermInvestments)}</td>
                       </tr>
                     )}
-                    {selectedData.assets?.currentAssets?.accountsReceivable > 0 && (
+                    {selectedData.assets?.current?.accountsReceivable > 0 && (
                       <tr>
                         <td>Accounts Receivable</td>
-                        <td>{formatCurrency(selectedData.assets.currentAssets.accountsReceivable)}</td>
+                        <td>{formatCurrency(selectedData.assets.current.accountsReceivable)}</td>
                       </tr>
                     )}
-                    {selectedData.assets?.currentAssets?.inventory > 0 && (
+                    {selectedData.assets?.current?.inventory > 0 && (
                       <tr>
                         <td>Inventory</td>
-                        <td>{formatCurrency(selectedData.assets.currentAssets.inventory)}</td>
+                        <td>{formatCurrency(selectedData.assets.current.inventory)}</td>
                       </tr>
                     )}
-                    {selectedData.assets?.currentAssets?.otherCurrentAssets > 0 && (
+                    {selectedData.assets?.current?.other > 0 && (
                       <tr>
                         <td>Other Current Assets</td>
-                        <td>{formatCurrency(selectedData.assets.currentAssets.otherCurrentAssets)}</td>
+                        <td>{formatCurrency(selectedData.assets.current.other)}</td>
                       </tr>
                     )}
                     <tr className="subtotal-row">
                       <td>Total Current Assets</td>
-                      <td>{formatCurrency(selectedData.assets?.currentAssets?.total)}</td>
+                      <td>{formatCurrency(selectedData.assets?.current?.total)}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -312,39 +323,39 @@ function BalanceSheetBreakdown({ symbol, periodType }) {
                 <h5>Non-Current Assets</h5>
                 <table className="bs-table">
                   <tbody>
-                    {selectedData.assets?.nonCurrentAssets?.propertyPlantEquipment > 0 && (
+                    {selectedData.assets?.noncurrent?.propertyPlantEquipment > 0 && (
                       <tr>
                         <td>Property, Plant & Equipment</td>
-                        <td>{formatCurrency(selectedData.assets.nonCurrentAssets.propertyPlantEquipment)}</td>
+                        <td>{formatCurrency(selectedData.assets.noncurrent.propertyPlantEquipment)}</td>
                       </tr>
                     )}
-                    {selectedData.assets?.nonCurrentAssets?.goodwill > 0 && (
+                    {selectedData.assets?.noncurrent?.goodwill > 0 && (
                       <tr>
                         <td>Goodwill</td>
-                        <td>{formatCurrency(selectedData.assets.nonCurrentAssets.goodwill)}</td>
+                        <td>{formatCurrency(selectedData.assets.noncurrent.goodwill)}</td>
                       </tr>
                     )}
-                    {selectedData.assets?.nonCurrentAssets?.intangibleAssets > 0 && (
+                    {selectedData.assets?.noncurrent?.intangibleAssets > 0 && (
                       <tr>
                         <td>Intangible Assets</td>
-                        <td>{formatCurrency(selectedData.assets.nonCurrentAssets.intangibleAssets)}</td>
+                        <td>{formatCurrency(selectedData.assets.noncurrent.intangibleAssets)}</td>
                       </tr>
                     )}
-                    {selectedData.assets?.nonCurrentAssets?.longTermInvestments > 0 && (
+                    {selectedData.assets?.noncurrent?.longTermInvestments > 0 && (
                       <tr>
                         <td>Long-term Investments</td>
-                        <td>{formatCurrency(selectedData.assets.nonCurrentAssets.longTermInvestments)}</td>
+                        <td>{formatCurrency(selectedData.assets.noncurrent.longTermInvestments)}</td>
                       </tr>
                     )}
-                    {selectedData.assets?.nonCurrentAssets?.otherNonCurrentAssets > 0 && (
+                    {selectedData.assets?.noncurrent?.other > 0 && (
                       <tr>
                         <td>Other Non-Current Assets</td>
-                        <td>{formatCurrency(selectedData.assets.nonCurrentAssets.otherNonCurrentAssets)}</td>
+                        <td>{formatCurrency(selectedData.assets.noncurrent.other)}</td>
                       </tr>
                     )}
                     <tr className="subtotal-row">
                       <td>Total Non-Current Assets</td>
-                      <td>{formatCurrency(selectedData.assets?.nonCurrentAssets?.total)}</td>
+                      <td>{formatCurrency(selectedData.assets?.noncurrent?.total)}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -365,33 +376,33 @@ function BalanceSheetBreakdown({ symbol, periodType }) {
                 <h5>Current Liabilities</h5>
                 <table className="bs-table">
                   <tbody>
-                    {selectedData.liabilities?.currentLiabilities?.accountsPayable > 0 && (
+                    {selectedData.liabilities?.current?.accountsPayable > 0 && (
                       <tr>
                         <td>Accounts Payable</td>
-                        <td>{formatCurrency(selectedData.liabilities.currentLiabilities.accountsPayable)}</td>
+                        <td>{formatCurrency(selectedData.liabilities.current.accountsPayable)}</td>
                       </tr>
                     )}
-                    {selectedData.liabilities?.currentLiabilities?.shortTermDebt > 0 && (
+                    {selectedData.liabilities?.current?.shortTermDebt > 0 && (
                       <tr>
                         <td>Short-term Debt</td>
-                        <td>{formatCurrency(selectedData.liabilities.currentLiabilities.shortTermDebt)}</td>
+                        <td>{formatCurrency(selectedData.liabilities.current.shortTermDebt)}</td>
                       </tr>
                     )}
-                    {selectedData.liabilities?.currentLiabilities?.deferredRevenue > 0 && (
+                    {selectedData.liabilities?.current?.deferredRevenue > 0 && (
                       <tr>
                         <td>Deferred Revenue</td>
-                        <td>{formatCurrency(selectedData.liabilities.currentLiabilities.deferredRevenue)}</td>
+                        <td>{formatCurrency(selectedData.liabilities.current.deferredRevenue)}</td>
                       </tr>
                     )}
-                    {selectedData.liabilities?.currentLiabilities?.otherCurrentLiabilities > 0 && (
+                    {selectedData.liabilities?.current?.other > 0 && (
                       <tr>
                         <td>Other Current Liabilities</td>
-                        <td>{formatCurrency(selectedData.liabilities.currentLiabilities.otherCurrentLiabilities)}</td>
+                        <td>{formatCurrency(selectedData.liabilities.current.other)}</td>
                       </tr>
                     )}
                     <tr className="subtotal-row">
                       <td>Total Current Liabilities</td>
-                      <td>{formatCurrency(selectedData.liabilities?.currentLiabilities?.total)}</td>
+                      <td>{formatCurrency(selectedData.liabilities?.current?.total)}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -402,27 +413,27 @@ function BalanceSheetBreakdown({ symbol, periodType }) {
                 <h5>Non-Current Liabilities</h5>
                 <table className="bs-table">
                   <tbody>
-                    {selectedData.liabilities?.nonCurrentLiabilities?.longTermDebt > 0 && (
+                    {selectedData.liabilities?.noncurrent?.longTermDebt > 0 && (
                       <tr>
                         <td>Long-term Debt</td>
-                        <td>{formatCurrency(selectedData.liabilities.nonCurrentLiabilities.longTermDebt)}</td>
+                        <td>{formatCurrency(selectedData.liabilities.noncurrent.longTermDebt)}</td>
                       </tr>
                     )}
-                    {selectedData.liabilities?.nonCurrentLiabilities?.deferredTaxLiabilities > 0 && (
+                    {selectedData.liabilities?.noncurrent?.deferredTaxLiabilities > 0 && (
                       <tr>
                         <td>Deferred Tax Liabilities</td>
-                        <td>{formatCurrency(selectedData.liabilities.nonCurrentLiabilities.deferredTaxLiabilities)}</td>
+                        <td>{formatCurrency(selectedData.liabilities.noncurrent.deferredTaxLiabilities)}</td>
                       </tr>
                     )}
-                    {selectedData.liabilities?.nonCurrentLiabilities?.otherNonCurrentLiabilities > 0 && (
+                    {selectedData.liabilities?.noncurrent?.other > 0 && (
                       <tr>
                         <td>Other Non-Current Liabilities</td>
-                        <td>{formatCurrency(selectedData.liabilities.nonCurrentLiabilities.otherNonCurrentLiabilities)}</td>
+                        <td>{formatCurrency(selectedData.liabilities.noncurrent.other)}</td>
                       </tr>
                     )}
                     <tr className="subtotal-row">
                       <td>Total Non-Current Liabilities</td>
-                      <td>{formatCurrency(selectedData.liabilities?.nonCurrentLiabilities?.total)}</td>
+                      <td>{formatCurrency(selectedData.liabilities?.noncurrent?.total)}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -472,12 +483,12 @@ function BalanceSheetBreakdown({ symbol, periodType }) {
 
               <div className="bs-subtotal equity-subtotal">
                 <span>Total Equity</span>
-                <span>{formatCurrency(selectedData.summary.shareholdersEquity)}</span>
+                <span>{formatCurrency(selectedData.summary.shareholderEquity)}</span>
               </div>
 
               <div className="bs-total">
                 <span>Total Liabilities + Equity</span>
-                <span>{formatCurrency(selectedData.summary.totalLiabilities + selectedData.summary.shareholdersEquity)}</span>
+                <span>{formatCurrency(selectedData.summary.totalLiabilities + selectedData.summary.shareholderEquity)}</span>
               </div>
             </div>
           </div>

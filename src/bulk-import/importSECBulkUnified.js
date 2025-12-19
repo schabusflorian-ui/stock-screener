@@ -115,6 +115,18 @@ class SECBulkImporterUnified {
   }
 
   /**
+   * Derive fiscal year from fiscal date ending
+   * For annual reports: use the year of the fiscal date
+   * This is more reliable than SEC's fy field which uses calendar year convention
+   */
+  deriveFiscalYear(fiscalDateEnding) {
+    if (!fiscalDateEnding) return null;
+    // fiscalDateEnding is in YYYY-MM-DD format
+    const year = parseInt(fiscalDateEnding.substring(0, 4));
+    return year;
+  }
+
+  /**
    * Determine period type and fiscal period from qtrs
    */
   determinePeriod(qtrs, fy, fp, formType) {
@@ -236,11 +248,13 @@ class SECBulkImporterUnified {
 
       // Insert Q4 if we have data
       if (Object.keys(q4Statement).length > 0) {
+        // Derive fiscal year from the fiscal date (more reliable than SEC's fy field)
+        const derivedFiscalYear = this.deriveFiscalYear(fiscalDate);
         this.insertOrUpdateStatement(
           sub.company_id,
           statementType,
           fiscalDate,
-          parseInt(sub.fy),
+          derivedFiscalYear,
           'quarterly',
           'Q4',
           q4Statement,
@@ -451,6 +465,9 @@ class SECBulkImporterUnified {
               }
             }
 
+            // Derive fiscal year from the actual fiscal date (more reliable than SEC's fy field)
+            const derivedFiscalYear = this.deriveFiscalYear(fiscalDate);
+
             // Insert each statement type
             for (const [statementType, data] of Object.entries(statements)) {
               if (Object.keys(data).length > 0) {
@@ -458,7 +475,7 @@ class SECBulkImporterUnified {
                   sub.company_id,
                   statementType,
                   fiscalDate,
-                  parseInt(sub.fy),
+                  derivedFiscalYear,
                   periodType,
                   fiscalPeriod,
                   data,
@@ -516,7 +533,7 @@ class SECBulkImporterUnified {
       console.log('   1️⃣  Parsing submissions...');
 
       const submissions = await SECFileParser.parseSubmissions(subFile, {
-        filter: (sub) => sub.form === '10-K' || sub.form === '10-Q'
+        filter: (sub) => sub.form?.startsWith('10-K') || sub.form?.startsWith('10-Q')
       });
 
       console.log(`      ✓ Found ${submissions.length} filings (10-K/10-Q)`);

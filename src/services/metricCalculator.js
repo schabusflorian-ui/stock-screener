@@ -2,19 +2,129 @@
 
 /**
  * Metric Calculator Service
- * 
- * Transforms raw financial data into value investing metrics
- * 
+ *
+ * Transforms raw financial data into value investing metrics.
+ *
+ * ============================================================================
+ * NULL HANDLING POLICY
+ * ============================================================================
+ *
+ * This service follows consistent null handling rules to ensure data quality:
+ *
+ * 1. INPUT VALIDATION:
+ *    - Missing or invalid input data returns null (not 0, not NaN)
+ *    - The getField() helper returns null if field is missing or unparseable
+ *    - All calculation methods check for null inputs before proceeding
+ *
+ * 2. CALCULATION RULES:
+ *    - Division by zero returns null (not Infinity, not error)
+ *    - Operations with null operands return null (null propagation)
+ *    - Negative denominators use Math.abs() for growth calculations
+ *
+ * 3. AGGREGATION RULES:
+ *    - SQL AVG() automatically excludes null values
+ *    - JavaScript aggregations filter nulls: values.filter(v => v != null)
+ *    - Empty arrays after filtering return null, not 0
+ *
+ * 4. DATA QUALITY:
+ *    - dataQualityScore: 0-100 based on metric completeness
+ *    - Metrics requiring specific data (e.g., market cap) may be null
+ *    - Period-specific metrics (QoQ for annual, CAGR for quarterly) are null
+ *
+ * 5. DISPLAY RECOMMENDATIONS:
+ *    - Frontend should show "N/A" or "-" for null values
+ *    - Charts should exclude null data points (not plot as 0)
+ *    - Screening filters should use IS NOT NULL to exclude incomplete data
+ *
+ * ============================================================================
+ *
  * Implements calculations for:
  * - ROIC (Return on Invested Capital)
  * - FCF (Free Cash Flow) and FCF Yield
  * - Owner Earnings (Buffett's preferred metric)
  * - Quality metrics (debt ratios, margins, efficiency)
  * - Valuation metrics (P/E, P/B, etc.)
+ * - Growth metrics (YoY, QoQ, CAGR)
+ * - DuPont analysis (ROE decomposition)
  */
 class MetricCalculator {
+  // Define reasonable bounds for all metrics to prevent extreme outliers
+  static METRIC_BOUNDS = {
+    roic: [-200, 300],
+    roce: [-200, 300],
+    roe: [-200, 300],
+    roa: [-100, 100],
+    grossMargin: [0, 100],
+    operatingMargin: [-100, 100],
+    netMargin: [-200, 100],
+    fcfYield: [-100, 100],
+    fcf_margin: [-100, 100],
+    peRatio: [0, 500],
+    pbRatio: [0, 100],
+    psRatio: [0, 100],
+    evEbitda: [0, 100],
+    debtToEquity: [0, 20],
+    debtToAssets: [0, 1],
+    currentRatio: [0, 50],
+    quickRatio: [0, 50],
+    interestCoverage: [-100, 1000],
+    assetTurnover: [0, 20],
+    equityMultiplier: [0, 50],
+    dupontRoe: [-200, 300],
+    revenue_growth_yoy: [-100, 1000],
+    earnings_growth_yoy: [-100, 1000],
+    fcf_growth_yoy: [-100, 1000],
+    revenue_growth_qoq: [-100, 500],
+    earnings_growth_qoq: [-100, 500],
+    revenue_cagr_3y: [-50, 200],
+    revenue_cagr_5y: [-50, 200],
+    earnings_cagr_3y: [-50, 200],
+    earnings_cagr_5y: [-50, 200],
+    pegRatio: [0, 20],
+    earningsYield: [-50, 100],
+    tobins_q: [0, 20],
+    graham_number: [0, 10000],
+    dividend_yield: [0, 30],
+    buyback_yield: [0, 30],
+    shareholder_yield: [0, 50]
+  };
+
   constructor() {
     console.log('✅ Metric Calculator initialized');
+  }
+
+  /**
+   * Clamp a metric value to reasonable bounds
+   * @param {string} metricName - Name of the metric
+   * @param {number} value - Raw calculated value
+   * @returns {number|null} Clamped value or null if input was null
+   */
+  clampMetric(metricName, value) {
+    if (value === null || value === undefined || isNaN(value)) return null;
+
+    const bounds = MetricCalculator.METRIC_BOUNDS[metricName];
+    if (!bounds) return value; // No bounds defined, return as-is
+
+    const [min, max] = bounds;
+    return Math.max(min, Math.min(max, value));
+  }
+
+  /**
+   * Apply clamping to all metrics in an object
+   * @param {Object} metrics - Object containing metric values
+   * @returns {Object} Metrics with values clamped to reasonable bounds
+   */
+  clampAllMetrics(metrics) {
+    const clamped = { ...metrics };
+
+    for (const [key, bounds] of Object.entries(MetricCalculator.METRIC_BOUNDS)) {
+      if (clamped[key] !== null && clamped[key] !== undefined && !isNaN(clamped[key])) {
+        const [min, max] = bounds;
+        clamped[key] = Math.max(min, Math.min(max, clamped[key]));
+      }
+    }
+
+    return clamped;
   }
 
   /**
@@ -46,9 +156,10 @@ class MetricCalculator {
    * @param {Number} marketCap - Current market capitalization
    * @param {Number} currentPrice - Current stock price
    * @param {Object} context - Optional context for time-series metrics (companyId, fiscalDate, periodType)
+   * @param {Object} prevFinancialData - Optional previous period financial data (for average calculations)
    * @returns {Object} All calculated metrics
    */
-  calculateAllMetrics(financialData, marketCap, currentPrice, context = null) {
+  calculateAllMetrics(financialData, marketCap, currentPrice, context = null, prevFinancialData = null) {
     // Initialize result object with defaults
     const metrics = {
       roic: null,
@@ -73,8 +184,24 @@ class MetricCalculator {
       earningsYield: null,
       dataQualityScore: 0,
       revenue_growth_yoy: null,
+      earnings_growth_yoy: null,
+      fcf_growth_yoy: null,
+      revenue_growth_qoq: null,
+      earnings_growth_qoq: null,
+      revenue_cagr_3y: null,
+      revenue_cagr_5y: null,
+      earnings_cagr_3y: null,
+      earnings_cagr_5y: null,
+      equityMultiplier: null,
+      dupontRoe: null,
+      pegRatio: null,
+      evEbitda: null,
       msi: null,
-      tobins_q: null
+      tobins_q: null,
+      graham_number: null,
+      dividend_yield: null,
+      buyback_yield: null,
+      shareholder_yield: null
     };
 
     // Validate we have minimum required data
@@ -83,6 +210,7 @@ class MetricCalculator {
     }
 
     const { balance_sheet, income_statement, cash_flow } = financialData;
+    const prev_balance_sheet = prevFinancialData?.balance_sheet || null;
 
     // MODIFIED: Allow partial calculations even with incomplete data
     // Some metrics only need income statement (margins, growth)
@@ -129,11 +257,11 @@ class MetricCalculator {
       } catch (e) {}
 
       try {
-        metrics.roe = this.calculateROE(income_statement, balance_sheet, periodType);
+        metrics.roe = this.calculateROE(income_statement, balance_sheet, periodType, prev_balance_sheet);
       } catch (e) {}
 
       try {
-        metrics.roa = this.calculateROA(income_statement, balance_sheet, periodType);
+        metrics.roa = this.calculateROA(income_statement, balance_sheet, periodType, prev_balance_sheet);
       } catch (e) {}
     }
 
@@ -257,10 +385,15 @@ class MetricCalculator {
         }
       } catch (e) {}
 
+      // Tobin's Q - proper formula: (Market Cap + Total Debt) / Total Assets
+      // This approximates replacement cost with book value of assets
       try {
         const totalAssets = this.getField(balance_sheet, ['totalAssets', 'Assets']);
-        if (totalAssets) {
-          metrics.tobins_q = marketCap / totalAssets;
+        const totalLiabilities = this.getField(balance_sheet, ['totalLiabilities', 'Liabilities']);
+        if (totalAssets && totalAssets > 0) {
+          // Better Tobin's Q: (Market Value of Equity + Debt) / Total Assets
+          const totalDebt = totalLiabilities || 0;
+          metrics.tobins_q = (marketCap + totalDebt) / totalAssets;
         }
       } catch (e) {}
 
@@ -278,6 +411,103 @@ class MetricCalculator {
           if (bookValue && bookValue > 0) {
             metrics.msi = enterpriseValue / bookValue;
           }
+
+          // EV/EBITDA calculation
+          // EBITDA = Operating Income + Depreciation & Amortization
+          const operatingIncome = this.getField(income_statement, [
+            'operatingIncome', 'OperatingIncomeLoss', 'operatingRevenue', 'ebit'
+          ]);
+
+          // Get D&A from cash flow (non-cash expense add-back)
+          let depAmort = 0;
+          if (cash_flow) {
+            depAmort = Math.abs(this.getField(cash_flow, [
+              'depreciationAndAmortization', 'DepreciationDepletionAndAmortization',
+              'depreciation', 'Depreciation', 'DepreciationAmortizationAndAccretion'
+            ]) || 0);
+          }
+
+          if (operatingIncome !== null && operatingIncome !== undefined) {
+            const ebitda = operatingIncome + depAmort;
+
+            // Annualize if quarterly
+            const annualizedEbitda = periodType === 'quarterly' ? ebitda * 4 : ebitda;
+
+            if (annualizedEbitda > 0) {
+              metrics.evEbitda = enterpriseValue / annualizedEbitda;
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Graham Number - Benjamin Graham's intrinsic value formula
+    // Formula: √(22.5 × EPS × BVPS)
+    // Only valid when both EPS and BVPS are positive
+    if (hasValidBalanceSheet && currentPrice) {
+      try {
+        let netIncome = this.getField(income_statement, ['netIncome', 'NetIncomeLoss', 'ProfitLoss']);
+        const shareholderEquity = this.getField(balance_sheet, ['shareholderEquity', 'StockholdersEquity', 'totalShareholderEquity']);
+
+        // We need shares outstanding to calculate EPS and BVPS
+        // Estimate from market cap / price if available
+        if (netIncome && shareholderEquity && marketCap && currentPrice > 0) {
+          const sharesOutstanding = marketCap / currentPrice;
+
+          // Annualize quarterly earnings
+          if (periodType === 'quarterly') {
+            netIncome = netIncome * 4;
+          }
+
+          const eps = netIncome / sharesOutstanding;
+          const bvps = shareholderEquity / sharesOutstanding;
+
+          // Graham Number only valid for profitable companies with positive book value
+          if (eps > 0 && bvps > 0) {
+            metrics.graham_number = Math.sqrt(22.5 * eps * bvps);
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Dividend Yield and Shareholder Yield
+    // These require cash flow statement for dividend/buyback data
+    if (cash_flow && marketCap && marketCap > 0) {
+      try {
+        // Dividends paid (usually negative in cash flow, so take absolute value)
+        let dividendsPaid = Math.abs(this.getField(cash_flow, [
+          'dividendsPaid', 'PaymentsOfDividends', 'DividendsPaid',
+          'PaymentsOfDividendsCommonStock', 'dividendPayout'
+        ]) || 0);
+
+        // Share repurchases (usually negative, so take absolute value)
+        let shareRepurchases = Math.abs(this.getField(cash_flow, [
+          'commonStockRepurchased', 'PaymentsForRepurchaseOfCommonStock',
+          'RepurchaseOfCommonStock', 'stockRepurchased', 'buybackOfShares',
+          'PaymentsForRepurchaseOfEquity'
+        ]) || 0);
+
+        // Annualize if quarterly
+        if (periodType === 'quarterly') {
+          dividendsPaid = dividendsPaid * 4;
+          shareRepurchases = shareRepurchases * 4;
+        }
+
+        // Dividend Yield = Annual Dividends / Market Cap * 100
+        if (dividendsPaid > 0) {
+          metrics.dividend_yield = (dividendsPaid / marketCap) * 100;
+        }
+
+        // Buyback Yield = Annual Buybacks / Market Cap * 100
+        if (shareRepurchases > 0) {
+          metrics.buyback_yield = (shareRepurchases / marketCap) * 100;
+        }
+
+        // Shareholder Yield = Dividend Yield + Buyback Yield
+        // Total capital returned to shareholders as % of market cap
+        const totalReturned = dividendsPaid + shareRepurchases;
+        if (totalReturned > 0) {
+          metrics.shareholder_yield = (totalReturned / marketCap) * 100;
         }
       } catch (e) {}
     }
@@ -290,6 +520,25 @@ class MetricCalculator {
     if (hasValidBalanceSheet) {
       try {
         metrics.assetTurnover = this.calculateAssetTurnover(income_statement, balance_sheet, periodType);
+      } catch (e) {}
+
+      // DuPont Analysis: ROE = Net Margin × Asset Turnover × Equity Multiplier
+      // Equity Multiplier = Total Assets / Shareholder Equity (measures leverage)
+      try {
+        const totalAssets = this.getField(balance_sheet, ['totalAssets', 'Assets']);
+        const shareholderEquity = this.getField(balance_sheet, ['shareholderEquity', 'StockholdersEquity', 'totalShareholderEquity']);
+
+        if (totalAssets && shareholderEquity && shareholderEquity > 0) {
+          metrics.equityMultiplier = totalAssets / shareholderEquity;
+
+          // Calculate DuPont ROE if we have all three components
+          // DuPont ROE = Net Margin × Asset Turnover × Equity Multiplier
+          if (metrics.netMargin !== null && metrics.assetTurnover !== null) {
+            // Convert net margin from percentage to decimal for calculation
+            const netMarginDecimal = metrics.netMargin / 100;
+            metrics.dupontRoe = netMarginDecimal * metrics.assetTurnover * metrics.equityMultiplier * 100;
+          }
+        }
       } catch (e) {}
     }
 
@@ -310,6 +559,100 @@ class MetricCalculator {
           );
         }
       } catch (e) {}
+
+      // Earnings (Net Income) Growth YoY
+      try {
+        const netIncome = this.getField(income_statement, ['netIncome', 'NetIncomeLoss', 'ProfitLoss']);
+        if (netIncome !== null && netIncome !== undefined) {
+          metrics.earnings_growth_yoy = this.calculateEarningsGrowth(
+            context.companyId,
+            context.fiscalDate,
+            context.periodType,
+            netIncome
+          );
+        }
+      } catch (e) {}
+
+      // FCF Growth YoY (requires cash_flow and fcf to be calculated)
+      if (cash_flow && metrics.fcf !== null && metrics.fcf !== undefined) {
+        try {
+          metrics.fcf_growth_yoy = this.calculateFCFGrowth(
+            context.companyId,
+            context.fiscalDate,
+            context.periodType,
+            metrics.fcf
+          );
+        } catch (e) {}
+      }
+
+      // QoQ Growth Metrics (only meaningful for quarterly data)
+      if (context.periodType === 'quarterly') {
+        // Revenue Growth QoQ
+        try {
+          const totalRevenue = this.getField(income_statement, ['revenue', 'totalRevenue', 'Revenues']);
+          if (totalRevenue !== null && totalRevenue !== undefined) {
+            metrics.revenue_growth_qoq = this.calculateRevenueGrowthQoQ(
+              context.companyId,
+              context.fiscalDate,
+              context.periodType,
+              totalRevenue
+            );
+          }
+        } catch (e) {}
+
+        // Earnings Growth QoQ
+        try {
+          const netIncome = this.getField(income_statement, ['netIncome', 'NetIncomeLoss', 'ProfitLoss']);
+          if (netIncome !== null && netIncome !== undefined) {
+            metrics.earnings_growth_qoq = this.calculateEarningsGrowthQoQ(
+              context.companyId,
+              context.fiscalDate,
+              context.periodType,
+              netIncome
+            );
+          }
+        } catch (e) {}
+      }
+
+      // PEG Ratio (P/E divided by Earnings Growth)
+      // Only calculate if we have both P/E and positive earnings growth
+      if (metrics.peRatio !== null && metrics.earnings_growth_yoy !== null && metrics.earnings_growth_yoy > 0) {
+        try {
+          // PEG = P/E ratio / Earnings Growth Rate (as a percentage)
+          // A PEG of 1 means fair value, <1 is undervalued, >1 is overvalued
+          metrics.pegRatio = metrics.peRatio / metrics.earnings_growth_yoy;
+        } catch (e) {}
+      }
+
+      // CAGR Calculations (only for annual data - CAGR over quarters doesn't make sense)
+      if (context.periodType === 'annual') {
+        const currentRevenue = this.getField(income_statement, ['revenue', 'totalRevenue', 'Revenues']);
+        const currentNetIncome = this.getField(income_statement, ['netIncome', 'NetIncomeLoss', 'ProfitLoss']);
+
+        // 3-Year CAGR
+        try {
+          if (currentRevenue > 0) {
+            const revCagr3y = this.calculateCAGR(context.companyId, context.fiscalDate, 'revenue', 3);
+            if (revCagr3y !== null) metrics.revenue_cagr_3y = revCagr3y;
+          }
+          if (currentNetIncome > 0) {
+            const earnCagr3y = this.calculateCAGR(context.companyId, context.fiscalDate, 'earnings', 3);
+            if (earnCagr3y !== null) metrics.earnings_cagr_3y = earnCagr3y;
+          }
+        } catch (e) {}
+
+        // 5-Year CAGR
+        try {
+          if (currentRevenue > 0) {
+            const revCagr5y = this.calculateCAGR(context.companyId, context.fiscalDate, 'revenue', 5);
+            if (revCagr5y !== null) metrics.revenue_cagr_5y = revCagr5y;
+          }
+          if (currentNetIncome > 0) {
+            const earnCagr5y = this.calculateCAGR(context.companyId, context.fiscalDate, 'earnings', 5);
+            if (earnCagr5y !== null) metrics.earnings_cagr_5y = earnCagr5y;
+          }
+        } catch (e) {}
+      }
     }
 
     // ========================================
@@ -322,7 +665,8 @@ class MetricCalculator {
       metrics.dataQualityScore = 0;
     }
 
-    return metrics;
+    // Apply clamping to all metrics to prevent extreme outliers
+    return this.clampAllMetrics(metrics);
   }
   
   /**
@@ -479,6 +823,7 @@ class MetricCalculator {
    * Formula: Net Income / Shareholder Equity
    *
    * Shows how much profit a company generates with shareholders' money.
+   * Uses AVERAGE equity (current + previous period / 2) to match Yahoo Finance methodology.
    * For quarterly data: Annualizes net income by multiplying by 4
    *
    * Good: > 15%
@@ -487,8 +832,9 @@ class MetricCalculator {
    * @param {Object} income - Income statement data
    * @param {Object} balance - Balance sheet data
    * @param {String} periodType - 'quarterly' or 'annual' (default: 'annual')
+   * @param {Object} prevBalance - Previous period balance sheet (optional, for averaging)
    */
-  calculateROE(income, balance, periodType = 'annual') {
+  calculateROE(income, balance, periodType = 'annual', prevBalance = null) {
     try {
       // Use robust field getter to handle all naming variations
       let netIncome = this.getField(income, ['netIncome', 'NetIncomeLoss', 'ProfitLoss']);
@@ -503,7 +849,16 @@ class MetricCalculator {
         netIncome = netIncome * 4;
       }
 
-      const roe = (netIncome / shareholderEquity) * 100;
+      // Use AVERAGE equity if previous period data is available (Yahoo Finance methodology)
+      let equityForCalc = shareholderEquity;
+      if (prevBalance) {
+        const prevEquity = this.getField(prevBalance, ['shareholderEquity', 'StockholdersEquity', 'totalShareholderEquity']);
+        if (prevEquity && prevEquity > 0) {
+          equityForCalc = (shareholderEquity + prevEquity) / 2;
+        }
+      }
+
+      const roe = (netIncome / equityForCalc) * 100;
       return Math.round(roe * 10) / 10;
 
     } catch (error) {
@@ -514,16 +869,18 @@ class MetricCalculator {
   /**
    * ROA - Return on Assets
    *
-   * Formula: Net Income / Total Assets
+   * Formula: Net Income / Average Total Assets
    *
    * Shows how efficiently a company uses its assets to generate profit.
+   * Uses AVERAGE assets (current + previous period / 2) to match Yahoo Finance methodology.
    * For quarterly data: Annualizes net income by multiplying by 4
    *
    * @param {Object} income - Income statement data
    * @param {Object} balance - Balance sheet data
    * @param {String} periodType - 'quarterly' or 'annual' (default: 'annual')
+   * @param {Object} prevBalance - Previous period balance sheet (optional, for averaging)
    */
-  calculateROA(income, balance, periodType = 'annual') {
+  calculateROA(income, balance, periodType = 'annual', prevBalance = null) {
     try {
       // Use robust field getter to handle all naming variations
       let netIncome = this.getField(income, ['netIncome', 'NetIncomeLoss', 'ProfitLoss']);
@@ -538,7 +895,16 @@ class MetricCalculator {
         netIncome = netIncome * 4;
       }
 
-      const roa = (netIncome / totalAssets) * 100;
+      // Use AVERAGE assets if previous period data is available (Yahoo Finance methodology)
+      let assetsForCalc = totalAssets;
+      if (prevBalance) {
+        const prevAssets = this.getField(prevBalance, ['totalAssets', 'Assets']);
+        if (prevAssets && prevAssets > 0) {
+          assetsForCalc = (totalAssets + prevAssets) / 2;
+        }
+      }
+
+      const roa = (netIncome / assetsForCalc) * 100;
       return Math.round(roa * 10) / 10;
 
     } catch (error) {
@@ -816,12 +1182,37 @@ class MetricCalculator {
       const shareholderEquity = this.getField(balance, ['shareholderEquity', 'StockholdersEquity', 'totalShareholderEquity']);
       if (!shareholderEquity || shareholderEquity <= 0) return null;
 
-      const longTermDebt = this.getField(balance, ['longTermDebt', 'LongTermDebtNoncurrent', 'LongTermDebt']) || 0;
-      const shortTermDebt = this.getField(balance, ['shortTermDebt', 'ShortTermBorrowings', 'LongTermDebtCurrent']) || 0;
+      // Extended field variations for long-term debt
+      const longTermDebt = this.getField(balance, [
+        'longTermDebt',
+        'LongTermDebtNoncurrent',
+        'LongTermDebt',
+        'Debt',
+        'DebtNoncurrent',
+        'LongTermDebtAndCapitalLeaseObligations',
+        'LongTermDebtAndFinanceLeaseObligations',
+        'FinanceLeaseLiabilityNoncurrent',
+        'NotesPayableNoncurrent',
+        'SeniorNotesNoncurrent',
+        'ConvertibleDebtNoncurrent'
+      ]) || 0;
 
-      // CRITICAL FIX: Add operating lease liabilities (ASC 842 - effective 2019+)
-      // These are real obligations that must be paid, just like debt
-      // Significantly understated for companies like Starbucks, airlines, retailers
+      // Extended field variations for short-term debt
+      const shortTermDebt = this.getField(balance, [
+        'shortTermDebt',
+        'ShortTermBorrowings',
+        'LongTermDebtCurrent',
+        'DebtCurrent',
+        'ShortTermDebt',
+        'CommercialPaper',
+        'ShortTermBorrowingsAndCurrentPortionOfLongTermDebt',
+        'FinanceLeaseLiabilityCurrent',
+        'NotesPayableCurrent',
+        'SeniorNotesCurrent',
+        'ConvertibleDebtCurrent'
+      ]) || 0;
+
+      // Operating lease liabilities (ASC 842 - effective 2019+)
       const operatingLeaseLiabilitiesNoncurrent = this.getField(balance, [
         'operatingLeaseLiabilityNoncurrent',
         'OperatingLeaseLiabilityNoncurrent'
@@ -832,6 +1223,20 @@ class MetricCalculator {
       ]) || 0;
 
       const totalDebt = longTermDebt + shortTermDebt + operatingLeaseLiabilitiesNoncurrent + operatingLeaseLiabilitiesCurrent;
+
+      // If no debt found through specific fields, try totalLiabilities approach as fallback
+      if (totalDebt === 0) {
+        const totalLiabilities = this.getField(balance, ['totalLiabilities', 'Liabilities']);
+        const currentLiabilities = this.getField(balance, ['currentLiabilities', 'LiabilitiesCurrent', 'totalCurrentLiabilities']) || 0;
+
+        // Non-current liabilities often approximates long-term debt for many companies
+        if (totalLiabilities && totalLiabilities > currentLiabilities) {
+          const nonCurrentLiabilities = totalLiabilities - currentLiabilities;
+          const ratio = nonCurrentLiabilities / shareholderEquity;
+          return Math.round(ratio * 100) / 100;
+        }
+      }
+
       const ratio = totalDebt / shareholderEquity;
 
       return Math.round(ratio * 100) / 100; // Round to 2 decimals
@@ -911,16 +1316,11 @@ class MetricCalculator {
   /**
    * Quick Ratio (Acid Test)
    *
-   * IMPROVED FORMULA:
-   * (Cash + Marketable Securities + Receivables) / Current Liabilities
+   * STANDARD FORMULA (Yahoo Finance compatible):
+   * (Current Assets - Inventory) / Current Liabilities
    *
-   * Traditional: (Current Assets - Inventory) / Current Liabilities
-   * New: More precise by explicitly including most liquid assets
-   *
-   * This is MORE ACCURATE because:
-   * - Explicitly includes marketable securities (highly liquid)
-   * - For tech companies like Apple with $100B+ in marketable securities,
-   *   the old formula significantly understated true liquidity
+   * This matches Yahoo Finance's calculation methodology.
+   * The traditional formula excludes inventory because it's less liquid.
    *
    * Good: > 1.0
    * Great: > 1.5
@@ -931,36 +1331,7 @@ class MetricCalculator {
       const currentLiabilities = this.getField(balance, ['currentLiabilities', 'LiabilitiesCurrent', 'totalCurrentLiabilities']);
       if (!currentLiabilities || currentLiabilities <= 0) return null;
 
-      // IMPROVED: Explicitly sum most liquid assets
-      const cash = this.getField(balance, [
-        'cashAndEquivalents',
-        'CashAndCashEquivalentsAtCarryingValue',
-        'Cash',
-        'cashAndCashEquivalents'
-      ]) || 0;
-
-      const marketableSecurities = this.getField(balance, [
-        'marketableSecurities',
-        'MarketableSecurities',
-        'AvailableForSaleSecurities',
-        'AvailableForSaleSecuritiesCurrent'
-      ]) || 0;
-
-      const receivables = this.getField(balance, [
-        'accountsReceivable',
-        'AccountsReceivableNetCurrent',
-        'receivables',
-        'Receivables'
-      ]) || 0;
-
-      // If we have explicit components, use them
-      if (cash > 0 || marketableSecurities > 0 || receivables > 0) {
-        const quickAssets = cash + marketableSecurities + receivables;
-        const ratio = quickAssets / currentLiabilities;
-        return Math.round(ratio * 100) / 100;
-      }
-
-      // Fallback to traditional formula if explicit components not available
+      // Standard formula: (Current Assets - Inventory) / Current Liabilities
       const currentAssets = this.getField(balance, ['currentAssets', 'AssetsCurrent']);
       const inventory = this.getField(balance, ['inventory', 'InventoryNet', 'Inventory']) || 0;
 
@@ -1163,6 +1534,371 @@ class MetricCalculator {
 
     } catch (error) {
       console.error('Error calculating revenue growth:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Calculate Earnings (Net Income) Growth Year-over-Year
+   *
+   * Formula: ((Current Net Income - Prior Year Net Income) / |Prior Year Net Income|) * 100
+   *
+   * Uses absolute value in denominator to handle negative-to-positive transitions correctly.
+   *
+   * @param {Number} companyId - Company ID for database query
+   * @param {String} fiscalDate - Current fiscal period end date
+   * @param {String} periodType - 'quarterly' or 'annual'
+   * @param {Number} currentNetIncome - Current period net income
+   * @returns {Number|null} Earnings growth percentage
+   */
+  calculateEarningsGrowth(companyId, fiscalDate, periodType, currentNetIncome) {
+    if (!companyId || !fiscalDate || currentNetIncome === null || currentNetIncome === undefined) return null;
+
+    try {
+      const db = require('../database');
+      const database = db.getDatabase();
+
+      // Parse current date
+      const currentDate = new Date(fiscalDate);
+      const priorYearDate = new Date(currentDate);
+      priorYearDate.setFullYear(currentDate.getFullYear() - 1);
+
+      // Format date range for query (allow +/- 45 days for quarterly matching)
+      const minDate = new Date(priorYearDate);
+      minDate.setDate(minDate.getDate() - 45);
+      const maxDate = new Date(priorYearDate);
+      maxDate.setDate(maxDate.getDate() + 45);
+
+      const minDateStr = minDate.toISOString().split('T')[0];
+      const maxDateStr = maxDate.toISOString().split('T')[0];
+
+      // Query prior year data
+      const priorData = database.prepare(`
+        SELECT data
+        FROM financial_data
+        WHERE company_id = ?
+          AND statement_type = 'income_statement'
+          AND period_type = ?
+          AND fiscal_date_ending >= ?
+          AND fiscal_date_ending <= ?
+        ORDER BY ABS(JULIANDAY(fiscal_date_ending) - JULIANDAY(?))
+        LIMIT 1
+      `).get(companyId, periodType, minDateStr, maxDateStr, priorYearDate.toISOString().split('T')[0]);
+
+      if (!priorData) return null;
+
+      const priorIncomeStatement = JSON.parse(priorData.data);
+      const priorNetIncome = this.getField(priorIncomeStatement, ['netIncome', 'NetIncomeLoss', 'ProfitLoss']);
+
+      // Skip if prior year had zero earnings (undefined growth)
+      if (priorNetIncome === null || priorNetIncome === undefined || priorNetIncome === 0) return null;
+
+      // Calculate growth percentage using absolute value for denominator
+      // This handles negative-to-positive transitions correctly
+      const growth = ((currentNetIncome - priorNetIncome) / Math.abs(priorNetIncome)) * 100;
+      return growth;
+
+    } catch (error) {
+      console.error('Error calculating earnings growth:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Calculate Free Cash Flow Growth Year-over-Year
+   *
+   * Formula: ((Current FCF - Prior Year FCF) / |Prior Year FCF|) * 100
+   *
+   * FCF = Operating Cash Flow - Capital Expenditures
+   *
+   * @param {Number} companyId - Company ID for database query
+   * @param {String} fiscalDate - Current fiscal period end date
+   * @param {String} periodType - 'quarterly' or 'annual'
+   * @param {Number} currentFCF - Current period free cash flow
+   * @returns {Number|null} FCF growth percentage
+   */
+  calculateFCFGrowth(companyId, fiscalDate, periodType, currentFCF) {
+    if (!companyId || !fiscalDate || currentFCF === null || currentFCF === undefined) return null;
+
+    try {
+      const db = require('../database');
+      const database = db.getDatabase();
+
+      // Parse current date
+      const currentDate = new Date(fiscalDate);
+      const priorYearDate = new Date(currentDate);
+      priorYearDate.setFullYear(currentDate.getFullYear() - 1);
+
+      // Format date range for query (allow +/- 45 days for quarterly matching)
+      const minDate = new Date(priorYearDate);
+      minDate.setDate(minDate.getDate() - 45);
+      const maxDate = new Date(priorYearDate);
+      maxDate.setDate(maxDate.getDate() + 45);
+
+      const minDateStr = minDate.toISOString().split('T')[0];
+      const maxDateStr = maxDate.toISOString().split('T')[0];
+
+      // Query prior year cash flow data
+      const priorData = database.prepare(`
+        SELECT data
+        FROM financial_data
+        WHERE company_id = ?
+          AND statement_type = 'cash_flow'
+          AND period_type = ?
+          AND fiscal_date_ending >= ?
+          AND fiscal_date_ending <= ?
+        ORDER BY ABS(JULIANDAY(fiscal_date_ending) - JULIANDAY(?))
+        LIMIT 1
+      `).get(companyId, periodType, minDateStr, maxDateStr, priorYearDate.toISOString().split('T')[0]);
+
+      if (!priorData) return null;
+
+      const priorCashFlow = JSON.parse(priorData.data);
+
+      // Calculate prior year FCF
+      const priorOperatingCF = this.getField(priorCashFlow, [
+        'operatingCashflow', 'NetCashProvidedByUsedInOperatingActivities',
+        'CashFlowsFromOperatingActivities', 'netCashFromOperatingActivities'
+      ]);
+      const priorCapex = Math.abs(this.getField(priorCashFlow, [
+        'capitalExpenditures', 'PaymentsToAcquirePropertyPlantAndEquipment',
+        'CapitalExpenditures', 'purchaseOfPropertyPlantEquipment'
+      ]) || 0);
+
+      if (priorOperatingCF === null || priorOperatingCF === undefined) return null;
+
+      const priorFCF = priorOperatingCF - priorCapex;
+
+      // Skip if prior year had zero FCF (undefined growth)
+      if (priorFCF === 0) return null;
+
+      // Calculate growth percentage using absolute value for denominator
+      const growth = ((currentFCF - priorFCF) / Math.abs(priorFCF)) * 100;
+      return growth;
+
+    } catch (error) {
+      console.error('Error calculating FCF growth:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Calculate Revenue Growth Quarter-over-Quarter
+   * Compares current quarter to the previous quarter (sequential growth)
+   *
+   * @param {Number} companyId - Company ID for database query
+   * @param {String} fiscalDate - Current fiscal period end date
+   * @param {String} periodType - Should be 'quarterly' for meaningful QoQ
+   * @param {Number} currentRevenue - Current period revenue
+   * @returns {Number|null} Revenue growth percentage
+   */
+  calculateRevenueGrowthQoQ(companyId, fiscalDate, periodType, currentRevenue) {
+    // QoQ only makes sense for quarterly data
+    if (!companyId || !fiscalDate || !currentRevenue || periodType !== 'quarterly') return null;
+
+    try {
+      const db = require('../database');
+      const database = db.getDatabase();
+
+      // Find the previous quarter (approximately 90 days before)
+      const currentDate = new Date(fiscalDate);
+      const priorQuarterDate = new Date(currentDate);
+      priorQuarterDate.setDate(currentDate.getDate() - 90);
+
+      // Format date range for query (allow +/- 30 days for matching)
+      const minDate = new Date(priorQuarterDate);
+      minDate.setDate(minDate.getDate() - 30);
+      const maxDate = new Date(priorQuarterDate);
+      maxDate.setDate(maxDate.getDate() + 30);
+
+      const minDateStr = minDate.toISOString().split('T')[0];
+      const maxDateStr = maxDate.toISOString().split('T')[0];
+
+      // Query prior quarter data
+      const priorData = database.prepare(`
+        SELECT data
+        FROM financial_data
+        WHERE company_id = ?
+          AND statement_type = 'income_statement'
+          AND period_type = 'quarterly'
+          AND fiscal_date_ending >= ?
+          AND fiscal_date_ending <= ?
+          AND fiscal_date_ending < ?
+        ORDER BY fiscal_date_ending DESC
+        LIMIT 1
+      `).get(companyId, minDateStr, maxDateStr, fiscalDate);
+
+      if (!priorData) return null;
+
+      const priorIncomeStatement = JSON.parse(priorData.data);
+      const priorRevenue = this.getField(priorIncomeStatement, ['revenue', 'totalRevenue', 'Revenues']);
+
+      if (!priorRevenue || priorRevenue <= 0) return null;
+
+      // Calculate growth percentage
+      const growth = ((currentRevenue - priorRevenue) / priorRevenue) * 100;
+      return growth;
+
+    } catch (error) {
+      console.error('Error calculating revenue QoQ growth:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Calculate Earnings Growth Quarter-over-Quarter
+   * Compares current quarter to the previous quarter (sequential growth)
+   *
+   * @param {Number} companyId - Company ID for database query
+   * @param {String} fiscalDate - Current fiscal period end date
+   * @param {String} periodType - Should be 'quarterly' for meaningful QoQ
+   * @param {Number} currentNetIncome - Current period net income
+   * @returns {Number|null} Earnings growth percentage
+   */
+  calculateEarningsGrowthQoQ(companyId, fiscalDate, periodType, currentNetIncome) {
+    // QoQ only makes sense for quarterly data
+    if (!companyId || !fiscalDate || currentNetIncome === null || currentNetIncome === undefined || periodType !== 'quarterly') return null;
+
+    try {
+      const db = require('../database');
+      const database = db.getDatabase();
+
+      // Find the previous quarter (approximately 90 days before)
+      const currentDate = new Date(fiscalDate);
+      const priorQuarterDate = new Date(currentDate);
+      priorQuarterDate.setDate(currentDate.getDate() - 90);
+
+      // Format date range for query (allow +/- 30 days for matching)
+      const minDate = new Date(priorQuarterDate);
+      minDate.setDate(minDate.getDate() - 30);
+      const maxDate = new Date(priorQuarterDate);
+      maxDate.setDate(maxDate.getDate() + 30);
+
+      const minDateStr = minDate.toISOString().split('T')[0];
+      const maxDateStr = maxDate.toISOString().split('T')[0];
+
+      // Query prior quarter data
+      const priorData = database.prepare(`
+        SELECT data
+        FROM financial_data
+        WHERE company_id = ?
+          AND statement_type = 'income_statement'
+          AND period_type = 'quarterly'
+          AND fiscal_date_ending >= ?
+          AND fiscal_date_ending <= ?
+          AND fiscal_date_ending < ?
+        ORDER BY fiscal_date_ending DESC
+        LIMIT 1
+      `).get(companyId, minDateStr, maxDateStr, fiscalDate);
+
+      if (!priorData) return null;
+
+      const priorIncomeStatement = JSON.parse(priorData.data);
+      const priorNetIncome = this.getField(priorIncomeStatement, ['netIncome', 'NetIncomeLoss', 'ProfitLoss']);
+
+      // Skip if prior quarter had zero earnings
+      if (priorNetIncome === null || priorNetIncome === undefined || priorNetIncome === 0) return null;
+
+      // Calculate growth percentage using absolute value for denominator
+      const growth = ((currentNetIncome - priorNetIncome) / Math.abs(priorNetIncome)) * 100;
+      return growth;
+
+    } catch (error) {
+      console.error('Error calculating earnings QoQ growth:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Calculate Compound Annual Growth Rate (CAGR)
+   *
+   * Formula: CAGR = ((End Value / Start Value) ^ (1/n)) - 1
+   * Where n = number of years
+   *
+   * @param {Number} companyId - Company ID for database query
+   * @param {String} fiscalDate - Current fiscal period end date
+   * @param {String} metricType - 'revenue' or 'earnings'
+   * @param {Number} years - Number of years (3 or 5)
+   * @returns {Number|null} CAGR as percentage (e.g., 15.5 for 15.5% annual growth)
+   */
+  calculateCAGR(companyId, fiscalDate, metricType, years) {
+    if (!companyId || !fiscalDate || !metricType || !years) return null;
+
+    try {
+      const db = require('../database');
+      const database = db.getDatabase();
+
+      // Get current period data
+      const currentData = database.prepare(`
+        SELECT data
+        FROM financial_data
+        WHERE company_id = ?
+          AND statement_type = 'income_statement'
+          AND period_type = 'annual'
+          AND fiscal_date_ending <= ?
+        ORDER BY fiscal_date_ending DESC
+        LIMIT 1
+      `).get(companyId, fiscalDate);
+
+      if (!currentData) return null;
+
+      const currentIncomeStatement = JSON.parse(currentData.data);
+      let currentValue;
+      if (metricType === 'revenue') {
+        currentValue = this.getField(currentIncomeStatement, ['revenue', 'totalRevenue', 'Revenues']);
+      } else {
+        currentValue = this.getField(currentIncomeStatement, ['netIncome', 'NetIncomeLoss', 'ProfitLoss']);
+      }
+
+      if (!currentValue || currentValue <= 0) return null;
+
+      // Calculate the target start date (years ago)
+      const currentDate = new Date(fiscalDate);
+      const startDate = new Date(currentDate);
+      startDate.setFullYear(currentDate.getFullYear() - years);
+
+      // Allow +/- 90 days for fiscal year alignment
+      const minDate = new Date(startDate);
+      minDate.setDate(minDate.getDate() - 90);
+      const maxDate = new Date(startDate);
+      maxDate.setDate(maxDate.getDate() + 90);
+
+      const minDateStr = minDate.toISOString().split('T')[0];
+      const maxDateStr = maxDate.toISOString().split('T')[0];
+
+      // Get start period data
+      const startData = database.prepare(`
+        SELECT data
+        FROM financial_data
+        WHERE company_id = ?
+          AND statement_type = 'income_statement'
+          AND period_type = 'annual'
+          AND fiscal_date_ending >= ?
+          AND fiscal_date_ending <= ?
+        ORDER BY ABS(JULIANDAY(fiscal_date_ending) - JULIANDAY(?))
+        LIMIT 1
+      `).get(companyId, minDateStr, maxDateStr, startDate.toISOString().split('T')[0]);
+
+      if (!startData) return null;
+
+      const startIncomeStatement = JSON.parse(startData.data);
+      let startValue;
+      if (metricType === 'revenue') {
+        startValue = this.getField(startIncomeStatement, ['revenue', 'totalRevenue', 'Revenues']);
+      } else {
+        startValue = this.getField(startIncomeStatement, ['netIncome', 'NetIncomeLoss', 'ProfitLoss']);
+      }
+
+      // CAGR only works with positive start values
+      if (!startValue || startValue <= 0) return null;
+
+      // CAGR = ((End / Start) ^ (1/years) - 1) * 100
+      const cagr = (Math.pow(currentValue / startValue, 1 / years) - 1) * 100;
+
+      return cagr;
+
+    } catch (error) {
+      console.error(`Error calculating ${years}Y CAGR for ${metricType}:`, error.message);
       return null;
     }
   }

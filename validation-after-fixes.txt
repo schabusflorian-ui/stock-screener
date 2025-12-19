@@ -1,0 +1,119 @@
+
+
+============================================================
+       INVESTMENT METRICS VALIDATION SYSTEM
+============================================================
+
+Configuration:
+  Sample size: 40 companies
+  Save results: Yes
+  Verbose mode: No
+📊 Initializing database...
+✅ Database schema created successfully!
+📁 Database location: /Users/florianschabus/Investment Project/data/stocks.db
+
+
+Starting validation...
+
+
+1. Selecting sample companies...
+   Added 10 mega-cap companies
+   After sector sampling: 15 companies
+   Final sample: 40 companies
+
+   Sample Distribution:
+   - Total companies: 40
+   - Mega-caps included: 10
+   - By sector:
+     Technology: 13
+     Manufacturing: 7
+     Retail Trade: 5
+     Healthcare: 5
+     Finance: 3
+     Transportation & Utilities: 2
+     Communication: 2
+     Utilities: 1
+     Services: 1
+     Insurance: 1
+
+2. Fetching Yahoo Finance data (est. 28s)...
+   Progress: 1/40 (3%) | AAPL   ✓ | 1s elapsed       Progress: 2/40 (5%) | MSFT   ✓ | 1s elapsed       Progress: 3/40 (8%) | GOOGL  ✓ | 2s elapsed       Progress: 4/40 (10%) | AMZN   ✓ | 2s elapsed       Progress: 5/40 (13%) | NVDA   ✓ | 3s elapsed       Progress: 6/40 (15%) | META   ✓ | 4s elapsed       Progress: 7/40 (18%) | TSLA   ✓ | 4s elapsed       Progress: 8/40 (20%) | BRK-B  ✓ | 4s elapsed       Progress: 9/40 (23%) | JPM    ✓ | 5s elapsed       Progress: 10/40 (25%) | V      ✓ | 5s elapsed       Progress: 11/40 (28%) | BMY    ✓ | 6s elapsed       Progress: 12/40 (30%) | ABT    ✓ | 7s elapsed       Progress: 13/40 (33%) | JNJ    ✓ | 7s elapsed       Progress: 14/40 (35%) | MRK    ✓ | 7s elapsed       Progress: 15/40 (38%) | NEE    ✓ | 8s elapsed       Progress: 16/40 (40%) | UNP    ✓ | 8s elapsed       Progress: 17/40 (43%) | AVGO   ✓ | 9s elapsed       Progress: 18/40 (45%) | UPS    ✓ | 9s elapsed       Progress: 19/40 (48%) | ABBV   ✓ | 10s elapsed       Progress: 20/40 (50%) | HON    ✓ | 10s elapsed       Progress: 21/40 (53%) | COST   ✓ | 11s elapsed       Progress: 22/40 (55%) | MS     ✓ | 12s elapsed       Progress: 23/40 (57%) | WFC    ✓ | 12s elapsed       Progress: 24/40 (60%) | TXN    ✓ | 13s elapsed       Progress: 25/40 (63%) | WMT    ✓ | 13s elapsed       Progress: 26/40 (65%) | GE     ✓ | 13s elapsed       Progress: 27/40 (68%) | MA     ✓ | 14s elapsed       Progress: 28/40 (70%) | CMCSA  ✓ | 14s elapsed       Progress: 29/40 (73%) | RTX    ✓ | 15s elapsed       Progress: 30/40 (75%) | INTC   ✓ | 16s elapsed       Progress: 31/40 (78%) | NFLX   ✓ | 16s elapsed       Progress: 32/40 (80%) | DHR    ✓ | 16s elapsed       Progress: 33/40 (83%) | KO     ✓ | 17s elapsed       Progress: 34/40 (85%) | LOW    ✓ | 18s elapsed       Progress: 35/40 (88%) | ADBE   ✓ | 18s elapsed       Progress: 36/40 (90%) | MCD    ✓ | 19s elapsed       Progress: 37/40 (93%) | ACN    ✓ | 19s elapsed       Progress: 38/40 (95%) | CRM    ✓ | 19s elapsed       Progress: 39/40 (98%) | XOM    ✓ | 20s elapsed       Progress: 40/40 (100%) | VZ     ✓ | 21s elapsed    
+3. Analyzed 40 companies (0 failed)
+
+
+
+======================================================================
+               METRICS VALIDATION REPORT
+======================================================================
+
+Validation Date: 12/14/2025, 5:16:45 PM
+Companies Sampled: 40
+Companies Analyzed: 40
+API Calls Made: 40
+Overall Accuracy: 36.2%
+
+----------------------------------------------------------------------
+PER-METRIC ACCURACY
+----------------------------------------------------------------------
+Metric              Accuracy    Avg Diff    Median    N     Status
+----------------------------------------------------------------------
+gross_margin        42.1%       42.0%       12.7%     38    ❌
+operating_margin    28.9%       27.9%       16.3%     38    ❌
+net_margin          31.6%       50.4%       23.7%     38    ❌
+roe                 20.0%       65.5%       43.4%     35    ❌
+roa                 44.7%       54.0%       24.7%     38    ❌
+current_ratio       47.1%       13.9%       10.8%     34    ❌
+quick_ratio         32.4%       29.3%       19.4%     34    ❌
+debt_to_equity      43.8%       53.8%       39.8%     32    ❌
+pe_ratio            N/A         N/A         N/A       0     undefined
+pb_ratio            N/A         N/A         N/A       0     undefined
+
+----------------------------------------------------------------------
+ISSUES FOUND (183 total, showing top 15)
+----------------------------------------------------------------------
+Symbol  Metric            Ours        Yahoo       Diff      Status
+INTC    net_margin        3.10        0.37        735.6%    ❌
+INTC    roe               1.50        0.19        706.5%    ❌
+TSLA    roa               14.10       2.35        500.0%    ❌
+UPS     gross_margin      100.00      21.69       361.0%    ❌
+BRK-B   debt_to_equity    0.82        0.18        351.4%    ❌
+INTC    roa               0.90        -0.46       294.4%    ❌
+TSLA    roe               23.70       6.79        249.0%    ❌
+XOM     gross_margin      100.00      31.22       220.3%    ❌
+AVGO    operating_margin  -33.50      31.77       205.5%    ❌
+TSLA    net_margin        15.50       5.31        191.7%    ❌
+BRK-B   gross_margin      66.40       24.36       172.6%    ❌
+MS      debt_to_equity    10.94       4.21        160.1%    ❌
+JNJ     roa               21.00       8.26        154.1%    ❌
+ABBV    net_margin        9.00        4.00        124.8%    ❌
+JPM     gross_margin      100.00      0.00        100.0%    ❌
+
+======================================================================
+❌ VALIDATION FAILED - Significant discrepancies found
+======================================================================
+
+
+RECOMMENDATIONS:
+------------------------------------------------------------
+❌ [HIGH] gross_margin has 19 major discrepancies. May indicate systematic calculation issue.
+❌ [HIGH] debt_to_equity has 14 major discrepancies. May indicate systematic calculation issue.
+❌ [HIGH] roa has 12 major discrepancies. May indicate systematic calculation issue.
+❌ [HIGH] roe has 18 major discrepancies. May indicate systematic calculation issue.
+❌ [HIGH] quick_ratio has 13 major discrepancies. May indicate systematic calculation issue.
+❌ [HIGH] current_ratio has 9 major discrepancies. May indicate systematic calculation issue.
+❌ [HIGH] net_margin has 21 major discrepancies. May indicate systematic calculation issue.
+❌ [HIGH] operating_margin has 19 major discrepancies. May indicate systematic calculation issue.
+❌ [HIGH] debt_to_equity has low accuracy (43.8%). Review calculation methodology.
+❌ [HIGH] quick_ratio has low accuracy (32.4%). Review calculation methodology.
+❌ [HIGH] current_ratio has low accuracy (47.1%). Review calculation methodology.
+❌ [HIGH] roa has low accuracy (44.7%). Review calculation methodology.
+❌ [HIGH] roe has low accuracy (20.0%). Review calculation methodology.
+❌ [HIGH] net_margin has low accuracy (31.6%). Review calculation methodology.
+❌ [HIGH] operating_margin has low accuracy (28.9%). Review calculation methodology.
+❌ [HIGH] gross_margin has low accuracy (42.1%). Review calculation methodology.
+
+Results saved to: validation-results-2025-12-14.json
+
+Total time: 20.6s
+Average per company: 0.52s
+

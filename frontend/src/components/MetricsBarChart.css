@@ -1,15 +1,18 @@
 /* MetricsBarChart.css */
 
 .metrics-bar-chart {
-  background: #1e293b;
-  border: 1px solid #334155;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
   border-radius: 0.75rem;
   padding: 1rem 1.25rem;
 }
 
 .metrics-bar-chart .chart-label {
   font-size: 0.75rem;
-  color: #64748b;
+  color: #6b7280;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: 1rem;
@@ -37,13 +40,13 @@
 }
 
 .bar-row.clickable:hover .bar-name {
-  color: #e2e8f0;
+  color: #374151;
 }
 
 .bar-name {
   flex: 0 0 120px;
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: #6b7280;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -55,7 +58,7 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  background: #0f172a;
+  background: rgba(0, 0, 0, 0.04);
   border-radius: 0.25rem;
   overflow: hidden;
   position: relative;
@@ -72,7 +75,7 @@
   right: 0.5rem;
   font-size: 0.75rem;
   font-weight: 600;
-  color: #e2e8f0;
+  color: #374151;
 }
 
 /* Responsive */

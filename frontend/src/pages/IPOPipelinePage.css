@@ -38,10 +38,13 @@
 
 .view-toggle {
   display: flex;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: var(--radius-md);
   padding: 0.25rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
 }
 
 .view-toggle button {
@@ -139,8 +142,8 @@
 .ipo-search-input {
   flex: 1;
   padding: 0.75rem 1rem;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-md);
   color: var(--text-primary);
   font-size: 0.875rem;
@@ -181,8 +184,8 @@
 }
 
 .ipo-clear-button {
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   color: var(--text-secondary);
 }
 
@@ -207,19 +210,25 @@
   text-align: center;
   color: var(--text-tertiary);
   padding: 2rem;
-  background: var(--bg-secondary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: var(--radius-lg);
 }
 
-/* Stats Bar */
+/* Stats Bar - Liquid Glass */
 .ipo-stats-bar {
   display: flex;
   gap: 0;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: var(--radius-lg);
   margin-bottom: 1.5rem;
   overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
 }
 
 .stat-item {
@@ -276,11 +285,14 @@
   flex: 1;
   min-width: 260px;
   max-width: 320px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
 }
 
 .column-header {
@@ -290,7 +302,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: var(--bg-secondary);
+  background: rgba(255, 255, 255, 0.8);
   position: sticky;
   top: 0;
   z-index: 1;
@@ -304,7 +316,7 @@
 }
 
 .column-count {
-  background: var(--bg-tertiary);
+  background: rgba(255, 255, 255, 0.5);
   color: var(--text-tertiary);
   padding: 0.25rem 0.625rem;
   border-radius: var(--radius-full);
@@ -339,11 +351,11 @@
   font-size: 0.8125rem;
 }
 
-/* IPO Card */
+/* IPO Card - Liquid Glass */
 .ipo-card {
   display: block;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-md);
   padding: 1rem;
   margin-bottom: 0.75rem;
@@ -378,7 +390,7 @@
   font-size: 0.625rem;
   font-weight: 600;
   color: var(--text-tertiary);
-  background: var(--bg-secondary);
+  background: rgba(255, 255, 255, 0.7);
   padding: 0.125rem 0.375rem;
   border-radius: var(--radius-sm);
   text-transform: uppercase;
@@ -407,7 +419,7 @@
   font-size: 0.625rem;
   font-weight: 500;
   color: var(--text-tertiary);
-  background: var(--bg-secondary);
+  background: rgba(255, 255, 255, 0.7);
   padding: 0.125rem 0.375rem;
   border-radius: var(--radius-sm);
 }
@@ -453,27 +465,30 @@
   color: var(--brand-primary);
 }
 
-/* List View */
+/* List View - Liquid Glass */
 .ipo-list-view {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: var(--radius-lg);
   overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
 }
 
 .list-filters {
   display: flex;
   gap: 1rem;
   padding: 1rem 1.25rem;
-  background: var(--bg-tertiary);
-  border-bottom: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.5);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   flex-wrap: wrap;
 }
 
 .list-filters select {
   padding: 0.5rem 1rem;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-size: 0.875rem;
@@ -504,7 +519,7 @@
 }
 
 .ipo-table th {
-  background: var(--bg-tertiary);
+  background: rgba(255, 255, 255, 0.5);
   font-size: 0.6875rem;
   font-weight: 600;
   color: var(--text-secondary);
@@ -522,7 +537,7 @@
 }
 
 .ipo-table tbody tr:hover td {
-  background: var(--bg-hover);
+  background: rgba(99, 102, 241, 0.04);
 }
 
 .ipo-table tbody tr:last-child td {
@@ -578,8 +593,10 @@
 
 .quick-link {
   padding: 0.75rem 1.5rem;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: var(--radius-md);
   color: var(--text-secondary);
   text-decoration: none;

@@ -3,7 +3,6 @@ import { NavLink } from 'react-router-dom';
 import {
   Home,
   Search,
-  BarChart3,
   TrendingUp,
   Briefcase,
   Star,
@@ -14,15 +13,17 @@ import {
   ChevronRight,
   LineChart,
   Users,
-  DollarSign
+  DollarSign,
+  MessageCircle,
+  Bell
 } from 'lucide-react';
 import './Sidebar.css';
 
 const navItems = [
   { path: '/', icon: Home, label: 'Home', shortcut: 'G H' },
   { path: '/screening', icon: Search, label: 'Screen', shortcut: 'G S' },
-  { path: '/compare', icon: BarChart3, label: 'Compare', shortcut: 'G C' },
-  { path: '/charts', icon: LineChart, label: 'Charts', shortcut: 'G A' },
+  { path: '/charts', icon: LineChart, label: 'Comparison', shortcut: 'G C' },
+  { path: '/trending', icon: MessageCircle, label: 'Trending', shortcut: 'G T' },
   { path: '/insiders', icon: Users, label: 'Insiders', shortcut: 'G N' },
   { path: '/capital', icon: DollarSign, label: 'Capital', shortcut: 'G D' },
   { path: '/ipo', icon: TrendingUp, label: 'IPOs', shortcut: 'G I' },
@@ -30,6 +31,7 @@ const navItems = [
 ];
 
 const secondaryItems = [
+  { path: '/alerts', icon: Bell, label: 'Alerts', shortcut: 'G L' },
   { path: '/watchlist', icon: Star, label: 'Watchlist', shortcut: 'G W' },
   { path: '/updates', icon: RefreshCw, label: 'Updates', shortcut: 'G U' },
 ];

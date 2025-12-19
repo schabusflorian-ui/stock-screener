@@ -1,0 +1,389 @@
+/**
+ * SEC Direct Refresh Job
+ *
+ * Fetches latest financial data directly from SEC EDGAR API
+ * for individual companies. Use this for real-time updates
+ * instead of waiting for quarterly bulk files.
+ *
+ * Usage:
+ *   node src/jobs/secDirectRefresh.js [watchlist|all|SYMBOL1,SYMBOL2,...]
+ */
+
+const db = require('../database');
+const SECProvider = require('../providers/SECProvider');
+
+const database = db.getDatabase();
+const secProvider = new SECProvider();
+
+// Tag mappings for converting XBRL concepts to our standard fields
+// These match the actual financial_data table schema
+const TAG_MAPPINGS = {
+  // Income Statement
+  'Revenues': 'total_revenue',
+  'RevenueFromContractWithCustomerExcludingAssessedTax': 'total_revenue',
+  'SalesRevenueNet': 'total_revenue',
+  'GrossProfit': 'gross_profit',
+  'OperatingIncomeLoss': 'operating_income',
+  'NetIncomeLoss': 'net_income',
+  'CostOfGoodsAndServicesSold': 'cost_of_revenue',
+  'CostOfRevenue': 'cost_of_revenue',
+
+  // Balance Sheet
+  'Assets': 'total_assets',
+  'AssetsCurrent': 'current_assets',
+  'CashAndCashEquivalentsAtCarryingValue': 'cash_and_equivalents',
+  'Liabilities': 'total_liabilities',
+  'LiabilitiesCurrent': 'current_liabilities',
+  'LongTermDebtNoncurrent': 'long_term_debt',
+  'LongTermDebt': 'long_term_debt',
+  'ShortTermBorrowings': 'short_term_debt',
+  'StockholdersEquity': 'shareholder_equity',
+  'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest': 'shareholder_equity',
+
+  // Cash Flow
+  'NetCashProvidedByUsedInOperatingActivities': 'operating_cashflow',
+  'PaymentsToAcquirePropertyPlantAndEquipment': 'capital_expenditures',
+};
+
+/**
+ * Fetch and store financial data for a company from SEC EDGAR
+ */
+async function refreshCompanyFromSEC(symbol) {
+  console.log(`\n📥 Fetching ${symbol} from SEC EDGAR...`);
+
+  try {
+    // Get company from database
+    const company = database.prepare(`
+      SELECT id, cik, name FROM companies WHERE symbol = ?
+    `).get(symbol.toUpperCase());
+
+    if (!company) {
+      console.log(`   ⚠️ Company ${symbol} not found in database`);
+      return { success: false, error: 'Company not found' };
+    }
+
+    // Fetch company facts from SEC
+    const facts = await secProvider.getCompanyFacts(symbol);
+    const usGaap = facts.facts?.['us-gaap'];
+
+    if (!usGaap) {
+      console.log(`   ⚠️ No US-GAAP data found for ${symbol}`);
+      return { success: false, error: 'No US-GAAP data' };
+    }
+
+    // Get submissions for filing dates
+    const submissions = await secProvider.getSubmissions(symbol);
+    const recentFilings = submissions.filings?.recent || {};
+
+    // Build a map of accession numbers to filing info
+    const filingInfo = new Map();
+    if (recentFilings.accessionNumber) {
+      for (let i = 0; i < recentFilings.accessionNumber.length; i++) {
+        const accn = recentFilings.accessionNumber[i].replace(/-/g, '');
+        filingInfo.set(accn, {
+          form: recentFilings.form[i],
+          filingDate: recentFilings.filingDate[i],
+          reportDate: recentFilings.reportDate[i],
+        });
+      }
+    }
+
+    // Extract all financial data points
+    const dataPoints = [];
+
+    for (const [concept, standardField] of Object.entries(TAG_MAPPINGS)) {
+      const conceptData = usGaap[concept];
+      if (!conceptData?.units?.USD) continue;
+
+      // Filter to 10-K and 10-Q filings only
+      const values = conceptData.units.USD.filter(v =>
+        v.form === '10-K' || v.form === '10-Q'
+      );
+
+      for (const item of values) {
+        // Determine fiscal period from frame or form
+        let fiscalPeriod = 'FY';
+        if (item.frame) {
+          if (item.frame.includes('Q1')) fiscalPeriod = 'Q1';
+          else if (item.frame.includes('Q2')) fiscalPeriod = 'Q2';
+          else if (item.frame.includes('Q3')) fiscalPeriod = 'Q3';
+          else if (item.frame.includes('Q4')) fiscalPeriod = 'Q4';
+        } else if (item.fp) {
+          fiscalPeriod = item.fp;
+        }
+
+        // Extract fiscal year from end date or frame
+        let fiscalYear = null;
+        if (item.frame) {
+          const match = item.frame.match(/CY(\d{4})/);
+          if (match) fiscalYear = parseInt(match[1]);
+        }
+        if (!fiscalYear && item.end) {
+          fiscalYear = parseInt(item.end.substring(0, 4));
+        }
+
+        dataPoints.push({
+          company_id: company.id,
+          field: standardField,
+          concept: concept,
+          fiscal_date_ending: item.end,
+          fiscal_period: fiscalPeriod,
+          fiscal_year: fiscalYear,
+          value: item.val,
+          filed_date: item.filed,
+          form: item.form,
+          accn: item.accn,
+        });
+      }
+    }
+
+    console.log(`   📊 Found ${dataPoints.length} data points`);
+
+    // Group by fiscal period for financial_data table
+    const periodGroups = new Map();
+
+    for (const dp of dataPoints) {
+      const key = `${dp.fiscal_date_ending}-${dp.fiscal_period}`;
+      if (!periodGroups.has(key)) {
+        periodGroups.set(key, {
+          company_id: dp.company_id,
+          fiscal_date_ending: dp.fiscal_date_ending,
+          fiscal_period: dp.fiscal_period,
+          fiscal_year: dp.fiscal_year,
+          filed_date: dp.filed_date,
+          form: dp.form,
+          period_type: dp.form === '10-K' ? 'annual' : 'quarterly',
+        });
+      }
+
+      const group = periodGroups.get(key);
+      group[dp.field] = dp.value;
+
+      // Keep most recent filed date
+      if (dp.filed_date > group.filed_date) {
+        group.filed_date = dp.filed_date;
+      }
+    }
+
+    // Insert/update financial_data (using actual table columns)
+    // UNIQUE constraint is: (company_id, statement_type, fiscal_date_ending, period_type)
+    const insertStmt = database.prepare(`
+      INSERT INTO financial_data (
+        company_id, statement_type, fiscal_date_ending, fiscal_period, fiscal_year,
+        period_type, filed_date, form, data,
+        total_revenue, gross_profit, operating_income, net_income, cost_of_revenue,
+        total_assets, current_assets, cash_and_equivalents,
+        total_liabilities, current_liabilities, long_term_debt, short_term_debt,
+        shareholder_equity, operating_cashflow, capital_expenditures
+      ) VALUES (
+        ?, 'all', ?, ?, ?,
+        ?, ?, ?, '{}',
+        ?, ?, ?, ?, ?,
+        ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?
+      )
+      ON CONFLICT(company_id, statement_type, fiscal_date_ending, period_type)
+      DO UPDATE SET
+        fiscal_period = excluded.fiscal_period,
+        fiscal_year = excluded.fiscal_year,
+        filed_date = MAX(excluded.filed_date, financial_data.filed_date),
+        form = excluded.form,
+        total_revenue = COALESCE(excluded.total_revenue, financial_data.total_revenue),
+        gross_profit = COALESCE(excluded.gross_profit, financial_data.gross_profit),
+        operating_income = COALESCE(excluded.operating_income, financial_data.operating_income),
+        net_income = COALESCE(excluded.net_income, financial_data.net_income),
+        cost_of_revenue = COALESCE(excluded.cost_of_revenue, financial_data.cost_of_revenue),
+        total_assets = COALESCE(excluded.total_assets, financial_data.total_assets),
+        current_assets = COALESCE(excluded.current_assets, financial_data.current_assets),
+        cash_and_equivalents = COALESCE(excluded.cash_and_equivalents, financial_data.cash_and_equivalents),
+        total_liabilities = COALESCE(excluded.total_liabilities, financial_data.total_liabilities),
+        current_liabilities = COALESCE(excluded.current_liabilities, financial_data.current_liabilities),
+        long_term_debt = COALESCE(excluded.long_term_debt, financial_data.long_term_debt),
+        short_term_debt = COALESCE(excluded.short_term_debt, financial_data.short_term_debt),
+        shareholder_equity = COALESCE(excluded.shareholder_equity, financial_data.shareholder_equity),
+        operating_cashflow = COALESCE(excluded.operating_cashflow, financial_data.operating_cashflow),
+        capital_expenditures = COALESCE(excluded.capital_expenditures, financial_data.capital_expenditures)
+    `);
+
+    let inserted = 0;
+    let updated = 0;
+
+    for (const [key, data] of periodGroups) {
+      try {
+        const result = insertStmt.run(
+          data.company_id,
+          data.fiscal_date_ending,
+          data.fiscal_period,
+          data.fiscal_year,
+          data.period_type,
+          data.filed_date,
+          data.form,
+          data.total_revenue || null,
+          data.gross_profit || null,
+          data.operating_income || null,
+          data.net_income || null,
+          data.cost_of_revenue || null,
+          data.total_assets || null,
+          data.current_assets || null,
+          data.cash_and_equivalents || null,
+          data.total_liabilities || null,
+          data.current_liabilities || null,
+          data.long_term_debt || null,
+          data.short_term_debt || null,
+          data.shareholder_equity || null,
+          data.operating_cashflow || null,
+          data.capital_expenditures || null
+        );
+
+        if (result.changes > 0) {
+          inserted++;
+        }
+      } catch (err) {
+        // Ignore constraint errors
+      }
+    }
+
+    console.log(`   ✅ Processed ${periodGroups.size} periods (${inserted} new/updated)`);
+
+    // Show latest data
+    const latest = database.prepare(`
+      SELECT fiscal_date_ending, fiscal_period, filed_date, total_revenue
+      FROM financial_data
+      WHERE company_id = ?
+      ORDER BY fiscal_date_ending DESC
+      LIMIT 3
+    `).all(company.id);
+
+    console.log(`   📅 Latest periods:`);
+    for (const l of latest) {
+      const rev = l.total_revenue ? `$${(l.total_revenue / 1e9).toFixed(1)}B` : 'N/A';
+      console.log(`      ${l.fiscal_date_ending} ${l.fiscal_period} (filed ${l.filed_date}) - Revenue: ${rev}`);
+    }
+
+    return {
+      success: true,
+      periods: periodGroups.size,
+      inserted,
+      symbol
+    };
+
+  } catch (error) {
+    console.log(`   ❌ Error: ${error.message}`);
+    return { success: false, error: error.message, symbol };
+  }
+}
+
+/**
+ * Get watchlist symbols
+ */
+function getWatchlistSymbols() {
+  const watchlist = database.prepare(`
+    SELECT c.symbol
+    FROM watchlist w
+    JOIN companies c ON c.id = w.company_id
+    WHERE c.symbol IS NOT NULL AND c.symbol NOT LIKE 'CIK_%'
+    ORDER BY w.added_at DESC
+  `).all();
+
+  return watchlist.map(w => w.symbol);
+}
+
+/**
+ * Get top companies by market activity
+ */
+function getTopCompanies(limit = 50) {
+  const companies = database.prepare(`
+    SELECT DISTINCT c.symbol
+    FROM companies c
+    JOIN financial_data fd ON fd.company_id = c.id
+    WHERE c.symbol IS NOT NULL
+      AND c.symbol NOT LIKE 'CIK_%'
+      AND c.is_active = 1
+    ORDER BY fd.total_revenue DESC
+    LIMIT ?
+  `).all(limit);
+
+  return companies.map(c => c.symbol);
+}
+
+/**
+ * Main execution
+ */
+async function main() {
+  const args = process.argv.slice(2);
+  const mode = args[0] || 'watchlist';
+
+  console.log('═══════════════════════════════════════════════════════');
+  console.log('         SEC DIRECT DATA REFRESH                       ');
+  console.log('═══════════════════════════════════════════════════════');
+
+  let symbols = [];
+
+  if (mode === 'watchlist') {
+    symbols = getWatchlistSymbols();
+    console.log(`\n📋 Refreshing ${symbols.length} watchlist companies`);
+  } else if (mode === 'all' || mode === 'top') {
+    symbols = getTopCompanies(50);
+    console.log(`\n📋 Refreshing top ${symbols.length} companies`);
+  } else {
+    // Assume comma-separated symbols
+    symbols = mode.split(',').map(s => s.trim().toUpperCase());
+    console.log(`\n📋 Refreshing ${symbols.length} specified symbols: ${symbols.join(', ')}`);
+  }
+
+  if (symbols.length === 0) {
+    console.log('\n⚠️ No companies to refresh');
+    return;
+  }
+
+  const results = {
+    success: 0,
+    failed: 0,
+    errors: []
+  };
+
+  for (const symbol of symbols) {
+    const result = await refreshCompanyFromSEC(symbol);
+
+    if (result.success) {
+      results.success++;
+    } else {
+      results.failed++;
+      results.errors.push({ symbol, error: result.error });
+    }
+
+    // Rate limiting - wait between requests
+    await new Promise(r => setTimeout(r, 200));
+  }
+
+  console.log('\n═══════════════════════════════════════════════════════');
+  console.log('                    SUMMARY                            ');
+  console.log('═══════════════════════════════════════════════════════');
+  console.log(`✅ Success: ${results.success}`);
+  console.log(`❌ Failed: ${results.failed}`);
+
+  if (results.errors.length > 0) {
+    console.log('\nErrors:');
+    for (const err of results.errors) {
+      console.log(`   ${err.symbol}: ${err.error}`);
+    }
+  }
+
+  console.log('\n═══════════════════════════════════════════════════════\n');
+}
+
+// Export for use as module
+module.exports = {
+  refreshCompanyFromSEC,
+  getWatchlistSymbols,
+  getTopCompanies
+};
+
+// Run if called directly
+if (require.main === module) {
+  main().then(() => process.exit(0)).catch(err => {
+    console.error(err);
+    process.exit(1);
+  });
+}

@@ -204,39 +204,31 @@ class QuarterlyUpdater {
         };
       }
 
-      // Step 3: Import updates for affected companies
+      // Step 3: Import using unified importer (writes to financial_data table)
+      // This ensures new data is available to frontend and metrics calculator
       onProgress({
         stage: 'importing',
         percent: 30,
         message: 'Importing financial data...',
         companiesTotal: companiesNeedingUpdate.length
       });
-      console.log('3. Importing new data...');
+      console.log('3. Importing new data using unified importer...');
 
-      const importResult = await this.importUpdatesForCompanies(
-        companiesNeedingUpdate,
-        bulkPath,
-        (importProgress) => {
-          onProgress({
-            stage: 'importing',
-            percent: 30 + Math.round(importProgress.percent * 0.5),
-            message: `Importing: ${importProgress.current}/${importProgress.total}`,
-            currentCompany: importProgress.currentCompany,
-            companiesProcessed: importProgress.current,
-            companiesTotal: importProgress.total,
-            recordsAdded: importProgress.recordsAdded
-          });
-        }
-      );
+      const importResult = await this.importQuarterUnified(quarter);
 
-      stats.companiesUpdated = importResult.companiesUpdated;
-      stats.recordsAdded = importResult.recordsAdded;
-      stats.recordsUpdated = importResult.recordsUpdated;
-      stats.recordsSkipped = importResult.recordsSkipped;
-      stats.errors = importResult.errors;
+      stats.companiesUpdated = companiesNeedingUpdate.length;
+      stats.recordsAdded = importResult.stats?.statementsInserted || 0;
+      stats.recordsUpdated = importResult.stats?.statementsUpdated || 0;
+      stats.recordsSkipped = 0;
+      stats.errors = importResult.stats?.errors ? [{ count: importResult.stats.errors }] : [];
 
       console.log(`   Updated ${stats.companiesUpdated} companies`);
       console.log(`   Added ${stats.recordsAdded} records`);
+
+      // Mark companies as updated in freshness tracking
+      for (const company of companiesNeedingUpdate) {
+        this.detector.markCompanyUpdated(company.company_id);
+      }
 
       // Step 4: Recalculate metrics (optional - can be heavy)
       onProgress({ stage: 'calculating_metrics', percent: 90, message: 'Updating metrics...' });
@@ -326,9 +318,30 @@ class QuarterlyUpdater {
   }
 
   /**
-   * Download file with progress reporting
+   * Download file with progress reporting and retry logic
+   * @param {string} url - URL to download
+   * @param {string} destPath - Destination file path
+   * @param {function} onProgress - Progress callback (0-1)
+   * @param {number} retries - Number of retries remaining (default: 3)
+   * @param {number} delay - Delay between retries in ms (default: 2000)
    */
-  downloadWithProgress(url, destPath, onProgress) {
+  async downloadWithProgress(url, destPath, onProgress, retries = 3, delay = 2000) {
+    try {
+      await this._downloadFile(url, destPath, onProgress);
+    } catch (error) {
+      if (retries > 0) {
+        console.log(`   Download failed, retrying in ${delay/1000}s... (${retries} retries left)`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return this.downloadWithProgress(url, destPath, onProgress, retries - 1, delay * 1.5);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Internal download implementation
+   */
+  _downloadFile(url, destPath, onProgress) {
     return new Promise((resolve, reject) => {
       const file = createWriteStream(destPath);
 
@@ -340,15 +353,15 @@ class QuarterlyUpdater {
         // Handle redirects
         if (response.statusCode === 301 || response.statusCode === 302) {
           file.close();
-          fs.unlinkSync(destPath);
-          return this.downloadWithProgress(response.headers.location, destPath, onProgress)
+          if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
+          return this._downloadFile(response.headers.location, destPath, onProgress)
             .then(resolve)
             .catch(reject);
         }
 
         if (response.statusCode !== 200) {
           file.close();
-          fs.unlinkSync(destPath);
+          if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
           reject(new Error(`Download failed with status ${response.statusCode}`));
           return;
         }

@@ -8,11 +8,14 @@ import './SortableTable.css';
  *
  * Props:
  * - data: array of objects
- * - columns: array of { key, label, format?, sortable?, linkTo?, className? }
+ * - columns: array of { key, label, format?, sortable?, linkTo?, className?, filterable? }
  * - defaultSort: { key, direction: 'asc' | 'desc' }
  * - onRowClick: (row) => void
  * - rowClassName: (row) => string
  * - emptyMessage: string
+ * - searchable: boolean - show search input
+ * - searchKeys: array of keys to search in (defaults to all string/symbol columns)
+ * - searchPlaceholder: string
  */
 function SortableTable({
   data = [],
@@ -20,11 +23,15 @@ function SortableTable({
   defaultSort = null,
   onRowClick,
   rowClassName,
-  emptyMessage = 'No data available'
+  emptyMessage = 'No data available',
+  searchable = false,
+  searchKeys = null,
+  searchPlaceholder = 'Search...'
 }) {
   const [sortConfig, setSortConfig] = useState(
     defaultSort || { key: null, direction: 'asc' }
   );
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Handle sort
   const handleSort = (key) => {
@@ -37,11 +44,31 @@ function SortableTable({
     }));
   };
 
+  // Filter data
+  const filteredData = useMemo(() => {
+    if (!searchTerm.trim()) return data;
+
+    const term = searchTerm.toLowerCase();
+    const keysToSearch = searchKeys || columns
+      .filter(c => c.filterable !== false && ['symbol', 'name', 'company', 'sector', 'industry'].includes(c.key))
+      .map(c => c.key);
+
+    // If no searchable keys defined, search symbol and name by default
+    const defaultKeys = keysToSearch.length > 0 ? keysToSearch : ['symbol', 'name'];
+
+    return data.filter(row =>
+      defaultKeys.some(key => {
+        const val = row[key];
+        return val && String(val).toLowerCase().includes(term);
+      })
+    );
+  }, [data, searchTerm, searchKeys, columns]);
+
   // Sort data
   const sortedData = useMemo(() => {
-    if (!sortConfig.key) return data;
+    if (!sortConfig.key) return filteredData;
 
-    return [...data].sort((a, b) => {
+    return [...filteredData].sort((a, b) => {
       const aVal = a[sortConfig.key];
       const bVal = b[sortConfig.key];
 
@@ -60,7 +87,7 @@ function SortableTable({
 
       return sortConfig.direction === 'desc' ? -comparison : comparison;
     });
-  }, [data, sortConfig]);
+  }, [filteredData, sortConfig]);
 
   // Format value based on column config
   const formatValue = (value, format) => {
@@ -103,8 +130,25 @@ function SortableTable({
   }
 
   return (
-    <div className="sortable-table-wrapper">
-      <table className="sortable-table">
+    <div className="sortable-table-container">
+      {searchable && (
+        <div className="sortable-table-search">
+          <input
+            type="text"
+            placeholder={searchPlaceholder}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="search-input"
+          />
+          {searchTerm && (
+            <span className="search-results-count">
+              {sortedData.length} of {data.length}
+            </span>
+          )}
+        </div>
+      )}
+      <div className="sortable-table-wrapper">
+        <table className="sortable-table">
         <thead>
           <tr>
             {columns.map(col => (
@@ -167,7 +211,8 @@ function SortableTable({
             </tr>
           ))}
         </tbody>
-      </table>
+        </table>
+      </div>
     </div>
   );
 }

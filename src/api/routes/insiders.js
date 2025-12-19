@@ -401,6 +401,79 @@ router.get('/cluster-buying', (req, res) => {
 });
 
 /**
+ * POST /api/insiders/update
+ * Trigger insider data update from SEC EDGAR
+ * Body params:
+ *   - days: days of history to fetch (default 30)
+ *   - limit: max companies to process (default 50, 0 = all)
+ */
+router.post('/update', async (req, res) => {
+  try {
+    const { days = 30, limit = 50 } = req.body;
+
+    // Return immediately with status
+    res.json({
+      status: 'started',
+      message: `Insider data update started for ${limit || 'all'} companies (last ${days} days)`,
+      params: { days, limit }
+    });
+
+    // Run import asynchronously (don't await)
+    const path = require('path');
+    const { spawn } = require('child_process');
+    const scriptPath = path.join(__dirname, '..', '..', '..', 'scripts', 'import', 'import-insider-data.js');
+
+    const child = spawn('node', [scriptPath, days.toString(), limit.toString()], {
+      cwd: path.join(__dirname, '..', '..', '..'),
+      detached: true,
+      stdio: 'ignore'
+    });
+
+    child.unref();
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/insiders/update-status
+ * Get the last insider data update status
+ */
+router.get('/update-status', (req, res) => {
+  try {
+    // Get counts and latest transaction date
+    const stats = database.prepare(`
+      SELECT
+        COUNT(DISTINCT company_id) as companies_with_data,
+        COUNT(DISTINCT insider_id) as total_insiders,
+        COUNT(*) as total_transactions,
+        MAX(created_at) as last_import_time,
+        MAX(transaction_date) as latest_transaction
+      FROM insider_transactions
+    `).get();
+
+    // Get signal distribution
+    const signals = database.prepare(`
+      SELECT insider_signal, COUNT(*) as count
+      FROM insider_activity_summary
+      WHERE period = '3m'
+      GROUP BY insider_signal
+    `).all();
+
+    res.json({
+      lastImport: stats.last_import_time,
+      latestTransaction: stats.latest_transaction,
+      companiesWithData: stats.companies_with_data,
+      totalInsiders: stats.total_insiders,
+      totalTransactions: stats.total_transactions,
+      signalDistribution: Object.fromEntries(signals.map(s => [s.insider_signal, s.count]))
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * GET /api/insiders/stats
  * Get overall insider trading statistics
  */

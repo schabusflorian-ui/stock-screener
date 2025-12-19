@@ -9,125 +9,99 @@ import {
   Award,
   Clock,
   ArrowUpRight,
-  ArrowDownRight,
-  Sparkles,
+  Database,
   Target,
-  Shield
+  Shield,
+  Zap,
+  PieChart,
+  Activity,
+  Layers,
+  RefreshCw,
+  Bell
 } from 'lucide-react';
-import { companyAPI, metricsAPI, ipoAPI } from '../services/api';
+import { statsAPI, ipoAPI, alertsAPI, pricesAPI } from '../services/api';
 import { useWatchlist } from '../context/WatchlistContext';
-import { SnowflakeChart } from '../components/charts';
 import './HomePage.css';
 
 function HomePage() {
   const { watchlist } = useWatchlist();
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ companies: 0, dataYears: 0 });
-  const [leaderboards, setLeaderboards] = useState({
-    roic: [],
-    value: [],
-    quality: []
-  });
-  const [topMovers, setTopMovers] = useState({ gainers: [], losers: [] });
+  const [error, setError] = useState(null);
+  const [stats, setStats] = useState(null);
+  const [highlights, setHighlights] = useState(null);
+  const [priceData, setPriceData] = useState({});
   const [upcomingIPOs, setUpcomingIPOs] = useState([]);
-  const [watchlistData, setWatchlistData] = useState([]);
-  const [featuredCompany, setFeaturedCompany] = useState(null);
+  const [recentAlerts, setRecentAlerts] = useState([]);
+  const [alertSummary, setAlertSummary] = useState(null);
 
   useEffect(() => {
     loadDashboardData();
   }, []);
 
-  const loadWatchlistData = async () => {
+  const loadDashboardData = async () => {
     try {
-      const watchlistPromises = watchlist.slice(0, 6).map(item =>
-        companyAPI.getOne(item.symbol).catch(() => null)
-      );
-      const results = await Promise.all(watchlistPromises);
-      const validResults = results
-        .filter(r => r !== null)
-        .map(r => r.data);
-      setWatchlistData(validResults);
-    } catch (error) {
-      console.error('Error loading watchlist data:', error);
+      const [statsRes, highlightsRes, iposRes, alertsRes, alertSummaryRes] = await Promise.all([
+        statsAPI.getDashboard(),
+        statsAPI.getHighlights(),
+        ipoAPI.getUpcoming().catch(() => ({ data: { ipos: [] } })),
+        alertsAPI.getAlerts({ limit: 5, signals: ['strong_buy', 'buy'] }).catch(() => ({ data: { data: [] } })),
+        alertsAPI.getSummary().catch(() => ({ data: { data: null } }))
+      ]);
+
+      setStats(statsRes.data);
+      setHighlights(highlightsRes.data);
+      setUpcomingIPOs(iposRes.data?.ipos?.slice(0, 3) || []);
+      setRecentAlerts(alertsRes.data?.data?.slice(0, 4) || []);
+      setAlertSummary(alertSummaryRes.data?.data || null);
+      setLoading(false);
+
+      // Load price data for all highlight companies in background
+      const allSymbols = new Set();
+      ['topROIC', 'bestValue', 'highestGrowth', 'strongBalance', 'dividendLeaders'].forEach(key => {
+        highlightsRes.data?.[key]?.forEach(c => allSymbols.add(c.symbol));
+      });
+
+      const newPrices = {};
+      await Promise.all([...allSymbols].map(async (symbol) => {
+        try {
+          const res = await pricesAPI.getMetrics(symbol);
+          if (res?.data?.data) {
+            newPrices[symbol] = res.data.data;
+          }
+        } catch (e) {
+          // Ignore individual price fetch errors
+        }
+      }));
+      setPriceData(newPrices);
+    } catch (err) {
+      console.error('Error loading dashboard:', err);
+      setError(err.message);
+      setLoading(false);
     }
   };
 
-  // Load watchlist company details when watchlist changes
-  useEffect(() => {
-    if (watchlist.length > 0) {
-      loadWatchlistData();
-    } else {
-      setWatchlistData([]);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [watchlist]);
-
-  const loadDashboardData = async () => {
-    try {
-      const [
-        companiesRes,
-        roicLeaders,
-        valueLeaders,
-        qualityLeaders,
-        iposRes
-      ] = await Promise.all([
-        companyAPI.getAll(),
-        metricsAPI.getLeaderboard('roic', 5),
-        metricsAPI.getLeaderboard('earnings_yield', 5),
-        metricsAPI.getLeaderboard('roe', 5),
-        ipoAPI.getUpcoming().catch(() => ({ data: { ipos: [] } }))
-      ]);
-
-      const companies = companiesRes.data.companies;
-
-      setStats({
-        companies: companies.length,
-        dataYears: companies.reduce((sum, c) => sum + (c.years_of_data || 0), 0)
-      });
-
-      setLeaderboards({
-        roic: roicLeaders.data.leaderboard || [],
-        value: valueLeaders.data.leaderboard || [],
-        quality: qualityLeaders.data.leaderboard || []
-      });
-
-      // Simulate top movers (in real app, this would come from price data)
-      const sortedByROIC = [...companies].sort((a, b) => (b.latest_roic || 0) - (a.latest_roic || 0));
-      setTopMovers({
-        gainers: sortedByROIC.slice(0, 5).map(c => ({
-          ...c,
-          change: Math.random() * 8 + 1 // Simulated daily change
-        })),
-        losers: sortedByROIC.slice(-5).reverse().map(c => ({
-          ...c,
-          change: -(Math.random() * 8 + 1) // Simulated daily change
-        }))
-      });
-
-      setUpcomingIPOs(iposRes.data?.ipos?.slice(0, 4) || []);
-
-      // Set featured company (highest ROIC)
-      if (roicLeaders.data.leaderboard?.length > 0) {
-        const featured = roicLeaders.data.leaderboard[0];
-        setFeaturedCompany(featured);
-      }
-
-      setLoading(false);
-    } catch (error) {
-      console.error('Error loading dashboard:', error);
-      setLoading(false);
-    }
+  const formatNumber = (num) => {
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+    if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+    return num?.toLocaleString() || '0';
   };
 
   if (loading) {
     return (
       <div className="home-page">
-        <div className="dashboard-loading">
-          <div className="loading-grid">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className="skeleton-card" />
-            ))}
-          </div>
+        <div className="loading-overlay">
+          <div className="spinner"></div>
+          <span>Loading dashboard...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="home-page">
+        <div className="loading-overlay">
+          <span style={{ color: '#ef4444' }}>Error loading dashboard: {error}</span>
         </div>
       </div>
     );
@@ -135,254 +109,374 @@ function HomePage() {
 
   return (
     <div className="home-page">
-      {/* Stats Bar */}
-      <div className="stats-bar">
-        <div className="stat-item">
-          <BarChart3 size={16} />
-          <span className="stat-value">{stats.companies}</span>
-          <span className="stat-label">Companies</span>
+      {/* Welcome Header */}
+      <header className="welcome-header">
+        <div className="welcome-text">
+          <h1>Fundamental Analysis</h1>
         </div>
-        <div className="stat-item">
-          <Clock size={16} />
-          <span className="stat-value">{stats.dataYears}</span>
-          <span className="stat-label">Years of Data</span>
+      </header>
+
+      {/* Stats Pills */}
+      <div className="stats-pills">
+        <div className="stat-pill highlight">
+          <span className="pill-value">{stats?.companies?.total || 0}</span>
+          <span className="pill-label">Companies</span>
         </div>
-        <div className="stat-item">
-          <Target size={16} />
-          <span className="stat-value">20+</span>
-          <span className="stat-label">Metrics</span>
+        <div className="stat-pill">
+          <span className="pill-value">{stats?.dataRange?.yearsOfData || 0}</span>
+          <span className="pill-label">Years</span>
+          <span className="pill-detail">{stats?.dataRange?.earliestYear}–{stats?.dataRange?.latestYear}</span>
         </div>
-        <div className="stat-item">
-          <Star size={16} />
-          <span className="stat-value">{watchlist.length}</span>
-          <span className="stat-label">Watchlist</span>
+        <div className="stat-pill">
+          <span className="pill-value">{formatNumber(stats?.filings?.total || 0)}</span>
+          <span className="pill-label">Filings</span>
+        </div>
+        <div className="stat-pill">
+          <span className="pill-value">{stats?.companies?.sectors || 0}</span>
+          <span className="pill-label">Sectors</span>
+        </div>
+        <div className="stat-pill">
+          <Star size={14} className="pill-icon" />
+          <span className="pill-value">{watchlist.length}</span>
+          <span className="pill-label">Watchlist</span>
         </div>
       </div>
 
-      {/* Main Grid */}
+      {/* Main Content Grid */}
       <div className="dashboard-grid">
-        {/* Watchlist Section */}
-        <section className="dashboard-card watchlist-section">
+        {/* Leaderboards Section - Primary Focus */}
+        <section className="dashboard-card leaderboards-section">
           <div className="card-header">
-            <h3><Star size={18} /> Your Watchlist</h3>
-            <Link to="/watchlist" className="view-all">View All</Link>
-          </div>
-          {watchlistData.length > 0 ? (
-            <div className="watchlist-items">
-              {watchlistData.map(company => (
-                <Link
-                  to={`/company/${company.company?.symbol}`}
-                  key={company.company?.symbol}
-                  className="watchlist-item"
-                >
-                  <div className="watchlist-symbol">{company.company?.symbol}</div>
-                  <div className="watchlist-name">{company.company?.name}</div>
-                  <div className="watchlist-metrics">
-                    <span className="metric-badge roic">
-                      ROIC {company.latest_metrics?.roic?.toFixed(1) || '-'}%
-                    </span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state">
-              <Star size={24} />
-              <p>No companies in watchlist</p>
-              <Link to="/screening" className="add-link">Find companies to watch</Link>
-            </div>
-          )}
-        </section>
-
-        {/* Featured Company with Snowflake */}
-        {featuredCompany && (
-          <section className="dashboard-card featured-section">
-            <div className="card-header">
-              <h3><Sparkles size={18} /> Top Performer</h3>
-            </div>
-            <Link to={`/company/${featuredCompany.symbol}`} className="featured-content">
-              <div className="featured-info">
-                <div className="featured-symbol">{featuredCompany.symbol}</div>
-                <div className="featured-name">{featuredCompany.name}</div>
-                <div className="featured-sector">{featuredCompany.sector}</div>
-                <div className="featured-metric">
-                  <span className="metric-label">ROIC</span>
-                  <span className="metric-value positive">{featuredCompany.roic?.toFixed(1)}%</span>
-                </div>
-              </div>
-              <div className="featured-chart">
-                <SnowflakeChart
-                  metrics={{
-                    pe_ratio: featuredCompany.pe_ratio,
-                    pb_ratio: featuredCompany.pb_ratio,
-                    revenue_growth: featuredCompany.revenue_growth,
-                    earnings_growth: featuredCompany.earnings_growth,
-                    roic: featuredCompany.roic,
-                    roe: featuredCompany.roe,
-                    current_ratio: featuredCompany.current_ratio,
-                    debt_to_equity: featuredCompany.debt_to_equity,
-                    dividend_yield: featuredCompany.dividend_yield,
-                    payout_ratio: featuredCompany.payout_ratio
-                  }}
-                  size="small"
-                  showLegend={false}
-                />
-              </div>
-            </Link>
-          </section>
-        )}
-
-        {/* Top Movers */}
-        <section className="dashboard-card movers-section">
-          <div className="card-header">
-            <h3><TrendingUp size={18} /> Top Performers</h3>
-          </div>
-          <div className="movers-grid">
-            <div className="movers-column gainers">
-              <h4><ArrowUpRight size={14} /> Highest ROIC</h4>
-              {topMovers.gainers.map(company => (
-                <Link
-                  to={`/company/${company.symbol}`}
-                  key={company.symbol}
-                  className="mover-item"
-                >
-                  <span className="mover-symbol">{company.symbol}</span>
-                  <span className="mover-change positive">
-                    {company.latest_roic?.toFixed(1) || '-'}%
-                  </span>
-                </Link>
-              ))}
-            </div>
-            <div className="movers-column losers">
-              <h4><ArrowDownRight size={14} /> Needs Attention</h4>
-              {topMovers.losers.map(company => (
-                <Link
-                  to={`/company/${company.symbol}`}
-                  key={company.symbol}
-                  className="mover-item"
-                >
-                  <span className="mover-symbol">{company.symbol}</span>
-                  <span className="mover-change negative">
-                    {company.latest_roic?.toFixed(1) || '-'}%
-                  </span>
-                </Link>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* Leaderboards */}
-        <section className="dashboard-card leaderboard-section">
-          <div className="card-header">
-            <h3><Award size={18} /> Leaderboards</h3>
+            <h3><Award size={18} /> Market Leaders</h3>
             <Link to="/screening" className="view-all">Screen All</Link>
           </div>
           <div className="leaderboards-grid">
             {/* ROIC Leaders */}
             <div className="leaderboard-column">
-              <h4><BarChart3 size={14} /> Highest ROIC</h4>
-              {leaderboards.roic.map((company, idx) => (
-                <Link
-                  to={`/company/${company.symbol}`}
-                  key={company.symbol}
-                  className="leaderboard-item"
-                >
-                  <span className="rank">#{idx + 1}</span>
-                  <span className="symbol">{company.symbol}</span>
-                  <span className="value">{company.roic?.toFixed(1)}%</span>
-                </Link>
-              ))}
+              <h4><TrendingUp size={14} /> Top ROIC</h4>
+              <p className="leaderboard-desc">Return on Invested Capital</p>
+              {highlights?.topROIC?.map((company, idx) => {
+                const price = priceData[company.symbol];
+                return (
+                  <Link
+                    to={`/company/${company.symbol}`}
+                    key={company.symbol}
+                    className="leaderboard-item"
+                  >
+                    <span className="rank">#{idx + 1}</span>
+                    <div className="company-info">
+                      <span className="symbol">{company.symbol}</span>
+                      {price?.last_price && <span className="price">${price.last_price.toFixed(2)}</span>}
+                    </div>
+                    <div className="values-col">
+                      <span className="value positive">{company.roic?.toFixed(1)}%</span>
+                      {price?.change_1m != null && (
+                        <span className={`price-change ${price.change_1m >= 0 ? 'up' : 'down'}`}>
+                          {price.change_1m >= 0 ? '+' : ''}{price.change_1m.toFixed(1)}%
+                        </span>
+                      )}
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
 
-            {/* Value Leaders */}
+            {/* Best Value */}
             <div className="leaderboard-column">
               <h4><DollarSign size={14} /> Best Value</h4>
-              {leaderboards.value.map((company, idx) => (
-                <Link
-                  to={`/company/${company.symbol}`}
-                  key={company.symbol}
-                  className="leaderboard-item"
-                >
-                  <span className="rank">#{idx + 1}</span>
-                  <span className="symbol">{company.symbol}</span>
-                  <span className="value">{company.earnings_yield?.toFixed(1)}%</span>
-                </Link>
-              ))}
+              <p className="leaderboard-desc">Earnings Yield</p>
+              {highlights?.bestValue?.map((company, idx) => {
+                const price = priceData[company.symbol];
+                return (
+                  <Link
+                    to={`/company/${company.symbol}`}
+                    key={company.symbol}
+                    className="leaderboard-item"
+                  >
+                    <span className="rank">#{idx + 1}</span>
+                    <div className="company-info">
+                      <span className="symbol">{company.symbol}</span>
+                      {price?.last_price && <span className="price">${price.last_price.toFixed(2)}</span>}
+                    </div>
+                    <div className="values-col">
+                      <span className="value">{company.earnings_yield?.toFixed(1)}%</span>
+                      {price?.change_1m != null && (
+                        <span className={`price-change ${price.change_1m >= 0 ? 'up' : 'down'}`}>
+                          {price.change_1m >= 0 ? '+' : ''}{price.change_1m.toFixed(1)}%
+                        </span>
+                      )}
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
 
-            {/* Quality Leaders */}
+            {/* Highest Growth */}
             <div className="leaderboard-column">
-              <h4><Shield size={14} /> Quality (ROE)</h4>
-              {leaderboards.quality.map((company, idx) => (
-                <Link
-                  to={`/company/${company.symbol}`}
-                  key={company.symbol}
-                  className="leaderboard-item"
-                >
-                  <span className="rank">#{idx + 1}</span>
-                  <span className="symbol">{company.symbol}</span>
-                  <span className="value">{company.roe?.toFixed(1)}%</span>
-                </Link>
-              ))}
+              <h4><Zap size={14} /> Growth Leaders</h4>
+              <p className="leaderboard-desc">Revenue Growth YoY</p>
+              {highlights?.highestGrowth?.map((company, idx) => {
+                const price = priceData[company.symbol];
+                return (
+                  <Link
+                    to={`/company/${company.symbol}`}
+                    key={company.symbol}
+                    className="leaderboard-item"
+                  >
+                    <span className="rank">#{idx + 1}</span>
+                    <div className="company-info">
+                      <span className="symbol">{company.symbol}</span>
+                      {price?.last_price && <span className="price">${price.last_price.toFixed(2)}</span>}
+                    </div>
+                    <div className="values-col">
+                      <span className="value positive">+{company.revenue_growth_yoy?.toFixed(1)}%</span>
+                      {price?.change_1m != null && (
+                        <span className={`price-change ${price.change_1m >= 0 ? 'up' : 'down'}`}>
+                          {price.change_1m >= 0 ? '+' : ''}{price.change_1m.toFixed(1)}%
+                        </span>
+                      )}
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+
+            {/* Strong Balance */}
+            <div className="leaderboard-column">
+              <h4><Shield size={14} /> Fortress Balance</h4>
+              <p className="leaderboard-desc">Low Debt, High Liquidity</p>
+              {highlights?.strongBalance?.map((company, idx) => {
+                const price = priceData[company.symbol];
+                return (
+                  <Link
+                    to={`/company/${company.symbol}`}
+                    key={company.symbol}
+                    className="leaderboard-item"
+                  >
+                    <span className="rank">#{idx + 1}</span>
+                    <div className="company-info">
+                      <span className="symbol">{company.symbol}</span>
+                      {price?.last_price && <span className="price">${price.last_price.toFixed(2)}</span>}
+                    </div>
+                    <div className="values-col">
+                      <span className="value">{company.current_ratio?.toFixed(1)}x</span>
+                      {price?.change_1m != null && (
+                        <span className={`price-change ${price.change_1m >= 0 ? 'up' : 'down'}`}>
+                          {price.change_1m >= 0 ? '+' : ''}{price.change_1m.toFixed(1)}%
+                        </span>
+                      )}
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           </div>
         </section>
 
-        {/* Upcoming IPOs */}
-        <section className="dashboard-card ipos-section">
-          <div className="card-header">
-            <h3><Sparkles size={18} /> IPO Pipeline</h3>
-            <Link to="/ipo" className="view-all">View Pipeline</Link>
-          </div>
-          {upcomingIPOs.length > 0 ? (
-            <div className="ipo-items">
-              {upcomingIPOs.map(ipo => (
-                <Link
-                  to={`/ipo/${ipo.id}`}
-                  key={ipo.id}
-                  className="ipo-item"
-                >
-                  <div className="ipo-info">
-                    <div className="ipo-name">{ipo.company_name}</div>
-                    <div className="ipo-sector">{ipo.sector || 'Technology'}</div>
+        {/* Quick Access Grid */}
+        <div className="side-column">
+          {/* Sector Overview */}
+          <section className="dashboard-card sectors-preview">
+            <div className="card-header">
+              <h3><PieChart size={18} /> Coverage by Sector</h3>
+              <Link to="/sectors" className="view-all">View All</Link>
+            </div>
+            <div className="sector-bars">
+              {stats?.sectorBreakdown?.slice(0, 6).map(sector => {
+                const maxCount = stats.sectorBreakdown[0]?.count || 1;
+                const percent = (sector.count / maxCount) * 100;
+                return (
+                  <div key={sector.sector} className="sector-bar-item">
+                    <div className="sector-bar-label">
+                      <span className="sector-name">{sector.sector}</span>
+                      <span className="sector-count">{sector.count}</span>
+                    </div>
+                    <div className="sector-bar-track">
+                      <div
+                        className="sector-bar-fill"
+                        style={{ width: `${percent}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="ipo-status">
+                );
+              })}
+            </div>
+          </section>
+
+          {/* IPO Pipeline */}
+          <section className="dashboard-card ipo-preview">
+            <div className="card-header">
+              <h3><Activity size={18} /> IPO Pipeline</h3>
+              <Link to="/ipo" className="view-all">View Pipeline</Link>
+            </div>
+            {upcomingIPOs.length > 0 ? (
+              <div className="ipo-list">
+                {upcomingIPOs.map(ipo => (
+                  <Link to={`/ipo/${ipo.id}`} key={ipo.id} className="ipo-item">
+                    <div className="ipo-name">{ipo.company_name}</div>
                     <span className={`status-badge ${ipo.status?.toLowerCase()}`}>
                       {ipo.status || 'Filed'}
                     </span>
-                  </div>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-mini">
+                <p>No upcoming IPOs tracked</p>
+              </div>
+            )}
+          </section>
+
+          {/* Buy Signals Widget */}
+          <section className="dashboard-card alerts-preview">
+            <div className="card-header">
+              <h3><Bell size={18} /> Buy Signals</h3>
+              <Link to="/alerts" className="view-all">
+                {alertSummary?.unread > 0 && <span className="unread-count">{alertSummary.unread}</span>}
+                View All
+              </Link>
+            </div>
+            {recentAlerts.length > 0 ? (
+              <div className="alerts-list-mini">
+                {recentAlerts.map(alert => (
+                  <Link
+                    to={`/company/${alert.symbol}`}
+                    key={alert.id}
+                    className={`alert-item-mini signal-${alert.signal_type}`}
+                  >
+                    <span className="alert-signal-icon">
+                      {alert.signal_type === 'strong_buy' ? '🟢' : '🔵'}
+                    </span>
+                    <div className="alert-item-info">
+                      <span className="alert-symbol">{alert.symbol}</span>
+                      <span className="alert-title-mini">{alert.title?.replace(`${alert.symbol}: `, '')}</span>
+                    </div>
+                    <span className={`alert-signal-badge ${alert.signal_type}`}>
+                      {alert.signal_type?.replace('_', ' ')}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-mini">
+                <p>No buy signals detected</p>
+                <Link to="/alerts" className="run-scan-link">Run Scan</Link>
+              </div>
+            )}
+          </section>
+
+          {/* Dividend Leaders */}
+          <section className="dashboard-card dividend-preview">
+            <div className="card-header">
+              <h3><DollarSign size={18} /> Dividend Leaders</h3>
+              <Link to="/screening?preset=dividend" className="view-all">View All</Link>
+            </div>
+            <div className="dividend-list">
+              {highlights?.dividendLeaders?.slice(0, 4).map(company => (
+                <Link
+                  to={`/company/${company.symbol}`}
+                  key={company.symbol}
+                  className="dividend-item"
+                >
+                  <span className="symbol">{company.symbol}</span>
+                  <span className="yield">{company.dividend_yield?.toFixed(2)}%</span>
                 </Link>
               ))}
             </div>
-          ) : (
-            <div className="empty-state">
-              <Sparkles size={24} />
-              <p>No upcoming IPOs</p>
-            </div>
-          )}
-        </section>
+          </section>
+        </div>
 
         {/* Quick Actions */}
-        <section className="dashboard-card actions-section">
+        <section className="dashboard-card actions-section full-width">
           <div className="card-header">
-            <h3>Quick Actions</h3>
+            <h3>Analysis Tools</h3>
           </div>
           <div className="quick-actions">
-            <Link to="/screening" className="action-button">
-              <Target size={20} />
-              <span>Screen Stocks</span>
+            <Link to="/screening" className="action-card">
+              <div className="action-icon">
+                <Target size={24} />
+              </div>
+              <div className="action-info">
+                <span className="action-title">Stock Screener</span>
+                <span className="action-desc">Filter by 20+ metrics</span>
+              </div>
+              <ArrowUpRight size={16} className="action-arrow" />
             </Link>
-            <Link to="/sectors" className="action-button">
-              <BarChart3 size={20} />
-              <span>Sector Analysis</span>
+
+            <Link to="/sectors" className="action-card">
+              <div className="action-icon">
+                <BarChart3 size={24} />
+              </div>
+              <div className="action-info">
+                <span className="action-title">Sector Analysis</span>
+                <span className="action-desc">Compare industries</span>
+              </div>
+              <ArrowUpRight size={16} className="action-arrow" />
             </Link>
-            <Link to="/compare" className="action-button">
-              <TrendingUp size={20} />
-              <span>Compare</span>
+
+            <Link to="/compare" className="action-card">
+              <div className="action-icon">
+                <Activity size={24} />
+              </div>
+              <div className="action-info">
+                <span className="action-title">Compare</span>
+                <span className="action-desc">Side-by-side analysis</span>
+              </div>
+              <ArrowUpRight size={16} className="action-arrow" />
             </Link>
-            <Link to="/ipo" className="action-button">
-              <Sparkles size={20} />
-              <span>IPO Pipeline</span>
+
+            <Link to="/charts" className="action-card">
+              <div className="action-icon">
+                <TrendingUp size={24} />
+              </div>
+              <div className="action-info">
+                <span className="action-title">Advanced Charts</span>
+                <span className="action-desc">Multi-company metrics</span>
+              </div>
+              <ArrowUpRight size={16} className="action-arrow" />
+            </Link>
+
+            <Link to="/capital" className="action-card">
+              <div className="action-icon">
+                <DollarSign size={24} />
+              </div>
+              <div className="action-info">
+                <span className="action-title">Capital Allocation</span>
+                <span className="action-desc">Dividends & buybacks</span>
+              </div>
+              <ArrowUpRight size={16} className="action-arrow" />
+            </Link>
+
+            <Link to="/insiders" className="action-card">
+              <div className="action-icon">
+                <Database size={24} />
+              </div>
+              <div className="action-info">
+                <span className="action-title">Insider Trading</span>
+                <span className="action-desc">Form 4 filings</span>
+              </div>
+              <ArrowUpRight size={16} className="action-arrow" />
+            </Link>
+          </div>
+        </section>
+
+        {/* Data Freshness Info */}
+        <section className="dashboard-card data-info full-width">
+          <div className="data-info-content">
+            <div className="data-info-item">
+              <Clock size={16} />
+              <span>Latest filing: {stats?.dataRange?.latestFiling || 'N/A'}</span>
+            </div>
+            <div className="data-info-item">
+              <Database size={16} />
+              <span>{stats?.companies?.withMetrics || 0} companies with calculated metrics</span>
+            </div>
+            <div className="data-info-item">
+              <RefreshCw size={16} />
+              <span>{stats?.recentActivity?.updatesLast30Days || 0} updates in last 30 days</span>
+            </div>
+            <Link to="/updates" className="data-info-link">
+              Manage Updates
             </Link>
           </div>
         </section>

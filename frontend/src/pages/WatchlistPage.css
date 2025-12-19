@@ -59,9 +59,12 @@
 .empty-state {
   text-align: center;
   padding: 4rem 2rem;
-  background: var(--bg-secondary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border-radius: var(--radius-lg);
-  border: 1px solid var(--border-primary);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
 }
 
 .empty-icon {
@@ -95,10 +98,13 @@
 
 /* Table */
 .watchlist-table-section {
-  background: var(--bg-secondary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   padding: 1.5rem;
   border-radius: var(--radius-lg);
-  border: 1px solid var(--border-primary);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
   margin-bottom: 2rem;
 }
 
@@ -115,7 +121,7 @@
 .watchlist-table td {
   padding: var(--radius-lg);
   text-align: left;
-  border-bottom: 1px solid var(--border-primary);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .watchlist-table th {
@@ -173,6 +179,21 @@
   color: var(--positive);
 }
 
+.negative {
+  color: var(--negative);
+}
+
+.price-cell {
+  font-weight: 600;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+}
+
+.change-cell {
+  font-weight: 500;
+  font-size: 0.875rem;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+}
+
 .action-buttons {
   display: flex;
   gap: var(--radius-md);
@@ -180,7 +201,7 @@
 
 .view-btn {
   padding: 0.25rem var(--radius-lg);
-  background: var(--border-primary);
+  background: rgba(255, 255, 255, 0.5);
   border-radius: 0.25rem;
   color: var(--text-primary);
   text-decoration: none;
@@ -189,7 +210,7 @@
 }
 
 .view-btn:hover {
-  background: var(--brand-primary);
+  background: rgba(99, 102, 241, 0.08);
 }
 
 .remove-btn {
@@ -210,10 +231,13 @@
 
 /* Summary */
 .watchlist-summary {
-  background: var(--bg-secondary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   padding: 1.5rem;
   border-radius: var(--radius-lg);
-  border: 1px solid var(--border-primary);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
 }
 
 .watchlist-summary h3 {
@@ -227,7 +251,7 @@
 }
 
 .summary-card {
-  background: var(--bg-primary);
+  background: rgba(255, 255, 255, 0.5);
   padding: 1rem;
   border-radius: var(--radius-md);
   display: flex;

@@ -66,36 +66,36 @@ function MultiMetricChart({
 
     const chart = createChart(chartContainerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: '#0f172a' },
-        textColor: '#94a3b8',
+        background: { type: ColorType.Solid, color: 'transparent' },
+        textColor: '#6b7280',
         fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
         attributionLogo: false
       },
       grid: {
-        vertLines: { color: '#1e293b' },
-        horzLines: { color: '#1e293b' }
+        vertLines: { color: 'rgba(0, 0, 0, 0.06)' },
+        horzLines: { color: 'rgba(0, 0, 0, 0.06)' }
       },
       crosshair: {
         mode: CrosshairMode.Magnet,
         vertLine: {
           width: 1,
-          color: '#64748b',
+          color: '#6366f1',
           style: 2,
-          labelBackgroundColor: '#475569'
+          labelBackgroundColor: '#6366f1'
         },
         horzLine: {
           width: 1,
-          color: '#64748b',
+          color: '#6366f1',
           style: 2,
-          labelBackgroundColor: '#475569'
+          labelBackgroundColor: '#6366f1'
         }
       },
       rightPriceScale: {
-        borderColor: '#334155',
+        borderColor: 'rgba(0, 0, 0, 0.1)',
         scaleMargins: { top: 0.1, bottom: 0.1 }
       },
       timeScale: {
-        borderColor: '#334155',
+        borderColor: 'rgba(0, 0, 0, 0.1)',
         timeVisible: false,
         rightOffset: 3,
         barSpacing: 20,
@@ -236,6 +236,7 @@ function MultiMetricChart({
             formatter: (v) => {
               if (metric.format === 'percent') return `${v.toFixed(1)}%`;
               if (metric.format === 'ratio') return v.toFixed(2);
+              if (metric.format === 'currency') return `$${v.toFixed(2)}`;
               return v.toFixed(1);
             }
           },
@@ -256,6 +257,7 @@ function MultiMetricChart({
             formatter: (v) => {
               if (metric.format === 'percent') return `${v.toFixed(1)}%`;
               if (metric.format === 'ratio') return v.toFixed(2);
+              if (metric.format === 'currency') return `$${v.toFixed(2)}`;
               return v.toFixed(1);
             }
           },
@@ -295,6 +297,7 @@ function MultiMetricChart({
     if (value === null || value === undefined) return '-';
     if (metric?.format === 'percent') return `${value.toFixed(1)}%`;
     if (metric?.format === 'ratio') return value.toFixed(2);
+    if (metric?.format === 'currency') return `$${value.toFixed(2)}`;
     return value.toFixed(1);
   }, []);
 

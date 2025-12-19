@@ -51,22 +51,33 @@ function FinancialBreakdown({ symbol, periodType }) {
   if (loading) return <div className="breakdown-loading">Loading financial data...</div>;
   if (breakdown.length === 0) return <div className="breakdown-empty">No financial breakdown data available</div>;
 
+  // Helper to format period label - use fiscal label if available
+  const formatPeriodLabel = (item) => {
+    // Prefer fiscal_label (e.g., "FY2024 Q1") if available
+    if (item.fiscal_label) return item.fiscal_label;
+    // Fall back to fiscal_year for annual reports
+    if (item.fiscal_year) return `FY${item.fiscal_year}`;
+    // Fall back to period date
+    if (item.period) return item.period.substring(0, 4);
+    return item.fiscal_period || 'N/A';
+  };
+
   // Prepare chart data for margin trends
   const marginChartData = [...breakdown].reverse().map(item => ({
-    period: item.period.substring(0, 7), // YYYY-MM format
-    'Gross Margin': item.margins.grossMargin,
-    'Operating Margin': item.margins.operatingMargin,
-    'Net Margin': item.margins.netMargin
+    period: formatPeriodLabel(item),
+    'Gross Margin': item.margins?.grossMargin || 0,
+    'Operating Margin': item.margins?.operatingMargin || 0,
+    'Net Margin': item.margins?.netMargin || 0
   }));
 
   // Prepare revenue/cost evolution data
   const revenueChartData = [...breakdown].reverse().map(item => ({
-    period: item.period.substring(0, 7),
-    Revenue: item.revenue / 1e9,
-    'Cost of Revenue': item.costOfRevenue / 1e9,
-    'Gross Profit': item.grossProfit / 1e9,
-    'Operating Income': item.operatingIncome / 1e9,
-    'Net Income': item.netIncome / 1e9
+    period: formatPeriodLabel(item),
+    Revenue: (item.revenue || 0) / 1e9,
+    'Cost of Revenue': (item.costOfRevenue || 0) / 1e9,
+    'Gross Profit': (item.grossProfit || 0) / 1e9,
+    'Operating Income': (item.operatingIncome || 0) / 1e9,
+    'Net Income': (item.netIncome || 0) / 1e9
   }));
 
   // Get selected period data for detailed view
@@ -162,7 +173,7 @@ function FinancialBreakdown({ symbol, periodType }) {
             >
               {breakdown.map(b => (
                 <option key={b.period} value={b.period}>
-                  {b.fiscal_period || b.period} ({b.period_type})
+                  {formatPeriodLabel(b)}
                 </option>
               ))}
             </select>

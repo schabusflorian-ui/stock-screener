@@ -42,6 +42,7 @@ const calculateEMA = (data, period) => {
 
 // Color schemes for different metrics
 const METRIC_COLORS = {
+  stock_price: { line: '#059669', area: 'rgba(5, 150, 105, 0.1)' },
   roic: { line: '#8b5cf6', area: 'rgba(139, 92, 246, 0.1)' },
   roe: { line: '#3b82f6', area: 'rgba(59, 130, 246, 0.1)' },
   net_margin: { line: '#22c55e', area: 'rgba(34, 197, 94, 0.1)' },
@@ -112,39 +113,39 @@ function FinancialChart({
 
     const chart = createChart(chartContainerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: '#0f172a' },
-        textColor: '#94a3b8',
+        background: { type: ColorType.Solid, color: 'transparent' },
+        textColor: '#6b7280',
         fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
         attributionLogo: false
       },
       grid: {
-        vertLines: { color: '#1e293b' },
-        horzLines: { color: '#1e293b' }
+        vertLines: { color: 'rgba(0, 0, 0, 0.06)' },
+        horzLines: { color: 'rgba(0, 0, 0, 0.06)' }
       },
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: {
           width: 1,
-          color: '#8b5cf6',
+          color: '#6366f1',
           style: 2,
-          labelBackgroundColor: '#8b5cf6'
+          labelBackgroundColor: '#6366f1'
         },
         horzLine: {
           width: 1,
-          color: '#8b5cf6',
+          color: '#6366f1',
           style: 2,
-          labelBackgroundColor: '#8b5cf6'
+          labelBackgroundColor: '#6366f1'
         }
       },
       rightPriceScale: {
-        borderColor: '#334155',
+        borderColor: 'rgba(0, 0, 0, 0.1)',
         scaleMargins: {
           top: 0.1,
           bottom: showVolume ? 0.25 : 0.1
         }
       },
       timeScale: {
-        borderColor: '#334155',
+        borderColor: 'rgba(0, 0, 0, 0.1)',
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 5,

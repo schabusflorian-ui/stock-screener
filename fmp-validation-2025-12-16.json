@@ -1,0 +1,1044 @@
+{
+  "timestamp": "2025-12-16T13:13:54.684Z",
+  "symbolsValidated": 9,
+  "byMetric": {
+    "gross_margin": {
+      "exact": 6,
+      "match": 0,
+      "close": 1,
+      "concerning": 0,
+      "major": 0,
+      "missing_ours": 0,
+      "missing_fmp": 0,
+      "comparisons": [
+        {
+          "symbol": "MSFT",
+          "ours": 69.775,
+          "fmp": 68.76403958994187,
+          "diff": 1.459459244196362
+        },
+        {
+          "symbol": "GOOGL",
+          "ours": 57.833333333333336,
+          "fmp": 59.17214256622315,
+          "diff": 2.288455685679392
+        },
+        {
+          "symbol": "AAPL",
+          "ours": 46.175000000000004,
+          "fmp": 46.90516410716045,
+          "diff": 1.5688930378761075
+        },
+        {
+          "symbol": "KO",
+          "ours": 61.325,
+          "fmp": 61.63271300589555,
+          "diff": 0.500518427633403
+        },
+        {
+          "symbol": "WMT",
+          "ours": 24.85,
+          "fmp": 24.90665817048592,
+          "diff": 0.22774106046987425
+        },
+        {
+          "symbol": "NKE",
+          "ours": 44.75,
+          "fmp": 41.93798449612403,
+          "diff": 6.487670742885247
+        },
+        {
+          "symbol": "COST",
+          "ours": 12.649999999999999,
+          "fmp": 12.876304874264866,
+          "diff": 1.773111113258102
+        }
+      ]
+    },
+    "operating_margin": {
+      "exact": 3,
+      "match": 2,
+      "close": 0,
+      "concerning": 0,
+      "major": 2,
+      "missing_ours": 0,
+      "missing_fmp": 0,
+      "comparisons": [
+        {
+          "symbol": "MSFT",
+          "ours": 45.775000000000006,
+          "fmp": 46.266660313397686,
+          "diff": 1.0683429910403603
+        },
+        {
+          "symbol": "GOOGL",
+          "ours": 34.1,
+          "fmp": 32.18791263810811,
+          "diff": 5.76903778017791
+        },
+        {
+          "symbol": "AAPL",
+          "ours": 41.550000000000004,
+          "fmp": 31.970799762591884,
+          "diff": 26.058476698677346
+        },
+        {
+          "symbol": "KO",
+          "ours": 29.225,
+          "fmp": 30.694668820678512,
+          "diff": 4.905463763749382
+        },
+        {
+          "symbol": "WMT",
+          "ours": 4.25,
+          "fmp": 4.121406250666728,
+          "diff": 3.072213806922359
+        },
+        {
+          "symbol": "NKE",
+          "ours": 12.425,
+          "fmp": 7.3643410852713185,
+          "diff": 51.14529981491094
+        },
+        {
+          "symbol": "COST",
+          "ours": 3.65,
+          "fmp": 3.7982674194250174,
+          "diff": 3.981259293626794
+        }
+      ]
+    },
+    "net_margin": {
+      "exact": 3,
+      "match": 0,
+      "close": 2,
+      "concerning": 0,
+      "major": 2,
+      "missing_ours": 0,
+      "missing_fmp": 0,
+      "comparisons": [
+        {
+          "symbol": "MSFT",
+          "ours": 36.949999999999996,
+          "fmp": 35.70718690863545,
+          "diff": 3.421032782145424
+        },
+        {
+          "symbol": "GOOGL",
+          "ours": 28.3,
+          "fmp": 32.2330515179894,
+          "diff": 12.994724103147401
+        },
+        {
+          "symbol": "AAPL",
+          "ours": 26.950000000000003,
+          "fmp": 26.91506412181824,
+          "diff": 0.1297162780786959
+        },
+        {
+          "symbol": "KO",
+          "ours": 24.375,
+          "fmp": 27.339865304324107,
+          "diff": 11.466201398290025
+        },
+        {
+          "symbol": "WMT",
+          "ours": 2.3249999999999997,
+          "fmp": 3.2586077168268472,
+          "diff": 33.44102108080812
+        },
+        {
+          "symbol": "NKE",
+          "ours": 10.375,
+          "fmp": 6.2338501291989665,
+          "diff": 49.86678594348612
+        },
+        {
+          "symbol": "COST",
+          "ours": 2.875,
+          "fmp": 2.9608653630109383,
+          "diff": 2.9426779978569337
+        }
+      ]
+    },
+    "roe": {
+      "exact": 0,
+      "match": 0,
+      "close": 0,
+      "concerning": 0,
+      "major": 0,
+      "missing_ours": 0,
+      "missing_fmp": 7,
+      "comparisons": []
+    },
+    "roa": {
+      "exact": 0,
+      "match": 0,
+      "close": 0,
+      "concerning": 0,
+      "major": 0,
+      "missing_ours": 0,
+      "missing_fmp": 7,
+      "comparisons": []
+    },
+    "roic": {
+      "exact": 0,
+      "match": 0,
+      "close": 0,
+      "concerning": 0,
+      "major": 0,
+      "missing_ours": 0,
+      "missing_fmp": 7,
+      "comparisons": []
+    },
+    "current_ratio": {
+      "exact": 0,
+      "match": 4,
+      "close": 2,
+      "concerning": 0,
+      "major": 0,
+      "missing_ours": 1,
+      "missing_fmp": 0,
+      "comparisons": [
+        {
+          "symbol": "MSFT",
+          "ours": 1.27,
+          "fmp": 1.4005303860855136,
+          "diff": 9.775615118676567
+        },
+        {
+          "symbol": "GOOGL",
+          "ours": 1.95,
+          "fmp": 1.7473329984932195,
+          "diff": 10.962875217859665
+        },
+        {
+          "symbol": "AAPL",
+          "ours": 0.95,
+          "fmp": 0.8932929222186667,
+          "diff": 6.152801553979618
+        },
+        {
+          "symbol": "KO",
+          "ours": 1.06,
+          "fmp": 1.2110316014045068,
+          "diff": 13.30070451781491
+        },
+        {
+          "symbol": "NKE",
+          "ours": 2.4,
+          "fmp": 2.190266703326918,
+          "diff": 9.13817476100342
+        },
+        {
+          "symbol": "COST",
+          "ours": 0.97,
+          "fmp": 1.0384164573615595,
+          "diff": 6.812975178607895
+        }
+      ]
+    },
+    "quick_ratio": {
+      "exact": 1,
+      "match": 3,
+      "close": 1,
+      "concerning": 0,
+      "major": 1,
+      "missing_ours": 1,
+      "missing_fmp": 0,
+      "comparisons": [
+        {
+          "symbol": "MSFT",
+          "ours": 1.27,
+          "fmp": 1.3921597676968207,
+          "diff": 9.177493340492314
+        },
+        {
+          "symbol": "GOOGL",
+          "ours": 1.95,
+          "fmp": 1.7473329984932195,
+          "diff": 10.962875217859665
+        },
+        {
+          "symbol": "AAPL",
+          "ours": 0.91,
+          "fmp": 0.858770399261008,
+          "diff": 5.79267956546489
+        },
+        {
+          "symbol": "KO",
+          "ours": 0.9,
+          "fmp": 0.9975998933285923,
+          "diff": 10.286667244420181
+        },
+        {
+          "symbol": "NKE",
+          "ours": 2.4,
+          "fmp": 1.4466135093025387,
+          "diff": 49.570173264967686
+        },
+        {
+          "symbol": "COST",
+          "ours": 0.44,
+          "fmp": 0.5327113981581151,
+          "diff": 19.062467723452084
+        }
+      ]
+    },
+    "debt_to_equity": {
+      "exact": 0,
+      "match": 0,
+      "close": 0,
+      "concerning": 0,
+      "major": 0,
+      "missing_ours": 0,
+      "missing_fmp": 6,
+      "comparisons": [],
+      "both_null": null
+    },
+    "debt_to_assets": {
+      "exact": 0,
+      "match": 0,
+      "close": 0,
+      "concerning": 0,
+      "major": 0,
+      "missing_ours": 0,
+      "missing_fmp": 6,
+      "comparisons": [],
+      "both_null": null
+    },
+    "interest_coverage": {
+      "exact": 0,
+      "match": 0,
+      "close": 0,
+      "concerning": 0,
+      "major": 0,
+      "missing_ours": 0,
+      "missing_fmp": 1,
+      "comparisons": [],
+      "both_null": null
+    },
+    "asset_turnover": {
+      "exact": 3,
+      "match": 3,
+      "close": 0,
+      "concerning": 0,
+      "major": 0,
+      "missing_ours": 1,
+      "missing_fmp": 0,
+      "comparisons": [
+        {
+          "symbol": "MSFT",
+          "ours": 0.51,
+          "fmp": 0.4617137397442606,
+          "diff": 9.938371411409202
+        },
+        {
+          "symbol": "GOOGL",
+          "ours": 0.82,
+          "fmp": 0.7185447807795045,
+          "diff": 13.188464903711566
+        },
+        {
+          "symbol": "AAPL",
+          "ours": 1.03,
+          "fmp": 1.1584451663368045,
+          "diff": 11.738486146473235
+        },
+        {
+          "symbol": "KO",
+          "ours": 0.45,
+          "fmp": 0.4494601348484134,
+          "diff": 0.1200420409243793
+        },
+        {
+          "symbol": "NKE",
+          "ours": 1.22,
+          "fmp": 1.2439063588150212,
+          "diff": 1.9405249496996826
+        },
+        {
+          "symbol": "COST",
+          "ours": 3.56,
+          "fmp": 3.3867737649474576,
+          "diff": 4.9872427378193915
+        }
+      ]
+    },
+    "fcf_yield": {
+      "exact": 0,
+      "match": 0,
+      "close": 0,
+      "concerning": 0,
+      "major": 0,
+      "missing_ours": 7,
+      "missing_fmp": 0,
+      "comparisons": []
+    }
+  },
+  "bySymbol": [
+    {
+      "symbol": "MSFT",
+      "sector": "Technology",
+      "periodType": "ttm",
+      "metrics": {
+        "gross_margin": {
+          "ours": 69.775,
+          "fmp": 68.76403958994187,
+          "status": "exact",
+          "diff": 1.459459244196362
+        },
+        "operating_margin": {
+          "ours": 45.775000000000006,
+          "fmp": 46.266660313397686,
+          "status": "exact",
+          "diff": 1.0683429910403603
+        },
+        "net_margin": {
+          "ours": 36.949999999999996,
+          "fmp": 35.70718690863545,
+          "status": "exact",
+          "diff": 3.421032782145424
+        },
+        "roe": {
+          "ours": 39.35,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "roa": {
+          "ours": 20.125,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "roic": {
+          "ours": 25.225,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "current_ratio": {
+          "ours": 1.27,
+          "fmp": 1.4005303860855136,
+          "status": "match",
+          "diff": 9.775615118676567
+        },
+        "quick_ratio": {
+          "ours": 1.27,
+          "fmp": 1.3921597676968207,
+          "status": "match",
+          "diff": 9.177493340492314
+        },
+        "debt_to_equity": {
+          "ours": 0.3,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "debt_to_assets": {
+          "ours": 0.16,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "interest_coverage": {
+          "ours": null,
+          "fmp": null,
+          "status": "both_null",
+          "diff": null
+        },
+        "asset_turnover": {
+          "ours": 0.51,
+          "fmp": 0.4617137397442606,
+          "status": "match",
+          "diff": 9.938371411409202
+        },
+        "fcf_yield": {
+          "ours": null,
+          "fmp": 2.210851477169471,
+          "status": "missing_ours",
+          "diff": null
+        }
+      },
+      "matchCount": 6,
+      "totalCompared": 6,
+      "accuracy": "100"
+    },
+    {
+      "symbol": "GOOGL",
+      "sector": "Technology",
+      "periodType": "ttm",
+      "metrics": {
+        "gross_margin": {
+          "ours": 57.833333333333336,
+          "fmp": 59.17214256622315,
+          "status": "exact",
+          "diff": 2.288455685679392
+        },
+        "operating_margin": {
+          "ours": 34.1,
+          "fmp": 32.18791263810811,
+          "status": "match",
+          "diff": 5.76903778017791
+        },
+        "net_margin": {
+          "ours": 28.3,
+          "fmp": 32.2330515179894,
+          "status": "close",
+          "diff": 12.994724103147401
+        },
+        "roe": {
+          "ours": 32.46666666666667,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "roa": {
+          "ours": 22.933333333333334,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "roic": {
+          "ours": 29.433333333333334,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "current_ratio": {
+          "ours": 1.95,
+          "fmp": 1.7473329984932195,
+          "status": "close",
+          "diff": 10.962875217859665
+        },
+        "quick_ratio": {
+          "ours": 1.95,
+          "fmp": 1.7473329984932195,
+          "status": "match",
+          "diff": 10.962875217859665
+        },
+        "debt_to_equity": {
+          "ours": 0.11,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "debt_to_assets": {
+          "ours": 0.08,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "interest_coverage": {
+          "ours": null,
+          "fmp": null,
+          "status": "both_null",
+          "diff": null
+        },
+        "asset_turnover": {
+          "ours": 0.82,
+          "fmp": 0.7185447807795045,
+          "status": "match",
+          "diff": 13.188464903711566
+        },
+        "fcf_yield": {
+          "ours": null,
+          "fmp": 1.9774779468720465,
+          "status": "missing_ours",
+          "diff": null
+        }
+      },
+      "matchCount": 6,
+      "totalCompared": 6,
+      "accuracy": "100"
+    },
+    {
+      "symbol": "AAPL",
+      "sector": "Technology",
+      "periodType": "ttm",
+      "metrics": {
+        "gross_margin": {
+          "ours": 46.175000000000004,
+          "fmp": 46.90516410716045,
+          "status": "exact",
+          "diff": 1.5688930378761075
+        },
+        "operating_margin": {
+          "ours": 41.550000000000004,
+          "fmp": 31.970799762591884,
+          "status": "major",
+          "diff": 26.058476698677346
+        },
+        "net_margin": {
+          "ours": 26.950000000000003,
+          "fmp": 26.91506412181824,
+          "status": "exact",
+          "diff": 0.1297162780786959
+        },
+        "roe": {
+          "ours": 150.025,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "roa": {
+          "ours": 32.725,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "roic": {
+          "ours": 65.75,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "current_ratio": {
+          "ours": 0.95,
+          "fmp": 0.8932929222186667,
+          "status": "match",
+          "diff": 6.152801553979618
+        },
+        "quick_ratio": {
+          "ours": 0.91,
+          "fmp": 0.858770399261008,
+          "status": "exact",
+          "diff": 5.79267956546489
+        },
+        "debt_to_equity": {
+          "ours": 1.23,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "debt_to_assets": {
+          "ours": 0.3,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "interest_coverage": {
+          "ours": null,
+          "fmp": null,
+          "status": "both_null",
+          "diff": null
+        },
+        "asset_turnover": {
+          "ours": 1.03,
+          "fmp": 1.1584451663368045,
+          "status": "match",
+          "diff": 11.738486146473235
+        },
+        "fcf_yield": {
+          "ours": null,
+          "fmp": 2.4377270348406688,
+          "status": "missing_ours",
+          "diff": null
+        }
+      },
+      "matchCount": 5,
+      "totalCompared": 6,
+      "accuracy": "83"
+    },
+    {
+      "symbol": "KO",
+      "sector": "Manufacturing",
+      "periodType": "ttm",
+      "metrics": {
+        "gross_margin": {
+          "ours": 61.325,
+          "fmp": 61.63271300589555,
+          "status": "exact",
+          "diff": 0.500518427633403
+        },
+        "operating_margin": {
+          "ours": 29.225,
+          "fmp": 30.694668820678512,
+          "status": "match",
+          "diff": 4.905463763749382
+        },
+        "net_margin": {
+          "ours": 24.375,
+          "fmp": 27.339865304324107,
+          "status": "close",
+          "diff": 11.466201398290025
+        },
+        "roe": {
+          "ours": 15.549999999999999,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "roa": {
+          "ours": 11.575000000000001,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "roic": {
+          "ours": 15.15,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "current_ratio": {
+          "ours": 1.06,
+          "fmp": 1.2110316014045068,
+          "status": "close",
+          "diff": 13.30070451781491
+        },
+        "quick_ratio": {
+          "ours": 0.9,
+          "fmp": 0.9975998933285923,
+          "status": "match",
+          "diff": 10.286667244420181
+        },
+        "debt_to_equity": {
+          "ours": 0.58,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "debt_to_assets": {
+          "ours": 0.41,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "interest_coverage": {
+          "ours": null,
+          "fmp": null,
+          "status": "both_null",
+          "diff": null
+        },
+        "asset_turnover": {
+          "ours": 0.45,
+          "fmp": 0.4494601348484134,
+          "status": "exact",
+          "diff": 0.1200420409243793
+        },
+        "fcf_yield": {
+          "ours": null,
+          "fmp": 1.823526795960677,
+          "status": "missing_ours",
+          "diff": null
+        }
+      },
+      "matchCount": 6,
+      "totalCompared": 6,
+      "accuracy": "100"
+    },
+    {
+      "symbol": "WMT",
+      "sector": "Retail Trade",
+      "periodType": "ttm",
+      "metrics": {
+        "gross_margin": {
+          "ours": 24.85,
+          "fmp": 24.90665817048592,
+          "status": "exact",
+          "diff": 0.22774106046987425
+        },
+        "operating_margin": {
+          "ours": 4.25,
+          "fmp": 4.121406250666728,
+          "status": "exact",
+          "diff": 3.072213806922359
+        },
+        "net_margin": {
+          "ours": 2.3249999999999997,
+          "fmp": 3.2586077168268472,
+          "status": "major",
+          "diff": 33.44102108080812
+        },
+        "roe": {
+          "ours": 15.966666666666669,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "roa": {
+          "ours": 5.566666666666667,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "roic": {
+          "ours": 12.799999999999999,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "current_ratio": {
+          "ours": null,
+          "fmp": 0.8028894342100715,
+          "status": "missing_ours",
+          "diff": null
+        },
+        "quick_ratio": {
+          "ours": null,
+          "fmp": 0.23818822797497666,
+          "status": "missing_ours",
+          "diff": null
+        },
+        "debt_to_equity": {
+          "ours": null,
+          "fmp": null,
+          "status": "both_null",
+          "diff": null
+        },
+        "debt_to_assets": {
+          "ours": null,
+          "fmp": null,
+          "status": "both_null",
+          "diff": null
+        },
+        "interest_coverage": {
+          "ours": null,
+          "fmp": null,
+          "status": "both_null",
+          "diff": null
+        },
+        "asset_turnover": {
+          "ours": null,
+          "fmp": 2.4356446276697095,
+          "status": "missing_ours",
+          "diff": null
+        },
+        "fcf_yield": {
+          "ours": null,
+          "fmp": 3.484666215936908,
+          "status": "missing_ours",
+          "diff": null
+        }
+      },
+      "matchCount": 2,
+      "totalCompared": 3,
+      "accuracy": "67"
+    },
+    {
+      "symbol": "NKE",
+      "sector": "Manufacturing",
+      "periodType": "ttm",
+      "metrics": {
+        "gross_margin": {
+          "ours": 44.75,
+          "fmp": 41.93798449612403,
+          "status": "close",
+          "diff": 6.487670742885247
+        },
+        "operating_margin": {
+          "ours": 12.425,
+          "fmp": 7.3643410852713185,
+          "status": "major",
+          "diff": 51.14529981491094
+        },
+        "net_margin": {
+          "ours": 10.375,
+          "fmp": 6.2338501291989665,
+          "status": "major",
+          "diff": 49.86678594348612
+        },
+        "roe": {
+          "ours": 36.95,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "roa": {
+          "ours": 13.974999999999998,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "roic": {
+          "ours": 18.525,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "current_ratio": {
+          "ours": 2.4,
+          "fmp": 2.190266703326918,
+          "status": "match",
+          "diff": 9.13817476100342
+        },
+        "quick_ratio": {
+          "ours": 2.4,
+          "fmp": 1.4466135093025387,
+          "status": "major",
+          "diff": 49.570173264967686
+        },
+        "debt_to_equity": {
+          "ours": 0.97,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "debt_to_assets": {
+          "ours": 0.37,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "interest_coverage": {
+          "ours": null,
+          "fmp": null,
+          "status": "both_null",
+          "diff": null
+        },
+        "asset_turnover": {
+          "ours": 1.22,
+          "fmp": 1.2439063588150212,
+          "status": "exact",
+          "diff": 1.9405249496996826
+        },
+        "fcf_yield": {
+          "ours": null,
+          "fmp": 3.004343524378541,
+          "status": "missing_ours",
+          "diff": null
+        }
+      },
+      "matchCount": 3,
+      "totalCompared": 6,
+      "accuracy": "50"
+    },
+    {
+      "symbol": "COST",
+      "sector": "Retail Trade",
+      "periodType": "ttm",
+      "metrics": {
+        "gross_margin": {
+          "ours": 12.649999999999999,
+          "fmp": 12.876304874264866,
+          "status": "exact",
+          "diff": 1.773111113258102
+        },
+        "operating_margin": {
+          "ours": 3.65,
+          "fmp": 3.7982674194250174,
+          "status": "exact",
+          "diff": 3.981259293626794
+        },
+        "net_margin": {
+          "ours": 2.875,
+          "fmp": 2.9608653630109383,
+          "status": "exact",
+          "diff": 2.9426779978569337
+        },
+        "roe": {
+          "ours": 29.949999999999996,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "roa": {
+          "ours": 10.025,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "roic": {
+          "ours": 19.4,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "current_ratio": {
+          "ours": 0.97,
+          "fmp": 1.0384164573615595,
+          "status": "match",
+          "diff": 6.812975178607895
+        },
+        "quick_ratio": {
+          "ours": 0.44,
+          "fmp": 0.5327113981581151,
+          "status": "close",
+          "diff": 19.062467723452084
+        },
+        "debt_to_equity": {
+          "ours": 0.45,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "debt_to_assets": {
+          "ours": 0.15,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "interest_coverage": {
+          "ours": 59.4,
+          "fmp": null,
+          "status": "missing_fmp",
+          "diff": null
+        },
+        "asset_turnover": {
+          "ours": 3.56,
+          "fmp": 3.3867737649474576,
+          "status": "exact",
+          "diff": 4.9872427378193915
+        },
+        "fcf_yield": {
+          "ours": null,
+          "fmp": 2.356691722407888,
+          "status": "missing_ours",
+          "diff": null
+        }
+      },
+      "matchCount": 6,
+      "totalCompared": 6,
+      "accuracy": "100"
+    }
+  ],
+  "issues": [
+    {
+      "symbol": "NKE",
+      "metric": "operating_margin",
+      "label": "Operating Margin",
+      "ours": 12.425,
+      "fmp": 7.3643410852713185,
+      "diff": 51.14529981491094,
+      "sector": "Manufacturing"
+    },
+    {
+      "symbol": "NKE",
+      "metric": "net_margin",
+      "label": "Net Margin",
+      "ours": 10.375,
+      "fmp": 6.2338501291989665,
+      "diff": 49.86678594348612,
+      "sector": "Manufacturing"
+    },
+    {
+      "symbol": "NKE",
+      "metric": "quick_ratio",
+      "label": "Quick Ratio",
+      "ours": 2.4,
+      "fmp": 1.4466135093025387,
+      "diff": 49.570173264967686,
+      "sector": "Manufacturing"
+    },
+    {
+      "symbol": "WMT",
+      "metric": "net_margin",
+      "label": "Net Margin",
+      "ours": 2.3249999999999997,
+      "fmp": 3.2586077168268472,
+      "diff": 33.44102108080812,
+      "sector": "Retail Trade"
+    },
+    {
+      "symbol": "AAPL",
+      "metric": "operating_margin",
+      "label": "Operating Margin",
+      "ours": 41.550000000000004,
+      "fmp": 31.970799762591884,
+      "diff": 26.058476698677346,
+      "sector": "Technology"
+    }
+  ]
+}

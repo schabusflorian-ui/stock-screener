@@ -17,6 +17,8 @@ class SectorAnalysisService {
    * Get all sectors with aggregate metrics
    */
   getSectorOverview(periodType = 'annual') {
+    // Use bounded averages to exclude extreme outliers
+    // Reasonable bounds: ROIC/ROE -100 to 200%, margins -100 to 100%, growth -100 to 500%
     const sql = `
       WITH latest_metrics AS (
         SELECT
@@ -25,9 +27,10 @@ class SectorAnalysisService {
           c.industry,
           c.symbol,
           c.name,
-          c.market_cap
+          pm.market_cap
         FROM calculated_metrics m
         JOIN companies c ON m.company_id = c.id
+        LEFT JOIN price_metrics pm ON pm.company_id = c.id
         WHERE m.period_type = ?
           AND m.fiscal_period = (
             SELECT MAX(m2.fiscal_period)
@@ -41,32 +44,32 @@ class SectorAnalysisService {
         sector,
         COUNT(DISTINCT symbol) as company_count,
 
-        -- Profitability
-        ROUND(AVG(roic), 2) as avg_roic,
-        ROUND(AVG(roe), 2) as avg_roe,
-        ROUND(AVG(roa), 2) as avg_roa,
+        -- Profitability (bounded to exclude extreme outliers)
+        ROUND(AVG(CASE WHEN roic BETWEEN -100 AND 200 THEN roic END), 2) as avg_roic,
+        ROUND(AVG(CASE WHEN roe BETWEEN -100 AND 200 THEN roe END), 2) as avg_roe,
+        ROUND(AVG(CASE WHEN roa BETWEEN -100 AND 100 THEN roa END), 2) as avg_roa,
 
-        -- Margins
-        ROUND(AVG(gross_margin), 2) as avg_gross_margin,
-        ROUND(AVG(operating_margin), 2) as avg_operating_margin,
-        ROUND(AVG(net_margin), 2) as avg_net_margin,
+        -- Margins (bounded -100% to 100%)
+        ROUND(AVG(CASE WHEN gross_margin BETWEEN -100 AND 100 THEN gross_margin END), 2) as avg_gross_margin,
+        ROUND(AVG(CASE WHEN operating_margin BETWEEN -100 AND 100 THEN operating_margin END), 2) as avg_operating_margin,
+        ROUND(AVG(CASE WHEN net_margin BETWEEN -100 AND 100 THEN net_margin END), 2) as avg_net_margin,
 
-        -- Valuation
-        ROUND(AVG(pe_ratio), 2) as avg_pe_ratio,
-        ROUND(AVG(pb_ratio), 2) as avg_pb_ratio,
-        ROUND(AVG(ev_ebitda), 2) as avg_ev_ebitda,
+        -- Valuation (bounded to reasonable ranges)
+        ROUND(AVG(CASE WHEN pe_ratio BETWEEN 0 AND 500 THEN pe_ratio END), 2) as avg_pe_ratio,
+        ROUND(AVG(CASE WHEN pb_ratio BETWEEN 0 AND 50 THEN pb_ratio END), 2) as avg_pb_ratio,
+        ROUND(AVG(CASE WHEN ev_ebitda BETWEEN 0 AND 100 THEN ev_ebitda END), 2) as avg_ev_ebitda,
 
         -- Financial Health
-        ROUND(AVG(debt_to_equity), 2) as avg_debt_to_equity,
-        ROUND(AVG(current_ratio), 2) as avg_current_ratio,
+        ROUND(AVG(CASE WHEN debt_to_equity BETWEEN 0 AND 10 THEN debt_to_equity END), 2) as avg_debt_to_equity,
+        ROUND(AVG(CASE WHEN current_ratio BETWEEN 0 AND 20 THEN current_ratio END), 2) as avg_current_ratio,
 
-        -- Growth
-        ROUND(AVG(revenue_growth_yoy), 2) as avg_revenue_growth,
-        ROUND(AVG(earnings_growth_yoy), 2) as avg_earnings_growth,
+        -- Growth (bounded -100% to 500%)
+        ROUND(AVG(CASE WHEN revenue_growth_yoy BETWEEN -100 AND 500 THEN revenue_growth_yoy END), 2) as avg_revenue_growth,
+        ROUND(AVG(CASE WHEN earnings_growth_yoy BETWEEN -100 AND 500 THEN earnings_growth_yoy END), 2) as avg_earnings_growth,
 
         -- Cash Flow
-        ROUND(AVG(fcf_yield), 2) as avg_fcf_yield,
-        ROUND(AVG(fcf_margin), 2) as avg_fcf_margin,
+        ROUND(AVG(CASE WHEN fcf_yield BETWEEN -100 AND 100 THEN fcf_yield END), 2) as avg_fcf_yield,
+        ROUND(AVG(CASE WHEN fcf_margin BETWEEN -100 AND 100 THEN fcf_margin END), 2) as avg_fcf_margin,
 
         -- Market Cap totals
         ROUND(SUM(market_cap) / 1e9, 2) as total_market_cap_b,
@@ -94,9 +97,10 @@ class SectorAnalysisService {
           c.industry,
           c.symbol,
           c.name,
-          c.market_cap
+          pm.market_cap
         FROM calculated_metrics m
         JOIN companies c ON m.company_id = c.id
+        LEFT JOIN price_metrics pm ON pm.company_id = c.id
         WHERE m.period_type = ?
           AND m.fiscal_period = (
             SELECT MAX(m2.fiscal_period)
@@ -111,29 +115,29 @@ class SectorAnalysisService {
         industry,
         COUNT(DISTINCT symbol) as company_count,
 
-        -- Profitability
-        ROUND(AVG(roic), 2) as avg_roic,
-        ROUND(AVG(roe), 2) as avg_roe,
-        ROUND(AVG(roa), 2) as avg_roa,
+        -- Profitability (bounded to exclude extreme outliers)
+        ROUND(AVG(CASE WHEN roic BETWEEN -100 AND 200 THEN roic END), 2) as avg_roic,
+        ROUND(AVG(CASE WHEN roe BETWEEN -100 AND 200 THEN roe END), 2) as avg_roe,
+        ROUND(AVG(CASE WHEN roa BETWEEN -100 AND 100 THEN roa END), 2) as avg_roa,
 
-        -- Margins
-        ROUND(AVG(gross_margin), 2) as avg_gross_margin,
-        ROUND(AVG(operating_margin), 2) as avg_operating_margin,
-        ROUND(AVG(net_margin), 2) as avg_net_margin,
+        -- Margins (bounded -100% to 100%)
+        ROUND(AVG(CASE WHEN gross_margin BETWEEN -100 AND 100 THEN gross_margin END), 2) as avg_gross_margin,
+        ROUND(AVG(CASE WHEN operating_margin BETWEEN -100 AND 100 THEN operating_margin END), 2) as avg_operating_margin,
+        ROUND(AVG(CASE WHEN net_margin BETWEEN -100 AND 100 THEN net_margin END), 2) as avg_net_margin,
 
         -- Valuation
-        ROUND(AVG(pe_ratio), 2) as avg_pe_ratio,
-        ROUND(AVG(pb_ratio), 2) as avg_pb_ratio,
+        ROUND(AVG(CASE WHEN pe_ratio BETWEEN 0 AND 500 THEN pe_ratio END), 2) as avg_pe_ratio,
+        ROUND(AVG(CASE WHEN pb_ratio BETWEEN 0 AND 50 THEN pb_ratio END), 2) as avg_pb_ratio,
 
         -- Financial Health
-        ROUND(AVG(debt_to_equity), 2) as avg_debt_to_equity,
-        ROUND(AVG(current_ratio), 2) as avg_current_ratio,
+        ROUND(AVG(CASE WHEN debt_to_equity BETWEEN 0 AND 10 THEN debt_to_equity END), 2) as avg_debt_to_equity,
+        ROUND(AVG(CASE WHEN current_ratio BETWEEN 0 AND 20 THEN current_ratio END), 2) as avg_current_ratio,
 
         -- Growth
-        ROUND(AVG(revenue_growth_yoy), 2) as avg_revenue_growth,
+        ROUND(AVG(CASE WHEN revenue_growth_yoy BETWEEN -100 AND 500 THEN revenue_growth_yoy END), 2) as avg_revenue_growth,
 
         -- Cash Flow
-        ROUND(AVG(fcf_yield), 2) as avg_fcf_yield,
+        ROUND(AVG(CASE WHEN fcf_yield BETWEEN -100 AND 100 THEN fcf_yield END), 2) as avg_fcf_yield,
 
         -- Market Cap
         ROUND(SUM(market_cap) / 1e9, 2) as total_market_cap_b
@@ -221,13 +225,17 @@ class SectorAnalysisService {
    * Get sector rotation data - historical performance by sector
    */
   getSectorRotation(periods = 4, periodType = 'annual') {
-    // First get the distinct periods we want to analyze
+    // First get the distinct periods that have actual data
+    // Focus on main fiscal year endings with significant company counts
     const periodsQuery = `
-      SELECT DISTINCT fiscal_period
+      SELECT fiscal_period, COUNT(*) as company_count
       FROM calculated_metrics
       WHERE period_type = ?
+        AND roic IS NOT NULL
         AND fiscal_period <= date('now')
         AND fiscal_period >= date('now', '-10 years')
+      GROUP BY fiscal_period
+      HAVING COUNT(*) >= 100
       ORDER BY fiscal_period DESC
       LIMIT ?
     `;
@@ -246,11 +254,11 @@ class SectorAnalysisService {
           c.sector,
           m.fiscal_period,
           COUNT(DISTINCT c.symbol) as company_count,
-          ROUND(AVG(m.roic), 2) as avg_roic,
-          ROUND(AVG(m.roe), 2) as avg_roe,
-          ROUND(AVG(m.net_margin), 2) as avg_net_margin,
-          ROUND(AVG(m.revenue_growth_yoy), 2) as avg_revenue_growth,
-          ROUND(AVG(m.fcf_yield), 2) as avg_fcf_yield
+          ROUND(AVG(CASE WHEN m.roic BETWEEN -100 AND 200 THEN m.roic END), 2) as avg_roic,
+          ROUND(AVG(CASE WHEN m.roe BETWEEN -100 AND 200 THEN m.roe END), 2) as avg_roe,
+          ROUND(AVG(CASE WHEN m.net_margin BETWEEN -100 AND 100 THEN m.net_margin END), 2) as avg_net_margin,
+          ROUND(AVG(CASE WHEN m.revenue_growth_yoy BETWEEN -100 AND 500 THEN m.revenue_growth_yoy END), 2) as avg_revenue_growth,
+          ROUND(AVG(CASE WHEN m.fcf_yield BETWEEN -100 AND 100 THEN m.fcf_yield END), 2) as avg_fcf_yield
         FROM calculated_metrics m
         JOIN companies c ON m.company_id = c.id
         WHERE m.period_type = ?
@@ -344,20 +352,20 @@ class SectorAnalysisService {
         industry,
         COUNT(DISTINCT symbol) as company_count,
 
-        -- Margin metrics
-        ROUND(AVG(gross_margin), 2) as avg_gross_margin,
-        ROUND(MIN(gross_margin), 2) as min_gross_margin,
-        ROUND(MAX(gross_margin), 2) as max_gross_margin,
+        -- Margin metrics (bounded to exclude extreme outliers)
+        ROUND(AVG(CASE WHEN gross_margin BETWEEN -100 AND 100 THEN gross_margin END), 2) as avg_gross_margin,
+        ROUND(MIN(CASE WHEN gross_margin BETWEEN -100 AND 100 THEN gross_margin END), 2) as min_gross_margin,
+        ROUND(MAX(CASE WHEN gross_margin BETWEEN -100 AND 100 THEN gross_margin END), 2) as max_gross_margin,
 
-        ROUND(AVG(operating_margin), 2) as avg_operating_margin,
-        ROUND(MIN(operating_margin), 2) as min_operating_margin,
-        ROUND(MAX(operating_margin), 2) as max_operating_margin,
+        ROUND(AVG(CASE WHEN operating_margin BETWEEN -100 AND 100 THEN operating_margin END), 2) as avg_operating_margin,
+        ROUND(MIN(CASE WHEN operating_margin BETWEEN -100 AND 100 THEN operating_margin END), 2) as min_operating_margin,
+        ROUND(MAX(CASE WHEN operating_margin BETWEEN -100 AND 100 THEN operating_margin END), 2) as max_operating_margin,
 
-        ROUND(AVG(net_margin), 2) as avg_net_margin,
-        ROUND(MIN(net_margin), 2) as min_net_margin,
-        ROUND(MAX(net_margin), 2) as max_net_margin,
+        ROUND(AVG(CASE WHEN net_margin BETWEEN -100 AND 100 THEN net_margin END), 2) as avg_net_margin,
+        ROUND(MIN(CASE WHEN net_margin BETWEEN -100 AND 100 THEN net_margin END), 2) as min_net_margin,
+        ROUND(MAX(CASE WHEN net_margin BETWEEN -100 AND 100 THEN net_margin END), 2) as max_net_margin,
 
-        ROUND(AVG(fcf_margin), 2) as avg_fcf_margin
+        ROUND(AVG(CASE WHEN fcf_margin BETWEEN -100 AND 100 THEN fcf_margin END), 2) as avg_fcf_margin
 
       FROM latest_metrics
       GROUP BY sector, industry
@@ -380,9 +388,18 @@ class SectorAnalysisService {
           c.industry,
           c.symbol,
           c.name,
-          c.market_cap
+          c.market_cap,
+          pm.current_price,
+          pm.change_1d,
+          pm.change_1w,
+          pm.change_1m,
+          pm.change_ytd,
+          pm.change_1y,
+          pm.high_52w,
+          pm.low_52w
         FROM calculated_metrics m
         JOIN companies c ON m.company_id = c.id
+        LEFT JOIN price_metrics pm ON pm.company_id = c.id
         WHERE m.period_type = ?
           AND m.fiscal_period = (
             SELECT MAX(m2.fiscal_period)
@@ -398,6 +415,16 @@ class SectorAnalysisService {
         industry,
         ROUND(market_cap / 1e9, 2) as market_cap_b,
         fiscal_period,
+
+        -- Price data
+        ROUND(current_price, 2) as current_price,
+        ROUND(change_1d, 2) as change_1d,
+        ROUND(change_1w, 2) as change_1w,
+        ROUND(change_1m, 2) as change_1m,
+        ROUND(change_ytd, 2) as change_ytd,
+        ROUND(change_1y, 2) as change_1y,
+        ROUND(high_52w, 2) as high_52w,
+        ROUND(low_52w, 2) as low_52w,
 
         -- Profitability
         ROUND(roic, 2) as roic,
@@ -467,9 +494,15 @@ class SectorAnalysisService {
           c.industry,
           c.symbol,
           c.name,
-          c.market_cap
+          c.market_cap,
+          pm.current_price,
+          pm.change_1d,
+          pm.change_1w,
+          pm.change_ytd,
+          pm.change_1y
         FROM calculated_metrics m
         JOIN companies c ON m.company_id = c.id
+        LEFT JOIN price_metrics pm ON pm.company_id = c.id
         WHERE m.period_type = ?
           AND m.fiscal_period = (
             SELECT MAX(m2.fiscal_period)
@@ -485,6 +518,13 @@ class SectorAnalysisService {
         sector,
         ROUND(market_cap / 1e9, 2) as market_cap_b,
         fiscal_period,
+
+        -- Price data
+        ROUND(current_price, 2) as current_price,
+        ROUND(change_1d, 2) as change_1d,
+        ROUND(change_1w, 2) as change_1w,
+        ROUND(change_ytd, 2) as change_ytd,
+        ROUND(change_1y, 2) as change_1y,
 
         ROUND(roic, 2) as roic,
         ROUND(roe, 2) as roe,
@@ -544,8 +584,29 @@ class SectorAnalysisService {
   }
 
   // Helper methods
+  // Outlier bounds for different metric types
+  static BOUNDS = {
+    roic: [-100, 200],
+    roe: [-100, 200],
+    roa: [-100, 100],
+    net_margin: [-100, 100],
+    operating_margin: [-100, 100],
+    gross_margin: [-100, 100],
+    fcf_yield: [-100, 100],
+    fcf_margin: [-100, 100],
+    pe_ratio: [0, 500],
+    pb_ratio: [0, 50],
+    ev_ebitda: [0, 100],
+    debt_to_equity: [0, 10],
+    current_ratio: [0, 20],
+    revenue_growth: [-100, 500],
+    earnings_growth: [-100, 500]
+  };
+
   avg(arr, field) {
-    const values = arr.map(x => x[field]).filter(v => v !== null && v !== undefined);
+    const bounds = SectorAnalysisService.BOUNDS[field] || [-Infinity, Infinity];
+    const values = arr.map(x => x[field])
+      .filter(v => v !== null && v !== undefined && v >= bounds[0] && v <= bounds[1]);
     if (values.length === 0) return null;
     return +(values.reduce((a, b) => a + b, 0) / values.length).toFixed(2);
   }

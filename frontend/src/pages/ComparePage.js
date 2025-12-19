@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { companyAPI } from '../services/api';
+import { companyAPI, pricesAPI } from '../services/api';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -66,6 +66,21 @@ const METRIC_CATEGORIES = {
     metrics: [
       { key: 'asset_turnover', label: 'Asset Turnover', format: 'ratio', description: 'Revenue / Assets', higherBetter: true },
     ]
+  },
+  price: {
+    label: 'Price Performance',
+    metrics: [
+      { key: 'current_price', label: 'Current Price', format: 'currency_price', description: 'Latest stock price', higherBetter: null },
+      { key: 'change_1d', label: '1D Change', format: 'percent', description: '1 day price change', higherBetter: true },
+      { key: 'change_1w', label: '1W Change', format: 'percent', description: '1 week price change', higherBetter: true },
+      { key: 'change_1m', label: '1M Change', format: 'percent', description: '1 month price change', higherBetter: true },
+      { key: 'change_3m', label: '3M Change', format: 'percent', description: '3 month price change', higherBetter: true },
+      { key: 'change_ytd', label: 'YTD Change', format: 'percent', description: 'Year-to-date price change', higherBetter: true },
+      { key: 'change_1y', label: '1Y Change', format: 'percent', description: '1 year price change', higherBetter: true },
+      { key: 'high_52w', label: '52W High', format: 'currency_price', description: '52 week high', higherBetter: null },
+      { key: 'low_52w', label: '52W Low', format: 'currency_price', description: '52 week low', higherBetter: null },
+      { key: 'from_52w_high', label: 'From 52W High', format: 'percent', description: 'Distance from 52 week high', higherBetter: false },
+    ]
   }
 };
 
@@ -88,6 +103,7 @@ const formatValue = (value, format) => {
       if (Math.abs(value) >= 1e9) return `$${(value / 1e9).toFixed(1)}B`;
       if (Math.abs(value) >= 1e6) return `$${(value / 1e6).toFixed(1)}M`;
       return `$${value.toFixed(0)}`;
+    case 'currency_price': return `$${value.toFixed(2)}`;
     default: return value.toFixed(2);
   }
 };
@@ -106,6 +122,7 @@ function ComparePage() {
   const [selectedCompanies, setSelectedCompanies] = useState([]);
   const [companyData, setCompanyData] = useState({});
   const [breakdownData, setBreakdownData] = useState({});
+  const [priceData, setPriceData] = useState({});
   const [periodType, setPeriodType] = useState('annual');
   const [selectedMetric, setSelectedMetric] = useState('roic');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -146,16 +163,35 @@ function ComparePage() {
   // Load data for selected companies
   const loadCompanyData = useCallback(async (symbol) => {
     try {
-      const [companyRes, metricsRes, breakdownRes] = await Promise.all([
+      const [companyRes, metricsRes, breakdownRes, priceMetricsRes] = await Promise.all([
         companyAPI.getOne(symbol),
         companyAPI.getMetrics(symbol, { limit: 10, periodType }),
-        companyAPI.getBreakdown(symbol, { limit: 5, periodType })
+        companyAPI.getBreakdown(symbol, { limit: 5, periodType }),
+        pricesAPI.getMetrics(symbol).catch(() => ({ data: null }))
       ]);
+
+      // Parse price metrics
+      const pm = priceMetricsRes.data;
+      const priceMetrics = pm ? {
+        current_price: pm.current_price,
+        change_1d: pm.change_1d,
+        change_1w: pm.change_1w,
+        change_1m: pm.change_1m,
+        change_3m: pm.change_3m,
+        change_ytd: pm.change_ytd,
+        change_1y: pm.change_1y,
+        high_52w: pm.high_52w,
+        low_52w: pm.low_52w,
+        from_52w_high: pm.current_price && pm.high_52w ? ((pm.current_price - pm.high_52w) / pm.high_52w * 100) : null
+      } : {};
+
       return {
         company: companyRes.data.company,
-        latestMetrics: companyRes.data.latest_metrics,
+        latestMetrics: { ...companyRes.data.latest_metrics, ...priceMetrics },
         historicalMetrics: metricsRes.data.metrics,
-        breakdown: breakdownRes.data.breakdown
+        breakdown: breakdownRes.data.breakdown,
+        fiscalYearEnd: metricsRes.data.fiscal_year_end,
+        priceMetrics
       };
     } catch (error) {
       console.error(`Error loading data for ${symbol}:`, error);
@@ -237,7 +273,19 @@ function ComparePage() {
 
     const sortedDates = Array.from(allDates).sort();
     return sortedDates.map(date => {
-      const point = { date: date.substring(0, 7) };
+      // Use fiscal_label from the first company that has this date
+      let fiscalLabel = null;
+      for (const symbol of selectedCompanies) {
+        const metric = companyData[symbol]?.historicalMetrics?.find(m => m.fiscal_period === date);
+        if (metric?.fiscal_label) {
+          fiscalLabel = metric.fiscal_label;
+          break;
+        }
+      }
+      const point = {
+        date: fiscalLabel || date.substring(0, 7),
+        rawDate: date
+      };
       selectedCompanies.forEach(symbol => {
         const metric = companyData[symbol]?.historicalMetrics?.find(m => m.fiscal_period === date);
         point[symbol] = metric?.[selectedMetric] ?? null;
@@ -292,7 +340,19 @@ function ComparePage() {
 
     const sortedDates = Array.from(allDates).sort();
     return sortedDates.map(date => {
-      const point = { date: date.substring(0, 7) };
+      // Use fiscal_label from the first company that has this date
+      let fiscalLabel = null;
+      for (const symbol of selectedCompanies) {
+        const bd = breakdownData[symbol]?.find(b => b.period === date);
+        if (bd?.fiscal_label) {
+          fiscalLabel = bd.fiscal_label;
+          break;
+        }
+      }
+      const point = {
+        date: fiscalLabel || date.substring(0, 7),
+        rawDate: date
+      };
       selectedCompanies.forEach(symbol => {
         const bd = breakdownData[symbol]?.find(b => b.period === date);
         point[`${symbol}_revenue`] = bd?.revenue ? bd.revenue / 1e9 : null;
@@ -332,42 +392,45 @@ function ComparePage() {
     });
   };
 
-  // Calculate score for each company
+  // Get quality scores from backend (consistent with CompanyPage and Dashboard)
   const getCompanyScores = () => {
     return selectedCompanies.map(symbol => {
       const metrics = companyData[symbol]?.latestMetrics;
       if (!metrics) return { symbol, score: 0, details: {} };
 
-      let score = 0;
+      // Use backend-calculated data_quality_score for consistency
+      const score = metrics.data_quality_score || 0;
+
+      // Generate detail labels based on component values (same thresholds as backend)
       const details = {};
 
-      // ROIC score (0-25 points)
-      if (metrics.roic > 20) { score += 25; details.roic = 'Excellent'; }
-      else if (metrics.roic > 15) { score += 20; details.roic = 'Good'; }
-      else if (metrics.roic > 10) { score += 15; details.roic = 'Average'; }
-      else if (metrics.roic > 5) { score += 10; details.roic = 'Below Avg'; }
-      else { score += 0; details.roic = 'Poor'; }
+      // ROIC rating
+      if (metrics.roic >= 30) details.roic = 'Excellent';
+      else if (metrics.roic >= 20) details.roic = 'Very Good';
+      else if (metrics.roic >= 15) details.roic = 'Good';
+      else if (metrics.roic >= 10) details.roic = 'Average';
+      else details.roic = 'Below Avg';
 
-      // Net Margin score (0-25 points)
-      if (metrics.net_margin > 20) { score += 25; details.margin = 'Excellent'; }
-      else if (metrics.net_margin > 15) { score += 20; details.margin = 'Good'; }
-      else if (metrics.net_margin > 10) { score += 15; details.margin = 'Average'; }
-      else if (metrics.net_margin > 5) { score += 10; details.margin = 'Below Avg'; }
-      else { score += 0; details.margin = 'Poor'; }
+      // Net Margin rating
+      if (metrics.net_margin >= 20) details.margin = 'Excellent';
+      else if (metrics.net_margin >= 15) details.margin = 'Very Good';
+      else if (metrics.net_margin >= 10) details.margin = 'Good';
+      else if (metrics.net_margin >= 5) details.margin = 'Average';
+      else details.margin = 'Below Avg';
 
-      // Debt/Equity score (0-25 points)
-      if (metrics.debt_to_equity < 0.3) { score += 25; details.debt = 'Excellent'; }
-      else if (metrics.debt_to_equity < 0.5) { score += 20; details.debt = 'Good'; }
-      else if (metrics.debt_to_equity < 1) { score += 15; details.debt = 'Average'; }
-      else if (metrics.debt_to_equity < 2) { score += 10; details.debt = 'Below Avg'; }
-      else { score += 0; details.debt = 'Poor'; }
+      // Debt/Equity rating (lower is better)
+      if (metrics.debt_to_equity <= 0.3) details.debt = 'Excellent';
+      else if (metrics.debt_to_equity <= 0.5) details.debt = 'Very Good';
+      else if (metrics.debt_to_equity <= 1.0) details.debt = 'Good';
+      else if (metrics.debt_to_equity <= 2.0) details.debt = 'Average';
+      else details.debt = 'High';
 
-      // FCF Yield score (0-25 points)
-      if (metrics.fcf_yield > 8) { score += 25; details.fcf = 'Excellent'; }
-      else if (metrics.fcf_yield > 5) { score += 20; details.fcf = 'Good'; }
-      else if (metrics.fcf_yield > 3) { score += 15; details.fcf = 'Average'; }
-      else if (metrics.fcf_yield > 0) { score += 10; details.fcf = 'Below Avg'; }
-      else { score += 0; details.fcf = 'Poor'; }
+      // FCF Yield rating
+      if (metrics.fcf_yield >= 8) details.fcf = 'Excellent';
+      else if (metrics.fcf_yield >= 5) details.fcf = 'Very Good';
+      else if (metrics.fcf_yield >= 3) details.fcf = 'Good';
+      else if (metrics.fcf_yield >= 1) details.fcf = 'Average';
+      else details.fcf = 'Below Avg';
 
       return { symbol, score, details };
     }).sort((a, b) => b.score - a.score);
@@ -439,24 +502,32 @@ function ComparePage() {
       {/* Selected Companies Tags */}
       {selectedCompanies.length > 0 && (
         <div className="selected-companies">
-          {selectedCompanies.map((symbol, idx) => (
-            <div
-              key={symbol}
-              className="company-tag"
-              style={{ borderColor: COMPANY_COLORS[idx] }}
-            >
-              <span className="tag-color" style={{ backgroundColor: COMPANY_COLORS[idx] }} />
-              <Link to={`/company/${symbol}`} className="tag-symbol">{symbol}</Link>
-              <span className="tag-name">{companyData[symbol]?.company?.name}</span>
-              <WatchlistButton
-                symbol={symbol}
-                name={companyData[symbol]?.company?.name}
-                sector={companyData[symbol]?.company?.sector}
-                size="small"
-              />
-              <button className="tag-remove" onClick={() => removeCompany(symbol)}>×</button>
-            </div>
-          ))}
+          {selectedCompanies.map((symbol, idx) => {
+            const fye = companyData[symbol]?.fiscalYearEnd;
+            return (
+              <div
+                key={symbol}
+                className="company-tag"
+                style={{ borderColor: COMPANY_COLORS[idx] }}
+              >
+                <span className="tag-color" style={{ backgroundColor: COMPANY_COLORS[idx] }} />
+                <Link to={`/company/${symbol}`} className="tag-symbol">{symbol}</Link>
+                <span className="tag-name">{companyData[symbol]?.company?.name}</span>
+                {fye?.monthName && (
+                  <span className="tag-fiscal" title={`Fiscal year ends ${fye.monthName} ${fye.day}`}>
+                    FYE: {fye.monthName?.substring(0, 3)}
+                  </span>
+                )}
+                <WatchlistButton
+                  symbol={symbol}
+                  name={companyData[symbol]?.company?.name}
+                  sector={companyData[symbol]?.company?.sector}
+                  size="small"
+                />
+                <button className="tag-remove" onClick={() => removeCompany(symbol)}>×</button>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -863,7 +934,9 @@ function ComparePage() {
                             <div key={symbol} className="breakdown-card" style={{ borderColor: COMPANY_COLORS[idx] }}>
                               <div className="breakdown-header">
                                 <span style={{ color: COMPANY_COLORS[idx] }}>{symbol}</span>
-                                <span className="period">{bd.period?.substring(0, 7)}</span>
+                                <span className="period" title={bd.period}>
+                                  {bd.fiscal_label || bd.period?.substring(0, 7)}
+                                </span>
                               </div>
                               <div className="breakdown-item">
                                 <span>Revenue</span>

@@ -1,0 +1,4478 @@
+{
+  "timestamp": "2025-12-14T16:36:23.723Z",
+  "sampleSize": 25,
+  "comparisonMode": "ttm",
+  "companies": [
+    {
+      "symbol": "AAPL",
+      "fiscalYear": 2024,
+      "matchScore": 0.5,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 45.825,
+          "yahoo": 46.905,
+          "diff": 2.302526383114803,
+          "absoluteDiff": 1.0799999999999983,
+          "status": "close"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 40.875,
+          "yahoo": 31.647,
+          "diff": 29.15916200587734,
+          "absoluteDiff": 9.228000000000002,
+          "status": "major"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 25.925,
+          "yahoo": 26.915001999999998,
+          "diff": 3.6782534885191427,
+          "absoluteDiff": 0.9900019999999969,
+          "status": "close"
+        },
+        {
+          "metric": "roe",
+          "ours": 130.925,
+          "yahoo": 171.42199,
+          "diff": 23.6241511372024,
+          "absoluteDiff": 40.49698999999998,
+          "status": "concerning"
+        },
+        {
+          "metric": "roa",
+          "ours": 29.025000000000002,
+          "yahoo": 22.964000000000002,
+          "diff": 26.393485455495558,
+          "absoluteDiff": 6.061,
+          "status": "concerning"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": 0.95,
+          "yahoo": 0.893,
+          "diff": 6.382978723404248,
+          "absoluteDiff": 0.05699999999999994,
+          "status": "acceptable"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": 0.91,
+          "yahoo": 0.771,
+          "diff": 18.028534370946826,
+          "absoluteDiff": 0.139,
+          "status": "concerning"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": 1.23,
+          "yahoo": 1.52411,
+          "diff": 19.297163590554494,
+          "absoluteDiff": 0.2941100000000001,
+          "status": "acceptable"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 37.302948,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 55.75636,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    },
+    {
+      "symbol": "MSFT",
+      "fiscalYear": 2025,
+      "matchScore": 0.875,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 69.775,
+          "yahoo": 68.76400000000001,
+          "diff": 1.4702460589843458,
+          "absoluteDiff": 1.0109999999999957,
+          "status": "exact"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 45.775000000000006,
+          "yahoo": 48.873,
+          "diff": 6.338878317271279,
+          "absoluteDiff": 3.097999999999992,
+          "status": "acceptable"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 36.949999999999996,
+          "yahoo": 35.707,
+          "diff": 3.4811101464698657,
+          "absoluteDiff": 1.242999999999995,
+          "status": "close"
+        },
+        {
+          "metric": "roe",
+          "ours": 37.85,
+          "yahoo": 32.241002,
+          "diff": 17.39709578505035,
+          "absoluteDiff": 5.608998,
+          "status": "acceptable"
+        },
+        {
+          "metric": "roa",
+          "ours": 19.400000000000002,
+          "yahoo": 14.655999999999999,
+          "diff": 32.368995633187794,
+          "absoluteDiff": 4.744000000000003,
+          "status": "concerning"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": 1.27,
+          "yahoo": 1.401,
+          "diff": 9.350463954318345,
+          "absoluteDiff": 0.131,
+          "status": "acceptable"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": 1.27,
+          "yahoo": 1.254,
+          "diff": 1.2759170653907506,
+          "absoluteDiff": 0.016000000000000014,
+          "status": "exact"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": 0.3,
+          "yahoo": 0.33154000000000006,
+          "diff": 9.513180913313645,
+          "absoluteDiff": 0.03154000000000007,
+          "status": "acceptable"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 34.010662,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 9.797912,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    },
+    {
+      "symbol": "GOOGL",
+      "fiscalYear": 2024,
+      "matchScore": 0.375,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 57.833333333333336,
+          "yahoo": 59.172000000000004,
+          "diff": 2.262331282813946,
+          "absoluteDiff": 1.3386666666666684,
+          "status": "close"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 34.1,
+          "yahoo": 30.512,
+          "diff": 11.759307813319353,
+          "absoluteDiff": 3.588000000000001,
+          "status": "concerning"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 28.3,
+          "yahoo": 32.233003,
+          "diff": 12.201788955251846,
+          "absoluteDiff": 3.933002999999996,
+          "status": "concerning"
+        },
+        {
+          "metric": "roe",
+          "ours": 31.900000000000002,
+          "yahoo": 35.449999999999996,
+          "diff": 10.014104372355414,
+          "absoluteDiff": 3.5499999999999936,
+          "status": "acceptable"
+        },
+        {
+          "metric": "roa",
+          "ours": 22.633333333333336,
+          "yahoo": 16.275999,
+          "diff": 39.05956453630488,
+          "absoluteDiff": 6.357334333333338,
+          "status": "concerning"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": 1.95,
+          "yahoo": 1.747,
+          "diff": 11.619919862621627,
+          "absoluteDiff": 0.20299999999999985,
+          "status": "concerning"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": 1.95,
+          "yahoo": 1.563,
+          "diff": 24.760076775431862,
+          "absoluteDiff": 0.387,
+          "status": "concerning"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": 0.11,
+          "yahoo": 0.11424,
+          "diff": 3.7114845938375294,
+          "absoluteDiff": 0.004239999999999994,
+          "status": "close"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 30.501972,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 9.655355,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    },
+    {
+      "symbol": "AMZN",
+      "fiscalYear": 2024,
+      "matchScore": 0.5,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 48.9,
+          "yahoo": 50.046,
+          "diff": 2.289893298165689,
+          "absoluteDiff": 1.1460000000000008,
+          "status": "close"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 9.566666666666666,
+          "yahoo": 11.057,
+          "diff": 13.4786409815803,
+          "absoluteDiff": 1.490333333333334,
+          "status": "concerning"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 8.533333333333333,
+          "yahoo": 11.063,
+          "diff": 22.866009822531566,
+          "absoluteDiff": 2.5296666666666674,
+          "status": "major"
+        },
+        {
+          "metric": "roe",
+          "ours": 22.7,
+          "yahoo": 24.326999999999998,
+          "diff": 6.688042093147528,
+          "absoluteDiff": 1.626999999999999,
+          "status": "acceptable"
+        },
+        {
+          "metric": "roa",
+          "ours": 9.433333333333332,
+          "yahoo": 7.495,
+          "diff": 25.861685568156528,
+          "absoluteDiff": 1.9383333333333317,
+          "status": "concerning"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": 1.09,
+          "yahoo": 1.009,
+          "diff": 8.027750247770088,
+          "absoluteDiff": 0.08100000000000018,
+          "status": "acceptable"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": 0.87,
+          "yahoo": 0.76,
+          "diff": 14.473684210526313,
+          "absoluteDiff": 0.10999999999999999,
+          "status": "acceptable"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": 0.21,
+          "yahoo": 0.43405,
+          "diff": 51.61847713397074,
+          "absoluteDiff": 0.22405,
+          "status": "major"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 31.94774,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 6.53974,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    },
+    {
+      "symbol": "NVDA",
+      "fiscalYear": 2025,
+      "matchScore": 0.625,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 75.525,
+          "yahoo": 70.05,
+          "diff": 7.815845824411147,
+          "absoluteDiff": 5.4750000000000085,
+          "status": "concerning"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 62.99999999999999,
+          "yahoo": 63.168997000000005,
+          "diff": 0.2675315550759997,
+          "absoluteDiff": 0.1689970000000116,
+          "status": "exact"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 54.6,
+          "yahoo": 53.007000000000005,
+          "diff": 3.0052634557699855,
+          "absoluteDiff": 1.5929999999999964,
+          "status": "close"
+        },
+        {
+          "metric": "roe",
+          "ours": 120.25,
+          "yahoo": 107.35900000000001,
+          "diff": 12.00737711789416,
+          "absoluteDiff": 12.890999999999991,
+          "status": "acceptable"
+        },
+        {
+          "metric": "roa",
+          "ours": 79.3,
+          "yahoo": 53.528,
+          "diff": 48.14676431026752,
+          "absoluteDiff": 25.772,
+          "status": "major"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": 4.1,
+          "yahoo": 4.468,
+          "diff": 8.236347358997321,
+          "absoluteDiff": 0.3680000000000003,
+          "status": "acceptable"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": 3.64,
+          "yahoo": 3.605,
+          "diff": 0.9708737864077709,
+          "absoluteDiff": 0.03500000000000014,
+          "status": "exact"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": 0.17,
+          "yahoo": 0.09102,
+          "diff": 86.77213799165018,
+          "absoluteDiff": 0.07898000000000001,
+          "status": "major"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 43.321785,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 35.77678,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    },
+    {
+      "symbol": "META",
+      "fiscalYear": 2024,
+      "matchScore": 0.25,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 81.675,
+          "yahoo": 82.013,
+          "diff": 0.4121297843024984,
+          "absoluteDiff": 0.33800000000000807,
+          "status": "exact"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 50.724999999999994,
+          "yahoo": 40.075,
+          "diff": 26.57517155333747,
+          "absoluteDiff": 10.649999999999991,
+          "status": "major"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 35.25,
+          "yahoo": 30.891999999999996,
+          "diff": 14.107212223229329,
+          "absoluteDiff": 4.358000000000004,
+          "status": "concerning"
+        },
+        {
+          "metric": "roe",
+          "ours": 34.3,
+          "yahoo": 32.643001999999996,
+          "diff": 5.076120143606896,
+          "absoluteDiff": 1.6569980000000015,
+          "status": "acceptable"
+        },
+        {
+          "metric": "roa",
+          "ours": 22.700000000000003,
+          "yahoo": 18.013,
+          "diff": 26.020096596902242,
+          "absoluteDiff": 4.687000000000001,
+          "status": "concerning"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": 2.73,
+          "yahoo": 1.978,
+          "diff": 38.01820020222447,
+          "absoluteDiff": 0.752,
+          "status": "major"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": 2.73,
+          "yahoo": 1.671,
+          "diff": 63.37522441651705,
+          "absoluteDiff": 1.059,
+          "status": "major"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": 0.4,
+          "yahoo": 0.26311,
+          "diff": 52.02766903576451,
+          "absoluteDiff": 0.13689,
+          "status": "major"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 28.493143,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 8.368796,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    },
+    {
+      "symbol": "TSLA",
+      "fiscalYear": 2024,
+      "matchScore": 0.125,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 18.275,
+          "yahoo": 17.006999,
+          "diff": 7.455759831584621,
+          "absoluteDiff": 1.2680009999999982,
+          "status": "concerning"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 8.65,
+          "yahoo": 6.628,
+          "diff": 30.506940253470127,
+          "absoluteDiff": 2.0220000000000002,
+          "status": "major"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 7,
+          "yahoo": 5.314,
+          "diff": 31.72751223184042,
+          "absoluteDiff": 1.686,
+          "status": "major"
+        },
+        {
+          "metric": "roe",
+          "ours": 10.6,
+          "yahoo": 6.7909999999999995,
+          "diff": 56.08894124576646,
+          "absoluteDiff": 3.809,
+          "status": "major"
+        },
+        {
+          "metric": "roa",
+          "ours": 6.225,
+          "yahoo": 2.35,
+          "diff": 164.89361702127655,
+          "absoluteDiff": 3.8749999999999996,
+          "status": "major"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": 1.84,
+          "yahoo": 2.066,
+          "diff": 10.939012584704733,
+          "absoluteDiff": 0.22599999999999976,
+          "status": "concerning"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": 1.37,
+          "yahoo": 1.486,
+          "diff": 7.806191117092859,
+          "absoluteDiff": 0.11599999999999988,
+          "status": "acceptable"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": 0.11,
+          "yahoo": 0.17082,
+          "diff": 35.604730125278074,
+          "absoluteDiff": 0.06082,
+          "status": "concerning"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 312.21768,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 19.077229,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    },
+    {
+      "symbol": "BRK-B",
+      "fiscalYear": 2024,
+      "matchScore": 0.16666666666666666,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 83.525,
+          "yahoo": 24.361,
+          "diff": 242.8635934485448,
+          "absoluteDiff": 59.164,
+          "status": "major"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 4.2,
+          "yahoo": 41.103,
+          "diff": 89.78176775417852,
+          "absoluteDiff": 36.903,
+          "status": "major"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 114.525,
+          "yahoo": 18.129,
+          "diff": 531.7226543107728,
+          "absoluteDiff": 96.396,
+          "status": "major"
+        },
+        {
+          "metric": "roe",
+          "ours": 8.5,
+          "yahoo": 10.17,
+          "diff": 16.420845624385446,
+          "absoluteDiff": 1.67,
+          "status": "acceptable"
+        },
+        {
+          "metric": "roa",
+          "ours": 32.56666666666666,
+          "yahoo": 4.775,
+          "diff": 582.024432809773,
+          "absoluteDiff": 27.791666666666664,
+          "status": "major"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": null,
+          "yahoo": 2.722,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": null,
+          "yahoo": 2.55,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": 0.76,
+          "yahoo": 0.18166000000000002,
+          "diff": 318.3639766596939,
+          "absoluteDiff": 0.57834,
+          "status": "major"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 15.974416,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 0.0010293559,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    },
+    {
+      "symbol": "JPM",
+      "fiscalYear": 2024,
+      "matchScore": 0.8,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 100,
+          "yahoo": 0,
+          "diff": 100,
+          "absoluteDiff": 100,
+          "status": "major"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 41.1,
+          "yahoo": 43.708000000000006,
+          "diff": 5.966871053354086,
+          "absoluteDiff": 2.608000000000004,
+          "status": "acceptable"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 32.175,
+          "yahoo": 34.699999999999996,
+          "diff": 7.276657060518729,
+          "absoluteDiff": 2.5249999999999986,
+          "status": "acceptable"
+        },
+        {
+          "metric": "roe",
+          "ours": 16.833333333333332,
+          "yahoo": 16.436999999999998,
+          "diff": 2.411226703980864,
+          "absoluteDiff": 0.39633333333333454,
+          "status": "close"
+        },
+        {
+          "metric": "roa",
+          "ours": 1.4333333333333333,
+          "yahoo": 1.323,
+          "diff": 8.339632149155964,
+          "absoluteDiff": 0.1103333333333334,
+          "status": "acceptable"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": null,
+          "yahoo": null,
+          "diff": null,
+          "status": "missing"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": null,
+          "yahoo": null,
+          "diff": null,
+          "status": "missing"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": 1.97,
+          "yahoo": null,
+          "diff": null,
+          "status": "missing_yahoo"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 15.776126,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 2.5490367,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    },
+    {
+      "symbol": "V",
+      "fiscalYear": 2024,
+      "matchScore": 0.75,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 100,
+          "yahoo": 97.765,
+          "diff": 2.2860942054927627,
+          "absoluteDiff": 2.2349999999999994,
+          "status": "close"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 64.5,
+          "yahoo": 65.75,
+          "diff": 1.9011406844106464,
+          "absoluteDiff": 1.25,
+          "status": "exact"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 53,
+          "yahoo": 50.144999999999996,
+          "diff": 5.693488882241509,
+          "absoluteDiff": 2.855000000000004,
+          "status": "acceptable"
+        },
+        {
+          "metric": "roe",
+          "ours": 45.85,
+          "yahoo": 52.068000000000005,
+          "diff": 11.942075747099953,
+          "absoluteDiff": 6.2180000000000035,
+          "status": "acceptable"
+        },
+        {
+          "metric": "roa",
+          "ours": 20,
+          "yahoo": 17.261000000000003,
+          "diff": 15.86814205434214,
+          "absoluteDiff": 2.738999999999997,
+          "status": "acceptable"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": 1.37,
+          "yahoo": 1.078,
+          "diff": 27.087198515769945,
+          "absoluteDiff": 0.29200000000000004,
+          "status": "major"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": 1.37,
+          "yahoo": 0.757,
+          "diff": 80.97754293262881,
+          "absoluteDiff": 0.6130000000000001,
+          "status": "major"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": 0.52,
+          "yahoo": 0.6880700000000001,
+          "diff": 24.426293836382932,
+          "absoluteDiff": 0.16807000000000005,
+          "status": "acceptable"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 34.134445,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 17.946032,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    },
+    {
+      "symbol": "ABBV",
+      "fiscalYear": 2024,
+      "matchScore": 0,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 65.475,
+          "yahoo": 71.461,
+          "diff": 8.376597024950678,
+          "absoluteDiff": 5.986000000000004,
+          "status": "concerning"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 23.299999999999997,
+          "yahoo": 35.497,
+          "diff": 34.3606501957912,
+          "absoluteDiff": 12.197000000000003,
+          "status": "major"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 11.05,
+          "yahoo": 4.004,
+          "diff": 175.97402597402603,
+          "absoluteDiff": 7.046000000000001,
+          "status": "major"
+        },
+        {
+          "metric": "roe",
+          "ours": 29.7,
+          "yahoo": 137.961,
+          "diff": 78.47217691956423,
+          "absoluteDiff": 108.26100000000001,
+          "status": "major"
+        },
+        {
+          "metric": "roa",
+          "ours": 4.3999999999999995,
+          "yahoo": 9.585,
+          "diff": 54.09494001043298,
+          "absoluteDiff": 5.185000000000001,
+          "status": "major"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": null,
+          "yahoo": 0.725,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": null,
+          "yahoo": 0.468,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": null,
+          "yahoo": null,
+          "diff": null,
+          "status": "missing"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 169.18182,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": null,
+          "diff": null,
+          "status": "missing"
+        }
+      ]
+    },
+    {
+      "symbol": "JNJ",
+      "fiscalYear": 2024,
+      "matchScore": 0.5,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 69.275,
+          "yahoo": 68.355006,
+          "diff": 1.3459058141257463,
+          "absoluteDiff": 0.9199940000000026,
+          "status": "exact"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 20.575,
+          "yahoo": 30.200001999999998,
+          "diff": 31.87086543901553,
+          "absoluteDiff": 9.625001999999999,
+          "status": "major"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 42.5,
+          "yahoo": 27.259,
+          "diff": 55.91180894383506,
+          "absoluteDiff": 15.241,
+          "status": "major"
+        },
+        {
+          "metric": "roe",
+          "ours": 7.7,
+          "yahoo": 33.619,
+          "diff": 77.09628483893037,
+          "absoluteDiff": 25.919,
+          "status": "major"
+        },
+        {
+          "metric": "roa",
+          "ours": 6.9,
+          "yahoo": 8.264000000000001,
+          "diff": 16.505324298160705,
+          "absoluteDiff": 1.3640000000000008,
+          "status": "acceptable"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": 1.03,
+          "yahoo": 1.074,
+          "diff": 4.096834264432033,
+          "absoluteDiff": 0.04400000000000004,
+          "status": "close"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": 0.79,
+          "yahoo": 0.711,
+          "diff": 11.111111111111121,
+          "absoluteDiff": 0.07900000000000007,
+          "status": "acceptable"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": 0.23,
+          "yahoo": 0.57766,
+          "diff": 60.18419139286085,
+          "absoluteDiff": 0.34765999999999997,
+          "status": "major"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 20.44251,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 6.421829,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    },
+    {
+      "symbol": "UNH",
+      "fiscalYear": 2024,
+      "matchScore": 0.5,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 88.87500000000001,
+          "yahoo": 19.701,
+          "diff": 351.1192325262677,
+          "absoluteDiff": 69.174,
+          "status": "major"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 8.425,
+          "yahoo": 3.8129999999999997,
+          "diff": 120.95462890112776,
+          "absoluteDiff": 4.612000000000001,
+          "status": "major"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 3.9499999999999997,
+          "yahoo": 4.042,
+          "diff": 2.2761009401286514,
+          "absoluteDiff": 0.09200000000000008,
+          "status": "close"
+        },
+        {
+          "metric": "roe",
+          "ours": 15.95,
+          "yahoo": 17.476,
+          "diff": 8.731975280384527,
+          "absoluteDiff": 1.5259999999999998,
+          "status": "acceptable"
+        },
+        {
+          "metric": "roa",
+          "ours": 5.275,
+          "yahoo": 5.361,
+          "diff": 1.604178324939366,
+          "absoluteDiff": 0.08599999999999941,
+          "status": "exact"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": 0.91,
+          "yahoo": 0.823,
+          "diff": 10.57108140947753,
+          "absoluteDiff": 0.08700000000000008,
+          "status": "concerning"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": 0.91,
+          "yahoo": 0.745,
+          "diff": 22.147651006711413,
+          "absoluteDiff": 0.16500000000000004,
+          "status": "concerning"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": 0.78,
+          "yahoo": 0.7573399999999999,
+          "diff": 2.9920511263105247,
+          "absoluteDiff": 0.022660000000000124,
+          "status": "close"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 17.822731,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 3.233294,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    },
+    {
+      "symbol": "ABT",
+      "fiscalYear": 2024,
+      "matchScore": 0.5,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 55.333333333333336,
+          "yahoo": 56.259996,
+          "diff": 1.64710759429607,
+          "absoluteDiff": 0.9266626666666653,
+          "status": "exact"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 25.666666666666668,
+          "yahoo": 19.395,
+          "diff": 32.33651284695369,
+          "absoluteDiff": 6.271666666666668,
+          "status": "major"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 14.066666666666668,
+          "yahoo": 31.879999999999995,
+          "diff": 55.87620242576327,
+          "absoluteDiff": 17.813333333333325,
+          "status": "major"
+        },
+        {
+          "metric": "roe",
+          "ours": 14.933333333333332,
+          "yahoo": 30.620000000000005,
+          "diff": 51.230132810799056,
+          "absoluteDiff": 15.686666666666673,
+          "status": "major"
+        },
+        {
+          "metric": "roa",
+          "ours": 8,
+          "yahoo": 6.7930005,
+          "diff": 17.76828221932267,
+          "absoluteDiff": 1.2069995000000002,
+          "status": "acceptable"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": 1.6,
+          "yahoo": 1.703,
+          "diff": 6.048150322959482,
+          "absoluteDiff": 0.10299999999999998,
+          "status": "acceptable"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": 1.14,
+          "yahoo": 1.088,
+          "diff": 4.779411764705866,
+          "absoluteDiff": 0.051999999999999824,
+          "status": "close"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": 0.37,
+          "yahoo": 0.2531,
+          "diff": 46.187277755827736,
+          "absoluteDiff": 0.1169,
+          "status": "concerning"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 15.781133,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 4.281473,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    },
+    {
+      "symbol": "NEE",
+      "fiscalYear": 2024,
+      "matchScore": 0.5,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 100,
+          "yahoo": 62.041000000000004,
+          "diff": 61.18373333763155,
+          "absoluteDiff": 37.958999999999996,
+          "status": "major"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 32.45,
+          "yahoo": 30.768,
+          "diff": 5.466718668746757,
+          "absoluteDiff": 1.6820000000000022,
+          "status": "acceptable"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 26.950000000000003,
+          "yahoo": 24.729,
+          "diff": 8.981357919851202,
+          "absoluteDiff": 2.2210000000000036,
+          "status": "acceptable"
+        },
+        {
+          "metric": "roe",
+          "ours": 11.925,
+          "yahoo": 8.236,
+          "diff": 44.79116075764934,
+          "absoluteDiff": 3.689,
+          "status": "major"
+        },
+        {
+          "metric": "roa",
+          "ours": 3.8499999999999996,
+          "yahoo": 2.447,
+          "diff": 57.33551287290558,
+          "absoluteDiff": 1.4029999999999996,
+          "status": "major"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": 0.41,
+          "yahoo": 0.553,
+          "diff": 25.85895117540688,
+          "absoluteDiff": 0.14300000000000007,
+          "status": "major"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": 0.33,
+          "yahoo": 0.357,
+          "diff": 7.5630252100840245,
+          "absoluteDiff": 0.02699999999999997,
+          "status": "acceptable"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": 1.24,
+          "yahoo": 1.44161,
+          "diff": 13.9850583722366,
+          "absoluteDiff": 0.20161000000000007,
+          "status": "acceptable"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 25.920635,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 3.1384532,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    },
+    {
+      "symbol": "DHR",
+      "fiscalYear": 2024,
+      "matchScore": 0.75,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 59.2,
+          "yahoo": 59.592999999999996,
+          "diff": 0.6594734280871807,
+          "absoluteDiff": 0.3929999999999936,
+          "status": "exact"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 20.225,
+          "yahoo": 20.75,
+          "diff": 2.530120481927704,
+          "absoluteDiff": 0.5249999999999986,
+          "status": "close"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 17.200000000000003,
+          "yahoo": 14.435,
+          "diff": 19.1548320055421,
+          "absoluteDiff": 2.7650000000000023,
+          "status": "concerning"
+        },
+        {
+          "metric": "roe",
+          "ours": 7.6,
+          "yahoo": 6.843000000000001,
+          "diff": 11.062399532368824,
+          "absoluteDiff": 0.7569999999999988,
+          "status": "acceptable"
+        },
+        {
+          "metric": "roa",
+          "ours": 4.75,
+          "yahoo": 4.0570002,
+          "diff": 17.08158160800682,
+          "absoluteDiff": 0.6929997999999999,
+          "status": "acceptable"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": 1.37,
+          "yahoo": 1.519,
+          "diff": 9.809084924292286,
+          "absoluteDiff": 0.1489999999999998,
+          "status": "acceptable"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": 1.01,
+          "yahoo": 0.835,
+          "diff": 20.958083832335337,
+          "absoluteDiff": 0.17500000000000004,
+          "status": "concerning"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": 0.34,
+          "yahoo": 0.35544,
+          "diff": 4.3439117713256685,
+          "absoluteDiff": 0.015439999999999954,
+          "status": "close"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 46.474335,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 3.1300826,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    },
+    {
+      "symbol": "KO",
+      "fiscalYear": 2024,
+      "matchScore": 0.25,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 61.325,
+          "yahoo": 61.632997,
+          "diff": 0.4997274430772859,
+          "absoluteDiff": 0.3079970000000003,
+          "status": "exact"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 29.225,
+          "yahoo": 32.373002,
+          "diff": 9.724158420649399,
+          "absoluteDiff": 3.148001999999998,
+          "status": "concerning"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 24.375,
+          "yahoo": 27.339999999999996,
+          "diff": 10.844915874177017,
+          "absoluteDiff": 2.9649999999999963,
+          "status": "concerning"
+        },
+        {
+          "metric": "roe",
+          "ours": 15.45,
+          "yahoo": 42.442,
+          "diff": 63.597379953819335,
+          "absoluteDiff": 26.992,
+          "status": "major"
+        },
+        {
+          "metric": "roa",
+          "ours": 11.475000000000001,
+          "yahoo": 8.959,
+          "diff": 28.08349146110059,
+          "absoluteDiff": 2.516000000000002,
+          "status": "concerning"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": 1.06,
+          "yahoo": 1.211,
+          "diff": 12.469033856317093,
+          "absoluteDiff": 0.15100000000000002,
+          "status": "concerning"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": 0.9,
+          "yahoo": 0.877,
+          "diff": 2.6225769669327272,
+          "absoluteDiff": 0.02300000000000002,
+          "status": "close"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": 0.58,
+          "yahoo": 1.4477099999999998,
+          "diff": 59.93672765954508,
+          "absoluteDiff": 0.8677099999999999,
+          "status": "major"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 23.350992,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 9.709486,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    },
+    {
+      "symbol": "WMT",
+      "fiscalYear": 2025,
+      "matchScore": 0.4,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 24.85,
+          "yahoo": 24.906999,
+          "diff": 0.22884732118870513,
+          "absoluteDiff": 0.05699899999999758,
+          "status": "exact"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 4.25,
+          "yahoo": 3.73,
+          "diff": 13.941018766756033,
+          "absoluteDiff": 0.52,
+          "status": "concerning"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 2.3249999999999997,
+          "yahoo": 3.259,
+          "diff": 28.65909788278614,
+          "absoluteDiff": 0.9340000000000002,
+          "status": "major"
+        },
+        {
+          "metric": "roe",
+          "ours": 15.766666666666666,
+          "yahoo": 23.660999999999998,
+          "diff": 33.364326669766,
+          "absoluteDiff": 7.894333333333332,
+          "status": "concerning"
+        },
+        {
+          "metric": "roa",
+          "ours": 5.6000000000000005,
+          "yahoo": 6.539000000000001,
+          "diff": 14.359993882856706,
+          "absoluteDiff": 0.9390000000000001,
+          "status": "acceptable"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": null,
+          "yahoo": 0.803,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": null,
+          "yahoo": 0.196,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": null,
+          "yahoo": 0.66747,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 40.804195,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 9.681434,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    },
+    {
+      "symbol": "UPS",
+      "fiscalYear": 2024,
+      "matchScore": 0.5,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 100,
+          "yahoo": 21.691,
+          "diff": 361.02069982942237,
+          "absoluteDiff": 78.309,
+          "status": "major"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 7.9,
+          "yahoo": 10.174999999999999,
+          "diff": 22.358722358722346,
+          "absoluteDiff": 2.2749999999999986,
+          "status": "major"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 5.975,
+          "yahoo": 6.1490003,
+          "diff": 2.8297331519076416,
+          "absoluteDiff": 0.17400030000000033,
+          "status": "close"
+        },
+        {
+          "metric": "roe",
+          "ours": 25.025000000000002,
+          "yahoo": 33.617999999999995,
+          "diff": 25.560711523588537,
+          "absoluteDiff": 8.592999999999993,
+          "status": "concerning"
+        },
+        {
+          "metric": "roa",
+          "ours": 7.450000000000001,
+          "yahoo": 7.117999999999999,
+          "diff": 4.664231525709492,
+          "absoluteDiff": 0.3320000000000016,
+          "status": "close"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": 1.14,
+          "yahoo": 1.305,
+          "diff": 12.643678160919544,
+          "absoluteDiff": 0.16500000000000004,
+          "status": "concerning"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": 1.14,
+          "yahoo": 1.174,
+          "diff": 2.896081771720616,
+          "absoluteDiff": 0.03400000000000003,
+          "status": "close"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": 1.42,
+          "yahoo": 1.8432,
+          "diff": 22.960069444444446,
+          "absoluteDiff": 0.4232,
+          "status": "acceptable"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 15.5981455,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 5.40865,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    },
+    {
+      "symbol": "MRK",
+      "fiscalYear": 2024,
+      "matchScore": 0.6,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 77.19999999999999,
+          "yahoo": 77.852,
+          "diff": 0.8374865128705944,
+          "absoluteDiff": 0.6520000000000152,
+          "status": "exact"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 72.65,
+          "yahoo": 40.802,
+          "diff": 78.05499730405374,
+          "absoluteDiff": 31.848000000000006,
+          "status": "major"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 32.05,
+          "yahoo": 29.631999999999998,
+          "diff": 8.16009719222462,
+          "absoluteDiff": 2.4179999999999993,
+          "status": "acceptable"
+        },
+        {
+          "metric": "roe",
+          "ours": 36.3,
+          "yahoo": 39.485002,
+          "diff": 8.066358968400216,
+          "absoluteDiff": 3.1850020000000043,
+          "status": "acceptable"
+        },
+        {
+          "metric": "roa",
+          "ours": 18.65,
+          "yahoo": 13.755,
+          "diff": 35.587059251181365,
+          "absoluteDiff": 4.894999999999998,
+          "status": "concerning"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": null,
+          "yahoo": 1.661,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": null,
+          "yahoo": 1.09,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": null,
+          "yahoo": 0.79708,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 13.267197,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 4.8117056,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    },
+    {
+      "symbol": "BMY",
+      "fiscalYear": 2024,
+      "matchScore": 0.25,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 85.44999999999999,
+          "yahoo": 73.14600300000001,
+          "diff": 16.821147424829185,
+          "absoluteDiff": 12.303996999999981,
+          "status": "major"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": -14.925,
+          "yahoo": 31.566,
+          "diff": 147.28188557308496,
+          "absoluteDiff": 46.491,
+          "status": "major"
+        },
+        {
+          "metric": "net_margin",
+          "ours": -9.375000000000002,
+          "yahoo": 12.572,
+          "diff": 174.57047406936053,
+          "absoluteDiff": 21.947000000000003,
+          "status": "major"
+        },
+        {
+          "metric": "roe",
+          "ours": -15.45,
+          "yahoo": 33.777002,
+          "diff": 145.74118212149202,
+          "absoluteDiff": 49.227002,
+          "status": "major"
+        },
+        {
+          "metric": "roa",
+          "ours": -7.324999999999999,
+          "yahoo": 9.39,
+          "diff": 178.00851970181043,
+          "absoluteDiff": 16.715,
+          "status": "major"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": 1.24,
+          "yahoo": 1.266,
+          "diff": 2.0537124802527664,
+          "absoluteDiff": 0.026000000000000023,
+          "status": "close"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": 1.09,
+          "yahoo": 1.106,
+          "diff": 1.4466546112115743,
+          "absoluteDiff": 0.016000000000000014,
+          "status": "exact"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": 1.08,
+          "yahoo": 2.74414,
+          "diff": 60.64340740632767,
+          "absoluteDiff": 1.6641399999999997,
+          "status": "major"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 17.646465,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 5.7517557,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    },
+    {
+      "symbol": "HD",
+      "fiscalYear": 2024,
+      "matchScore": 0.3333333333333333,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 33.675,
+          "yahoo": 33.355000000000004,
+          "diff": 0.9593764053365107,
+          "absoluteDiff": 0.3199999999999932,
+          "status": "exact"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 14.2,
+          "yahoo": 12.945,
+          "diff": 9.69486288142139,
+          "absoluteDiff": 1.254999999999999,
+          "status": "concerning"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 9.925,
+          "yahoo": 8.7740004,
+          "diff": 13.118298923259687,
+          "absoluteDiff": 1.1509996000000005,
+          "status": "concerning"
+        },
+        {
+          "metric": "roe",
+          "ours": null,
+          "yahoo": 162.909,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "roa",
+          "ours": 18,
+          "yahoo": 13.225999999999999,
+          "diff": 36.09556933313172,
+          "absoluteDiff": 4.774000000000001,
+          "status": "concerning"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": 1.13,
+          "yahoo": 1.051,
+          "diff": 7.516650808753565,
+          "absoluteDiff": 0.07899999999999996,
+          "status": "acceptable"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": 0.31,
+          "yahoo": 0.246,
+          "diff": 26.01626016260163,
+          "absoluteDiff": 0.064,
+          "status": "concerning"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": null,
+          "yahoo": 5.44586,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 24.516018,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 29.535189,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    },
+    {
+      "symbol": "ORCL",
+      "fiscalYear": 2025,
+      "matchScore": 0.25,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 100,
+          "yahoo": 68.54299999999999,
+          "diff": 45.893818478911065,
+          "absoluteDiff": 31.457000000000008,
+          "status": "major"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 58.900000000000006,
+          "yahoo": 31.996999999999996,
+          "diff": 84.07975747726353,
+          "absoluteDiff": 26.90300000000001,
+          "status": "major"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 20.45,
+          "yahoo": 25.280002000000003,
+          "diff": 19.106019058068124,
+          "absoluteDiff": 4.830002000000004,
+          "status": "concerning"
+        },
+        {
+          "metric": "roe",
+          "ours": 33.875,
+          "yahoo": 69.026,
+          "diff": 50.92428939819777,
+          "absoluteDiff": 35.150999999999996,
+          "status": "major"
+        },
+        {
+          "metric": "roa",
+          "ours": 7.825,
+          "yahoo": 6.864000000000001,
+          "diff": 14.00058275058274,
+          "absoluteDiff": 0.9609999999999994,
+          "status": "acceptable"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": 0.81,
+          "yahoo": 0.909,
+          "diff": 10.891089108910888,
+          "absoluteDiff": 0.09899999999999998,
+          "status": "concerning"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": 0.81,
+          "yahoo": 0.773,
+          "diff": 4.786545924967663,
+          "absoluteDiff": 0.03700000000000003,
+          "status": "close"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": 0.24,
+          "yahoo": 4.3251100000000005,
+          "diff": 94.45100818245085,
+          "absoluteDiff": 4.08511,
+          "status": "major"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 35.708645,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 18.222542,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    },
+    {
+      "symbol": "PEP",
+      "fiscalYear": 2024,
+      "matchScore": 0.375,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 55.15,
+          "yahoo": 54.269003999999995,
+          "diff": 1.6233870811412043,
+          "absoluteDiff": 0.8809960000000032,
+          "status": "exact"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 18.525,
+          "yahoo": 16.903000000000002,
+          "diff": 9.595929716618329,
+          "absoluteDiff": 1.6219999999999963,
+          "status": "concerning"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 12.724999999999998,
+          "yahoo": 7.8200005,
+          "diff": 62.72377476190696,
+          "absoluteDiff": 4.904999499999998,
+          "status": "major"
+        },
+        {
+          "metric": "roe",
+          "ours": 15.725000000000001,
+          "yahoo": 37.162,
+          "diff": 57.68526989935956,
+          "absoluteDiff": 21.436999999999998,
+          "status": "major"
+        },
+        {
+          "metric": "roa",
+          "ours": 11.2,
+          "yahoo": 8.365,
+          "diff": 33.891213389121326,
+          "absoluteDiff": 2.834999999999999,
+          "status": "concerning"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": 0.89,
+          "yahoo": 0.912,
+          "diff": 2.412280701754388,
+          "absoluteDiff": 0.02200000000000002,
+          "status": "close"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": 0.7,
+          "yahoo": 0.676,
+          "diff": 3.550295857988152,
+          "absoluteDiff": 0.02399999999999991,
+          "status": "close"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": 0.62,
+          "yahoo": 2.6019,
+          "diff": 76.17125946423768,
+          "absoluteDiff": 1.9819,
+          "status": "major"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 28.640682,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 10.637622,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    },
+    {
+      "symbol": "CMCSA",
+      "fiscalYear": 2024,
+      "matchScore": 0.375,
+      "metrics": [
+        {
+          "metric": "gross_margin",
+          "ours": 100,
+          "yahoo": 71.882004,
+          "diff": 39.11687826622086,
+          "absoluteDiff": 28.117996000000005,
+          "status": "major"
+        },
+        {
+          "metric": "operating_margin",
+          "ours": 19.725,
+          "yahoo": 17.735,
+          "diff": 11.220749929517915,
+          "absoluteDiff": 1.990000000000002,
+          "status": "concerning"
+        },
+        {
+          "metric": "net_margin",
+          "ours": 12.350000000000001,
+          "yahoo": 18.333,
+          "diff": 32.63513882070582,
+          "absoluteDiff": 5.982999999999997,
+          "status": "major"
+        },
+        {
+          "metric": "roe",
+          "ours": 18.4,
+          "yahoo": 24.186,
+          "diff": 23.92293062102043,
+          "absoluteDiff": 5.786000000000001,
+          "status": "concerning"
+        },
+        {
+          "metric": "roa",
+          "ours": 5.85,
+          "yahoo": 5.1069997,
+          "diff": 14.548665432660968,
+          "absoluteDiff": 0.7430002999999994,
+          "status": "acceptable"
+        },
+        {
+          "metric": "current_ratio",
+          "ours": 0.72,
+          "yahoo": 0.882,
+          "diff": 18.367346938775515,
+          "absoluteDiff": 0.16200000000000003,
+          "status": "concerning"
+        },
+        {
+          "metric": "quick_ratio",
+          "ours": 0.72,
+          "yahoo": 0.689,
+          "diff": 4.499274310595069,
+          "absoluteDiff": 0.031000000000000028,
+          "status": "close"
+        },
+        {
+          "metric": "debt_to_equity",
+          "ours": 1.17,
+          "yahoo": 1.01462,
+          "diff": 15.314107744771427,
+          "absoluteDiff": 0.15537999999999985,
+          "status": "acceptable"
+        },
+        {
+          "metric": "pe_ratio",
+          "ours": null,
+          "yahoo": 4.523256,
+          "diff": null,
+          "status": "missing_ours"
+        },
+        {
+          "metric": "pb_ratio",
+          "ours": null,
+          "yahoo": 1.0250329,
+          "diff": null,
+          "status": "missing_ours"
+        }
+      ]
+    }
+  ],
+  "byMetric": {
+    "gross_margin": {
+      "exact": 10,
+      "close": 4,
+      "acceptable": 0,
+      "concerning": 3,
+      "major": 8,
+      "missing": 0,
+      "diffs": [
+        2.302526383114803,
+        1.4702460589843458,
+        2.262331282813946,
+        2.289893298165689,
+        7.815845824411147,
+        0.4121297843024984,
+        7.455759831584621,
+        242.8635934485448,
+        100,
+        2.2860942054927627,
+        8.376597024950678,
+        1.3459058141257463,
+        351.1192325262677,
+        1.64710759429607,
+        61.18373333763155,
+        0.6594734280871807,
+        0.4997274430772859,
+        0.22884732118870513,
+        361.02069982942237,
+        0.8374865128705944,
+        16.821147424829185,
+        0.9593764053365107,
+        45.893818478911065,
+        1.6233870811412043,
+        39.11687826622086
+      ],
+      "comparisons": [
+        {
+          "symbol": "AAPL",
+          "ours": 45.825,
+          "yahoo": 46.905,
+          "diff": 2.302526383114803
+        },
+        {
+          "symbol": "MSFT",
+          "ours": 69.775,
+          "yahoo": 68.76400000000001,
+          "diff": 1.4702460589843458
+        },
+        {
+          "symbol": "GOOGL",
+          "ours": 57.833333333333336,
+          "yahoo": 59.172000000000004,
+          "diff": 2.262331282813946
+        },
+        {
+          "symbol": "AMZN",
+          "ours": 48.9,
+          "yahoo": 50.046,
+          "diff": 2.289893298165689
+        },
+        {
+          "symbol": "NVDA",
+          "ours": 75.525,
+          "yahoo": 70.05,
+          "diff": 7.815845824411147
+        },
+        {
+          "symbol": "META",
+          "ours": 81.675,
+          "yahoo": 82.013,
+          "diff": 0.4121297843024984
+        },
+        {
+          "symbol": "TSLA",
+          "ours": 18.275,
+          "yahoo": 17.006999,
+          "diff": 7.455759831584621
+        },
+        {
+          "symbol": "BRK-B",
+          "ours": 83.525,
+          "yahoo": 24.361,
+          "diff": 242.8635934485448
+        },
+        {
+          "symbol": "JPM",
+          "ours": 100,
+          "yahoo": 0,
+          "diff": 100
+        },
+        {
+          "symbol": "V",
+          "ours": 100,
+          "yahoo": 97.765,
+          "diff": 2.2860942054927627
+        },
+        {
+          "symbol": "ABBV",
+          "ours": 65.475,
+          "yahoo": 71.461,
+          "diff": 8.376597024950678
+        },
+        {
+          "symbol": "JNJ",
+          "ours": 69.275,
+          "yahoo": 68.355006,
+          "diff": 1.3459058141257463
+        },
+        {
+          "symbol": "UNH",
+          "ours": 88.87500000000001,
+          "yahoo": 19.701,
+          "diff": 351.1192325262677
+        },
+        {
+          "symbol": "ABT",
+          "ours": 55.333333333333336,
+          "yahoo": 56.259996,
+          "diff": 1.64710759429607
+        },
+        {
+          "symbol": "NEE",
+          "ours": 100,
+          "yahoo": 62.041000000000004,
+          "diff": 61.18373333763155
+        },
+        {
+          "symbol": "DHR",
+          "ours": 59.2,
+          "yahoo": 59.592999999999996,
+          "diff": 0.6594734280871807
+        },
+        {
+          "symbol": "KO",
+          "ours": 61.325,
+          "yahoo": 61.632997,
+          "diff": 0.4997274430772859
+        },
+        {
+          "symbol": "WMT",
+          "ours": 24.85,
+          "yahoo": 24.906999,
+          "diff": 0.22884732118870513
+        },
+        {
+          "symbol": "UPS",
+          "ours": 100,
+          "yahoo": 21.691,
+          "diff": 361.02069982942237
+        },
+        {
+          "symbol": "MRK",
+          "ours": 77.19999999999999,
+          "yahoo": 77.852,
+          "diff": 0.8374865128705944
+        },
+        {
+          "symbol": "BMY",
+          "ours": 85.44999999999999,
+          "yahoo": 73.14600300000001,
+          "diff": 16.821147424829185
+        },
+        {
+          "symbol": "HD",
+          "ours": 33.675,
+          "yahoo": 33.355000000000004,
+          "diff": 0.9593764053365107
+        },
+        {
+          "symbol": "ORCL",
+          "ours": 100,
+          "yahoo": 68.54299999999999,
+          "diff": 45.893818478911065
+        },
+        {
+          "symbol": "PEP",
+          "ours": 55.15,
+          "yahoo": 54.269003999999995,
+          "diff": 1.6233870811412043
+        },
+        {
+          "symbol": "CMCSA",
+          "ours": 100,
+          "yahoo": 71.882004,
+          "diff": 39.11687826622086
+        }
+      ]
+    },
+    "operating_margin": {
+      "exact": 2,
+      "close": 1,
+      "acceptable": 3,
+      "concerning": 7,
+      "major": 12,
+      "missing": 0,
+      "diffs": [
+        29.15916200587734,
+        6.338878317271279,
+        11.759307813319353,
+        13.4786409815803,
+        0.2675315550759997,
+        26.57517155333747,
+        30.506940253470127,
+        89.78176775417852,
+        5.966871053354086,
+        1.9011406844106464,
+        34.3606501957912,
+        31.87086543901553,
+        120.95462890112776,
+        32.33651284695369,
+        5.466718668746757,
+        2.530120481927704,
+        9.724158420649399,
+        13.941018766756033,
+        22.358722358722346,
+        78.05499730405374,
+        147.28188557308496,
+        9.69486288142139,
+        84.07975747726353,
+        9.595929716618329,
+        11.220749929517915
+      ],
+      "comparisons": [
+        {
+          "symbol": "AAPL",
+          "ours": 40.875,
+          "yahoo": 31.647,
+          "diff": 29.15916200587734
+        },
+        {
+          "symbol": "MSFT",
+          "ours": 45.775000000000006,
+          "yahoo": 48.873,
+          "diff": 6.338878317271279
+        },
+        {
+          "symbol": "GOOGL",
+          "ours": 34.1,
+          "yahoo": 30.512,
+          "diff": 11.759307813319353
+        },
+        {
+          "symbol": "AMZN",
+          "ours": 9.566666666666666,
+          "yahoo": 11.057,
+          "diff": 13.4786409815803
+        },
+        {
+          "symbol": "NVDA",
+          "ours": 62.99999999999999,
+          "yahoo": 63.168997000000005,
+          "diff": 0.2675315550759997
+        },
+        {
+          "symbol": "META",
+          "ours": 50.724999999999994,
+          "yahoo": 40.075,
+          "diff": 26.57517155333747
+        },
+        {
+          "symbol": "TSLA",
+          "ours": 8.65,
+          "yahoo": 6.628,
+          "diff": 30.506940253470127
+        },
+        {
+          "symbol": "BRK-B",
+          "ours": 4.2,
+          "yahoo": 41.103,
+          "diff": 89.78176775417852
+        },
+        {
+          "symbol": "JPM",
+          "ours": 41.1,
+          "yahoo": 43.708000000000006,
+          "diff": 5.966871053354086
+        },
+        {
+          "symbol": "V",
+          "ours": 64.5,
+          "yahoo": 65.75,
+          "diff": 1.9011406844106464
+        },
+        {
+          "symbol": "ABBV",
+          "ours": 23.299999999999997,
+          "yahoo": 35.497,
+          "diff": 34.3606501957912
+        },
+        {
+          "symbol": "JNJ",
+          "ours": 20.575,
+          "yahoo": 30.200001999999998,
+          "diff": 31.87086543901553
+        },
+        {
+          "symbol": "UNH",
+          "ours": 8.425,
+          "yahoo": 3.8129999999999997,
+          "diff": 120.95462890112776
+        },
+        {
+          "symbol": "ABT",
+          "ours": 25.666666666666668,
+          "yahoo": 19.395,
+          "diff": 32.33651284695369
+        },
+        {
+          "symbol": "NEE",
+          "ours": 32.45,
+          "yahoo": 30.768,
+          "diff": 5.466718668746757
+        },
+        {
+          "symbol": "DHR",
+          "ours": 20.225,
+          "yahoo": 20.75,
+          "diff": 2.530120481927704
+        },
+        {
+          "symbol": "KO",
+          "ours": 29.225,
+          "yahoo": 32.373002,
+          "diff": 9.724158420649399
+        },
+        {
+          "symbol": "WMT",
+          "ours": 4.25,
+          "yahoo": 3.73,
+          "diff": 13.941018766756033
+        },
+        {
+          "symbol": "UPS",
+          "ours": 7.9,
+          "yahoo": 10.174999999999999,
+          "diff": 22.358722358722346
+        },
+        {
+          "symbol": "MRK",
+          "ours": 72.65,
+          "yahoo": 40.802,
+          "diff": 78.05499730405374
+        },
+        {
+          "symbol": "BMY",
+          "ours": -14.925,
+          "yahoo": 31.566,
+          "diff": 147.28188557308496
+        },
+        {
+          "symbol": "HD",
+          "ours": 14.2,
+          "yahoo": 12.945,
+          "diff": 9.69486288142139
+        },
+        {
+          "symbol": "ORCL",
+          "ours": 58.900000000000006,
+          "yahoo": 31.996999999999996,
+          "diff": 84.07975747726353
+        },
+        {
+          "symbol": "PEP",
+          "ours": 18.525,
+          "yahoo": 16.903000000000002,
+          "diff": 9.595929716618329
+        },
+        {
+          "symbol": "CMCSA",
+          "ours": 19.725,
+          "yahoo": 17.735,
+          "diff": 11.220749929517915
+        }
+      ]
+    },
+    "net_margin": {
+      "exact": 0,
+      "close": 5,
+      "acceptable": 4,
+      "concerning": 6,
+      "major": 10,
+      "missing": 0,
+      "diffs": [
+        3.6782534885191427,
+        3.4811101464698657,
+        12.201788955251846,
+        22.866009822531566,
+        3.0052634557699855,
+        14.107212223229329,
+        31.72751223184042,
+        531.7226543107728,
+        7.276657060518729,
+        5.693488882241509,
+        175.97402597402603,
+        55.91180894383506,
+        2.2761009401286514,
+        55.87620242576327,
+        8.981357919851202,
+        19.1548320055421,
+        10.844915874177017,
+        28.65909788278614,
+        2.8297331519076416,
+        8.16009719222462,
+        174.57047406936053,
+        13.118298923259687,
+        19.106019058068124,
+        62.72377476190696,
+        32.63513882070582
+      ],
+      "comparisons": [
+        {
+          "symbol": "AAPL",
+          "ours": 25.925,
+          "yahoo": 26.915001999999998,
+          "diff": 3.6782534885191427
+        },
+        {
+          "symbol": "MSFT",
+          "ours": 36.949999999999996,
+          "yahoo": 35.707,
+          "diff": 3.4811101464698657
+        },
+        {
+          "symbol": "GOOGL",
+          "ours": 28.3,
+          "yahoo": 32.233003,
+          "diff": 12.201788955251846
+        },
+        {
+          "symbol": "AMZN",
+          "ours": 8.533333333333333,
+          "yahoo": 11.063,
+          "diff": 22.866009822531566
+        },
+        {
+          "symbol": "NVDA",
+          "ours": 54.6,
+          "yahoo": 53.007000000000005,
+          "diff": 3.0052634557699855
+        },
+        {
+          "symbol": "META",
+          "ours": 35.25,
+          "yahoo": 30.891999999999996,
+          "diff": 14.107212223229329
+        },
+        {
+          "symbol": "TSLA",
+          "ours": 7,
+          "yahoo": 5.314,
+          "diff": 31.72751223184042
+        },
+        {
+          "symbol": "BRK-B",
+          "ours": 114.525,
+          "yahoo": 18.129,
+          "diff": 531.7226543107728
+        },
+        {
+          "symbol": "JPM",
+          "ours": 32.175,
+          "yahoo": 34.699999999999996,
+          "diff": 7.276657060518729
+        },
+        {
+          "symbol": "V",
+          "ours": 53,
+          "yahoo": 50.144999999999996,
+          "diff": 5.693488882241509
+        },
+        {
+          "symbol": "ABBV",
+          "ours": 11.05,
+          "yahoo": 4.004,
+          "diff": 175.97402597402603
+        },
+        {
+          "symbol": "JNJ",
+          "ours": 42.5,
+          "yahoo": 27.259,
+          "diff": 55.91180894383506
+        },
+        {
+          "symbol": "UNH",
+          "ours": 3.9499999999999997,
+          "yahoo": 4.042,
+          "diff": 2.2761009401286514
+        },
+        {
+          "symbol": "ABT",
+          "ours": 14.066666666666668,
+          "yahoo": 31.879999999999995,
+          "diff": 55.87620242576327
+        },
+        {
+          "symbol": "NEE",
+          "ours": 26.950000000000003,
+          "yahoo": 24.729,
+          "diff": 8.981357919851202
+        },
+        {
+          "symbol": "DHR",
+          "ours": 17.200000000000003,
+          "yahoo": 14.435,
+          "diff": 19.1548320055421
+        },
+        {
+          "symbol": "KO",
+          "ours": 24.375,
+          "yahoo": 27.339999999999996,
+          "diff": 10.844915874177017
+        },
+        {
+          "symbol": "WMT",
+          "ours": 2.3249999999999997,
+          "yahoo": 3.259,
+          "diff": 28.65909788278614
+        },
+        {
+          "symbol": "UPS",
+          "ours": 5.975,
+          "yahoo": 6.1490003,
+          "diff": 2.8297331519076416
+        },
+        {
+          "symbol": "MRK",
+          "ours": 32.05,
+          "yahoo": 29.631999999999998,
+          "diff": 8.16009719222462
+        },
+        {
+          "symbol": "BMY",
+          "ours": -9.375000000000002,
+          "yahoo": 12.572,
+          "diff": 174.57047406936053
+        },
+        {
+          "symbol": "HD",
+          "ours": 9.925,
+          "yahoo": 8.7740004,
+          "diff": 13.118298923259687
+        },
+        {
+          "symbol": "ORCL",
+          "ours": 20.45,
+          "yahoo": 25.280002000000003,
+          "diff": 19.106019058068124
+        },
+        {
+          "symbol": "PEP",
+          "ours": 12.724999999999998,
+          "yahoo": 7.8200005,
+          "diff": 62.72377476190696
+        },
+        {
+          "symbol": "CMCSA",
+          "ours": 12.350000000000001,
+          "yahoo": 18.333,
+          "diff": 32.63513882070582
+        }
+      ]
+    },
+    "roe": {
+      "exact": 0,
+      "close": 1,
+      "acceptable": 10,
+      "concerning": 4,
+      "major": 9,
+      "missing": 1,
+      "diffs": [
+        23.6241511372024,
+        17.39709578505035,
+        10.014104372355414,
+        6.688042093147528,
+        12.00737711789416,
+        5.076120143606896,
+        56.08894124576646,
+        16.420845624385446,
+        2.411226703980864,
+        11.942075747099953,
+        78.47217691956423,
+        77.09628483893037,
+        8.731975280384527,
+        51.230132810799056,
+        44.79116075764934,
+        11.062399532368824,
+        63.597379953819335,
+        33.364326669766,
+        25.560711523588537,
+        8.066358968400216,
+        145.74118212149202,
+        50.92428939819777,
+        57.68526989935956,
+        23.92293062102043
+      ],
+      "comparisons": [
+        {
+          "symbol": "AAPL",
+          "ours": 130.925,
+          "yahoo": 171.42199,
+          "diff": 23.6241511372024
+        },
+        {
+          "symbol": "MSFT",
+          "ours": 37.85,
+          "yahoo": 32.241002,
+          "diff": 17.39709578505035
+        },
+        {
+          "symbol": "GOOGL",
+          "ours": 31.900000000000002,
+          "yahoo": 35.449999999999996,
+          "diff": 10.014104372355414
+        },
+        {
+          "symbol": "AMZN",
+          "ours": 22.7,
+          "yahoo": 24.326999999999998,
+          "diff": 6.688042093147528
+        },
+        {
+          "symbol": "NVDA",
+          "ours": 120.25,
+          "yahoo": 107.35900000000001,
+          "diff": 12.00737711789416
+        },
+        {
+          "symbol": "META",
+          "ours": 34.3,
+          "yahoo": 32.643001999999996,
+          "diff": 5.076120143606896
+        },
+        {
+          "symbol": "TSLA",
+          "ours": 10.6,
+          "yahoo": 6.7909999999999995,
+          "diff": 56.08894124576646
+        },
+        {
+          "symbol": "BRK-B",
+          "ours": 8.5,
+          "yahoo": 10.17,
+          "diff": 16.420845624385446
+        },
+        {
+          "symbol": "JPM",
+          "ours": 16.833333333333332,
+          "yahoo": 16.436999999999998,
+          "diff": 2.411226703980864
+        },
+        {
+          "symbol": "V",
+          "ours": 45.85,
+          "yahoo": 52.068000000000005,
+          "diff": 11.942075747099953
+        },
+        {
+          "symbol": "ABBV",
+          "ours": 29.7,
+          "yahoo": 137.961,
+          "diff": 78.47217691956423
+        },
+        {
+          "symbol": "JNJ",
+          "ours": 7.7,
+          "yahoo": 33.619,
+          "diff": 77.09628483893037
+        },
+        {
+          "symbol": "UNH",
+          "ours": 15.95,
+          "yahoo": 17.476,
+          "diff": 8.731975280384527
+        },
+        {
+          "symbol": "ABT",
+          "ours": 14.933333333333332,
+          "yahoo": 30.620000000000005,
+          "diff": 51.230132810799056
+        },
+        {
+          "symbol": "NEE",
+          "ours": 11.925,
+          "yahoo": 8.236,
+          "diff": 44.79116075764934
+        },
+        {
+          "symbol": "DHR",
+          "ours": 7.6,
+          "yahoo": 6.843000000000001,
+          "diff": 11.062399532368824
+        },
+        {
+          "symbol": "KO",
+          "ours": 15.45,
+          "yahoo": 42.442,
+          "diff": 63.597379953819335
+        },
+        {
+          "symbol": "WMT",
+          "ours": 15.766666666666666,
+          "yahoo": 23.660999999999998,
+          "diff": 33.364326669766
+        },
+        {
+          "symbol": "UPS",
+          "ours": 25.025000000000002,
+          "yahoo": 33.617999999999995,
+          "diff": 25.560711523588537
+        },
+        {
+          "symbol": "MRK",
+          "ours": 36.3,
+          "yahoo": 39.485002,
+          "diff": 8.066358968400216
+        },
+        {
+          "symbol": "BMY",
+          "ours": -15.45,
+          "yahoo": 33.777002,
+          "diff": 145.74118212149202
+        },
+        {
+          "symbol": "ORCL",
+          "ours": 33.875,
+          "yahoo": 69.026,
+          "diff": 50.92428939819777
+        },
+        {
+          "symbol": "PEP",
+          "ours": 15.725000000000001,
+          "yahoo": 37.162,
+          "diff": 57.68526989935956
+        },
+        {
+          "symbol": "CMCSA",
+          "ours": 18.4,
+          "yahoo": 24.186,
+          "diff": 23.92293062102043
+        }
+      ]
+    },
+    "roa": {
+      "exact": 1,
+      "close": 1,
+      "acceptable": 8,
+      "concerning": 9,
+      "major": 6,
+      "missing": 0,
+      "diffs": [
+        26.393485455495558,
+        32.368995633187794,
+        39.05956453630488,
+        25.861685568156528,
+        48.14676431026752,
+        26.020096596902242,
+        164.89361702127655,
+        582.024432809773,
+        8.339632149155964,
+        15.86814205434214,
+        54.09494001043298,
+        16.505324298160705,
+        1.604178324939366,
+        17.76828221932267,
+        57.33551287290558,
+        17.08158160800682,
+        28.08349146110059,
+        14.359993882856706,
+        4.664231525709492,
+        35.587059251181365,
+        178.00851970181043,
+        36.09556933313172,
+        14.00058275058274,
+        33.891213389121326,
+        14.548665432660968
+      ],
+      "comparisons": [
+        {
+          "symbol": "AAPL",
+          "ours": 29.025000000000002,
+          "yahoo": 22.964000000000002,
+          "diff": 26.393485455495558
+        },
+        {
+          "symbol": "MSFT",
+          "ours": 19.400000000000002,
+          "yahoo": 14.655999999999999,
+          "diff": 32.368995633187794
+        },
+        {
+          "symbol": "GOOGL",
+          "ours": 22.633333333333336,
+          "yahoo": 16.275999,
+          "diff": 39.05956453630488
+        },
+        {
+          "symbol": "AMZN",
+          "ours": 9.433333333333332,
+          "yahoo": 7.495,
+          "diff": 25.861685568156528
+        },
+        {
+          "symbol": "NVDA",
+          "ours": 79.3,
+          "yahoo": 53.528,
+          "diff": 48.14676431026752
+        },
+        {
+          "symbol": "META",
+          "ours": 22.700000000000003,
+          "yahoo": 18.013,
+          "diff": 26.020096596902242
+        },
+        {
+          "symbol": "TSLA",
+          "ours": 6.225,
+          "yahoo": 2.35,
+          "diff": 164.89361702127655
+        },
+        {
+          "symbol": "BRK-B",
+          "ours": 32.56666666666666,
+          "yahoo": 4.775,
+          "diff": 582.024432809773
+        },
+        {
+          "symbol": "JPM",
+          "ours": 1.4333333333333333,
+          "yahoo": 1.323,
+          "diff": 8.339632149155964
+        },
+        {
+          "symbol": "V",
+          "ours": 20,
+          "yahoo": 17.261000000000003,
+          "diff": 15.86814205434214
+        },
+        {
+          "symbol": "ABBV",
+          "ours": 4.3999999999999995,
+          "yahoo": 9.585,
+          "diff": 54.09494001043298
+        },
+        {
+          "symbol": "JNJ",
+          "ours": 6.9,
+          "yahoo": 8.264000000000001,
+          "diff": 16.505324298160705
+        },
+        {
+          "symbol": "UNH",
+          "ours": 5.275,
+          "yahoo": 5.361,
+          "diff": 1.604178324939366
+        },
+        {
+          "symbol": "ABT",
+          "ours": 8,
+          "yahoo": 6.7930005,
+          "diff": 17.76828221932267
+        },
+        {
+          "symbol": "NEE",
+          "ours": 3.8499999999999996,
+          "yahoo": 2.447,
+          "diff": 57.33551287290558
+        },
+        {
+          "symbol": "DHR",
+          "ours": 4.75,
+          "yahoo": 4.0570002,
+          "diff": 17.08158160800682
+        },
+        {
+          "symbol": "KO",
+          "ours": 11.475000000000001,
+          "yahoo": 8.959,
+          "diff": 28.08349146110059
+        },
+        {
+          "symbol": "WMT",
+          "ours": 5.6000000000000005,
+          "yahoo": 6.539000000000001,
+          "diff": 14.359993882856706
+        },
+        {
+          "symbol": "UPS",
+          "ours": 7.450000000000001,
+          "yahoo": 7.117999999999999,
+          "diff": 4.664231525709492
+        },
+        {
+          "symbol": "MRK",
+          "ours": 18.65,
+          "yahoo": 13.755,
+          "diff": 35.587059251181365
+        },
+        {
+          "symbol": "BMY",
+          "ours": -7.324999999999999,
+          "yahoo": 9.39,
+          "diff": 178.00851970181043
+        },
+        {
+          "symbol": "HD",
+          "ours": 18,
+          "yahoo": 13.225999999999999,
+          "diff": 36.09556933313172
+        },
+        {
+          "symbol": "ORCL",
+          "ours": 7.825,
+          "yahoo": 6.864000000000001,
+          "diff": 14.00058275058274
+        },
+        {
+          "symbol": "PEP",
+          "ours": 11.2,
+          "yahoo": 8.365,
+          "diff": 33.891213389121326
+        },
+        {
+          "symbol": "CMCSA",
+          "ours": 5.85,
+          "yahoo": 5.1069997,
+          "diff": 14.548665432660968
+        }
+      ]
+    },
+    "current_ratio": {
+      "exact": 0,
+      "close": 3,
+      "acceptable": 7,
+      "concerning": 7,
+      "major": 3,
+      "missing": 5,
+      "diffs": [
+        6.382978723404248,
+        9.350463954318345,
+        11.619919862621627,
+        8.027750247770088,
+        8.236347358997321,
+        38.01820020222447,
+        10.939012584704733,
+        27.087198515769945,
+        4.096834264432033,
+        10.57108140947753,
+        6.048150322959482,
+        25.85895117540688,
+        9.809084924292286,
+        12.469033856317093,
+        12.643678160919544,
+        2.0537124802527664,
+        7.516650808753565,
+        10.891089108910888,
+        2.412280701754388,
+        18.367346938775515
+      ],
+      "comparisons": [
+        {
+          "symbol": "AAPL",
+          "ours": 0.95,
+          "yahoo": 0.893,
+          "diff": 6.382978723404248
+        },
+        {
+          "symbol": "MSFT",
+          "ours": 1.27,
+          "yahoo": 1.401,
+          "diff": 9.350463954318345
+        },
+        {
+          "symbol": "GOOGL",
+          "ours": 1.95,
+          "yahoo": 1.747,
+          "diff": 11.619919862621627
+        },
+        {
+          "symbol": "AMZN",
+          "ours": 1.09,
+          "yahoo": 1.009,
+          "diff": 8.027750247770088
+        },
+        {
+          "symbol": "NVDA",
+          "ours": 4.1,
+          "yahoo": 4.468,
+          "diff": 8.236347358997321
+        },
+        {
+          "symbol": "META",
+          "ours": 2.73,
+          "yahoo": 1.978,
+          "diff": 38.01820020222447
+        },
+        {
+          "symbol": "TSLA",
+          "ours": 1.84,
+          "yahoo": 2.066,
+          "diff": 10.939012584704733
+        },
+        {
+          "symbol": "V",
+          "ours": 1.37,
+          "yahoo": 1.078,
+          "diff": 27.087198515769945
+        },
+        {
+          "symbol": "JNJ",
+          "ours": 1.03,
+          "yahoo": 1.074,
+          "diff": 4.096834264432033
+        },
+        {
+          "symbol": "UNH",
+          "ours": 0.91,
+          "yahoo": 0.823,
+          "diff": 10.57108140947753
+        },
+        {
+          "symbol": "ABT",
+          "ours": 1.6,
+          "yahoo": 1.703,
+          "diff": 6.048150322959482
+        },
+        {
+          "symbol": "NEE",
+          "ours": 0.41,
+          "yahoo": 0.553,
+          "diff": 25.85895117540688
+        },
+        {
+          "symbol": "DHR",
+          "ours": 1.37,
+          "yahoo": 1.519,
+          "diff": 9.809084924292286
+        },
+        {
+          "symbol": "KO",
+          "ours": 1.06,
+          "yahoo": 1.211,
+          "diff": 12.469033856317093
+        },
+        {
+          "symbol": "UPS",
+          "ours": 1.14,
+          "yahoo": 1.305,
+          "diff": 12.643678160919544
+        },
+        {
+          "symbol": "BMY",
+          "ours": 1.24,
+          "yahoo": 1.266,
+          "diff": 2.0537124802527664
+        },
+        {
+          "symbol": "HD",
+          "ours": 1.13,
+          "yahoo": 1.051,
+          "diff": 7.516650808753565
+        },
+        {
+          "symbol": "ORCL",
+          "ours": 0.81,
+          "yahoo": 0.909,
+          "diff": 10.891089108910888
+        },
+        {
+          "symbol": "PEP",
+          "ours": 0.89,
+          "yahoo": 0.912,
+          "diff": 2.412280701754388
+        },
+        {
+          "symbol": "CMCSA",
+          "ours": 0.72,
+          "yahoo": 0.882,
+          "diff": 18.367346938775515
+        }
+      ]
+    },
+    "quick_ratio": {
+      "exact": 3,
+      "close": 6,
+      "acceptable": 4,
+      "concerning": 5,
+      "major": 2,
+      "missing": 5,
+      "diffs": [
+        18.028534370946826,
+        1.2759170653907506,
+        24.760076775431862,
+        14.473684210526313,
+        0.9708737864077709,
+        63.37522441651705,
+        7.806191117092859,
+        80.97754293262881,
+        11.111111111111121,
+        22.147651006711413,
+        4.779411764705866,
+        7.5630252100840245,
+        20.958083832335337,
+        2.6225769669327272,
+        2.896081771720616,
+        1.4466546112115743,
+        26.01626016260163,
+        4.786545924967663,
+        3.550295857988152,
+        4.499274310595069
+      ],
+      "comparisons": [
+        {
+          "symbol": "AAPL",
+          "ours": 0.91,
+          "yahoo": 0.771,
+          "diff": 18.028534370946826
+        },
+        {
+          "symbol": "MSFT",
+          "ours": 1.27,
+          "yahoo": 1.254,
+          "diff": 1.2759170653907506
+        },
+        {
+          "symbol": "GOOGL",
+          "ours": 1.95,
+          "yahoo": 1.563,
+          "diff": 24.760076775431862
+        },
+        {
+          "symbol": "AMZN",
+          "ours": 0.87,
+          "yahoo": 0.76,
+          "diff": 14.473684210526313
+        },
+        {
+          "symbol": "NVDA",
+          "ours": 3.64,
+          "yahoo": 3.605,
+          "diff": 0.9708737864077709
+        },
+        {
+          "symbol": "META",
+          "ours": 2.73,
+          "yahoo": 1.671,
+          "diff": 63.37522441651705
+        },
+        {
+          "symbol": "TSLA",
+          "ours": 1.37,
+          "yahoo": 1.486,
+          "diff": 7.806191117092859
+        },
+        {
+          "symbol": "V",
+          "ours": 1.37,
+          "yahoo": 0.757,
+          "diff": 80.97754293262881
+        },
+        {
+          "symbol": "JNJ",
+          "ours": 0.79,
+          "yahoo": 0.711,
+          "diff": 11.111111111111121
+        },
+        {
+          "symbol": "UNH",
+          "ours": 0.91,
+          "yahoo": 0.745,
+          "diff": 22.147651006711413
+        },
+        {
+          "symbol": "ABT",
+          "ours": 1.14,
+          "yahoo": 1.088,
+          "diff": 4.779411764705866
+        },
+        {
+          "symbol": "NEE",
+          "ours": 0.33,
+          "yahoo": 0.357,
+          "diff": 7.5630252100840245
+        },
+        {
+          "symbol": "DHR",
+          "ours": 1.01,
+          "yahoo": 0.835,
+          "diff": 20.958083832335337
+        },
+        {
+          "symbol": "KO",
+          "ours": 0.9,
+          "yahoo": 0.877,
+          "diff": 2.6225769669327272
+        },
+        {
+          "symbol": "UPS",
+          "ours": 1.14,
+          "yahoo": 1.174,
+          "diff": 2.896081771720616
+        },
+        {
+          "symbol": "BMY",
+          "ours": 1.09,
+          "yahoo": 1.106,
+          "diff": 1.4466546112115743
+        },
+        {
+          "symbol": "HD",
+          "ours": 0.31,
+          "yahoo": 0.246,
+          "diff": 26.01626016260163
+        },
+        {
+          "symbol": "ORCL",
+          "ours": 0.81,
+          "yahoo": 0.773,
+          "diff": 4.786545924967663
+        },
+        {
+          "symbol": "PEP",
+          "ours": 0.7,
+          "yahoo": 0.676,
+          "diff": 3.550295857988152
+        },
+        {
+          "symbol": "CMCSA",
+          "ours": 0.72,
+          "yahoo": 0.689,
+          "diff": 4.499274310595069
+        }
+      ]
+    },
+    "debt_to_equity": {
+      "exact": 0,
+      "close": 3,
+      "acceptable": 6,
+      "concerning": 2,
+      "major": 9,
+      "missing": 5,
+      "diffs": [
+        19.297163590554494,
+        9.513180913313645,
+        3.7114845938375294,
+        51.61847713397074,
+        86.77213799165018,
+        52.02766903576451,
+        35.604730125278074,
+        318.3639766596939,
+        24.426293836382932,
+        60.18419139286085,
+        2.9920511263105247,
+        46.187277755827736,
+        13.9850583722366,
+        4.3439117713256685,
+        59.93672765954508,
+        22.960069444444446,
+        60.64340740632767,
+        94.45100818245085,
+        76.17125946423768,
+        15.314107744771427
+      ],
+      "comparisons": [
+        {
+          "symbol": "AAPL",
+          "ours": 1.23,
+          "yahoo": 1.52411,
+          "diff": 19.297163590554494
+        },
+        {
+          "symbol": "MSFT",
+          "ours": 0.3,
+          "yahoo": 0.33154000000000006,
+          "diff": 9.513180913313645
+        },
+        {
+          "symbol": "GOOGL",
+          "ours": 0.11,
+          "yahoo": 0.11424,
+          "diff": 3.7114845938375294
+        },
+        {
+          "symbol": "AMZN",
+          "ours": 0.21,
+          "yahoo": 0.43405,
+          "diff": 51.61847713397074
+        },
+        {
+          "symbol": "NVDA",
+          "ours": 0.17,
+          "yahoo": 0.09102,
+          "diff": 86.77213799165018
+        },
+        {
+          "symbol": "META",
+          "ours": 0.4,
+          "yahoo": 0.26311,
+          "diff": 52.02766903576451
+        },
+        {
+          "symbol": "TSLA",
+          "ours": 0.11,
+          "yahoo": 0.17082,
+          "diff": 35.604730125278074
+        },
+        {
+          "symbol": "BRK-B",
+          "ours": 0.76,
+          "yahoo": 0.18166000000000002,
+          "diff": 318.3639766596939
+        },
+        {
+          "symbol": "V",
+          "ours": 0.52,
+          "yahoo": 0.6880700000000001,
+          "diff": 24.426293836382932
+        },
+        {
+          "symbol": "JNJ",
+          "ours": 0.23,
+          "yahoo": 0.57766,
+          "diff": 60.18419139286085
+        },
+        {
+          "symbol": "UNH",
+          "ours": 0.78,
+          "yahoo": 0.7573399999999999,
+          "diff": 2.9920511263105247
+        },
+        {
+          "symbol": "ABT",
+          "ours": 0.37,
+          "yahoo": 0.2531,
+          "diff": 46.187277755827736
+        },
+        {
+          "symbol": "NEE",
+          "ours": 1.24,
+          "yahoo": 1.44161,
+          "diff": 13.9850583722366
+        },
+        {
+          "symbol": "DHR",
+          "ours": 0.34,
+          "yahoo": 0.35544,
+          "diff": 4.3439117713256685
+        },
+        {
+          "symbol": "KO",
+          "ours": 0.58,
+          "yahoo": 1.4477099999999998,
+          "diff": 59.93672765954508
+        },
+        {
+          "symbol": "UPS",
+          "ours": 1.42,
+          "yahoo": 1.8432,
+          "diff": 22.960069444444446
+        },
+        {
+          "symbol": "BMY",
+          "ours": 1.08,
+          "yahoo": 2.74414,
+          "diff": 60.64340740632767
+        },
+        {
+          "symbol": "ORCL",
+          "ours": 0.24,
+          "yahoo": 4.3251100000000005,
+          "diff": 94.45100818245085
+        },
+        {
+          "symbol": "PEP",
+          "ours": 0.62,
+          "yahoo": 2.6019,
+          "diff": 76.17125946423768
+        },
+        {
+          "symbol": "CMCSA",
+          "ours": 1.17,
+          "yahoo": 1.01462,
+          "diff": 15.314107744771427
+        }
+      ]
+    },
+    "pe_ratio": {
+      "exact": 0,
+      "close": 0,
+      "acceptable": 0,
+      "concerning": 0,
+      "major": 0,
+      "missing": 25,
+      "diffs": [],
+      "comparisons": []
+    },
+    "pb_ratio": {
+      "exact": 0,
+      "close": 0,
+      "acceptable": 0,
+      "concerning": 0,
+      "major": 0,
+      "missing": 25,
+      "diffs": [],
+      "comparisons": []
+    }
+  },
+  "issues": [
+    {
+      "symbol": "AAPL",
+      "metric": "operating_margin",
+      "ours": 40.875,
+      "yahoo": 31.647,
+      "diff": 29.15916200587734,
+      "status": "major"
+    },
+    {
+      "symbol": "AAPL",
+      "metric": "roe",
+      "ours": 130.925,
+      "yahoo": 171.42199,
+      "diff": 23.6241511372024,
+      "status": "concerning"
+    },
+    {
+      "symbol": "AAPL",
+      "metric": "roa",
+      "ours": 29.025000000000002,
+      "yahoo": 22.964000000000002,
+      "diff": 26.393485455495558,
+      "status": "concerning"
+    },
+    {
+      "symbol": "AAPL",
+      "metric": "quick_ratio",
+      "ours": 0.91,
+      "yahoo": 0.771,
+      "diff": 18.028534370946826,
+      "status": "concerning"
+    },
+    {
+      "symbol": "MSFT",
+      "metric": "roa",
+      "ours": 19.400000000000002,
+      "yahoo": 14.655999999999999,
+      "diff": 32.368995633187794,
+      "status": "concerning"
+    },
+    {
+      "symbol": "GOOGL",
+      "metric": "operating_margin",
+      "ours": 34.1,
+      "yahoo": 30.512,
+      "diff": 11.759307813319353,
+      "status": "concerning"
+    },
+    {
+      "symbol": "GOOGL",
+      "metric": "net_margin",
+      "ours": 28.3,
+      "yahoo": 32.233003,
+      "diff": 12.201788955251846,
+      "status": "concerning"
+    },
+    {
+      "symbol": "GOOGL",
+      "metric": "roa",
+      "ours": 22.633333333333336,
+      "yahoo": 16.275999,
+      "diff": 39.05956453630488,
+      "status": "concerning"
+    },
+    {
+      "symbol": "GOOGL",
+      "metric": "current_ratio",
+      "ours": 1.95,
+      "yahoo": 1.747,
+      "diff": 11.619919862621627,
+      "status": "concerning"
+    },
+    {
+      "symbol": "GOOGL",
+      "metric": "quick_ratio",
+      "ours": 1.95,
+      "yahoo": 1.563,
+      "diff": 24.760076775431862,
+      "status": "concerning"
+    },
+    {
+      "symbol": "AMZN",
+      "metric": "operating_margin",
+      "ours": 9.566666666666666,
+      "yahoo": 11.057,
+      "diff": 13.4786409815803,
+      "status": "concerning"
+    },
+    {
+      "symbol": "AMZN",
+      "metric": "net_margin",
+      "ours": 8.533333333333333,
+      "yahoo": 11.063,
+      "diff": 22.866009822531566,
+      "status": "major"
+    },
+    {
+      "symbol": "AMZN",
+      "metric": "roa",
+      "ours": 9.433333333333332,
+      "yahoo": 7.495,
+      "diff": 25.861685568156528,
+      "status": "concerning"
+    },
+    {
+      "symbol": "AMZN",
+      "metric": "debt_to_equity",
+      "ours": 0.21,
+      "yahoo": 0.43405,
+      "diff": 51.61847713397074,
+      "status": "major"
+    },
+    {
+      "symbol": "NVDA",
+      "metric": "gross_margin",
+      "ours": 75.525,
+      "yahoo": 70.05,
+      "diff": 7.815845824411147,
+      "status": "concerning"
+    },
+    {
+      "symbol": "NVDA",
+      "metric": "roa",
+      "ours": 79.3,
+      "yahoo": 53.528,
+      "diff": 48.14676431026752,
+      "status": "major"
+    },
+    {
+      "symbol": "NVDA",
+      "metric": "debt_to_equity",
+      "ours": 0.17,
+      "yahoo": 0.09102,
+      "diff": 86.77213799165018,
+      "status": "major"
+    },
+    {
+      "symbol": "META",
+      "metric": "operating_margin",
+      "ours": 50.724999999999994,
+      "yahoo": 40.075,
+      "diff": 26.57517155333747,
+      "status": "major"
+    },
+    {
+      "symbol": "META",
+      "metric": "net_margin",
+      "ours": 35.25,
+      "yahoo": 30.891999999999996,
+      "diff": 14.107212223229329,
+      "status": "concerning"
+    },
+    {
+      "symbol": "META",
+      "metric": "roa",
+      "ours": 22.700000000000003,
+      "yahoo": 18.013,
+      "diff": 26.020096596902242,
+      "status": "concerning"
+    },
+    {
+      "symbol": "META",
+      "metric": "current_ratio",
+      "ours": 2.73,
+      "yahoo": 1.978,
+      "diff": 38.01820020222447,
+      "status": "major"
+    },
+    {
+      "symbol": "META",
+      "metric": "quick_ratio",
+      "ours": 2.73,
+      "yahoo": 1.671,
+      "diff": 63.37522441651705,
+      "status": "major"
+    },
+    {
+      "symbol": "META",
+      "metric": "debt_to_equity",
+      "ours": 0.4,
+      "yahoo": 0.26311,
+      "diff": 52.02766903576451,
+      "status": "major"
+    },
+    {
+      "symbol": "TSLA",
+      "metric": "gross_margin",
+      "ours": 18.275,
+      "yahoo": 17.006999,
+      "diff": 7.455759831584621,
+      "status": "concerning"
+    },
+    {
+      "symbol": "TSLA",
+      "metric": "operating_margin",
+      "ours": 8.65,
+      "yahoo": 6.628,
+      "diff": 30.506940253470127,
+      "status": "major"
+    },
+    {
+      "symbol": "TSLA",
+      "metric": "net_margin",
+      "ours": 7,
+      "yahoo": 5.314,
+      "diff": 31.72751223184042,
+      "status": "major"
+    },
+    {
+      "symbol": "TSLA",
+      "metric": "roe",
+      "ours": 10.6,
+      "yahoo": 6.7909999999999995,
+      "diff": 56.08894124576646,
+      "status": "major"
+    },
+    {
+      "symbol": "TSLA",
+      "metric": "roa",
+      "ours": 6.225,
+      "yahoo": 2.35,
+      "diff": 164.89361702127655,
+      "status": "major"
+    },
+    {
+      "symbol": "TSLA",
+      "metric": "current_ratio",
+      "ours": 1.84,
+      "yahoo": 2.066,
+      "diff": 10.939012584704733,
+      "status": "concerning"
+    },
+    {
+      "symbol": "TSLA",
+      "metric": "debt_to_equity",
+      "ours": 0.11,
+      "yahoo": 0.17082,
+      "diff": 35.604730125278074,
+      "status": "concerning"
+    },
+    {
+      "symbol": "BRK-B",
+      "metric": "gross_margin",
+      "ours": 83.525,
+      "yahoo": 24.361,
+      "diff": 242.8635934485448,
+      "status": "major"
+    },
+    {
+      "symbol": "BRK-B",
+      "metric": "operating_margin",
+      "ours": 4.2,
+      "yahoo": 41.103,
+      "diff": 89.78176775417852,
+      "status": "major"
+    },
+    {
+      "symbol": "BRK-B",
+      "metric": "net_margin",
+      "ours": 114.525,
+      "yahoo": 18.129,
+      "diff": 531.7226543107728,
+      "status": "major"
+    },
+    {
+      "symbol": "BRK-B",
+      "metric": "roa",
+      "ours": 32.56666666666666,
+      "yahoo": 4.775,
+      "diff": 582.024432809773,
+      "status": "major"
+    },
+    {
+      "symbol": "BRK-B",
+      "metric": "debt_to_equity",
+      "ours": 0.76,
+      "yahoo": 0.18166000000000002,
+      "diff": 318.3639766596939,
+      "status": "major"
+    },
+    {
+      "symbol": "JPM",
+      "metric": "gross_margin",
+      "ours": 100,
+      "yahoo": 0,
+      "diff": 100,
+      "status": "major"
+    },
+    {
+      "symbol": "V",
+      "metric": "current_ratio",
+      "ours": 1.37,
+      "yahoo": 1.078,
+      "diff": 27.087198515769945,
+      "status": "major"
+    },
+    {
+      "symbol": "V",
+      "metric": "quick_ratio",
+      "ours": 1.37,
+      "yahoo": 0.757,
+      "diff": 80.97754293262881,
+      "status": "major"
+    },
+    {
+      "symbol": "ABBV",
+      "metric": "gross_margin",
+      "ours": 65.475,
+      "yahoo": 71.461,
+      "diff": 8.376597024950678,
+      "status": "concerning"
+    },
+    {
+      "symbol": "ABBV",
+      "metric": "operating_margin",
+      "ours": 23.299999999999997,
+      "yahoo": 35.497,
+      "diff": 34.3606501957912,
+      "status": "major"
+    },
+    {
+      "symbol": "ABBV",
+      "metric": "net_margin",
+      "ours": 11.05,
+      "yahoo": 4.004,
+      "diff": 175.97402597402603,
+      "status": "major"
+    },
+    {
+      "symbol": "ABBV",
+      "metric": "roe",
+      "ours": 29.7,
+      "yahoo": 137.961,
+      "diff": 78.47217691956423,
+      "status": "major"
+    },
+    {
+      "symbol": "ABBV",
+      "metric": "roa",
+      "ours": 4.3999999999999995,
+      "yahoo": 9.585,
+      "diff": 54.09494001043298,
+      "status": "major"
+    },
+    {
+      "symbol": "JNJ",
+      "metric": "operating_margin",
+      "ours": 20.575,
+      "yahoo": 30.200001999999998,
+      "diff": 31.87086543901553,
+      "status": "major"
+    },
+    {
+      "symbol": "JNJ",
+      "metric": "net_margin",
+      "ours": 42.5,
+      "yahoo": 27.259,
+      "diff": 55.91180894383506,
+      "status": "major"
+    },
+    {
+      "symbol": "JNJ",
+      "metric": "roe",
+      "ours": 7.7,
+      "yahoo": 33.619,
+      "diff": 77.09628483893037,
+      "status": "major"
+    },
+    {
+      "symbol": "JNJ",
+      "metric": "debt_to_equity",
+      "ours": 0.23,
+      "yahoo": 0.57766,
+      "diff": 60.18419139286085,
+      "status": "major"
+    },
+    {
+      "symbol": "UNH",
+      "metric": "gross_margin",
+      "ours": 88.87500000000001,
+      "yahoo": 19.701,
+      "diff": 351.1192325262677,
+      "status": "major"
+    },
+    {
+      "symbol": "UNH",
+      "metric": "operating_margin",
+      "ours": 8.425,
+      "yahoo": 3.8129999999999997,
+      "diff": 120.95462890112776,
+      "status": "major"
+    },
+    {
+      "symbol": "UNH",
+      "metric": "current_ratio",
+      "ours": 0.91,
+      "yahoo": 0.823,
+      "diff": 10.57108140947753,
+      "status": "concerning"
+    },
+    {
+      "symbol": "UNH",
+      "metric": "quick_ratio",
+      "ours": 0.91,
+      "yahoo": 0.745,
+      "diff": 22.147651006711413,
+      "status": "concerning"
+    },
+    {
+      "symbol": "ABT",
+      "metric": "operating_margin",
+      "ours": 25.666666666666668,
+      "yahoo": 19.395,
+      "diff": 32.33651284695369,
+      "status": "major"
+    },
+    {
+      "symbol": "ABT",
+      "metric": "net_margin",
+      "ours": 14.066666666666668,
+      "yahoo": 31.879999999999995,
+      "diff": 55.87620242576327,
+      "status": "major"
+    },
+    {
+      "symbol": "ABT",
+      "metric": "roe",
+      "ours": 14.933333333333332,
+      "yahoo": 30.620000000000005,
+      "diff": 51.230132810799056,
+      "status": "major"
+    },
+    {
+      "symbol": "ABT",
+      "metric": "debt_to_equity",
+      "ours": 0.37,
+      "yahoo": 0.2531,
+      "diff": 46.187277755827736,
+      "status": "concerning"
+    },
+    {
+      "symbol": "NEE",
+      "metric": "gross_margin",
+      "ours": 100,
+      "yahoo": 62.041000000000004,
+      "diff": 61.18373333763155,
+      "status": "major"
+    },
+    {
+      "symbol": "NEE",
+      "metric": "roe",
+      "ours": 11.925,
+      "yahoo": 8.236,
+      "diff": 44.79116075764934,
+      "status": "major"
+    },
+    {
+      "symbol": "NEE",
+      "metric": "roa",
+      "ours": 3.8499999999999996,
+      "yahoo": 2.447,
+      "diff": 57.33551287290558,
+      "status": "major"
+    },
+    {
+      "symbol": "NEE",
+      "metric": "current_ratio",
+      "ours": 0.41,
+      "yahoo": 0.553,
+      "diff": 25.85895117540688,
+      "status": "major"
+    },
+    {
+      "symbol": "DHR",
+      "metric": "net_margin",
+      "ours": 17.200000000000003,
+      "yahoo": 14.435,
+      "diff": 19.1548320055421,
+      "status": "concerning"
+    },
+    {
+      "symbol": "DHR",
+      "metric": "quick_ratio",
+      "ours": 1.01,
+      "yahoo": 0.835,
+      "diff": 20.958083832335337,
+      "status": "concerning"
+    },
+    {
+      "symbol": "KO",
+      "metric": "operating_margin",
+      "ours": 29.225,
+      "yahoo": 32.373002,
+      "diff": 9.724158420649399,
+      "status": "concerning"
+    },
+    {
+      "symbol": "KO",
+      "metric": "net_margin",
+      "ours": 24.375,
+      "yahoo": 27.339999999999996,
+      "diff": 10.844915874177017,
+      "status": "concerning"
+    },
+    {
+      "symbol": "KO",
+      "metric": "roe",
+      "ours": 15.45,
+      "yahoo": 42.442,
+      "diff": 63.597379953819335,
+      "status": "major"
+    },
+    {
+      "symbol": "KO",
+      "metric": "roa",
+      "ours": 11.475000000000001,
+      "yahoo": 8.959,
+      "diff": 28.08349146110059,
+      "status": "concerning"
+    },
+    {
+      "symbol": "KO",
+      "metric": "current_ratio",
+      "ours": 1.06,
+      "yahoo": 1.211,
+      "diff": 12.469033856317093,
+      "status": "concerning"
+    },
+    {
+      "symbol": "KO",
+      "metric": "debt_to_equity",
+      "ours": 0.58,
+      "yahoo": 1.4477099999999998,
+      "diff": 59.93672765954508,
+      "status": "major"
+    },
+    {
+      "symbol": "WMT",
+      "metric": "operating_margin",
+      "ours": 4.25,
+      "yahoo": 3.73,
+      "diff": 13.941018766756033,
+      "status": "concerning"
+    },
+    {
+      "symbol": "WMT",
+      "metric": "net_margin",
+      "ours": 2.3249999999999997,
+      "yahoo": 3.259,
+      "diff": 28.65909788278614,
+      "status": "major"
+    },
+    {
+      "symbol": "WMT",
+      "metric": "roe",
+      "ours": 15.766666666666666,
+      "yahoo": 23.660999999999998,
+      "diff": 33.364326669766,
+      "status": "concerning"
+    },
+    {
+      "symbol": "UPS",
+      "metric": "gross_margin",
+      "ours": 100,
+      "yahoo": 21.691,
+      "diff": 361.02069982942237,
+      "status": "major"
+    },
+    {
+      "symbol": "UPS",
+      "metric": "operating_margin",
+      "ours": 7.9,
+      "yahoo": 10.174999999999999,
+      "diff": 22.358722358722346,
+      "status": "major"
+    },
+    {
+      "symbol": "UPS",
+      "metric": "roe",
+      "ours": 25.025000000000002,
+      "yahoo": 33.617999999999995,
+      "diff": 25.560711523588537,
+      "status": "concerning"
+    },
+    {
+      "symbol": "UPS",
+      "metric": "current_ratio",
+      "ours": 1.14,
+      "yahoo": 1.305,
+      "diff": 12.643678160919544,
+      "status": "concerning"
+    },
+    {
+      "symbol": "MRK",
+      "metric": "operating_margin",
+      "ours": 72.65,
+      "yahoo": 40.802,
+      "diff": 78.05499730405374,
+      "status": "major"
+    },
+    {
+      "symbol": "MRK",
+      "metric": "roa",
+      "ours": 18.65,
+      "yahoo": 13.755,
+      "diff": 35.587059251181365,
+      "status": "concerning"
+    },
+    {
+      "symbol": "BMY",
+      "metric": "gross_margin",
+      "ours": 85.44999999999999,
+      "yahoo": 73.14600300000001,
+      "diff": 16.821147424829185,
+      "status": "major"
+    },
+    {
+      "symbol": "BMY",
+      "metric": "operating_margin",
+      "ours": -14.925,
+      "yahoo": 31.566,
+      "diff": 147.28188557308496,
+      "status": "major"
+    },
+    {
+      "symbol": "BMY",
+      "metric": "net_margin",
+      "ours": -9.375000000000002,
+      "yahoo": 12.572,
+      "diff": 174.57047406936053,
+      "status": "major"
+    },
+    {
+      "symbol": "BMY",
+      "metric": "roe",
+      "ours": -15.45,
+      "yahoo": 33.777002,
+      "diff": 145.74118212149202,
+      "status": "major"
+    },
+    {
+      "symbol": "BMY",
+      "metric": "roa",
+      "ours": -7.324999999999999,
+      "yahoo": 9.39,
+      "diff": 178.00851970181043,
+      "status": "major"
+    },
+    {
+      "symbol": "BMY",
+      "metric": "debt_to_equity",
+      "ours": 1.08,
+      "yahoo": 2.74414,
+      "diff": 60.64340740632767,
+      "status": "major"
+    },
+    {
+      "symbol": "HD",
+      "metric": "operating_margin",
+      "ours": 14.2,
+      "yahoo": 12.945,
+      "diff": 9.69486288142139,
+      "status": "concerning"
+    },
+    {
+      "symbol": "HD",
+      "metric": "net_margin",
+      "ours": 9.925,
+      "yahoo": 8.7740004,
+      "diff": 13.118298923259687,
+      "status": "concerning"
+    },
+    {
+      "symbol": "HD",
+      "metric": "roa",
+      "ours": 18,
+      "yahoo": 13.225999999999999,
+      "diff": 36.09556933313172,
+      "status": "concerning"
+    },
+    {
+      "symbol": "HD",
+      "metric": "quick_ratio",
+      "ours": 0.31,
+      "yahoo": 0.246,
+      "diff": 26.01626016260163,
+      "status": "concerning"
+    },
+    {
+      "symbol": "ORCL",
+      "metric": "gross_margin",
+      "ours": 100,
+      "yahoo": 68.54299999999999,
+      "diff": 45.893818478911065,
+      "status": "major"
+    },
+    {
+      "symbol": "ORCL",
+      "metric": "operating_margin",
+      "ours": 58.900000000000006,
+      "yahoo": 31.996999999999996,
+      "diff": 84.07975747726353,
+      "status": "major"
+    },
+    {
+      "symbol": "ORCL",
+      "metric": "net_margin",
+      "ours": 20.45,
+      "yahoo": 25.280002000000003,
+      "diff": 19.106019058068124,
+      "status": "concerning"
+    },
+    {
+      "symbol": "ORCL",
+      "metric": "roe",
+      "ours": 33.875,
+      "yahoo": 69.026,
+      "diff": 50.92428939819777,
+      "status": "major"
+    },
+    {
+      "symbol": "ORCL",
+      "metric": "current_ratio",
+      "ours": 0.81,
+      "yahoo": 0.909,
+      "diff": 10.891089108910888,
+      "status": "concerning"
+    },
+    {
+      "symbol": "ORCL",
+      "metric": "debt_to_equity",
+      "ours": 0.24,
+      "yahoo": 4.3251100000000005,
+      "diff": 94.45100818245085,
+      "status": "major"
+    },
+    {
+      "symbol": "PEP",
+      "metric": "operating_margin",
+      "ours": 18.525,
+      "yahoo": 16.903000000000002,
+      "diff": 9.595929716618329,
+      "status": "concerning"
+    },
+    {
+      "symbol": "PEP",
+      "metric": "net_margin",
+      "ours": 12.724999999999998,
+      "yahoo": 7.8200005,
+      "diff": 62.72377476190696,
+      "status": "major"
+    },
+    {
+      "symbol": "PEP",
+      "metric": "roe",
+      "ours": 15.725000000000001,
+      "yahoo": 37.162,
+      "diff": 57.68526989935956,
+      "status": "major"
+    },
+    {
+      "symbol": "PEP",
+      "metric": "roa",
+      "ours": 11.2,
+      "yahoo": 8.365,
+      "diff": 33.891213389121326,
+      "status": "concerning"
+    },
+    {
+      "symbol": "PEP",
+      "metric": "debt_to_equity",
+      "ours": 0.62,
+      "yahoo": 2.6019,
+      "diff": 76.17125946423768,
+      "status": "major"
+    },
+    {
+      "symbol": "CMCSA",
+      "metric": "gross_margin",
+      "ours": 100,
+      "yahoo": 71.882004,
+      "diff": 39.11687826622086,
+      "status": "major"
+    },
+    {
+      "symbol": "CMCSA",
+      "metric": "operating_margin",
+      "ours": 19.725,
+      "yahoo": 17.735,
+      "diff": 11.220749929517915,
+      "status": "concerning"
+    },
+    {
+      "symbol": "CMCSA",
+      "metric": "net_margin",
+      "ours": 12.350000000000001,
+      "yahoo": 18.333,
+      "diff": 32.63513882070582,
+      "status": "major"
+    },
+    {
+      "symbol": "CMCSA",
+      "metric": "roe",
+      "ours": 18.4,
+      "yahoo": 24.186,
+      "diff": 23.92293062102043,
+      "status": "concerning"
+    },
+    {
+      "symbol": "CMCSA",
+      "metric": "current_ratio",
+      "ours": 0.72,
+      "yahoo": 0.882,
+      "diff": 18.367346938775515,
+      "status": "concerning"
+    }
+  ],
+  "warnings": [],
+  "summary": {
+    "gross_margin": {
+      "accuracy": "56.0%",
+      "avgDiff": "50.4%",
+      "medianDiff": "2.3%",
+      "status": "fail",
+      "statusIcon": "❌",
+      "sampleSize": 25,
+      "breakdown": {
+        "exact": 10,
+        "close": 4,
+        "acceptable": 0,
+        "concerning": 3,
+        "major": 8
+      }
+    },
+    "operating_margin": {
+      "accuracy": "24.0%",
+      "avgDiff": "33.2%",
+      "medianDiff": "13.9%",
+      "status": "fail",
+      "statusIcon": "❌",
+      "sampleSize": 25,
+      "breakdown": {
+        "exact": 2,
+        "close": 1,
+        "acceptable": 3,
+        "concerning": 7,
+        "major": 12
+      }
+    },
+    "net_margin": {
+      "accuracy": "36.0%",
+      "avgDiff": "52.3%",
+      "medianDiff": "14.1%",
+      "status": "fail",
+      "statusIcon": "❌",
+      "sampleSize": 25,
+      "breakdown": {
+        "exact": 0,
+        "close": 5,
+        "acceptable": 4,
+        "concerning": 6,
+        "major": 10
+      }
+    },
+    "roe": {
+      "accuracy": "45.8%",
+      "avgDiff": "35.1%",
+      "medianDiff": "23.9%",
+      "status": "fail",
+      "statusIcon": "❌",
+      "sampleSize": 24,
+      "breakdown": {
+        "exact": 0,
+        "close": 1,
+        "acceptable": 10,
+        "concerning": 4,
+        "major": 9
+      }
+    },
+    "roa": {
+      "accuracy": "40.0%",
+      "avgDiff": "59.7%",
+      "medianDiff": "26.4%",
+      "status": "fail",
+      "statusIcon": "❌",
+      "sampleSize": 25,
+      "breakdown": {
+        "exact": 1,
+        "close": 1,
+        "acceptable": 8,
+        "concerning": 9,
+        "major": 6
+      }
+    },
+    "current_ratio": {
+      "accuracy": "50.0%",
+      "avgDiff": "12.1%",
+      "medianDiff": "10.6%",
+      "status": "fail",
+      "statusIcon": "❌",
+      "sampleSize": 20,
+      "breakdown": {
+        "exact": 0,
+        "close": 3,
+        "acceptable": 7,
+        "concerning": 7,
+        "major": 3
+      }
+    },
+    "quick_ratio": {
+      "accuracy": "65.0%",
+      "avgDiff": "16.2%",
+      "medianDiff": "7.8%",
+      "status": "fail",
+      "statusIcon": "❌",
+      "sampleSize": 20,
+      "breakdown": {
+        "exact": 3,
+        "close": 6,
+        "acceptable": 4,
+        "concerning": 5,
+        "major": 2
+      }
+    },
+    "debt_to_equity": {
+      "accuracy": "45.0%",
+      "avgDiff": "52.9%",
+      "medianDiff": "46.2%",
+      "status": "fail",
+      "statusIcon": "❌",
+      "sampleSize": 20,
+      "breakdown": {
+        "exact": 0,
+        "close": 3,
+        "acceptable": 6,
+        "concerning": 2,
+        "major": 9
+      }
+    },
+    "pe_ratio": {
+      "accuracy": "N/A",
+      "avgDiff": "N/A",
+      "medianDiff": "N/A",
+      "status": "?",
+      "sampleSize": 0
+    },
+    "pb_ratio": {
+      "accuracy": "N/A",
+      "avgDiff": "N/A",
+      "medianDiff": "N/A",
+      "status": "?",
+      "sampleSize": 0
+    }
+  },
+  "overallAccuracy": "44.6"
+}

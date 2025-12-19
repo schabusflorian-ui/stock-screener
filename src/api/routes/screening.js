@@ -50,11 +50,12 @@ router.post('/custom', (req, res) => {
  * Get list of available preset screens
  */
 router.get('/presets', (req, res) => {
+  // Note: All presets filter to companies with data within the last 2 years (latest available data)
   const presets = [
     {
       id: 'buffett',
       name: 'Buffett Quality',
-      description: 'High ROIC, low debt companies with strong cash flows',
+      description: 'ROIC >15%, debt/equity <0.5, positive FCF. Latest data within 2 years.',
       criteria: {
         minROIC: 15,
         maxDebtToEquity: 0.5,
@@ -64,7 +65,7 @@ router.get('/presets', (req, res) => {
     {
       id: 'value',
       name: 'Deep Value (Graham)',
-      description: 'Low P/E, low P/B stocks with decent returns',
+      description: 'P/E <15, P/B <1.5, positive ROIC. Latest data within 2 years.',
       criteria: {
         maxPERatio: 15,
         maxPBRatio: 1.5,
@@ -74,7 +75,7 @@ router.get('/presets', (req, res) => {
     {
       id: 'magic',
       name: 'Magic Formula',
-      description: 'Greenblatt style: High ROIC at reasonable prices',
+      description: 'ROIC >15%, P/E <25 (Greenblatt). Latest data within 2 years.',
       criteria: {
         minROIC: 15,
         maxPERatio: 25
@@ -83,7 +84,7 @@ router.get('/presets', (req, res) => {
     {
       id: 'quality',
       name: 'Quality at Any Price',
-      description: 'Top quality companies regardless of valuation',
+      description: 'ROIC >20%, debt/equity <1. Latest data within 2 years.',
       criteria: {
         minROIC: 20,
         maxDebtToEquity: 1.0
@@ -92,7 +93,7 @@ router.get('/presets', (req, res) => {
     {
       id: 'growth',
       name: 'High Growth',
-      description: 'Companies with strong revenue and earnings growth',
+      description: 'Revenue & earnings growth >15%. Latest data within 2 years.',
       criteria: {
         minRevenueGrowth: 15,
         minEarningsGrowth: 15
@@ -101,9 +102,9 @@ router.get('/presets', (req, res) => {
     {
       id: 'dividend',
       name: 'Dividend Value',
-      description: 'High FCF yield with sustainable growth',
+      description: 'FCF margin >10%, low debt, positive growth. Latest data within 2 years.',
       criteria: {
-        minFCFYield: 5,
+        minFCFMargin: 10,
         maxDebtToEquity: 1.0,
         minRevenueGrowth: 0
       }
@@ -111,11 +112,72 @@ router.get('/presets', (req, res) => {
     {
       id: 'fortress',
       name: 'Financial Fortress',
-      description: 'Rock-solid balance sheets with minimal debt',
+      description: 'Debt <0.3, current ratio >2, margin >5%. Latest data within 2 years.',
       criteria: {
         maxDebtToEquity: 0.3,
         minCurrentRatio: 2,
-        minFCFYield: 0
+        minNetMargin: 5
+      }
+    },
+    {
+      id: 'cigarbutts',
+      name: 'Graham Cigar Butts',
+      description: 'P/B <0.8, P/E <8, current ratio >1.5. Deep value / net-net style.',
+      criteria: {
+        maxPBRatio: 0.8,
+        maxPERatio: 8,
+        minCurrentRatio: 1.5
+      }
+    },
+    {
+      id: 'compounders',
+      name: 'Akre Compounders',
+      description: 'ROIC >20%, debt <0.5, net margin >10%. High-quality compounders.',
+      criteria: {
+        minROIC: 20,
+        maxDebtToEquity: 0.5,
+        minNetMargin: 10
+      }
+    },
+    {
+      id: 'flywheel',
+      name: 'Sleep Well Flywheel',
+      description: 'Revenue CAGR >10%, gross margin >30%, ROIC >12%. Growth + efficiency.',
+      criteria: {
+        minRevenueCagr: 10,
+        minGrossMargin: 30,
+        minROIC: 12
+      }
+    },
+    {
+      id: 'forensic',
+      name: 'Forensic Quality',
+      description: 'CFO/Net Income >1.0, margin >5%. High earnings quality.',
+      criteria: {
+        minCFOToNetIncome: 1.0,
+        minNetMargin: 5,
+        maxDebtToEquity: 1.0
+      }
+    },
+    {
+      id: 'asymmetry',
+      name: 'Pabrai Asymmetry',
+      description: 'P/E <10, ROIC >12%, debt <0.8. Cheap quality with low risk.',
+      criteria: {
+        maxPERatio: 10,
+        minROIC: 12,
+        maxDebtToEquity: 0.8
+      }
+    },
+    {
+      id: 'moats',
+      name: 'Pat Dorsey Moats',
+      description: 'ROIC >15%, gross margin >40%. Companies with competitive advantages.',
+      criteria: {
+        minROIC: 15,
+        minGrossMargin: 40,
+        minOperatingMargin: 15,
+        minNetMargin: 10
       }
     }
   ];
@@ -129,8 +191,8 @@ router.get('/presets', (req, res) => {
  */
 router.get('/buffett', (req, res) => {
   try {
-    const { limit = 50 } = req.query;
-    const results = screener.buffettQuality(parseInt(limit));
+    const { limit } = req.query;
+    const results = screener.buffettQuality(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Buffett Quality',
@@ -153,8 +215,8 @@ router.get('/buffett', (req, res) => {
  */
 router.get('/value', (req, res) => {
   try {
-    const { limit = 50 } = req.query;
-    const results = screener.deepValue(parseInt(limit));
+    const { limit } = req.query;
+    const results = screener.deepValue(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Deep Value (Graham)',
@@ -177,8 +239,8 @@ router.get('/value', (req, res) => {
  */
 router.get('/magic', (req, res) => {
   try {
-    const { limit = 50 } = req.query;
-    const results = screener.magicFormula(parseInt(limit));
+    const { limit } = req.query;
+    const results = screener.magicFormula(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Magic Formula (Greenblatt)',
@@ -200,8 +262,8 @@ router.get('/magic', (req, res) => {
  */
 router.get('/quality', (req, res) => {
   try {
-    const { limit = 50 } = req.query;
-    const results = screener.qualityAtAnyPrice(parseInt(limit));
+    const { limit } = req.query;
+    const results = screener.qualityAtAnyPrice(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Quality at Any Price',
@@ -223,8 +285,8 @@ router.get('/quality', (req, res) => {
  */
 router.get('/growth', (req, res) => {
   try {
-    const { limit = 50 } = req.query;
-    const results = screener.highGrowth(parseInt(limit));
+    const { limit } = req.query;
+    const results = screener.highGrowth(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'High Growth',
@@ -246,8 +308,8 @@ router.get('/growth', (req, res) => {
  */
 router.get('/dividend', (req, res) => {
   try {
-    const { limit = 50 } = req.query;
-    const results = screener.dividendValue(parseInt(limit));
+    const { limit } = req.query;
+    const results = screener.dividendValue(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Dividend Value',
@@ -270,8 +332,8 @@ router.get('/dividend', (req, res) => {
  */
 router.get('/fortress', (req, res) => {
   try {
-    const { limit = 50 } = req.query;
-    const results = screener.financialFortress(parseInt(limit));
+    const { limit } = req.query;
+    const results = screener.financialFortress(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Financial Fortress',
@@ -279,6 +341,161 @@ router.get('/fortress', (req, res) => {
         maxDebtToEquity: 0.3,
         minCurrentRatio: 2,
         minFCFYield: 0
+      },
+      count: results.length,
+      results
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/screening/cigarbutts
+ * Graham Cigar Butts - Deep value / net-net style
+ */
+router.get('/cigarbutts', (req, res) => {
+  try {
+    const { limit } = req.query;
+    const results = screener.grahamCigarButts(limit ? parseInt(limit) : undefined);
+
+    res.json({
+      screen: 'Graham Cigar Butts',
+      description: 'Deep value stocks trading below liquidation value',
+      criteria: {
+        maxPBRatio: 0.8,
+        maxPERatio: 8,
+        minCurrentRatio: 1.5,
+        minNetMargin: 0
+      },
+      count: results.length,
+      results
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/screening/compounders
+ * Akre Compounders - High quality compounders
+ */
+router.get('/compounders', (req, res) => {
+  try {
+    const { limit } = req.query;
+    const results = screener.akreCompounders(limit ? parseInt(limit) : undefined);
+
+    res.json({
+      screen: 'Akre Compounders',
+      description: 'High-quality compounders with conservative debt',
+      criteria: {
+        minROIC: 20,
+        maxDebtToEquity: 0.5,
+        minNetMargin: 10,
+        minFCFMargin: 8
+      },
+      count: results.length,
+      results
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/screening/flywheel
+ * Sleep Well Flywheel - Compounders with growth and efficiency
+ */
+router.get('/flywheel', (req, res) => {
+  try {
+    const { limit } = req.query;
+    const results = screener.sleepWellFlywheel(limit ? parseInt(limit) : undefined);
+
+    res.json({
+      screen: 'Sleep Well Flywheel',
+      description: 'Growing companies with improving capital efficiency',
+      criteria: {
+        minRevenueCagr: 10,
+        minGrossMargin: 30,
+        minROIC: 12
+      },
+      count: results.length,
+      results
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/screening/forensic
+ * Forensic Quality - High earnings quality
+ */
+router.get('/forensic', (req, res) => {
+  try {
+    const { limit } = req.query;
+    const results = screener.forensicQuality(limit ? parseInt(limit) : undefined);
+
+    res.json({
+      screen: 'Forensic Quality',
+      description: 'Companies with high-quality cash earnings',
+      criteria: {
+        minCFOToNetIncome: 1.0,
+        minNetMargin: 5,
+        maxDebtToEquity: 1.0
+      },
+      count: results.length,
+      results
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/screening/asymmetry
+ * Pabrai Asymmetry - Low risk, high reward
+ */
+router.get('/asymmetry', (req, res) => {
+  try {
+    const { limit } = req.query;
+    const results = screener.pabraiAsymmetry(limit ? parseInt(limit) : undefined);
+
+    res.json({
+      screen: 'Pabrai Asymmetry',
+      description: 'Cheap quality stocks with asymmetric risk/reward',
+      criteria: {
+        maxPERatio: 10,
+        minROIC: 12,
+        maxDebtToEquity: 0.8,
+        minFCFMargin: 5
+      },
+      count: results.length,
+      results
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/screening/moats
+ * Pat Dorsey Moats - Companies with competitive advantages
+ */
+router.get('/moats', (req, res) => {
+  try {
+    const { limit } = req.query;
+    const results = screener.dorseyMoats(limit ? parseInt(limit) : undefined);
+
+    res.json({
+      screen: 'Pat Dorsey Moats',
+      description: 'Companies with durable competitive advantages',
+      criteria: {
+        minROIC: 15,
+        minGrossMargin: 40,
+        minOperatingMargin: 15,
+        minNetMargin: 10,
+        maxDebtToEquity: 1.0
       },
       count: results.length,
       results

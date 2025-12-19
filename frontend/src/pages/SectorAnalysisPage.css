@@ -1,7 +1,7 @@
 /* SectorAnalysisPage.css */
 
 .sector-analysis-page {
-  padding: 2rem 0;
+  padding: 2rem;
 }
 
 .page-header {
@@ -26,7 +26,11 @@
   gap: var(--radius-md);
   margin-bottom: 2rem;
   padding: 0.25rem;
-  background: var(--bg-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-md);
   width: fit-content;
 }
@@ -95,8 +99,11 @@
 
 .section-header select {
   padding: var(--radius-md) 1rem;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-size: 0.875rem;
@@ -110,8 +117,11 @@
 }
 
 .sector-card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-lg);
   padding: 1.25rem;
   cursor: pointer;
@@ -129,7 +139,7 @@
   align-items: center;
   margin-bottom: 1rem;
   padding-bottom: var(--radius-lg);
-  border-bottom: 1px solid var(--border-primary);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .sector-card .card-header h3 {
@@ -170,7 +180,7 @@
 .sector-card .card-footer {
   margin-top: 1rem;
   padding-top: var(--radius-lg);
-  border-top: 1px solid var(--border-primary);
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
   text-align: right;
 }
 
@@ -190,8 +200,11 @@
 
 /* Rotation Chart */
 .rotation-chart-container {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-lg);
   padding: 1.5rem;
   margin-bottom: 2rem;
@@ -199,8 +212,11 @@
 
 /* Rotation Table */
 .rotation-table {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-lg);
   overflow: hidden;
 }
@@ -214,11 +230,11 @@
 .rotation-table td {
   padding: 0.875rem 1rem;
   text-align: left;
-  border-bottom: 1px solid var(--border-primary);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .rotation-table th {
-  background: var(--bg-primary);
+  background: rgba(255, 255, 255, 0.5);
   color: var(--text-secondary);
   font-weight: 600;
   font-size: var(--radius-lg);
@@ -227,7 +243,7 @@
 }
 
 .rotation-table tbody tr:hover {
-  background: rgba(139, 92, 246, 0.05);
+  background: rgba(99, 102, 241, 0.04);
 }
 
 .rotation-table .sector-name {
@@ -266,8 +282,11 @@
 }
 
 .sector-performers {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-lg);
   overflow: hidden;
 }
@@ -275,9 +294,9 @@
 .sector-performers h3 {
   margin: 0;
   padding: 1rem 1.25rem;
-  background: var(--bg-primary);
+  background: rgba(255, 255, 255, 0.5);
   font-size: 0.875rem;
-  border-bottom: 1px solid var(--border-primary);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .performers-list {
@@ -293,7 +312,7 @@
 }
 
 .performer-row:hover {
-  background: rgba(139, 92, 246, 0.05);
+  background: rgba(99, 102, 241, 0.04);
 }
 
 .performer-row .rank {
@@ -337,8 +356,11 @@
 
 /* Margin Table */
 .margin-table {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-lg);
   overflow-x: auto;
 }
@@ -353,11 +375,11 @@
 .margin-table td {
   padding: var(--radius-lg) 1rem;
   text-align: left;
-  border-bottom: 1px solid var(--border-primary);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .margin-table th {
-  background: var(--bg-primary);
+  background: rgba(255, 255, 255, 0.5);
   color: var(--text-secondary);
   font-weight: 600;
   font-size: var(--radius-lg);
@@ -367,7 +389,7 @@
 }
 
 .margin-table tbody tr:hover {
-  background: rgba(139, 92, 246, 0.05);
+  background: rgba(99, 102, 241, 0.04);
 }
 
 .margin-table .industry-name {
@@ -410,7 +432,7 @@
   gap: var(--radius-md);
   padding: var(--radius-md) 1rem;
   background: transparent;
-  border: 1px solid var(--border-primary);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
   cursor: pointer;
@@ -420,7 +442,7 @@
 }
 
 .back-button:hover {
-  background: var(--bg-secondary);
+  background: rgba(99, 102, 241, 0.04);
   color: var(--text-primary);
 }
 
@@ -448,8 +470,11 @@
 }
 
 .aggregate-metrics .metric-card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-md);
   padding: 1rem;
   display: flex;
@@ -472,8 +497,11 @@
 
 /* Companies Table */
 .companies-table {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-lg);
   overflow: hidden;
 }
@@ -481,9 +509,9 @@
 .companies-table h3 {
   margin: 0;
   padding: 1rem 1.25rem;
-  background: var(--bg-primary);
+  background: rgba(255, 255, 255, 0.5);
   font-size: 0.875rem;
-  border-bottom: 1px solid var(--border-primary);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .companies-table table {
@@ -495,11 +523,11 @@
 .companies-table td {
   padding: var(--radius-lg) 1rem;
   text-align: left;
-  border-bottom: 1px solid var(--border-primary);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .companies-table th {
-  background: var(--bg-primary);
+  background: rgba(255, 255, 255, 0.5);
   color: var(--text-secondary);
   font-weight: 600;
   font-size: var(--radius-lg);
@@ -509,7 +537,7 @@
 }
 
 .companies-table tbody tr:hover {
-  background: rgba(139, 92, 246, 0.05);
+  background: rgba(99, 102, 241, 0.04);
 }
 
 .companies-table .symbol-link {
@@ -566,8 +594,11 @@
   flex: 1;
   max-width: 300px;
   padding: var(--radius-lg) 1rem;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-md);
   color: var(--text-primary);
   font-size: 0.875rem;
@@ -580,8 +611,11 @@
 
 .industry-filters select {
   padding: var(--radius-lg) 1rem;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-md);
   color: var(--text-primary);
   font-size: 0.875rem;
@@ -589,8 +623,11 @@
 }
 
 .industries-table {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-lg);
   overflow-x: auto;
 }
@@ -605,11 +642,11 @@
 .industries-table td {
   padding: var(--radius-lg) 1rem;
   text-align: left;
-  border-bottom: 1px solid var(--border-primary);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .industries-table th {
-  background: var(--bg-primary);
+  background: rgba(255, 255, 255, 0.5);
   color: var(--text-secondary);
   font-weight: 600;
   font-size: var(--radius-lg);
@@ -619,7 +656,7 @@
 }
 
 .industries-table tbody tr:hover {
-  background: rgba(139, 92, 246, 0.05);
+  background: rgba(99, 102, 241, 0.04);
 }
 
 .industries-table .industry-name {
@@ -655,8 +692,11 @@
 }
 
 .sidebar-section {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-lg);
   overflow: hidden;
 }
@@ -666,8 +706,8 @@
   justify-content: space-between;
   align-items: center;
   padding: 1rem 1.25rem;
-  background: var(--bg-primary);
-  border-bottom: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.5);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .sidebar-header h3 {
@@ -681,7 +721,7 @@
   height: 24px;
   padding: 0;
   border: none;
-  background: var(--border-primary);
+  background: rgba(0, 0, 0, 0.06);
   color: var(--text-secondary);
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -700,15 +740,15 @@
   display: flex;
   gap: var(--radius-md);
   padding: var(--radius-lg) 1rem;
-  border-bottom: 1px solid var(--border-primary);
-  background: rgba(139, 92, 246, 0.05);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(99, 102, 241, 0.04);
 }
 
 .new-item-form input {
   flex: 1;
   padding: var(--radius-md);
-  background: var(--bg-primary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-size: var(--radius-lg);
@@ -742,7 +782,7 @@
 
 .sidebar-item:hover,
 .tag-item:hover {
-  background: rgba(139, 92, 246, 0.1);
+  background: rgba(99, 102, 241, 0.08);
 }
 
 .sidebar-item.active,
@@ -793,8 +833,8 @@
   display: inline-flex;
   margin: var(--radius-md);
   padding: var(--radius-md) var(--radius-lg);
-  background: var(--border-primary);
-  border: 1px solid var(--border-secondary);
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: 1rem;
   gap: var(--radius-md);
 }
@@ -818,8 +858,11 @@
 
 /* Custom Companies Section */
 .custom-companies {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-lg);
   padding: 1.5rem;
   min-height: 400px;
@@ -831,7 +874,7 @@
   align-items: center;
   margin-bottom: 1.5rem;
   padding-bottom: 1rem;
-  border-bottom: 1px solid var(--border-primary);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .companies-header h3 {
@@ -851,8 +894,8 @@
 }
 
 .companies-grid .company-card {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-md);
   padding: 1rem;
   text-decoration: none;
@@ -945,8 +988,11 @@
 
 .header-controls .search-input {
   padding: var(--radius-md) 1rem;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-size: 0.875rem;
@@ -960,8 +1006,11 @@
 
 .header-controls select {
   padding: var(--radius-md) 1rem;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-size: 0.875rem;
@@ -970,10 +1019,10 @@
 /* View Toggle */
 .view-toggle {
   display: flex;
-  background: var(--bg-primary);
+  background: rgba(255, 255, 255, 0.5);
   border-radius: var(--radius-sm);
   overflow: hidden;
-  border: 1px solid var(--border-primary);
+  border: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .view-toggle button {
@@ -990,7 +1039,7 @@
 }
 
 .view-toggle button:hover {
-  background: rgba(139, 92, 246, 0.1);
+  background: rgba(99, 102, 241, 0.08);
   color: var(--text-primary);
 }
 
@@ -1000,7 +1049,7 @@
 }
 
 .view-toggle button:not(:last-child) {
-  border-right: 1px solid var(--border-primary);
+  border-right: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 /* Charts View */
@@ -1015,8 +1064,11 @@
 }
 
 .chart-card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-lg);
   padding: 1.25rem;
 }
@@ -1042,8 +1094,8 @@
 /* Filter Input in Tables */
 .filter-input {
   padding: var(--radius-md) var(--radius-lg);
-  background: var(--bg-primary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-size: var(--radius-lg);
@@ -1096,8 +1148,11 @@
 }
 
 .industry-charts .chart-card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-lg);
   padding: 1.25rem;
 }
@@ -1122,8 +1177,11 @@
 
 /* Sector Table Styles */
 .sector-table-container {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-lg);
   overflow: hidden;
 }
@@ -1137,11 +1195,11 @@
 .sector-table-container td {
   padding: 0.875rem 1rem;
   text-align: left;
-  border-bottom: 1px solid var(--border-primary);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .sector-table-container th {
-  background: var(--bg-primary);
+  background: rgba(255, 255, 255, 0.5);
   color: var(--text-secondary);
   font-weight: 600;
   font-size: var(--radius-lg);
@@ -1155,7 +1213,7 @@
 }
 
 .sector-table-container tbody tr:hover {
-  background: rgba(139, 92, 246, 0.1);
+  background: rgba(99, 102, 241, 0.08);
 }
 
 /* Responsive */

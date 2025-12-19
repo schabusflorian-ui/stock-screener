@@ -7,23 +7,172 @@ const newsService = require('../../services/newsService');
 const database = db.getDatabase();
 
 /**
+ * Calculate Q4 data from annual report minus Q1+Q2+Q3
+ * Companies don't file 10-Q for Q4, only 10-K annual reports
+ * This function fills in the missing Q4 quarters
+ */
+function calculateMissingQ4Data(db, companyId, existingQuarterly, limit) {
+  // Get fiscal config to know fiscal year end
+  const fiscalConfig = db.prepare(`
+    SELECT fiscal_year_end_month FROM company_fiscal_config WHERE company_id = ?
+  `).get(companyId);
+
+  if (!fiscalConfig) return existingQuarterly;
+
+  const fyeMonth = fiscalConfig.fiscal_year_end_month;
+
+  // Get annual data to calculate Q4s
+  const annualData = db.prepare(`
+    SELECT
+      fiscal_date_ending,
+      fiscal_year,
+      total_revenue,
+      cost_of_revenue,
+      gross_profit,
+      operating_income,
+      net_income,
+      data
+    FROM financial_data
+    WHERE company_id = ?
+      AND statement_type = 'income_statement'
+      AND period_type = 'annual'
+    ORDER BY fiscal_date_ending DESC
+    LIMIT 10
+  `).all(companyId);
+
+  // Build a map of existing quarters by date
+  const existingDates = new Set(existingQuarterly.map(q => q.fiscal_date_ending));
+
+  // For each fiscal year, check if Q4 is missing and calculate it
+  const calculatedQ4s = [];
+
+  for (const annual of annualData) {
+    const annualDate = new Date(annual.fiscal_date_ending);
+    const annualYear = annualDate.getFullYear();
+
+    // Q4 ends at fiscal year end (same as annual)
+    const q4EndDate = annual.fiscal_date_ending;
+
+    // Skip if Q4 already exists
+    if (existingDates.has(q4EndDate)) continue;
+
+    // Find Q1, Q2, Q3 for this fiscal year by looking at quarters
+    // that fall within this fiscal year's date range
+    // For Apple (Sept FYE): FY2024 annual ends 2024-09-30
+    //   Q1 ends 2023-12-31, Q2 ends 2024-03-31, Q3 ends 2024-06-30
+
+    // Calculate Q1/Q2/Q3 end dates based on FYE
+    // Q1 ends 3 months after FY start = FYE + 3 months
+    // Q2 ends 6 months after FY start = FYE + 6 months
+    // Q3 ends 9 months after FY start = FYE + 9 months
+    const getQuarterEndDate = (quarterNum) => {
+      const monthsAfterFYE = quarterNum * 3;
+      let month = fyeMonth + monthsAfterFYE;
+      let year = annualYear;
+
+      if (month > 12) {
+        month = month - 12;
+      } else {
+        year = annualYear - 1;
+      }
+
+      // Get last day of month
+      const lastDay = new Date(year, month, 0).getDate();
+      return `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    };
+
+    const q1End = getQuarterEndDate(1);
+    const q2End = getQuarterEndDate(2);
+    const q3End = getQuarterEndDate(3);
+
+    // Find matching quarters from existing data
+    const q1 = existingQuarterly.find(q => q.fiscal_date_ending === q1End);
+    const q2 = existingQuarterly.find(q => q.fiscal_date_ending === q2End);
+    const q3 = existingQuarterly.find(q => q.fiscal_date_ending === q3End);
+
+    // Only calculate if we have all 3 quarters
+    if (q1 && q2 && q3) {
+      const sumQ123 = (field) => {
+        return (q1[field] || 0) + (q2[field] || 0) + (q3[field] || 0);
+      };
+
+      // Calculate Q4 = Annual - (Q1 + Q2 + Q3)
+      const q4Revenue = (annual.total_revenue || 0) - sumQ123('total_revenue');
+      const q4CostOfRevenue = (annual.cost_of_revenue || 0) - sumQ123('cost_of_revenue');
+      const q4GrossProfit = (annual.gross_profit || 0) - sumQ123('gross_profit');
+      const q4OperatingIncome = (annual.operating_income || 0) - sumQ123('operating_income');
+      const q4NetIncome = (annual.net_income || 0) - sumQ123('net_income');
+
+      // Build Q4 data object (matching the structure of quarterly data)
+      const q4Data = {
+        fiscal_date_ending: q4EndDate,
+        fiscal_year: annual.fiscal_year,
+        fiscal_period: 'Q4',
+        period_type: 'quarterly',
+        total_revenue: q4Revenue,
+        cost_of_revenue: q4CostOfRevenue,
+        gross_profit: q4GrossProfit,
+        operating_income: q4OperatingIncome,
+        net_income: q4NetIncome,
+        data: JSON.stringify({
+          revenue: q4Revenue,
+          costOfRevenue: q4CostOfRevenue,
+          grossProfit: q4GrossProfit,
+          operatingIncome: q4OperatingIncome,
+          netIncome: q4NetIncome,
+          _calculated: true,
+          _note: 'Q4 calculated from annual - (Q1+Q2+Q3)'
+        }),
+        _calculated: true
+      };
+
+      calculatedQ4s.push(q4Data);
+    }
+  }
+
+  // Merge calculated Q4s with existing data and sort by date descending
+  const allQuarters = [...existingQuarterly, ...calculatedQ4s];
+  allQuarters.sort((a, b) => b.fiscal_date_ending.localeCompare(a.fiscal_date_ending));
+
+  // Apply limit
+  return allQuarters.slice(0, limit);
+}
+
+/**
  * GET /api/companies
  * List all companies
+ * Query params:
+ *   - include_cik: 'true' to include CIK-based symbols (default: false)
+ *   - include_inactive: 'true' to include inactive/delisted companies (default: false)
  */
 router.get('/', (req, res) => {
   try {
+    const { include_cik = 'false', include_inactive = 'false' } = req.query;
+    const excludeCIK = include_cik !== 'true';
+    const activeOnly = include_inactive !== 'true';
+
     const companies = database.prepare(`
-      SELECT 
+      SELECT
         c.*,
         COUNT(DISTINCT f.fiscal_date_ending) as years_of_data,
-        MAX(f.fiscal_date_ending) as latest_data
+        MAX(f.fiscal_date_ending) as latest_data,
+        m.roic as latest_roic,
+        m.roe as latest_roe,
+        m.net_margin as latest_net_margin
       FROM companies c
       LEFT JOIN financial_data f ON c.id = f.company_id
-      WHERE c.is_active = 1
+      LEFT JOIN calculated_metrics m ON c.id = m.company_id
+        AND m.fiscal_period = (
+          SELECT MAX(fiscal_period) FROM calculated_metrics
+          WHERE company_id = c.id AND period_type = 'annual'
+        )
+      WHERE 1=1
+        ${activeOnly ? 'AND c.is_active = 1' : ''}
+        ${excludeCIK ? "AND c.symbol NOT LIKE 'CIK_%'" : ''}
       GROUP BY c.id
       ORDER BY c.symbol
     `).all();
-    
+
     res.json({
       count: companies.length,
       companies
@@ -40,15 +189,15 @@ router.get('/', (req, res) => {
 router.get('/:symbol', (req, res) => {
   try {
     const { symbol } = req.params;
-    
+
     const company = database.prepare(`
       SELECT * FROM companies WHERE symbol = ? COLLATE NOCASE
     `).get(symbol.toUpperCase());
-    
+
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
     }
-    
+
     // Get latest metrics
     const metrics = database.prepare(`
       SELECT * FROM calculated_metrics
@@ -56,10 +205,105 @@ router.get('/:symbol', (req, res) => {
       ORDER BY fiscal_period DESC
       LIMIT 1
     `).get(company.id);
-    
+
+    // Get current price metrics for live valuation and market data
+    const priceMetrics = database.prepare(`
+      SELECT
+        last_price,
+        market_cap,
+        shares_outstanding,
+        beta,
+        enterprise_value,
+        change_1d,
+        change_1w,
+        change_1m,
+        change_3m,
+        change_6m,
+        change_1y,
+        change_ytd,
+        high_52w,
+        high_52w_date,
+        low_52w,
+        low_52w_date,
+        sma_50,
+        sma_200,
+        rsi_14,
+        volatility_30d,
+        avg_volume_30d,
+        max_drawdown_1y,
+        max_drawdown_3y,
+        max_drawdown_5y,
+        drawdown_recovery_days,
+        updated_at
+      FROM price_metrics
+      WHERE company_id = ?
+    `).get(company.id);
+
+    // If we have current market cap, recalculate valuation metrics
+    let enrichedMetrics = metrics ? { ...metrics } : null;
+    if (enrichedMetrics && priceMetrics?.market_cap && priceMetrics.market_cap > 0) {
+      const currentMarketCap = priceMetrics.market_cap;
+
+      // For valuation metrics (PE, PS), use annual/TTM data, not quarterly
+      // Get the most recent annual data for valuation metrics
+      const annualFinancials = database.prepare(`
+        SELECT net_income, total_revenue, fiscal_date_ending
+        FROM financial_data
+        WHERE company_id = ? AND statement_type = 'income_statement' AND period_type = 'annual'
+        ORDER BY fiscal_date_ending DESC
+        LIMIT 1
+      `).get(company.id);
+
+      // Get balance sheet for current period (for P/B ratio)
+      const balanceSheet = database.prepare(`
+        SELECT shareholder_equity
+        FROM financial_data
+        WHERE company_id = ? AND statement_type = 'balance_sheet'
+        ORDER BY fiscal_date_ending DESC
+        LIMIT 1
+      `).get(company.id);
+
+      // Get annual FCF (for FCF yield)
+      const annualMetrics = database.prepare(`
+        SELECT fcf
+        FROM calculated_metrics
+        WHERE company_id = ? AND period_type = 'annual'
+        ORDER BY fiscal_period DESC
+        LIMIT 1
+      `).get(company.id);
+
+      if (annualFinancials) {
+        const netIncome = annualFinancials.net_income;
+        const revenue = annualFinancials.total_revenue;
+        const bookValue = balanceSheet?.shareholder_equity;
+        const annualFcf = annualMetrics?.fcf;
+
+        // Recalculate valuation metrics with current market cap and annual financials
+        if (netIncome && netIncome > 0) {
+          enrichedMetrics.pe_ratio = currentMarketCap / netIncome;
+          enrichedMetrics.earnings_yield = (netIncome / currentMarketCap) * 100;
+        }
+        if (annualFcf && annualFcf > 0) {
+          enrichedMetrics.fcf_yield = (annualFcf / currentMarketCap) * 100;
+        }
+        if (revenue && revenue > 0) {
+          enrichedMetrics.ps_ratio = currentMarketCap / revenue;
+        }
+        if (bookValue && bookValue > 0) {
+          enrichedMetrics.pb_ratio = currentMarketCap / bookValue;
+        }
+
+        // Add market cap info to metrics
+        enrichedMetrics.current_market_cap = currentMarketCap;
+        enrichedMetrics.market_cap_updated_at = priceMetrics.updated_at;
+        enrichedMetrics.valuation_based_on = annualFinancials.fiscal_date_ending;
+      }
+    }
+
     res.json({
       company,
-      latest_metrics: metrics
+      latest_metrics: enrichedMetrics,
+      price_metrics: priceMetrics
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -156,6 +400,162 @@ router.get('/:symbol/metrics', (req, res) => {
 
     const metrics = database.prepare(query).all(...params);
 
+    // Get fiscal config for this company
+    const fiscalConfig = database.prepare(`
+      SELECT fiscal_year_end, fiscal_year_end_month, fiscal_year_end_day
+      FROM company_fiscal_config
+      WHERE company_id = ?
+    `).get(company.id);
+
+    // Get current market cap from price_metrics for live valuation metrics
+    const currentPriceMetrics = database.prepare(`
+      SELECT last_price, market_cap, updated_at
+      FROM price_metrics
+      WHERE company_id = ?
+    `).get(company.id);
+    const currentMarketCap = currentPriceMetrics?.market_cap;
+
+    // Enrich metrics with stock price and fiscal period labels
+    const enrichedMetrics = metrics.map(m => {
+      // Get stock price at fiscal period end date
+      const priceData = database.prepare(`
+        SELECT adjusted_close, close, date
+        FROM daily_prices
+        WHERE company_id = ? AND date <= ?
+        ORDER BY date DESC
+        LIMIT 1
+      `).get(company.id, m.fiscal_period);
+
+      // Get fiscal period info from fiscal_calendar
+      let fiscalInfo = database.prepare(`
+        SELECT fiscal_year, fiscal_period as fiscal_quarter, period_start, period_end,
+               calendar_quarter, calendar_year
+        FROM fiscal_calendar
+        WHERE company_id = ? AND period_end = ? AND fiscal_period != 'FY'
+        LIMIT 1
+      `).get(company.id, m.fiscal_period);
+
+      // Build fiscal label - always calculate based on fiscal year end config
+      // (fiscal_calendar data may have incorrect quarter designations from SEC)
+      let fiscalLabel = null;
+      let calendarLabel = null;
+
+      if (fiscalConfig && m.fiscal_period) {
+        const periodDate = new Date(m.fiscal_period);
+        const periodMonth = periodDate.getMonth() + 1; // 1-12
+        const periodYear = periodDate.getFullYear();
+        const fyeMonth = fiscalConfig.fiscal_year_end_month;
+        const calendarQuarter = Math.ceil(periodMonth / 3);
+
+        // For annual reports, use simple FY label
+        if (m.period_type === 'annual') {
+          // The fiscal year is the year if period ends at/before FYE month
+          // Otherwise it's the next year (e.g., AAPL Sep 30 2024 = FY2024)
+          const fiscalYear = m.fiscal_year || (periodMonth <= fyeMonth ? periodYear : periodYear + 1);
+          fiscalLabel = `FY${fiscalYear}`;
+          calendarLabel = String(periodYear);
+        } else {
+          // Quarterly: calculate which fiscal quarter this is
+          // FY Q1 starts the month AFTER fiscal year end
+          // For AAPL (FYE Sep/9): Oct=Q1, Nov=Q1, Dec=Q1 end, Jan=Q2...
+          const fyQ1StartMonth = (fyeMonth % 12) + 1; // Month 10 for AAPL
+
+          // Calculate how many months into the fiscal year this period ends
+          // Period end month relative to FY start
+          let monthsFromFYStart = periodMonth - fyQ1StartMonth;
+          if (monthsFromFYStart < 0) monthsFromFYStart += 12;
+
+          // Add 2 because we're looking at period END month, and quarters are 3 months
+          // Dec (month 12) for AAPL: 12 - 10 = 2 months from start, ends Q1 (months 0-2)
+          // Mar (month 3) for AAPL: 3 - 10 + 12 = 5 months from start, ends Q2 (months 3-5)
+          // Jun (month 6) for AAPL: 6 - 10 + 12 = 8 months from start, ends Q3 (months 6-8)
+          // Sep (month 9) for AAPL: 9 - 10 + 12 = 11 months from start, ends Q4 (months 9-11)
+          const fiscalQuarter = Math.floor(monthsFromFYStart / 3) + 1;
+
+          // Fiscal year: if period month is after FYE month, it's next fiscal year
+          let fiscalYear = periodYear;
+          if (periodMonth > fyeMonth) {
+            fiscalYear = periodYear + 1;
+          }
+
+          fiscalLabel = `FY${fiscalYear} Q${fiscalQuarter}`;
+          calendarLabel = `Q${calendarQuarter} ${periodYear}`;
+
+          fiscalInfo = {
+            fiscal_year: fiscalYear,
+            fiscal_quarter: `Q${fiscalQuarter}`,
+            period_end: m.fiscal_period,
+            calendar_quarter: calendarQuarter,
+            calendar_year: periodYear
+          };
+        }
+      } else if (m.period_type === 'annual' && m.fiscal_year) {
+        // Fallback for annual without fiscal config
+        fiscalLabel = `FY${m.fiscal_year}`;
+        calendarLabel = m.fiscal_period ? m.fiscal_period.substring(0, 4) : null;
+      }
+
+      // For latest period, recalculate valuation metrics using current market cap
+      // This ensures PE, FCF Yield, etc. reflect current stock price
+      let liveValuationMetrics = {};
+      if (currentMarketCap && currentMarketCap > 0) {
+        // Recalculate PE ratio: market_cap / net_income
+        // We need net_income from financial_data for this period
+        const financials = database.prepare(`
+          SELECT net_income, total_revenue
+          FROM financial_data
+          WHERE company_id = ? AND fiscal_date_ending = ? AND statement_type = 'income_statement'
+          LIMIT 1
+        `).get(company.id, m.fiscal_period);
+
+        const balanceSheet = database.prepare(`
+          SELECT shareholder_equity
+          FROM financial_data
+          WHERE company_id = ? AND fiscal_date_ending = ? AND statement_type = 'balance_sheet'
+          LIMIT 1
+        `).get(company.id, m.fiscal_period);
+
+        if (financials) {
+          const netIncome = financials.net_income;
+          const revenue = financials.total_revenue;
+          const bookValue = balanceSheet?.shareholder_equity;
+
+          // Recalculate valuation metrics with current market cap
+          if (netIncome && netIncome > 0) {
+            liveValuationMetrics.pe_ratio_live = currentMarketCap / netIncome;
+            liveValuationMetrics.earnings_yield_live = (netIncome / currentMarketCap) * 100;
+          }
+          if (m.fcf && m.fcf > 0) {
+            liveValuationMetrics.fcf_yield_live = (m.fcf / currentMarketCap) * 100;
+          }
+          if (revenue && revenue > 0) {
+            liveValuationMetrics.ps_ratio_live = currentMarketCap / revenue;
+          }
+          if (bookValue && bookValue > 0) {
+            liveValuationMetrics.pb_ratio_live = currentMarketCap / bookValue;
+          }
+        }
+      }
+
+      return {
+        ...m,
+        ...liveValuationMetrics,
+        current_market_cap: currentMarketCap || null,
+        stock_price: priceData ? (priceData.adjusted_close || priceData.close) : null,
+        stock_price_date: priceData ? priceData.date : null,
+        fiscal_label: fiscalLabel,
+        calendar_label: calendarLabel,
+        fiscal_info: fiscalInfo ? {
+          fiscalYear: fiscalInfo.fiscal_year,
+          fiscalQuarter: fiscalInfo.fiscal_quarter,
+          periodStart: fiscalInfo.period_start,
+          periodEnd: fiscalInfo.period_end,
+          calendarQuarter: fiscalInfo.calendar_quarter,
+          calendarYear: fiscalInfo.calendar_year
+        } : null
+      };
+    });
+
     // Get available period types for this company
     const periodTypes = database.prepare(`
       SELECT DISTINCT period_type, COUNT(*) as count
@@ -164,12 +564,28 @@ router.get('/:symbol/metrics', (req, res) => {
       GROUP BY period_type
     `).all(company.id);
 
+    // Build fiscal year end info
+    const fiscalYearEndInfo = fiscalConfig ? {
+      monthDay: fiscalConfig.fiscal_year_end,
+      month: fiscalConfig.fiscal_year_end_month,
+      day: fiscalConfig.fiscal_year_end_day,
+      monthName: ['January', 'February', 'March', 'April', 'May', 'June',
+                  'July', 'August', 'September', 'October', 'November', 'December'][fiscalConfig.fiscal_year_end_month - 1]
+    } : null;
+
     res.json({
       symbol: symbol.toUpperCase(),
-      count: metrics.length,
+      count: enrichedMetrics.length,
       period_type,
+      fiscal_year_end: fiscalYearEndInfo,
       available_periods: periodTypes,
-      metrics
+      metrics: enrichedMetrics,
+      // Current market data for live valuation metrics
+      current_price_data: currentPriceMetrics ? {
+        price: currentPriceMetrics.last_price,
+        market_cap: currentPriceMetrics.market_cap,
+        updated_at: currentPriceMetrics.updated_at
+      } : null
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -197,7 +613,7 @@ router.get('/:symbol/breakdown', (req, res) => {
     }
 
     // Get income statement data with extracted fields and full JSON
-    const incomeStatements = database.prepare(`
+    let incomeStatements = database.prepare(`
       SELECT
         fiscal_date_ending,
         fiscal_year,
@@ -217,10 +633,68 @@ router.get('/:symbol/breakdown', (req, res) => {
       LIMIT ?
     `).all(company.id, period_type, parseInt(limit));
 
+    // For quarterly data, calculate Q4 from annual - (Q1+Q2+Q3) if missing
+    // Companies don't file 10-Q for Q4, only 10-K annual reports
+    if (period_type === 'quarterly') {
+      incomeStatements = calculateMissingQ4Data(database, company.id, incomeStatements, parseInt(limit));
+    }
+
+    // Get fiscal config for this company
+    const fiscalConfig = database.prepare(`
+      SELECT fiscal_year_end, fiscal_year_end_month, fiscal_year_end_day
+      FROM company_fiscal_config
+      WHERE company_id = ?
+    `).get(company.id);
+
     // Process and enrich the data
     const breakdown = incomeStatements.map(stmt => {
       const fullData = JSON.parse(stmt.data);
       const revenue = stmt.total_revenue || parseFloat(fullData.revenue) || 0;
+
+      // Build fiscal label - always calculate based on fiscal year end config
+      let fiscalLabel = null;
+      let calendarLabel = null;
+      let fiscalInfo = null;
+
+      if (fiscalConfig && stmt.fiscal_date_ending) {
+        const periodDate = new Date(stmt.fiscal_date_ending);
+        const periodMonth = periodDate.getMonth() + 1; // 1-12
+        const periodYear = periodDate.getFullYear();
+        const fyeMonth = fiscalConfig.fiscal_year_end_month;
+        const calendarQuarter = Math.ceil(periodMonth / 3);
+
+        // For annual reports, use simple FY label
+        if (period_type === 'annual') {
+          const fiscalYear = stmt.fiscal_year || (periodMonth <= fyeMonth ? periodYear : periodYear + 1);
+          fiscalLabel = `FY${fiscalYear}`;
+          calendarLabel = String(periodYear);
+        } else {
+          // Quarterly: calculate which fiscal quarter this is
+          const fyQ1StartMonth = (fyeMonth % 12) + 1;
+          let monthsFromFYStart = periodMonth - fyQ1StartMonth;
+          if (monthsFromFYStart < 0) monthsFromFYStart += 12;
+
+          const fiscalQuarter = Math.floor(monthsFromFYStart / 3) + 1;
+          let fiscalYear = periodYear;
+          if (periodMonth > fyeMonth) {
+            fiscalYear = periodYear + 1;
+          }
+
+          fiscalLabel = `FY${fiscalYear} Q${fiscalQuarter}`;
+          calendarLabel = `Q${calendarQuarter} ${periodYear}`;
+
+          fiscalInfo = {
+            fiscal_year: fiscalYear,
+            fiscal_quarter: `Q${fiscalQuarter}`,
+            period_end: stmt.fiscal_date_ending,
+            calendar_quarter: calendarQuarter,
+            calendar_year: periodYear
+          };
+        }
+      } else if (period_type === 'annual' && stmt.fiscal_year) {
+        fiscalLabel = `FY${stmt.fiscal_year}`;
+        calendarLabel = stmt.fiscal_date_ending ? stmt.fiscal_date_ending.substring(0, 4) : null;
+      }
 
       // Extract cost components
       const costOfRevenue = stmt.cost_of_revenue || parseFloat(fullData.costOfRevenue) || 0;
@@ -247,6 +721,16 @@ router.get('/:symbol/breakdown', (req, res) => {
         fiscal_year: stmt.fiscal_year,
         fiscal_period: stmt.fiscal_period,
         period_type: stmt.period_type,
+        fiscal_label: fiscalLabel,
+        calendar_label: calendarLabel,
+        fiscal_info: fiscalInfo ? {
+          fiscalYear: fiscalInfo.fiscal_year,
+          fiscalQuarter: fiscalInfo.fiscal_quarter,
+          periodStart: fiscalInfo.period_start,
+          periodEnd: fiscalInfo.period_end,
+          calendarQuarter: fiscalInfo.calendar_quarter,
+          calendarYear: fiscalInfo.calendar_year
+        } : null,
 
         // Absolute values
         revenue,
@@ -294,9 +778,19 @@ router.get('/:symbol/breakdown', (req, res) => {
       GROUP BY period_type
     `).all(company.id);
 
+    // Build fiscal year end info
+    const fiscalYearEndInfo = fiscalConfig ? {
+      monthDay: fiscalConfig.fiscal_year_end,
+      month: fiscalConfig.fiscal_year_end_month,
+      day: fiscalConfig.fiscal_year_end_day,
+      monthName: ['January', 'February', 'March', 'April', 'May', 'June',
+                  'July', 'August', 'September', 'October', 'November', 'December'][fiscalConfig.fiscal_year_end_month - 1]
+    } : null;
+
     res.json({
       symbol: symbol.toUpperCase(),
       period_type,
+      fiscal_year_end: fiscalYearEndInfo,
       count: breakdown.length,
       available_periods: availablePeriods,
       breakdown

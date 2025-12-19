@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { companyAPI } from '../services/api';
+import { companyAPI, pricesAPI } from '../services/api';
 import { useWatchlist } from '../context/WatchlistContext';
 import './WatchlistPage.css';
 
@@ -20,32 +20,42 @@ const formatValue = (value, format) => {
 function WatchlistPage() {
   const { watchlist, removeFromWatchlist, clearWatchlist } = useWatchlist();
   const [metricsData, setMetricsData] = useState({});
+  const [priceData, setPriceData] = useState({});
   const [loading, setLoading] = useState(false);
   const [sortBy, setSortBy] = useState('addedAt');
   const [sortOrder, setSortOrder] = useState('desc');
 
-  // Load metrics for all watchlist items
+  // Load metrics and prices for all watchlist items
   useEffect(() => {
-    const loadMetrics = async () => {
+    const loadData = async () => {
       if (watchlist.length === 0) return;
 
       setLoading(true);
       const newMetrics = {};
+      const newPrices = {};
 
-      for (const item of watchlist) {
+      // Load all data in parallel
+      await Promise.all(watchlist.map(async (item) => {
         try {
-          const response = await companyAPI.getOne(item.symbol);
-          newMetrics[item.symbol] = response.data.latest_metrics;
+          const [metricsRes, priceRes] = await Promise.all([
+            companyAPI.getOne(item.symbol),
+            pricesAPI.getMetrics(item.symbol).catch(() => null)
+          ]);
+          newMetrics[item.symbol] = metricsRes.data.latest_metrics;
+          if (priceRes?.data?.data) {
+            newPrices[item.symbol] = priceRes.data.data;
+          }
         } catch (error) {
-          console.error(`Error loading metrics for ${item.symbol}:`, error);
+          console.error(`Error loading data for ${item.symbol}:`, error);
         }
-      }
+      }));
 
       setMetricsData(newMetrics);
+      setPriceData(newPrices);
       setLoading(false);
     };
 
-    loadMetrics();
+    loadData();
   }, [watchlist]);
 
   const handleSort = (column) => {
@@ -67,6 +77,9 @@ function WatchlistPage() {
       } else if (sortBy === 'symbol') {
         aVal = a.symbol;
         bVal = b.symbol;
+      } else if (['last_price', 'change_1d', 'change_1w', 'change_1m'].includes(sortBy)) {
+        aVal = priceData[a.symbol]?.[sortBy] ?? -Infinity;
+        bVal = priceData[b.symbol]?.[sortBy] ?? -Infinity;
       } else {
         aVal = metricsData[a.symbol]?.[sortBy] ?? -Infinity;
         bVal = metricsData[b.symbol]?.[sortBy] ?? -Infinity;
@@ -85,13 +98,18 @@ function WatchlistPage() {
   const exportToCSV = () => {
     if (watchlist.length === 0) return;
 
-    const headers = ['Symbol', 'Name', 'Sector', 'ROIC', 'ROE', 'Net Margin', 'FCF Yield', 'Debt/Equity', 'Added'];
+    const headers = ['Symbol', 'Name', 'Sector', 'Price', '1D %', '1W %', '1M %', 'ROIC', 'ROE', 'Net Margin', 'FCF Yield', 'Debt/Equity', 'Added'];
     const rows = watchlist.map(item => {
       const metrics = metricsData[item.symbol] || {};
+      const prices = priceData[item.symbol] || {};
       return [
         item.symbol,
         `"${item.name || ''}"`,
         item.sector || '',
+        prices.last_price?.toFixed(2) || '',
+        prices.change_1d?.toFixed(2) || '',
+        prices.change_1w?.toFixed(2) || '',
+        prices.change_1m?.toFixed(2) || '',
         metrics.roic?.toFixed(1) || '',
         metrics.roe?.toFixed(1) || '',
         metrics.net_margin?.toFixed(1) || '',
@@ -157,7 +175,18 @@ function WatchlistPage() {
                     Symbol <SortIcon column="symbol" />
                   </th>
                   <th>Name</th>
-                  <th>Sector</th>
+                  <th onClick={() => handleSort('last_price')}>
+                    Price <SortIcon column="last_price" />
+                  </th>
+                  <th onClick={() => handleSort('change_1d')}>
+                    1D <SortIcon column="change_1d" />
+                  </th>
+                  <th onClick={() => handleSort('change_1w')}>
+                    1W <SortIcon column="change_1w" />
+                  </th>
+                  <th onClick={() => handleSort('change_1m')}>
+                    1M <SortIcon column="change_1m" />
+                  </th>
                   <th onClick={() => handleSort('roic')}>
                     ROIC <SortIcon column="roic" />
                   </th>
@@ -165,13 +194,10 @@ function WatchlistPage() {
                     ROE <SortIcon column="roe" />
                   </th>
                   <th onClick={() => handleSort('net_margin')}>
-                    Net Margin <SortIcon column="net_margin" />
+                    Margin <SortIcon column="net_margin" />
                   </th>
                   <th onClick={() => handleSort('fcf_yield')}>
-                    FCF Yield <SortIcon column="fcf_yield" />
-                  </th>
-                  <th onClick={() => handleSort('debt_to_equity')}>
-                    Debt/Eq <SortIcon column="debt_to_equity" />
+                    FCF Yld <SortIcon column="fcf_yield" />
                   </th>
                   <th onClick={() => handleSort('addedAt')}>
                     Added <SortIcon column="addedAt" />
@@ -182,6 +208,7 @@ function WatchlistPage() {
               <tbody>
                 {getSortedWatchlist().map(item => {
                   const metrics = metricsData[item.symbol] || {};
+                  const prices = priceData[item.symbol] || {};
                   return (
                     <tr key={item.symbol}>
                       <td>
@@ -190,7 +217,18 @@ function WatchlistPage() {
                         </Link>
                       </td>
                       <td className="name-cell">{item.name}</td>
-                      <td className="sector-cell">{item.sector}</td>
+                      <td className="price-cell">
+                        {prices.last_price ? `$${prices.last_price.toFixed(2)}` : '-'}
+                      </td>
+                      <td className={`change-cell ${prices.change_1d > 0 ? 'positive' : prices.change_1d < 0 ? 'negative' : ''}`}>
+                        {prices.change_1d != null ? `${prices.change_1d > 0 ? '+' : ''}${prices.change_1d.toFixed(1)}%` : '-'}
+                      </td>
+                      <td className={`change-cell ${prices.change_1w > 0 ? 'positive' : prices.change_1w < 0 ? 'negative' : ''}`}>
+                        {prices.change_1w != null ? `${prices.change_1w > 0 ? '+' : ''}${prices.change_1w.toFixed(1)}%` : '-'}
+                      </td>
+                      <td className={`change-cell ${prices.change_1m > 0 ? 'positive' : prices.change_1m < 0 ? 'negative' : ''}`}>
+                        {prices.change_1m != null ? `${prices.change_1m > 0 ? '+' : ''}${prices.change_1m.toFixed(1)}%` : '-'}
+                      </td>
                       <td className={metrics.roic > 15 ? 'positive' : ''}>
                         {formatValue(metrics.roic, 'percent')}
                       </td>
@@ -202,9 +240,6 @@ function WatchlistPage() {
                       </td>
                       <td className={metrics.fcf_yield > 5 ? 'positive' : ''}>
                         {formatValue(metrics.fcf_yield, 'percent')}
-                      </td>
-                      <td className={metrics.debt_to_equity < 0.5 ? 'positive' : ''}>
-                        {formatValue(metrics.debt_to_equity, 'ratio')}
                       </td>
                       <td className="date-cell">
                         {new Date(item.addedAt).toLocaleDateString()}

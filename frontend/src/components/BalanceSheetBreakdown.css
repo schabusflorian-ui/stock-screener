@@ -1,8 +1,13 @@
+/* BalanceSheetBreakdown.css - Liquid Glass Theme */
+
 .balance-sheet-breakdown {
-  background: #1e293b;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   padding: 1.5rem;
   border-radius: 0.75rem;
-  border: 1px solid #334155;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
 }
 
 .bs-header {
@@ -16,7 +21,7 @@
 
 .bs-header h3 {
   margin: 0;
-  color: #e2e8f0;
+  color: #374151;
 }
 
 .bs-controls {
@@ -29,13 +34,14 @@
 .bs-empty {
   padding: 3rem;
   text-align: center;
-  color: #64748b;
+  color: #6b7280;
 }
 
-/* View Toggle */
+/* View Toggle - Liquid Glass */
 .view-toggle {
   display: flex;
-  background: #0f172a;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: 0.5rem;
   padding: 0.25rem;
 }
@@ -44,7 +50,7 @@
   padding: 0.5rem 1rem;
   border: none;
   background: transparent;
-  color: #94a3b8;
+  color: #6b7280;
   border-radius: 0.375rem;
   cursor: pointer;
   font-size: 0.875rem;
@@ -52,15 +58,15 @@
 }
 
 .view-toggle button:hover {
-  color: #e2e8f0;
+  color: #374151;
 }
 
 .view-toggle button.active {
-  background: #8b5cf6;
+  background: #6366f1;
   color: white;
 }
 
-/* Period Selector */
+/* Period Selector - Liquid Glass */
 .period-selector {
   display: flex;
   align-items: center;
@@ -69,26 +75,26 @@
 }
 
 .period-selector label {
-  color: #94a3b8;
+  color: #6b7280;
   font-size: 0.875rem;
 }
 
 .period-selector select {
   padding: 0.5rem 1rem;
-  background: #0f172a;
-  border: 1px solid #334155;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 0.5rem;
-  color: #e2e8f0;
+  color: #374151;
   font-size: 0.875rem;
   cursor: pointer;
 }
 
 .period-selector select:focus {
   outline: none;
-  border-color: #8b5cf6;
+  border-color: #6366f1;
 }
 
-/* Summary Cards */
+/* Summary Cards - Liquid Glass */
 .bs-summary-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -97,13 +103,13 @@
 }
 
 .bs-summary-card {
-  background: #0f172a;
+  background: rgba(255, 255, 255, 0.5);
   padding: 1.25rem;
   border-radius: 0.5rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  border-left: 3px solid #64748b;
+  border-left: 3px solid #9ca3af;
 }
 
 .bs-summary-card.assets {
@@ -120,7 +126,7 @@
 
 .bs-summary-card .card-label {
   font-size: 0.75rem;
-  color: #64748b;
+  color: #6b7280;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -128,12 +134,12 @@
 .bs-summary-card .card-value {
   font-size: 1.5rem;
   font-weight: 600;
-  color: #e2e8f0;
+  color: #374151;
 }
 
 /* Balance Sheet Equation Visualization */
 .bs-equation-section {
-  background: #0f172a;
+  background: rgba(255, 255, 255, 0.5);
   padding: 1.25rem;
   border-radius: 0.5rem;
   margin-bottom: 1.5rem;
@@ -141,7 +147,7 @@
 
 .bs-equation-section h4 {
   margin: 0 0 1rem 0;
-  color: #94a3b8;
+  color: #6b7280;
   font-size: 0.875rem;
 }
 
@@ -200,26 +206,26 @@
 
 .bar-label {
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: #6b7280;
   font-weight: 500;
 }
 
 .bs-equals {
   font-size: 2rem;
-  color: #64748b;
+  color: #9ca3af;
   font-weight: 300;
 }
 
-/* Ratios Section */
+/* Ratios Section - Liquid Glass */
 .bs-ratios-section {
-  background: #0f172a;
+  background: rgba(255, 255, 255, 0.5);
   padding: 1.25rem;
   border-radius: 0.5rem;
 }
 
 .bs-ratios-section h4 {
   margin: 0 0 1rem 0;
-  color: #94a3b8;
+  color: #6b7280;
   font-size: 0.875rem;
 }
 
@@ -230,13 +236,13 @@
 }
 
 .ratio-card {
-  background: #1e293b;
+  background: rgba(255, 255, 255, 0.5);
   padding: 1rem;
   border-radius: 0.5rem;
   display: flex;
   flex-direction: column;
   gap: 0.375rem;
-  border-left: 3px solid #64748b;
+  border-left: 3px solid #9ca3af;
 }
 
 .ratio-card.healthy {
@@ -253,19 +259,19 @@
 
 .ratio-name {
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: #6b7280;
   font-weight: 500;
 }
 
 .ratio-value {
   font-size: 1.25rem;
   font-weight: 600;
-  color: #e2e8f0;
+  color: #374151;
 }
 
 .ratio-desc {
   font-size: 0.65rem;
-  color: #64748b;
+  color: #9ca3af;
 }
 
 /* Detail View */
@@ -276,7 +282,7 @@
 }
 
 .bs-section {
-  background: #0f172a;
+  background: rgba(255, 255, 255, 0.5);
   padding: 1.25rem;
   border-radius: 0.5rem;
 }
@@ -284,7 +290,7 @@
 .bs-section h4 {
   margin: 0 0 1rem 0;
   padding-bottom: 0.75rem;
-  border-bottom: 1px solid #334155;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   font-size: 1rem;
 }
 
@@ -302,7 +308,7 @@
 
 .bs-subsection h5 {
   margin: 0 0 0.5rem 0;
-  color: #94a3b8;
+  color: #6b7280;
   font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -319,23 +325,23 @@
 }
 
 .bs-table td:first-child {
-  color: #94a3b8;
+  color: #6b7280;
 }
 
 .bs-table td:last-child {
   text-align: right;
-  color: #e2e8f0;
+  color: #374151;
   font-family: 'SF Mono', 'Monaco', monospace;
 }
 
 .bs-table .subtotal-row td {
   padding-top: 0.75rem;
-  border-top: 1px solid #334155;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
   font-weight: 600;
 }
 
 .bs-table .subtotal-row td:first-child {
-  color: #e2e8f0;
+  color: #374151;
 }
 
 .bs-table td.negative {
@@ -357,7 +363,7 @@
 }
 
 .bs-total span:last-child {
-  color: #e2e8f0;
+  color: #374151;
   font-family: 'SF Mono', 'Monaco', monospace;
 }
 
@@ -366,7 +372,7 @@
   justify-content: space-between;
   padding: 0.75rem;
   margin: 1rem 0;
-  background: #1e293b;
+  background: rgba(255, 255, 255, 0.5);
   border-radius: 0.375rem;
   font-weight: 500;
 }
@@ -388,7 +394,7 @@
 }
 
 .bs-subtotal span:last-child {
-  color: #e2e8f0;
+  color: #374151;
   font-family: 'SF Mono', 'Monaco', monospace;
 }
 
@@ -400,14 +406,14 @@
 }
 
 .chart-container {
-  background: #0f172a;
+  background: rgba(255, 255, 255, 0.5);
   padding: 1rem;
   border-radius: 0.5rem;
 }
 
 .chart-container h4 {
   margin: 0 0 1rem 0;
-  color: #94a3b8;
+  color: #6b7280;
   font-size: 0.875rem;
 }
 

@@ -1,6 +1,6 @@
 // frontend/src/pages/UpdatesPage.js
 import { useState, useEffect, useCallback } from 'react';
-import { updatesAPI } from '../services/api';
+import { updatesAPI, insidersAPI, capitalAPI, sentimentAPI, priceUpdatesAPI } from '../services/api';
 import './UpdatesPage.css';
 
 // Format date for display
@@ -253,6 +253,26 @@ function UpdatesPage() {
   const [selectedQuarter, setSelectedQuarter] = useState(null);
   const [forceUpdate, setForceUpdate] = useState(false);
 
+  // Insider update state
+  const [insiderStatus, setInsiderStatus] = useState(null);
+  const [insiderUpdating, setInsiderUpdating] = useState(false);
+  const [insiderDays, setInsiderDays] = useState(30);
+
+  // Capital allocation update state
+  const [capitalStatus, setCapitalStatus] = useState(null);
+  const [capitalUpdating, setCapitalUpdating] = useState(false);
+  const [capitalResult, setCapitalResult] = useState(null);
+
+  // Reddit sentiment update state
+  const [sentimentStatus, setSentimentStatus] = useState(null);
+  const [sentimentScanning, setSentimentScanning] = useState(false);
+
+  // Price updates state
+  const [priceUpdateStats, setPriceUpdateStats] = useState(null);
+  const [priceUpdateSchedule, setPriceUpdateSchedule] = useState(null);
+  const [priceUpdating, setPriceUpdating] = useState(false);
+  const [priceUpdateMessage, setPriceUpdateMessage] = useState(null);
+
   // Load status
   const loadStatus = useCallback(async () => {
     try {
@@ -296,6 +316,50 @@ function UpdatesPage() {
     }
   }, []);
 
+  // Load insider status
+  const loadInsiderStatus = useCallback(async () => {
+    try {
+      const res = await insidersAPI.getUpdateStatus();
+      setInsiderStatus(res.data);
+    } catch (err) {
+      console.error('Error loading insider status:', err);
+    }
+  }, []);
+
+  // Load capital allocation status
+  const loadCapitalStatus = useCallback(async () => {
+    try {
+      const res = await capitalAPI.getUpdateStatus();
+      setCapitalStatus(res.data);
+    } catch (err) {
+      console.error('Error loading capital status:', err);
+    }
+  }, []);
+
+  // Load Reddit sentiment status
+  const loadSentimentStatus = useCallback(async () => {
+    try {
+      const res = await sentimentAPI.getStatus();
+      setSentimentStatus(res.data);
+    } catch (err) {
+      console.error('Error loading sentiment status:', err);
+    }
+  }, []);
+
+  // Load price update status
+  const loadPriceUpdateStatus = useCallback(async () => {
+    try {
+      const [statsRes, scheduleRes] = await Promise.all([
+        priceUpdatesAPI.getStats(),
+        priceUpdatesAPI.getSchedule()
+      ]);
+      setPriceUpdateStats(statsRes.data?.data);
+      setPriceUpdateSchedule(scheduleRes.data?.data);
+    } catch (err) {
+      console.error('Error loading price update status:', err);
+    }
+  }, []);
+
   // Load companies needing update
   const loadCompaniesNeedingUpdate = useCallback(async (reset = false) => {
     try {
@@ -325,14 +389,14 @@ function UpdatesPage() {
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      await Promise.all([loadStatus(), loadHistory()]);
+      await Promise.all([loadStatus(), loadHistory(), loadInsiderStatus(), loadCapitalStatus(), loadSentimentStatus(), loadPriceUpdateStatus()]);
       // Load companies after status to get the count
       await loadCompaniesNeedingUpdate(true);
       setLoading(false);
     };
     init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadStatus, loadHistory]);
+  }, [loadStatus, loadHistory, loadInsiderStatus, loadCapitalStatus, loadSentimentStatus, loadPriceUpdateStatus]);
 
   // Poll for progress when update is running
   useEffect(() => {
@@ -376,6 +440,97 @@ function UpdatesPage() {
       await loadStatus();
     } catch (err) {
       setError(err.message);
+    }
+  };
+
+  // Trigger insider update
+  const runInsiderUpdate = async () => {
+    try {
+      setInsiderUpdating(true);
+      setError(null);
+      await insidersAPI.triggerUpdate(insiderDays, 50);
+      // Refresh status after a delay (update runs in background)
+      setTimeout(async () => {
+        try {
+          await loadInsiderStatus();
+        } catch (e) {
+          console.error('Error refreshing insider status:', e);
+        } finally {
+          setInsiderUpdating(false);
+        }
+      }, 3000);
+    } catch (err) {
+      setError(err.message);
+      setInsiderUpdating(false);
+    }
+  };
+
+  // Trigger capital allocation update
+  const runCapitalUpdate = async () => {
+    try {
+      setCapitalUpdating(true);
+      setCapitalResult(null);
+      setError(null);
+      const res = await capitalAPI.triggerUpdate();
+      setCapitalResult(res.data);
+      await loadCapitalStatus();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCapitalUpdating(false);
+    }
+  };
+
+  // Trigger Reddit sentiment scan
+  const runSentimentScan = async () => {
+    try {
+      setSentimentScanning(true);
+      setError(null);
+      // Use the trending endpoint with refresh=true to scan Reddit
+      await sentimentAPI.getTrending('24h', 50, true);
+      // Reload status after scan
+      await loadSentimentStatus();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSentimentScanning(false);
+    }
+  };
+
+  // Trigger price update
+  const runPriceUpdate = async () => {
+    try {
+      setPriceUpdating(true);
+      setPriceUpdateMessage(null);
+      setError(null);
+      const res = await priceUpdatesAPI.run();
+      setPriceUpdateMessage(res.data?.message || 'Price update started');
+      // Reload status after a delay (update runs in background)
+      setTimeout(async () => {
+        await loadPriceUpdateStatus();
+        setPriceUpdating(false);
+      }, 5000);
+    } catch (err) {
+      setError(err.message);
+      setPriceUpdating(false);
+    }
+  };
+
+  // Trigger price backfill
+  const runPriceBackfill = async () => {
+    try {
+      setPriceUpdating(true);
+      setPriceUpdateMessage(null);
+      setError(null);
+      const res = await priceUpdatesAPI.backfill();
+      setPriceUpdateMessage(res.data?.message || 'Backfill started');
+      setTimeout(async () => {
+        await loadPriceUpdateStatus();
+        setPriceUpdating(false);
+      }, 5000);
+    } catch (err) {
+      setError(err.message);
+      setPriceUpdating(false);
     }
   };
 
@@ -503,6 +658,348 @@ function UpdatesPage() {
             {status.currentStatus?.completed_at && (
               <span> on {formatDate(status.currentStatus.completed_at)}</span>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* Insider Trading Update */}
+      <div className="card insider-update-card">
+        <h3>Insider Trading Data</h3>
+        <p className="card-description">
+          Import Form 4 insider trading filings from SEC EDGAR for tracked companies.
+        </p>
+
+        {insiderStatus && (
+          <>
+            {insiderStatus.lastImport && (
+              <div className="last-update-info">
+                Last updated: {formatDate(insiderStatus.lastImport)}
+              </div>
+            )}
+            <div className="insider-stats-grid">
+              <div className="stat-item">
+                <span className="stat-value">{formatNumber(insiderStatus.companiesWithData)}</span>
+                <span className="stat-label">Companies</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value">{formatNumber(insiderStatus.totalInsiders)}</span>
+                <span className="stat-label">Insiders</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value">{formatNumber(insiderStatus.totalTransactions)}</span>
+                <span className="stat-label">Transactions</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value">{insiderStatus.latestTransaction || '-'}</span>
+                <span className="stat-label">Latest Filing</span>
+              </div>
+            </div>
+          </>
+        )}
+
+        {insiderStatus?.signalDistribution && (
+          <div className="signal-distribution">
+            <span className="signal bullish">Bullish: {insiderStatus.signalDistribution.bullish || 0}</span>
+            <span className="signal neutral">Neutral: {insiderStatus.signalDistribution.neutral || 0}</span>
+            <span className="signal bearish">Bearish: {insiderStatus.signalDistribution.bearish || 0}</span>
+          </div>
+        )}
+
+        <div className="update-controls">
+          <div className="control-row">
+            <label>
+              <span>Days to fetch:</span>
+              <select
+                value={insiderDays}
+                onChange={(e) => setInsiderDays(parseInt(e.target.value))}
+                disabled={insiderUpdating}
+              >
+                <option value={7}>7 days</option>
+                <option value={14}>14 days</option>
+                <option value={30}>30 days</option>
+                <option value={60}>60 days</option>
+                <option value={90}>90 days</option>
+              </select>
+            </label>
+          </div>
+          <div className="control-row buttons">
+            <button
+              onClick={loadInsiderStatus}
+              disabled={insiderUpdating}
+              className="btn-secondary"
+            >
+              Refresh Status
+            </button>
+            <button
+              onClick={runInsiderUpdate}
+              disabled={insiderUpdating}
+              className="btn-primary"
+            >
+              {insiderUpdating ? 'Updating...' : 'Update Insider Data'}
+            </button>
+          </div>
+        </div>
+
+        {insiderUpdating && (
+          <div className="update-message">
+            Fetching Form 4 filings from SEC EDGAR... This may take a few minutes.
+          </div>
+        )}
+      </div>
+
+      {/* Capital Allocation Update */}
+      <div className="card capital-update-card">
+        <h3>Capital Allocation Data</h3>
+        <p className="card-description">
+          Recalculate dividends, buybacks, and shareholder returns from SEC financial statements.
+        </p>
+
+        {capitalStatus && (
+          <>
+            {capitalStatus.lastUpdate && (
+              <div className="last-update-info">
+                Last updated: {formatDate(capitalStatus.lastUpdate)}
+              </div>
+            )}
+            <div className="capital-stats-grid">
+              <div className="stat-item">
+                <span className="stat-value">{formatNumber(capitalStatus.companiesTracked)}</span>
+                <span className="stat-label">Companies</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value">{formatNumber(capitalStatus.totalRecords)}</span>
+                <span className="stat-label">Records</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value">{capitalStatus.latestFiscalQuarter || '-'}</span>
+                <span className="stat-label">Latest Period</span>
+              </div>
+            </div>
+
+            {capitalStatus.dataByYear && capitalStatus.dataByYear.length > 0 && (
+              <div className="year-breakdown">
+                <span className="breakdown-label">Data by Year: </span>
+                {capitalStatus.dataByYear.slice(0, 5).map((y, i) => (
+                  <span key={y.year} className="year-item">
+                    {y.year}: {formatNumber(y.companies)} cos
+                    {i < Math.min(capitalStatus.dataByYear.length, 5) - 1 ? ', ' : ''}
+                  </span>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        <div className="update-controls">
+          <div className="control-row buttons">
+            <button
+              onClick={loadCapitalStatus}
+              disabled={capitalUpdating}
+              className="btn-secondary"
+            >
+              Refresh Status
+            </button>
+            <button
+              onClick={runCapitalUpdate}
+              disabled={capitalUpdating}
+              className="btn-primary"
+            >
+              {capitalUpdating ? 'Updating...' : 'Recalculate Capital Data'}
+            </button>
+          </div>
+        </div>
+
+        {capitalUpdating && (
+          <div className="update-message">
+            Processing all companies... This may take several minutes.
+          </div>
+        )}
+
+        {capitalResult && (
+          <div className="update-result success">
+            <strong>Update Complete:</strong> {capitalResult.message}
+          </div>
+        )}
+      </div>
+
+      {/* Reddit Sentiment Update */}
+      <div className="card sentiment-update-card">
+        <h3>Reddit Sentiment Data</h3>
+        <p className="card-description">
+          Scan Reddit (r/wallstreetbets, r/stocks, r/investing) for stock mentions and sentiment analysis.
+        </p>
+
+        {sentimentStatus && (
+          <>
+            {sentimentStatus.lastScan && (
+              <div className="last-update-info">
+                Last scanned: {formatDate(sentimentStatus.lastScan)}
+              </div>
+            )}
+            <div className="sentiment-stats-grid">
+              <div className="stat-item">
+                <span className="stat-value">{formatNumber(sentimentStatus.tickersTracked)}</span>
+                <span className="stat-label">Trending Tickers</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value">{formatNumber(sentimentStatus.totalMentions)}</span>
+                <span className="stat-label">Total Mentions</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value">{formatNumber(sentimentStatus.totalPosts)}</span>
+                <span className="stat-label">Posts Analyzed</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value">{formatNumber(sentimentStatus.companiesWithPosts)}</span>
+                <span className="stat-label">Companies</span>
+              </div>
+            </div>
+          </>
+        )}
+
+        {sentimentStatus?.sentimentDistribution && (
+          <div className="signal-distribution">
+            <span className="signal bullish">Bullish: {sentimentStatus.sentimentDistribution.bullish || 0}</span>
+            <span className="signal neutral">Neutral: {sentimentStatus.sentimentDistribution.neutral || 0}</span>
+            <span className="signal bearish">Bearish: {sentimentStatus.sentimentDistribution.bearish || 0}</span>
+          </div>
+        )}
+
+        {sentimentStatus?.subreddits && sentimentStatus.subreddits.length > 0 && (
+          <div className="subreddit-breakdown">
+            <span className="breakdown-label">Posts by Subreddit: </span>
+            {sentimentStatus.subreddits.slice(0, 5).map((sub, i) => (
+              <span key={sub.subreddit} className="subreddit-item">
+                r/{sub.subreddit}: {formatNumber(sub.post_count)}
+                {i < Math.min(sentimentStatus.subreddits.length, 5) - 1 ? ', ' : ''}
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="update-controls">
+          <div className="control-row buttons">
+            <button
+              onClick={loadSentimentStatus}
+              disabled={sentimentScanning}
+              className="btn-secondary"
+            >
+              Refresh Status
+            </button>
+            <button
+              onClick={runSentimentScan}
+              disabled={sentimentScanning}
+              className="btn-primary"
+            >
+              {sentimentScanning ? 'Scanning...' : 'Scan Reddit Now'}
+            </button>
+          </div>
+        </div>
+
+        {sentimentScanning && (
+          <div className="update-message">
+            Scanning Reddit for stock mentions... This may take 1-2 minutes.
+          </div>
+        )}
+      </div>
+
+      {/* Stock Price Updates */}
+      <div className="card price-update-card">
+        <h3>Stock Price Data</h3>
+        <p className="card-description">
+          Daily stock price updates from Yahoo Finance using a tiered rotation system.
+        </p>
+
+        {priceUpdateStats && (
+          <>
+            <div className="price-stats-grid">
+              <div className="stat-item">
+                <span className="stat-value">{formatNumber(priceUpdateStats.overall?.total)}</span>
+                <span className="stat-label">Total Companies</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value highlight-green">{formatNumber(priceUpdateStats.overall?.fresh_1d)}</span>
+                <span className="stat-label">Fresh (1 Day)</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value">{formatNumber(priceUpdateStats.overall?.fresh_7d)}</span>
+                <span className="stat-label">Fresh (7 Days)</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value highlight-warning">{formatNumber(priceUpdateStats.overall?.never_updated)}</span>
+                <span className="stat-label">Never Updated</span>
+              </div>
+            </div>
+
+            {priceUpdateStats.byTier && priceUpdateStats.byTier.length > 0 && (
+              <div className="tier-breakdown">
+                <span className="breakdown-label">Update Tiers: </span>
+                {priceUpdateStats.byTier.map((tier, i) => (
+                  <span key={tier.update_tier} className="tier-item">
+                    {tier.tier_name}: {formatNumber(tier.total)}
+                    {tier.avg_age_days != null && ` (avg ${tier.avg_age_days}d)`}
+                    {i < priceUpdateStats.byTier.length - 1 ? ' | ' : ''}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {priceUpdateStats.recentRuns && priceUpdateStats.recentRuns.length > 0 && (
+              <div className="last-update-info">
+                Last run: {formatDate(priceUpdateStats.recentRuns[0].created_at)}
+                {priceUpdateStats.recentRuns[0].companies_updated > 0 && (
+                  <> - Updated {formatNumber(priceUpdateStats.recentRuns[0].companies_updated)} companies</>
+                )}
+              </div>
+            )}
+          </>
+        )}
+
+        {priceUpdateSchedule && (
+          <div className="schedule-info">
+            <span className="schedule-label">Today's Schedule ({priceUpdateSchedule.date}): </span>
+            <span className="schedule-total">{formatNumber(priceUpdateSchedule.total)} companies</span>
+            {priceUpdateSchedule.message && (
+              <span className="schedule-message"> - {priceUpdateSchedule.message}</span>
+            )}
+          </div>
+        )}
+
+        <div className="update-controls">
+          <div className="control-row buttons">
+            <button
+              onClick={loadPriceUpdateStatus}
+              disabled={priceUpdating}
+              className="btn-secondary"
+            >
+              Refresh Status
+            </button>
+            <button
+              onClick={runPriceBackfill}
+              disabled={priceUpdating}
+              className="btn-secondary"
+            >
+              {priceUpdating ? 'Running...' : 'Run Backfill'}
+            </button>
+            <button
+              onClick={runPriceUpdate}
+              disabled={priceUpdating}
+              className="btn-primary"
+            >
+              {priceUpdating ? 'Running...' : 'Run Daily Update'}
+            </button>
+          </div>
+        </div>
+
+        {priceUpdating && (
+          <div className="update-message">
+            Running price update in the background... This may take several minutes.
+          </div>
+        )}
+
+        {priceUpdateMessage && !priceUpdating && (
+          <div className="update-result success">
+            {priceUpdateMessage}
           </div>
         )}
       </div>

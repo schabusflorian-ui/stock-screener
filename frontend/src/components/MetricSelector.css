@@ -1,3 +1,5 @@
+/* MetricSelector.css - Liquid Glass Theme */
+
 .metric-selector {
   position: relative;
 }
@@ -7,22 +9,24 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 1rem;
-  background: #1e293b;
-  border: 1px solid #334155;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 0.5rem;
-  color: #e2e8f0;
+  color: #374151;
   cursor: pointer;
   font-size: 0.875rem;
   transition: all 0.2s ease;
 }
 
 .metric-selector-toggle:hover {
-  background: #334155;
+  background: rgba(255, 255, 255, 0.9);
+  border-color: #6366f1;
 }
 
 .metric-selector-toggle .arrow {
   font-size: 0.625rem;
   transition: transform 0.2s ease;
+  color: #6b7280;
 }
 
 .metric-selector-toggle .arrow.open {
@@ -30,20 +34,22 @@
 }
 
 .metric-selector-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
   min-width: 400px;
   max-height: 500px;
   overflow-y: auto;
-  background: #1e293b;
-  border: 1px solid #334155;
-  border-radius: 0.5rem;
-  margin-top: 0.5rem;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 0.75rem;
   padding: 1rem;
-  z-index: 100;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+}
+
+/* Portal-based dropdown uses fixed positioning from inline styles */
+.metric-selector-portal {
+  position: fixed;
+  z-index: 99999;
 }
 
 .selected-metrics {
@@ -51,7 +57,7 @@
   flex-wrap: wrap;
   gap: 0.5rem;
   padding-bottom: 1rem;
-  border-bottom: 1px solid #334155;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   margin-bottom: 1rem;
   min-height: 2rem;
 }
@@ -61,7 +67,7 @@
   align-items: center;
   gap: 0.25rem;
   padding: 0.25rem 0.5rem;
-  background: #0f172a;
+  background: rgba(255, 255, 255, 0.7);
   border: 1px solid;
   border-radius: 0.25rem;
   font-size: 0.75rem;
@@ -85,7 +91,7 @@
 }
 
 .metric-category {
-  background: #0f172a;
+  background: rgba(255, 255, 255, 0.5);
   border-radius: 0.5rem;
   padding: 0.75rem;
 }
@@ -99,7 +105,7 @@
 
 .category-name {
   font-weight: 600;
-  color: #94a3b8;
+  color: #6b7280;
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -113,17 +119,18 @@
 .category-actions button {
   padding: 0.125rem 0.5rem;
   background: transparent;
-  border: 1px solid #334155;
+  border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 0.25rem;
-  color: #64748b;
+  color: #6b7280;
   font-size: 0.625rem;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .category-actions button:hover {
-  background: #334155;
-  color: #e2e8f0;
+  background: rgba(99, 102, 241, 0.08);
+  border-color: #6366f1;
+  color: #6366f1;
 }
 
 .metric-options {
@@ -140,18 +147,18 @@
   border-radius: 0.25rem;
   cursor: pointer;
   font-size: 0.8125rem;
-  color: #94a3b8;
+  color: #6b7280;
   transition: all 0.2s ease;
 }
 
 .metric-option:hover {
-  background: #1e293b;
-  color: #e2e8f0;
+  background: rgba(99, 102, 241, 0.08);
+  color: #374151;
 }
 
 .metric-option.selected {
-  background: #1e293b;
-  color: #e2e8f0;
+  background: rgba(99, 102, 241, 0.1);
+  color: #374151;
 }
 
 .metric-option input[type="checkbox"] {
@@ -170,5 +177,24 @@
 }
 
 .metric-option.selected .metric-color {
-  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.3);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3);
+}
+
+/* Scrollbar styling */
+.metric-selector-dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+
+.metric-selector-dropdown::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 3px;
+}
+
+.metric-selector-dropdown::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 3px;
+}
+
+.metric-selector-dropdown::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.2);
 }

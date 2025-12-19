@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line, Legend } from 'recharts';
 import { companyAPI } from '../services/api';
+import { DCFValuation } from './DCFValuation';
 import './AnalysisDashboard.css';
 
 // Format helpers
@@ -29,11 +30,17 @@ const formatRatio = (value) => {
 
 // Quality Scores Section
 function QualityScores({ piotroski, altmanZ }) {
-  const piotroskiColor = piotroski?.score >= 7 ? '#22c55e' :
-                         piotroski?.score >= 5 ? '#f59e0b' : '#ef4444';
+  // Handle missing data - determine if we have valid scores
+  const hasPiotroski = piotroski && piotroski.score !== null && piotroski.score !== undefined;
+  const hasAltmanZ = altmanZ && altmanZ.score !== null && altmanZ.score !== undefined;
 
-  const altmanColor = altmanZ?.zone === 'safe' ? '#22c55e' :
-                      altmanZ?.zone === 'grey' ? '#f59e0b' : '#ef4444';
+  const piotroskiColor = hasPiotroski
+    ? (piotroski.score >= 7 ? '#22c55e' : piotroski.score >= 5 ? '#f59e0b' : '#ef4444')
+    : '#9ca3af';
+
+  const altmanColor = hasAltmanZ
+    ? (altmanZ.zone === 'safe' ? '#22c55e' : altmanZ.zone === 'grey' ? '#f59e0b' : '#ef4444')
+    : '#9ca3af';
 
   const piotroskiComponents = piotroski?.components || {};
   const componentLabels = {
@@ -48,6 +55,17 @@ function QualityScores({ piotroski, altmanZ }) {
     increasingAssetTurnover: 'Improving Efficiency'
   };
 
+  // Safe number formatting
+  const safePercent = (val) => {
+    if (val === null || val === undefined || isNaN(val)) return 'N/A';
+    return `${(val * 100).toFixed(1)}%`;
+  };
+
+  const safeRatio = (val) => {
+    if (val === null || val === undefined || isNaN(val)) return 'N/A';
+    return `${val.toFixed(2)}x`;
+  };
+
   return (
     <div className="quality-scores-section">
       <h3>Quality Scores</h3>
@@ -56,47 +74,87 @@ function QualityScores({ piotroski, altmanZ }) {
         <div className="score-card">
           <div className="score-header">
             <h4>Piotroski F-Score</h4>
-            <span className="score-badge" style={{ backgroundColor: piotroskiColor }}>
-              {piotroski?.score ?? '-'}/9
-            </span>
+            <div className="score-display" style={{ '--score-color': piotroskiColor }}>
+              <span className="score-value">{hasPiotroski ? piotroski.score : '-'}</span>
+              <span className="score-max">/9</span>
+            </div>
           </div>
-          <p className="score-interpretation">{piotroski?.interpretation}</p>
 
-          {piotroski?.score !== null && (
+          {hasPiotroski && (
+            <div className="score-gauge">
+              <div className="gauge-track">
+                {[...Array(9)].map((_, i) => (
+                  <div
+                    key={i}
+                    className={`gauge-segment ${i < piotroski.score ? 'filled' : ''}`}
+                    style={{
+                      backgroundColor: i < piotroski.score ? piotroskiColor : 'rgba(0,0,0,0.08)'
+                    }}
+                  />
+                ))}
+              </div>
+              <div className="gauge-labels">
+                <span>Weak</span>
+                <span>Strong</span>
+              </div>
+            </div>
+          )}
+
+          <p className="score-interpretation">
+            {hasPiotroski ? piotroski.interpretation : 'Insufficient data to calculate score'}
+          </p>
+
+          {hasPiotroski && Object.keys(piotroskiComponents).length > 0 && (
             <div className="score-components">
               <div className="component-group">
                 <span className="group-label">Profitability</span>
                 <div className="component-items">
-                  {['positiveNetIncome', 'positiveROA', 'positiveCFO', 'cfoGreaterThanNetIncome'].map(key => (
-                    <div key={key} className={`component-item ${piotroskiComponents[key] ? 'pass' : 'fail'}`}>
-                      <span className="check">{piotroskiComponents[key] ? '✓' : '✗'}</span>
-                      <span>{componentLabels[key]}</span>
-                    </div>
-                  ))}
+                  {['positiveNetIncome', 'positiveROA', 'positiveCFO', 'cfoGreaterThanNetIncome'].map(key => {
+                    const hasData = piotroskiComponents[key] !== undefined;
+                    return (
+                      <div key={key} className={`component-item ${!hasData ? 'no-data' : piotroskiComponents[key] ? 'pass' : 'fail'}`}>
+                        <span className="check">{!hasData ? '?' : piotroskiComponents[key] ? '✓' : '✗'}</span>
+                        <span>{componentLabels[key]}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
               <div className="component-group">
                 <span className="group-label">Leverage & Liquidity</span>
                 <div className="component-items">
-                  {['decreasingLeverage', 'increasingCurrentRatio', 'noNewShares'].map(key => (
-                    <div key={key} className={`component-item ${piotroskiComponents[key] ? 'pass' : 'fail'}`}>
-                      <span className="check">{piotroskiComponents[key] ? '✓' : '✗'}</span>
-                      <span>{componentLabels[key]}</span>
-                    </div>
-                  ))}
+                  {['decreasingLeverage', 'increasingCurrentRatio', 'noNewShares'].map(key => {
+                    const hasData = piotroskiComponents[key] !== undefined;
+                    return (
+                      <div key={key} className={`component-item ${!hasData ? 'no-data' : piotroskiComponents[key] ? 'pass' : 'fail'}`}>
+                        <span className="check">{!hasData ? '?' : piotroskiComponents[key] ? '✓' : '✗'}</span>
+                        <span>{componentLabels[key]}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
               <div className="component-group">
                 <span className="group-label">Operating Efficiency</span>
                 <div className="component-items">
-                  {['increasingGrossMargin', 'increasingAssetTurnover'].map(key => (
-                    <div key={key} className={`component-item ${piotroskiComponents[key] ? 'pass' : 'fail'}`}>
-                      <span className="check">{piotroskiComponents[key] ? '✓' : '✗'}</span>
-                      <span>{componentLabels[key]}</span>
-                    </div>
-                  ))}
+                  {['increasingGrossMargin', 'increasingAssetTurnover'].map(key => {
+                    const hasData = piotroskiComponents[key] !== undefined;
+                    return (
+                      <div key={key} className={`component-item ${!hasData ? 'no-data' : piotroskiComponents[key] ? 'pass' : 'fail'}`}>
+                        <span className="check">{!hasData ? '?' : piotroskiComponents[key] ? '✓' : '✗'}</span>
+                        <span>{componentLabels[key]}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
+            </div>
+          )}
+
+          {!hasPiotroski && (
+            <div className="no-score-data">
+              <span className="no-data-icon">📊</span>
+              <p>Score unavailable - requires multiple periods of financial data</p>
             </div>
           )}
         </div>
@@ -105,18 +163,21 @@ function QualityScores({ piotroski, altmanZ }) {
         <div className="score-card">
           <div className="score-header">
             <h4>Altman Z-Score</h4>
-            <span className="score-badge" style={{ backgroundColor: altmanColor }}>
-              {altmanZ?.score ?? '-'}
-            </span>
+            <div className="score-display" style={{ '--score-color': altmanColor }}>
+              <span className="score-value">{hasAltmanZ ? altmanZ.score.toFixed(2) : '-'}</span>
+            </div>
           </div>
-          <p className="score-interpretation">{altmanZ?.interpretation}</p>
 
-          {altmanZ?.score !== null && (
+          <p className="score-interpretation">
+            {hasAltmanZ ? altmanZ.interpretation : 'Insufficient data to calculate score'}
+          </p>
+
+          {hasAltmanZ && (
             <div className="z-score-meter">
               <div className="meter-track">
-                <div className="zone distress" style={{ width: '30%' }}>Distress</div>
-                <div className="zone grey" style={{ width: '20%' }}>Grey</div>
-                <div className="zone safe" style={{ width: '50%' }}>Safe</div>
+                <div className="zone distress">Distress</div>
+                <div className="zone grey">Grey</div>
+                <div className="zone safe">Safe</div>
               </div>
               <div
                 className="meter-marker"
@@ -124,33 +185,46 @@ function QualityScores({ piotroski, altmanZ }) {
                   left: `${Math.min(100, Math.max(0, (altmanZ.score / 5) * 100))}%`
                 }}
               >
-                <span>{altmanZ.score}</span>
+                <span>{altmanZ.score.toFixed(1)}</span>
+              </div>
+              <div className="meter-scale">
+                <span>0</span>
+                <span className="threshold">1.8</span>
+                <span className="threshold">3.0</span>
+                <span>5+</span>
               </div>
             </div>
           )}
 
-          {altmanZ?.components && (
+          {hasAltmanZ && altmanZ.components && (
             <div className="z-components">
               <div className="z-component">
                 <span className="label">Working Capital/Assets</span>
-                <span className="value">{(altmanZ.components.workingCapitalRatio * 100).toFixed(1)}%</span>
+                <span className="value">{safePercent(altmanZ.components.workingCapitalRatio)}</span>
               </div>
               <div className="z-component">
                 <span className="label">Retained Earnings/Assets</span>
-                <span className="value">{(altmanZ.components.retainedEarningsRatio * 100).toFixed(1)}%</span>
+                <span className="value">{safePercent(altmanZ.components.retainedEarningsRatio)}</span>
               </div>
               <div className="z-component">
                 <span className="label">EBIT/Assets</span>
-                <span className="value">{(altmanZ.components.ebitRatio * 100).toFixed(1)}%</span>
+                <span className="value">{safePercent(altmanZ.components.ebitRatio)}</span>
               </div>
               <div className="z-component">
                 <span className="label">Market Cap/Liabilities</span>
-                <span className="value">{altmanZ.components.marketToDebtRatio.toFixed(2)}x</span>
+                <span className="value">{safeRatio(altmanZ.components.marketToDebtRatio)}</span>
               </div>
               <div className="z-component">
                 <span className="label">Sales/Assets</span>
-                <span className="value">{altmanZ.components.assetTurnover.toFixed(2)}x</span>
+                <span className="value">{safeRatio(altmanZ.components.assetTurnover)}</span>
               </div>
+            </div>
+          )}
+
+          {!hasAltmanZ && (
+            <div className="no-score-data">
+              <span className="no-data-icon">📉</span>
+              <p>Score unavailable - requires complete balance sheet and income data</p>
             </div>
           )}
         </div>
@@ -599,11 +673,16 @@ function DCFCalculator({ latestMetrics, companyName }) {
 
 // ============ MAIN COMPONENT ============
 
-function AnalysisDashboard({ symbol, periodType = 'annual' }) {
+function AnalysisDashboard({ symbol, periodType = 'annual', initialSection = 'quality' }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeSection, setActiveSection] = useState('quality');
+  const [activeSection, setActiveSection] = useState(initialSection);
+
+  // Update active section when initialSection changes (e.g., from DCF click)
+  useEffect(() => {
+    setActiveSection(initialSection);
+  }, [initialSection]);
 
   useEffect(() => {
     const loadAnalysis = async () => {
@@ -685,10 +764,7 @@ function AnalysisDashboard({ symbol, periodType = 'annual' }) {
         )}
 
         {activeSection === 'dcf' && (
-          <DCFCalculator
-            latestMetrics={data.latestMetrics}
-            companyName={data.company?.name}
-          />
+          <DCFValuation symbol={symbol} />
         )}
       </div>
     </div>

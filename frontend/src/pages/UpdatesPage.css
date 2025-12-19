@@ -23,13 +23,16 @@
   margin: 0;
 }
 
-/* Cards */
+/* Cards - Liquid Glass */
 .card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: var(--radius-lg);
   padding: 1.5rem;
   margin-bottom: 1.5rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
 }
 
 .card h3 {
@@ -98,7 +101,7 @@
 }
 
 .status-idle {
-  background: var(--bg-tertiary);
+  background: rgba(255, 255, 255, 0.5);
   color: var(--text-tertiary);
 }
 
@@ -140,10 +143,10 @@
 
 .control-row select {
   padding: 0.5rem 1rem;
-  border: 1px solid var(--border-primary);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-md);
   font-size: 0.875rem;
-  background: var(--bg-tertiary);
+  background: rgba(255, 255, 255, 0.5);
   color: var(--text-primary);
   min-width: 150px;
   cursor: pointer;
@@ -197,13 +200,13 @@
 }
 
 .btn-secondary {
-  background: var(--bg-tertiary);
+  background: rgba(255, 255, 255, 0.5);
   color: var(--text-secondary);
-  border: 1px solid var(--border-primary);
+  border: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: var(--bg-hover);
+  background: rgba(99, 102, 241, 0.08);
   border-color: var(--border-secondary);
 }
 
@@ -268,7 +271,7 @@
 .progress-bar-wrapper {
   width: 100%;
   height: 8px;
-  background: var(--bg-tertiary);
+  background: rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-sm);
   overflow: hidden;
 }
@@ -317,7 +320,7 @@
 .freshness-card .stat-item {
   text-align: center;
   padding: 1rem;
-  background: var(--bg-tertiary);
+  background: rgba(255, 255, 255, 0.5);
   border-radius: var(--radius-md);
 }
 
@@ -369,7 +372,7 @@
 }
 
 .history-table th {
-  background: var(--bg-tertiary);
+  background: rgba(255, 255, 255, 0.5);
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -386,7 +389,7 @@
 }
 
 .history-table tbody tr:hover {
-  background: var(--bg-hover);
+  background: rgba(99, 102, 241, 0.04);
 }
 
 .history-table .status-row-failed {
@@ -422,7 +425,7 @@
 }
 
 .companies-table th {
-  background: var(--bg-tertiary);
+  background: rgba(255, 255, 255, 0.5);
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -440,7 +443,7 @@
 }
 
 .companies-table tbody tr:hover {
-  background: var(--bg-hover);
+  background: rgba(99, 102, 241, 0.04);
 }
 
 .symbol-cell .symbol-link {
@@ -518,6 +521,309 @@
   }
 
   .freshness-card .freshness-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Insider Update Card */
+.insider-update-card .card-description {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.insider-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 8px;
+}
+
+.insider-stats-grid .stat-item {
+  text-align: center;
+}
+
+.insider-stats-grid .stat-value {
+  display: block;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.insider-stats-grid .stat-label {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+}
+
+.signal-distribution {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 6px;
+  justify-content: center;
+}
+
+.signal-distribution .signal {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+
+.signal-distribution .signal.bullish {
+  background: rgba(34, 197, 94, 0.1);
+  color: var(--positive);
+}
+
+.signal-distribution .signal.neutral {
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--text-secondary);
+}
+
+.signal-distribution .signal.bearish {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--negative);
+}
+
+.update-message {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 6px;
+  color: var(--info);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .insider-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .signal-distribution {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .capital-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Capital Allocation Update Card */
+.capital-update-card .card-description {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.capital-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+
+.capital-stats-grid .stat-item {
+  text-align: center;
+}
+
+.capital-stats-grid .stat-value {
+  display: block;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.capital-stats-grid .stat-label {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.year-breakdown {
+  margin: 1rem 0;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: var(--radius-md);
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.year-breakdown .breakdown-label {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.year-breakdown .year-item {
+  color: var(--text-tertiary);
+}
+
+.update-result {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+}
+
+.update-result.success {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  color: var(--positive);
+}
+
+/* Sentiment Update Card */
+.sentiment-update-card .card-description {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.sentiment-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 8px;
+}
+
+.sentiment-stats-grid .stat-item {
+  text-align: center;
+}
+
+.sentiment-stats-grid .stat-value {
+  display: block;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.sentiment-stats-grid .stat-label {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+}
+
+.subreddit-breakdown {
+  margin: 1rem 0;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: var(--radius-md);
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.subreddit-breakdown .breakdown-label {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.subreddit-breakdown .subreddit-item {
+  color: var(--text-tertiary);
+}
+
+@media (max-width: 640px) {
+  .sentiment-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Price Update Card */
+.price-update-card .card-description {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.price-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 8px;
+}
+
+.price-stats-grid .stat-item {
+  text-align: center;
+}
+
+.price-stats-grid .stat-value {
+  display: block;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.price-stats-grid .stat-value.highlight-green {
+  color: var(--positive);
+}
+
+.price-stats-grid .stat-value.highlight-warning {
+  color: #f59e0b;
+}
+
+.price-stats-grid .stat-label {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+}
+
+.tier-breakdown {
+  margin: 1rem 0;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: var(--radius-md);
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.tier-breakdown .breakdown-label {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.tier-breakdown .tier-item {
+  color: var(--text-tertiary);
+}
+
+.schedule-info {
+  margin: 1rem 0;
+  padding: 0.75rem;
+  background: rgba(99, 102, 241, 0.08);
+  border-radius: var(--radius-md);
+  font-size: 0.8125rem;
+}
+
+.schedule-info .schedule-label {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.schedule-info .schedule-total {
+  color: var(--brand-primary);
+  font-weight: 600;
+}
+
+.schedule-info .schedule-message {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+@media (max-width: 640px) {
+  .price-stats-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 }

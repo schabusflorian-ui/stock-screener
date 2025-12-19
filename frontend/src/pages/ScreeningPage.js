@@ -1,9 +1,63 @@
 // frontend/src/pages/ScreeningPage.js
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { screeningAPI, companyAPI } from '../services/api';
 import { WatchlistButton, PeriodToggle, ComparisonChart } from '../components';
+import { ChevronUp, ChevronDown, Filter, Columns, X } from 'lucide-react';
 import './ScreeningPage.css';
+
+// All available columns for the results table
+const ALL_COLUMNS = [
+  { key: 'symbol', label: 'Symbol', format: 'text', filterable: true, alwaysVisible: true },
+  { key: 'name', label: 'Company', format: 'text', filterable: true },
+  { key: 'sector', label: 'Sector', format: 'text', filterable: true },
+  { key: 'industry', label: 'Industry', format: 'text', filterable: true },
+  // Price & Market Data (from price_metrics)
+  { key: 'last_price', label: 'Price', format: 'currency', filterable: true },
+  { key: 'market_cap', label: 'Mkt Cap', format: 'currency_large', filterable: true },
+  { key: 'enterprise_value', label: 'EV', format: 'currency_large', filterable: true },
+  { key: 'beta', label: 'Beta', format: 'ratio', filterable: true, colorCode: { good: 1, bad: 2, inverse: true } },
+  { key: 'change_1d', label: '1D %', format: 'percent', filterable: true, colorCode: { good: 0, bad: -5 } },
+  { key: 'change_1w', label: '1W %', format: 'percent', filterable: true, colorCode: { good: 0, bad: -10 } },
+  { key: 'change_1m', label: '1M %', format: 'percent', filterable: true, colorCode: { good: 0, bad: -15 } },
+  { key: 'change_ytd', label: 'YTD %', format: 'percent', filterable: true, colorCode: { good: 0, bad: -20 } },
+  // Profitability
+  { key: 'roic', label: 'ROIC', format: 'percent', filterable: true, colorCode: { good: 15, bad: 5 } },
+  { key: 'roe', label: 'ROE', format: 'percent', filterable: true, colorCode: { good: 15, bad: 5 } },
+  { key: 'roa', label: 'ROA', format: 'percent', filterable: true, colorCode: { good: 10, bad: 2 } },
+  { key: 'gross_margin', label: 'Gross Margin', format: 'percent', filterable: true, colorCode: { good: 40, bad: 20 } },
+  { key: 'operating_margin', label: 'Op. Margin', format: 'percent', filterable: true, colorCode: { good: 15, bad: 5 } },
+  { key: 'net_margin', label: 'Net Margin', format: 'percent', filterable: true, colorCode: { good: 15, bad: 0 } },
+  // Cash Flow
+  { key: 'fcf_yield', label: 'FCF Yield', format: 'percent', filterable: true, colorCode: { good: 5, bad: 0 } },
+  { key: 'fcf_margin', label: 'FCF Margin', format: 'percent', filterable: true, colorCode: { good: 10, bad: 0 } },
+  // Valuation
+  { key: 'pe_ratio', label: 'P/E', format: 'ratio', filterable: true, colorCode: { good: 15, bad: 30, inverse: true } },
+  { key: 'pb_ratio', label: 'P/B', format: 'ratio', filterable: true, colorCode: { good: 1.5, bad: 4, inverse: true } },
+  { key: 'ps_ratio', label: 'P/S', format: 'ratio', filterable: true, colorCode: { good: 2, bad: 8, inverse: true } },
+  { key: 'ev_ebitda', label: 'EV/EBITDA', format: 'ratio', filterable: true, colorCode: { good: 10, bad: 20, inverse: true } },
+  // Financial Health
+  { key: 'debt_to_equity', label: 'Debt/Eq', format: 'ratio', filterable: true, colorCode: { good: 0.5, bad: 2, inverse: true } },
+  { key: 'debt_to_assets', label: 'Debt/Assets', format: 'ratio', filterable: true, colorCode: { good: 0.3, bad: 0.6, inverse: true } },
+  { key: 'current_ratio', label: 'Current', format: 'ratio', filterable: true, colorCode: { good: 2, bad: 1 } },
+  { key: 'quick_ratio', label: 'Quick', format: 'ratio', filterable: true, colorCode: { good: 1.5, bad: 0.8 } },
+  { key: 'interest_coverage', label: 'Int. Coverage', format: 'ratio', filterable: true, colorCode: { good: 5, bad: 2 } },
+  // Growth
+  { key: 'revenue_growth_yoy', label: 'Rev Growth', format: 'percent', filterable: true, colorCode: { good: 10, bad: 0 } },
+  { key: 'earnings_growth_yoy', label: 'Earn Growth', format: 'percent', filterable: true, colorCode: { good: 10, bad: 0 } },
+  { key: 'fcf_growth_yoy', label: 'FCF Growth', format: 'percent', filterable: true, colorCode: { good: 10, bad: 0 } },
+  // Efficiency
+  { key: 'asset_turnover', label: 'Asset Turn', format: 'ratio', filterable: true, colorCode: { good: 1, bad: 0.3 } },
+  // Other
+  { key: 'fiscal_period', label: 'Period', format: 'date', filterable: true },
+  { key: 'quality_score', label: 'Quality', format: 'number', filterable: true },
+];
+
+// Default visible columns
+const DEFAULT_VISIBLE_COLUMNS = ['symbol', 'name', 'sector', 'roic', 'roe', 'net_margin', 'fcf_yield', 'pe_ratio', 'debt_to_equity', 'revenue_growth_yoy', 'fiscal_period'];
+
+// Storage key for column preferences
+const COLUMN_PREFS_KEY = 'screening_column_preferences';
 
 // Metric definitions for the criteria builder
 const METRIC_DEFINITIONS = {
@@ -69,10 +123,17 @@ const formatValue = (value, format) => {
     case 'percent': return `${value.toFixed(1)}%`;
     case 'ratio': return value.toFixed(2);
     case 'currency':
-      if (Math.abs(value) >= 1e12) return `$${(value / 1e12).toFixed(1)}T`;
       if (Math.abs(value) >= 1e9) return `$${(value / 1e9).toFixed(1)}B`;
       if (Math.abs(value) >= 1e6) return `$${(value / 1e6).toFixed(1)}M`;
+      if (Math.abs(value) >= 1e3) return `$${(value / 1e3).toFixed(1)}K`;
+      return `$${value.toFixed(2)}`;
+    case 'currency_large':
+      // For market cap, enterprise value - larger numbers
+      if (Math.abs(value) >= 1e12) return `$${(value / 1e12).toFixed(2)}T`;
+      if (Math.abs(value) >= 1e9) return `$${(value / 1e9).toFixed(1)}B`;
+      if (Math.abs(value) >= 1e6) return `$${(value / 1e6).toFixed(0)}M`;
       return `$${value.toFixed(0)}`;
+    case 'number': return Math.round(value).toString();
     default: return value.toFixed(2);
   }
 };
@@ -123,6 +184,151 @@ function ScreeningPage() {
   const [chartMetric, setChartMetric] = useState('roic');
   const [chartData, setChartData] = useState([]);
   const [loadingChartData, setLoadingChartData] = useState(false);
+
+  // Table sorting state (client-side sorting of results)
+  const [tableSortColumn, setTableSortColumn] = useState('roic');
+  const [tableSortDirection, setTableSortDirection] = useState('desc');
+
+  // Column visibility state - load from localStorage or use defaults
+  const [visibleColumns, setVisibleColumns] = useState(() => {
+    const saved = localStorage.getItem(COLUMN_PREFS_KEY);
+    return saved ? JSON.parse(saved) : DEFAULT_VISIBLE_COLUMNS;
+  });
+  const [showColumnSelector, setShowColumnSelector] = useState(false);
+
+  // Column filters state (text/value filters for each column)
+  const [columnFilters, setColumnFilters] = useState({});
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Save column preferences to localStorage
+  useEffect(() => {
+    localStorage.setItem(COLUMN_PREFS_KEY, JSON.stringify(visibleColumns));
+  }, [visibleColumns]);
+
+  // Toggle column visibility
+  const toggleColumn = (columnKey) => {
+    const column = ALL_COLUMNS.find(c => c.key === columnKey);
+    if (column?.alwaysVisible) return; // Can't hide always-visible columns
+
+    setVisibleColumns(prev =>
+      prev.includes(columnKey)
+        ? prev.filter(k => k !== columnKey)
+        : [...prev, columnKey]
+    );
+  };
+
+  // Get visible column definitions in order
+  const visibleColumnDefs = useMemo(() => {
+    return ALL_COLUMNS.filter(col => visibleColumns.includes(col.key));
+  }, [visibleColumns]);
+
+  // Update column filter
+  const updateColumnFilter = (columnKey, value) => {
+    setColumnFilters(prev => {
+      if (!value || value === '') {
+        const { [columnKey]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [columnKey]: value };
+    });
+  };
+
+  // Clear all filters
+  const clearAllFilters = () => {
+    setColumnFilters({});
+  };
+
+  // Check if any filters are active
+  const hasActiveFilters = Object.keys(columnFilters).length > 0;
+
+  // Handle table header click for sorting
+  const handleTableSort = (column) => {
+    if (tableSortColumn === column) {
+      // Toggle direction if same column
+      setTableSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      // New column - default to descending for most metrics, ascending for symbol/name
+      setTableSortColumn(column);
+      setTableSortDirection(['symbol', 'name', 'sector', 'industry'].includes(column) ? 'asc' : 'desc');
+    }
+  };
+
+  // Filter and sort results client-side
+  const filteredAndSortedResults = useMemo(() => {
+    if (!results.length) return results;
+
+    // First apply filters
+    let filtered = results;
+    if (hasActiveFilters) {
+      filtered = results.filter(stock => {
+        return Object.entries(columnFilters).every(([colKey, filterValue]) => {
+          const stockValue = stock[colKey];
+          if (stockValue === null || stockValue === undefined) return false;
+
+          const column = ALL_COLUMNS.find(c => c.key === colKey);
+
+          // Text columns: case-insensitive contains
+          if (column?.format === 'text' || column?.format === 'date') {
+            return String(stockValue).toLowerCase().includes(filterValue.toLowerCase());
+          }
+
+          // Numeric columns: parse filter as range (e.g., ">10", "<5", "10-20", or just "10")
+          const strFilter = String(filterValue).trim();
+          const numValue = parseFloat(stockValue);
+
+          if (strFilter.startsWith('>=')) {
+            return numValue >= parseFloat(strFilter.slice(2));
+          } else if (strFilter.startsWith('<=')) {
+            return numValue <= parseFloat(strFilter.slice(2));
+          } else if (strFilter.startsWith('>')) {
+            return numValue > parseFloat(strFilter.slice(1));
+          } else if (strFilter.startsWith('<')) {
+            return numValue < parseFloat(strFilter.slice(1));
+          } else if (strFilter.includes('-') && !strFilter.startsWith('-')) {
+            const [min, max] = strFilter.split('-').map(s => parseFloat(s.trim()));
+            return numValue >= min && numValue <= max;
+          } else {
+            // Exact or contains for numeric
+            return String(stockValue).includes(strFilter);
+          }
+        });
+      });
+    }
+
+    // Then sort
+    return [...filtered].sort((a, b) => {
+      let aVal = a[tableSortColumn];
+      let bVal = b[tableSortColumn];
+
+      // Handle null/undefined values - push to end
+      if (aVal === null || aVal === undefined) return 1;
+      if (bVal === null || bVal === undefined) return -1;
+
+      // String comparison for text columns
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        const comparison = aVal.localeCompare(bVal);
+        return tableSortDirection === 'asc' ? comparison : -comparison;
+      }
+
+      // Numeric comparison
+      const comparison = aVal - bVal;
+      return tableSortDirection === 'asc' ? comparison : -comparison;
+    });
+  }, [results, tableSortColumn, tableSortDirection, columnFilters, hasActiveFilters]);
+
+  // Helper to get cell class based on value and column color coding
+  const getCellClass = (value, column) => {
+    if (value === null || value === undefined || !column.colorCode) return '';
+    const { good, bad, inverse } = column.colorCode;
+    if (inverse) {
+      if (value <= good) return 'positive';
+      if (value >= bad) return 'negative';
+    } else {
+      if (value >= good) return 'positive';
+      if (value <= bad) return 'negative';
+    }
+    return '';
+  };
 
   // Load filter options and presets
   useEffect(() => {
@@ -176,7 +382,7 @@ function ScreeningPage() {
     }
   }, [criteria, periodType, selectedSectors, selectedIndustries, sortBy, sortOrder, limit, historicalMode, lookbackYears, asOfDate]);
 
-  // Run preset screen
+  // Run preset screen (no limit - returns all matches)
   const runPresetScreen = async (presetId, name) => {
     setLoading(true);
     setActiveScreen(name);
@@ -184,13 +390,19 @@ function ScreeningPage() {
     try {
       let response;
       switch(presetId) {
-        case 'buffett': response = await screeningAPI.buffett(limit); break;
-        case 'value': response = await screeningAPI.value(limit); break;
-        case 'magic': response = await screeningAPI.magic(limit); break;
-        case 'quality': response = await screeningAPI.quality(limit); break;
-        case 'growth': response = await screeningAPI.growth(limit); break;
-        case 'dividend': response = await screeningAPI.dividend(limit); break;
-        case 'fortress': response = await screeningAPI.fortress(limit); break;
+        case 'buffett': response = await screeningAPI.buffett(); break;
+        case 'value': response = await screeningAPI.value(); break;
+        case 'magic': response = await screeningAPI.magic(); break;
+        case 'quality': response = await screeningAPI.quality(); break;
+        case 'growth': response = await screeningAPI.growth(); break;
+        case 'dividend': response = await screeningAPI.dividend(); break;
+        case 'fortress': response = await screeningAPI.fortress(); break;
+        case 'cigarbutts': response = await screeningAPI.cigarbutts(); break;
+        case 'compounders': response = await screeningAPI.compounders(); break;
+        case 'flywheel': response = await screeningAPI.flywheel(); break;
+        case 'forensic': response = await screeningAPI.forensic(); break;
+        case 'asymmetry': response = await screeningAPI.asymmetry(); break;
+        case 'moats': response = await screeningAPI.moats(); break;
         default: return;
       }
 
@@ -711,28 +923,110 @@ function ScreeningPage() {
             </div>
           )}
 
+          {/* Table Controls */}
+          <div className="table-controls">
+            <div className="table-controls-left">
+              <button
+                className={`table-control-btn ${showFilters ? 'active' : ''}`}
+                onClick={() => setShowFilters(!showFilters)}
+                title="Toggle column filters"
+              >
+                <Filter size={16} />
+                {hasActiveFilters && <span className="filter-badge">{Object.keys(columnFilters).length}</span>}
+              </button>
+              {hasActiveFilters && (
+                <button className="clear-filters-btn" onClick={clearAllFilters}>
+                  Clear filters
+                </button>
+              )}
+              <span className="results-count">
+                {hasActiveFilters
+                  ? `${filteredAndSortedResults.length} of ${results.length} results`
+                  : `${results.length} results`}
+              </span>
+            </div>
+            <div className="table-controls-right">
+              <div className="column-selector-wrapper">
+                <button
+                  className={`table-control-btn ${showColumnSelector ? 'active' : ''}`}
+                  onClick={() => setShowColumnSelector(!showColumnSelector)}
+                  title="Select columns"
+                >
+                  <Columns size={16} />
+                  <span>Columns</span>
+                </button>
+                {showColumnSelector && (
+                  <div className="column-selector-dropdown">
+                    <div className="column-selector-header">
+                      <span>Show/Hide Columns</span>
+                      <button onClick={() => setShowColumnSelector(false)}><X size={14} /></button>
+                    </div>
+                    <div className="column-selector-list">
+                      {ALL_COLUMNS.map(col => (
+                        <label key={col.key} className={`column-option ${col.alwaysVisible ? 'disabled' : ''}`}>
+                          <input
+                            type="checkbox"
+                            checked={visibleColumns.includes(col.key)}
+                            onChange={() => toggleColumn(col.key)}
+                            disabled={col.alwaysVisible}
+                          />
+                          <span>{col.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="column-selector-footer">
+                      <button onClick={() => setVisibleColumns(DEFAULT_VISIBLE_COLUMNS)}>
+                        Reset to Default
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* Results Table */}
           <div className={`results-table ${resultsView === 'chart' ? 'with-selection' : ''}`}>
             <table>
               <thead>
                 <tr>
                   {resultsView === 'chart' && <th className="select-col">Compare</th>}
-                  <th>Symbol</th>
-                  <th>Company</th>
-                  <th>Sector</th>
-                  <th>ROIC</th>
-                  <th>ROE</th>
-                  <th>Net Margin</th>
-                  <th>FCF Yield</th>
-                  <th>P/E</th>
-                  <th>Debt/Eq</th>
-                  <th>Growth</th>
-                  <th>Period</th>
+                  {visibleColumnDefs.map(col => (
+                    <th
+                      key={col.key}
+                      className="sortable"
+                      onClick={() => handleTableSort(col.key)}
+                    >
+                      {col.label}
+                      {tableSortColumn === col.key && (
+                        tableSortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+                      )}
+                    </th>
+                  ))}
                   <th></th>
                 </tr>
+                {showFilters && (
+                  <tr className="filter-row">
+                    {resultsView === 'chart' && <th className="select-col"></th>}
+                    {visibleColumnDefs.map(col => (
+                      <th key={`filter-${col.key}`} className="filter-cell">
+                        {col.filterable && (
+                          <input
+                            type="text"
+                            placeholder={col.format === 'text' || col.format === 'date' ? 'Filter...' : '>10, <5, 5-20'}
+                            value={columnFilters[col.key] || ''}
+                            onChange={(e) => updateColumnFilter(col.key, e.target.value)}
+                            className="column-filter-input"
+                          />
+                        )}
+                      </th>
+                    ))}
+                    <th></th>
+                  </tr>
+                )}
               </thead>
               <tbody>
-                {results.map(stock => {
+                {filteredAndSortedResults.map(stock => {
                   const isSelected = selectedForChart.some(s => s.symbol === stock.symbol);
                   return (
                     <tr key={stock.symbol} className={isSelected ? 'selected-row' : ''}>
@@ -746,35 +1040,48 @@ function ScreeningPage() {
                           />
                         </td>
                       )}
-                      <td>
-                        <Link to={`/company/${stock.symbol}`} className="symbol-link">
-                          {stock.symbol}
-                        </Link>
-                      </td>
-                      <td className="company-name">{stock.name}</td>
-                      <td className="sector-cell">{stock.sector}</td>
-                      <td className={stock.roic > 15 ? 'positive' : stock.roic < 5 ? 'negative' : ''}>
-                        {formatValue(stock.roic, 'percent')}
-                      </td>
-                      <td className={stock.roe > 15 ? 'positive' : stock.roe < 5 ? 'negative' : ''}>
-                        {formatValue(stock.roe, 'percent')}
-                      </td>
-                      <td className={stock.net_margin > 15 ? 'positive' : stock.net_margin < 0 ? 'negative' : ''}>
-                        {formatValue(stock.net_margin, 'percent')}
-                      </td>
-                      <td className={stock.fcf_yield > 5 ? 'positive' : stock.fcf_yield < 0 ? 'negative' : ''}>
-                        {formatValue(stock.fcf_yield, 'percent')}
-                      </td>
-                      <td className={stock.pe_ratio < 15 ? 'positive' : stock.pe_ratio > 30 ? 'negative' : ''}>
-                        {formatValue(stock.pe_ratio, 'ratio')}
-                      </td>
-                      <td className={stock.debt_to_equity < 0.5 ? 'positive' : stock.debt_to_equity > 2 ? 'negative' : ''}>
-                        {formatValue(stock.debt_to_equity, 'ratio')}
-                      </td>
-                      <td className={stock.revenue_growth_yoy > 10 ? 'positive' : stock.revenue_growth_yoy < 0 ? 'negative' : ''}>
-                        {formatValue(stock.revenue_growth_yoy, 'percent')}
-                      </td>
-                      <td className="period-cell">{stock.fiscal_period?.substring(0, 7)}</td>
+                      {visibleColumnDefs.map(col => {
+                        const value = stock[col.key];
+
+                        // Special rendering for symbol column
+                        if (col.key === 'symbol') {
+                          return (
+                            <td key={col.key}>
+                              <Link to={`/company/${stock.symbol}`} className="symbol-link">
+                                {stock.symbol.startsWith('CIK_') ? stock.name?.split(' ').slice(0, 3).join(' ') || stock.symbol : stock.symbol}
+                              </Link>
+                              {stock.symbol.startsWith('CIK_') && (
+                                <span className="cik-badge">{stock.symbol.replace('CIK_', '')}</span>
+                              )}
+                            </td>
+                          );
+                        }
+
+                        // Special rendering for company name
+                        if (col.key === 'name') {
+                          return (
+                            <td key={col.key} className="company-name">
+                              {stock.symbol.startsWith('CIK_') ? '' : stock.name}
+                            </td>
+                          );
+                        }
+
+                        // Special rendering for fiscal period
+                        if (col.key === 'fiscal_period') {
+                          return (
+                            <td key={col.key} className="period-cell">
+                              {value?.substring(0, 7)}
+                            </td>
+                          );
+                        }
+
+                        // Standard rendering for other columns
+                        return (
+                          <td key={col.key} className={getCellClass(value, col)}>
+                            {formatValue(value, col.format)}
+                          </td>
+                        );
+                      })}
                       <td>
                         <WatchlistButton
                           symbol={stock.symbol}

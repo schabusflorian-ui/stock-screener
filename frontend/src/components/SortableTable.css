@@ -1,9 +1,46 @@
 /* SortableTable.css */
 
+.sortable-table-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.sortable-table-search {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.sortable-table-search .search-input {
+  flex: 1;
+  max-width: 300px;
+  padding: 0.5rem 0.875rem;
+  font-size: 0.875rem;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.8);
+  transition: all 0.2s ease;
+}
+
+.sortable-table-search .search-input:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.sortable-table-search .search-results-count {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
 .sortable-table-wrapper {
   overflow-x: auto;
-  background: #1e293b;
-  border: 1px solid #334155;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
   border-radius: 0.75rem;
 }
 
@@ -17,12 +54,12 @@
 .sortable-table td {
   padding: 0.75rem 1rem;
   text-align: left;
-  border-bottom: 1px solid #334155;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .sortable-table th {
-  background: #0f172a;
-  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.5);
+  color: #6b7280;
   font-weight: 600;
   font-size: 0.75rem;
   text-transform: uppercase;
@@ -40,8 +77,8 @@
 }
 
 .sortable-table th.sortable:hover {
-  background: #1e293b;
-  color: #e2e8f0;
+  background: rgba(99, 102, 241, 0.04);
+  color: #374151;
 }
 
 .sortable-table th .th-content {
@@ -58,7 +95,7 @@
 
 .sortable-table .sort-indicator.active {
   opacity: 1;
-  color: #8b5cf6;
+  color: #6366f1;
 }
 
 .sortable-table tbody tr {
@@ -66,7 +103,7 @@
 }
 
 .sortable-table tbody tr:hover {
-  background: rgba(139, 92, 246, 0.05);
+  background: rgba(99, 102, 241, 0.04);
 }
 
 .sortable-table tbody tr.clickable {
@@ -74,7 +111,7 @@
 }
 
 .sortable-table tbody tr.clickable:hover {
-  background: rgba(139, 92, 246, 0.1);
+  background: rgba(99, 102, 241, 0.08);
 }
 
 /* Value classes */
@@ -88,7 +125,7 @@
 
 /* Links */
 .sortable-table .table-link {
-  color: #8b5cf6;
+  color: #6366f1;
   text-decoration: none;
   font-weight: 600;
 }
@@ -111,9 +148,11 @@
   align-items: center;
   justify-content: center;
   height: 200px;
-  color: #64748b;
+  color: #6b7280;
   font-size: 0.875rem;
-  background: #1e293b;
-  border: 1px solid #334155;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: 0.75rem;
 }

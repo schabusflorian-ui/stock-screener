@@ -34,7 +34,7 @@ function CommandPalette({ open, onOpenChange }) {
     }
   }, [open]);
 
-  // Search for companies
+  // Search for companies (includes inactive for discoverability)
   useEffect(() => {
     if (!search || search.length < 1) {
       setSearchResults([]);
@@ -44,7 +44,8 @@ function CommandPalette({ open, onOpenChange }) {
     const searchCompanies = async () => {
       setLoading(true);
       try {
-        const response = await companyAPI.getAll();
+        // Include inactive companies so they're searchable
+        const response = await companyAPI.getAll({ include_inactive: 'true' });
         const companies = response.data.companies || [];
         const filtered = companies
           .filter(c =>
@@ -162,6 +163,9 @@ function CommandPalette({ open, onOpenChange }) {
                     <div className="command-item-content">
                       <span className="command-item-symbol">{company.symbol}</span>
                       <span className="command-item-name">{company.name}</span>
+                      {company.is_active === 0 && (
+                        <span className="command-item-badge inactive">Inactive</span>
+                      )}
                     </div>
                     <ArrowRight size={14} className="command-item-arrow" />
                   </Command.Item>

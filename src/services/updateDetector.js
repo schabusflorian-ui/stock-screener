@@ -222,9 +222,9 @@ class UpdateDetector {
           row[header] = values[i] || '';
         });
 
-        // Only process 10-K and 10-Q forms
+        // Process 10-K, 10-Q, and their amendments (10-K/A, 10-Q/A)
         const form = row.form?.toUpperCase();
-        if (form !== '10-K' && form !== '10-Q') {
+        if (!form || (!form.startsWith('10-K') && !form.startsWith('10-Q'))) {
           return;
         }
 
@@ -456,7 +456,7 @@ class UpdateDetector {
         const form = forms[i];
         const filedDate = filingDates[i];
 
-        if (form !== '10-K' && form !== '10-Q') continue;
+        if (!form || (!form.startsWith('10-K') && !form.startsWith('10-Q'))) continue;
 
         // Check if newer than our latest
         if (!ourLatest?.latest_filed_date || filedDate > ourLatest.latest_filed_date) {

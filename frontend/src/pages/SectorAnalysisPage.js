@@ -619,6 +619,9 @@ function SectorAnalysisPage() {
                   defaultSort={{ key: 'company_count', direction: 'desc' }}
                   onRowClick={(row) => setSelectedSector(row.sector)}
                   emptyMessage="No sectors found"
+                  searchable
+                  searchKeys={['sector']}
+                  searchPlaceholder="Search sectors..."
                 />
               )}
             </>
@@ -667,6 +670,9 @@ function SectorAnalysisPage() {
                 columns={industryTableColumns}
                 defaultSort={{ key: 'company_count', direction: 'desc' }}
                 emptyMessage="No industries found"
+                searchable
+                searchKeys={['industry', 'sector']}
+                searchPlaceholder="Search industries..."
               />
             </>
           )}
@@ -1188,27 +1194,26 @@ function SectorDetailView({ sector, detail, loading, onBack }) {
               <tr>
                 <th>Symbol</th>
                 <th>Company</th>
-                <th>Industry</th>
+                <th className="sortable" onClick={() => handleSort('current_price')}>
+                  Price {getSortIndicator('current_price')}
+                </th>
+                <th className="sortable" onClick={() => handleSort('change_ytd')}>
+                  YTD {getSortIndicator('change_ytd')}
+                </th>
+                <th className="sortable" onClick={() => handleSort('change_1y')}>
+                  1Y {getSortIndicator('change_1y')}
+                </th>
                 <th className="sortable" onClick={() => handleSort('market_cap_b')}>
                   Mkt Cap {getSortIndicator('market_cap_b')}
                 </th>
                 <th className="sortable" onClick={() => handleSort('roic')}>
                   ROIC {getSortIndicator('roic')}
                 </th>
-                <th className="sortable" onClick={() => handleSort('roe')}>
-                  ROE {getSortIndicator('roe')}
-                </th>
                 <th className="sortable" onClick={() => handleSort('net_margin')}>
-                  Net Margin {getSortIndicator('net_margin')}
+                  Margin {getSortIndicator('net_margin')}
                 </th>
                 <th className="sortable" onClick={() => handleSort('pe_ratio')}>
                   P/E {getSortIndicator('pe_ratio')}
-                </th>
-                <th className="sortable" onClick={() => handleSort('debt_to_equity')}>
-                  D/E {getSortIndicator('debt_to_equity')}
-                </th>
-                <th className="sortable" onClick={() => handleSort('revenue_growth')}>
-                  Growth {getSortIndicator('revenue_growth')}
                 </th>
                 <th></th>
               </tr>
@@ -1222,24 +1227,21 @@ function SectorDetailView({ sector, detail, loading, onBack }) {
                     </Link>
                   </td>
                   <td className="company-name">{company.name}</td>
-                  <td className="industry">{company.industry}</td>
+                  <td>{company.current_price ? `$${company.current_price.toFixed(2)}` : '-'}</td>
+                  <td className={getValueClass(company.change_ytd, { good: 0, bad: -20 })}>
+                    {company.change_ytd != null ? `${company.change_ytd > 0 ? '+' : ''}${company.change_ytd.toFixed(1)}%` : '-'}
+                  </td>
+                  <td className={getValueClass(company.change_1y, { good: 0, bad: -20 })}>
+                    {company.change_1y != null ? `${company.change_1y > 0 ? '+' : ''}${company.change_1y.toFixed(1)}%` : '-'}
+                  </td>
                   <td>{formatValue(company.market_cap_b, 'currency')}</td>
                   <td className={getValueClass(company.roic, { good: 15, bad: 5 })}>
                     {formatValue(company.roic, 'percent')}
-                  </td>
-                  <td className={getValueClass(company.roe, { good: 15, bad: 5 })}>
-                    {formatValue(company.roe, 'percent')}
                   </td>
                   <td className={getValueClass(company.net_margin, { good: 15, bad: 0 })}>
                     {formatValue(company.net_margin, 'percent')}
                   </td>
                   <td>{formatValue(company.pe_ratio, 'ratio')}</td>
-                  <td className={getValueClass(company.debt_to_equity, { bad: 2 })}>
-                    {formatValue(company.debt_to_equity, 'ratio')}
-                  </td>
-                  <td className={getValueClass(company.revenue_growth, { good: 10, bad: 0 })}>
-                    {formatValue(company.revenue_growth, 'percent')}
-                  </td>
                   <td>
                     <WatchlistButton
                       symbol={company.symbol}
@@ -1399,6 +1401,15 @@ function IndustryDetailView({ industry, detail, loading, onBack }) {
               <tr>
                 <th>Symbol</th>
                 <th>Company</th>
+                <th className="sortable" onClick={() => handleSort('current_price')}>
+                  Price {getSortIndicator('current_price')}
+                </th>
+                <th className="sortable" onClick={() => handleSort('change_ytd')}>
+                  YTD {getSortIndicator('change_ytd')}
+                </th>
+                <th className="sortable" onClick={() => handleSort('change_1y')}>
+                  1Y {getSortIndicator('change_1y')}
+                </th>
                 <th className="sortable" onClick={() => handleSort('market_cap_b')}>
                   Mkt Cap {getSortIndicator('market_cap_b')}
                 </th>
@@ -1435,6 +1446,13 @@ function IndustryDetailView({ industry, detail, loading, onBack }) {
                     </Link>
                   </td>
                   <td className="company-name">{company.name}</td>
+                  <td>{company.current_price ? `$${company.current_price.toFixed(2)}` : '-'}</td>
+                  <td className={getValueClass(company.change_ytd, { good: 0, bad: -20 })}>
+                    {company.change_ytd != null ? `${company.change_ytd > 0 ? '+' : ''}${company.change_ytd.toFixed(1)}%` : '-'}
+                  </td>
+                  <td className={getValueClass(company.change_1y, { good: 0, bad: -20 })}>
+                    {company.change_1y != null ? `${company.change_1y > 0 ? '+' : ''}${company.change_1y.toFixed(1)}%` : '-'}
+                  </td>
                   <td>{formatValue(company.market_cap_b, 'currency')}</td>
                   <td className={getValueClass(company.roic, { good: 15, bad: 5 })}>
                     {formatValue(company.roic, 'percent')}

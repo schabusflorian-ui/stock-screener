@@ -1,8 +1,9 @@
-/* Layout.css */
+/* Layout.css - Liquid Glass Theme */
 
 .app-layout {
   min-height: 100vh;
-  background: var(--bg-primary);
+  background: linear-gradient(135deg, #f0f4ff 0%, #e8f4f8 50%, #fdf4f5 100%);
+  background-attachment: fixed;
 }
 
 .main-wrapper {
@@ -32,7 +33,9 @@
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   z-index: calc(var(--z-sticky) - 1);
 }
 

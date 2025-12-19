@@ -1,8 +1,13 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { createChart, ColorType, CrosshairMode, LineSeries } from 'lightweight-charts';
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts';
-import { companyAPI } from '../services/api';
-import { PeriodToggle } from '../components';
+import {
+  ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine,
+  BarChart, Bar, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Legend,
+  LineChart, Line, ComposedChart, Area
+} from 'recharts';
+import { companyAPI, pricesAPI } from '../services/api';
+import { PeriodToggle, WatchlistButton } from '../components';
 import './AdvancedChartsPage.css';
 
 // Color palette for series
@@ -13,6 +18,7 @@ const SERIES_COLORS = [
 
 // Available metrics for charting
 const CHART_METRICS = [
+  { key: 'stock_price', label: 'Stock Price', format: 'currency', category: 'Price' },
   { key: 'roic', label: 'ROIC', format: 'percent', category: 'Profitability' },
   { key: 'roe', label: 'ROE', format: 'percent', category: 'Profitability' },
   { key: 'roa', label: 'ROA', format: 'percent', category: 'Profitability' },
@@ -42,6 +48,56 @@ const CORRELATION_TYPES = [
   { value: 'spearman', label: 'Spearman', description: 'Rank-based correlation (monotonic relationships)' },
   { value: 'mutual_info', label: 'Mutual Information', description: 'Non-linear dependency (0 to ∞)' },
 ];
+
+// Comparison metrics organized by category
+const COMPARISON_METRICS_BY_CATEGORY = {
+  'Returns': [
+    { key: 'roic', label: 'ROIC', format: 'percent', higherBetter: true },
+    { key: 'roe', label: 'ROE', format: 'percent', higherBetter: true },
+    { key: 'roa', label: 'ROA', format: 'percent', higherBetter: true },
+  ],
+  'Margins': [
+    { key: 'gross_margin', label: 'Gross Margin', format: 'percent', higherBetter: true },
+    { key: 'operating_margin', label: 'Op. Margin', format: 'percent', higherBetter: true },
+    { key: 'net_margin', label: 'Net Margin', format: 'percent', higherBetter: true },
+    { key: 'fcf_margin', label: 'FCF Margin', format: 'percent', higherBetter: true },
+  ],
+  'Growth': [
+    { key: 'revenue_growth_yoy', label: 'Revenue YoY', format: 'percent', higherBetter: true },
+    { key: 'earnings_growth_yoy', label: 'Earnings YoY', format: 'percent', higherBetter: true },
+  ],
+  'Financial Health': [
+    { key: 'debt_to_equity', label: 'Debt/Equity', format: 'ratio', higherBetter: false },
+    { key: 'current_ratio', label: 'Current Ratio', format: 'ratio', higherBetter: true },
+    { key: 'interest_coverage', label: 'Interest Cov.', format: 'ratio', higherBetter: true },
+  ],
+  'Cash Flow': [
+    { key: 'fcf_yield', label: 'FCF Yield', format: 'percent', higherBetter: true },
+    { key: 'operating_cash_flow_ratio', label: 'OCF/Revenue', format: 'percent', higherBetter: true },
+  ],
+};
+
+// Flat list for backward compatibility
+const COMPARISON_METRICS = Object.values(COMPARISON_METRICS_BY_CATEGORY).flat();
+
+const RADAR_METRICS = ['roic', 'roe', 'gross_margin', 'net_margin', 'fcf_yield', 'current_ratio'];
+
+// Margin metrics for waterfall chart
+const MARGIN_METRICS = [
+  { key: 'gross_margin', label: 'Gross', color: '#22c55e' },
+  { key: 'operating_margin', label: 'Operating', color: '#3b82f6' },
+  { key: 'net_margin', label: 'Net', color: '#8b5cf6' },
+];
+
+// Format value for comparison display
+const formatCompareValue = (value, format) => {
+  if (value === null || value === undefined || isNaN(value)) return '-';
+  switch (format) {
+    case 'percent': return `${value.toFixed(1)}%`;
+    case 'ratio': return value.toFixed(2);
+    default: return value.toFixed(2);
+  }
+};
 
 // Time ranges
 const TIME_RANGES = [
@@ -312,8 +368,8 @@ function CorrelationHeatmap({ matrix, labels, type, onCellClick }) {
                   key={colLabel}
                   className={`heatmap-cell data ${isDiagonal ? 'diagonal' : ''}`}
                   style={{
-                    backgroundColor: isDiagonal ? '#1e293b' : `${color}30`,
-                    color: isDiagonal ? '#64748b' : color,
+                    backgroundColor: isDiagonal ? 'rgba(0, 0, 0, 0.05)' : `${color}20`,
+                    color: isDiagonal ? '#9ca3af' : color,
                     cursor: !isDiagonal ? 'pointer' : 'default'
                   }}
                   onClick={() => !isDiagonal && onCellClick && onCellClick(rowLabel, colLabel)}
@@ -390,25 +446,25 @@ function ScatterPlot({ data, xLabel, yLabel, companies, colors }) {
   return (
     <ResponsiveContainer width="100%" height={350}>
       <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 20 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+        <CartesianGrid strokeDasharray="3 3" stroke="rgba(0, 0, 0, 0.08)" />
         <XAxis
           dataKey="x"
           type="number"
           name={xLabel}
-          stroke="#94a3b8"
-          tick={{ fill: '#94a3b8', fontSize: 11 }}
-          label={{ value: xLabel, position: 'bottom', fill: '#94a3b8', fontSize: 12 }}
+          stroke="rgba(0, 0, 0, 0.2)"
+          tick={{ fill: '#6b7280', fontSize: 11 }}
+          label={{ value: xLabel, position: 'bottom', fill: '#6b7280', fontSize: 12 }}
         />
         <YAxis
           dataKey="y"
           type="number"
           name={yLabel}
-          stroke="#94a3b8"
-          tick={{ fill: '#94a3b8', fontSize: 11 }}
-          label={{ value: yLabel, angle: -90, position: 'left', fill: '#94a3b8', fontSize: 12 }}
+          stroke="rgba(0, 0, 0, 0.2)"
+          tick={{ fill: '#6b7280', fontSize: 11 }}
+          label={{ value: yLabel, angle: -90, position: 'left', fill: '#6b7280', fontSize: 12 }}
         />
         <Tooltip
-          contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem' }}
+          contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem', backdropFilter: 'blur(8px)' }}
           formatter={(value, name) => [value?.toFixed(2), name]}
           labelFormatter={(_, payload) => payload[0]?.payload?.label || ''}
         />
@@ -512,16 +568,26 @@ function AdvancedChartsPage() {
   const [allCompanies, setAllCompanies] = useState([]);
   const [selectedCompanies, setSelectedCompanies] = useState([]);
   const [companyData, setCompanyData] = useState({});
-  const [selectedMetric, setSelectedMetric] = useState('roic');
+  const [selectedMetric, setSelectedMetric] = useState('stock_price');
   const [secondaryMetric, setSecondaryMetric] = useState('');
   const [periodType, setPeriodType] = useState('annual');
   const [normalization, setNormalization] = useState('absolute');
   const [timeRange, setTimeRange] = useState('All');
   const [showTrendLines, setShowTrendLines] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('overlay');
+  const [activeTab, setActiveTab] = useState('comparison'); // default to comparison (chart overlay)
   const [correlationType, setCorrelationType] = useState('pearson');
   const [selectedScatterPair, setSelectedScatterPair] = useState(null);
+  // Metrics tab state (company comparison data)
+  const [comparisonData, setComparisonData] = useState({});
+  // Stock price data for comparison chart
+  const [priceData, setPriceData] = useState({});
+  // Metrics table state - sortable with customizable metrics
+  const [metricsTableSort, setMetricsTableSort] = useState({ key: null, direction: 'desc' });
+  const [selectedTableMetrics, setSelectedTableMetrics] = useState([
+    'roic', 'roe', 'roa', 'gross_margin', 'operating_margin', 'net_margin', 'fcf_margin',
+    'revenue_growth_yoy', 'earnings_growth_yoy', 'debt_to_equity', 'current_ratio', 'fcf_yield'
+  ]);
 
   // Chart refs
   const mainChartRef = useRef(null);
@@ -570,6 +636,46 @@ function AdvancedChartsPage() {
     }
   }, [periodType]);
 
+  // Load comparison data for a company (latest metrics + company info)
+  const loadComparisonData = useCallback(async (symbol) => {
+    try {
+      const [companyRes, priceMetricsRes] = await Promise.all([
+        companyAPI.getOne(symbol),
+        pricesAPI.getMetrics(symbol).catch(() => ({ data: null }))
+      ]);
+      const pm = priceMetricsRes.data;
+      return {
+        company: companyRes.data.company,
+        latestMetrics: {
+          ...companyRes.data.latest_metrics,
+          ...(pm ? {
+            current_price: pm.current_price,
+            change_1d: pm.change_1d,
+            change_1w: pm.change_1w,
+            change_ytd: pm.change_ytd,
+          } : {})
+        }
+      };
+    } catch (error) {
+      console.error(`Error loading comparison data for ${symbol}:`, error);
+      return null;
+    }
+  }, []);
+
+  // Load stock price history for a company
+  const loadPriceHistory = useCallback(async (symbol) => {
+    try {
+      const response = await pricesAPI.get(symbol, { period: '5y' });
+      if (response.data?.success && response.data.data?.prices) {
+        return response.data.data.prices;
+      }
+      return [];
+    } catch (error) {
+      console.error(`Error loading price history for ${symbol}:`, error);
+      return [];
+    }
+  }, []);
+
   // Add company
   const addCompany = async (symbol) => {
     if (selectedCompanies.length >= 10) {
@@ -583,8 +689,14 @@ function AdvancedChartsPage() {
     setSearchQuery('');
     setSearchResults([]);
 
-    const metrics = await loadCompanyMetrics(symbol);
+    const [metrics, comparison] = await Promise.all([
+      loadCompanyMetrics(symbol),
+      loadComparisonData(symbol)
+    ]);
     setCompanyData(prev => ({ ...prev, [symbol]: metrics }));
+    if (comparison) {
+      setComparisonData(prev => ({ ...prev, [symbol]: comparison }));
+    }
     setLoading(false);
   };
 
@@ -592,6 +704,16 @@ function AdvancedChartsPage() {
   const removeCompany = (symbol) => {
     setSelectedCompanies(prev => prev.filter(s => s !== symbol));
     setCompanyData(prev => {
+      const newData = { ...prev };
+      delete newData[symbol];
+      return newData;
+    });
+    setComparisonData(prev => {
+      const newData = { ...prev };
+      delete newData[symbol];
+      return newData;
+    });
+    setPriceData(prev => {
       const newData = { ...prev };
       delete newData[symbol];
       return newData;
@@ -607,14 +729,40 @@ function AdvancedChartsPage() {
       if (selectedCompanies.length === 0) return;
       setLoading(true);
       const newData = {};
+      const newComparison = {};
       for (const symbol of selectedCompanies) {
-        newData[symbol] = await loadCompanyMetrics(symbol);
+        const [metrics, comparison] = await Promise.all([
+          loadCompanyMetrics(symbol),
+          loadComparisonData(symbol)
+        ]);
+        newData[symbol] = metrics;
+        if (comparison) newComparison[symbol] = comparison;
       }
       setCompanyData(newData);
+      setComparisonData(newComparison);
       setLoading(false);
     };
     reloadAll();
-  }, [periodType, selectedCompanies, loadCompanyMetrics]);
+  }, [periodType, selectedCompanies, loadCompanyMetrics, loadComparisonData]);
+
+  // Load price data when stock_price metric is selected
+  useEffect(() => {
+    if (selectedMetric !== 'stock_price') return;
+    const loadPrices = async () => {
+      const missingSymbols = selectedCompanies.filter(s => !priceData[s]);
+      if (missingSymbols.length === 0) return;
+
+      setLoading(true);
+      const newPriceData = { ...priceData };
+      for (const symbol of missingSymbols) {
+        const prices = await loadPriceHistory(symbol);
+        newPriceData[symbol] = prices;
+      }
+      setPriceData(newPriceData);
+      setLoading(false);
+    };
+    loadPrices();
+  }, [selectedMetric, selectedCompanies, priceData, loadPriceHistory]);
 
   // Prepare chart data
   const chartData = useMemo(() => {
@@ -625,12 +773,24 @@ function AdvancedChartsPage() {
       : null;
 
     selectedCompanies.forEach(symbol => {
-      const metrics = companyData[symbol] || [];
-      let data = metrics
-        .filter(m => m[selectedMetric] !== null && m[selectedMetric] !== undefined)
-        .map(m => ({ time: m.fiscal_period, value: m[selectedMetric] }))
-        .filter(d => !cutoffDate || d.time >= cutoffDate)
-        .sort((a, b) => a.time.localeCompare(b.time));
+      let data;
+
+      // Handle stock price differently - use daily price data
+      if (selectedMetric === 'stock_price') {
+        const prices = priceData[symbol] || [];
+        data = prices
+          .map(p => ({ time: p.date, value: p.adjusted_close || p.close }))
+          .filter(d => d.value !== null && d.value !== undefined)
+          .filter(d => !cutoffDate || d.time >= cutoffDate)
+          .sort((a, b) => a.time.localeCompare(b.time));
+      } else {
+        const metrics = companyData[symbol] || [];
+        data = metrics
+          .filter(m => m[selectedMetric] !== null && m[selectedMetric] !== undefined)
+          .map(m => ({ time: m.fiscal_period, value: m[selectedMetric] }))
+          .filter(d => !cutoffDate || d.time >= cutoffDate)
+          .sort((a, b) => a.time.localeCompare(b.time));
+      }
 
       if (data.length === 0) {
         result[symbol] = { data: [], normalized: [], trendLine: null, stats: null, variance: null };
@@ -670,7 +830,7 @@ function AdvancedChartsPage() {
     });
 
     return result;
-  }, [selectedCompanies, companyData, selectedMetric, normalization, timeRange]);
+  }, [selectedCompanies, companyData, priceData, selectedMetric, normalization, timeRange]);
 
   // Secondary metric data
   const secondaryData = useMemo(() => {
@@ -806,7 +966,7 @@ function AdvancedChartsPage() {
 
   // Initialize/update main chart
   useEffect(() => {
-    if (!mainChartContainerRef.current || activeTab === 'correlation') return;
+    if (!mainChartContainerRef.current || activeTab === 'correlation' || activeTab === 'metrics') return;
 
     if (mainChartRef.current) {
       try { mainChartRef.current.remove(); } catch (e) {}
@@ -816,22 +976,22 @@ function AdvancedChartsPage() {
 
     const chart = createChart(mainChartContainerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: '#0f172a' },
-        textColor: '#94a3b8',
-        fontFamily: "'Inter', sans-serif",
+        background: { type: ColorType.Solid, color: 'transparent' },
+        textColor: '#6b7280',
+        fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
         attributionLogo: false
       },
       grid: {
-        vertLines: { color: '#1e293b' },
-        horzLines: { color: '#1e293b' }
+        vertLines: { color: 'rgba(0, 0, 0, 0.06)' },
+        horzLines: { color: 'rgba(0, 0, 0, 0.06)' }
       },
       crosshair: {
         mode: CrosshairMode.Magnet,
-        vertLine: { color: '#64748b', style: 2, labelBackgroundColor: '#475569' },
-        horzLine: { color: '#64748b', style: 2, labelBackgroundColor: '#475569' }
+        vertLine: { width: 1, color: '#6366f1', style: 2, labelBackgroundColor: '#6366f1' },
+        horzLine: { width: 1, color: '#6366f1', style: 2, labelBackgroundColor: '#6366f1' }
       },
-      rightPriceScale: { borderColor: '#334155', scaleMargins: { top: 0.1, bottom: 0.1 } },
-      timeScale: { borderColor: '#334155', timeVisible: true, rightOffset: 5 },
+      rightPriceScale: { borderColor: 'rgba(0, 0, 0, 0.1)', scaleMargins: { top: 0.1, bottom: 0.1 } },
+      timeScale: { borderColor: 'rgba(0, 0, 0, 0.1)', timeVisible: true, rightOffset: 5 },
       handleScroll: { mouseWheel: true, pressedMouseMove: true },
       handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
       width: mainChartContainerRef.current.clientWidth,
@@ -911,8 +1071,8 @@ function AdvancedChartsPage() {
     <div className="advanced-charts-page">
       <div className="page-header">
         <div>
-          <h1>Advanced Charts</h1>
-          <p>Multi-company overlays, correlation analysis, and variance metrics</p>
+          <h1>Charts & Comparison</h1>
+          <p>Compare companies, analyze trends, correlations, and variance metrics</p>
         </div>
       </div>
 
@@ -957,8 +1117,11 @@ function AdvancedChartsPage() {
         <>
           {/* Tab Navigation */}
           <div className="chart-tabs">
-            <button className={activeTab === 'overlay' ? 'active' : ''} onClick={() => setActiveTab('overlay')}>
-              Overlay Chart
+            <button className={activeTab === 'comparison' ? 'active' : ''} onClick={() => setActiveTab('comparison')}>
+              Comparison
+            </button>
+            <button className={activeTab === 'metrics' ? 'active' : ''} onClick={() => setActiveTab('metrics')}>
+              Metrics
             </button>
             <button className={activeTab === 'yoy' ? 'active' : ''} onClick={() => setActiveTab('yoy')}>
               YoY Analysis
@@ -971,7 +1134,8 @@ function AdvancedChartsPage() {
             </button>
           </div>
 
-          {/* Controls */}
+          {/* Controls - hidden for metrics tab */}
+          {activeTab !== 'metrics' && (
           <div className="chart-controls">
             <div className="control-group">
               <label>Metric</label>
@@ -1014,7 +1178,7 @@ function AdvancedChartsPage() {
               </>
             )}
 
-            {(activeTab === 'overlay' || activeTab === 'yoy') && (
+            {(activeTab === 'comparison' || activeTab === 'yoy') && (
               <div className="control-group">
                 <label>Normalization</label>
                 <select value={normalization} onChange={(e) => setNormalization(e.target.value)}>
@@ -1052,7 +1216,7 @@ function AdvancedChartsPage() {
               </div>
             </div>
 
-            {(activeTab === 'overlay' || activeTab === 'yoy') && (
+            {(activeTab === 'comparison' || activeTab === 'yoy') && (
               <div className="control-group">
                 <label>Options</label>
                 <label className="checkbox-label">
@@ -1066,13 +1230,322 @@ function AdvancedChartsPage() {
               </div>
             )}
           </div>
+          )}
 
           {loading ? (
             <div className="loading">Loading chart data...</div>
           ) : (
             <>
-              {/* Overlay/YoY Chart */}
-              {(activeTab === 'overlay' || activeTab === 'yoy') && (
+              {/* Metrics Tab - Company Comparison */}
+              {activeTab === 'metrics' && (
+                <div className="metrics-section">
+                  {/* Company Cards with Key Metrics */}
+                  <div className="comparison-cards">
+                    {selectedCompanies.map((symbol, idx) => {
+                      const data = comparisonData[symbol];
+                      const metrics = data?.latestMetrics || {};
+                      const company = data?.company || {};
+                      const score = metrics.data_quality_score || 0;
+                      return (
+                        <div
+                          key={symbol}
+                          className="comparison-card"
+                          style={{ '--card-color': SERIES_COLORS[idx % SERIES_COLORS.length] }}
+                        >
+                          <div className="comparison-card-header">
+                            <Link to={`/company/${symbol}`} className="card-symbol">{symbol}</Link>
+                            <WatchlistButton symbol={symbol} name={company.name} sector={company.sector} size="small" />
+                          </div>
+                          <div className="card-company-name">{company.name}</div>
+                          <div className="card-sector">{company.sector}</div>
+                          <div className="card-score">
+                            <span className="score-label">Quality Score</span>
+                            <span className="score-value">{score}/100</span>
+                            <div className="score-bar">
+                              <div className="score-fill" style={{ width: `${score}%` }}></div>
+                            </div>
+                          </div>
+                          <div className="card-price">
+                            {metrics.current_price && (
+                              <>
+                                <span className="price-value">${metrics.current_price.toFixed(2)}</span>
+                                {metrics.change_1d !== null && (
+                                  <span className={`price-change ${metrics.change_1d >= 0 ? 'positive' : 'negative'}`}>
+                                    {metrics.change_1d >= 0 ? '+' : ''}{metrics.change_1d?.toFixed(1)}%
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Metrics Comparison Table - Sortable with Add/Remove */}
+                  <div className="metrics-table-section">
+                    {/* Fiscal Period Reference */}
+                    <div className="fiscal-period-info">
+                      <span className="fiscal-label">Data Period:</span>
+                      {selectedCompanies.map((symbol, idx) => {
+                        const metrics = comparisonData[symbol]?.latestMetrics;
+                        const period = metrics?.fiscal_period || metrics?.period || '-';
+                        return (
+                          <span key={symbol} className="fiscal-period" style={{ color: SERIES_COLORS[idx % SERIES_COLORS.length] }}>
+                            {symbol}: {period}
+                          </span>
+                        );
+                      })}
+                    </div>
+
+                    {/* Metric Selector */}
+                    <div className="metric-selector">
+                      <span className="selector-label">Metrics:</span>
+                      <div className="metric-pills">
+                        {COMPARISON_METRICS.map(metric => {
+                          const isSelected = selectedTableMetrics.includes(metric.key);
+                          return (
+                            <button
+                              key={metric.key}
+                              className={`metric-pill ${isSelected ? 'selected' : ''}`}
+                              onClick={() => {
+                                if (isSelected) {
+                                  setSelectedTableMetrics(prev => prev.filter(k => k !== metric.key));
+                                } else {
+                                  setSelectedTableMetrics(prev => [...prev, metric.key]);
+                                }
+                              }}
+                            >
+                              {metric.label}
+                              {isSelected && <span className="pill-remove">×</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Sortable Table */}
+                    <div className="comparison-table-wrapper">
+                      <table className="comparison-table sortable">
+                        <thead>
+                          <tr>
+                            <th
+                              className="sortable-header"
+                              onClick={() => setMetricsTableSort({ key: null, direction: metricsTableSort.direction === 'asc' ? 'desc' : 'asc' })}
+                            >
+                              Metric
+                            </th>
+                            {selectedCompanies.map((symbol, idx) => (
+                              <th
+                                key={symbol}
+                                className="sortable-header"
+                                style={{ color: SERIES_COLORS[idx % SERIES_COLORS.length] }}
+                                onClick={() => setMetricsTableSort(prev => ({
+                                  key: symbol,
+                                  direction: prev.key === symbol && prev.direction === 'desc' ? 'asc' : 'desc'
+                                }))}
+                              >
+                                {symbol}
+                                {metricsTableSort.key === symbol && (
+                                  <span className="sort-indicator">{metricsTableSort.direction === 'asc' ? ' ↑' : ' ↓'}</span>
+                                )}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(() => {
+                            // Get selected metrics with their info
+                            const metricsToShow = selectedTableMetrics
+                              .map(key => COMPARISON_METRICS.find(m => m.key === key))
+                              .filter(Boolean);
+
+                            // Sort by selected company's values if sorting is active
+                            let sortedMetrics = [...metricsToShow];
+                            if (metricsTableSort.key && selectedCompanies.includes(metricsTableSort.key)) {
+                              sortedMetrics.sort((a, b) => {
+                                const valA = comparisonData[metricsTableSort.key]?.latestMetrics?.[a.key];
+                                const valB = comparisonData[metricsTableSort.key]?.latestMetrics?.[b.key];
+                                if (valA === null || valA === undefined) return 1;
+                                if (valB === null || valB === undefined) return -1;
+                                return metricsTableSort.direction === 'asc' ? valA - valB : valB - valA;
+                              });
+                            }
+
+                            return sortedMetrics.map(metric => {
+                              const values = selectedCompanies.map(s => comparisonData[s]?.latestMetrics?.[metric.key]);
+                              const validValues = values.filter(v => v !== null && v !== undefined && !isNaN(v));
+                              const best = validValues.length > 0
+                                ? (metric.higherBetter !== false ? Math.max(...validValues) : Math.min(...validValues))
+                                : null;
+                              return (
+                                <tr key={metric.key}>
+                                  <td className="metric-label">
+                                    {metric.label}
+                                    <button
+                                      className="remove-metric-btn"
+                                      onClick={() => setSelectedTableMetrics(prev => prev.filter(k => k !== metric.key))}
+                                      title="Remove metric"
+                                    >
+                                      ×
+                                    </button>
+                                  </td>
+                                  {selectedCompanies.map((symbol) => {
+                                    const value = comparisonData[symbol]?.latestMetrics?.[metric.key];
+                                    const isBest = value === best && validValues.length > 1;
+                                    return (
+                                      <td key={symbol} className={isBest ? 'best-value' : ''}>
+                                        {formatCompareValue(value, metric.format)}
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              );
+                            });
+                          })()}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Two Column Layout for Charts */}
+                  <div className="comparison-charts-grid">
+                    {/* Margin Waterfall Comparison */}
+                    <div className="comparison-chart-card">
+                      <h4>Margin Comparison</h4>
+                      <ResponsiveContainer width="100%" height={250}>
+                        <BarChart
+                          layout="vertical"
+                          data={MARGIN_METRICS.map(m => ({
+                            metric: m.label,
+                            ...selectedCompanies.reduce((acc, symbol, idx) => {
+                              acc[symbol] = comparisonData[symbol]?.latestMetrics?.[m.key] || 0;
+                              return acc;
+                            }, {})
+                          }))}
+                          margin={{ left: 10, right: 20 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0, 0, 0, 0.08)" />
+                          <XAxis type="number" stroke="#6b7280" tick={{ fill: '#6b7280', fontSize: 11 }} unit="%" />
+                          <YAxis type="category" dataKey="metric" stroke="#6b7280" tick={{ fill: '#6b7280', fontSize: 11 }} width={70} />
+                          <Tooltip
+                            contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem' }}
+                            formatter={(v) => `${v.toFixed(1)}%`}
+                          />
+                          <Legend />
+                          {selectedCompanies.map((symbol, idx) => (
+                            <Bar key={symbol} dataKey={symbol} name={symbol} fill={SERIES_COLORS[idx % SERIES_COLORS.length]} />
+                          ))}
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    {/* Profitability Bar Chart */}
+                    <div className="comparison-chart-card">
+                      <h4>Returns on Capital</h4>
+                      <ResponsiveContainer width="100%" height={250}>
+                        <BarChart
+                          data={selectedCompanies.map((symbol, idx) => ({
+                            symbol,
+                            roic: comparisonData[symbol]?.latestMetrics?.roic || 0,
+                            roe: comparisonData[symbol]?.latestMetrics?.roe || 0,
+                            roa: comparisonData[symbol]?.latestMetrics?.roa || 0,
+                          }))}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0, 0, 0, 0.08)" />
+                          <XAxis dataKey="symbol" stroke="#6b7280" tick={{ fill: '#6b7280', fontSize: 11 }} />
+                          <YAxis stroke="#6b7280" tick={{ fill: '#6b7280', fontSize: 11 }} unit="%" />
+                          <Tooltip
+                            contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem' }}
+                            formatter={(v) => `${v.toFixed(1)}%`}
+                          />
+                          <Legend />
+                          <Bar dataKey="roic" name="ROIC" fill="#8b5cf6" />
+                          <Bar dataKey="roe" name="ROE" fill="#22c55e" />
+                          <Bar dataKey="roa" name="ROA" fill="#f59e0b" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    {/* Financial Health Chart */}
+                    <div className="comparison-chart-card">
+                      <h4>Financial Health</h4>
+                      <ResponsiveContainer width="100%" height={250}>
+                        <BarChart
+                          data={selectedCompanies.map((symbol) => ({
+                            symbol,
+                            debt_to_equity: comparisonData[symbol]?.latestMetrics?.debt_to_equity || 0,
+                            current_ratio: comparisonData[symbol]?.latestMetrics?.current_ratio || 0,
+                          }))}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0, 0, 0, 0.08)" />
+                          <XAxis dataKey="symbol" stroke="#6b7280" tick={{ fill: '#6b7280', fontSize: 11 }} />
+                          <YAxis stroke="#6b7280" tick={{ fill: '#6b7280', fontSize: 11 }} />
+                          <Tooltip
+                            contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem' }}
+                            formatter={(v) => v.toFixed(2)}
+                          />
+                          <Legend />
+                          <Bar dataKey="debt_to_equity" name="Debt/Equity" fill="#ef4444" />
+                          <Bar dataKey="current_ratio" name="Current Ratio" fill="#3b82f6" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    {/* Radar Chart */}
+                    <div className="comparison-chart-card">
+                      <h4>Quality Radar</h4>
+                      <ResponsiveContainer width="100%" height={250}>
+                        <RadarChart
+                          data={RADAR_METRICS.map(metricKey => {
+                            const metric = COMPARISON_METRICS.find(m => m.key === metricKey);
+                            const point = { metric: metric?.label || metricKey };
+                            const allValues = selectedCompanies
+                              .map(symbol => comparisonData[symbol]?.latestMetrics?.[metricKey])
+                              .filter(v => v !== null && v !== undefined && !isNaN(v));
+                            const maxVal = Math.max(...allValues, 1);
+                            const minVal = Math.min(...allValues, 0);
+                            selectedCompanies.forEach(symbol => {
+                              const value = comparisonData[symbol]?.latestMetrics?.[metricKey];
+                              if (value === null || value === undefined || isNaN(value)) {
+                                point[symbol] = 0;
+                                return;
+                              }
+                              let normalized;
+                              if (metric?.higherBetter === false) {
+                                normalized = maxVal === minVal ? 50 : ((maxVal - value) / (maxVal - minVal)) * 100;
+                              } else {
+                                normalized = maxVal === minVal ? 50 : ((value - minVal) / (maxVal - minVal)) * 100;
+                              }
+                              point[symbol] = Math.max(0, Math.min(100, normalized));
+                            });
+                            return point;
+                          })}
+                        >
+                          <PolarGrid stroke="rgba(0, 0, 0, 0.1)" />
+                          <PolarAngleAxis dataKey="metric" tick={{ fill: '#6b7280', fontSize: 10 }} />
+                          <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#9ca3af', fontSize: 9 }} />
+                          {selectedCompanies.map((symbol, idx) => (
+                            <Radar
+                              key={symbol}
+                              name={symbol}
+                              dataKey={symbol}
+                              stroke={SERIES_COLORS[idx % SERIES_COLORS.length]}
+                              fill={SERIES_COLORS[idx % SERIES_COLORS.length]}
+                              fillOpacity={0.15}
+                              strokeWidth={2}
+                            />
+                          ))}
+                          <Legend />
+                        </RadarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Comparison/YoY Chart */}
+              {(activeTab === 'comparison' || activeTab === 'yoy') && (
                 <div className="main-chart-section">
                   <div className="chart-header">
                     <h3>
@@ -1260,7 +1733,7 @@ function AdvancedChartsPage() {
               )}
 
               {/* Stats Summary */}
-              {showTrendLines && (activeTab === 'overlay' || activeTab === 'yoy') && (
+              {showTrendLines && (activeTab === 'comparison' || activeTab === 'yoy') && (
                 <div className="stats-summary">
                   <h3>Trend Analysis Summary</h3>
                   <div className="stats-grid">
@@ -1319,46 +1792,31 @@ function AdvancedChartsPage() {
       )}
 
       {selectedCompanies.length === 0 && (
-        <div className="empty-state">
-          <div className="empty-icon">📈</div>
-          <h3>Advanced Charting Workspace</h3>
-          <p>Search and add companies above to start analyzing</p>
-
-          <div className="features-grid">
-            <div className="feature">
-              <span className="feature-icon">🔀</span>
-              <h4>Multi-Company Overlay</h4>
-              <p>Compare up to 10 companies on the same chart</p>
+        <div className="empty-state-compact">
+          <div className="empty-main">
+            <div className="empty-left">
+              <h3>Charts & Comparison Workspace</h3>
+              <p>Compare companies side-by-side, analyze trends, correlations, and variance metrics</p>
+              <div className="quick-start-inline">
+                <span className="quick-label">Quick start:</span>
+                <button onClick={() => { addCompany('AAPL'); addCompany('MSFT'); addCompany('GOOGL'); }}>
+                  Tech Giants
+                </button>
+                <button onClick={() => { addCompany('JPM'); addCompany('BAC'); addCompany('WFC'); }}>
+                  Big Banks
+                </button>
+                <button onClick={() => { addCompany('JNJ'); addCompany('PFE'); addCompany('UNH'); }}>
+                  Healthcare
+                </button>
+              </div>
             </div>
-            <div className="feature">
-              <span className="feature-icon">🗺️</span>
-              <h4>Correlation Heatmap</h4>
-              <p>Pearson, Spearman, and Mutual Information</p>
-            </div>
-            <div className="feature">
-              <span className="feature-icon">📊</span>
-              <h4>Scatter Plots</h4>
-              <p>Visualize metric relationships with regression lines</p>
-            </div>
-            <div className="feature">
-              <span className="feature-icon">📉</span>
-              <h4>Variance Analysis</h4>
-              <p>Compare volatility with coefficient of variation</p>
-            </div>
-          </div>
-
-          <div className="quick-start">
-            <span>Quick start:</span>
-            <div className="quick-buttons">
-              <button onClick={() => { addCompany('AAPL'); addCompany('MSFT'); addCompany('GOOGL'); }}>
-                Tech Giants
-              </button>
-              <button onClick={() => { addCompany('JPM'); addCompany('BAC'); addCompany('WFC'); }}>
-                Big Banks
-              </button>
-              <button onClick={() => { addCompany('JNJ'); addCompany('PFE'); addCompany('UNH'); }}>
-                Healthcare
-              </button>
+            <div className="empty-right">
+              <div className="feature-pills">
+                <span className="feature-pill"><span className="pill-icon">📊</span> Company Comparison</span>
+                <span className="feature-pill"><span className="pill-icon">🔀</span> Multi-Company Overlay</span>
+                <span className="feature-pill"><span className="pill-icon">🗺️</span> Correlation Heatmap</span>
+                <span className="feature-pill"><span className="pill-icon">📉</span> Variance Analysis</span>
+              </div>
             </div>
           </div>
         </div>

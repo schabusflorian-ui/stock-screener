@@ -1,13 +1,24 @@
 // frontend/src/pages/InsiderTradingPage.js
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   Legend, ScatterChart, Scatter, ZAxis
 } from 'recharts';
-import { insidersAPI } from '../services/api';
+import { insidersAPI, pricesAPI } from '../services/api';
 import { WatchlistButton } from '../components';
 import './InsiderTradingPage.css';
+
+// Sortable table header component
+const SortableHeader = ({ label, sortKey, currentSort, onSort }) => {
+  const isActive = currentSort.key === sortKey;
+  return (
+    <th onClick={() => onSort(sortKey)} className={`sortable ${isActive ? 'sorted' : ''}`}>
+      {label}
+      {isActive && <span className="sort-arrow">{currentSort.dir === 'asc' ? '↑' : '↓'}</span>}
+    </th>
+  );
+};
 
 // Format currency values
 const formatCurrency = (value) => {
@@ -77,15 +88,60 @@ function InsiderTradingPage() {
   const [clusterBuying, setClusterBuying] = useState([]);
   const [stats, setStats] = useState(null);
   const [monthlyTrend, setMonthlyTrend] = useState([]);
+  const [updateStatus, setUpdateStatus] = useState(null);
 
   // Filters
   const [transactionType, setTransactionType] = useState('all');
   const [minInsiders, setMinInsiders] = useState(2);
   const [clusterDays, setClusterDays] = useState(30);
 
+  // Sorting state for each table
+  const [overviewSort, setOverviewSort] = useState({ key: 'buy_value', dir: 'desc' });
+  const [recentSort, setRecentSort] = useState({ key: 'transaction_date', dir: 'desc' });
+  const [clusterSort, setClusterSort] = useState({ key: 'unique_buyers', dir: 'desc' });
+
   // Loading state
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [priceData, setPriceData] = useState({});
+
+  // Sort helper
+  const handleSort = (setter) => (key) => {
+    setter(prev => ({
+      key,
+      dir: prev.key === key ? (prev.dir === 'asc' ? 'desc' : 'asc') : 'desc'
+    }));
+  };
+
+  // Sorted data
+  const sortedTopBuying = useMemo(() => {
+    return [...topBuying].sort((a, b) => {
+      const aVal = a[overviewSort.key] ?? -Infinity;
+      const bVal = b[overviewSort.key] ?? -Infinity;
+      return overviewSort.dir === 'asc' ? aVal - bVal : bVal - aVal;
+    });
+  }, [topBuying, overviewSort]);
+
+  const sortedRecentTransactions = useMemo(() => {
+    return [...recentTransactions].sort((a, b) => {
+      if (recentSort.key === 'transaction_date') {
+        const aVal = a[recentSort.key] || '';
+        const bVal = b[recentSort.key] || '';
+        return recentSort.dir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      }
+      const aVal = a[recentSort.key] ?? -Infinity;
+      const bVal = b[recentSort.key] ?? -Infinity;
+      return recentSort.dir === 'asc' ? aVal - bVal : bVal - aVal;
+    });
+  }, [recentTransactions, recentSort]);
+
+  const sortedClusterBuying = useMemo(() => {
+    return [...clusterBuying].sort((a, b) => {
+      const aVal = a[clusterSort.key] ?? -Infinity;
+      const bVal = b[clusterSort.key] ?? -Infinity;
+      return clusterSort.dir === 'asc' ? aVal - bVal : bVal - aVal;
+    });
+  }, [clusterBuying, clusterSort]);
 
   // Load initial data
   useEffect(() => {
@@ -96,14 +152,33 @@ function InsiderTradingPage() {
     setLoading(true);
     setError(null);
     try {
-      const [topBuyingRes, statsRes] = await Promise.all([
+      const [topBuyingRes, statsRes, updateStatusRes] = await Promise.all([
         insidersAPI.getTopBuying(20, period),
-        insidersAPI.getStats()
+        insidersAPI.getStats(),
+        insidersAPI.getUpdateStatus()
       ]);
 
-      setTopBuying(topBuyingRes.data.companies || []);
+      const companies = topBuyingRes.data.companies || [];
+      setTopBuying(companies);
       setStats(statsRes.data.yearToDate || null);
       setMonthlyTrend(statsRes.data.monthlyTrend || []);
+      setUpdateStatus(updateStatusRes.data || null);
+
+      // Load prices for top buying companies
+      const newPrices = { ...priceData };
+      await Promise.all(
+        companies.filter(c => !newPrices[c.symbol]).slice(0, 20).map(async (company) => {
+          try {
+            const res = await pricesAPI.getMetrics(company.symbol);
+            if (res?.data?.data) {
+              newPrices[company.symbol] = res.data.data;
+            }
+          } catch (e) {
+            // Ignore individual price fetch errors
+          }
+        })
+      );
+      setPriceData(newPrices);
     } catch (err) {
       console.error('Error loading insider data:', err);
       setError(err.message);
@@ -236,23 +311,27 @@ function InsiderTradingPage() {
           </div>
         </div>
         <div className="table-container">
-          <table className="data-table">
+          <table className="data-table sortable-table">
             <thead>
               <tr>
                 <th>Symbol</th>
                 <th>Company</th>
+                <th>Price</th>
+                <th>1M</th>
                 <th>Signal</th>
-                <th>Buy Value</th>
-                <th>Buyers</th>
-                <th>Net Value</th>
+                <SortableHeader label="Buy Value" sortKey="buy_value" currentSort={overviewSort} onSort={handleSort(setOverviewSort)} />
+                <SortableHeader label="Buyers" sortKey="unique_buyers" currentSort={overviewSort} onSort={handleSort(setOverviewSort)} />
+                <SortableHeader label="Net Value" sortKey="net_value" currentSort={overviewSort} onSort={handleSort(setOverviewSort)} />
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {topBuying.length === 0 ? (
-                <tr><td colSpan="7" className="no-data">No insider buying data available</td></tr>
+              {sortedTopBuying.length === 0 ? (
+                <tr><td colSpan="9" className="no-data">No insider buying data available</td></tr>
               ) : (
-                topBuying.map((company) => (
+                sortedTopBuying.map((company) => {
+                  const price = priceData[company.symbol];
+                  return (
                   <tr key={company.company_id || company.symbol}>
                     <td>
                       <Link to={`/company/${company.symbol}`} className="symbol-link">
@@ -260,6 +339,12 @@ function InsiderTradingPage() {
                       </Link>
                     </td>
                     <td className="company-name">{company.company_name}</td>
+                    <td className="price-cell">
+                      {price?.last_price ? `$${price.last_price.toFixed(2)}` : '-'}
+                    </td>
+                    <td className={`change-cell ${price?.change_1m > 0 ? 'positive' : price?.change_1m < 0 ? 'negative' : ''}`}>
+                      {price?.change_1m != null ? `${price.change_1m > 0 ? '+' : ''}${price.change_1m.toFixed(1)}%` : '-'}
+                    </td>
                     <td>
                       <SignalBadge signal={company.insider_signal} score={company.signal_score} />
                     </td>
@@ -272,7 +357,8 @@ function InsiderTradingPage() {
                       <WatchlistButton symbol={company.symbol} compact />
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -368,24 +454,24 @@ function InsiderTradingPage() {
       </div>
 
       <div className="table-container">
-        <table className="data-table">
+        <table className="data-table sortable-table">
           <thead>
             <tr>
-              <th>Date</th>
+              <SortableHeader label="Date" sortKey="transaction_date" currentSort={recentSort} onSort={handleSort(setRecentSort)} />
               <th>Symbol</th>
               <th>Insider</th>
               <th>Title</th>
               <th>Type</th>
-              <th>Shares</th>
-              <th>Price</th>
-              <th>Value</th>
+              <SortableHeader label="Shares" sortKey="shares_transacted" currentSort={recentSort} onSort={handleSort(setRecentSort)} />
+              <SortableHeader label="Price" sortKey="price_per_share" currentSort={recentSort} onSort={handleSort(setRecentSort)} />
+              <SortableHeader label="Value" sortKey="total_value" currentSort={recentSort} onSort={handleSort(setRecentSort)} />
             </tr>
           </thead>
           <tbody>
-            {recentTransactions.length === 0 ? (
+            {sortedRecentTransactions.length === 0 ? (
               <tr><td colSpan="8" className="no-data">No transactions found</td></tr>
             ) : (
-              recentTransactions.map((tx, idx) => (
+              sortedRecentTransactions.map((tx, idx) => (
                 <tr key={tx.id || idx}>
                   <td>{formatDate(tx.transaction_date)}</td>
                   <td>
@@ -439,24 +525,24 @@ function InsiderTradingPage() {
       </div>
 
       <div className="table-container">
-        <table className="data-table">
+        <table className="data-table sortable-table">
           <thead>
             <tr>
               <th>Symbol</th>
               <th>Company</th>
               <th>Sector</th>
-              <th>Unique Buyers</th>
-              <th>Total Value</th>
-              <th>Total Shares</th>
+              <SortableHeader label="Unique Buyers" sortKey="unique_buyers" currentSort={clusterSort} onSort={handleSort(setClusterSort)} />
+              <SortableHeader label="Total Value" sortKey="total_buy_value" currentSort={clusterSort} onSort={handleSort(setClusterSort)} />
+              <SortableHeader label="Total Shares" sortKey="total_shares" currentSort={clusterSort} onSort={handleSort(setClusterSort)} />
               <th>Buyers</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {clusterBuying.length === 0 ? (
+            {sortedClusterBuying.length === 0 ? (
               <tr><td colSpan="8" className="no-data">No cluster buying detected</td></tr>
             ) : (
-              clusterBuying.map((cluster) => (
+              sortedClusterBuying.map((cluster) => (
                 <tr key={cluster.company_id}>
                   <td>
                     <Link to={`/company/${cluster.symbol}`} className="symbol-link">
@@ -498,8 +584,19 @@ function InsiderTradingPage() {
   return (
     <div className="insider-page">
       <div className="page-header">
-        <h1>Insider Trading</h1>
-        <p className="subtitle">Track insider buying and selling activity</p>
+        <div className="header-content">
+          <h1>Insider Trading</h1>
+          <p className="subtitle">Track insider buying and selling activity</p>
+        </div>
+        {updateStatus?.lastImport && (
+          <div className="update-info">
+            <span className="update-label">Last Updated:</span>
+            <span className="update-date">{formatDate(updateStatus.lastImport)}</span>
+            <span className="update-stats">
+              {updateStatus.totalTransactions?.toLocaleString()} transactions from {updateStatus.companiesWithData} companies
+            </span>
+          </div>
+        )}
       </div>
 
       {/* View mode tabs */}

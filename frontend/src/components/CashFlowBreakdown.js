@@ -33,9 +33,9 @@ function CashFlowBreakdown({ symbol, periodType }) {
           limit: 10,
           periodType
         });
-        setData(response.data.cashFlow || []);
-        if (response.data.cashFlow?.length > 0) {
-          setSelectedPeriod(response.data.cashFlow[0].period);
+        setData(response.data.breakdown || []);
+        if (response.data.breakdown?.length > 0) {
+          setSelectedPeriod(response.data.breakdown[0].period);
         }
       } catch (error) {
         console.error('Error loading cash flow:', error);
@@ -54,9 +54,20 @@ function CashFlowBreakdown({ symbol, periodType }) {
   // Get selected period data
   const selectedData = data.find(d => d.period === selectedPeriod);
 
+  // Helper to format period label - use fiscal label if available
+  const formatPeriodLabel = (item) => {
+    // Prefer fiscal_label (e.g., "FY2024 Q1") if available
+    if (item.fiscal_label) return item.fiscal_label;
+    // Fall back to fiscal_year for annual reports
+    if (item.fiscal_year) return `FY${item.fiscal_year}`;
+    // Fall back to period date
+    if (item.period) return item.period.substring(0, 4);
+    return item.fiscal_period || 'N/A';
+  };
+
   // Prepare trend chart data
   const cashFlowTrendData = [...data].reverse().map(item => ({
-    period: item.fiscal_period,
+    period: formatPeriodLabel(item),
     'Operating': (item.summary.operatingCashFlow || 0) / 1e9,
     'Investing': (item.summary.investingCashFlow || 0) / 1e9,
     'Financing': (item.summary.financingCashFlow || 0) / 1e9
@@ -64,23 +75,23 @@ function CashFlowBreakdown({ symbol, periodType }) {
 
   // Net change in cash
   const netCashData = [...data].reverse().map(item => ({
-    period: item.fiscal_period,
+    period: formatPeriodLabel(item),
     'Net Change': (item.summary.netChangeInCash || 0) / 1e9
   }));
 
   // Free Cash Flow trend
   const fcfData = [...data].reverse().map(item => ({
-    period: item.fiscal_period,
+    period: formatPeriodLabel(item),
     'Operating CF': (item.summary.operatingCashFlow || 0) / 1e9,
     'CapEx': Math.abs(item.investing?.capitalExpenditures || 0) / 1e9,
-    'Free Cash Flow': (item.quality?.freeCashFlow || 0) / 1e9
+    'Free Cash Flow': (item.summary?.freeCashFlow || 0) / 1e9
   }));
 
   // Quality metrics trend
   const qualityData = [...data].reverse().map(item => ({
-    period: item.fiscal_period,
+    period: formatPeriodLabel(item),
     'FCF Conversion': (item.quality?.fcfConversion || 0) * 100,
-    'FCF Margin': (item.quality?.fcfMargin || 0) * 100
+    'FCF to Op CF': (item.quality?.fcfToOperatingCF || 0) * 100
   }));
 
   // Get health indicator class
@@ -137,7 +148,7 @@ function CashFlowBreakdown({ symbol, periodType }) {
             >
               {data.map(d => (
                 <option key={d.period} value={d.period}>
-                  {d.fiscal_period} ({d.period_type})
+                  {formatPeriodLabel(d)}
                 </option>
               ))}
             </select>
@@ -249,15 +260,15 @@ function CashFlowBreakdown({ symbol, periodType }) {
                 <span className="quality-value">{formatPercent(selectedData.quality?.fcfConversion)}</span>
                 <span className="quality-desc">Free Cash Flow / Net Income</span>
               </div>
-              <div className={`quality-card ${getHealthClass(selectedData.quality?.fcfMargin, 'fcfMargin')}`}>
-                <span className="quality-name">FCF Margin</span>
-                <span className="quality-value">{formatPercent(selectedData.quality?.fcfMargin)}</span>
-                <span className="quality-desc">Free Cash Flow / Revenue</span>
+              <div className={`quality-card ${getHealthClass(selectedData.quality?.fcfToOperatingCF, 'fcfMargin')}`}>
+                <span className="quality-name">FCF to Operating CF</span>
+                <span className="quality-value">{formatPercent(selectedData.quality?.fcfToOperatingCF)}</span>
+                <span className="quality-desc">Free Cash Flow / Operating CF</span>
               </div>
               <div className="quality-card">
                 <span className="quality-name">Free Cash Flow</span>
-                <span className={`quality-value ${selectedData.quality?.freeCashFlow >= 0 ? 'positive-text' : 'negative'}`}>
-                  {formatCurrency(selectedData.quality?.freeCashFlow)}
+                <span className={`quality-value ${selectedData.summary?.freeCashFlow >= 0 ? 'positive-text' : 'negative'}`}>
+                  {formatCurrency(selectedData.summary?.freeCashFlow)}
                 </span>
                 <span className="quality-desc">Operating CF - CapEx</span>
               </div>
@@ -284,7 +295,7 @@ function CashFlowBreakdown({ symbol, periodType }) {
             >
               {data.map(d => (
                 <option key={d.period} value={d.period}>
-                  {d.fiscal_period} ({d.period_type})
+                  {formatPeriodLabel(d)}
                 </option>
               ))}
             </select>
@@ -302,63 +313,63 @@ function CashFlowBreakdown({ symbol, periodType }) {
                       <td>{formatCurrency(selectedData.operating.netIncome)}</td>
                     </tr>
                   )}
-                  {selectedData.operating?.depreciationAmortization > 0 && (
+                  {selectedData.operating?.adjustments?.depreciation > 0 && (
                     <tr>
                       <td>Depreciation & Amortization</td>
-                      <td className="positive">{formatCurrency(selectedData.operating.depreciationAmortization)}</td>
+                      <td className="positive">{formatCurrency(selectedData.operating.adjustments.depreciation)}</td>
                     </tr>
                   )}
-                  {selectedData.operating?.stockBasedCompensation > 0 && (
+                  {selectedData.operating?.adjustments?.stockBasedCompensation > 0 && (
                     <tr>
                       <td>Stock-Based Compensation</td>
-                      <td className="positive">{formatCurrency(selectedData.operating.stockBasedCompensation)}</td>
+                      <td className="positive">{formatCurrency(selectedData.operating.adjustments.stockBasedCompensation)}</td>
                     </tr>
                   )}
-                  {selectedData.operating?.deferredIncomeTax !== 0 && selectedData.operating?.deferredIncomeTax !== undefined && (
+                  {selectedData.operating?.adjustments?.deferredIncomeTax !== 0 && selectedData.operating?.adjustments?.deferredIncomeTax !== undefined && (
                     <tr>
                       <td>Deferred Income Tax</td>
-                      <td className={selectedData.operating.deferredIncomeTax >= 0 ? 'positive' : 'negative'}>
-                        {formatCurrency(selectedData.operating.deferredIncomeTax)}
+                      <td className={selectedData.operating.adjustments.deferredIncomeTax >= 0 ? 'positive' : 'negative'}>
+                        {formatCurrency(selectedData.operating.adjustments.deferredIncomeTax)}
                       </td>
                     </tr>
                   )}
-                  {selectedData.operating?.changeInWorkingCapital !== 0 && selectedData.operating?.changeInWorkingCapital !== undefined && (
+                  {selectedData.operating?.workingCapitalChanges?.total !== 0 && selectedData.operating?.workingCapitalChanges?.total !== undefined && (
                     <tr>
                       <td>Change in Working Capital</td>
-                      <td className={selectedData.operating.changeInWorkingCapital >= 0 ? 'positive' : 'negative'}>
-                        {formatCurrency(selectedData.operating.changeInWorkingCapital)}
+                      <td className={selectedData.operating.workingCapitalChanges.total >= 0 ? 'positive' : 'negative'}>
+                        {formatCurrency(selectedData.operating.workingCapitalChanges.total)}
                       </td>
                     </tr>
                   )}
-                  {selectedData.operating?.changeInReceivables !== 0 && selectedData.operating?.changeInReceivables !== undefined && (
+                  {selectedData.operating?.workingCapitalChanges?.receivables !== 0 && selectedData.operating?.workingCapitalChanges?.receivables !== undefined && (
                     <tr className="indent">
                       <td>Change in Receivables</td>
-                      <td className={selectedData.operating.changeInReceivables >= 0 ? 'positive' : 'negative'}>
-                        {formatCurrency(selectedData.operating.changeInReceivables)}
+                      <td className={selectedData.operating.workingCapitalChanges.receivables >= 0 ? 'positive' : 'negative'}>
+                        {formatCurrency(selectedData.operating.workingCapitalChanges.receivables)}
                       </td>
                     </tr>
                   )}
-                  {selectedData.operating?.changeInInventory !== 0 && selectedData.operating?.changeInInventory !== undefined && (
+                  {selectedData.operating?.workingCapitalChanges?.inventory !== 0 && selectedData.operating?.workingCapitalChanges?.inventory !== undefined && (
                     <tr className="indent">
                       <td>Change in Inventory</td>
-                      <td className={selectedData.operating.changeInInventory >= 0 ? 'positive' : 'negative'}>
-                        {formatCurrency(selectedData.operating.changeInInventory)}
+                      <td className={selectedData.operating.workingCapitalChanges.inventory >= 0 ? 'positive' : 'negative'}>
+                        {formatCurrency(selectedData.operating.workingCapitalChanges.inventory)}
                       </td>
                     </tr>
                   )}
-                  {selectedData.operating?.changeInPayables !== 0 && selectedData.operating?.changeInPayables !== undefined && (
+                  {selectedData.operating?.workingCapitalChanges?.payables !== 0 && selectedData.operating?.workingCapitalChanges?.payables !== undefined && (
                     <tr className="indent">
                       <td>Change in Payables</td>
-                      <td className={selectedData.operating.changeInPayables >= 0 ? 'positive' : 'negative'}>
-                        {formatCurrency(selectedData.operating.changeInPayables)}
+                      <td className={selectedData.operating.workingCapitalChanges.payables >= 0 ? 'positive' : 'negative'}>
+                        {formatCurrency(selectedData.operating.workingCapitalChanges.payables)}
                       </td>
                     </tr>
                   )}
-                  {selectedData.operating?.otherOperatingActivities !== 0 && selectedData.operating?.otherOperatingActivities !== undefined && (
+                  {selectedData.operating?.adjustments?.otherNonCash !== 0 && selectedData.operating?.adjustments?.otherNonCash !== undefined && (
                     <tr>
                       <td>Other Operating Activities</td>
-                      <td className={selectedData.operating.otherOperatingActivities >= 0 ? 'positive' : 'negative'}>
-                        {formatCurrency(selectedData.operating.otherOperatingActivities)}
+                      <td className={selectedData.operating.adjustments.otherNonCash >= 0 ? 'positive' : 'negative'}>
+                        {formatCurrency(selectedData.operating.adjustments.otherNonCash)}
                       </td>
                     </tr>
                   )}
@@ -391,23 +402,23 @@ function CashFlowBreakdown({ symbol, periodType }) {
                       </td>
                     </tr>
                   )}
-                  {selectedData.investing?.purchaseOfInvestments !== 0 && selectedData.investing?.purchaseOfInvestments !== undefined && (
+                  {selectedData.investing?.investmentPurchases !== 0 && selectedData.investing?.investmentPurchases !== undefined && (
                     <tr>
                       <td>Purchase of Investments</td>
-                      <td className="negative">{formatCurrency(selectedData.investing.purchaseOfInvestments)}</td>
+                      <td className="negative">{formatCurrency(selectedData.investing.investmentPurchases)}</td>
                     </tr>
                   )}
-                  {selectedData.investing?.salesOfInvestments > 0 && (
+                  {selectedData.investing?.investmentSales > 0 && (
                     <tr>
                       <td>Sales of Investments</td>
-                      <td className="positive">{formatCurrency(selectedData.investing.salesOfInvestments)}</td>
+                      <td className="positive">{formatCurrency(selectedData.investing.investmentSales)}</td>
                     </tr>
                   )}
-                  {selectedData.investing?.otherInvestingActivities !== 0 && selectedData.investing?.otherInvestingActivities !== undefined && (
+                  {selectedData.investing?.other !== 0 && selectedData.investing?.other !== undefined && (
                     <tr>
                       <td>Other Investing Activities</td>
-                      <td className={selectedData.investing.otherInvestingActivities >= 0 ? 'positive' : 'negative'}>
-                        {formatCurrency(selectedData.investing.otherInvestingActivities)}
+                      <td className={selectedData.investing.other >= 0 ? 'positive' : 'negative'}>
+                        {formatCurrency(selectedData.investing.other)}
                       </td>
                     </tr>
                   )}
@@ -450,17 +461,17 @@ function CashFlowBreakdown({ symbol, periodType }) {
                       <td className="positive">{formatCurrency(selectedData.financing.stockIssuance)}</td>
                     </tr>
                   )}
-                  {selectedData.financing?.dividendsPaid !== 0 && selectedData.financing?.dividendsPaid !== undefined && (
+                  {selectedData.financing?.dividends !== 0 && selectedData.financing?.dividends !== undefined && (
                     <tr>
                       <td>Dividends Paid</td>
-                      <td className="negative">{formatCurrency(selectedData.financing.dividendsPaid)}</td>
+                      <td className="negative">{formatCurrency(selectedData.financing.dividends)}</td>
                     </tr>
                   )}
-                  {selectedData.financing?.otherFinancingActivities !== 0 && selectedData.financing?.otherFinancingActivities !== undefined && (
+                  {selectedData.financing?.other !== 0 && selectedData.financing?.other !== undefined && (
                     <tr>
                       <td>Other Financing Activities</td>
-                      <td className={selectedData.financing.otherFinancingActivities >= 0 ? 'positive' : 'negative'}>
-                        {formatCurrency(selectedData.financing.otherFinancingActivities)}
+                      <td className={selectedData.financing.other >= 0 ? 'positive' : 'negative'}>
+                        {formatCurrency(selectedData.financing.other)}
                       </td>
                     </tr>
                   )}
@@ -566,7 +577,7 @@ function CashFlowBreakdown({ symbol, periodType }) {
                 />
                 <Legend />
                 <Line type="monotone" dataKey="FCF Conversion" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 4 }} />
-                <Line type="monotone" dataKey="FCF Margin" stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} />
+                <Line type="monotone" dataKey="FCF to Op CF" stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
