@@ -1,8 +1,23 @@
 /* frontend/src/pages/IPOPipelinePage.css */
 
 .ipo-pipeline-page {
+  padding: var(--space-8) var(--space-6);
+  max-width: var(--max-content-width);
+  margin: 0 auto;
   animation: fadeIn 0.3s ease;
-  padding-bottom: 2rem;
+  color: var(--text-primary);
+}
+
+@media (max-width: 1024px) {
+  .ipo-pipeline-page {
+    padding: var(--space-6) var(--space-4);
+  }
+}
+
+@media (max-width: 768px) {
+  .ipo-pipeline-page {
+    padding: var(--space-4);
+  }
 }
 
 /* Header */
@@ -273,12 +288,12 @@
 
 .ipo-kanban::-webkit-scrollbar-track {
   background: var(--bg-secondary);
-  border-radius: 3px;
+  border-radius: var(--radius-none);
 }
 
 .ipo-kanban::-webkit-scrollbar-thumb {
   background: var(--border-secondary);
-  border-radius: 3px;
+  border-radius: var(--radius-none);
 }
 
 .kanban-column {
@@ -297,7 +312,7 @@
 
 .column-header {
   padding: 1rem;
-  border-top: 3px solid var(--brand-primary);
+  border-top: var(--space-1) solid var(--brand-primary);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   display: flex;
   justify-content: space-between;
@@ -341,7 +356,7 @@
 
 .column-content::-webkit-scrollbar-thumb {
   background: var(--border-secondary);
-  border-radius: 2px;
+  border-radius: var(--radius-none);
 }
 
 .empty-column {

@@ -1,34 +1,21 @@
 /* frontend/src/pages/AlertsPage.css */
 
 .alerts-page {
-  padding: 1.5rem;
-  max-width: 1200px;
+  padding: var(--space-8) var(--space-6);
+  max-width: var(--max-content-width);
   margin: 0 auto;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 1.5rem;
+@media (max-width: 1024px) {
+  .alerts-page {
+    padding: var(--space-6) var(--space-4);
+  }
 }
 
-.page-header h1 {
-  font-size: 1.75rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0;
-}
-
-.page-description {
-  color: var(--text-secondary);
-  margin-top: 0.25rem;
-  font-size: 0.875rem;
-}
-
-.header-actions {
-  display: flex;
-  gap: 0.75rem;
+@media (max-width: 768px) {
+  .alerts-page {
+    padding: var(--space-4);
+  }
 }
 
 /* Summary Card */
@@ -147,7 +134,7 @@
 .alert-card {
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-left: 4px solid var(--border-color);
+  border-left: var(--space-1) solid var(--border-color);
   border-radius: var(--radius-lg);
   padding: 1rem;
   margin-bottom: 0.75rem;
@@ -203,7 +190,7 @@
   font-size: 0.6875rem;
   font-weight: 600;
   padding: 0.125rem 0.375rem;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .alert-price .price-change.up {

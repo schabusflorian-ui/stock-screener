@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { createChart, ColorType, CrosshairMode, LineSeries, AreaSeries } from 'lightweight-charts';
+import { createChart, ColorType, CrosshairMode, LineSeries } from 'lightweight-charts';
 import './MultiMetricChart.css';
+
+// Import formatMetricValue from unified config
+import { formatMetricValue as formatFromConfig, METRICS } from '../config/metrics';
 
 // Default colors for metrics
 const DEFAULT_COLORS = [
@@ -24,23 +27,77 @@ const TIME_RANGES = [
 ];
 
 const CHART_MODES = [
-  { value: 'overlay', label: 'Overlay', icon: '📊' },
-  { value: 'stacked', label: 'Stacked', icon: '📈' }
+  { value: 'absolute', label: 'Absolute values (dual axis)', icon: '📊' },
+  { value: 'normalized', label: 'Normalized (% change)', icon: '📈' }
 ];
+
+// Determine if a metric is "large scale" (billions) vs "small scale" (percentages, ratios, prices)
+const isLargeScaleMetric = (metricKey, format) => {
+  // Currency metrics that are typically in billions
+  if (format === 'currency' || format === 'currency_large') {
+    // These are absolute financial values (revenue, net income, FCF, etc.)
+    return true;
+  }
+  return false;
+};
+
+// Format large numbers with units for Y-axis
+const formatAxisValue = (value, format, isLargeScale) => {
+  if (value === null || value === undefined || isNaN(value)) return '-';
+
+  if (format === 'percent') return `${value.toFixed(1)}%`;
+  if (format === 'ratio') return value.toFixed(2) + 'x';
+
+  if (format === 'currency' || format === 'currency_large') {
+    const absVal = Math.abs(value);
+    const sign = value < 0 ? '-' : '';
+    if (absVal >= 1e12) return `${sign}$${(absVal / 1e12).toFixed(1)}T`;
+    if (absVal >= 1e9) return `${sign}$${(absVal / 1e9).toFixed(0)}B`;
+    if (absVal >= 1e6) return `${sign}$${(absVal / 1e6).toFixed(0)}M`;
+    if (absVal >= 1e3) return `${sign}$${(absVal / 1e3).toFixed(0)}K`;
+    return `${sign}$${absVal.toFixed(0)}`;
+  }
+
+  if (format === 'currency_price') {
+    return `$${value.toFixed(0)}`;
+  }
+
+  return value.toFixed(1);
+};
+
+// Format for legend display (more precision)
+const formatLegendValue = (value, metricKey) => {
+  if (value === null || value === undefined || isNaN(value)) return '-';
+
+  // Use the unified config formatter
+  if (metricKey && METRICS[metricKey]) {
+    return formatFromConfig(value, metricKey);
+  }
+
+  // Fallback
+  const absVal = Math.abs(value);
+  const sign = value < 0 ? '-' : '';
+  if (absVal >= 1e12) return `${sign}$${(absVal / 1e12).toFixed(1)}T`;
+  if (absVal >= 1e9) return `${sign}$${(absVal / 1e9).toFixed(1)}B`;
+  if (absVal >= 1e6) return `${sign}$${(absVal / 1e6).toFixed(1)}M`;
+  if (absVal >= 1e3) return `${sign}$${(absVal / 1e3).toFixed(1)}K`;
+  return value.toFixed(2);
+};
 
 function MultiMetricChart({
   data = [], // Array of { time, metric1, metric2, ... }
   metrics = [], // Array of { key, label, color, format }
   height = 400,
   title = 'Historical Performance',
-  periodType = 'annual'
+  periodType = 'annual',
+  hideTimeRange = false // Hide internal time range selector (useful when parent controls period)
 }) {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
   const seriesRefs = useRef({});
 
   const [selectedTimeRange, setSelectedTimeRange] = useState('All');
-  const [chartMode, setChartMode] = useState('overlay');
+  const [chartMode, setChartMode] = useState('absolute'); // Default to 'absolute'
   const [visibleMetrics, setVisibleMetrics] = useState(() =>
     metrics.reduce((acc, m) => ({ ...acc, [m.key]: true }), {})
   );
@@ -59,6 +116,51 @@ function MultiMetricChart({
 
     return data.slice(-periodsToShow);
   }, [data, selectedTimeRange, periodType]);
+
+  // Calculate base values for normalization (first non-null value for each metric)
+  const baseValues = useMemo(() => {
+    const bases = {};
+    metrics.forEach(metric => {
+      for (const d of filteredData) {
+        const val = d[metric.key];
+        if (val !== null && val !== undefined && !isNaN(val) && val !== 0) {
+          bases[metric.key] = val;
+          break;
+        }
+      }
+    });
+    return bases;
+  }, [filteredData, metrics]);
+
+  // Categorize metrics into large-scale (left axis) and small-scale (right axis)
+  // eslint-disable-next-line no-unused-vars
+  const { largeScaleMetrics, smallScaleMetrics, rightAxisAllPercent } = useMemo(() => {
+    const large = [];
+    const small = [];
+    let allPercent = true;
+
+    metrics.forEach(metric => {
+      if (!visibleMetrics[metric.key]) return;
+
+      const metricDef = METRICS[metric.key];
+      const format = metricDef?.format || metric.format;
+
+      if (isLargeScaleMetric(metric.key, format)) {
+        large.push(metric);
+      } else {
+        small.push({ ...metric, format });
+        // Check if all small-scale metrics are percentages
+        if (format !== 'percent') {
+          allPercent = false;
+        }
+      }
+    });
+
+    // If no small-scale metrics, don't flag as all-percent
+    if (small.length === 0) allPercent = false;
+
+    return { largeScaleMetrics: large, smallScaleMetrics: small, rightAxisAllPercent: allPercent };
+  }, [metrics, visibleMetrics]);
 
   // Initialize chart
   useEffect(() => {
@@ -92,14 +194,21 @@ function MultiMetricChart({
       },
       rightPriceScale: {
         borderColor: 'rgba(0, 0, 0, 0.1)',
-        scaleMargins: { top: 0.1, bottom: 0.1 }
+        scaleMargins: { top: 0.1, bottom: 0.1 },
+        visible: true
+      },
+      leftPriceScale: {
+        borderColor: 'rgba(0, 0, 0, 0.1)',
+        scaleMargins: { top: 0.1, bottom: 0.1 },
+        visible: chartMode === 'absolute' && largeScaleMetrics.length > 0 && smallScaleMetrics.length > 0
       },
       timeScale: {
         borderColor: 'rgba(0, 0, 0, 0.1)',
         timeVisible: false,
-        rightOffset: 3,
-        barSpacing: 20,
+        rightOffset: 1,
+        barSpacing: 30,
         fixLeftEdge: true,
+        fixRightEdge: true,
         lockVisibleTimeRangeOnResize: true
       },
       handleScroll: {
@@ -156,7 +265,8 @@ function MultiMetricChart({
 
       setHoveredData({
         time: originalPoint?.period || timeStr,
-        values
+        values,
+        originalPoint
       });
     });
 
@@ -168,7 +278,7 @@ function MultiMetricChart({
         // Chart already disposed
       }
     };
-  }, [height, filteredData]);
+  }, [height, filteredData, chartMode, largeScaleMetrics.length, smallScaleMetrics.length]);
 
   // Update series when data or settings change
   useEffect(() => {
@@ -181,6 +291,14 @@ function MultiMetricChart({
       try { chart.removeSeries(series); } catch (e) {}
     });
     seriesRefs.current = {};
+
+    // Update left scale visibility based on mode and metrics
+    const useDualAxis = chartMode === 'absolute' && largeScaleMetrics.length > 0 && smallScaleMetrics.length > 0;
+    chart.applyOptions({
+      leftPriceScale: {
+        visible: useDualAxis
+      }
+    });
 
     // Helper to convert period string to a valid date format
     const convertPeriodToDate = (period, idx) => {
@@ -215,67 +333,71 @@ function MultiMetricChart({
       if (!visibleMetrics[metric.key]) return;
 
       const color = metric.color || DEFAULT_COLORS[idx % DEFAULT_COLORS.length];
+      const baseValue = baseValues[metric.key];
+      const metricDef = METRICS[metric.key];
+      const format = metricDef?.format || metric.format;
+      const isLarge = isLargeScaleMetric(metric.key, format);
 
       // Prepare data for this metric
       const seriesData = filteredData
-        .map((d, dataIdx) => ({
-          time: convertPeriodToDate(d.date || d.time, dataIdx),
-          value: d[metric.key]
-        }))
-        .filter(d => d.value !== null && d.value !== undefined && !isNaN(d.value));
+        .map((d, dataIdx) => {
+          const rawValue = d[metric.key];
+          if (rawValue === null || rawValue === undefined || isNaN(rawValue)) {
+            return null;
+          }
+
+          let displayValue;
+          if (chartMode === 'normalized' && baseValue && baseValue !== 0) {
+            // Show as percentage change from base
+            displayValue = ((rawValue - baseValue) / Math.abs(baseValue)) * 100;
+          } else {
+            displayValue = rawValue;
+          }
+
+          return {
+            time: convertPeriodToDate(d.date || d.time, dataIdx),
+            value: displayValue
+          };
+        })
+        .filter(d => d !== null);
 
       if (seriesData.length === 0) return;
 
-      let series;
-      if (chartMode === 'overlay') {
-        series = chart.addSeries(LineSeries, {
-          color: color,
-          lineWidth: 2,
-          priceFormat: {
-            type: 'custom',
-            formatter: (v) => {
-              if (metric.format === 'percent') return `${v.toFixed(1)}%`;
-              if (metric.format === 'ratio') return v.toFixed(2);
-              if (metric.format === 'currency') return `$${v.toFixed(2)}`;
-              return v.toFixed(1);
-            }
-          },
-          crosshairMarkerVisible: true,
-          crosshairMarkerRadius: 5,
-          lastValueVisible: false,
-          priceLineVisible: false
-        });
-      } else {
-        // Stacked mode - use area charts
-        series = chart.addSeries(AreaSeries, {
-          lineColor: color,
-          topColor: `${color}40`,
-          bottomColor: `${color}10`,
-          lineWidth: 2,
-          priceFormat: {
-            type: 'custom',
-            formatter: (v) => {
-              if (metric.format === 'percent') return `${v.toFixed(1)}%`;
-              if (metric.format === 'ratio') return v.toFixed(2);
-              if (metric.format === 'currency') return `$${v.toFixed(2)}`;
-              return v.toFixed(1);
-            }
-          },
-          crosshairMarkerVisible: true,
-          crosshairMarkerRadius: 5,
-          lastValueVisible: false,
-          priceLineVisible: false
-        });
-      }
+      // Price formatter based on mode
+      const priceFormatter = (v) => {
+        if (chartMode === 'normalized') {
+          return `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
+        }
+        return formatAxisValue(v, format, isLarge);
+      };
+
+      // Determine which price scale to use
+      const priceScaleId = (chartMode === 'absolute' && useDualAxis && isLarge) ? 'left' : 'right';
+
+      const series = chart.addSeries(LineSeries, {
+        color: color,
+        lineWidth: 2,
+        priceScaleId: priceScaleId,
+        priceFormat: {
+          type: 'custom',
+          formatter: priceFormatter
+        },
+        crosshairMarkerVisible: true,
+        crosshairMarkerRadius: 5,
+        lastValueVisible: false,
+        priceLineVisible: false
+      });
 
       series.setData(seriesData);
       seriesRefs.current[metric.key] = series;
     });
 
-    // Fit content
-    chart.timeScale().fitContent();
+    // Fit content to show all data
+    requestAnimationFrame(() => {
+      chart.timeScale().fitContent();
+    });
 
-  }, [filteredData, metrics, visibleMetrics, chartMode]);
+  }, [filteredData, metrics, visibleMetrics, chartMode, baseValues, largeScaleMetrics, smallScaleMetrics]);
 
   // Update visible metrics when metrics prop changes
   useEffect(() => {
@@ -292,14 +414,15 @@ function MultiMetricChart({
     }
   }, []);
 
-  // Format value for display
-  const formatMetricValue = useCallback((value, metric) => {
-    if (value === null || value === undefined) return '-';
-    if (metric?.format === 'percent') return `${value.toFixed(1)}%`;
-    if (metric?.format === 'ratio') return value.toFixed(2);
-    if (metric?.format === 'currency') return `$${value.toFixed(2)}`;
-    return value.toFixed(1);
-  }, []);
+  // Get the actual (non-normalized) value for display
+  const getActualValue = useCallback((metric, hoveredPoint) => {
+    if (!hoveredPoint?.originalPoint) {
+      // Use latest value
+      const latest = filteredData[filteredData.length - 1];
+      return latest?.[metric.key];
+    }
+    return hoveredPoint.originalPoint[metric.key];
+  }, [filteredData]);
 
   if (!data.length) {
     return (
@@ -309,6 +432,9 @@ function MultiMetricChart({
     );
   }
 
+  // Check if we're using dual axis
+  const useDualAxis = chartMode === 'absolute' && largeScaleMetrics.length > 0 && smallScaleMetrics.length > 0;
+
   return (
     <div className="multi-metric-chart-container">
       {/* Header */}
@@ -316,20 +442,22 @@ function MultiMetricChart({
         <h3>{title} ({periodType === 'annual' ? 'Annual' : 'Quarterly'})</h3>
 
         <div className="mmc-controls">
-          {/* Time Range */}
-          <div className="time-range-buttons">
-            {TIME_RANGES.map(range => (
-              <button
-                key={range.label}
-                className={selectedTimeRange === range.label ? 'active' : ''}
-                onClick={() => setSelectedTimeRange(range.label)}
-              >
-                {range.label}
-              </button>
-            ))}
-          </div>
+          {/* Time Range - can be hidden when parent controls period */}
+          {!hideTimeRange && (
+            <div className="time-range-buttons">
+              {TIME_RANGES.map(range => (
+                <button
+                  key={range.label}
+                  className={selectedTimeRange === range.label ? 'active' : ''}
+                  onClick={() => setSelectedTimeRange(range.label)}
+                >
+                  {range.label}
+                </button>
+              ))}
+            </div>
+          )}
 
-          {/* Chart Mode */}
+          {/* Chart Mode Toggle */}
           <div className="chart-mode-buttons">
             {CHART_MODES.map(mode => (
               <button
@@ -354,9 +482,17 @@ function MultiMetricChart({
         {metrics.map((metric, idx) => {
           const color = metric.color || DEFAULT_COLORS[idx % DEFAULT_COLORS.length];
           const isVisible = visibleMetrics[metric.key];
-          const currentValue = hoveredData?.values?.[metric.key];
-          const latestValue = filteredData[filteredData.length - 1]?.[metric.key];
-          const displayValue = currentValue ?? latestValue;
+          const actualValue = getActualValue(metric, hoveredData);
+          const baseValue = baseValues[metric.key];
+          const metricDef = METRICS[metric.key];
+          const format = metricDef?.format || metric.format;
+          void format; // Used for metric categorization
+
+          // Calculate percentage change for display
+          let percentChange = null;
+          if (actualValue != null && baseValue != null && baseValue !== 0) {
+            percentChange = ((actualValue - baseValue) / Math.abs(baseValue)) * 100;
+          }
 
           return (
             <button
@@ -367,9 +503,16 @@ function MultiMetricChart({
             >
               <span className="legend-dot"></span>
               <span className="legend-label">{metric.label}</span>
-              {displayValue !== undefined && displayValue !== null && (
-                <span className="legend-value">
-                  {formatMetricValue(displayValue, metric)}
+              {actualValue !== undefined && actualValue !== null && (
+                <span className="legend-value-group">
+                  <span className="legend-value">
+                    {formatLegendValue(actualValue, metric.key)}
+                  </span>
+                  {percentChange !== null && (
+                    <span className={`legend-change ${percentChange >= 0 ? 'positive' : 'negative'}`}>
+                      {percentChange >= 0 ? '+' : ''}{percentChange.toFixed(1)}%
+                    </span>
+                  )}
                 </span>
               )}
             </button>
@@ -386,6 +529,14 @@ function MultiMetricChart({
 
       {/* Chart Canvas */}
       <div ref={chartContainerRef} className="mmc-canvas" />
+
+      {/* Axis Description - below chart */}
+      {useDualAxis && (
+        <div className="mmc-axis-description">
+          <span className="axis-left">← Left axis: Large values (Revenue, FCF, Net Income)</span>
+          <span className="axis-right">Right axis: Smaller values (Price, Ratios, %) →</span>
+        </div>
+      )}
 
       {/* Instructions */}
       <div className="mmc-instructions">

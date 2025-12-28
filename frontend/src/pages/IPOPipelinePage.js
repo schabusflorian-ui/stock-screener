@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { ipoAPI } from '../services/api';
+import { PageHeader, Button } from '../components/ui';
 import './IPOPipelinePage.css';
 
 // IPO stage definitions with colors
@@ -217,37 +218,35 @@ function IPOPipelinePage() {
 
   return (
     <div className="ipo-pipeline-page">
-      <header className="ipo-header">
-        <div className="ipo-header-title">
-          <h1>IPO Pipeline</h1>
-          <p className="subtitle">Track upcoming IPOs from S-1 filing to trading</p>
-        </div>
-
-        <div className="ipo-header-actions">
-          <div className="view-toggle">
-            <button
-              className={viewMode === 'kanban' ? 'active' : ''}
-              onClick={() => setViewMode('kanban')}
+      <PageHeader
+        title="IPO Pipeline"
+        subtitle="Track upcoming IPOs from S-1 filing to trading"
+        actions={
+          <>
+            <div className="view-toggle">
+              <button
+                className={viewMode === 'kanban' ? 'active' : ''}
+                onClick={() => setViewMode('kanban')}
+              >
+                Kanban
+              </button>
+              <button
+                className={viewMode === 'list' ? 'active' : ''}
+                onClick={() => setViewMode('list')}
+              >
+                List
+              </button>
+            </div>
+            <Button
+              variant="primary"
+              onClick={checkForNewFilings}
+              disabled={checking}
             >
-              Kanban
-            </button>
-            <button
-              className={viewMode === 'list' ? 'active' : ''}
-              onClick={() => setViewMode('list')}
-            >
-              List
-            </button>
-          </div>
-
-          <button
-            onClick={checkForNewFilings}
-            disabled={checking}
-            className="check-button"
-          >
-            {checking ? 'Checking SEC...' : 'Check for New Filings'}
-          </button>
-        </div>
-      </header>
+              {checking ? 'Checking SEC...' : 'Check for New Filings'}
+            </Button>
+          </>
+        }
+      />
 
       {/* Check Result Banner */}
       {checkResult && (

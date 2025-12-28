@@ -3,10 +3,12 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  Legend, ScatterChart, Scatter, ZAxis
+  Legend
 } from 'recharts';
 import { insidersAPI, pricesAPI } from '../services/api';
 import { WatchlistButton } from '../components';
+import { PageHeader } from '../components/ui';
+import { Clock } from 'lucide-react';
 import './InsiderTradingPage.css';
 
 // Sortable table header component
@@ -583,21 +585,19 @@ function InsiderTradingPage() {
 
   return (
     <div className="insider-page">
-      <div className="page-header">
-        <div className="header-content">
-          <h1>Insider Trading</h1>
-          <p className="subtitle">Track insider buying and selling activity</p>
-        </div>
-        {updateStatus?.lastImport && (
-          <div className="update-info">
-            <span className="update-label">Last Updated:</span>
-            <span className="update-date">{formatDate(updateStatus.lastImport)}</span>
-            <span className="update-stats">
-              {updateStatus.totalTransactions?.toLocaleString()} transactions from {updateStatus.companiesWithData} companies
-            </span>
-          </div>
-        )}
-      </div>
+      <PageHeader
+        title="Insider Trading"
+        subtitle={
+          <>
+            Track insider buying and selling activity
+            {updateStatus?.lastImport && (
+              <span className="last-refreshed">
+                <Clock size={12} /> Updated {formatDate(updateStatus.lastImport)}
+              </span>
+            )}
+          </>
+        }
+      />
 
       {/* View mode tabs */}
       <div className="view-tabs">

@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, Command, Bell, Menu, ArrowRight, X } from 'lucide-react';
 import { alertsAPI } from '../../services/api';
+import { UserMenu } from '../auth';
 import './Header.css';
 
 function Header({ onOpenCommandPalette, onToggleMobileSidebar }) {
@@ -150,6 +151,8 @@ function Header({ onOpenCommandPalette, onToggleMobileSidebar }) {
             </Link>
           </div>
         )}
+
+        <UserMenu />
       </div>
     </header>
   );

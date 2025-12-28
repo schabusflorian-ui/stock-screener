@@ -1,7 +1,23 @@
 /* frontend/src/pages/CapitalAllocationPage.css */
 
 .capital-page {
+  padding: var(--space-8) var(--space-6);
+  max-width: var(--max-content-width);
+  margin: 0 auto;
   animation: fadeIn 0.3s ease;
+  color: var(--text-primary);
+}
+
+@media (max-width: 1024px) {
+  .capital-page {
+    padding: var(--space-6) var(--space-4);
+  }
+}
+
+@media (max-width: 768px) {
+  .capital-page {
+    padding: var(--space-4);
+  }
 }
 
 @keyframes fadeIn {
@@ -457,7 +473,7 @@
 /* Earnings Item */
 .earnings-item {
   background: rgba(16, 185, 129, 0.04);
-  border-left: 2px solid var(--positive);
+  border-left: 1px solid var(--positive);
 }
 
 .eps-estimate {
@@ -724,7 +740,7 @@
   margin-bottom: 1.5rem;
   padding: 1rem;
   background: rgba(99, 102, 241, 0.06);
-  border-left: 3px solid var(--brand-primary);
+  border-left: var(--space-1) solid var(--brand-primary);
   border-radius: 0 var(--radius-md) var(--radius-md) 0;
 }
 

@@ -2,6 +2,9 @@
 /* Redesigned multi-source sentiment trends page */
 
 .trending-page {
+  padding: var(--space-8) var(--space-6);
+  max-width: var(--max-content-width);
+  margin: 0 auto;
   animation: fadeIn 0.3s ease;
 }
 
@@ -10,34 +13,26 @@
   to { opacity: 1; }
 }
 
-/* Page Header */
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 1.5rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--border-primary);
+@media (max-width: 1024px) {
+  .trending-page {
+    padding: var(--space-6) var(--space-4);
+  }
 }
 
-.page-header .header-content {
-  flex: 1;
+@media (max-width: 768px) {
+  .trending-page {
+    padding: var(--space-4);
+  }
 }
 
-.page-header h1 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0 0 0.25rem 0;
-}
-
-.page-header .subtitle {
-  color: var(--text-tertiary);
-  font-size: 0.875rem;
-  margin: 0;
-  display: flex;
+/* Last refreshed styling for PageHeader subtitle */
+.last-refreshed {
+  display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.25rem;
+  margin-left: 0.5rem;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
 }
 
 .last-refreshed {
@@ -588,7 +583,7 @@
   font-size: 0.6875rem;
   color: var(--text-secondary);
   background: rgba(255, 255, 255, 0.5);
-  border-left: 2px solid;
+  border-left: 1px solid;
 }
 
 /* Posts Card */

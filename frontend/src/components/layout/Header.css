@@ -147,16 +147,16 @@
 
 .notification-badge {
   position: absolute;
-  top: 2px;
-  right: 2px;
+  top: var(--space-0);
+  right: var(--space-0);
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
   background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
   color: white;
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 700;
-  border-radius: 100px;
+  border-radius: var(--radius-2xl);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -178,7 +178,7 @@
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(20px);
   border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
   overflow: hidden;
   z-index: 1000;
@@ -200,24 +200,24 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
+  padding: var(--space-3) 16px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   background: rgba(99, 102, 241, 0.04);
 }
 
 .dropdown-title {
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 700;
   color: #374151;
 }
 
 .dropdown-count {
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: #ef4444;
   background: rgba(239, 68, 68, 0.1);
-  padding: 2px 8px;
-  border-radius: 100px;
+  padding: var(--space-0) 8px;
+  border-radius: var(--radius-2xl);
 }
 
 .dropdown-alerts {
@@ -228,8 +228,8 @@
 .dropdown-alert-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
+  gap: var(--space-2);
+  padding: var(--space-3) 16px;
   text-decoration: none;
   border-bottom: 1px solid rgba(0, 0, 0, 0.04);
   transition: background 0.15s ease;
@@ -244,7 +244,7 @@
 }
 
 .dropdown-alert-item .alert-icon {
-  font-size: 14px;
+  font-size: var(--text-base);
   flex-shrink: 0;
 }
 
@@ -253,17 +253,17 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0);
 }
 
 .dropdown-alert-item .alert-symbol {
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 700;
   color: #374151;
 }
 
 .dropdown-alert-item .alert-title {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: #6b7280;
   white-space: nowrap;
   overflow: hidden;
@@ -278,7 +278,7 @@
   justify-content: center;
   background: transparent;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: #9ca3af;
   cursor: pointer;
   flex-shrink: 0;
@@ -291,12 +291,12 @@
 }
 
 .dropdown-empty {
-  padding: 24px 16px;
+  padding: var(--space-6) 16px;
   text-align: center;
 }
 
 .dropdown-empty p {
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: #9ca3af;
   margin: 0;
 }
@@ -305,11 +305,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 12px 16px;
+  gap: var(--space-1);
+  padding: var(--space-3) 16px;
   background: rgba(99, 102, 241, 0.06);
   border-top: 1px solid rgba(0, 0, 0, 0.06);
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--brand-primary);
   text-decoration: none;

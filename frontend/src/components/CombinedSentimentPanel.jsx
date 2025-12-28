@@ -44,6 +44,7 @@ export function CombinedSentimentPanel({ symbol, onRefresh }) {
     if (symbol) {
       loadData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
 
   const loadData = async (refresh = false) => {
@@ -117,6 +118,7 @@ export function CombinedSentimentPanel({ symbol, onRefresh }) {
   const agreementDistribution = combined.agreement?.distribution || { bullish: 0, bearish: 0, neutral: 0 };
   const sourcesAgree = agreementDistribution.bullish || 0;
   const sourcesDisagree = agreementDistribution.bearish || 0;
+  // eslint-disable-next-line no-unused-vars
   const sourcesNeutral = agreementDistribution.neutral || 0;
 
   // Prepare pie chart data for source agreement

@@ -1,5 +1,6 @@
 // frontend/src/components/NewsAndEvents.js
 import { useState, useEffect } from 'react';
+import PropTypes from 'prop-types';
 import { companyAPI } from '../services/api';
 import './NewsAndEvents.css';
 
@@ -255,5 +256,16 @@ function FilingItem({ item }) {
     </a>
   );
 }
+
+NewsAndEvents.propTypes = {
+  symbol: PropTypes.string.isRequired,
+  cik: PropTypes.string,
+  sicCode: PropTypes.string
+};
+
+NewsAndEvents.defaultProps = {
+  cik: null,
+  sicCode: null
+};
 
 export default NewsAndEvents;

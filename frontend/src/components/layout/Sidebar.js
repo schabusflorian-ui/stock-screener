@@ -15,7 +15,13 @@ import {
   Users,
   DollarSign,
   MessageCircle,
-  Bell
+  Bell,
+  Wallet,
+  Crown,
+  Bot,
+  Command,
+  BookOpen,
+  Target
 } from 'lucide-react';
 import './Sidebar.css';
 
@@ -30,7 +36,18 @@ const navItems = [
   { path: '/sectors', icon: PieChart, label: 'Sectors', shortcut: 'G E' },
 ];
 
+const portfolioItems = [
+  { path: '/portfolios', icon: Wallet, label: 'Portfolios', shortcut: 'G P' },
+  { path: '/investors', icon: Crown, label: 'Investors', shortcut: 'G R' },
+];
+
+const researchItems = [
+  { path: '/notes', icon: BookOpen, label: 'Notes', shortcut: 'G O' },
+  { path: '/theses', icon: Target, label: 'Theses', shortcut: 'G B' },
+];
+
 const secondaryItems = [
+  { path: '/analyst', icon: Bot, label: 'AI Analyst', shortcut: 'G A' },
   { path: '/alerts', icon: Bell, label: 'Alerts', shortcut: 'G L' },
   { path: '/watchlist', icon: Star, label: 'Watchlist', shortcut: 'G W' },
   { path: '/updates', icon: RefreshCw, label: 'Updates', shortcut: 'G U' },
@@ -40,7 +57,7 @@ const bottomItems = [
   { path: '/settings', icon: Settings, label: 'Settings', shortcut: 'G ,' },
 ];
 
-function Sidebar({ collapsed, onToggle }) {
+function Sidebar({ collapsed, onToggle, onOpenSearch }) {
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
       <div className="sidebar-header">
@@ -55,9 +72,70 @@ function Sidebar({ collapsed, onToggle }) {
         </button>
       </div>
 
+      {/* Global Search Button */}
+      <button
+        className="sidebar-search-btn"
+        onClick={onOpenSearch}
+        title="Search (⌘K)"
+      >
+        <Search size={16} />
+        {!collapsed && (
+          <>
+            <span>Search...</span>
+            <span className="search-shortcut">
+              <Command size={10} />K
+            </span>
+          </>
+        )}
+      </button>
+
       <nav className="sidebar-nav">
         <div className="nav-section">
           {navItems.map(item => (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+              title={collapsed ? item.label : undefined}
+            >
+              <item.icon size={18} className="nav-icon" />
+              {!collapsed && (
+                <>
+                  <span className="nav-label">{item.label}</span>
+                  <span className="nav-shortcut">{item.shortcut}</span>
+                </>
+              )}
+            </NavLink>
+          ))}
+        </div>
+
+        <div className="nav-divider" />
+
+        <div className="nav-section">
+          <div className="nav-section-label">Portfolio</div>
+          {portfolioItems.map(item => (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+              title={collapsed ? item.label : undefined}
+            >
+              <item.icon size={18} className="nav-icon" />
+              {!collapsed && (
+                <>
+                  <span className="nav-label">{item.label}</span>
+                  <span className="nav-shortcut">{item.shortcut}</span>
+                </>
+              )}
+            </NavLink>
+          ))}
+        </div>
+
+        <div className="nav-divider" />
+
+        <div className="nav-section">
+          <div className="nav-section-label">Research</div>
+          {researchItems.map(item => (
             <NavLink
               key={item.path}
               to={item.path}

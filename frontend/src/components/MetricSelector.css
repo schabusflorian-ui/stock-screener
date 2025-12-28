@@ -187,12 +187,12 @@
 
 .metric-selector-dropdown::-webkit-scrollbar-track {
   background: rgba(0, 0, 0, 0.02);
-  border-radius: 3px;
+  border-radius: var(--radius-none);
 }
 
 .metric-selector-dropdown::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.1);
-  border-radius: 3px;
+  border-radius: var(--radius-none);
 }
 
 .metric-selector-dropdown::-webkit-scrollbar-thumb:hover {

@@ -1,5 +1,12 @@
 .watchlist-page {
-  padding: 1rem 0;
+  padding: var(--space-8) var(--space-6);
+  max-width: var(--max-content-width);
+  margin: 0 auto;
+}
+
+/* NL Query Section */
+.watchlist-page .nl-query-section {
+  margin-bottom: 1.5rem;
 }
 
 .watchlist-header {
@@ -25,7 +32,7 @@
 }
 
 .export-btn {
-  padding: var(--radius-md) 1rem;
+  padding: var(--space-3) 1rem;
   background: var(--positive);
   border: none;
   border-radius: var(--radius-md);
@@ -40,7 +47,7 @@
 }
 
 .clear-btn {
-  padding: var(--radius-md) 1rem;
+  padding: var(--space-3) 1rem;
   background: transparent;
   border: 1px solid var(--negative);
   border-radius: var(--radius-md);
@@ -83,7 +90,7 @@
 
 .cta-button {
   display: inline-block;
-  padding: var(--radius-lg) 1.5rem;
+  padding: var(--space-4) 1.5rem;
   background: var(--brand-primary);
   border-radius: var(--radius-md);
   color: white;
@@ -119,7 +126,7 @@
 
 .watchlist-table th,
 .watchlist-table td {
-  padding: var(--radius-lg);
+  padding: var(--space-4);
   text-align: left;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
@@ -192,6 +199,31 @@
   font-weight: 500;
   font-size: 0.875rem;
   font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+}
+
+/* Alpha Cell */
+.alpha-cell {
+  font-weight: 500;
+  font-size: 0.875rem;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+}
+
+.alpha-cell .alpha-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.alpha-cell.outperform {
+  color: var(--positive);
+}
+
+.alpha-cell.underperform {
+  color: var(--negative);
+}
+
+.alpha-cell svg {
+  flex-shrink: 0;
 }
 
 .action-buttons {
@@ -272,7 +304,17 @@
 }
 
 /* Responsive */
+@media (max-width: 1024px) {
+  .watchlist-page {
+    padding: var(--space-6) var(--space-4);
+  }
+}
+
 @media (max-width: 768px) {
+  .watchlist-page {
+    padding: var(--space-4);
+  }
+
   .watchlist-header {
     flex-direction: column;
   }

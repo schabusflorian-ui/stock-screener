@@ -1,6 +1,8 @@
 // frontend/src/pages/UpdatesPage.js
 import { useState, useEffect, useCallback } from 'react';
-import { updatesAPI, insidersAPI, capitalAPI, sentimentAPI, priceUpdatesAPI } from '../services/api';
+import { updatesAPI, insidersAPI, capitalAPI, sentimentAPI, priceUpdatesAPI, indicesAPI, secRefreshAPI, knowledgeAPI } from '../services/api';
+import { PageHeader, Callout } from '../components/ui';
+import { UpdateSystemPanel } from '../components/updates';
 import './UpdatesPage.css';
 
 // Format date for display
@@ -273,6 +275,23 @@ function UpdatesPage() {
   const [priceUpdating, setPriceUpdating] = useState(false);
   const [priceUpdateMessage, setPriceUpdateMessage] = useState(null);
 
+  // Index updates state
+  const [indexStatus, setIndexStatus] = useState(null);
+  const [indexUpdating, setIndexUpdating] = useState(false);
+  const [indexUpdateMessage, setIndexUpdateMessage] = useState(null);
+
+  // SEC Direct Refresh state
+  const [secRefreshStatus, setSecRefreshStatus] = useState(null);
+  const [secRefreshing, setSecRefreshing] = useState(false);
+  const [secRefreshMessage, setSecRefreshMessage] = useState(null);
+  const [secRefreshMode, setSecRefreshMode] = useState('watchlist');
+
+  // Knowledge Base state
+  const [knowledgeStatus, setKnowledgeStatus] = useState(null);
+  const [knowledgeRefreshing, setKnowledgeRefreshing] = useState(false);
+  const [knowledgeRefreshMessage, setKnowledgeRefreshMessage] = useState(null);
+  const [knowledgeRefreshMode, setKnowledgeRefreshMode] = useState('incremental');
+
   // Load status
   const loadStatus = useCallback(async () => {
     try {
@@ -360,6 +379,42 @@ function UpdatesPage() {
     }
   }, []);
 
+  // Load index status
+  const loadIndexStatus = useCallback(async () => {
+    try {
+      const res = await indicesAPI.getAll();
+      if (res.data?.data) {
+        setIndexStatus({
+          indices: res.data.data,
+          count: res.data.data.length,
+          lastUpdate: res.data.data[0]?.last_price_date
+        });
+      }
+    } catch (err) {
+      console.error('Error loading index status:', err);
+    }
+  }, []);
+
+  // Load SEC refresh status
+  const loadSecRefreshStatus = useCallback(async () => {
+    try {
+      const res = await secRefreshAPI.getStatus();
+      setSecRefreshStatus(res.data?.data);
+    } catch (err) {
+      console.error('Error loading SEC refresh status:', err);
+    }
+  }, []);
+
+  // Load Knowledge Base status
+  const loadKnowledgeStatus = useCallback(async () => {
+    try {
+      const res = await knowledgeAPI.getUpdateStatus();
+      setKnowledgeStatus(res.data?.data);
+    } catch (err) {
+      console.error('Error loading knowledge base status:', err);
+    }
+  }, []);
+
   // Load companies needing update
   const loadCompaniesNeedingUpdate = useCallback(async (reset = false) => {
     try {
@@ -385,18 +440,55 @@ function UpdatesPage() {
     loadCompaniesNeedingUpdate(false);
   };
 
+  // Trigger SEC direct refresh
+  const runSecRefresh = async () => {
+    try {
+      setSecRefreshing(true);
+      setSecRefreshMessage(null);
+      setError(null);
+      const res = await secRefreshAPI.run(secRefreshMode);
+      setSecRefreshMessage(res.data?.message || 'SEC refresh started');
+      setTimeout(async () => {
+        await loadSecRefreshStatus();
+        setSecRefreshing(false);
+      }, 5000);
+    } catch (err) {
+      setError(err.message);
+      setSecRefreshing(false);
+    }
+  };
+
+  // Trigger Knowledge Base refresh
+  const runKnowledgeRefresh = async () => {
+    try {
+      setKnowledgeRefreshing(true);
+      setKnowledgeRefreshMessage(null);
+      setError(null);
+      const res = await knowledgeAPI.refresh(knowledgeRefreshMode);
+      setKnowledgeRefreshMessage(res.data?.message || `Knowledge base ${knowledgeRefreshMode} refresh started`);
+      // Poll for completion
+      setTimeout(async () => {
+        await loadKnowledgeStatus();
+        setKnowledgeRefreshing(false);
+      }, 10000);
+    } catch (err) {
+      setError(err.message);
+      setKnowledgeRefreshing(false);
+    }
+  };
+
   // Initial load
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      await Promise.all([loadStatus(), loadHistory(), loadInsiderStatus(), loadCapitalStatus(), loadSentimentStatus(), loadPriceUpdateStatus()]);
+      await Promise.all([loadStatus(), loadHistory(), loadInsiderStatus(), loadCapitalStatus(), loadSentimentStatus(), loadPriceUpdateStatus(), loadIndexStatus(), loadSecRefreshStatus(), loadKnowledgeStatus()]);
       // Load companies after status to get the count
       await loadCompaniesNeedingUpdate(true);
       setLoading(false);
     };
     init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadStatus, loadHistory, loadInsiderStatus, loadCapitalStatus, loadSentimentStatus, loadPriceUpdateStatus]);
+  }, [loadStatus, loadHistory, loadInsiderStatus, loadCapitalStatus, loadSentimentStatus, loadPriceUpdateStatus, loadIndexStatus, loadSecRefreshStatus, loadKnowledgeStatus]);
 
   // Poll for progress when update is running
   useEffect(() => {
@@ -534,6 +626,22 @@ function UpdatesPage() {
     }
   };
 
+  // Trigger index update
+  const runIndexUpdate = async () => {
+    try {
+      setIndexUpdating(true);
+      setIndexUpdateMessage(null);
+      setError(null);
+      const res = await indicesAPI.update();
+      setIndexUpdateMessage(res.data?.message || 'Index update completed');
+      await loadIndexStatus();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIndexUpdating(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="updates-page">
@@ -546,17 +654,19 @@ function UpdatesPage() {
 
   return (
     <div className="updates-page">
-      <header className="page-header">
-        <h1>Data Updates</h1>
-        <p className="subtitle">Manage quarterly SEC data imports</p>
-      </header>
+      <PageHeader
+        title="Data Updates"
+        subtitle="Manage quarterly SEC data imports"
+      />
 
       {error && (
-        <div className="error-banner">
-          <span>{error}</span>
-          <button onClick={() => setError(null)}>Dismiss</button>
-        </div>
+        <Callout type="error" dismissible onDismiss={() => setError(null)}>
+          {error}
+        </Callout>
       )}
+
+      {/* Centralized Update System Panel */}
+      <UpdateSystemPanel />
 
       {/* Current Update Section */}
       <div className="card update-control-card">
@@ -1000,6 +1110,278 @@ function UpdatesPage() {
         {priceUpdateMessage && !priceUpdating && (
           <div className="update-result success">
             {priceUpdateMessage}
+          </div>
+        )}
+      </div>
+
+      {/* Market Indices Update */}
+      <div className="card index-update-card">
+        <h3>Market Indices Data</h3>
+        <p className="card-description">
+          Update historical prices and metrics for market indices (S&P 500, Dow Jones, NASDAQ, Russell 2000).
+        </p>
+
+        {indexStatus && (
+          <>
+            {indexStatus.lastUpdate && (
+              <div className="last-update-info">
+                Last updated: {formatDate(indexStatus.lastUpdate)}
+              </div>
+            )}
+            <div className="index-stats-grid">
+              <div className="stat-item">
+                <span className="stat-value">{formatNumber(indexStatus.count)}</span>
+                <span className="stat-label">Indices Tracked</span>
+              </div>
+              {indexStatus.indices?.slice(0, 4).map(idx => (
+                <div key={idx.symbol} className="stat-item">
+                  <span className="stat-value">
+                    <span className={idx.change_1d_pct >= 0 ? 'positive' : 'negative'}>
+                      {idx.change_1d_pct >= 0 ? '+' : ''}{idx.change_1d_pct?.toFixed(2)}%
+                    </span>
+                  </span>
+                  <span className="stat-label">{idx.short_name}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        <div className="update-controls">
+          <div className="control-row buttons">
+            <button
+              onClick={loadIndexStatus}
+              disabled={indexUpdating}
+              className="btn-secondary"
+            >
+              Refresh Status
+            </button>
+            <button
+              onClick={runIndexUpdate}
+              disabled={indexUpdating}
+              className="btn-primary"
+            >
+              {indexUpdating ? 'Updating...' : 'Update Index Prices'}
+            </button>
+          </div>
+        </div>
+
+        {indexUpdating && (
+          <div className="update-message">
+            Fetching latest index prices from Yahoo Finance... This may take a minute.
+          </div>
+        )}
+
+        {indexUpdateMessage && !indexUpdating && (
+          <div className="update-result success">
+            {indexUpdateMessage}
+          </div>
+        )}
+      </div>
+
+      {/* SEC Direct Refresh */}
+      <div className="card sec-refresh-card">
+        <h3>SEC Direct Filing Refresh</h3>
+        <p className="card-description">
+          Fetch latest 10-K and 10-Q filings directly from SEC EDGAR API for individual companies.
+        </p>
+
+        {secRefreshStatus && (
+          <>
+            <div className="sec-refresh-stats-grid">
+              <div className="stat-item">
+                <span className="stat-value">{formatNumber(secRefreshStatus.watchlistCount)}</span>
+                <span className="stat-label">Watchlist Companies</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value">{formatNumber(secRefreshStatus.recentUpdates?.length || 0)}</span>
+                <span className="stat-label">Updated (30d)</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value highlight-warning">{formatNumber(secRefreshStatus.staleCompanies?.length || 0)}</span>
+                <span className="stat-label">Stale Data (120d+)</span>
+              </div>
+            </div>
+
+            {secRefreshStatus.recentUpdates && secRefreshStatus.recentUpdates.length > 0 && (
+              <div className="recent-updates-list">
+                <span className="breakdown-label">Recent Updates: </span>
+                {secRefreshStatus.recentUpdates.slice(0, 5).map((update, i) => (
+                  <span key={update.symbol} className="update-item">
+                    {update.symbol} ({update.latest_filing})
+                    {i < Math.min(secRefreshStatus.recentUpdates.length, 5) - 1 ? ', ' : ''}
+                  </span>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        <div className="update-controls">
+          <div className="control-row">
+            <label>
+              <span>Mode:</span>
+              <select
+                value={secRefreshMode}
+                onChange={(e) => setSecRefreshMode(e.target.value)}
+                disabled={secRefreshing}
+              >
+                <option value="watchlist">Watchlist Only</option>
+                <option value="all">All Companies (Top 50)</option>
+              </select>
+            </label>
+          </div>
+          <div className="control-row buttons">
+            <button
+              onClick={loadSecRefreshStatus}
+              disabled={secRefreshing}
+              className="btn-secondary"
+            >
+              Refresh Status
+            </button>
+            <button
+              onClick={runSecRefresh}
+              disabled={secRefreshing}
+              className="btn-primary"
+            >
+              {secRefreshing ? 'Refreshing...' : 'Run SEC Refresh'}
+            </button>
+          </div>
+        </div>
+
+        {secRefreshing && (
+          <div className="update-message">
+            Fetching latest filings from SEC EDGAR... This may take several minutes.
+          </div>
+        )}
+
+        {secRefreshMessage && !secRefreshing && (
+          <div className="update-result success">
+            {secRefreshMessage}
+          </div>
+        )}
+      </div>
+
+      {/* AI Knowledge Base */}
+      <div className="card knowledge-update-card">
+        <h3>AI Knowledge Base</h3>
+        <p className="card-description">
+          Investment wisdom from Buffett, Marks, Damodaran, Taleb, a16z, ARK Invest, and more.
+          Powers AI analyst personas and contextual insights.
+        </p>
+
+        {knowledgeStatus && (
+          <>
+            {knowledgeStatus.database && (
+              <div className="last-update-info">
+                Vector DB: {knowledgeStatus.database.sizeMB} MB,
+                modified {formatDate(knowledgeStatus.database.modified)}
+              </div>
+            )}
+            <div className="knowledge-stats-grid">
+              <div className="stat-item">
+                <span className="stat-value">
+                  {knowledgeStatus.vectorStore?.total_documents
+                    ? formatNumber(knowledgeStatus.vectorStore.total_documents)
+                    : '-'}
+                </span>
+                <span className="stat-label">Vector Embeddings</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value">
+                  {knowledgeStatus.sources ? Object.keys(knowledgeStatus.sources).length : '-'}
+                </span>
+                <span className="stat-label">Sources</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value">
+                  {knowledgeStatus.vectorStore?.topics
+                    ? Object.keys(knowledgeStatus.vectorStore.topics).length
+                    : '-'}
+                </span>
+                <span className="stat-label">Topics</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value">
+                  {knowledgeStatus.sources
+                    ? Object.values(knowledgeStatus.sources).reduce((a, b) => a + b, 0)
+                    : '-'}
+                </span>
+                <span className="stat-label">Raw Documents</span>
+              </div>
+            </div>
+
+            {knowledgeStatus.sources && Object.keys(knowledgeStatus.sources).length > 0 && (
+              <div className="sources-breakdown">
+                <span className="breakdown-label">Sources: </span>
+                {Object.entries(knowledgeStatus.sources)
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 6)
+                  .map(([source, count], i) => (
+                    <span key={source} className="source-item">
+                      {source.split('/').pop()}: {count}
+                      {i < Math.min(Object.keys(knowledgeStatus.sources).length, 6) - 1 ? ', ' : ''}
+                    </span>
+                  ))}
+              </div>
+            )}
+
+            {knowledgeStatus.history && knowledgeStatus.history.length > 0 && (
+              <div className="refresh-history">
+                <span className="breakdown-label">Recent Refreshes: </span>
+                {knowledgeStatus.history.slice(0, 3).map((run, i) => (
+                  <span key={i} className="history-item">
+                    {run.success ? '✓' : '✗'} {run.incremental ? 'incr' : 'full'} ({run.duration})
+                    {i < Math.min(knowledgeStatus.history.length, 3) - 1 ? ', ' : ''}
+                  </span>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        <div className="update-controls">
+          <div className="control-row">
+            <label>
+              <span>Mode:</span>
+              <select
+                value={knowledgeRefreshMode}
+                onChange={(e) => setKnowledgeRefreshMode(e.target.value)}
+                disabled={knowledgeRefreshing}
+              >
+                <option value="incremental">Incremental (Tech sources only)</option>
+                <option value="full">Full Refresh (All sources)</option>
+                <option value="rebuild">Rebuild Embeddings Only</option>
+              </select>
+            </label>
+          </div>
+          <div className="control-row buttons">
+            <button
+              onClick={loadKnowledgeStatus}
+              disabled={knowledgeRefreshing}
+              className="btn-secondary"
+            >
+              Refresh Status
+            </button>
+            <button
+              onClick={runKnowledgeRefresh}
+              disabled={knowledgeRefreshing}
+              className="btn-primary"
+            >
+              {knowledgeRefreshing ? 'Refreshing...' : 'Run Knowledge Refresh'}
+            </button>
+          </div>
+        </div>
+
+        {knowledgeRefreshing && (
+          <div className="update-message">
+            Refreshing knowledge base... This may take several minutes for a full refresh.
+          </div>
+        )}
+
+        {knowledgeRefreshMessage && !knowledgeRefreshing && (
+          <div className="update-result success">
+            {knowledgeRefreshMessage}
           </div>
         )}
       </div>

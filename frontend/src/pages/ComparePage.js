@@ -1,95 +1,32 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
-import { companyAPI, pricesAPI } from '../services/api';
+import { Link, useNavigate } from 'react-router-dom';
+import { companyAPI, pricesAPI, indicesAPI } from '../services/api';
+import { NLQueryBar } from '../components/nl';
+import { PageHeader } from '../components/ui';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   AreaChart, Area, ComposedChart, Cell, ReferenceLine
 } from 'recharts';
-import { PeriodToggle, WatchlistButton } from '../components';
+import { PeriodToggle, WatchlistButton, AlphaCompareChart } from '../components';
 import './ComparePage.css';
 
-// Organized metrics by category
-const METRIC_CATEGORIES = {
-  profitability: {
-    label: 'Profitability',
-    metrics: [
-      { key: 'roic', label: 'ROIC', format: 'percent', description: 'Return on Invested Capital', higherBetter: true },
-      { key: 'roe', label: 'ROE', format: 'percent', description: 'Return on Equity', higherBetter: true },
-      { key: 'roa', label: 'ROA', format: 'percent', description: 'Return on Assets', higherBetter: true },
-    ]
-  },
-  margins: {
-    label: 'Margins',
-    metrics: [
-      { key: 'gross_margin', label: 'Gross Margin', format: 'percent', description: 'Gross Profit / Revenue', higherBetter: true },
-      { key: 'operating_margin', label: 'Operating Margin', format: 'percent', description: 'Operating Income / Revenue', higherBetter: true },
-      { key: 'net_margin', label: 'Net Margin', format: 'percent', description: 'Net Income / Revenue', higherBetter: true },
-    ]
-  },
-  cashFlow: {
-    label: 'Cash Flow',
-    metrics: [
-      { key: 'fcf_yield', label: 'FCF Yield', format: 'percent', description: 'Free Cash Flow / Market Cap', higherBetter: true },
-      { key: 'fcf_margin', label: 'FCF Margin', format: 'percent', description: 'FCF / Revenue', higherBetter: true },
-    ]
-  },
-  valuation: {
-    label: 'Valuation',
-    metrics: [
-      { key: 'pe_ratio', label: 'P/E Ratio', format: 'ratio', description: 'Price / Earnings', higherBetter: false },
-      { key: 'pb_ratio', label: 'P/B Ratio', format: 'ratio', description: 'Price / Book Value', higherBetter: false },
-      { key: 'ps_ratio', label: 'P/S Ratio', format: 'ratio', description: 'Price / Sales', higherBetter: false },
-      { key: 'ev_ebitda', label: 'EV/EBITDA', format: 'ratio', description: 'Enterprise Value / EBITDA', higherBetter: false },
-    ]
-  },
-  financialHealth: {
-    label: 'Financial Health',
-    metrics: [
-      { key: 'debt_to_equity', label: 'Debt/Equity', format: 'ratio', description: 'Total Debt / Equity', higherBetter: false },
-      { key: 'debt_to_assets', label: 'Debt/Assets', format: 'ratio', description: 'Total Debt / Assets', higherBetter: false },
-      { key: 'current_ratio', label: 'Current Ratio', format: 'ratio', description: 'Current Assets / Liabilities', higherBetter: true },
-      { key: 'quick_ratio', label: 'Quick Ratio', format: 'ratio', description: 'Liquid Assets / Liabilities', higherBetter: true },
-      { key: 'interest_coverage', label: 'Interest Coverage', format: 'ratio', description: 'EBIT / Interest Expense', higherBetter: true },
-    ]
-  },
-  growth: {
-    label: 'Growth',
-    metrics: [
-      { key: 'revenue_growth_yoy', label: 'Revenue Growth', format: 'percent', description: 'YoY Revenue Growth', higherBetter: true },
-      { key: 'earnings_growth_yoy', label: 'Earnings Growth', format: 'percent', description: 'YoY Earnings Growth', higherBetter: true },
-      { key: 'fcf_growth_yoy', label: 'FCF Growth', format: 'percent', description: 'YoY FCF Growth', higherBetter: true },
-    ]
-  },
-  efficiency: {
-    label: 'Efficiency',
-    metrics: [
-      { key: 'asset_turnover', label: 'Asset Turnover', format: 'ratio', description: 'Revenue / Assets', higherBetter: true },
-    ]
-  },
-  price: {
-    label: 'Price Performance',
-    metrics: [
-      { key: 'current_price', label: 'Current Price', format: 'currency_price', description: 'Latest stock price', higherBetter: null },
-      { key: 'change_1d', label: '1D Change', format: 'percent', description: '1 day price change', higherBetter: true },
-      { key: 'change_1w', label: '1W Change', format: 'percent', description: '1 week price change', higherBetter: true },
-      { key: 'change_1m', label: '1M Change', format: 'percent', description: '1 month price change', higherBetter: true },
-      { key: 'change_3m', label: '3M Change', format: 'percent', description: '3 month price change', higherBetter: true },
-      { key: 'change_ytd', label: 'YTD Change', format: 'percent', description: 'Year-to-date price change', higherBetter: true },
-      { key: 'change_1y', label: '1Y Change', format: 'percent', description: '1 year price change', higherBetter: true },
-      { key: 'high_52w', label: '52W High', format: 'currency_price', description: '52 week high', higherBetter: null },
-      { key: 'low_52w', label: '52W Low', format: 'currency_price', description: '52 week low', higherBetter: null },
-      { key: 'from_52w_high', label: 'From 52W High', format: 'percent', description: 'Distance from 52 week high', higherBetter: false },
-    ]
-  }
-};
+// Import from unified metrics configuration
+import {
+  getComparePageCategories,
+  DEFAULT_COMPARE_METRICS,
+  RADAR_METRICS,
+  formatMetricValue
+} from '../config/metrics';
+
+// Get metrics from unified config
+const METRIC_CATEGORIES = getComparePageCategories();
 
 // Flatten all metrics for easy lookup
 const ALL_METRICS = Object.values(METRIC_CATEGORIES).flatMap(cat => cat.metrics);
 
-// Default metrics for different views
-const DEFAULT_TABLE_METRICS = ['roic', 'roe', 'gross_margin', 'net_margin', 'fcf_yield', 'debt_to_equity', 'current_ratio', 'revenue_growth_yoy'];
-const RADAR_METRICS = ['roic', 'roe', 'gross_margin', 'net_margin', 'fcf_yield', 'current_ratio'];
+// Default metrics for table view
+const DEFAULT_TABLE_METRICS = DEFAULT_COMPARE_METRICS;
 
 const COMPANY_COLORS = ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#3b82f6'];
 
@@ -117,6 +54,7 @@ const formatCurrencyShort = (value) => {
 };
 
 function ComparePage() {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [selectedCompanies, setSelectedCompanies] = useState([]);
@@ -129,6 +67,10 @@ function ComparePage() {
   const [viewMode, setViewMode] = useState('overview');
   const [allCompanies, setAllCompanies] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [marketIndices, setMarketIndices] = useState([]);
+  const [selectedIndices, setSelectedIndices] = useState([]);
+  const [indexPriceData, setIndexPriceData] = useState({});
+  const [companyPrices, setCompanyPrices] = useState({});
 
   // Load all companies for search
   useEffect(() => {
@@ -141,6 +83,19 @@ function ComparePage() {
       }
     };
     loadCompanies();
+  }, []);
+
+  // Load market indices
+  useEffect(() => {
+    const loadIndices = async () => {
+      try {
+        const response = await indicesAPI.getAll();
+        setMarketIndices(response.data?.data || []);
+      } catch (error) {
+        console.error('Error loading market indices:', error);
+      }
+    };
+    loadIndices();
   }, []);
 
   // Search companies
@@ -232,10 +187,20 @@ function ComparePage() {
     setSearchQuery('');
     setSearchResults([]);
 
-    const data = await loadCompanyData(symbol);
+    const [data, priceRes] = await Promise.all([
+      loadCompanyData(symbol),
+      pricesAPI.get(symbol, { period: '1y' }).catch(() => ({ data: null }))
+    ]);
+
     if (data) {
       setCompanyData(prev => ({ ...prev, [symbol]: data }));
       setBreakdownData(prev => ({ ...prev, [symbol]: data.breakdown }));
+    }
+    if (priceRes.data?.prices) {
+      setCompanyPrices(prev => ({
+        ...prev,
+        [symbol]: priceRes.data.prices.map(p => ({ date: p.date, close: p.close }))
+      }));
     }
     setLoading(false);
   };
@@ -248,6 +213,52 @@ function ComparePage() {
       return newData;
     });
     setBreakdownData(prev => {
+      const newData = { ...prev };
+      delete newData[symbol];
+      return newData;
+    });
+    setCompanyPrices(prev => {
+      const newData = { ...prev };
+      delete newData[symbol];
+      return newData;
+    });
+  };
+
+  // Toggle index selection
+  const toggleIndex = async (index) => {
+    const symbol = index.short_name;
+    if (selectedIndices.find(i => i.short_name === symbol)) {
+      // Remove index
+      setSelectedIndices(prev => prev.filter(i => i.short_name !== symbol));
+      setIndexPriceData(prev => {
+        const newData = { ...prev };
+        delete newData[symbol];
+        return newData;
+      });
+    } else {
+      // Add index (max 2 indices)
+      if (selectedIndices.length >= 2) {
+        alert('Maximum 2 indices can be compared at once');
+        return;
+      }
+      setSelectedIndices(prev => [...prev, index]);
+      // Load price data for this index
+      try {
+        const priceRes = await indicesAPI.getPrices(symbol, '1y');
+        const prices = priceRes.data?.data || [];
+        setIndexPriceData(prev => ({
+          ...prev,
+          [symbol]: prices.map(p => ({ date: p.date, close: p.close }))
+        }));
+      } catch (error) {
+        console.error(`Error loading price data for ${symbol}:`, error);
+      }
+    }
+  };
+
+  const removeIndex = (symbol) => {
+    setSelectedIndices(prev => prev.filter(i => i.short_name !== symbol));
+    setIndexPriceData(prev => {
       const newData = { ...prev };
       delete newData[symbol];
       return newData;
@@ -436,6 +447,65 @@ function ComparePage() {
     }).sort((a, b) => b.score - a.score);
   };
 
+  // Get normalized price performance data for comparison chart
+  const getPricePerformanceData = () => {
+    // Collect all unique dates from companies and indices
+    const allDates = new Set();
+
+    // Add company price dates
+    selectedCompanies.forEach(symbol => {
+      companyPrices[symbol]?.forEach(p => allDates.add(p.date));
+    });
+
+    // Add index price dates
+    selectedIndices.forEach(index => {
+      indexPriceData[index.short_name]?.forEach(p => allDates.add(p.date));
+    });
+
+    const sortedDates = Array.from(allDates).sort();
+    if (sortedDates.length === 0) return [];
+
+    // Get base prices (first available price for each)
+    const basePrices = {};
+    selectedCompanies.forEach(symbol => {
+      const prices = companyPrices[symbol];
+      if (prices?.length) {
+        const firstPrice = prices.find(p => p.close);
+        if (firstPrice) basePrices[symbol] = firstPrice.close;
+      }
+    });
+    selectedIndices.forEach(index => {
+      const prices = indexPriceData[index.short_name];
+      if (prices?.length) {
+        const firstPrice = prices.find(p => p.close);
+        if (firstPrice) basePrices[index.short_name] = firstPrice.close;
+      }
+    });
+
+    // Build normalized data points
+    return sortedDates.map(date => {
+      const point = { date: date.substring(5) }; // MM-DD format
+
+      // Add company performance
+      selectedCompanies.forEach(symbol => {
+        const priceData = companyPrices[symbol]?.find(p => p.date === date);
+        if (priceData?.close && basePrices[symbol]) {
+          point[symbol] = ((priceData.close - basePrices[symbol]) / basePrices[symbol]) * 100;
+        }
+      });
+
+      // Add index performance
+      selectedIndices.forEach(index => {
+        const priceData = indexPriceData[index.short_name]?.find(p => p.date === date);
+        if (priceData?.close && basePrices[index.short_name]) {
+          point[index.short_name] = ((priceData.close - basePrices[index.short_name]) / basePrices[index.short_name]) * 100;
+        }
+      });
+
+      return point;
+    });
+  };
+
   const exportToCSV = () => {
     if (selectedCompanies.length === 0) return;
 
@@ -466,9 +536,18 @@ function ComparePage() {
 
   return (
     <div className="compare-page">
-      <div className="compare-header">
-        <h1>Company Comparison</h1>
-        <p>Compare up to 5 companies with detailed metrics and analysis</p>
+      <PageHeader
+        title="Company Comparison"
+        subtitle="Compare up to 5 companies with detailed metrics and analysis"
+      />
+
+      {/* Natural Language Query Bar */}
+      <div className="nl-query-section">
+        <NLQueryBar
+          placeholder="Try: 'Compare AAPL to MSFT' or 'Find stocks similar to NVDA'..."
+          context={{ page: 'compare', symbols: selectedCompanies }}
+          onResultSelect={(symbol) => navigate(`/company/${symbol}`)}
+        />
       </div>
 
       {/* Company Search */}
@@ -497,10 +576,32 @@ function ComparePage() {
             </div>
           )}
         </div>
+
+        {/* Market Index Quick Select */}
+        {marketIndices.length > 0 && (
+          <div className="index-selector">
+            <span className="index-label">Compare vs:</span>
+            <div className="index-buttons">
+              {marketIndices.map(index => {
+                const isSelected = selectedIndices.find(i => i.short_name === index.short_name);
+                return (
+                  <button
+                    key={index.short_name}
+                    className={`index-btn ${isSelected ? 'active' : ''}`}
+                    onClick={() => toggleIndex(index)}
+                    title={index.name}
+                  >
+                    {index.short_name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Selected Companies Tags */}
-      {selectedCompanies.length > 0 && (
+      {(selectedCompanies.length > 0 || selectedIndices.length > 0) && (
         <div className="selected-companies">
           {selectedCompanies.map((symbol, idx) => {
             const fye = companyData[symbol]?.fiscalYearEnd;
@@ -528,6 +629,19 @@ function ComparePage() {
               </div>
             );
           })}
+          {selectedIndices.map((index, idx) => (
+            <div
+              key={index.short_name}
+              className="company-tag index-tag"
+              style={{ borderColor: '#64748b' }}
+            >
+              <span className="tag-color" style={{ backgroundColor: '#64748b' }} />
+              <span className="tag-symbol">{index.short_name}</span>
+              <span className="tag-name">{index.name}</span>
+              <span className="tag-badge">Index</span>
+              <button className="tag-remove" onClick={() => removeIndex(index.short_name)}>×</button>
+            </div>
+          ))}
         </div>
       )}
 
@@ -669,6 +783,57 @@ function ComparePage() {
                     </div>
                   </div>
 
+                  {/* Price Performance vs Indices */}
+                  {(selectedCompanies.length > 0 || selectedIndices.length > 0) && Object.keys(companyPrices).length > 0 && (
+                    <div className="performance-section">
+                      <h3>
+                        Price Performance (1Y)
+                        {selectedIndices.length > 0 && (
+                          <span className="section-subtitle"> vs {selectedIndices.map(i => i.short_name).join(', ')}</span>
+                        )}
+                      </h3>
+                      <ResponsiveContainer width="100%" height={300}>
+                        <LineChart data={getPricePerformanceData()}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                          <XAxis dataKey="date" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 11 }} interval="preserveStartEnd" />
+                          <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8' }} tickFormatter={(v) => `${v.toFixed(0)}%`} />
+                          <Tooltip
+                            contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem' }}
+                            formatter={(v) => v !== null ? `${v.toFixed(1)}%` : '-'}
+                            labelFormatter={(label) => `Date: ${label}`}
+                          />
+                          <Legend />
+                          <ReferenceLine y={0} stroke="#64748b" strokeDasharray="3 3" />
+                          {/* Company price lines */}
+                          {selectedCompanies.map((symbol, idx) => (
+                            <Line
+                              key={symbol}
+                              type="monotone"
+                              dataKey={symbol}
+                              stroke={COMPANY_COLORS[idx]}
+                              strokeWidth={2}
+                              dot={false}
+                              connectNulls
+                            />
+                          ))}
+                          {/* Index price lines - dashed style */}
+                          {selectedIndices.map((index) => (
+                            <Line
+                              key={index.short_name}
+                              type="monotone"
+                              dataKey={index.short_name}
+                              stroke="#64748b"
+                              strokeWidth={2}
+                              strokeDasharray="5 5"
+                              dot={false}
+                              connectNulls
+                            />
+                          ))}
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+
                   {/* Quick Comparison Table */}
                   <div className="quick-table">
                     <h3>Key Metrics at a Glance</h3>
@@ -803,6 +968,74 @@ function ComparePage() {
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Price Returns Comparison Table */}
+                  {(selectedCompanies.length > 0 && Object.keys(companyPrices).length > 0) && (
+                    <div className="metrics-table-wrapper">
+                      <h4 className="subsection-title">
+                        Price Returns vs Indices
+                        {selectedIndices.length > 0 && (
+                          <span className="section-subtitle"> ({selectedIndices.map(i => i.short_name).join(', ')})</span>
+                        )}
+                      </h4>
+                      <table className="metrics-table price-returns-table">
+                        <thead>
+                          <tr>
+                            <th>Period</th>
+                            {selectedCompanies.map((symbol, idx) => (
+                              <th key={symbol} style={{ borderTopColor: COMPANY_COLORS[idx] }}>
+                                {symbol}
+                              </th>
+                            ))}
+                            {selectedIndices.map((index) => (
+                              <th key={index.short_name} style={{ borderTopColor: '#64748b' }}>
+                                {index.short_name}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {['1D', '1W', '1M', '3M', 'YTD', '1Y'].map(period => {
+                            const periodKey = {
+                              '1D': 'change_1d',
+                              '1W': 'change_1w',
+                              '1M': 'change_1m',
+                              '3M': 'change_3m',
+                              'YTD': 'change_ytd',
+                              '1Y': 'change_1y'
+                            }[period];
+
+                            return (
+                              <tr key={period}>
+                                <td className="metric-name">{period}</td>
+                                {selectedCompanies.map((symbol) => {
+                                  const value = companyData[symbol]?.latestMetrics?.[periodKey];
+                                  const isPositive = value > 0;
+                                  const isNegative = value < 0;
+                                  return (
+                                    <td key={symbol} className={isPositive ? 'positive' : isNegative ? 'negative' : ''}>
+                                      {value !== null && value !== undefined ? `${value >= 0 ? '+' : ''}${value.toFixed(1)}%` : '-'}
+                                    </td>
+                                  );
+                                })}
+                                {selectedIndices.map((index) => {
+                                  // Get index returns from current price data if available
+                                  const indexChange = index[periodKey.replace('change_', 'return_')];
+                                  const isPositive = indexChange > 0;
+                                  const isNegative = indexChange < 0;
+                                  return (
+                                    <td key={index.short_name} className={`index-value ${isPositive ? 'positive' : isNegative ? 'negative' : ''}`}>
+                                      {indexChange !== null && indexChange !== undefined ? `${indexChange >= 0 ? '+' : ''}${indexChange.toFixed(1)}%` : '-'}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -846,6 +1079,65 @@ function ComparePage() {
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
+
+                    {/* Price Performance Chart - Companies vs Indices */}
+                    {(selectedCompanies.length > 0 || selectedIndices.length > 0) && (
+                      <div className="chart-card full-width">
+                        <h4>
+                          Price Performance (1Y)
+                          {selectedIndices.length > 0 && (
+                            <span className="chart-subtitle"> vs {selectedIndices.map(i => i.short_name).join(', ')}</span>
+                          )}
+                        </h4>
+                        <ResponsiveContainer width="100%" height={350}>
+                          <LineChart data={getPricePerformanceData()}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                            <XAxis dataKey="date" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 11 }} interval="preserveStartEnd" />
+                            <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8' }} tickFormatter={(v) => `${v.toFixed(0)}%`} />
+                            <Tooltip
+                              contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem' }}
+                              formatter={(v) => v !== null ? `${v.toFixed(1)}%` : '-'}
+                              labelFormatter={(label) => `Date: ${label}`}
+                            />
+                            <Legend />
+                            <ReferenceLine y={0} stroke="#64748b" strokeDasharray="3 3" />
+                            {/* Company price lines */}
+                            {selectedCompanies.map((symbol, idx) => (
+                              <Line
+                                key={symbol}
+                                type="monotone"
+                                dataKey={symbol}
+                                stroke={COMPANY_COLORS[idx]}
+                                strokeWidth={2}
+                                dot={false}
+                                connectNulls
+                              />
+                            ))}
+                            {/* Index price lines - dashed style */}
+                            {selectedIndices.map((index, idx) => (
+                              <Line
+                                key={index.short_name}
+                                type="monotone"
+                                dataKey={index.short_name}
+                                stroke="#64748b"
+                                strokeWidth={2}
+                                strokeDasharray="5 5"
+                                dot={false}
+                                connectNulls
+                              />
+                            ))}
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+
+                    {/* Alpha Comparison Chart */}
+                    {selectedCompanies.length > 0 && (
+                      <div className="chart-card full-width">
+                        <h4>Alpha vs S&P 500</h4>
+                        <AlphaCompareChart symbols={selectedCompanies} height={320} />
+                      </div>
+                    )}
 
                     <div className="chart-card">
                       <h4>Profitability Comparison</h4>
@@ -1004,11 +1296,15 @@ function ComparePage() {
             <span>Try comparing:</span>
             <div className="suggestion-groups">
               <div className="suggestion-group">
-                <span className="group-label">Tech Giants</span>
+                <span className="group-label">Mag 7</span>
                 <div className="suggestion-buttons">
                   <button onClick={() => addCompany('AAPL')}>AAPL</button>
                   <button onClick={() => addCompany('MSFT')}>MSFT</button>
                   <button onClick={() => addCompany('GOOGL')}>GOOGL</button>
+                  <button onClick={() => addCompany('AMZN')}>AMZN</button>
+                  <button onClick={() => addCompany('NVDA')}>NVDA</button>
+                  <button onClick={() => addCompany('META')}>META</button>
+                  <button onClick={() => addCompany('TSLA')}>TSLA</button>
                 </div>
               </div>
               <div className="suggestion-group">
@@ -1016,7 +1312,17 @@ function ComparePage() {
                 <div className="suggestion-buttons">
                   <button onClick={() => addCompany('JPM')}>JPM</button>
                   <button onClick={() => addCompany('BAC')}>BAC</button>
-                  <button onClick={() => addCompany('WFC')}>WFC</button>
+                  <button onClick={() => addCompany('GS')}>GS</button>
+                  <button onClick={() => addCompany('MS')}>MS</button>
+                </div>
+              </div>
+              <div className="suggestion-group">
+                <span className="group-label">Pharma</span>
+                <div className="suggestion-buttons">
+                  <button onClick={() => addCompany('JNJ')}>JNJ</button>
+                  <button onClick={() => addCompany('PFE')}>PFE</button>
+                  <button onClick={() => addCompany('MRK')}>MRK</button>
+                  <button onClick={() => addCompany('LLY')}>LLY</button>
                 </div>
               </div>
             </div>

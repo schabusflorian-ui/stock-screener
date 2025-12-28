@@ -1,6 +1,6 @@
 // frontend/src/components/layout/CommandPalette.js
-import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Command } from 'cmdk';
 import {
   Search,
@@ -14,17 +14,75 @@ import {
   Plus,
   ArrowRight,
   Clock,
-  Zap
+  Zap,
+  Bot,
+  Send,
+  Sparkles,
+  Loader,
+  Building2,
+  HelpCircle
 } from 'lucide-react';
-import { companyAPI } from '../../services/api';
+import { companyAPI, analystAPI, sentimentAPI } from '../../services/api';
 import './CommandPalette.css';
 
 function CommandPalette({ open, onOpenChange }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [recentSearches, setRecentSearches] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  // NL Query state
+  const [mode, setMode] = useState('search'); // 'search' or 'ask'
+  const [nlResponse, setNlResponse] = useState(null);
+  const [nlLoading, setNlLoading] = useState(false);
+  const inputRef = useRef(null);
+
+  // Company context state
+  const [currentCompany, setCurrentCompany] = useState(null);
+  const [companyContext, setCompanyContext] = useState(null);
+  const [loadingContext, setLoadingContext] = useState(false);
+
+  // Detect current company from URL
+  useEffect(() => {
+    const match = location.pathname.match(/^\/company\/([A-Z0-9.]+)$/i);
+    if (match) {
+      const symbol = match[1].toUpperCase();
+      setCurrentCompany(symbol);
+    } else {
+      setCurrentCompany(null);
+      setCompanyContext(null);
+    }
+  }, [location.pathname]);
+
+  // Load company context when on a company page and palette opens
+  useEffect(() => {
+    if (open && currentCompany && !companyContext) {
+      loadCompanyContext(currentCompany);
+    }
+  }, [open, currentCompany]);
+
+  const loadCompanyContext = async (symbol) => {
+    setLoadingContext(true);
+    try {
+      const [companyRes, metricsRes, sentimentRes] = await Promise.allSettled([
+        companyAPI.getOne(symbol),
+        companyAPI.getMetrics(symbol),
+        sentimentAPI.getAnalyst(symbol)
+      ]);
+
+      setCompanyContext({
+        company: companyRes.status === 'fulfilled' ? companyRes.value.data : null,
+        metrics: metricsRes.status === 'fulfilled' ? metricsRes.value.data?.metrics?.[0] : null,
+        analyst_ratings: sentimentRes.status === 'fulfilled' ? sentimentRes.value.data : null
+      });
+    } catch (err) {
+      console.error('Failed to load company context:', err);
+    } finally {
+      setLoadingContext(false);
+    }
+  };
 
   // Load recent searches from localStorage
   useEffect(() => {
@@ -33,6 +91,79 @@ function CommandPalette({ open, onOpenChange }) {
       setRecentSearches(JSON.parse(saved));
     }
   }, [open]);
+
+  // Reset state when closing
+  useEffect(() => {
+    if (!open) {
+      setMode('search');
+      setNlResponse(null);
+      setNlLoading(false);
+      setSearch('');
+    }
+  }, [open]);
+
+  // Detect if input looks like a question (NL query)
+  const looksLikeQuestion = useCallback((text) => {
+    if (!text || text.length < 3) return false;
+    const questionWords = ['what', 'why', 'how', 'when', 'where', 'who', 'which', 'is', 'are', 'can', 'should', 'would', 'could', 'will', 'does', 'do', 'compare', 'analyze', 'explain', 'tell', 'show', 'find'];
+    const firstWord = text.toLowerCase().split(' ')[0];
+    return questionWords.includes(firstWord) || text.endsWith('?');
+  }, []);
+
+  // Company-specific quick queries
+  const companyQueries = currentCompany ? [
+    { query: `What's the investment thesis for ${currentCompany}?`, label: 'Investment thesis' },
+    { query: `What are the main risks for ${currentCompany}?`, label: 'Key risks' },
+    { query: `Is ${currentCompany} fairly valued?`, label: 'Valuation check' },
+    { query: `What's the competitive moat for ${currentCompany}?`, label: 'Competitive moat' },
+    { query: `How is ${currentCompany}'s management?`, label: 'Management quality' }
+  ] : [];
+
+  // Handle NL Query submission
+  const handleAskAI = useCallback(async (queryOverride = null) => {
+    const queryText = queryOverride || search;
+    if (!queryText.trim() || nlLoading) return;
+
+    setNlLoading(true);
+    setNlResponse(null);
+    setMode('ask');
+    if (queryOverride) {
+      setSearch(queryOverride);
+    }
+
+    try {
+      // Create a quick conversation and get response
+      const convResponse = await analystAPI.createConversation({
+        analystId: 'value', // Value analyst for comprehensive analysis
+        companySymbol: currentCompany || undefined
+      });
+
+      const conversation = convResponse.data.conversation;
+
+      const msgResponse = await analystAPI.sendMessage(
+        conversation.id,
+        queryText,
+        currentCompany ? companyContext : null
+      );
+
+      setNlResponse({
+        query: queryText,
+        response: msgResponse.data.message.content,
+        company: currentCompany,
+        conversationId: conversation.id,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('NL Query error:', error);
+      setNlResponse({
+        query: queryText,
+        error: 'Failed to get AI response. Try again or visit the AI Analyst page.',
+        timestamp: new Date().toISOString()
+      });
+    } finally {
+      setNlLoading(false);
+    }
+  }, [search, nlLoading, currentCompany, companyContext]);
 
   // Search for companies (includes inactive for discoverability)
   useEffect(() => {
@@ -127,30 +258,131 @@ function CommandPalette({ open, onOpenChange }) {
       <div className="command-palette-container" onClick={e => e.stopPropagation()}>
         <Command className="command-palette" shouldFilter={false}>
           <div className="command-input-wrapper">
-            <Search size={18} className="command-search-icon" />
+            {mode === 'ask' ? (
+              <Bot size={18} className="command-search-icon ai" />
+            ) : (
+              <Search size={18} className="command-search-icon" />
+            )}
             <Command.Input
+              ref={inputRef}
               value={search}
-              onValueChange={setSearch}
-              placeholder="Search stocks, metrics, or commands..."
+              onValueChange={(val) => {
+                setSearch(val);
+                if (mode === 'ask' && !nlResponse) {
+                  setMode('search');
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && looksLikeQuestion(search) && !nlLoading) {
+                  e.preventDefault();
+                  handleAskAI();
+                }
+              }}
+              placeholder={mode === 'ask'
+                ? (currentCompany ? `Ask about ${currentCompany}...` : "Ask a question about investments...")
+                : (currentCompany ? `Search or ask about ${currentCompany}...` : "Search stocks or ask a question...")}
               className="command-input"
               autoFocus
             />
+            {search && looksLikeQuestion(search) && !nlLoading && mode !== 'ask' && (
+              <button
+                className="command-ask-btn"
+                onClick={handleAskAI}
+                title="Ask AI (Enter)"
+              >
+                <Sparkles size={14} />
+                Ask AI
+              </button>
+            )}
+            {nlLoading && (
+              <div className="command-loading-indicator">
+                <Loader size={14} className="spin" />
+              </div>
+            )}
             <kbd className="command-kbd">ESC</kbd>
           </div>
 
           <Command.List className="command-list">
-            {loading && (
+            {/* NL Query Response */}
+            {mode === 'ask' && (nlResponse || nlLoading) && (
+              <div className="nl-response-container">
+                {nlLoading ? (
+                  <div className="nl-loading">
+                    <Bot size={20} className="nl-loading-icon" />
+                    <div className="nl-loading-text">
+                      <span className="nl-loading-title">Thinking...</span>
+                      <span className="nl-loading-subtitle">Getting AI response</span>
+                    </div>
+                  </div>
+                ) : nlResponse?.error ? (
+                  <div className="nl-error">
+                    <span className="nl-error-icon">⚠️</span>
+                    <span>{nlResponse.error}</span>
+                    <button
+                      className="nl-retry-btn"
+                      onClick={() => navigate('/analyst')}
+                    >
+                      Open AI Analyst
+                    </button>
+                  </div>
+                ) : nlResponse ? (
+                  <div className="nl-response">
+                    <div className="nl-response-header">
+                      <Bot size={16} className="nl-response-icon" />
+                      <span className="nl-response-label">AI Response</span>
+                      {nlResponse.company && (
+                        <span className="nl-response-company">
+                          <Building2 size={12} />
+                          {nlResponse.company}
+                        </span>
+                      )}
+                    </div>
+                    <div className="nl-response-content">
+                      {nlResponse.response}
+                    </div>
+                    <div className="nl-response-actions">
+                      <button
+                        className="nl-action-btn"
+                        onClick={() => {
+                          setMode('search');
+                          setNlResponse(null);
+                          setSearch('');
+                        }}
+                      >
+                        New Search
+                      </button>
+                      <button
+                        className="nl-action-btn primary"
+                        onClick={() => {
+                          const analystUrl = nlResponse.company
+                            ? `/analyst?symbol=${nlResponse.company}`
+                            : '/analyst';
+                          navigate(analystUrl);
+                          onOpenChange(false);
+                        }}
+                      >
+                        Continue in AI Analyst →
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            )}
+
+            {mode === 'search' && loading && (
               <Command.Loading className="command-loading">
                 Searching...
               </Command.Loading>
             )}
 
-            <Command.Empty className="command-empty">
-              No results found. Try searching for a stock symbol or company name.
-            </Command.Empty>
+            {mode === 'search' && (
+              <Command.Empty className="command-empty">
+                No results found. Try searching for a stock symbol or company name.
+              </Command.Empty>
+            )}
 
             {/* Search Results */}
-            {searchResults.length > 0 && (
+            {mode === 'search' && searchResults.length > 0 && (
               <Command.Group heading="Stocks" className="command-group">
                 {searchResults.map(company => (
                   <Command.Item
@@ -174,7 +406,7 @@ function CommandPalette({ open, onOpenChange }) {
             )}
 
             {/* Recent Searches */}
-            {!search && recentSearches.length > 0 && (
+            {mode === 'search' && !search && recentSearches.length > 0 && (
               <Command.Group heading="Recent" className="command-group">
                 {recentSearches.map(item => (
                   <Command.Item
@@ -194,8 +426,35 @@ function CommandPalette({ open, onOpenChange }) {
               </Command.Group>
             )}
 
+            {/* Company-Specific Quick Queries */}
+            {mode === 'search' && !search && currentCompany && companyQueries.length > 0 && (
+              <Command.Group heading={`Ask about ${currentCompany}`} className="command-group company-queries">
+                {loadingContext ? (
+                  <div className="command-context-loading">
+                    <Loader size={14} className="spin" />
+                    <span>Loading company data...</span>
+                  </div>
+                ) : (
+                  companyQueries.map((item, idx) => (
+                    <Command.Item
+                      key={idx}
+                      value={`ask:${item.query}`}
+                      onSelect={() => handleAskAI(item.query)}
+                      className="command-item company-query-item"
+                    >
+                      <HelpCircle size={16} className="command-item-icon ai-icon" />
+                      <div className="command-item-content">
+                        <span className="command-item-label">{item.label}</span>
+                      </div>
+                      <Sparkles size={14} className="command-item-arrow ai" />
+                    </Command.Item>
+                  ))
+                )}
+              </Command.Group>
+            )}
+
             {/* Quick Actions */}
-            {!search && (
+            {mode === 'search' && !search && (
               <Command.Group heading="Actions" className="command-group">
                 <Command.Item value="action:watchlist" onSelect={handleSelect} className="command-item">
                   <Plus size={16} className="command-item-icon" />
@@ -221,7 +480,7 @@ function CommandPalette({ open, onOpenChange }) {
             )}
 
             {/* Navigation */}
-            {!search && (
+            {mode === 'search' && !search && (
               <Command.Group heading="Navigation" className="command-group">
                 <Command.Item value="/" onSelect={handleSelect} className="command-item">
                   <Home size={16} className="command-item-icon" />

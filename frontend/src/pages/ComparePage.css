@@ -1,5 +1,7 @@
 .compare-page {
-  /* Uses parent layout padding for consistent margins */
+  padding: var(--space-8) var(--space-6);
+  max-width: var(--max-content-width);
+  margin: 0 auto;
   animation: fadeIn 0.3s ease;
 }
 
@@ -8,16 +10,21 @@
   to { opacity: 1; }
 }
 
-.compare-header {
-  margin-bottom: 2rem;
+@media (max-width: 1024px) {
+  .compare-page {
+    padding: var(--space-6) var(--space-4);
+  }
 }
 
-.compare-header h1 {
-  margin-bottom: var(--radius-md);
+@media (max-width: 768px) {
+  .compare-page {
+    padding: var(--space-4);
+  }
 }
 
-.compare-header p {
-  color: var(--text-secondary);
+/* NL Query Section */
+.compare-page .nl-query-section {
+  margin-bottom: 1.5rem;
 }
 
 /* Company Search */
@@ -32,7 +39,7 @@
 
 .search-input {
   width: 100%;
-  padding: var(--radius-lg) 1rem;
+  padding: var(--space-3) 1rem;
   background: rgba(255, 255, 255, 0.7);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -74,7 +81,7 @@
   display: flex;
   align-items: center;
   gap: 1rem;
-  padding: var(--radius-lg) 1rem;
+  padding: var(--space-3) 1rem;
   cursor: pointer;
   transition: background 0.2s ease;
 }
@@ -99,22 +106,66 @@
 
 .result-sector {
   color: var(--text-tertiary);
-  font-size: var(--radius-lg);
+  font-size: var(--text-xs);
+}
+
+/* Index Selector */
+.index-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.index-label {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.index-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.index-btn {
+  padding: 0.375rem 0.75rem;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.index-btn:hover {
+  border-color: var(--brand-primary);
+  color: var(--brand-primary);
+  background: rgba(99, 102, 241, 0.04);
+}
+
+.index-btn.active {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: white;
 }
 
 /* Selected Companies */
 .selected-companies {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--radius-lg);
+  gap: var(--space-3);
   margin-bottom: 1.5rem;
 }
 
 .company-tag {
   display: flex;
   align-items: center;
-  gap: var(--radius-md);
-  padding: var(--radius-md) var(--radius-lg);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   background: rgba(255, 255, 255, 0.7);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -124,8 +175,8 @@
 }
 
 .tag-color {
-  width: var(--radius-md);
-  height: var(--radius-md);
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
 }
 
@@ -154,6 +205,21 @@
   padding: 0.125rem 0.375rem;
   background: rgba(99, 102, 241, 0.08);
   border-radius: var(--radius-sm);
+}
+
+.tag-badge {
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  padding: 0.125rem 0.375rem;
+  background: rgba(100, 116, 139, 0.1);
+  border-radius: var(--radius-sm);
+}
+
+.index-tag .tag-symbol {
+  color: #64748b;
 }
 
 .tag-remove {
@@ -188,7 +254,7 @@
 }
 
 .view-toggle button {
-  padding: var(--radius-md) 1rem;
+  padding: var(--space-2) 1rem;
   border: none;
   background: transparent;
   color: var(--text-secondary);
@@ -208,7 +274,7 @@
 }
 
 .export-btn {
-  padding: var(--radius-md) 1rem;
+  padding: var(--space-2) 1rem;
   background: var(--positive);
   border: none;
   border-radius: var(--radius-md);
@@ -249,7 +315,7 @@
 
 .comparison-table th,
 .comparison-table td {
-  padding: var(--radius-lg) 1rem;
+  padding: var(--space-3) 1rem;
   text-align: right;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
@@ -262,7 +328,7 @@
 .comparison-table th {
   color: var(--text-primary);
   font-weight: 600;
-  border-top: 3px solid transparent;
+  border-top: var(--space-1) solid transparent;
 }
 
 .comparison-table .metric-name {
@@ -300,7 +366,7 @@
 }
 
 .chart-controls select {
-  padding: var(--radius-md) 1rem;
+  padding: var(--space-2) 1rem;
   background: rgba(255, 255, 255, 0.5);
   border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-md);
@@ -341,7 +407,7 @@
 }
 
 .comparison-radar-section h3 {
-  margin-bottom: var(--radius-md);
+  margin-bottom: var(--space-2);
 }
 
 .radar-note {
@@ -368,7 +434,7 @@
 }
 
 .empty-state h3 {
-  margin-bottom: var(--radius-md);
+  margin-bottom: var(--space-2);
 }
 
 .empty-state p {
@@ -380,7 +446,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--radius-lg);
+  gap: var(--space-3);
 }
 
 .suggestions span {
@@ -388,7 +454,7 @@
 }
 
 .suggestions button {
-  padding: var(--radius-md) 1rem;
+  padding: var(--space-2) 1rem;
   background: rgba(255, 255, 255, 0.5);
   border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-md);
@@ -442,7 +508,7 @@
 }
 
 .score-rank {
-  font-size: var(--radius-lg);
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   margin-bottom: 0.25rem;
 }
@@ -463,27 +529,27 @@
   font-size: 1.5rem;
   font-weight: bold;
   color: var(--brand-primary);
-  margin-bottom: var(--radius-md);
+  margin-bottom: var(--space-2);
 }
 
 .score-bar {
   height: 6px;
   background: rgba(0, 0, 0, 0.06);
-  border-radius: 3px;
-  margin-bottom: var(--radius-lg);
+  border-radius: var(--radius-none);
+  margin-bottom: var(--space-3);
   overflow: hidden;
 }
 
 .score-fill {
   height: 100%;
-  border-radius: 3px;
+  border-radius: var(--radius-none);
   transition: width 0.5s ease;
 }
 
 .score-details {
   display: flex;
   justify-content: center;
-  gap: var(--radius-md);
+  gap: var(--space-2);
   flex-wrap: wrap;
 }
 
@@ -491,7 +557,7 @@
   font-size: 0.625rem;
   color: var(--text-tertiary);
   background: rgba(255, 255, 255, 0.7);
-  padding: 0.125rem var(--radius-sm);
+  padding: 0.125rem var(--space-1);
   border-radius: 0.25rem;
 }
 
@@ -544,7 +610,7 @@
 
 .quick-table th,
 .quick-table td {
-  padding: var(--radius-lg) 1rem;
+  padding: var(--space-3) 1rem;
   text-align: right;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
@@ -582,14 +648,14 @@
 .category-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--radius-md);
+  gap: var(--space-2);
   margin-bottom: 1.5rem;
   padding-bottom: 1rem;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .category-tabs button {
-  padding: var(--radius-md) 1rem;
+  padding: var(--space-2) 1rem;
   background: rgba(255, 255, 255, 0.5);
   border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-md);
@@ -621,7 +687,7 @@
 
 .metrics-table th,
 .metrics-table td {
-  padding: var(--radius-lg) 1rem;
+  padding: var(--space-3) 1rem;
   text-align: right;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
@@ -633,7 +699,7 @@
 
 .metrics-table th {
   font-weight: 600;
-  border-top: 3px solid var(--brand-primary);
+  border-top: var(--space-1) solid var(--brand-primary);
 }
 
 .metrics-table .metric-name {
@@ -654,9 +720,9 @@
   font-weight: 600;
   color: var(--brand-primary);
   text-transform: uppercase;
-  font-size: var(--radius-lg);
+  font-size: var(--text-xs);
   letter-spacing: 0.05em;
-  padding: var(--radius-md) 1rem;
+  padding: var(--space-2) 1rem;
 }
 
 /* Charts Section */
@@ -688,6 +754,12 @@
   margin-bottom: 1rem;
 }
 
+.chart-subtitle {
+  font-weight: 400;
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+}
+
 .chart-card.full-width {
   grid-column: 1 / -1;
 }
@@ -711,15 +783,15 @@
   background: rgba(255, 255, 255, 0.5);
   padding: 1rem;
   border-radius: var(--radius-md);
-  border-left: 3px solid var(--brand-primary);
+  border-left: var(--space-1) solid var(--brand-primary);
 }
 
 .breakdown-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--radius-lg);
-  padding-bottom: var(--radius-md);
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-2);
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
@@ -729,14 +801,14 @@
 }
 
 .breakdown-header .period {
-  font-size: var(--radius-lg);
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
 }
 
 .breakdown-item {
   display: flex;
   justify-content: space-between;
-  padding: var(--radius-sm) 0;
+  padding: var(--space-1) 0;
   font-size: 0.875rem;
 }
 
@@ -752,7 +824,7 @@
 .breakdown-item.highlight {
   background: rgba(139, 92, 246, 0.1);
   margin: 0.25rem -var(--radius-md);
-  padding: var(--radius-md);
+  padding: var(--space-2);
   border-radius: 0.25rem;
 }
 
@@ -773,21 +845,21 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--radius-md);
+  gap: var(--space-2);
 }
 
 .group-label {
-  font-size: var(--radius-lg);
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
 }
 
 .suggestion-buttons {
   display: flex;
-  gap: var(--radius-md);
+  gap: var(--space-2);
 }
 
 .suggestion-buttons button {
-  padding: var(--radius-md) 1rem;
+  padding: var(--space-2) 1rem;
   background: rgba(255, 255, 255, 0.5);
   border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-md);
@@ -805,6 +877,62 @@
   text-align: center;
   padding: 3rem;
   color: var(--text-secondary);
+}
+
+/* Performance Section (Overview) */
+.performance-section {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+  padding: 1.5rem;
+  border-radius: var(--radius-lg);
+}
+
+.performance-section h3 {
+  margin-bottom: 1rem;
+  color: var(--text-primary);
+}
+
+.section-subtitle {
+  font-weight: 400;
+  color: var(--text-tertiary);
+  font-size: 0.875rem;
+}
+
+/* Subsection Title */
+.subsection-title {
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+/* Price Returns Table */
+.price-returns-table td.positive {
+  color: var(--positive);
+  font-weight: 500;
+}
+
+.price-returns-table td.negative {
+  color: var(--negative);
+  font-weight: 500;
+}
+
+.price-returns-table td.index-value {
+  background: rgba(100, 116, 139, 0.05);
+}
+
+.price-returns-table th {
+  border-top: var(--space-1) solid var(--brand-primary);
+}
+
+.price-returns-table th:last-child,
+.price-returns-table th:nth-last-child(2) {
+  border-top-color: #64748b;
 }
 
 /* Responsive */
@@ -845,7 +973,7 @@
   .category-tabs {
     overflow-x: auto;
     flex-wrap: nowrap;
-    padding-bottom: var(--radius-md);
+    padding-bottom: var(--space-2);
   }
 
   .category-tabs button {

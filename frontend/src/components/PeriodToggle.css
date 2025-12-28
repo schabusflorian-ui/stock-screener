@@ -27,8 +27,9 @@
 }
 
 .period-btn.active {
-  background: #6366f1;
+  background: var(--brand-primary, #6366f1);
   color: white;
+  font-weight: 600;
 }
 
 .period-btn:disabled {

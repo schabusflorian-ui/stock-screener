@@ -14,11 +14,11 @@
 .news-error {
   padding: 3rem;
   text-align: center;
-  color: #6b7280;
+  color: var(--text-secondary);
 }
 
 .news-error {
-  color: #ef4444;
+  color: var(--negative);
 }
 
 /* SEC Info Banner */
@@ -36,12 +36,12 @@
   background: rgba(99, 102, 241, 0.1);
   border-radius: 0.25rem;
   font-size: 0.75rem;
-  color: #6366f1;
+  color: var(--brand-primary);
 }
 
 .sic-badge {
-  background: rgba(59, 130, 246, 0.1);
-  color: #3b82f6;
+  background: rgba(var(--info-rgb), 0.1);
+  color: var(--info);
 }
 
 /* Tab Navigation */
@@ -57,22 +57,22 @@
   padding: 0.875rem 1rem;
   background: transparent;
   border: none;
-  color: #6b7280;
+  color: var(--text-secondary);
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
-  border-bottom: 2px solid transparent;
+  border-bottom: 1px solid transparent;
 }
 
 .news-tabs button:hover {
   background: rgba(99, 102, 241, 0.04);
-  color: #374151;
+  color: var(--text-primary);
 }
 
 .news-tabs button.active {
-  color: #6366f1;
-  border-bottom-color: #6366f1;
+  color: var(--brand-primary);
+  border-bottom-color: var(--brand-primary);
   background: rgba(99, 102, 241, 0.04);
 }
 
@@ -85,7 +85,7 @@
 .no-items {
   padding: 2rem;
   text-align: center;
-  color: #6b7280;
+  color: var(--text-secondary);
 }
 
 /* Filing Legend */
@@ -96,7 +96,7 @@
   background: rgba(255, 255, 255, 0.5);
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   font-size: 0.75rem;
-  color: #6b7280;
+  color: var(--text-secondary);
 }
 
 .legend-dot {
@@ -107,9 +107,9 @@
   margin-right: 0.375rem;
 }
 
-.legend-dot.high { background: #ef4444; }
-.legend-dot.medium { background: #3b82f6; }
-.legend-dot.low { background: #64748b; }
+.legend-dot.high { background: var(--negative); }
+.legend-dot.medium { background: var(--info); }
+.legend-dot.low { background: var(--text-tertiary); }
 
 /* News Item */
 .news-item {
@@ -137,27 +137,27 @@
 
 .news-source {
   font-size: 0.75rem;
-  color: #6366f1;
+  color: var(--brand-primary);
   font-weight: 500;
 }
 
 .news-time {
   font-size: 0.75rem;
-  color: #6b7280;
+  color: var(--text-secondary);
 }
 
 .news-headline {
   margin: 0 0 0.375rem 0;
   font-size: 0.9375rem;
   font-weight: 500;
-  color: #374151;
+  color: var(--text-primary);
   line-height: 1.4;
 }
 
 .news-summary {
   margin: 0;
   font-size: 0.8125rem;
-  color: #6b7280;
+  color: var(--text-secondary);
   line-height: 1.5;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -173,7 +173,7 @@
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   text-decoration: none;
   transition: background 0.2s ease;
-  border-left: 3px solid transparent;
+  border-left: var(--space-1) solid transparent;
 }
 
 .filing-item:hover {
@@ -185,16 +185,16 @@
 }
 
 .filing-item.priority-high {
-  border-left-color: #ef4444;
-  background: rgba(239, 68, 68, 0.05);
+  border-left-color: var(--negative);
+  background: rgba(var(--negative-rgb), 0.05);
 }
 
 .filing-item.priority-medium {
-  border-left-color: #3b82f6;
+  border-left-color: var(--info);
 }
 
 .filing-item.priority-low {
-  border-left-color: #64748b;
+  border-left-color: var(--text-tertiary);
 }
 
 .filing-icon {
@@ -224,7 +224,7 @@
 .filing-form {
   font-size: 0.75rem;
   font-weight: 600;
-  color: #6366f1;
+  color: var(--brand-primary);
   background: rgba(99, 102, 241, 0.1);
   padding: 0.125rem 0.5rem;
   border-radius: 0.25rem;
@@ -232,19 +232,19 @@
 
 .filing-date {
   font-size: 0.75rem;
-  color: #6b7280;
+  color: var(--text-secondary);
 }
 
 .filing-title {
   margin: 0;
   font-size: 0.875rem;
-  color: #374151;
+  color: var(--text-primary);
   line-height: 1.4;
 }
 
 .filing-report-date {
   font-size: 0.75rem;
-  color: #6b7280;
+  color: var(--text-secondary);
   margin-top: 0.25rem;
   display: block;
 }
@@ -255,7 +255,7 @@
   background: rgba(255, 255, 255, 0.5);
   border-top: 1px solid rgba(0, 0, 0, 0.06);
   font-size: 0.75rem;
-  color: #6b7280;
+  color: var(--text-secondary);
   text-align: right;
 }
 
@@ -270,7 +270,7 @@
 
 .news-content::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.1);
-  border-radius: 3px;
+  border-radius: var(--radius-none);
 }
 
 .news-content::-webkit-scrollbar-thumb:hover {

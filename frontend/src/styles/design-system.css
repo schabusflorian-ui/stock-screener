@@ -574,3 +574,80 @@ body {
 .table tbody tr:hover {
   background: rgba(99, 102, 241, 0.04);
 }
+
+/* ============ DARK THEME ============ */
+
+[data-theme="dark"] {
+  /* Background Colors - Dark Glass Theme */
+  --bg-primary: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #1f2937 100%);
+  --bg-primary-solid: #0f172a;
+  --bg-secondary: rgba(30, 41, 59, 0.7);
+  --bg-tertiary: rgba(30, 41, 59, 0.5);
+  --bg-elevated: rgba(30, 41, 59, 0.85);
+  --bg-hover: rgba(51, 65, 85, 0.9);
+  --bg-active: rgba(99, 102, 241, 0.15);
+
+  /* Glass Effects - Dark */
+  --glass-bg: rgba(30, 41, 59, 0.7);
+  --glass-bg-hover: rgba(30, 41, 59, 0.85);
+  --glass-border: rgba(71, 85, 105, 0.4);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  --glass-shadow-hover: 0 12px 40px rgba(0, 0, 0, 0.4);
+
+  /* Border Colors - Dark */
+  --border-primary: rgba(255, 255, 255, 0.06);
+  --border-secondary: rgba(255, 255, 255, 0.12);
+
+  /* Text Colors - Dark Theme */
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-tertiary: #64748b;
+  --text-muted: #475569;
+}
+
+/* Scrollbar - Dark Theme */
+[data-theme="dark"]::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+[data-theme="dark"]::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.4);
+}
+
+[data-theme="dark"]::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.6);
+}
+
+/* Skeleton - Dark Theme */
+[data-theme="dark"] .skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(30, 41, 59, 0.5) 25%,
+    rgba(51, 65, 85, 0.5) 50%,
+    rgba(30, 41, 59, 0.5) 75%
+  );
+  background-size: 200% 100%;
+}
+
+/* Table - Dark Theme */
+[data-theme="dark"] .table th {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+[data-theme="dark"] .table tbody tr:hover {
+  background: rgba(99, 102, 241, 0.08);
+}
+
+/* Badge Neutral - Dark Theme */
+[data-theme="dark"] .badge-neutral {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Kbd - Dark Theme */
+[data-theme="dark"] .kbd {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* ============ RESPONSIVE UTILITIES ============ */
+@import './responsive.css';

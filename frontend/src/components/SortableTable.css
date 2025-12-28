@@ -3,45 +3,46 @@
 .sortable-table-container {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .sortable-table-search {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .sortable-table-search .search-input {
   flex: 1;
   max-width: 300px;
-  padding: 0.5rem 0.875rem;
-  font-size: 0.875rem;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.8);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
   transition: all 0.2s ease;
 }
 
 .sortable-table-search .search-input:focus {
   outline: none;
-  border-color: #6366f1;
+  border-color: var(--brand-primary);
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
 }
 
 .sortable-table-search .search-results-count {
-  font-size: 0.75rem;
-  color: #6b7280;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
 }
 
 .sortable-table-wrapper {
   overflow-x: auto;
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--bg-secondary);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
-  border-radius: 0.75rem;
+  border: 1px solid var(--border-primary);
+  box-shadow: var(--shadow-md);
+  border-radius: var(--radius-lg);
 }
 
 .sortable-table {
@@ -52,16 +53,16 @@
 
 .sortable-table th,
 .sortable-table td {
-  padding: 0.75rem 1rem;
+  padding: var(--space-3) var(--space-4);
   text-align: left;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  border-bottom: 1px solid var(--border-primary);
 }
 
 .sortable-table th {
-  background: rgba(255, 255, 255, 0.5);
-  color: #6b7280;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
   font-weight: 600;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   white-space: nowrap;
@@ -77,14 +78,14 @@
 }
 
 .sortable-table th.sortable:hover {
-  background: rgba(99, 102, 241, 0.04);
-  color: #374151;
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .sortable-table th .th-content {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .sortable-table .sort-indicator {
@@ -95,7 +96,7 @@
 
 .sortable-table .sort-indicator.active {
   opacity: 1;
-  color: #6366f1;
+  color: var(--brand-primary);
 }
 
 .sortable-table tbody tr {
@@ -103,7 +104,7 @@
 }
 
 .sortable-table tbody tr:hover {
-  background: rgba(99, 102, 241, 0.04);
+  background: var(--bg-hover);
 }
 
 .sortable-table tbody tr.clickable {
@@ -116,16 +117,16 @@
 
 /* Value classes */
 .sortable-table .positive {
-  color: #22c55e !important;
+  color: var(--positive) !important;
 }
 
 .sortable-table .negative {
-  color: #ef4444 !important;
+  color: var(--negative) !important;
 }
 
 /* Links */
 .sortable-table .table-link {
-  color: #6366f1;
+  color: var(--brand-primary);
   text-decoration: none;
   font-weight: 600;
 }
@@ -148,11 +149,11 @@
   align-items: center;
   justify-content: center;
   height: 200px;
-  color: #6b7280;
-  font-size: 0.875rem;
-  background: rgba(255, 255, 255, 0.7);
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+  background: var(--bg-secondary);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: 0.75rem;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
 }

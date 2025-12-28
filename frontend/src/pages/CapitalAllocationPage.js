@@ -7,6 +7,7 @@ import {
 } from 'recharts';
 import { capitalAPI, earningsAPI, pricesAPI } from '../services/api';
 import { WatchlistButton } from '../components';
+import { PageHeader } from '../components/ui';
 import './CapitalAllocationPage.css';
 
 // Format currency values
@@ -875,23 +876,23 @@ function CapitalAllocationPage() {
 
   return (
     <div className="capital-page">
-      <div className="page-header">
-        <div className="header-content">
-          <h1>Capital Allocation</h1>
-          <p className="subtitle">Track dividends, buybacks, and shareholder returns</p>
-        </div>
-        {lastUpdated && (
-          <div className="update-info">
-            <span className="update-label">Data through</span>
-            <span className="update-date">{lastUpdated}</span>
-            {stats && (
-              <span className="update-stats">
-                {stats.dividends?.total_dividend_payers?.toLocaleString() || 0} dividend payers | {stats.buybacks?.companies_with_programs?.toLocaleString() || 0} buyback companies
-              </span>
-            )}
-          </div>
-        )}
-      </div>
+      <PageHeader
+        title="Capital Allocation"
+        subtitle="Track dividends, buybacks, and shareholder returns"
+        actions={
+          lastUpdated && (
+            <div className="update-info">
+              <span className="update-label">Data through</span>
+              <span className="update-date">{lastUpdated}</span>
+              {stats && (
+                <span className="update-stats">
+                  {stats.dividends?.total_dividend_payers?.toLocaleString() || 0} dividend payers | {stats.buybacks?.companies_with_programs?.toLocaleString() || 0} buyback companies
+                </span>
+              )}
+            </div>
+          )
+        }
+      />
 
       {/* View mode tabs */}
       <div className="view-tabs">

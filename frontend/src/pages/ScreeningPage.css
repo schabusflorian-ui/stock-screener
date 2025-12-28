@@ -1,33 +1,11 @@
 /* frontend/src/pages/ScreeningPage.css - Liquid Glass Theme */
 
 .screening-page {
+  padding: var(--space-8) var(--space-6);
+  max-width: var(--max-content-width);
+  margin: 0 auto;
   animation: fadeIn 0.3s ease;
   color: var(--text-primary);
-}
-
-/* Header */
-.screening-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 1.5rem;
-  padding-bottom: 1.5rem;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-  flex-wrap: wrap;
-  gap: 1rem;
-}
-
-.screening-header h1 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0 0 0.25rem 0;
-}
-
-.screening-header > div > p {
-  color: var(--text-tertiary);
-  margin: 0;
-  font-size: 0.875rem;
 }
 
 .view-toggle {
@@ -60,6 +38,227 @@
 .view-toggle button.active {
   background: var(--brand-primary);
   color: white;
+}
+
+/* AI Screening Assistant */
+.ai-screening-section {
+  margin-bottom: 1rem;
+}
+
+.ai-assistant-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(99, 102, 241, 0.1));
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: var(--radius-lg);
+  color: #8b5cf6;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ai-assistant-toggle:hover {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(99, 102, 241, 0.15));
+  border-color: rgba(139, 92, 246, 0.3);
+  transform: translateY(-1px);
+}
+
+.ai-assistant-toggle.active {
+  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+  color: white;
+  border-color: transparent;
+}
+
+.ai-assistant-toggle .sparkle-icon {
+  animation: sparkle 2s ease-in-out infinite;
+}
+
+@keyframes sparkle {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+
+.ai-suggestion-panel {
+  margin-top: 1rem;
+  padding: 1.25rem;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 8px 32px rgba(139, 92, 246, 0.1);
+}
+
+.ai-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.ai-input-icon {
+  color: #8b5cf6;
+  flex-shrink: 0;
+}
+
+.ai-goal-input {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: var(--radius-md);
+  font-size: 0.9375rem;
+  color: var(--text-primary);
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.ai-goal-input:focus {
+  border-color: rgba(139, 92, 246, 0.4);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+}
+
+.ai-goal-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.ai-suggest-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+  border: none;
+  border-radius: var(--radius-md);
+  color: white;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.ai-suggest-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(139, 92, 246, 0.3);
+}
+
+.ai-suggest-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ai-suggest-btn .spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.ai-suggestion-result {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid rgba(139, 92, 246, 0.15);
+}
+
+.suggestion-explanation {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.08), rgba(99, 102, 241, 0.08));
+  border-radius: var(--radius-lg);
+  margin-bottom: 1rem;
+}
+
+.suggestion-explanation svg {
+  color: #8b5cf6;
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+}
+
+.suggestion-explanation p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.suggestion-filters,
+.suggestion-presets {
+  margin-bottom: 1rem;
+}
+
+.suggestion-filters h4,
+.suggestion-presets h4 {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 0 0 0.75rem 0;
+}
+
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.filter-chip {
+  padding: 0.375rem 0.75rem;
+  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #7c3aed;
+}
+
+.apply-filters-btn {
+  padding: 0.625rem 1.25rem;
+  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+  border: none;
+  border-radius: var(--radius-md);
+  color: white;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.apply-filters-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(139, 92, 246, 0.3);
+}
+
+.preset-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.preset-suggestion-btn {
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.preset-suggestion-btn:hover {
+  background: rgba(139, 92, 246, 0.1);
+  border-color: rgba(139, 92, 246, 0.2);
+  color: #8b5cf6;
 }
 
 /* Templates Bar - Liquid Glass */
@@ -830,7 +1029,7 @@
 .results-table th.sortable svg {
   display: inline-block;
   vertical-align: middle;
-  margin-left: 4px;
+  margin-left: var(--space-1);
   color: var(--brand-primary);
 }
 
@@ -954,7 +1153,7 @@
 
 .results-table::-webkit-scrollbar-thumb {
   background: var(--border-secondary);
-  border-radius: 3px;
+  border-radius: var(--radius-none);
 }
 
 .results-table::-webkit-scrollbar-thumb:hover {
@@ -988,7 +1187,7 @@
   padding: 0.5rem 0.75rem;
   background: var(--bg-primary);
   border: 1px solid var(--border-primary);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--text-secondary);
   font-size: 0.8125rem;
   cursor: pointer;
@@ -1017,7 +1216,7 @@
   padding: 0 5px;
   background: var(--brand-primary);
   color: white;
-  border-radius: 9px;
+  border-radius: var(--radius-md);
   font-size: 0.6875rem;
   font-weight: 600;
   display: flex;
@@ -1058,7 +1257,7 @@
   max-height: 400px;
   background: var(--bg-primary);
   border: 1px solid var(--border-primary);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
   z-index: 100;
   overflow: hidden;
@@ -1086,7 +1285,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .column-selector-header button:hover {
@@ -1105,7 +1304,7 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 0.75rem;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 0.8125rem;
   color: var(--text-secondary);
@@ -1137,7 +1336,7 @@
   padding: 0.5rem;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-primary);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--text-secondary);
   font-size: 0.75rem;
   cursor: pointer;
@@ -1168,7 +1367,7 @@
   padding: 0.375rem 0.5rem;
   background: var(--bg-primary);
   border: 1px solid var(--border-primary);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-size: 0.75rem;
   transition: border-color 0.15s ease;
@@ -1186,15 +1385,18 @@
 
 /* Responsive */
 @media (max-width: 1024px) {
+  .screening-page {
+    padding: var(--space-6) var(--space-4);
+  }
+
   .criteria-categories {
     grid-template-columns: repeat(2, 1fr);
   }
 }
 
 @media (max-width: 768px) {
-  .screening-header {
-    flex-direction: column;
-    align-items: stretch;
+  .screening-page {
+    padding: var(--space-4);
   }
 
   .view-toggle {

@@ -7,11 +7,12 @@ import {
   PieChart, Pie, Cell, LineChart, Line, AreaChart, Area
 } from 'recharts';
 import {
-  TrendingUp, TrendingDown, Minus, RefreshCw, MessageCircle,
+  TrendingUp, TrendingDown, RefreshCw, MessageCircle,
   MessageSquare, Newspaper, Activity, ArrowUpRight, ArrowDownRight,
   Clock, AlertCircle, ExternalLink, History, Target
 } from 'lucide-react';
 import { sentimentAPI, pricesAPI } from '../services/api';
+import { PageHeader } from '../components/ui';
 import { WatchlistButton } from '../components';
 import MarketSentimentCard from '../components/MarketSentimentCard';
 import './TrendingTickersPage.css';
@@ -246,20 +247,18 @@ function TrendingTickersPage() {
 
       // Load prices for trending symbols in background
       const symbols = trendingData.map(t => t.symbol).slice(0, 30);
-      const newPrices = { ...priceData };
       await Promise.all(
-        symbols.filter(s => !newPrices[s]).map(async (symbol) => {
+        symbols.map(async (symbol) => {
           try {
             const res = await pricesAPI.getMetrics(symbol);
             if (res?.data?.data) {
-              newPrices[symbol] = res.data.data;
+              setPriceData(prev => ({ ...prev, [symbol]: res.data.data }));
             }
           } catch (e) {
             // Ignore individual price fetch errors
           }
         })
       );
-      setPriceData(newPrices);
     } catch (err) {
       console.error('Error loading trending:', err);
       setError(err.message);
@@ -267,7 +266,7 @@ function TrendingTickersPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [period, priceData]);
+  }, [period]);
 
   // Load posts for selected ticker
   const loadTickerPosts = useCallback(async (symbol) => {
@@ -511,25 +510,26 @@ function TrendingTickersPage() {
   return (
     <div className="trending-page">
       {/* Header */}
-      <div className="page-header">
-        <div className="header-content">
-          <h1>Social Sentiment Trends</h1>
-          <p className="subtitle">
+      <PageHeader
+        title="Social Sentiment Trends"
+        subtitle={
+          <>
             Multi-source sentiment analysis
             {lastRefreshed && (
               <span className="last-refreshed">
                 <Clock size={12} /> Updated {formatDate(lastRefreshed)}
               </span>
             )}
-          </p>
-        </div>
-        <div className="header-actions">
-          <div className="period-selector">
-            {['24h', '7d', '30d'].map(p => (
-              <button
-                key={p}
-                className={period === p ? 'active' : ''}
-                onClick={() => setPeriod(p)}
+          </>
+        }
+        actions={
+          <div className="header-actions">
+            <div className="period-selector">
+              {['24h', '7d', '30d'].map(p => (
+                <button
+                  key={p}
+                  className={period === p ? 'active' : ''}
+                  onClick={() => setPeriod(p)}
               >
                 {p}
               </button>
@@ -544,7 +544,8 @@ function TrendingTickersPage() {
             {refreshing ? 'Scanning...' : 'Refresh'}
           </button>
         </div>
-      </div>
+        }
+      />
 
       {/* Tab Navigation */}
       <div className="main-tabs">

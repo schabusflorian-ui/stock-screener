@@ -15,6 +15,8 @@ export { default as AnalysisDashboard } from './AnalysisDashboard';
 export { default as NewsAndEvents } from './NewsAndEvents';
 export { default as AnalystHistoryChart } from './AnalystHistoryChart';
 export { default as EarningsCalendar } from './EarningsCalendar';
+export { default as AlphaChart } from './AlphaChart';
+export { default as AlphaCompareChart } from './AlphaCompareChart';
 export {
   AVAILABLE_METRICS,
   DEFAULT_CHART_METRICS,

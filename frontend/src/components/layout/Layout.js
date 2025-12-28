@@ -128,6 +128,7 @@ function Layout({ children }) {
       <Sidebar
         collapsed={sidebarCollapsed}
         onToggle={handleToggleSidebar}
+        onOpenSearch={handleOpenCommandPalette}
       />
 
       {/* Mobile sidebar overlay */}

@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { alertsAPI, pricesAPI } from '../services/api';
+import { PageHeader, Button, Callout } from '../components/ui';
 import './AlertsPage.css';
 
 // Format date
@@ -356,28 +357,24 @@ export default function AlertsPage() {
 
   return (
     <div className="alerts-page">
-      <div className="page-header">
-        <div className="header-content">
-          <h1>Alert Center</h1>
-          <p className="page-description">
-            Buy signals, valuation alerts, and market opportunities
-          </p>
-        </div>
-        <div className="header-actions">
-          <button
-            className="btn-primary"
+      <PageHeader
+        title="Alert Center"
+        subtitle="Buy signals, valuation alerts, and market opportunities"
+        actions={
+          <Button
+            variant="primary"
             onClick={handleScan}
             disabled={scanning}
           >
             {scanning ? 'Scanning...' : 'Run Scan'}
-          </button>
-        </div>
-      </div>
+          </Button>
+        }
+      />
 
       {error && (
-        <div className="error-banner">
+        <Callout type="error">
           {error}
-        </div>
+        </Callout>
       )}
 
       <SummaryCard summary={summary} onScan={handleScan} />

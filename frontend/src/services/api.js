@@ -1,16 +1,32 @@
 // frontend/src/services/api.js
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:3000/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL
+  ? `${process.env.REACT_APP_API_URL}/api`
+  : 'http://localhost:3000/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000
+  timeout: 10000,
+  withCredentials: true // Enable credentials for session cookies
 });
+
+// Response interceptor to handle 401 errors
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Redirect to login on auth failure
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
 
 export const companyAPI = {
   getAll: (params = {}) => api.get('/companies', { params }),
   getOne: (symbol) => api.get(`/companies/${symbol}`),
+  search: (query) => api.get(`/companies?search=${encodeURIComponent(query)}`),
   getFinancials: (symbol) => api.get(`/companies/${symbol}/financials`),
   getMetrics: (symbol, { limit = 20, periodType = 'annual' } = {}) =>
     api.get(`/companies/${symbol}/metrics?limit=${limit}&period_type=${periodType}`),
@@ -480,6 +496,53 @@ export const fiscalAPI = {
     api.get(`/fiscal/period-for-date/${symbol}?date=${date}`)
 };
 
+export const indicesAPI = {
+  // Get all market indices (S&P 500, Dow, NASDAQ, Russell)
+  getAll: () => api.get('/indices'),
+
+  // Get all ETF-based indices (SPY, QQQ, sector ETFs)
+  getETFs: () => api.get('/indices/etfs'),
+
+  // Get market indices only (SPY, QQQ, DIA, IWM, VTI)
+  getMarket: () => api.get('/indices/etfs/market'),
+
+  // Get sector ETFs (XLK, XLF, XLV, etc.)
+  getSectors: () => api.get('/indices/etfs/sectors'),
+
+  // Get primary benchmark (SPY)
+  getBenchmark: () => api.get('/indices/benchmark'),
+
+  // Get specific index by symbol
+  getIndex: (symbol) => api.get(`/indices/${symbol}`),
+
+  // Get price history for an index
+  getPrices: (symbol, period = '1m') => api.get(`/indices/${encodeURIComponent(symbol)}/prices?period=${period}`),
+
+  // Get index constituents
+  getConstituents: (indexCode, limit = 100) => api.get(`/indices/constituents/${indexCode}?limit=${limit}`),
+
+  // Get alpha metrics for a stock vs SPY (current snapshot)
+  getAlpha: (symbol) => api.get(`/indices/alpha/${symbol}`),
+
+  // Get alpha time series for charting (daily alpha over time)
+  getAlphaTimeseries: (symbol, period = '1y') =>
+    api.get(`/indices/alpha/timeseries/${symbol}?period=${period}`),
+
+  // Get stocks outperforming the market
+  getOutperformers: (period = 'ytd', limit = 50) =>
+    api.get(`/prices/screen/outperformers?period=${period}&limit=${limit}`),
+
+  // Get stocks underperforming the market
+  getUnderperformers: (period = 'ytd', limit = 50) =>
+    api.get(`/prices/screen/underperformers?period=${period}&limit=${limit}`),
+
+  // Trigger index price update (admin)
+  update: () => api.post('/indices/update', {}, { timeout: 120000 }),
+
+  // Recalculate alpha for all stocks
+  calculateAlpha: () => api.post('/indices/alpha/calculate')
+};
+
 export const pricesAPI = {
   // Get price import status
   getStatus: () => api.get('/prices/status'),
@@ -699,6 +762,56 @@ export const dcfAPI = {
     api.get('/dcf/benchmarks')
 };
 
+// ============================================
+// ETF and Model Portfolio API
+// ============================================
+export const etfsAPI = {
+  // Get all ETFs
+  getAll: (options = {}) => {
+    const params = new URLSearchParams();
+    if (options.category) params.append('category', options.category);
+    if (options.assetClass) params.append('assetClass', options.assetClass);
+    if (options.issuer) params.append('issuer', options.issuer);
+    if (options.limit) params.append('limit', options.limit);
+    return api.get(`/etfs?${params.toString()}`);
+  },
+
+  // Get ETF by symbol
+  get: (symbol) => api.get(`/etfs/${symbol}`),
+
+  // Get ETF categories
+  getCategories: () => api.get('/etfs/categories'),
+
+  // Get ETF holdings
+  getHoldings: (symbol, options = {}) => {
+    const params = new URLSearchParams();
+    if (options.minWeight) params.append('minWeight', options.minWeight);
+    if (options.limit) params.append('limit', options.limit);
+    return api.get(`/etfs/${symbol}/holdings?${params.toString()}`);
+  },
+
+  // Compare ETFs
+  compare: (symbols) => api.get(`/etfs/compare?symbols=${symbols.join(',')}`),
+
+  // Get all model portfolios
+  getModels: () => api.get('/etfs/models/list'),
+
+  // Get single model portfolio
+  getModel: (name) => api.get(`/etfs/models/${encodeURIComponent(name)}`),
+
+  // Prepare portfolio from model (get trade list)
+  prepareFromModel: (name, amount, options = {}) =>
+    api.post(`/etfs/models/${encodeURIComponent(name)}/prepare`, { amount, ...options }),
+
+  // Prepare custom ETF portfolio
+  prepareCustom: (allocations, amount) =>
+    api.post('/etfs/prepare-custom', { allocations, amount }),
+
+  // Calculate rebalance trades
+  rebalance: (currentHoldings, targetModel, portfolioValue) =>
+    api.post('/etfs/rebalance', { currentHoldings, targetModel, portfolioValue })
+};
+
 export const dividendsAPI = {
   // Get dividend summary stats
   getSummary: () => api.get('/dividends/summary'),
@@ -747,6 +860,687 @@ export const dividendsAPI = {
   // Get dividend history for a company
   getCompanyHistory: (symbol, limit = 40) =>
     api.get(`/dividends/company/${symbol}/history?limit=${limit}`)
+};
+
+// ============================================
+// Famous Investors API
+// ============================================
+export const investorsAPI = {
+  // Get all famous investors
+  getAll: () => api.get('/investors'),
+
+  // Get single investor with details
+  get: (id) => api.get(`/investors/${id}`),
+
+  // Get latest holdings for an investor
+  getHoldings: (id, { limit = 100, sortBy = 'market_value', sortOrder = 'DESC' } = {}) =>
+    api.get(`/investors/${id}/holdings?limit=${limit}&sortBy=${sortBy}&sortOrder=${sortOrder}`),
+
+  // Get holding changes from latest filing
+  getChanges: (id) => api.get(`/investors/${id}/changes`),
+
+  // Get holdings history over time
+  getHistory: (id, periods = 4) => api.get(`/investors/${id}/history?periods=${periods}`),
+
+  // Get investor statistics and analytics
+  getStats: (id) => api.get(`/investors/${id}/stats`),
+
+  // Get investors who own a specific stock
+  getByStock: (symbol) => api.get(`/investors/by-stock/${symbol}`),
+
+  // Get stocks most owned by famous investors
+  getMostOwned: (limit = 20) => api.get(`/investors/most-owned?limit=${limit}`),
+
+  // Get recent investor activity (new buys, sells)
+  getActivity: (limit = 50) => api.get(`/investors/activity?limit=${limit}`),
+
+  // Prepare portfolio clone from investor
+  clone: (id, options = {}) => api.post(`/investors/${id}/clone`, options),
+
+  // Preview clone without creating
+  clonePreview: (id, { amount = 10000, minWeight = 0, maxPositions = null } = {}) => {
+    const params = new URLSearchParams({ amount, minWeight });
+    if (maxPositions) params.append('maxPositions', maxPositions);
+    return api.get(`/investors/${id}/clone-preview?${params.toString()}`);
+  },
+
+  // Trigger 13F fetch for an investor
+  fetch13F: (id) => api.post(`/investors/${id}/fetch-13f`, {}, { timeout: 120000 }),
+
+  // Trigger 13F fetch for all investors
+  fetchAll13F: () => api.post('/investors/fetch-all-13f', {}, { timeout: 300000 }),
+
+  // Get portfolio performance history (quarterly values over time)
+  getPerformance: (id, limit = 40) => api.get(`/investors/${id}/performance?limit=${limit}`),
+
+  // Get portfolio returns with S&P 500 benchmark comparison
+  getReturns: (id, limit = 50) => api.get(`/investors/${id}/returns?limit=${limit}`),
+
+  // Search for CIK numbers
+  searchCIK: (query) => api.get('/investors/search-cik', { params: { query } }),
+
+  // Create a new investor
+  create: (data) => api.post('/investors', data)
+};
+
+// ============================================
+// Portfolio API
+// ============================================
+export const portfoliosAPI = {
+  // Get all portfolios
+  getAll: () => api.get('/portfolios'),
+
+  // Get single portfolio
+  get: (id) => api.get(`/portfolios/${id}`),
+
+  // Create new portfolio
+  create: (data) => api.post('/portfolios', data),
+
+  // Update portfolio
+  update: (id, data) => api.put(`/portfolios/${id}`, data),
+
+  // Delete portfolio
+  delete: (id) => api.delete(`/portfolios/${id}`),
+
+  // Get portfolio holdings
+  getHoldings: (id) => api.get(`/portfolios/${id}/holdings`),
+
+  // Execute trade
+  trade: (id, tradeData) => api.post(`/portfolios/${id}/trade`, tradeData),
+
+  // Get standing orders
+  getOrders: (id, { status = 'active' } = {}) =>
+    api.get(`/portfolios/${id}/orders?status=${status}`),
+
+  // Create standing order
+  createOrder: (id, orderData) => api.post(`/portfolios/${id}/orders`, orderData),
+
+  // Cancel order
+  cancelOrder: (id, orderId) => api.delete(`/portfolios/${id}/orders/${orderId}`),
+
+  // Get transactions
+  getTransactions: (id, { limit = 50, offset = 0, type } = {}) => {
+    const params = new URLSearchParams({ limit, offset });
+    if (type) params.append('type', type);
+    return api.get(`/portfolios/${id}/transactions?${params.toString()}`);
+  },
+
+  // Deposit cash
+  deposit: (id, amount) => api.post(`/portfolios/${id}/deposit`, { amount }),
+
+  // Withdraw cash
+  withdraw: (id, amount) => api.post(`/portfolios/${id}/withdraw`, { amount }),
+
+  // Get portfolio summary
+  getSummary: (id) => api.get(`/portfolios/${id}/summary`),
+
+  // Get portfolio value history
+  getValueHistory: (id, period = '1y') =>
+    api.get(`/portfolios/${id}/value-history?period=${period}`),
+
+  // ============ Alerts ============
+
+  // Get all unread alerts across portfolios
+  getAllAlerts: () => api.get('/portfolios/alerts'),
+
+  // Get alerts for a portfolio
+  getAlerts: (id, { unreadOnly = false, limit = 50, offset = 0 } = {}) => {
+    const params = new URLSearchParams({ limit, offset });
+    if (unreadOnly) params.append('unreadOnly', 'true');
+    return api.get(`/portfolios/${id}/alerts?${params.toString()}`);
+  },
+
+  // Get unread alert count for a portfolio
+  getUnreadAlertCount: (id) => api.get(`/portfolios/${id}/alerts/count`),
+
+  // Get alert settings for a portfolio
+  getAlertSettings: (id) => api.get(`/portfolios/${id}/alert-settings`),
+
+  // Update alert setting
+  updateAlertSetting: (id, alertType, { enabled, threshold }) =>
+    api.put(`/portfolios/${id}/alert-settings`, { alertType, enabled, threshold }),
+
+  // Check portfolio alerts (trigger check)
+  checkAlerts: (id) => api.post(`/portfolios/${id}/check-alerts`),
+
+  // Mark alerts as read
+  markAlertsRead: (id, { alertIds = null, all = false } = {}) =>
+    api.post(`/portfolios/${id}/alerts/mark-read`, { alertIds, all }),
+
+  // Dismiss an alert
+  dismissAlert: (id, alertId) => api.delete(`/portfolios/${id}/alerts/${alertId}`),
+
+  // ============ Export ============
+
+  // Export holdings as CSV (triggers download)
+  exportHoldings: (id) => {
+    window.open(`${API_BASE_URL}/portfolios/${id}/export/holdings`, '_blank');
+  },
+
+  // Export transactions as CSV (triggers download)
+  exportTransactions: (id, { startDate, endDate, type } = {}) => {
+    const params = new URLSearchParams();
+    if (startDate) params.append('startDate', startDate);
+    if (endDate) params.append('endDate', endDate);
+    if (type) params.append('type', type);
+    const queryString = params.toString();
+    window.open(`${API_BASE_URL}/portfolios/${id}/export/transactions${queryString ? '?' + queryString : ''}`, '_blank');
+  },
+
+  // Get portfolio summary JSON
+  exportSummaryJson: (id) => api.get(`/portfolios/${id}/export/summary`),
+
+  // Export tax report as CSV (triggers download)
+  exportTaxReport: (id, year = new Date().getFullYear()) => {
+    window.open(`${API_BASE_URL}/portfolios/${id}/export/tax?year=${year}`, '_blank');
+  },
+
+  // Export dividend report as CSV (triggers download)
+  exportDividendReport: (id, year = new Date().getFullYear()) => {
+    window.open(`${API_BASE_URL}/portfolios/${id}/export/dividends?year=${year}`, '_blank');
+  }
+};
+
+// ============================================
+// Simulation API
+// ============================================
+export const simulateAPI = {
+  // Get performance metrics for a portfolio
+  getPerformance: (portfolioId, period = '1y') =>
+    api.get(`/simulate/portfolios/${portfolioId}/performance?period=${period}`),
+
+  // Get allocation breakdown
+  getAllocation: (portfolioId) =>
+    api.get(`/simulate/portfolios/${portfolioId}/allocation`),
+
+  // Get risk metrics
+  getRisk: (portfolioId) =>
+    api.get(`/simulate/portfolios/${portfolioId}/risk`),
+
+  // Run backtest
+  runBacktest: (config) =>
+    api.post('/simulate/backtest', config, { timeout: 120000 }),
+
+  // Get backtest results
+  getBacktest: (id) => api.get(`/simulate/backtest/${id}`),
+
+  // Run Monte Carlo simulation
+  runMonteCarlo: (config) =>
+    api.post('/simulate/monte-carlo', config, { timeout: 120000 }),
+
+  // Get Monte Carlo results
+  getMonteCarlo: (id) => api.get(`/simulate/monte-carlo/${id}`),
+
+  // Calculate position size
+  calculatePositionSize: (config) =>
+    api.post('/simulate/position-size', config),
+
+  // Compare portfolios
+  compare: (config) => api.post('/simulate/compare', config, { timeout: 60000 }),
+
+  // Stress Testing
+  runStressTest: (portfolioId, scenarioId) =>
+    api.post('/simulate/stress-test', { portfolioId, scenarioId }, { timeout: 60000 }),
+  runAllStressTests: (portfolioId) =>
+    api.post('/simulate/stress-test/all', { portfolioId }, { timeout: 120000 }),
+  getStressTestScenarios: () => api.get('/simulate/stress-test/scenarios'),
+
+  // What-If Analysis
+  runWhatIf: (portfolioId, changes) =>
+    api.post(`/simulate/portfolios/${portfolioId}/what-if`, { changes }),
+  runWhatIfWeights: (portfolioId, targetWeights) =>
+    api.post(`/simulate/portfolios/${portfolioId}/what-if/weights`, { targetWeights }),
+  compareScenarios: (portfolioId, scenarios) =>
+    api.post(`/simulate/portfolios/${portfolioId}/what-if/compare`, { scenarios }),
+
+  // Rebalancing
+  calculateRebalance: (portfolioId, config) =>
+    api.post(`/simulate/portfolios/${portfolioId}/rebalance-calc`, config),
+  checkRebalanceNeeded: (portfolioId) =>
+    api.get(`/simulate/portfolios/${portfolioId}/rebalance-check`),
+  getRebalanceTemplates: () => api.get('/simulate/rebalance-templates'),
+  applyTemplate: (portfolioId, templateId) =>
+    api.post(`/simulate/portfolios/${portfolioId}/apply-template`, { templateId }),
+
+  // Advanced Analytics
+  getCorrelation: (portfolioId, period = '1y') =>
+    api.get(`/simulate/portfolios/${portfolioId}/correlation?period=${period}`),
+  getDiversification: (portfolioId) =>
+    api.get(`/simulate/portfolios/${portfolioId}/diversification`),
+  getFactorExposure: (portfolioId) =>
+    api.get(`/simulate/portfolios/${portfolioId}/factors`),
+  getIncomeProjection: (portfolioId, years = 10, growthRate = 5) =>
+    api.get(`/simulate/portfolios/${portfolioId}/income-projection?years=${years}&growthRate=${growthRate}`),
+
+  // Correlation & Covariance Analytics
+  getCovariance: (portfolioId, period = '1y') =>
+    api.get(`/simulate/portfolios/${portfolioId}/covariance?period=${period}`),
+  getRiskContribution: (portfolioId, period = '1y') =>
+    api.get(`/simulate/portfolios/${portfolioId}/risk-contribution?period=${period}`),
+  getRollingCorrelation: (portfolioId, period = '1y', window = 60) =>
+    api.get(`/simulate/portfolios/${portfolioId}/rolling-correlation?period=${period}&window=${window}`),
+  getClusterAnalysis: (portfolioId, period = '1y') =>
+    api.get(`/simulate/portfolios/${portfolioId}/clusters?period=${period}`),
+
+  // Risk/Reward Analysis
+  analyzeRiskReward: (config) =>
+    api.post('/simulate/risk-reward', config),
+  calculateOptimalPositions: (config) =>
+    api.post('/simulate/optimal-positions', config),
+
+  // Advanced Kelly Criterion
+  getKellyBacktest: (portfolioId, params = {}) => {
+    const { period = '3y', rebalanceFrequency = 'monthly', initialCapital = 100000 } = params;
+    return api.get(`/simulate/portfolios/${portfolioId}/kelly/backtest?period=${period}&rebalanceFrequency=${rebalanceFrequency}&initialCapital=${initialCapital}`, { timeout: 60000 });
+  },
+  getKellyOptimize: (portfolioId, params = {}) => {
+    const { period = '3y', maxWeight = 0.40, minWeight = 0.02, leverageAllowed = false } = params;
+    return api.get(`/simulate/portfolios/${portfolioId}/kelly/optimize?period=${period}&maxWeight=${maxWeight}&minWeight=${minWeight}&leverageAllowed=${leverageAllowed}`, { timeout: 60000 });
+  },
+  getKellyRegime: (portfolioId, params = {}) => {
+    const { period = '5y', regimeWindow = 60 } = params;
+    return api.get(`/simulate/portfolios/${portfolioId}/kelly/regime?period=${period}&regimeWindow=${regimeWindow}`, { timeout: 60000 });
+  },
+  getKellyDrawdown: (portfolioId, params = {}) => {
+    const { period = '5y', initialCapital = 100000 } = params;
+    return api.get(`/simulate/portfolios/${portfolioId}/kelly/drawdown?period=${period}&initialCapital=${initialCapital}`, { timeout: 60000 });
+  },
+  getKellyCompare: (portfolioId, params = {}) => {
+    const { period = '5y', initialCapital = 100000, rebalanceFrequency = 'monthly' } = params;
+    return api.get(`/simulate/portfolios/${portfolioId}/kelly/compare?period=${period}&initialCapital=${initialCapital}&rebalanceFrequency=${rebalanceFrequency}`, { timeout: 60000 });
+  },
+
+  // Alpha Analytics
+  getAlpha: (portfolioId, params = {}) => {
+    const { period = '1y', benchmarkSymbol = 'SPY' } = params;
+    return api.get(`/simulate/portfolios/${portfolioId}/alpha?period=${period}&benchmarkSymbol=${benchmarkSymbol}`, { timeout: 60000 });
+  },
+  getJensensAlpha: (portfolioId, params = {}) => {
+    const { period = '1y', benchmarkSymbol = 'SPY' } = params;
+    return api.get(`/simulate/portfolios/${portfolioId}/alpha/jensens?period=${period}&benchmarkSymbol=${benchmarkSymbol}`, { timeout: 60000 });
+  },
+  getMultiFactorAlpha: (portfolioId, params = {}) => {
+    const { period = '1y', benchmarkSymbol = 'SPY' } = params;
+    return api.get(`/simulate/portfolios/${portfolioId}/alpha/multi-factor?period=${period}&benchmarkSymbol=${benchmarkSymbol}`, { timeout: 60000 });
+  },
+  getRollingAlpha: (portfolioId, params = {}) => {
+    const { period = '1y', benchmarkSymbol = 'SPY', windowDays = 60 } = params;
+    return api.get(`/simulate/portfolios/${portfolioId}/alpha/rolling?period=${period}&benchmarkSymbol=${benchmarkSymbol}&windowDays=${windowDays}`, { timeout: 60000 });
+  },
+  getAlphaAttribution: (portfolioId, params = {}) => {
+    const { period = '1y', benchmarkSymbol = 'SPY' } = params;
+    return api.get(`/simulate/portfolios/${portfolioId}/alpha/attribution?period=${period}&benchmarkSymbol=${benchmarkSymbol}`, { timeout: 60000 });
+  },
+  getSkillAnalysis: (portfolioId, params = {}) => {
+    const { period = '1y', benchmarkSymbol = 'SPY' } = params;
+    return api.get(`/simulate/portfolios/${portfolioId}/alpha/skill?period=${period}&benchmarkSymbol=${benchmarkSymbol}`, { timeout: 60000 });
+  }
+};
+
+// ============================================
+// Knowledge Base API
+// ============================================
+export const knowledgeAPI = {
+  // Get knowledge base update status (for Updates page)
+  getUpdateStatus: () => api.get('/knowledge/update/status'),
+
+  // Trigger knowledge base refresh
+  refresh: (mode = 'incremental') =>
+    api.post('/knowledge/update/refresh', { mode }, { timeout: 300000 }),
+
+  // Search knowledge base
+  search: (query, { topK = 5, topics = null, minSimilarity = 0.3 } = {}) => {
+    const params = new URLSearchParams({ q: query, top_k: topK, min_similarity: minSimilarity });
+    if (topics) params.append('topics', topics.join(','));
+    return api.get(`/knowledge/search?${params.toString()}`);
+  },
+
+  // Get knowledge base statistics
+  getStats: () => api.get('/knowledge/stats'),
+
+  // Get available topics
+  getTopics: () => api.get('/knowledge/topics'),
+
+  // Health check
+  health: () => api.get('/knowledge/health')
+};
+
+// ============================================
+// AI Analyst API
+// ============================================
+export const analystAPI = {
+  // Get all available analysts
+  getAnalysts: () => api.get('/analyst/personas'),
+
+  // Get specific analyst details
+  getAnalyst: (id) => api.get(`/analyst/personas/${id}`),
+
+  // List all conversations with optional filters
+  listConversations: ({ analystId, companySymbol, limit } = {}) => {
+    const params = new URLSearchParams();
+    if (analystId) params.append('analystId', analystId);
+    if (companySymbol) params.append('companySymbol', companySymbol);
+    if (limit) params.append('limit', limit);
+    return api.get(`/analyst/conversations?${params.toString()}`);
+  },
+
+  // Create a new conversation with an analyst
+  createConversation: ({ analystId, companyId, companySymbol }) =>
+    api.post('/analyst/conversations', { analystId, companyId, companySymbol }),
+
+  // Get conversation by ID
+  getConversation: (id) => api.get(`/analyst/conversations/${id}`),
+
+  // Delete a conversation
+  deleteConversation: (id) => api.delete(`/analyst/conversations/${id}`),
+
+  // Send a message in a conversation
+  sendMessage: (conversationId, message, companyContext = null) =>
+    api.post(`/analyst/conversations/${conversationId}/messages`, {
+      message,
+      companyContext
+    }, { timeout: 120000 }),
+
+  // Send a message with streaming response (returns EventSource)
+  sendMessageStream: (conversationId, message, companyContext = null, callbacks = {}) => {
+    const { onStart, onToken, onComplete, onError, onDone } = callbacks;
+
+    // Build URL with query parameters
+    const params = new URLSearchParams({ message });
+    if (companyContext) {
+      params.append('companyContext', JSON.stringify(companyContext));
+    }
+
+    const url = `${API_BASE_URL}/analyst/conversations/${conversationId}/messages/stream?${params.toString()}`;
+
+    const eventSource = new EventSource(url);
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        switch (data.type) {
+          case 'start':
+            onStart?.(data.id);
+            break;
+          case 'token':
+            onToken?.(data.content);
+            break;
+          case 'complete':
+            onComplete?.(data.message);
+            break;
+          case 'error':
+            onError?.(new Error(data.error));
+            eventSource.close();
+            break;
+          case 'done':
+            onDone?.();
+            eventSource.close();
+            break;
+          default:
+            break;
+        }
+      } catch (e) {
+        console.error('Error parsing SSE event:', e);
+      }
+    };
+
+    eventSource.onerror = (error) => {
+      console.error('SSE error:', error);
+      onError?.(error);
+      eventSource.close();
+    };
+
+    // Return the EventSource so caller can close it if needed
+    return eventSource;
+  },
+
+  // Quick one-shot analysis without conversation
+  analyze: ({ analystId, companyData, question }) =>
+    api.post('/analyst/analyze', {
+      analystId,
+      companyData,
+      question
+    }, { timeout: 120000 }),
+
+  // Get conversation statistics
+  getStats: () => api.get('/analyst/stats'),
+
+  // Health check for analyst service
+  health: () => api.get('/analyst/health')
+};
+
+// ============================================
+// Natural Language Query API
+// ============================================
+export const nlQueryAPI = {
+  // Process a natural language query
+  query: (query, context = null) =>
+    api.post('/nl/query', { query, context }, { timeout: 60000 }),
+
+  // Classify a query without executing
+  classify: (query) =>
+    api.post('/nl/classify', { query }),
+
+  // Get example queries by intent type
+  getExamples: () => api.get('/nl/examples'),
+
+  // Get query suggestions based on context
+  getSuggestions: ({ symbol, page } = {}) => {
+    const params = new URLSearchParams();
+    if (symbol) params.append('symbol', symbol);
+    if (page) params.append('page', page);
+    return api.get(`/nl/suggestions?${params.toString()}`);
+  },
+
+  // Check NL service health
+  health: () => api.get('/nl/health')
+};
+
+// SEC Direct Refresh API
+export const secRefreshAPI = {
+  // Get status of SEC direct refresh
+  getStatus: () => api.get('/sec-refresh/status'),
+
+  // Run SEC direct refresh
+  run: (mode = 'watchlist', symbols = []) =>
+    api.post('/sec-refresh/run', { mode, symbols }),
+
+  // Get watchlist symbols
+  getWatchlist: () => api.get('/sec-refresh/watchlist')
+};
+
+// ============================================
+// AI Ratings API
+// ============================================
+export const aiRatingsAPI = {
+  // Store a new AI rating for a company
+  save: (symbol, rating) =>
+    api.post(`/ai-ratings/${symbol}`, rating),
+
+  // Get AI rating history for a company
+  getHistory: (symbol, limit = 10) =>
+    api.get(`/ai-ratings/${symbol}?limit=${limit}`),
+
+  // Get the latest AI rating for a company
+  getLatest: (symbol) =>
+    api.get(`/ai-ratings/${symbol}/latest`),
+
+  // Get AI rating trend data for charting
+  getTrend: (symbol, days = 90) =>
+    api.get(`/ai-ratings/${symbol}/trend?days=${days}`),
+
+  // Get AI-powered screening suggestions
+  getScreeningSuggestions: (goal) =>
+    api.post('/ai-ratings/screening/suggest', { goal }, { timeout: 60000 })
+};
+
+// ============================================
+// Notes API
+// ============================================
+export const notesAPI = {
+  // Notebooks
+  getNotebooks: () => api.get('/notes/notebooks'),
+  createNotebook: (data) => api.post('/notes/notebooks', data),
+  updateNotebook: (id, data) => api.put(`/notes/notebooks/${id}`, data),
+  deleteNotebook: (id) => api.delete(`/notes/notebooks/${id}`),
+
+  // Tags
+  getTags: () => api.get('/notes/tags'),
+  createTag: (data) => api.post('/notes/tags', data),
+  updateTag: (id, data) => api.put(`/notes/tags/${id}`, data),
+  deleteTag: (id) => api.delete(`/notes/tags/${id}`),
+
+  // Notes CRUD
+  getAll: (params = {}) => {
+    const queryParams = new URLSearchParams();
+    if (params.notebookId) queryParams.append('notebookId', params.notebookId);
+    if (params.limit) queryParams.append('limit', params.limit);
+    return api.get(`/notes?${queryParams.toString()}`);
+  },
+  getOne: (id) => api.get(`/notes/${id}`),
+  create: (data) => api.post('/notes', data),
+  update: (id, data) => api.put(`/notes/${id}`, data),
+  delete: (id, hard = false) => api.delete(`/notes/${id}?hard=${hard}`),
+  pin: (id, isPinned = true) => api.post(`/notes/${id}/pin`, { isPinned }),
+  publish: (id) => api.post(`/notes/${id}/publish`),
+
+  // Notes by company
+  getByCompany: (symbol) => api.get(`/notes/company/${symbol}`),
+
+  // Search
+  search: (query, limit = 50) => api.get(`/notes/search?q=${encodeURIComponent(query)}&limit=${limit}`),
+
+  // Activity
+  getActivity: (limit = 50) => api.get(`/notes/activity?limit=${limit}`),
+
+  // Attachments
+  addAttachment: (noteId, data) => api.post(`/notes/${noteId}/attachments`, data),
+  removeAttachment: (noteId, attachmentId) => api.delete(`/notes/${noteId}/attachments/${attachmentId}`),
+
+  // Tags on notes
+  addTag: (noteId, tagId) => api.post(`/notes/${noteId}/tags/${tagId}`),
+  removeTag: (noteId, tagId) => api.delete(`/notes/${noteId}/tags/${tagId}`),
+
+  // Versions
+  getVersions: (noteId) => api.get(`/notes/${noteId}/versions`),
+  getVersion: (noteId, versionNumber) => api.get(`/notes/${noteId}/versions/${versionNumber}`),
+  restoreVersion: (noteId, versionNumber) => api.post(`/notes/${noteId}/versions/${versionNumber}/restore`),
+
+  // Snapshots
+  getSnapshots: (noteId) => api.get(`/notes/${noteId}/snapshots`),
+  captureSnapshot: (noteId, data) => api.post(`/notes/${noteId}/snapshots`, data),
+  compareSnapshot: (snapshotId) => api.get(`/notes/snapshots/${snapshotId}/compare`),
+  deleteSnapshot: (snapshotId) => api.delete(`/notes/snapshots/${snapshotId}`)
+};
+
+// ============================================
+// Theses API
+// ============================================
+export const thesesAPI = {
+  // Dashboard
+  getDashboard: () => api.get('/theses/dashboard'),
+
+  // Templates
+  getTemplates: () => api.get('/theses/templates'),
+  getTemplate: (id) => api.get(`/theses/templates/${id}`),
+
+  // Upcoming catalysts
+  getUpcomingCatalysts: (limit = 20) => api.get(`/theses/catalysts/upcoming?limit=${limit}`),
+
+  // Theses by company
+  getByCompany: (symbol) => api.get(`/theses/company/${symbol}`),
+
+  // Theses CRUD
+  getAll: (status = null) => {
+    const params = status ? `?status=${status}` : '';
+    return api.get(`/theses${params}`);
+  },
+  getOne: (id) => api.get(`/theses/${id}`),
+  create: (data) => api.post('/theses', data),
+  update: (id, data) => api.put(`/theses/${id}`, data),
+  updateStatus: (id, data) => api.put(`/theses/${id}/status`, data),
+  delete: (id) => api.delete(`/theses/${id}`),
+
+  // Assumptions
+  getAssumptions: (thesisId) => api.get(`/theses/${thesisId}/assumptions`),
+  addAssumption: (thesisId, data) => api.post(`/theses/${thesisId}/assumptions`, data),
+  updateAssumption: (thesisId, assumptionId, data) => api.put(`/theses/${thesisId}/assumptions/${assumptionId}`, data),
+  updateAssumptionStatus: (thesisId, assumptionId, data) => api.put(`/theses/${thesisId}/assumptions/${assumptionId}/status`, data),
+  deleteAssumption: (thesisId, assumptionId) => api.delete(`/theses/${thesisId}/assumptions/${assumptionId}`),
+
+  // Catalysts
+  getCatalysts: (thesisId) => api.get(`/theses/${thesisId}/catalysts`),
+  addCatalyst: (thesisId, data) => api.post(`/theses/${thesisId}/catalysts`, data),
+  updateCatalyst: (thesisId, catalystId, data) => api.put(`/theses/${thesisId}/catalysts/${catalystId}`, data),
+  updateCatalystStatus: (thesisId, catalystId, data) => api.put(`/theses/${thesisId}/catalysts/${catalystId}/status`, data),
+  deleteCatalyst: (thesisId, catalystId) => api.delete(`/theses/${thesisId}/catalysts/${catalystId}`)
+};
+
+// Notes AI API
+export const notesAIAPI = {
+  // Summarize a note
+  summarize: (content, title = '', maxLength = 200) =>
+    api.post('/ai/notes/summarize', { content, title, maxLength }),
+
+  // Extract investment assumptions from content
+  extractAssumptions: (content, thesisContext = '') =>
+    api.post('/ai/notes/extract-assumptions', { content, thesisContext }),
+
+  // Challenge a thesis with counter-arguments
+  challengeThesis: (thesisSummary, assumptions = [], companyData = null) =>
+    api.post('/ai/notes/challenge-thesis', { thesisSummary, assumptions, companyData }),
+
+  // Extract key insights from a note
+  extractInsights: (content, noteType = 'research') =>
+    api.post('/ai/notes/extract-insights', { content, noteType }),
+
+  // Suggest tags for a note
+  suggestTags: (content, existingTags = []) =>
+    api.post('/ai/notes/suggest-tags', { content, existingTags })
+};
+
+// ============================================
+// Settings API
+// ============================================
+export const settingsAPI = {
+  // Update Schedules
+  getUpdateSchedules: () => api.get('/settings/updates'),
+  toggleSchedule: (name, enabled) => api.patch(`/settings/updates/${name}`, { enabled }),
+  getUpdateHistory: (schedule = null, limit = 50) => {
+    const params = new URLSearchParams();
+    if (schedule) params.append('schedule', schedule);
+    params.append('limit', limit);
+    return api.get(`/settings/updates/history?${params.toString()}`);
+  },
+
+  // Data Health
+  getDataHealth: () => api.get('/settings/data-health'),
+  getHealth: () => api.get('/settings/health'),
+
+  // API Integrations
+  getIntegrations: () => api.get('/settings/integrations'),
+  updateApiKey: (name, apiKey) => api.patch(`/settings/integrations/${name}`, { apiKey }),
+  testConnection: (name) => api.post(`/settings/integrations/${name}/test`),
+
+  // User Preferences
+  getPreferences: () => api.get('/settings/preferences'),
+  updatePreferences: (prefs) => api.patch('/settings/preferences', prefs),
+
+  // Database & Diagnostics
+  getDatabaseStats: () => api.get('/settings/database'),
+  getDiagnostics: () => api.get('/settings/diagnostics'),
+  getLogs: (options = {}) => {
+    const params = new URLSearchParams();
+    if (options.level) params.append('level', options.level);
+    if (options.category) params.append('category', options.category);
+    if (options.limit) params.append('limit', options.limit);
+    return api.get(`/settings/logs?${params.toString()}`);
+  },
+  cleanupLogs: (daysToKeep = 30) => api.post('/settings/logs/cleanup', { daysToKeep }),
+
+  // Exchange Rates
+  getExchangeRates: () => api.get('/settings/exchange-rates'),
 };
 
 export default api;

@@ -4,10 +4,11 @@ import { createChart, ColorType, CrosshairMode, LineSeries } from 'lightweight-c
 import {
   ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine,
   BarChart, Bar, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Legend,
-  LineChart, Line, ComposedChart, Area
+  LineChart, Line
 } from 'recharts';
-import { companyAPI, pricesAPI } from '../services/api';
+import { companyAPI, pricesAPI, indicesAPI } from '../services/api';
 import { PeriodToggle, WatchlistButton } from '../components';
+import { METRICS, METRIC_CATEGORIES, getMetricsArray } from '../config/metrics';
 import './AdvancedChartsPage.css';
 
 // Color palette for series
@@ -16,23 +17,22 @@ const SERIES_COLORS = [
   '#ec4899', '#06b6d4', '#f97316', '#a855f7', '#14b8a6'
 ];
 
-// Available metrics for charting
-const CHART_METRICS = [
-  { key: 'stock_price', label: 'Stock Price', format: 'currency', category: 'Price' },
-  { key: 'roic', label: 'ROIC', format: 'percent', category: 'Profitability' },
-  { key: 'roe', label: 'ROE', format: 'percent', category: 'Profitability' },
-  { key: 'roa', label: 'ROA', format: 'percent', category: 'Profitability' },
-  { key: 'gross_margin', label: 'Gross Margin', format: 'percent', category: 'Margins' },
-  { key: 'operating_margin', label: 'Operating Margin', format: 'percent', category: 'Margins' },
-  { key: 'net_margin', label: 'Net Margin', format: 'percent', category: 'Margins' },
-  { key: 'fcf_yield', label: 'FCF Yield', format: 'percent', category: 'Cash Flow' },
-  { key: 'fcf_margin', label: 'FCF Margin', format: 'percent', category: 'Cash Flow' },
-  { key: 'debt_to_equity', label: 'Debt/Equity', format: 'ratio', category: 'Leverage' },
-  { key: 'current_ratio', label: 'Current Ratio', format: 'ratio', category: 'Liquidity' },
-  { key: 'revenue_growth_yoy', label: 'Revenue Growth YoY', format: 'percent', category: 'Growth' },
-  { key: 'earnings_growth_yoy', label: 'Earnings Growth YoY', format: 'percent', category: 'Growth' },
-  { key: 'asset_turnover', label: 'Asset Turnover', format: 'ratio', category: 'Efficiency' },
-];
+// Build CHART_METRICS from centralized config - all metrics with historical data or commonly used
+const CHART_METRICS = getMetricsArray().filter(m =>
+  // Include all metrics that have historical data or are commonly used for comparison
+  m.hasHistorical === true ||
+  ['stock_price', 'pe_ratio', 'pb_ratio', 'ps_ratio', 'ev_ebitda', 'peg_ratio',
+   'dividend_yield', 'fcf_yield', 'earnings_yield', 'shareholder_yield', 'buyback_yield'].includes(m.key)
+);
+
+// Group metrics by category for the dropdown
+const CHART_METRICS_BY_CATEGORY = Object.entries(METRIC_CATEGORIES).reduce((acc, [catKey, catDef]) => {
+  const metricsInCategory = CHART_METRICS.filter(m => m.category === catDef.label);
+  if (metricsInCategory.length > 0) {
+    acc[catDef.label] = metricsInCategory;
+  }
+  return acc;
+}, {});
 
 // Normalization modes
 const NORMALIZATION_MODES = [
@@ -49,36 +49,38 @@ const CORRELATION_TYPES = [
   { value: 'mutual_info', label: 'Mutual Information', description: 'Non-linear dependency (0 to ∞)' },
 ];
 
-// Comparison metrics organized by category
-const COMPARISON_METRICS_BY_CATEGORY = {
-  'Returns': [
-    { key: 'roic', label: 'ROIC', format: 'percent', higherBetter: true },
-    { key: 'roe', label: 'ROE', format: 'percent', higherBetter: true },
-    { key: 'roa', label: 'ROA', format: 'percent', higherBetter: true },
-  ],
-  'Margins': [
-    { key: 'gross_margin', label: 'Gross Margin', format: 'percent', higherBetter: true },
-    { key: 'operating_margin', label: 'Op. Margin', format: 'percent', higherBetter: true },
-    { key: 'net_margin', label: 'Net Margin', format: 'percent', higherBetter: true },
-    { key: 'fcf_margin', label: 'FCF Margin', format: 'percent', higherBetter: true },
-  ],
-  'Growth': [
-    { key: 'revenue_growth_yoy', label: 'Revenue YoY', format: 'percent', higherBetter: true },
-    { key: 'earnings_growth_yoy', label: 'Earnings YoY', format: 'percent', higherBetter: true },
-  ],
-  'Financial Health': [
-    { key: 'debt_to_equity', label: 'Debt/Equity', format: 'ratio', higherBetter: false },
-    { key: 'current_ratio', label: 'Current Ratio', format: 'ratio', higherBetter: true },
-    { key: 'interest_coverage', label: 'Interest Cov.', format: 'ratio', higherBetter: true },
-  ],
-  'Cash Flow': [
-    { key: 'fcf_yield', label: 'FCF Yield', format: 'percent', higherBetter: true },
-    { key: 'operating_cash_flow_ratio', label: 'OCF/Revenue', format: 'percent', higherBetter: true },
-  ],
-};
+// Build COMPARISON_METRICS from centralized config - metrics useful for company comparison
+const COMPARISON_METRICS_KEYS = [
+  // Profitability
+  'roic', 'roe', 'roa', 'roce',
+  // Margins
+  'gross_margin', 'operating_margin', 'net_margin',
+  // Cash Flow
+  'fcf', 'fcf_yield', 'fcf_margin', 'owner_earnings',
+  // Growth
+  'revenue_growth_yoy', 'earnings_growth_yoy', 'fcf_growth_yoy',
+  // Valuation
+  'pe_ratio', 'pb_ratio', 'ps_ratio', 'ev_ebitda', 'peg_ratio', 'earnings_yield',
+  // Shareholder Returns
+  'dividend_yield', 'buyback_yield', 'shareholder_yield',
+  // Financial Health
+  'debt_to_equity', 'debt_to_assets', 'current_ratio', 'quick_ratio', 'interest_coverage',
+  // Efficiency
+  'asset_turnover', 'equity_multiplier',
+  // Financials
+  'revenue', 'net_income', 'operating_income', 'ebitda'
+];
 
-// Flat list for backward compatibility
-const COMPARISON_METRICS = Object.values(COMPARISON_METRICS_BY_CATEGORY).flat();
+const COMPARISON_METRICS = COMPARISON_METRICS_KEYS
+  .map(key => METRICS[key] ? { key, ...METRICS[key] } : null)
+  .filter(Boolean);
+
+// Group comparison metrics by category for the pills UI
+const COMPARISON_METRICS_BY_CATEGORY = COMPARISON_METRICS.reduce((acc, m) => {
+  if (!acc[m.category]) acc[m.category] = [];
+  acc[m.category].push(m);
+  return acc;
+}, {});
 
 const RADAR_METRICS = ['roic', 'roe', 'gross_margin', 'net_margin', 'fcf_yield', 'current_ratio'];
 
@@ -191,31 +193,35 @@ function calculateSpearmanCorrelation(series1, series2) {
   const paired = alignSeries(series1, series2);
   if (paired.length < 3) return null;
 
-  // Convert to ranks
-  const getRanks = (arr, key) => {
-    const sorted = [...arr].sort((a, b) => a[key] - b[key]);
-    const ranks = new Map();
-    sorted.forEach((item, i) => {
-      ranks.set(arr.indexOf(item), i + 1);
-    });
-    // Handle ties with average rank
-    const valueGroups = {};
-    arr.forEach((item, i) => {
-      const val = item[key];
-      if (!valueGroups[val]) valueGroups[val] = [];
-      valueGroups[val].push(i);
-    });
-    Object.values(valueGroups).forEach(indices => {
-      if (indices.length > 1) {
-        const avgRank = indices.reduce((s, i) => s + ranks.get(i), 0) / indices.length;
-        indices.forEach(i => ranks.set(i, avgRank));
+  // Convert to ranks with proper tie handling
+  const getRanks = (values) => {
+    // Create array of {value, originalIndex}
+    const indexed = values.map((v, i) => ({ value: v, originalIndex: i }));
+    // Sort by value
+    indexed.sort((a, b) => a.value - b.value);
+
+    // Assign ranks, handling ties with average rank
+    const ranks = new Array(values.length);
+    let i = 0;
+    while (i < indexed.length) {
+      // Find all items with the same value (ties)
+      let j = i;
+      while (j < indexed.length && indexed[j].value === indexed[i].value) {
+        j++;
       }
-    });
-    return arr.map((_, i) => ranks.get(i));
+      // Calculate average rank for ties (ranks are 1-based)
+      const avgRank = (i + 1 + j) / 2;
+      // Assign average rank to all tied items
+      for (let k = i; k < j; k++) {
+        ranks[indexed[k].originalIndex] = avgRank;
+      }
+      i = j;
+    }
+    return ranks;
   };
 
-  const ranks1 = getRanks(paired, 'v1');
-  const ranks2 = getRanks(paired, 'v2');
+  const ranks1 = getRanks(paired.map(p => p.v1));
+  const ranks2 = getRanks(paired.map(p => p.v2));
 
   // Calculate Pearson on ranks
   const n = paired.length;
@@ -341,7 +347,8 @@ function formatCorrelation(value, type) {
 
 // Correlation Heatmap Component
 function CorrelationHeatmap({ matrix, labels, type, onCellClick }) {
-  const cellSize = Math.min(60, 400 / labels.length);
+  // Dynamic cell sizing - ensure minimum readability while fitting larger matrices
+  const cellSize = Math.max(45, Math.min(70, 500 / labels.length));
 
   return (
     <div className="heatmap-container">
@@ -415,7 +422,7 @@ function CorrelationHeatmap({ matrix, labels, type, onCellClick }) {
   );
 }
 
-// Scatter Plot Component
+// Scatter Plot Component with regression line
 function ScatterPlot({ data, xLabel, yLabel, companies, colors }) {
   if (!data || data.length === 0) {
     return <div className="empty-scatter">No data available for scatter plot</div>;
@@ -436,57 +443,74 @@ function ScatterPlot({ data, xLabel, yLabel, companies, colors }) {
   const slope = denominator !== 0 ? numerator / denominator : 0;
   const intercept = yMean - slope * xMean;
 
+  // Calculate R-squared for display
+  let ssRes = 0, ssTot = 0;
+  for (let i = 0; i < n; i++) {
+    const predicted = intercept + slope * xValues[i];
+    ssRes += Math.pow(yValues[i] - predicted, 2);
+    ssTot += Math.pow(yValues[i] - yMean, 2);
+  }
+  const rSquared = ssTot === 0 ? 0 : 1 - (ssRes / ssTot);
+
   const xMin = Math.min(...xValues);
   const xMax = Math.max(...xValues);
-  const regressionLine = [
-    { x: xMin, y: intercept + slope * xMin },
-    { x: xMax, y: intercept + slope * xMax }
+
+  // Create regression line data points for Line component
+  const regressionData = [
+    { x: xMin, regression: intercept + slope * xMin },
+    { x: xMax, regression: intercept + slope * xMax }
   ];
 
+  // Combine scatter data with regression data for the chart
+  const combinedData = data.map(d => ({ ...d, regression: null }));
+
   return (
-    <ResponsiveContainer width="100%" height={350}>
-      <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 20 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="rgba(0, 0, 0, 0.08)" />
-        <XAxis
-          dataKey="x"
-          type="number"
-          name={xLabel}
-          stroke="rgba(0, 0, 0, 0.2)"
-          tick={{ fill: '#6b7280', fontSize: 11 }}
-          label={{ value: xLabel, position: 'bottom', fill: '#6b7280', fontSize: 12 }}
-        />
-        <YAxis
-          dataKey="y"
-          type="number"
-          name={yLabel}
-          stroke="rgba(0, 0, 0, 0.2)"
-          tick={{ fill: '#6b7280', fontSize: 11 }}
-          label={{ value: yLabel, angle: -90, position: 'left', fill: '#6b7280', fontSize: 12 }}
-        />
-        <Tooltip
-          contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem', backdropFilter: 'blur(8px)' }}
-          formatter={(value, name) => [value?.toFixed(2), name]}
-          labelFormatter={(_, payload) => payload[0]?.payload?.label || ''}
-        />
-        <ReferenceLine
-          segment={regressionLine}
-          stroke="#8b5cf6"
-          strokeWidth={2}
-          strokeDasharray="5 5"
-        />
-        <Scatter data={data} fill="#8b5cf6">
-          {data.map((entry, index) => {
-            const companyIdx = companies.indexOf(entry.symbol);
-            return (
-              <Cell
-                key={index}
-                fill={colors[companyIdx % colors.length] || '#8b5cf6'}
-              />
-            );
-          })}
-        </Scatter>
-      </ScatterChart>
-    </ResponsiveContainer>
+    <div className="scatter-plot-wrapper">
+      <ResponsiveContainer width="100%" height={350}>
+        <ScatterChart margin={{ top: 20, right: 30, bottom: 40, left: 20 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0, 0, 0, 0.08)" />
+          <XAxis
+            dataKey="x"
+            type="number"
+            name={xLabel}
+            stroke="rgba(0, 0, 0, 0.2)"
+            tick={{ fill: '#6b7280', fontSize: 11 }}
+            label={{ value: xLabel, position: 'bottom', offset: -5, fill: '#6b7280', fontSize: 12 }}
+            domain={[xMin - (xMax - xMin) * 0.05, xMax + (xMax - xMin) * 0.05]}
+          />
+          <YAxis
+            dataKey="y"
+            type="number"
+            name={yLabel}
+            stroke="rgba(0, 0, 0, 0.2)"
+            tick={{ fill: '#6b7280', fontSize: 11 }}
+            label={{ value: yLabel, angle: -90, position: 'insideLeft', fill: '#6b7280', fontSize: 12 }}
+          />
+          <Tooltip
+            contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem', backdropFilter: 'blur(8px)' }}
+            formatter={(value, name) => [value?.toFixed(2), name]}
+            labelFormatter={(_, payload) => payload[0]?.payload?.label || ''}
+          />
+          <Scatter data={combinedData} fill="#8b5cf6">
+            {data.map((entry, index) => {
+              const companyIdx = companies.indexOf(entry.symbol);
+              return (
+                <Cell
+                  key={index}
+                  fill={colors[companyIdx % colors.length] || '#8b5cf6'}
+                />
+              );
+            })}
+          </Scatter>
+          {/* Regression line as a separate Line */}
+          <Scatter data={regressionData} line={{ stroke: '#8b5cf6', strokeWidth: 2, strokeDasharray: '5 5' }} shape={() => null} legendType="none" />
+        </ScatterChart>
+      </ResponsiveContainer>
+      <div className="regression-stats">
+        <span>Regression: y = {slope.toFixed(3)}x + {intercept.toFixed(2)}</span>
+        <span>R² = {rSquared.toFixed(3)}</span>
+      </div>
+    </div>
   );
 }
 
@@ -571,7 +595,7 @@ function AdvancedChartsPage() {
   const [selectedMetric, setSelectedMetric] = useState('stock_price');
   const [secondaryMetric, setSecondaryMetric] = useState('');
   const [periodType, setPeriodType] = useState('annual');
-  const [normalization, setNormalization] = useState('absolute');
+  const [normalization, setNormalization] = useState('indexed');
   const [timeRange, setTimeRange] = useState('All');
   const [showTrendLines, setShowTrendLines] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -588,6 +612,10 @@ function AdvancedChartsPage() {
     'roic', 'roe', 'roa', 'gross_margin', 'operating_margin', 'net_margin', 'fcf_margin',
     'revenue_growth_yoy', 'earnings_growth_yoy', 'debt_to_equity', 'current_ratio', 'fcf_yield'
   ]);
+  // Index comparison state
+  const [marketIndices, setMarketIndices] = useState([]);
+  const [selectedIndices, setSelectedIndices] = useState([]);
+  const [indexPriceData, setIndexPriceData] = useState({});
 
   // Chart refs
   const mainChartRef = useRef(null);
@@ -606,6 +634,19 @@ function AdvancedChartsPage() {
       }
     };
     loadCompanies();
+  }, []);
+
+  // Load market indices
+  useEffect(() => {
+    const loadIndices = async () => {
+      try {
+        const response = await indicesAPI.getAll();
+        setMarketIndices(response.data?.data || []);
+      } catch (error) {
+        console.error('Error loading market indices:', error);
+      }
+    };
+    loadIndices();
   }, []);
 
   // Search companies
@@ -644,7 +685,7 @@ function AdvancedChartsPage() {
         pricesAPI.getMetrics(symbol).catch(() => ({ data: null }))
       ]);
       const pm = priceMetricsRes.data;
-      return {
+      const result = {
         company: companyRes.data.company,
         latestMetrics: {
           ...companyRes.data.latest_metrics,
@@ -656,6 +697,7 @@ function AdvancedChartsPage() {
           } : {})
         }
       };
+      return result;
     } catch (error) {
       console.error(`Error loading comparison data for ${symbol}:`, error);
       return null;
@@ -723,6 +765,47 @@ function AdvancedChartsPage() {
     }
   };
 
+  // Toggle index selection
+  const toggleIndex = async (index) => {
+    const symbol = index.short_name;
+    if (selectedIndices.find(i => i.short_name === symbol)) {
+      // Remove index
+      setSelectedIndices(prev => prev.filter(i => i.short_name !== symbol));
+      setIndexPriceData(prev => {
+        const newData = { ...prev };
+        delete newData[symbol];
+        return newData;
+      });
+    } else {
+      // Add index (max 2 indices)
+      if (selectedIndices.length >= 2) {
+        alert('Maximum 2 indices can be compared at once');
+        return;
+      }
+      setSelectedIndices(prev => [...prev, index]);
+      // Load price data for this index - use 'max' to get all available data
+      try {
+        const priceRes = await indicesAPI.getPrices(symbol, 'max');
+        const prices = priceRes.data?.data || [];
+        setIndexPriceData(prev => ({
+          ...prev,
+          [symbol]: prices.map(p => ({ date: p.date, close: p.close }))
+        }));
+      } catch (error) {
+        console.error(`Error loading price data for ${symbol}:`, error);
+      }
+    }
+  };
+
+  const removeIndex = (symbol) => {
+    setSelectedIndices(prev => prev.filter(i => i.short_name !== symbol));
+    setIndexPriceData(prev => {
+      const newData = { ...prev };
+      delete newData[symbol];
+      return newData;
+    });
+  };
+
   // Reload data when period changes
   useEffect(() => {
     const reloadAll = async () => {
@@ -745,9 +828,10 @@ function AdvancedChartsPage() {
     reloadAll();
   }, [periodType, selectedCompanies, loadCompanyMetrics, loadComparisonData]);
 
-  // Load price data when stock_price metric is selected
+  // Load price data when stock_price metric is selected OR when indices are selected
   useEffect(() => {
-    if (selectedMetric !== 'stock_price') return;
+    // Load price data if stock_price metric is selected OR if we have indices selected (for comparison)
+    if (selectedMetric !== 'stock_price' && selectedIndices.length === 0) return;
     const loadPrices = async () => {
       const missingSymbols = selectedCompanies.filter(s => !priceData[s]);
       if (missingSymbols.length === 0) return;
@@ -762,7 +846,7 @@ function AdvancedChartsPage() {
       setLoading(false);
     };
     loadPrices();
-  }, [selectedMetric, selectedCompanies, priceData, loadPriceHistory]);
+  }, [selectedMetric, selectedCompanies, priceData, loadPriceHistory, selectedIndices.length]);
 
   // Prepare chart data
   const chartData = useMemo(() => {
@@ -964,6 +1048,68 @@ function AdvancedChartsPage() {
     return result;
   }, [selectedCompanies, chartData]);
 
+  // Get normalized price performance data for comparison chart (companies vs indices)
+  const getPricePerformanceData = useCallback(() => {
+    // Collect all unique dates from companies and indices
+    const allDates = new Set();
+
+    // Add company price dates
+    selectedCompanies.forEach(symbol => {
+      const prices = priceData[symbol] || [];
+      prices.forEach(p => allDates.add(p.date));
+    });
+
+    // Add index price dates
+    selectedIndices.forEach(index => {
+      const prices = indexPriceData[index.short_name] || [];
+      prices.forEach(p => allDates.add(p.date));
+    });
+
+    const sortedDates = Array.from(allDates).sort();
+    if (sortedDates.length === 0) return [];
+
+    // Get base prices (first available price for each)
+    const basePrices = {};
+    selectedCompanies.forEach(symbol => {
+      const prices = priceData[symbol];
+      if (prices?.length) {
+        const firstPrice = prices.find(p => p.adjusted_close || p.close);
+        if (firstPrice) basePrices[symbol] = firstPrice.adjusted_close || firstPrice.close;
+      }
+    });
+    selectedIndices.forEach(index => {
+      const prices = indexPriceData[index.short_name];
+      if (prices?.length) {
+        const firstPrice = prices.find(p => p.close);
+        if (firstPrice) basePrices[index.short_name] = firstPrice.close;
+      }
+    });
+
+    // Build normalized data points
+    return sortedDates.map(date => {
+      const point = { date: date.substring(5) }; // MM-DD format
+
+      // Add company performance
+      selectedCompanies.forEach(symbol => {
+        const pricePoint = priceData[symbol]?.find(p => p.date === date);
+        const price = pricePoint?.adjusted_close || pricePoint?.close;
+        if (price && basePrices[symbol]) {
+          point[symbol] = ((price - basePrices[symbol]) / basePrices[symbol]) * 100;
+        }
+      });
+
+      // Add index performance
+      selectedIndices.forEach(index => {
+        const pricePoint = indexPriceData[index.short_name]?.find(p => p.date === date);
+        if (pricePoint?.close && basePrices[index.short_name]) {
+          point[index.short_name] = ((pricePoint.close - basePrices[index.short_name]) / basePrices[index.short_name]) * 100;
+        }
+      });
+
+      return point;
+    });
+  }, [selectedCompanies, selectedIndices, priceData, indexPriceData]);
+
   // Initialize/update main chart
   useEffect(() => {
     if (!mainChartContainerRef.current || activeTab === 'correlation' || activeTab === 'metrics') return;
@@ -1000,6 +1146,7 @@ function AdvancedChartsPage() {
 
     mainChartRef.current = chart;
 
+    // Add company series
     selectedCompanies.forEach((symbol, idx) => {
       const data = chartData[symbol]?.normalized || [];
       if (data.length === 0) return;
@@ -1049,6 +1196,70 @@ function AdvancedChartsPage() {
       }
     });
 
+    // Add index series (only when showing stock_price or when indices are selected for comparison)
+    if (selectedMetric === 'stock_price' || selectedIndices.length > 0) {
+      // Find the earliest start date from company data to align index normalization
+      let earliestCompanyDate = null;
+      selectedCompanies.forEach((symbol) => {
+        const data = chartData[symbol]?.normalized || [];
+        if (data.length > 0 && data[0].time) {
+          if (!earliestCompanyDate || data[0].time < earliestCompanyDate) {
+            earliestCompanyDate = data[0].time;
+          }
+        }
+      });
+
+      selectedIndices.forEach((index) => {
+        const prices = indexPriceData[index.short_name] || [];
+        if (prices.length === 0) return;
+
+        // Prepare index data - filter to start from same date as companies
+        let indexData = prices
+          .map(p => ({ time: p.date, value: p.close }))
+          .filter(d => d.value !== null && d.value !== undefined)
+          .sort((a, b) => a.time.localeCompare(b.time));
+
+        // Filter to match company date range if we have company data
+        if (earliestCompanyDate && indexData.length > 0) {
+          indexData = indexData.filter(d => d.time >= earliestCompanyDate);
+        }
+
+        if (indexData.length === 0) return;
+
+        // Apply same normalization as companies - base from the filtered start date
+        if (normalization === 'indexed' && indexData.length > 0) {
+          const baseValue = indexData[0].value;
+          indexData = baseValue !== 0
+            ? indexData.map(d => ({ time: d.time, value: (d.value / baseValue) * 100 }))
+            : indexData;
+        } else if (normalization === 'percent_change' && indexData.length > 0) {
+          const baseValue = indexData[0].value;
+          indexData = baseValue !== 0
+            ? indexData.map(d => ({ time: d.time, value: ((d.value - baseValue) / Math.abs(baseValue)) * 100 }))
+            : indexData;
+        }
+
+        const indexSeries = chart.addSeries(LineSeries, {
+          color: '#64748b', // Gray color for indices
+          lineWidth: 2,
+          lineStyle: 2, // Dashed line for indices
+          priceFormat: {
+            type: 'custom',
+            formatter: (v) => {
+              if (normalization === 'indexed') return v.toFixed(1);
+              if (normalization === 'percent_change') return `${v.toFixed(1)}%`;
+              return v.toFixed(2);
+            }
+          },
+          crosshairMarkerVisible: true,
+          crosshairMarkerRadius: 4,
+          title: index.short_name
+        });
+        indexSeries.setData(indexData);
+        seriesRefs.current.push({ symbol: index.short_name, series: indexSeries, isIndex: true });
+      });
+    }
+
     chart.timeScale().fitContent();
 
     const handleResize = () => {
@@ -1062,7 +1273,7 @@ function AdvancedChartsPage() {
       window.removeEventListener('resize', handleResize);
       try { chart.remove(); } catch (e) {}
     };
-  }, [selectedCompanies, chartData, normalization, showTrendLines, selectedMetric, activeTab]);
+  }, [selectedCompanies, chartData, normalization, showTrendLines, selectedMetric, activeTab, selectedIndices, indexPriceData]);
 
   const metricInfo = CHART_METRICS.find(m => m.key === selectedMetric);
   const secondaryMetricInfo = CHART_METRICS.find(m => m.key === secondaryMetric);
@@ -1110,7 +1321,42 @@ function AdvancedChartsPage() {
               <button className="tag-remove" onClick={() => removeCompany(symbol)}>×</button>
             </div>
           ))}
+          {/* Index tags */}
+          {selectedIndices.map((index) => (
+            <div
+              key={index.short_name}
+              className="company-tag index-tag"
+              style={{ '--tag-color': '#64748b' }}
+            >
+              <span className="tag-dot"></span>
+              <span className="tag-symbol">{index.short_name}</span>
+              <span className="tag-badge">Index</span>
+              <button className="tag-remove" onClick={() => removeIndex(index.short_name)}>×</button>
+            </div>
+          ))}
         </div>
+
+        {/* Market Index Quick Select */}
+        {marketIndices.length > 0 && (
+          <div className="index-selector">
+            <span className="index-label">Compare vs Index:</span>
+            <div className="index-buttons">
+              {marketIndices.map(index => {
+                const isSelected = selectedIndices.find(i => i.short_name === index.short_name);
+                return (
+                  <button
+                    key={index.short_name}
+                    className={`index-btn ${isSelected ? 'active' : ''}`}
+                    onClick={() => toggleIndex(index)}
+                    title={index.name}
+                  >
+                    {index.short_name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {selectedCompanies.length > 0 && (
@@ -1140,13 +1386,7 @@ function AdvancedChartsPage() {
             <div className="control-group">
               <label>Metric</label>
               <select value={selectedMetric} onChange={(e) => setSelectedMetric(e.target.value)}>
-                {Object.entries(
-                  CHART_METRICS.reduce((acc, m) => {
-                    if (!acc[m.category]) acc[m.category] = [];
-                    acc[m.category].push(m);
-                    return acc;
-                  }, {})
-                ).map(([category, metrics]) => (
+                {Object.entries(CHART_METRICS_BY_CATEGORY).map(([category, metrics]) => (
                   <optgroup key={category} label={category}>
                     {metrics.map(m => (
                       <option key={m.key} value={m.key}>{m.label}</option>
@@ -1298,29 +1538,37 @@ function AdvancedChartsPage() {
                       })}
                     </div>
 
-                    {/* Metric Selector */}
+                    {/* Metric Selector - organized by category */}
                     <div className="metric-selector">
-                      <span className="selector-label">Metrics:</span>
-                      <div className="metric-pills">
-                        {COMPARISON_METRICS.map(metric => {
-                          const isSelected = selectedTableMetrics.includes(metric.key);
-                          return (
-                            <button
-                              key={metric.key}
-                              className={`metric-pill ${isSelected ? 'selected' : ''}`}
-                              onClick={() => {
-                                if (isSelected) {
-                                  setSelectedTableMetrics(prev => prev.filter(k => k !== metric.key));
-                                } else {
-                                  setSelectedTableMetrics(prev => [...prev, metric.key]);
-                                }
-                              }}
-                            >
-                              {metric.label}
-                              {isSelected && <span className="pill-remove">×</span>}
-                            </button>
-                          );
-                        })}
+                      <span className="selector-label">Select Metrics:</span>
+                      <div className="metric-categories">
+                        {Object.entries(COMPARISON_METRICS_BY_CATEGORY).map(([category, metrics]) => (
+                          <div key={category} className="metric-category-group">
+                            <span className="category-label">{category}</span>
+                            <div className="metric-pills">
+                              {metrics.map(metric => {
+                                const isSelected = selectedTableMetrics.includes(metric.key);
+                                return (
+                                  <button
+                                    key={metric.key}
+                                    className={`metric-pill ${isSelected ? 'selected' : ''}`}
+                                    onClick={() => {
+                                      if (isSelected) {
+                                        setSelectedTableMetrics(prev => prev.filter(k => k !== metric.key));
+                                      } else {
+                                        setSelectedTableMetrics(prev => [...prev, metric.key]);
+                                      }
+                                    }}
+                                    title={metric.description}
+                                  >
+                                    {metric.shortLabel || metric.label}
+                                    {isSelected && <span className="pill-remove">×</span>}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
 
@@ -1413,31 +1661,37 @@ function AdvancedChartsPage() {
                     {/* Margin Waterfall Comparison */}
                     <div className="comparison-chart-card">
                       <h4>Margin Comparison</h4>
-                      <ResponsiveContainer width="100%" height={250}>
-                        <BarChart
-                          layout="vertical"
-                          data={MARGIN_METRICS.map(m => ({
-                            metric: m.label,
-                            ...selectedCompanies.reduce((acc, symbol, idx) => {
-                              acc[symbol] = comparisonData[symbol]?.latestMetrics?.[m.key] || 0;
-                              return acc;
-                            }, {})
-                          }))}
-                          margin={{ left: 10, right: 20 }}
-                        >
-                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0, 0, 0, 0.08)" />
-                          <XAxis type="number" stroke="#6b7280" tick={{ fill: '#6b7280', fontSize: 11 }} unit="%" />
-                          <YAxis type="category" dataKey="metric" stroke="#6b7280" tick={{ fill: '#6b7280', fontSize: 11 }} width={70} />
-                          <Tooltip
-                            contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem' }}
-                            formatter={(v) => `${v.toFixed(1)}%`}
-                          />
-                          <Legend />
-                          {selectedCompanies.map((symbol, idx) => (
-                            <Bar key={symbol} dataKey={symbol} name={symbol} fill={SERIES_COLORS[idx % SERIES_COLORS.length]} />
-                          ))}
-                        </BarChart>
-                      </ResponsiveContainer>
+                      {selectedCompanies.length > 0 && Object.keys(comparisonData).length > 0 ? (
+                        <ResponsiveContainer width="100%" height={250}>
+                          <BarChart
+                            layout="vertical"
+                            data={MARGIN_METRICS.map(m => ({
+                              metric: m.label,
+                              ...selectedCompanies.reduce((acc, symbol) => {
+                                acc[symbol] = comparisonData[symbol]?.latestMetrics?.[m.key] || 0;
+                                return acc;
+                              }, {})
+                            }))}
+                            margin={{ left: 10, right: 20 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(0, 0, 0, 0.08)" />
+                            <XAxis type="number" stroke="#6b7280" tick={{ fill: '#6b7280', fontSize: 11 }} unit="%" />
+                            <YAxis type="category" dataKey="metric" stroke="#6b7280" tick={{ fill: '#6b7280', fontSize: 11 }} width={70} />
+                            <Tooltip
+                              contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem' }}
+                              formatter={(v) => `${v.toFixed(1)}%`}
+                            />
+                            <Legend />
+                            {selectedCompanies.map((symbol, idx) => (
+                              <Bar key={symbol} dataKey={symbol} name={symbol} fill={SERIES_COLORS[idx % SERIES_COLORS.length]} />
+                            ))}
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="chart-empty-state">
+                          <p>Add companies to compare margin metrics</p>
+                        </div>
+                      )}
                     </div>
 
                     {/* Profitability Bar Chart */}
@@ -1540,6 +1794,57 @@ function AdvancedChartsPage() {
                         </RadarChart>
                       </ResponsiveContainer>
                     </div>
+
+                    {/* Price Performance Chart - Companies vs Indices */}
+                    {(selectedCompanies.length > 0 && Object.keys(priceData).length > 0) && (
+                      <div className="comparison-chart-card full-width">
+                        <h4>
+                          Price Performance (1Y)
+                          {selectedIndices.length > 0 && (
+                            <span className="chart-subtitle"> vs {selectedIndices.map(i => i.short_name).join(', ')}</span>
+                          )}
+                        </h4>
+                        <ResponsiveContainer width="100%" height={300}>
+                          <LineChart data={getPricePerformanceData()}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(0, 0, 0, 0.08)" />
+                            <XAxis dataKey="date" stroke="#6b7280" tick={{ fill: '#6b7280', fontSize: 11 }} interval="preserveStartEnd" />
+                            <YAxis stroke="#6b7280" tick={{ fill: '#6b7280', fontSize: 11 }} tickFormatter={(v) => `${v.toFixed(0)}%`} />
+                            <Tooltip
+                              contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem' }}
+                              formatter={(v) => v !== null ? `${v.toFixed(1)}%` : '-'}
+                              labelFormatter={(label) => `Date: ${label}`}
+                            />
+                            <Legend />
+                            <ReferenceLine y={0} stroke="#64748b" strokeDasharray="3 3" />
+                            {/* Company price lines */}
+                            {selectedCompanies.map((symbol, idx) => (
+                              <Line
+                                key={symbol}
+                                type="monotone"
+                                dataKey={symbol}
+                                stroke={SERIES_COLORS[idx % SERIES_COLORS.length]}
+                                strokeWidth={2}
+                                dot={false}
+                                connectNulls
+                              />
+                            ))}
+                            {/* Index price lines - dashed style */}
+                            {selectedIndices.map((index) => (
+                              <Line
+                                key={index.short_name}
+                                type="monotone"
+                                dataKey={index.short_name}
+                                stroke="#64748b"
+                                strokeWidth={2}
+                                strokeDasharray="5 5"
+                                dot={false}
+                                connectNulls
+                              />
+                            ))}
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1573,6 +1878,14 @@ function AdvancedChartsPage() {
                         </div>
                       );
                     })}
+                    {/* Index legend items */}
+                    {selectedIndices.map((index) => (
+                      <div key={index.short_name} className="legend-item legend-item-index">
+                        <span className="legend-color legend-color-dashed" style={{ backgroundColor: '#64748b' }}></span>
+                        <span className="legend-symbol">{index.short_name}</span>
+                        <span className="legend-badge">Index</span>
+                      </div>
+                    ))}
                   </div>
 
                   <div ref={mainChartContainerRef} className="chart-canvas"></div>
@@ -1591,12 +1904,22 @@ function AdvancedChartsPage() {
 
                   {/* Company Correlation Heatmap */}
                   <div className="correlation-card">
-                    <h3>Company Correlation Heatmap ({metricInfo?.label})</h3>
-                    <p className="card-description">
-                      Click a cell to view scatter plot for that pair
-                    </p>
+                    <div className="correlation-card-header">
+                      <h3>Company Correlation Heatmap</h3>
+                      <span className="correlation-metric-badge">{metricInfo?.label}</span>
+                    </div>
+                    {selectedCompanies.length >= 2 && (
+                      <p className="card-description">
+                        Click any cell to view the scatter plot for that company pair. Higher values indicate stronger correlation.
+                      </p>
+                    )}
 
-                    {correlationMatrix && selectedCompanies.length >= 2 ? (
+                    {loading ? (
+                      <div className="correlation-loading">
+                        <div className="loading-spinner-small"></div>
+                        <span>Calculating correlations...</span>
+                      </div>
+                    ) : correlationMatrix && selectedCompanies.length >= 2 ? (
                       <CorrelationHeatmap
                         matrix={correlationMatrix}
                         labels={selectedCompanies}
@@ -1604,7 +1927,11 @@ function AdvancedChartsPage() {
                         onCellClick={(s1, s2) => setSelectedScatterPair([s1, s2])}
                       />
                     ) : (
-                      <p className="empty-message">Add at least 2 companies to see correlations</p>
+                      <div className="correlation-empty-state">
+                        <div className="empty-icon">📊</div>
+                        <h4>Add Companies to Compare</h4>
+                        <p>Add at least 2 companies using the search above to see how their {metricInfo?.label || 'metrics'} correlate over time.</p>
+                      </div>
                     )}
                   </div>
 

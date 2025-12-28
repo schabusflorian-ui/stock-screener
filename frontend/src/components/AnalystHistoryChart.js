@@ -1,7 +1,6 @@
 // frontend/src/components/AnalystHistoryChart.js
 import { useState, useEffect } from 'react';
 import {
-  LineChart,
   Line,
   BarChart,
   Bar,
@@ -10,8 +9,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
-  ReferenceLine,
   Area,
   ComposedChart
 } from 'recharts';

@@ -1,5 +1,6 @@
 // frontend/src/components/PriceChart.js
 import { useState, useEffect } from 'react';
+import PropTypes from 'prop-types';
 import {
   LineChart,
   Line,
@@ -7,11 +8,10 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
-  ReferenceLine
+  ResponsiveContainer
 } from 'recharts';
 import { TrendingUp, TrendingDown, Activity, Calendar } from 'lucide-react';
-import { pricesAPI } from '../services/api';
+import { pricesAPI, indicesAPI } from '../services/api';
 import './PriceChart.css';
 
 const PERIODS = [
@@ -21,6 +21,15 @@ const PERIODS = [
   { key: '1y', label: '1Y' },
   { key: '5y', label: '5Y' },
   { key: 'max', label: 'MAX' }
+];
+
+// Available overlay options - use actual market index symbols for historical data
+const OVERLAY_OPTIONS = [
+  { key: 'sma50', label: 'SMA 50', color: '#6366f1', type: 'indicator' },
+  { key: 'sma200', label: 'SMA 200', color: '#f59e0b', type: 'indicator' },
+  { key: 'spy', label: 'S&P 500', color: '#8b5cf6', type: 'index', symbol: '^GSPC' },
+  { key: 'qqq', label: 'NASDAQ', color: '#06b6d4', type: 'index', symbol: '^IXIC' },
+  { key: 'dia', label: 'Dow Jones', color: '#f97316', type: 'index', symbol: '^DJI' }
 ];
 
 const formatPrice = (value) => {
@@ -81,9 +90,23 @@ const CustomTooltip = ({ active, payload, label }) => {
 export function PriceChart({ symbol }) {
   const [data, setData] = useState(null);
   const [metrics, setMetrics] = useState(null);
+  const [indexData, setIndexData] = useState({ spy: null, qqq: null, dia: null });
   const [period, setPeriod] = useState('1y');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Overlay toggles - SMA50 and SMA200 default on, indices off
+  const [overlays, setOverlays] = useState({
+    sma50: true,
+    sma200: true,
+    spy: false,
+    qqq: false,
+    dia: false
+  });
+
+  const toggleOverlay = (key) => {
+    setOverlays(prev => ({ ...prev, [key]: !prev[key] }));
+  };
 
   useEffect(() => {
     async function fetchPrices() {
@@ -107,6 +130,34 @@ export function PriceChart({ symbol }) {
         if (metricsRes.data.success) {
           setMetrics(metricsRes.data.data);
         }
+
+        // Fetch index data for overlays using actual market index symbols
+        const indexSymbols = [
+          { key: 'spy', symbol: '^GSPC', label: 'S&P 500' },
+          { key: 'qqq', symbol: '^IXIC', label: 'NASDAQ' },
+          { key: 'dia', symbol: '^DJI', label: 'Dow Jones' }
+        ];
+
+        const indexPromises = indexSymbols.map(async (idx) => {
+          try {
+            const res = await indicesAPI.getPrices(idx.symbol, period);
+            if (res.data.success && res.data.data && res.data.data.length > 0) {
+              // Index data comes in descending order (newest first), reverse to match stock data (ascending)
+              const sortedData = [...res.data.data].reverse();
+              return { key: idx.key, data: sortedData };
+            }
+          } catch (e) {
+            console.log(`No ${idx.label} data available`);
+          }
+          return { key: idx.key, data: null };
+        });
+
+        const indexResults = await Promise.all(indexPromises);
+        const newIndexData = {};
+        indexResults.forEach(r => {
+          newIndexData[r.key] = r.data;
+        });
+        setIndexData(newIndexData);
       } catch (err) {
         console.error('Error fetching prices:', err);
         setError('Failed to load price data');
@@ -159,11 +210,33 @@ export function PriceChart({ symbol }) {
   const sma50 = prices.length >= 50 ? calculateSMA(prices, 50) : [];
   const sma200 = prices.length >= 200 ? calculateSMA(prices, 200) : [];
 
+  // Create maps of index prices by date for overlays (normalized to stock's starting price)
+  const createIndexMap = (idxData) => {
+    const map = new Map();
+    if (idxData && idxData.length > 0) {
+      const idxStartPrice = idxData[0]?.adjusted_close || idxData[0]?.close;
+      for (const p of idxData) {
+        const idxPrice = p.adjusted_close || p.close;
+        // Rebase index to stock's starting price for visual comparison
+        const normalized = startPrice * (idxPrice / idxStartPrice);
+        map.set(p.date, normalized);
+      }
+    }
+    return map;
+  };
+
+  const spyByDate = createIndexMap(indexData.spy);
+  const qqqByDate = createIndexMap(indexData.qqq);
+  const diaByDate = createIndexMap(indexData.dia);
+
   const chartData = prices.map((p, i) => ({
     ...p,
     price: p.adjusted_close || p.close,
     sma50: sma50[i],
-    sma200: sma200[i]
+    sma200: sma200[i],
+    spy: spyByDate.get(p.date) || null,
+    qqq: qqqByDate.get(p.date) || null,
+    dia: diaByDate.get(p.date) || null
   }));
 
   return (
@@ -229,6 +302,30 @@ export function PriceChart({ symbol }) {
         </div>
       )}
 
+      {/* Overlay toggles */}
+      <div className="price-overlay-toggles">
+        <span className="overlay-label">Overlays:</span>
+        {OVERLAY_OPTIONS.map(opt => {
+          const isDisabled = (opt.key === 'sma50' && sma50.length === 0) ||
+                            (opt.key === 'sma200' && sma200.length === 0) ||
+                            (opt.key === 'spy' && !indexData.spy) ||
+                            (opt.key === 'qqq' && !indexData.qqq) ||
+                            (opt.key === 'dia' && !indexData.dia);
+          return (
+            <button
+              key={opt.key}
+              className={`overlay-toggle ${overlays[opt.key] ? 'active' : ''} ${isDisabled ? 'disabled' : ''}`}
+              onClick={() => !isDisabled && toggleOverlay(opt.key)}
+              disabled={isDisabled}
+              style={{ '--toggle-color': opt.color }}
+            >
+              <span className="overlay-indicator" style={{ backgroundColor: overlays[opt.key] ? opt.color : 'transparent' }} />
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Price chart */}
       <div className="price-chart-wrapper">
         <ResponsiveContainer width="100%" height={350}>
@@ -266,7 +363,7 @@ export function PriceChart({ symbol }) {
             />
 
             {/* SMA 50 */}
-            {sma50.length > 0 && (
+            {sma50.length > 0 && overlays.sma50 && (
               <Line
                 type="monotone"
                 dataKey="sma50"
@@ -279,7 +376,7 @@ export function PriceChart({ symbol }) {
             )}
 
             {/* SMA 200 */}
-            {sma200.length > 0 && (
+            {sma200.length > 0 && overlays.sma200 && (
               <Line
                 type="monotone"
                 dataKey="sma200"
@@ -290,26 +387,83 @@ export function PriceChart({ symbol }) {
                 name="SMA 200"
               />
             )}
+
+            {/* S&P 500 Index */}
+            {indexData.spy && overlays.spy && (
+              <Line
+                type="monotone"
+                dataKey="spy"
+                stroke="#8b5cf6"
+                strokeWidth={1.5}
+                strokeDasharray="3 3"
+                dot={false}
+                name="S&P 500"
+              />
+            )}
+
+            {/* NASDAQ (QQQ) Index */}
+            {indexData.qqq && overlays.qqq && (
+              <Line
+                type="monotone"
+                dataKey="qqq"
+                stroke="#06b6d4"
+                strokeWidth={1.5}
+                strokeDasharray="3 3"
+                dot={false}
+                name="NASDAQ"
+              />
+            )}
+
+            {/* Dow Jones (DIA) Index */}
+            {indexData.dia && overlays.dia && (
+              <Line
+                type="monotone"
+                dataKey="dia"
+                stroke="#f97316"
+                strokeWidth={1.5}
+                strokeDasharray="3 3"
+                dot={false}
+                name="Dow Jones"
+              />
+            )}
           </LineChart>
         </ResponsiveContainer>
       </div>
 
-      {/* Legend */}
+      {/* Legend - simplified since toggles are above */}
       <div className="price-chart-legend">
         <div className="legend-item">
-          <span className="legend-line price-line"></span>
-          <span>Price</span>
+          <span className="legend-line price-line" style={{ background: isPositive ? '#10b981' : '#ef4444' }}></span>
+          <span>{symbol}</span>
         </div>
-        {sma50.length > 0 && (
+        {sma50.length > 0 && overlays.sma50 && (
           <div className="legend-item">
             <span className="legend-line sma50-line"></span>
             <span>SMA 50</span>
           </div>
         )}
-        {sma200.length > 0 && (
+        {sma200.length > 0 && overlays.sma200 && (
           <div className="legend-item">
             <span className="legend-line sma200-line"></span>
             <span>SMA 200</span>
+          </div>
+        )}
+        {indexData.spy && overlays.spy && (
+          <div className="legend-item">
+            <span className="legend-line spy-line"></span>
+            <span>S&P 500 (rebased)</span>
+          </div>
+        )}
+        {indexData.qqq && overlays.qqq && (
+          <div className="legend-item">
+            <span className="legend-line qqq-line"></span>
+            <span>NASDAQ (rebased)</span>
+          </div>
+        )}
+        {indexData.dia && overlays.dia && (
+          <div className="legend-item">
+            <span className="legend-line dia-line"></span>
+            <span>Dow Jones (rebased)</span>
           </div>
         )}
       </div>
@@ -324,5 +478,9 @@ export function PriceChart({ symbol }) {
     </div>
   );
 }
+
+PriceChart.propTypes = {
+  symbol: PropTypes.string.isRequired
+};
 
 export default PriceChart;

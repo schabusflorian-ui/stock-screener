@@ -1,26 +1,22 @@
 /* frontend/src/pages/UpdatesPage.css */
 
 .updates-page {
+  padding: var(--space-8) var(--space-6);
+  max-width: var(--max-content-width);
+  margin: 0 auto;
   animation: fadeIn 0.3s ease;
 }
 
-.page-header {
-  margin-bottom: 1.5rem;
-  padding-bottom: 1.5rem;
-  border-bottom: 1px solid var(--border-primary);
+@media (max-width: 1024px) {
+  .updates-page {
+    padding: var(--space-6) var(--space-4);
+  }
 }
 
-.page-header h1 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0 0 0.25rem 0;
-}
-
-.page-header .subtitle {
-  color: var(--text-tertiary);
-  font-size: 0.875rem;
-  margin: 0;
+@media (max-width: 768px) {
+  .updates-page {
+    padding: var(--space-4);
+  }
 }
 
 /* Cards - Liquid Glass */
@@ -539,7 +535,7 @@
   margin-bottom: 1rem;
   padding: 1rem;
   background: rgba(255, 255, 255, 0.5);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .insider-stats-grid .stat-item {
@@ -565,7 +561,7 @@
   margin-bottom: 1rem;
   padding: 0.75rem;
   background: rgba(255, 255, 255, 0.5);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   justify-content: center;
 }
 
@@ -573,7 +569,7 @@
   font-size: 0.75rem;
   font-weight: 600;
   padding: 0.25rem 0.5rem;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .signal-distribution .signal.bullish {
@@ -596,7 +592,7 @@
   padding: 0.75rem;
   background: rgba(59, 130, 246, 0.1);
   border: 1px solid rgba(59, 130, 246, 0.2);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--info);
   font-size: 0.875rem;
   text-align: center;
@@ -695,7 +691,7 @@
   margin-bottom: 1rem;
   padding: 1rem;
   background: rgba(255, 255, 255, 0.5);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .sentiment-stats-grid .stat-item {
@@ -753,7 +749,7 @@
   margin-bottom: 1rem;
   padding: 1rem;
   background: rgba(255, 255, 255, 0.5);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .price-stats-grid .stat-item {
@@ -824,6 +820,124 @@
 
 @media (max-width: 640px) {
   .price-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Index Update Card */
+.index-update-card .card-description {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.index-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: var(--radius-md);
+}
+
+.index-stats-grid .stat-item {
+  text-align: center;
+}
+
+.index-stats-grid .stat-value {
+  display: block;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+}
+
+.index-stats-grid .stat-value .positive {
+  color: var(--positive);
+}
+
+.index-stats-grid .stat-value .negative {
+  color: var(--negative);
+}
+
+.index-stats-grid .stat-label {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+@media (max-width: 768px) {
+  .index-stats-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .index-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Knowledge Base Update Card */
+.knowledge-update-card .card-description {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.knowledge-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+
+.knowledge-stats-grid .stat-item {
+  text-align: center;
+  padding: 0.5rem;
+  background: rgba(99, 102, 241, 0.05);
+  border-radius: var(--radius-sm);
+}
+
+.knowledge-stats-grid .stat-value {
+  display: block;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.knowledge-stats-grid .stat-label {
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.sources-breakdown,
+.refresh-history {
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+}
+
+.sources-breakdown .breakdown-label,
+.refresh-history .breakdown-label {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.sources-breakdown .source-item,
+.refresh-history .history-item {
+  color: var(--text-primary);
+}
+
+@media (max-width: 768px) {
+  .knowledge-stats-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 }

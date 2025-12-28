@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import PropTypes from 'prop-types';
 import {
   TrendingUp, TrendingDown, Minus,
   MessageCircle, ThumbsUp, Rocket, BookOpen, BarChart2
@@ -276,5 +277,41 @@ export function SentimentCard({ data, onRefresh, loading, symbol }) {
     </div>
   );
 }
+
+SentimentCard.propTypes = {
+  data: PropTypes.shape({
+    analysis: PropTypes.shape({
+      signal: PropTypes.string,
+      confidence: PropTypes.number,
+      weightedSentiment: PropTypes.number,
+      totalPosts: PropTypes.number,
+      positiveCount: PropTypes.number,
+      negativeCount: PropTypes.number,
+      ddPosts: PropTypes.number,
+      buyMentions: PropTypes.number,
+      sellMentions: PropTypes.number,
+      rocketCount: PropTypes.number
+    }),
+    topPosts: PropTypes.arrayOf(PropTypes.shape({
+      post_id: PropTypes.string,
+      title: PropTypes.string,
+      permalink: PropTypes.string,
+      sentiment_score: PropTypes.number,
+      subreddit: PropTypes.string,
+      score: PropTypes.number,
+      is_dd: PropTypes.bool
+    }))
+  }),
+  onRefresh: PropTypes.func,
+  loading: PropTypes.bool,
+  symbol: PropTypes.string
+};
+
+SentimentCard.defaultProps = {
+  data: null,
+  onRefresh: null,
+  loading: false,
+  symbol: null
+};
 
 export default SentimentCard;

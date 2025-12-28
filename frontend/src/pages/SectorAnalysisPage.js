@@ -1,13 +1,16 @@
 // frontend/src/pages/SectorAnalysisPage.js
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { sectorsAPI, classificationsAPI } from '../services/api';
+import { Columns, X } from 'lucide-react';
+import { sectorsAPI, classificationsAPI, indicesAPI } from '../services/api';
+import { PageHeader } from '../components/ui';
 import {
   PeriodToggle,
   MultiMetricChart,
   WatchlistButton,
   SortableTable,
-  MetricsBarChart
+  MetricsBarChart,
+  Sparkline
 } from '../components';
 import './SectorAnalysisPage.css';
 
@@ -42,6 +45,7 @@ const getValueClass = (value, thresholds) => {
 
 // Tab definitions
 const TABS = [
+  { id: 'indices', label: 'Market Indices', icon: '📈' },
   { id: 'overview', label: 'Sector Overview', icon: '📊' },
   { id: 'industries', label: 'Industries', icon: '🏭' },
   { id: 'custom-sectors', label: 'Custom Sectors', icon: '🏷️' },
@@ -54,11 +58,77 @@ const TABS = [
 const TOP_PERFORMER_METRICS = [
   { value: 'roic', label: 'ROIC' },
   { value: 'roe', label: 'ROE' },
-  { value: 'net_margin', label: 'Net Margin' },
+  { value: 'roa', label: 'ROA' },
+  { value: 'gross_margin', label: 'Gross Margin' },
   { value: 'operating_margin', label: 'Operating Margin' },
+  { value: 'net_margin', label: 'Net Margin' },
+  { value: 'fcf_margin', label: 'FCF Margin' },
   { value: 'fcf_yield', label: 'FCF Yield' },
-  { value: 'revenue_growth_yoy', label: 'Revenue Growth' }
+  { value: 'earnings_yield', label: 'Earnings Yield' },
+  { value: 'revenue_growth_yoy', label: 'Revenue Growth' },
+  { value: 'earnings_growth_yoy', label: 'Earnings Growth' },
+  { value: 'pe_ratio', label: 'P/E Ratio' },
+  { value: 'pb_ratio', label: 'P/B Ratio' },
+  { value: 'ps_ratio', label: 'P/S Ratio' },
+  { value: 'debt_to_equity', label: 'D/E Ratio' },
+  { value: 'current_ratio', label: 'Current Ratio' },
+  { value: 'dividend_yield', label: 'Dividend Yield' }
 ];
+
+// Available metrics for Sector Overview table
+const SECTOR_OVERVIEW_METRICS = [
+  { key: 'company_count', label: 'Companies', format: 'integer' },
+  { key: 'avg_roic', label: 'Avg ROIC', format: 'percent', thresholds: { good: 15, bad: 5 } },
+  { key: 'avg_roe', label: 'Avg ROE', format: 'percent', thresholds: { good: 15, bad: 5 } },
+  { key: 'avg_gross_margin', label: 'Gross Margin', format: 'percent', thresholds: { good: 40, bad: 20 } },
+  { key: 'avg_operating_margin', label: 'Op. Margin', format: 'percent', thresholds: { good: 20, bad: 5 } },
+  { key: 'avg_net_margin', label: 'Net Margin', format: 'percent', thresholds: { good: 15, bad: 0 } },
+  { key: 'avg_fcf_margin', label: 'FCF Margin', format: 'percent', thresholds: { good: 15, bad: 0 } },
+  { key: 'avg_pe_ratio', label: 'P/E', format: 'ratio' },
+  { key: 'avg_pb_ratio', label: 'P/B', format: 'ratio' },
+  { key: 'avg_ps_ratio', label: 'P/S', format: 'ratio' },
+  { key: 'avg_debt_to_equity', label: 'D/E', format: 'ratio', thresholds: { bad: 2 } },
+  { key: 'avg_current_ratio', label: 'Current Ratio', format: 'ratio', thresholds: { good: 1.5, bad: 1 } },
+  { key: 'avg_revenue_growth', label: 'Growth', format: 'percent', thresholds: { good: 10, bad: 0 } },
+  { key: 'avg_dividend_yield', label: 'Div Yield', format: 'percent' },
+  { key: 'total_market_cap_b', label: 'Mkt Cap', format: 'currency' }
+];
+
+// Available metrics for Industries table
+const INDUSTRY_METRICS = [
+  { key: 'avg_roic', label: 'ROIC', format: 'percent', thresholds: { good: 15, bad: 5 } },
+  { key: 'avg_roe', label: 'ROE', format: 'percent', thresholds: { good: 15, bad: 5 } },
+  { key: 'avg_gross_margin', label: 'Gross Margin', format: 'percent', thresholds: { good: 40, bad: 20 } },
+  { key: 'avg_operating_margin', label: 'Operating Margin', format: 'percent', thresholds: { good: 20, bad: 5 } },
+  { key: 'avg_net_margin', label: 'Net Margin', format: 'percent', thresholds: { good: 15, bad: 0 } },
+  { key: 'avg_fcf_margin', label: 'FCF Margin', format: 'percent', thresholds: { good: 15, bad: 0 } },
+  { key: 'avg_pe_ratio', label: 'P/E Ratio', format: 'ratio' },
+  { key: 'avg_pb_ratio', label: 'P/B Ratio', format: 'ratio' },
+  { key: 'avg_debt_to_equity', label: 'D/E Ratio', format: 'ratio', thresholds: { bad: 2 } },
+  { key: 'avg_revenue_growth', label: 'Revenue Growth', format: 'percent', thresholds: { good: 10, bad: 0 } },
+  { key: 'total_market_cap_b', label: 'Market Cap', format: 'currency' }
+];
+
+// Available metrics for Sector Rotation table
+const ROTATION_METRICS = [
+  { key: 'roic_change', label: 'ROIC Change', format: 'percent', thresholds: { good: 0 } },
+  { key: 'roe_change', label: 'ROE Change', format: 'percent', thresholds: { good: 0 } },
+  { key: 'margin_change', label: 'Margin Change', format: 'percent', thresholds: { good: 0 } },
+  { key: 'avg_roic', label: 'Current ROIC', format: 'percent', thresholds: { good: 15, bad: 5 } },
+  { key: 'avg_net_margin', label: 'Current Net Margin', format: 'percent', thresholds: { good: 15, bad: 0 } }
+];
+
+// Available metrics for Margin Comparison table
+const MARGIN_METRICS = [
+  { key: 'avg_gross_margin', label: 'Gross Margin', thresholds: { good: 40, bad: 20 }, hasRange: true },
+  { key: 'avg_operating_margin', label: 'Operating Margin', thresholds: { good: 20, bad: 5 }, hasRange: true },
+  { key: 'avg_net_margin', label: 'Net Margin', thresholds: { good: 15, bad: 0 }, hasRange: true },
+  { key: 'avg_fcf_margin', label: 'FCF Margin', thresholds: { good: 15, bad: 0 }, hasRange: false },
+  { key: 'avg_roic', label: 'ROIC', thresholds: { good: 15, bad: 5 }, hasRange: false },
+  { key: 'avg_roe', label: 'ROE', thresholds: { good: 15, bad: 5 }, hasRange: false },
+  { key: 'avg_asset_turnover', label: 'Asset Turnover', thresholds: { good: 1, bad: 0.5 }, hasRange: false }
+];
+const DEFAULT_MARGIN_METRICS = ['avg_gross_margin', 'avg_operating_margin', 'avg_net_margin', 'avg_fcf_margin'];
 
 // View modes for sector overview
 const VIEW_MODES = [
@@ -68,7 +138,7 @@ const VIEW_MODES = [
 ];
 
 function SectorAnalysisPage() {
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('indices');
   const [periodType, setPeriodType] = useState('annual');
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('cards');
@@ -81,10 +151,22 @@ function SectorAnalysisPage() {
   const [industries, setIndustries] = useState([]);
   const [customSectors, setCustomSectors] = useState([]);
   const [customTags, setCustomTags] = useState([]);
+  const [marketIndices, setMarketIndices] = useState([]);
+  const [indexPriceHistory, setIndexPriceHistory] = useState({});
+  const [selectedIndex, setSelectedIndex] = useState(null);
+  const [indexConstituents, setIndexConstituents] = useState([]);
+  const [loadingConstituents, setLoadingConstituents] = useState(false);
+  const [indexChartPeriod, setIndexChartPeriod] = useState('1y');
 
   // Top performers controls
   const [topMetric, setTopMetric] = useState('roic');
   const [topLimit, setTopLimit] = useState(5);
+
+  // Metric selection for tables
+  const [selectedSectorMetrics, setSelectedSectorMetrics] = useState(['company_count', 'avg_roic', 'avg_net_margin', 'avg_pe_ratio', 'total_market_cap_b']);
+  const [selectedIndustryMetrics, setSelectedIndustryMetrics] = useState(['avg_roic', 'avg_net_margin', 'avg_pe_ratio']);
+  const [selectedRotationMetrics, setSelectedRotationMetrics] = useState(['roic_change', 'margin_change', 'avg_roic']);
+  const [selectedMarginMetrics, setSelectedMarginMetrics] = useState(DEFAULT_MARGIN_METRICS);
 
   // Selected sector for drill-down
   const [selectedSector, setSelectedSector] = useState(null);
@@ -99,6 +181,8 @@ function SectorAnalysisPage() {
   // Industry filters
   const [industryFilter, setIndustryFilter] = useState('');
   const [industrySectorFilter, setIndustrySectorFilter] = useState('');
+  const [showIndustryColumnSelector, setShowIndustryColumnSelector] = useState(false);
+  const [showMarginColumnSelector, setShowMarginColumnSelector] = useState(false);
 
   // Sector overview filter
   const [sectorFilter, setSectorFilter] = useState('');
@@ -178,6 +262,84 @@ function SectorAnalysisPage() {
     }
   }, []);
 
+  // Load market indices
+  const loadMarketIndices = useCallback(async () => {
+    try {
+      const res = await indicesAPI.getAll();
+      const indices = res.data?.data || [];
+      setMarketIndices(indices);
+
+      // Load price history for sparklines
+      if (indices.length > 0) {
+        const priceHistoryPromises = indices.slice(0, 4).map(async (idx) => {
+          try {
+            const priceRes = await indicesAPI.getPrices(idx.symbol, '1y');
+            return { symbol: idx.symbol, data: priceRes.data?.data || [] };
+          } catch (e) {
+            return { symbol: idx.symbol, data: [] };
+          }
+        });
+        const results = await Promise.all(priceHistoryPromises);
+        const historyMap = {};
+        results.forEach(({ symbol, data }) => {
+          historyMap[symbol] = data.map(d => ({ time: d.date, value: d.close })).reverse();
+        });
+        setIndexPriceHistory(historyMap);
+
+        // Auto-select first index (S&P 500)
+        setSelectedIndex(prev => prev || indices[0]);
+      }
+    } catch (error) {
+      console.error('Error loading market indices:', error);
+    }
+  }, []);
+
+  // Load index constituents for major indices
+  const loadIndexConstituents = useCallback(async (shortName) => {
+    // Map short_name from market_indices to stock_indexes code
+    // market_indices uses: SPX, DOW, NASDAQ, RUT
+    // stock_indexes uses: SPX, DJI, NDX, RUT
+    const codeMapping = {
+      'SPX': 'SPX',
+      'DOW': 'DJI',
+      'NASDAQ': 'NDX', // NASDAQ Composite -> show NASDAQ-100 constituents
+      'RUT': 'RUT'
+    };
+
+    const indexCode = codeMapping[shortName];
+    if (!indexCode) {
+      setIndexConstituents([]);
+      return;
+    }
+    setLoadingConstituents(true);
+    try {
+      // Different limits based on index size
+      const limits = { SPX: 505, DJI: 30, NDX: 100, RUT: 2000 };
+      const limit = limits[indexCode] || 500;
+      const res = await indicesAPI.getConstituents(indexCode, limit);
+      setIndexConstituents(res.data?.data || []);
+    } catch (error) {
+      console.error('Error loading index constituents:', error);
+      setIndexConstituents([]);
+    }
+    setLoadingConstituents(false);
+  }, []);
+
+  // Load chart data for selected index with specific period
+  const loadIndexChartData = useCallback(async (symbol, period) => {
+    if (!symbol) return;
+    try {
+      const priceRes = await indicesAPI.getPrices(symbol, period);
+      const data = priceRes.data?.data || [];
+      setIndexPriceHistory(prev => ({
+        ...prev,
+        [symbol]: data.map(d => ({ time: d.date, value: d.close })).reverse()
+      }));
+    } catch (error) {
+      console.error('Error loading index chart data:', error);
+    }
+  }, []);
+
   // Load companies for a custom sector
   const loadCustomSectorCompanies = useCallback(async (sectorName) => {
     try {
@@ -234,12 +396,13 @@ function SectorAnalysisPage() {
         loadTopPerformers(),
         loadMargins(),
         loadIndustries(),
-        loadCustomClassifications()
+        loadCustomClassifications(),
+        loadMarketIndices()
       ]);
       setLoading(false);
     };
     loadData();
-  }, [loadOverview, loadRotation, loadTopPerformers, loadMargins, loadIndustries, loadCustomClassifications]);
+  }, [loadOverview, loadRotation, loadTopPerformers, loadMargins, loadIndustries, loadCustomClassifications, loadMarketIndices]);
 
   // Load detail when sector selected
   useEffect(() => {
@@ -276,6 +439,20 @@ function SectorAnalysisPage() {
       setTaggedCompanies([]);
     }
   }, [selectedTagFilter, loadTaggedCompanies]);
+
+  // Load constituents when index selected
+  useEffect(() => {
+    if (selectedIndex?.short_name) {
+      loadIndexConstituents(selectedIndex.short_name);
+    }
+  }, [selectedIndex, loadIndexConstituents]);
+
+  // Load chart data when period changes
+  useEffect(() => {
+    if (selectedIndex?.symbol && indexChartPeriod) {
+      loadIndexChartData(selectedIndex.symbol, indexChartPeriod);
+    }
+  }, [selectedIndex?.symbol, indexChartPeriod, loadIndexChartData]);
 
   // Prepare chart data for sector rotation
   const getRotationChartData = () => {
@@ -397,44 +574,46 @@ function SectorAnalysisPage() {
     }
   };
 
-  // Sector table columns
-  const sectorTableColumns = [
-    { key: 'sector', label: 'Sector', className: 'sector-name' },
-    { key: 'company_count', label: 'Companies', format: 'integer' },
-    { key: 'avg_roic', label: 'Avg ROIC', format: 'percent', thresholds: { good: 15, bad: 5 } },
-    { key: 'avg_net_margin', label: 'Net Margin', format: 'percent', thresholds: { good: 15, bad: 0 } },
-    { key: 'avg_pe_ratio', label: 'P/E', format: 'ratio' },
-    { key: 'avg_debt_to_equity', label: 'D/E', format: 'ratio', thresholds: { bad: 2 } },
-    { key: 'avg_revenue_growth', label: 'Growth', format: 'percent', thresholds: { good: 10, bad: 0 } },
-    { key: 'total_market_cap_b', label: 'Mkt Cap', format: 'currency' }
-  ];
+  // Sector table columns - dynamic based on selected metrics
+  const sectorTableColumns = useMemo(() => {
+    const baseColumns = [{ key: 'sector', label: 'Sector', className: 'sector-name' }];
+    const metricColumns = selectedSectorMetrics.map(metricKey => {
+      const metric = SECTOR_OVERVIEW_METRICS.find(m => m.key === metricKey);
+      return metric ? { ...metric } : null;
+    }).filter(Boolean);
+    return [...baseColumns, ...metricColumns];
+  }, [selectedSectorMetrics]);
 
-  // Industry table columns
-  const industryTableColumns = [
-    {
-      key: 'industry',
-      label: 'Industry',
-      className: 'industry-name clickable-cell',
-      render: (row) => (
-        <span
-          className="clickable-text"
-          onClick={(e) => {
-            e.stopPropagation();
-            setSelectedIndustry(row.industry);
-          }}
-        >
-          {row.industry || '-'}
-        </span>
-      )
-    },
-    { key: 'sector', label: 'Sector', className: 'sector-name' },
-    { key: 'company_count', label: 'Companies', format: 'integer' },
-    { key: 'avg_roic', label: 'Avg ROIC', format: 'percent', thresholds: { good: 15, bad: 5 } },
-    { key: 'avg_gross_margin', label: 'Gross', format: 'percent', thresholds: { good: 40, bad: 20 } },
-    { key: 'avg_operating_margin', label: 'Op.', format: 'percent', thresholds: { good: 20, bad: 5 } },
-    { key: 'avg_net_margin', label: 'Net', format: 'percent', thresholds: { good: 15, bad: 0 } },
-    { key: 'avg_fcf_margin', label: 'FCF', format: 'percent', thresholds: { good: 15, bad: 0 } }
-  ];
+  // Industry table columns - dynamic based on selected metrics
+  const industryTableColumns = useMemo(() => {
+    const baseColumns = [
+      {
+        key: 'industry',
+        label: 'Industry',
+        className: 'industry-name clickable-cell',
+        render: (row) => (
+          <span
+            className="clickable-text"
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedIndustry(row.industry);
+            }}
+          >
+            {row.industry || '-'}
+          </span>
+        )
+      },
+      { key: 'sector', label: 'Sector', className: 'sector-name' },
+      { key: 'company_count', label: 'Companies', format: 'integer' }
+    ];
+
+    const metricColumns = selectedIndustryMetrics.map(metricKey => {
+      const metric = INDUSTRY_METRICS.find(m => m.key === metricKey);
+      return metric || { key: metricKey, label: metricKey, format: 'number' };
+    });
+
+    return [...baseColumns, ...metricColumns];
+  }, [selectedIndustryMetrics]);
 
   if (loading) {
     return <div className="loading">Loading sector analysis...</div>;
@@ -442,20 +621,20 @@ function SectorAnalysisPage() {
 
   return (
     <div className="sector-analysis-page">
-      <div className="page-header">
-        <div>
-          <h1>Sector Analysis</h1>
-          <p>Industry-level aggregations and performance insights</p>
-        </div>
-        <PeriodToggle
-          value={periodType}
-          onChange={setPeriodType}
-          availablePeriods={[
-            { period_type: 'annual', count: 1 },
-            { period_type: 'quarterly', count: 1 }
-          ]}
-        />
-      </div>
+      <PageHeader
+        title="Sector Analysis"
+        subtitle="Industry-level aggregations and performance insights"
+        actions={
+          <PeriodToggle
+            value={periodType}
+            onChange={setPeriodType}
+            availablePeriods={[
+              { period_type: 'annual', count: 1 },
+              { period_type: 'quarterly', count: 1 }
+            ]}
+          />
+        }
+      />
 
       {/* Tab Navigation */}
       <div className="tab-navigation">
@@ -470,6 +649,228 @@ function SectorAnalysisPage() {
           </button>
         ))}
       </div>
+
+      {/* Market Indices Tab */}
+      {activeTab === 'indices' && (
+        <div className="tab-content indices-tab">
+          {/* Index Selector Cards */}
+          <div className="index-selector-grid">
+            {marketIndices.map(index => (
+              <div
+                key={index.symbol}
+                className={`index-selector-card ${selectedIndex?.symbol === index.symbol ? 'selected' : ''}`}
+                onClick={() => setSelectedIndex(index)}
+              >
+                <div className="selector-header">
+                  <span className="selector-name">{index.short_name || index.name}</span>
+                  <span className={`selector-change ${index.change_1d_pct >= 0 ? 'positive' : 'negative'}`}>
+                    {index.change_1d_pct >= 0 ? '+' : ''}{index.change_1d_pct?.toFixed(2)}%
+                  </span>
+                </div>
+                <div className="selector-price">
+                  {index.last_price?.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                </div>
+                <div className="selector-sparkline">
+                  {indexPriceHistory[index.symbol]?.length > 0 && (
+                    <Sparkline
+                      data={indexPriceHistory[index.symbol]}
+                      width={120}
+                      height={40}
+                      showChange={false}
+                      color={index.change_ytd >= 0 ? '#10b981' : '#ef4444'}
+                    />
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Selected Index Details */}
+          {selectedIndex && (
+            <div className="index-detail-section">
+              <div className="index-detail-header">
+                <div className="index-title">
+                  <h2>{selectedIndex.name}</h2>
+                  <span className="index-subtitle">
+                    {selectedIndex.short_name} • Updated {selectedIndex.last_price_date && new Date(selectedIndex.last_price_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </span>
+                </div>
+                <div className="index-price-display">
+                  <span className="index-current-price">
+                    {selectedIndex.last_price?.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                  </span>
+                  <span className={`index-day-change ${selectedIndex.change_1d_pct >= 0 ? 'positive' : 'negative'}`}>
+                    {selectedIndex.change_1d_pct >= 0 ? '+' : ''}{selectedIndex.change_1d_pct?.toFixed(2)}%
+                  </span>
+                </div>
+              </div>
+
+              {/* Price Chart with Period Selector - ABOVE METRICS */}
+              <div className="index-chart-section">
+                <div className="chart-header">
+                  <h3>Price History</h3>
+                  <div className="period-selector">
+                    {[
+                      { value: '1m', label: '1M' },
+                      { value: '3m', label: '3M' },
+                      { value: '6m', label: '6M' },
+                      { value: '1y', label: '1Y' },
+                      { value: '3y', label: '3Y' },
+                      { value: '5y', label: '5Y' },
+                      { value: '10y', label: '10Y' },
+                      { value: 'all', label: 'All' }
+                    ].map(period => (
+                      <button
+                        key={period.value}
+                        className={`period-btn ${indexChartPeriod === period.value ? 'active' : ''}`}
+                        onClick={() => setIndexChartPeriod(period.value)}
+                      >
+                        {period.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {indexPriceHistory[selectedIndex.symbol]?.length > 0 ? (
+                  <div className="index-chart-container">
+                    <MultiMetricChart
+                      data={indexPriceHistory[selectedIndex.symbol]}
+                      metrics={[{ key: 'value', label: selectedIndex.short_name, format: 'number' }]}
+                      height={350}
+                      periodType="daily"
+                      hideTimeRange={true}
+                    />
+                  </div>
+                ) : (
+                  <div className="chart-loading">Loading chart data...</div>
+                )}
+              </div>
+
+              {/* Key Metrics Grid - BELOW CHART */}
+              <div className="index-metrics-grid">
+                <div className="index-metric-card">
+                  <span className="metric-label">1 Week</span>
+                  <span className={`metric-value ${selectedIndex.change_1w >= 0 ? 'positive' : 'negative'}`}>
+                    {selectedIndex.change_1w >= 0 ? '+' : ''}{selectedIndex.change_1w?.toFixed(2)}%
+                  </span>
+                </div>
+                <div className="index-metric-card">
+                  <span className="metric-label">1 Month</span>
+                  <span className={`metric-value ${selectedIndex.change_1m >= 0 ? 'positive' : 'negative'}`}>
+                    {selectedIndex.change_1m >= 0 ? '+' : ''}{selectedIndex.change_1m?.toFixed(2)}%
+                  </span>
+                </div>
+                <div className="index-metric-card">
+                  <span className="metric-label">3 Months</span>
+                  <span className={`metric-value ${selectedIndex.change_3m >= 0 ? 'positive' : 'negative'}`}>
+                    {selectedIndex.change_3m >= 0 ? '+' : ''}{selectedIndex.change_3m?.toFixed(2)}%
+                  </span>
+                </div>
+                <div className="index-metric-card">
+                  <span className="metric-label">YTD</span>
+                  <span className={`metric-value ${selectedIndex.change_ytd >= 0 ? 'positive' : 'negative'}`}>
+                    {selectedIndex.change_ytd >= 0 ? '+' : ''}{selectedIndex.change_ytd?.toFixed(2)}%
+                  </span>
+                </div>
+                <div className="index-metric-card">
+                  <span className="metric-label">1 Year</span>
+                  <span className={`metric-value ${selectedIndex.change_1y >= 0 ? 'positive' : 'negative'}`}>
+                    {selectedIndex.change_1y >= 0 ? '+' : ''}{selectedIndex.change_1y?.toFixed(2)}%
+                  </span>
+                </div>
+                <div className="index-metric-card">
+                  <span className="metric-label">52W High</span>
+                  <span className="metric-value">
+                    {selectedIndex.high_52w?.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                    <span className={`metric-sub ${selectedIndex.pct_from_52w_high <= -5 ? 'negative' : ''}`}>
+                      ({selectedIndex.pct_from_52w_high?.toFixed(1)}%)
+                    </span>
+                  </span>
+                </div>
+                <div className="index-metric-card">
+                  <span className="metric-label">52W Low</span>
+                  <span className="metric-value">
+                    {selectedIndex.low_52w?.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                    <span className="metric-sub positive">
+                      (+{selectedIndex.pct_from_52w_low?.toFixed(1)}%)
+                    </span>
+                  </span>
+                </div>
+                <div className="index-metric-card">
+                  <span className="metric-label">vs 50 SMA</span>
+                  <span className={`metric-value ${selectedIndex.price_vs_sma_50 >= 0 ? 'positive' : 'negative'}`}>
+                    {selectedIndex.price_vs_sma_50 >= 0 ? '+' : ''}{selectedIndex.price_vs_sma_50?.toFixed(1)}%
+                  </span>
+                </div>
+                <div className="index-metric-card">
+                  <span className="metric-label">vs 200 SMA</span>
+                  <span className={`metric-value ${selectedIndex.price_vs_sma_200 >= 0 ? 'positive' : 'negative'}`}>
+                    {selectedIndex.price_vs_sma_200 >= 0 ? '+' : ''}{selectedIndex.price_vs_sma_200?.toFixed(1)}%
+                  </span>
+                </div>
+              </div>
+
+              {/* Constituents Table - For major indices */}
+              {['SPX', 'DOW', 'NASDAQ', 'RUT'].includes(selectedIndex.short_name) && (
+                <div className="index-constituents-section">
+                  <div className="constituents-header">
+                    <h3>
+                      {selectedIndex.short_name === 'SPX' && 'S&P 500 Constituents'}
+                      {selectedIndex.short_name === 'NASDAQ' && 'NASDAQ-100 Constituents'}
+                      {selectedIndex.short_name === 'DOW' && 'Dow Jones Industrial Average Constituents'}
+                      {selectedIndex.short_name === 'RUT' && 'Russell 2000 Constituents'}
+                    </h3>
+                    <span className="constituents-count">
+                      {loadingConstituents ? 'Loading...' : `${indexConstituents.length} companies`}
+                    </span>
+                  </div>
+                  {loadingConstituents ? (
+                    <div className="loading">Loading constituents...</div>
+                  ) : indexConstituents.length > 0 ? (
+                    <div className="constituents-table-wrapper">
+                      <table className="constituents-table">
+                        <thead>
+                          <tr>
+                            <th>Symbol</th>
+                            <th>Company</th>
+                            <th>Sector</th>
+                            <th>Industry</th>
+                            <th>Market Cap</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {indexConstituents.map(company => (
+                            <tr key={company.symbol}>
+                              <td>
+                                <Link to={`/company/${company.symbol}`} className="symbol-link">
+                                  {company.symbol}
+                                </Link>
+                              </td>
+                              <td className="company-name">{company.name}</td>
+                              <td>{company.sector || '-'}</td>
+                              <td className="industry-cell">{company.industry || '-'}</td>
+                              <td className="market-cap">
+                                {company.market_cap
+                                  ? company.market_cap >= 1e12
+                                    ? `$${(company.market_cap / 1e12).toFixed(2)}T`
+                                    : `$${(company.market_cap / 1e9).toFixed(1)}B`
+                                  : '-'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="no-constituents">
+                      No constituent data available for this index.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Sector Overview Tab */}
       {activeTab === 'overview' && (
@@ -613,16 +1014,40 @@ function SectorAnalysisPage() {
 
               {/* Table View */}
               {viewMode === 'table' && (
-                <SortableTable
-                  data={filteredSectors}
-                  columns={sectorTableColumns}
-                  defaultSort={{ key: 'company_count', direction: 'desc' }}
-                  onRowClick={(row) => setSelectedSector(row.sector)}
-                  emptyMessage="No sectors found"
-                  searchable
-                  searchKeys={['sector']}
-                  searchPlaceholder="Search sectors..."
-                />
+                <>
+                  {/* Metric Selector */}
+                  <div className="metric-selector-section">
+                    <span className="selector-label">Show Metrics:</span>
+                    <div className="metric-checkboxes">
+                      {SECTOR_OVERVIEW_METRICS.map(metric => (
+                        <label key={metric.key} className="metric-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={selectedSectorMetrics.includes(metric.key)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedSectorMetrics(prev => [...prev, metric.key]);
+                              } else {
+                                setSelectedSectorMetrics(prev => prev.filter(k => k !== metric.key));
+                              }
+                            }}
+                          />
+                          <span>{metric.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <SortableTable
+                    data={filteredSectors}
+                    columns={sectorTableColumns}
+                    defaultSort={{ key: 'company_count', direction: 'desc' }}
+                    onRowClick={(row) => setSelectedSector(row.sector)}
+                    emptyMessage="No sectors found"
+                    searchable
+                    searchKeys={['sector']}
+                    searchPlaceholder="Search sectors..."
+                  />
+                </>
               )}
             </>
           )}
@@ -662,6 +1087,56 @@ function SectorAnalysisPage() {
                     ))}
                   </select>
                   <span className="count">{filteredIndustries.length} of {industries.length} industries</span>
+                </div>
+              </div>
+
+              {/* Table Controls with Column Selector */}
+              <div className="table-controls">
+                <div className="table-controls-left">
+                  <span className="results-count">{filteredIndustries.length} industries</span>
+                </div>
+                <div className="table-controls-right">
+                  <div className="column-selector-wrapper">
+                    <button
+                      className={`table-control-btn ${showIndustryColumnSelector ? 'active' : ''}`}
+                      onClick={() => setShowIndustryColumnSelector(!showIndustryColumnSelector)}
+                      title="Select columns"
+                    >
+                      <Columns size={16} />
+                      <span>Columns</span>
+                    </button>
+                    {showIndustryColumnSelector && (
+                      <div className="column-selector-dropdown">
+                        <div className="column-selector-header">
+                          <span>Show/Hide Columns</span>
+                          <button onClick={() => setShowIndustryColumnSelector(false)}><X size={14} /></button>
+                        </div>
+                        <div className="column-selector-list">
+                          {INDUSTRY_METRICS.map(metric => (
+                            <label key={metric.key} className="column-option">
+                              <input
+                                type="checkbox"
+                                checked={selectedIndustryMetrics.includes(metric.key)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedIndustryMetrics(prev => [...prev, metric.key]);
+                                  } else {
+                                    setSelectedIndustryMetrics(prev => prev.filter(k => k !== metric.key));
+                                  }
+                                }}
+                              />
+                              <span>{metric.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <div className="column-selector-footer">
+                          <button onClick={() => setSelectedIndustryMetrics(['avg_roic', 'avg_net_margin', 'avg_pe_ratio'])}>
+                            Reset to Default
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -897,6 +1372,29 @@ function SectorAnalysisPage() {
             />
           </div>
 
+          {/* Metric Selector */}
+          <div className="metric-selector-section">
+            <span className="selector-label">Show Metrics:</span>
+            <div className="metric-checkboxes">
+              {ROTATION_METRICS.map(metric => (
+                <label key={metric.key} className="metric-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={selectedRotationMetrics.includes(metric.key)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedRotationMetrics(prev => [...prev, metric.key]);
+                      } else {
+                        setSelectedRotationMetrics(prev => prev.filter(k => k !== metric.key));
+                      }
+                    }}
+                  />
+                  <span>{metric.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
           {/* Rotation Table */}
           <div className="rotation-table">
             <table>
@@ -904,11 +1402,10 @@ function SectorAnalysisPage() {
                 <tr>
                   <th>Sector</th>
                   <th>Momentum</th>
-                  <th>ROIC Chg</th>
-                  <th>ROE Chg</th>
-                  <th>Margin Chg</th>
-                  <th>Current ROIC</th>
-                  <th>Current Margin</th>
+                  {selectedRotationMetrics.map(metricKey => {
+                    const metric = ROTATION_METRICS.find(m => m.key === metricKey);
+                    return <th key={metricKey}>{metric?.label || metricKey}</th>;
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -922,23 +1419,28 @@ function SectorAnalysisPage() {
                           {sector.momentum || 'N/A'}
                         </span>
                       </td>
-                      <td className={getValueClass(sector.trends?.roic_change, { good: 0 })}>
-                        {sector.trends?.roic_change != null
-                          ? `${sector.trends.roic_change > 0 ? '+' : ''}${sector.trends.roic_change}%`
-                          : '-'}
-                      </td>
-                      <td className={getValueClass(sector.trends?.roe_change, { good: 0 })}>
-                        {sector.trends?.roe_change != null
-                          ? `${sector.trends.roe_change > 0 ? '+' : ''}${sector.trends.roe_change}%`
-                          : '-'}
-                      </td>
-                      <td className={getValueClass(sector.trends?.margin_change, { good: 0 })}>
-                        {sector.trends?.margin_change != null
-                          ? `${sector.trends.margin_change > 0 ? '+' : ''}${sector.trends.margin_change}%`
-                          : '-'}
-                      </td>
-                      <td>{formatValue(latest?.avg_roic, 'percent')}</td>
-                      <td>{formatValue(latest?.avg_net_margin, 'percent')}</td>
+                      {selectedRotationMetrics.map(metricKey => {
+                        const metric = ROTATION_METRICS.find(m => m.key === metricKey);
+                        let value = null;
+
+                        // Get value from appropriate location
+                        if (metricKey.includes('_change')) {
+                          value = sector.trends?.[metricKey];
+                        } else {
+                          value = latest?.[metricKey];
+                        }
+
+                        // Format and display
+                        const displayValue = value != null
+                          ? (metricKey.includes('_change') && value > 0 ? '+' : '') + formatValue(value, metric?.format || 'number')
+                          : '-';
+
+                        return (
+                          <td key={metricKey} className={getValueClass(value, metric?.thresholds || {})}>
+                            {displayValue}
+                          </td>
+                        );
+                      })}
                     </tr>
                   );
                 })}
@@ -1007,6 +1509,56 @@ function SectorAnalysisPage() {
             <span className="count">{marginData.length} industries</span>
           </div>
 
+          {/* Table Controls with Column Selector */}
+          <div className="table-controls">
+            <div className="table-controls-left">
+              <span className="results-count">{marginData.length} industries</span>
+            </div>
+            <div className="table-controls-right">
+              <div className="column-selector-wrapper">
+                <button
+                  className={`table-control-btn ${showMarginColumnSelector ? 'active' : ''}`}
+                  onClick={() => setShowMarginColumnSelector(!showMarginColumnSelector)}
+                  title="Select columns"
+                >
+                  <Columns size={16} />
+                  <span>Columns</span>
+                </button>
+                {showMarginColumnSelector && (
+                  <div className="column-selector-dropdown">
+                    <div className="column-selector-header">
+                      <span>Show/Hide Columns</span>
+                      <button onClick={() => setShowMarginColumnSelector(false)}><X size={14} /></button>
+                    </div>
+                    <div className="column-selector-list">
+                      {MARGIN_METRICS.map(metric => (
+                        <label key={metric.key} className="column-option">
+                          <input
+                            type="checkbox"
+                            checked={selectedMarginMetrics.includes(metric.key)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedMarginMetrics(prev => [...prev, metric.key]);
+                              } else {
+                                setSelectedMarginMetrics(prev => prev.filter(k => k !== metric.key));
+                              }
+                            }}
+                          />
+                          <span>{metric.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="column-selector-footer">
+                      <button onClick={() => setSelectedMarginMetrics(DEFAULT_MARGIN_METRICS)}>
+                        Reset to Default
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div className="margin-table">
             <table>
               <thead>
@@ -1014,10 +1566,10 @@ function SectorAnalysisPage() {
                   <th>Industry</th>
                   <th>Sector</th>
                   <th>Companies</th>
-                  <th>Gross Margin</th>
-                  <th>Op. Margin</th>
-                  <th>Net Margin</th>
-                  <th>FCF Margin</th>
+                  {selectedMarginMetrics.map(metricKey => {
+                    const metric = MARGIN_METRICS.find(m => m.key === metricKey);
+                    return <th key={metricKey}>{metric?.label || metricKey}</th>;
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -1026,41 +1578,29 @@ function SectorAnalysisPage() {
                     <td className="industry-name">{row.industry}</td>
                     <td className="sector-name">{row.sector}</td>
                     <td className="company-count">{row.company_count}</td>
-                    <td>
-                      <div className="margin-cell">
-                        <span className={getValueClass(row.avg_gross_margin, { good: 40, bad: 20 })}>
-                          {formatValue(row.avg_gross_margin, 'percent')}
-                        </span>
-                        <span className="range">
-                          ({formatValue(row.min_gross_margin, 'percent')} - {formatValue(row.max_gross_margin, 'percent')})
-                        </span>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="margin-cell">
-                        <span className={getValueClass(row.avg_operating_margin, { good: 20, bad: 5 })}>
-                          {formatValue(row.avg_operating_margin, 'percent')}
-                        </span>
-                        <span className="range">
-                          ({formatValue(row.min_operating_margin, 'percent')} - {formatValue(row.max_operating_margin, 'percent')})
-                        </span>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="margin-cell">
-                        <span className={getValueClass(row.avg_net_margin, { good: 15, bad: 0 })}>
-                          {formatValue(row.avg_net_margin, 'percent')}
-                        </span>
-                        <span className="range">
-                          ({formatValue(row.min_net_margin, 'percent')} - {formatValue(row.max_net_margin, 'percent')})
-                        </span>
-                      </div>
-                    </td>
-                    <td>
-                      <span className={getValueClass(row.avg_fcf_margin, { good: 15, bad: 0 })}>
-                        {formatValue(row.avg_fcf_margin, 'percent')}
-                      </span>
-                    </td>
+                    {selectedMarginMetrics.map(metricKey => {
+                      const metric = MARGIN_METRICS.find(m => m.key === metricKey);
+                      const minKey = metricKey.replace('avg_', 'min_');
+                      const maxKey = metricKey.replace('avg_', 'max_');
+                      return (
+                        <td key={metricKey}>
+                          {metric?.hasRange ? (
+                            <div className="margin-cell">
+                              <span className={getValueClass(row[metricKey], metric?.thresholds)}>
+                                {formatValue(row[metricKey], 'percent')}
+                              </span>
+                              <span className="range">
+                                ({formatValue(row[minKey], 'percent')} - {formatValue(row[maxKey], 'percent')})
+                              </span>
+                            </div>
+                          ) : (
+                            <span className={getValueClass(row[metricKey], metric?.thresholds)}>
+                              {formatValue(row[metricKey], 'percent')}
+                            </span>
+                          )}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>

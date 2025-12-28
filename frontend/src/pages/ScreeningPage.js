@@ -1,8 +1,10 @@
 // frontend/src/pages/ScreeningPage.js
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { screeningAPI, companyAPI } from '../services/api';
 import { WatchlistButton, PeriodToggle, ComparisonChart } from '../components';
+import { NLQueryBar } from '../components/nl';
+import { PageHeader, Card } from '../components/ui';
 import { ChevronUp, ChevronDown, Filter, Columns, X } from 'lucide-react';
 import './ScreeningPage.css';
 
@@ -21,6 +23,10 @@ const ALL_COLUMNS = [
   { key: 'change_1w', label: '1W %', format: 'percent', filterable: true, colorCode: { good: 0, bad: -10 } },
   { key: 'change_1m', label: '1M %', format: 'percent', filterable: true, colorCode: { good: 0, bad: -15 } },
   { key: 'change_ytd', label: 'YTD %', format: 'percent', filterable: true, colorCode: { good: 0, bad: -20 } },
+  // Alpha (vs SPY benchmark)
+  { key: 'alpha_1m', label: 'Alpha 1M', format: 'percent', filterable: true, colorCode: { good: 0, bad: -10 } },
+  { key: 'alpha_ytd', label: 'Alpha YTD', format: 'percent', filterable: true, colorCode: { good: 0, bad: -10 } },
+  { key: 'alpha_1y', label: 'Alpha 1Y', format: 'percent', filterable: true, colorCode: { good: 0, bad: -10 } },
   // Profitability
   { key: 'roic', label: 'ROIC', format: 'percent', filterable: true, colorCode: { good: 15, bad: 5 } },
   { key: 'roe', label: 'ROE', format: 'percent', filterable: true, colorCode: { good: 15, bad: 5 } },
@@ -36,6 +42,8 @@ const ALL_COLUMNS = [
   { key: 'pb_ratio', label: 'P/B', format: 'ratio', filterable: true, colorCode: { good: 1.5, bad: 4, inverse: true } },
   { key: 'ps_ratio', label: 'P/S', format: 'ratio', filterable: true, colorCode: { good: 2, bad: 8, inverse: true } },
   { key: 'ev_ebitda', label: 'EV/EBITDA', format: 'ratio', filterable: true, colorCode: { good: 10, bad: 20, inverse: true } },
+  { key: 'peg_ratio', label: 'PEG', format: 'ratio', filterable: true, colorCode: { good: 1, bad: 2, inverse: true } },
+  { key: 'pegy_ratio', label: 'PEGY', format: 'ratio', filterable: true, colorCode: { good: 1, bad: 2, inverse: true } },
   // Financial Health
   { key: 'debt_to_equity', label: 'Debt/Eq', format: 'ratio', filterable: true, colorCode: { good: 0.5, bad: 2, inverse: true } },
   { key: 'debt_to_assets', label: 'Debt/Assets', format: 'ratio', filterable: true, colorCode: { good: 0.3, bad: 0.6, inverse: true } },
@@ -91,6 +99,8 @@ const METRIC_DEFINITIONS = {
       { key: 'P/B Ratio', min: 'minPBRatio', max: 'maxPBRatio', format: 'ratio', description: 'Price / Book Value' },
       { key: 'P/S Ratio', min: 'minPSRatio', max: 'maxPSRatio', format: 'ratio', description: 'Price / Sales' },
       { key: 'EV/EBITDA', min: 'minEVEBITDA', max: 'maxEVEBITDA', format: 'ratio', description: 'Enterprise Value / EBITDA' },
+      { key: 'PEG Ratio', min: 'minPEGRatio', max: 'maxPEGRatio', format: 'ratio', description: 'P/E / Earnings Growth (<1 = undervalued)' },
+      { key: 'PEGY Ratio', min: 'minPEGYRatio', max: 'maxPEGYRatio', format: 'ratio', description: 'P/E / (Earnings Growth + Dividend Yield)' },
     ]
   },
   financialHealth: {
@@ -109,6 +119,15 @@ const METRIC_DEFINITIONS = {
       { key: 'Revenue Growth', min: 'minRevenueGrowth', max: 'maxRevenueGrowth', format: 'percent', description: 'Year-over-Year Revenue Growth' },
       { key: 'Earnings Growth', min: 'minEarningsGrowth', max: 'maxEarningsGrowth', format: 'percent', description: 'Year-over-Year Earnings Growth' },
       { key: 'FCF Growth', min: 'minFCFGrowth', max: 'maxFCFGrowth', format: 'percent', description: 'Year-over-Year FCF Growth' },
+    ]
+  },
+  alpha: {
+    label: 'Alpha (vs S&P 500)',
+    metrics: [
+      { key: 'Alpha 1M', min: 'minAlpha1M', max: 'maxAlpha1M', format: 'percent', description: '1 Month performance vs S&P 500' },
+      { key: 'Alpha 3M', min: 'minAlpha3M', max: 'maxAlpha3M', format: 'percent', description: '3 Month performance vs S&P 500' },
+      { key: 'Alpha YTD', min: 'minAlphaYTD', max: 'maxAlphaYTD', format: 'percent', description: 'Year-to-date performance vs S&P 500' },
+      { key: 'Alpha 1Y', min: 'minAlpha1Y', max: 'maxAlpha1Y', format: 'percent', description: '1 Year performance vs S&P 500' },
     ]
   }
 };
@@ -139,6 +158,8 @@ const formatValue = (value, format) => {
 };
 
 function ScreeningPage() {
+  const navigate = useNavigate();
+
   // View mode: 'presets' or 'custom'
   const [viewMode, setViewMode] = useState('presets');
 
@@ -199,6 +220,7 @@ function ScreeningPage() {
   // Column filters state (text/value filters for each column)
   const [columnFilters, setColumnFilters] = useState({});
   const [showFilters, setShowFilters] = useState(false);
+
 
   // Save column preferences to localStorage
   useEffect(() => {
@@ -585,25 +607,34 @@ function ScreeningPage() {
 
   return (
     <div className="screening-page">
-      <div className="screening-header">
-        <div>
-          <h1>Stock Screener</h1>
-          <p>Find stocks matching your investment criteria</p>
-        </div>
-        <div className="view-toggle">
-          <button
-            className={viewMode === 'presets' ? 'active' : ''}
-            onClick={() => setViewMode('presets')}
-          >
-            Preset Screens
-          </button>
-          <button
-            className={viewMode === 'custom' ? 'active' : ''}
-            onClick={() => setViewMode('custom')}
-          >
-            Custom Screener
-          </button>
-        </div>
+      <PageHeader
+        title="Stock Screener"
+        subtitle="Find stocks matching your investment criteria"
+        actions={
+          <div className="view-toggle">
+            <button
+              className={viewMode === 'presets' ? 'active' : ''}
+              onClick={() => setViewMode('presets')}
+            >
+              Preset Screens
+            </button>
+            <button
+              className={viewMode === 'custom' ? 'active' : ''}
+              onClick={() => setViewMode('custom')}
+            >
+              Custom Screener
+            </button>
+          </div>
+        }
+      />
+
+      {/* Natural Language Query Bar */}
+      <div className="nl-query-section">
+        <NLQueryBar
+          placeholder="Try: 'Show me undervalued tech stocks' or 'High dividend stocks with low debt'"
+          context={{ page: 'screening' }}
+          onResultSelect={(symbol) => navigate(`/company/${symbol}`)}
+        />
       </div>
 
       {/* Saved Templates Bar */}
