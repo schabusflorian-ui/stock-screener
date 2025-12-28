@@ -21,7 +21,7 @@
 
 .cf-header h3 {
   margin: 0;
-  color: #374151;
+  color: var(--text-primary);
 }
 
 .cf-controls {
@@ -34,7 +34,7 @@
 .cf-empty {
   padding: 3rem;
   text-align: center;
-  color: #6b7280;
+  color: var(--text-secondary);
 }
 
 /* View Toggle - Liquid Glass */
@@ -50,7 +50,7 @@
   padding: 0.5rem 1rem;
   border: none;
   background: transparent;
-  color: #6b7280;
+  color: var(--text-secondary);
   border-radius: 0.375rem;
   cursor: pointer;
   font-size: 0.875rem;
@@ -58,11 +58,11 @@
 }
 
 .cash-flow-breakdown .view-toggle button:hover {
-  color: #374151;
+  color: var(--text-primary);
 }
 
 .cash-flow-breakdown .view-toggle button.active {
-  background: #6366f1;
+  background: var(--brand-primary);
   color: white;
 }
 
@@ -75,7 +75,7 @@
 }
 
 .cash-flow-breakdown .period-selector label {
-  color: #6b7280;
+  color: var(--text-secondary);
   font-size: 0.875rem;
 }
 
@@ -84,14 +84,14 @@
   background: rgba(255, 255, 255, 0.7);
   border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 0.5rem;
-  color: #374151;
+  color: var(--text-primary);
   font-size: 0.875rem;
   cursor: pointer;
 }
 
 .cash-flow-breakdown .period-selector select:focus {
   outline: none;
-  border-color: #6366f1;
+  border-color: var(--brand-primary);
 }
 
 /* Summary Cards - Liquid Glass */
@@ -109,27 +109,27 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  border-left: 3px solid #9ca3af;
+  border-left: var(--space-1) solid var(--text-tertiary);
 }
 
 .cf-summary-card.operating {
-  border-left-color: #22c55e;
+  border-left-color: var(--positive);
 }
 
 .cf-summary-card.operating.negative {
-  border-left-color: #ef4444;
+  border-left-color: var(--negative);
 }
 
 .cf-summary-card.investing {
-  border-left-color: #f59e0b;
+  border-left-color: var(--warning);
 }
 
 .cf-summary-card.financing {
-  border-left-color: #6366f1;
+  border-left-color: var(--brand-primary);
 }
 
 .cf-summary-card.net-change {
-  border-left-color: #3b82f6;
+  border-left-color: var(--info);
 }
 
 .cf-summary-card .card-icon {
@@ -138,7 +138,7 @@
 
 .cf-summary-card .card-label {
   font-size: 0.75rem;
-  color: #6b7280;
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -146,15 +146,15 @@
 .cf-summary-card .card-value {
   font-size: 1.25rem;
   font-weight: 600;
-  color: #374151;
+  color: var(--text-primary);
 }
 
 .cf-summary-card .card-value.negative {
-  color: #ef4444;
+  color: var(--negative);
 }
 
 .cf-summary-card .card-value.positive-text {
-  color: #22c55e;
+  color: var(--positive);
 }
 
 /* Waterfall Visualization */
@@ -167,7 +167,7 @@
 
 .cf-waterfall-section h4 {
   margin: 0 0 1rem 0;
-  color: #6b7280;
+  color: var(--text-secondary);
   font-size: 0.875rem;
 }
 
@@ -194,12 +194,12 @@
   opacity: 0.8;
 }
 
-.operating-positive { background: #22c55e; }
-.operating-negative { background: #166534; }
-.investing-positive { background: #f59e0b; }
-.investing-negative { background: #b45309; }
-.financing-positive { background: #6366f1; }
-.financing-negative { background: #4f46e5; }
+.operating-positive { background: var(--positive); }
+.operating-negative { background: var(--positive-dark); }
+.investing-positive { background: var(--warning); }
+.investing-negative { background: var(--warning-dark); }
+.financing-positive { background: var(--brand-primary); }
+.financing-negative { background: var(--brand-secondary); }
 
 .waterfall-legend {
   display: flex;
@@ -212,18 +212,18 @@
   align-items: center;
   gap: 0.5rem;
   font-size: 0.75rem;
-  color: #6b7280;
+  color: var(--text-secondary);
 }
 
 .legend-dot {
   width: 12px;
   height: 12px;
-  border-radius: 2px;
+  border-radius: var(--radius-none);
 }
 
-.legend-dot.operating { background: #22c55e; }
-.legend-dot.investing { background: #f59e0b; }
-.legend-dot.financing { background: #6366f1; }
+.legend-dot.operating { background: var(--positive); }
+.legend-dot.investing { background: var(--warning); }
+.legend-dot.financing { background: var(--brand-primary); }
 
 /* Quality Section - Liquid Glass */
 .cf-quality-section {
@@ -234,7 +234,7 @@
 
 .cf-quality-section h4 {
   margin: 0 0 1rem 0;
-  color: #6b7280;
+  color: var(--text-secondary);
   font-size: 0.875rem;
 }
 
@@ -251,44 +251,44 @@
   display: flex;
   flex-direction: column;
   gap: 0.375rem;
-  border-left: 3px solid #9ca3af;
+  border-left: var(--space-1) solid var(--text-tertiary);
 }
 
 .quality-card.healthy {
-  border-left-color: #22c55e;
+  border-left-color: var(--positive);
 }
 
 .quality-card.warning {
-  border-left-color: #f59e0b;
+  border-left-color: var(--warning);
 }
 
 .quality-card.danger {
-  border-left-color: #ef4444;
+  border-left-color: var(--negative);
 }
 
 .quality-name {
   font-size: 0.75rem;
-  color: #6b7280;
+  color: var(--text-secondary);
   font-weight: 500;
 }
 
 .quality-value {
   font-size: 1.25rem;
   font-weight: 600;
-  color: #374151;
+  color: var(--text-primary);
 }
 
 .quality-value.positive-text {
-  color: #22c55e;
+  color: var(--positive);
 }
 
 .quality-value.negative {
-  color: #ef4444;
+  color: var(--negative);
 }
 
 .quality-desc {
   font-size: 0.65rem;
-  color: #9ca3af;
+  color: var(--text-tertiary);
 }
 
 /* Detail View */
@@ -312,11 +312,11 @@
 }
 
 .operating-section h4 {
-  color: #22c55e;
+  color: var(--positive);
 }
 
 .investing-section h4 {
-  color: #f59e0b;
+  color: var(--warning);
 }
 
 .financing-section h4 {
@@ -324,7 +324,7 @@
 }
 
 .summary-section h4 {
-  color: #3b82f6;
+  color: var(--info);
 }
 
 .cf-table {
@@ -338,20 +338,20 @@
 }
 
 .cf-table td:first-child {
-  color: #6b7280;
+  color: var(--text-secondary);
 }
 
 .cf-table td:last-child {
   text-align: right;
   font-family: 'SF Mono', 'Monaco', monospace;
-  color: #374151;
+  color: var(--text-primary);
 }
 
 .cf-table .starting-row td {
-  color: #374151;
+  color: var(--text-primary);
   font-weight: 500;
   padding-bottom: 0.75rem;
-  border-bottom: 1px dashed rgba(0, 0, 0, 0.1);
+  border-bottom: var(--space-0) dashed rgba(0, 0, 0, 0.1);
 }
 
 .cf-table .indent td:first-child {
@@ -360,11 +360,11 @@
 }
 
 .cf-table td.positive {
-  color: #22c55e;
+  color: var(--positive);
 }
 
 .cf-table td.negative {
-  color: #ef4444;
+  color: var(--negative);
 }
 
 .cf-table .total-row td {
@@ -374,7 +374,7 @@
 }
 
 .cf-table .total-row td:first-child {
-  color: #374151;
+  color: var(--text-primary);
 }
 
 .cf-table.summary-table td {
@@ -384,13 +384,13 @@
 .cf-table .grand-total-row td {
   padding-top: 1rem;
   margin-top: 0.5rem;
-  border-top: 2px solid rgba(0, 0, 0, 0.1);
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
   font-weight: 700;
   font-size: 1rem;
 }
 
 .cf-table .grand-total-row td:first-child {
-  color: #3b82f6;
+  color: var(--info);
 }
 
 /* Trends View */
@@ -408,7 +408,7 @@
 
 .cash-flow-breakdown .chart-container h4 {
   margin: 0 0 1rem 0;
-  color: #6b7280;
+  color: var(--text-secondary);
   font-size: 0.875rem;
 }
 

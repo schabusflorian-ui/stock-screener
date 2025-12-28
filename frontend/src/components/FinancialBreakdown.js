@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import PropTypes from 'prop-types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart, Line } from 'recharts';
 import { companyAPI } from '../services/api';
 import './FinancialBreakdown.css';
@@ -325,5 +326,14 @@ function FinancialBreakdown({ symbol, periodType }) {
     </div>
   );
 }
+
+FinancialBreakdown.propTypes = {
+  symbol: PropTypes.string.isRequired,
+  periodType: PropTypes.oneOf(['annual', 'quarterly'])
+};
+
+FinancialBreakdown.defaultProps = {
+  periodType: 'annual'
+};
 
 export default FinancialBreakdown;

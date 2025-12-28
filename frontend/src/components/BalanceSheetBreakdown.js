@@ -174,54 +174,73 @@ function BalanceSheetBreakdown({ symbol, periodType }) {
           {/* Balance Sheet Equation Visualization */}
           <div className="bs-equation-section">
             <h4>Balance Sheet Structure</h4>
-            <div className="bs-visual">
-              <div className="bs-left-side">
-                <div className="bs-bar assets-bar">
-                  <div
-                    className="bs-segment current-assets"
-                    style={{ height: `${(selectedData.assets?.current?.total / selectedData.summary.totalAssets) * 100}%` }}
-                    title={`Current Assets: ${formatCurrency(selectedData.assets?.current?.total)}`}
-                  >
-                    <span>Current</span>
+            {(() => {
+              // Calculate the right side total (Liabilities + Equity)
+              const currentLiab = selectedData.liabilities?.current?.total || 0;
+              const noncurrentLiab = selectedData.liabilities?.noncurrent?.total || 0;
+              const equity = selectedData.summary.shareholderEquity || 0;
+              const rightSideTotal = currentLiab + noncurrentLiab + Math.max(0, equity);
+
+              // Use totalAssets as the reference for both sides to ensure visual balance
+              const totalAssets = selectedData.summary.totalAssets;
+              const currentAssets = selectedData.assets?.current?.total || 0;
+              const noncurrentAssets = selectedData.assets?.noncurrent?.total || 0;
+
+              return (
+                <div className="bs-visual">
+                  <div className="bs-left-side">
+                    <div className="bs-bar assets-bar">
+                      <div
+                        className="bs-segment current-assets"
+                        style={{ height: `${(currentAssets / totalAssets) * 100}%` }}
+                        title={`Current Assets: ${formatCurrency(currentAssets)}`}
+                      >
+                        <span>Current</span>
+                      </div>
+                      <div
+                        className="bs-segment noncurrent-assets"
+                        style={{ height: `${(noncurrentAssets / totalAssets) * 100}%` }}
+                        title={`Non-Current Assets: ${formatCurrency(noncurrentAssets)}`}
+                      >
+                        <span>Non-Current</span>
+                      </div>
+                    </div>
+                    <span className="bar-label">Assets</span>
+                    <span className="bar-total">{formatCurrency(totalAssets)}</span>
                   </div>
-                  <div
-                    className="bs-segment noncurrent-assets"
-                    style={{ height: `${(selectedData.assets?.noncurrent?.total / selectedData.summary.totalAssets) * 100}%` }}
-                    title={`Non-Current Assets: ${formatCurrency(selectedData.assets?.noncurrent?.total)}`}
-                  >
-                    <span>Non-Current</span>
+                  <div className="bs-equals">=</div>
+                  <div className="bs-right-side">
+                    <div className="bs-bar liabilities-equity-bar">
+                      <div
+                        className="bs-segment current-liab"
+                        style={{ height: `${(currentLiab / rightSideTotal) * 100}%` }}
+                        title={`Current Liabilities: ${formatCurrency(currentLiab)}`}
+                      >
+                        <span>Current Liab.</span>
+                      </div>
+                      <div
+                        className="bs-segment noncurrent-liab"
+                        style={{ height: `${(noncurrentLiab / rightSideTotal) * 100}%` }}
+                        title={`Non-Current Liabilities: ${formatCurrency(noncurrentLiab)}`}
+                      >
+                        <span>Long-term Debt</span>
+                      </div>
+                      {equity > 0 && (
+                        <div
+                          className="bs-segment equity-segment"
+                          style={{ height: `${(equity / rightSideTotal) * 100}%` }}
+                          title={`Shareholders' Equity: ${formatCurrency(equity)}`}
+                        >
+                          <span>Equity</span>
+                        </div>
+                      )}
+                    </div>
+                    <span className="bar-label">Liabilities + Equity</span>
+                    <span className="bar-total">{formatCurrency(rightSideTotal)}</span>
                   </div>
                 </div>
-                <span className="bar-label">Assets</span>
-              </div>
-              <div className="bs-equals">=</div>
-              <div className="bs-right-side">
-                <div className="bs-bar liabilities-equity-bar">
-                  <div
-                    className="bs-segment current-liab"
-                    style={{ height: `${(selectedData.liabilities?.current?.total / selectedData.summary.totalAssets) * 100}%` }}
-                    title={`Current Liabilities: ${formatCurrency(selectedData.liabilities?.current?.total)}`}
-                  >
-                    <span>Current Liab.</span>
-                  </div>
-                  <div
-                    className="bs-segment noncurrent-liab"
-                    style={{ height: `${(selectedData.liabilities?.noncurrent?.total / selectedData.summary.totalAssets) * 100}%` }}
-                    title={`Non-Current Liabilities: ${formatCurrency(selectedData.liabilities?.noncurrent?.total)}`}
-                  >
-                    <span>Long-term Debt</span>
-                  </div>
-                  <div
-                    className="bs-segment equity-segment"
-                    style={{ height: `${(selectedData.summary.shareholderEquity / selectedData.summary.totalAssets) * 100}%` }}
-                    title={`Shareholders' Equity: ${formatCurrency(selectedData.summary.shareholderEquity)}`}
-                  >
-                    <span>Equity</span>
-                  </div>
-                </div>
-                <span className="bar-label">Liabilities + Equity</span>
-              </div>
-            </div>
+              );
+            })()}
           </div>
 
           {/* Key Ratios */}

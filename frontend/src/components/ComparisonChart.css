@@ -21,7 +21,7 @@
   border: 1px solid rgba(255, 255, 255, 0.5);
   padding: 3rem;
   text-align: center;
-  color: #6b7280;
+  color: var(--text-secondary);
 }
 
 /* Header */
@@ -41,13 +41,13 @@
 
 .comparison-title h4 {
   margin: 0;
-  color: #374151;
+  color: var(--text-primary);
   font-size: 1rem;
   font-weight: 600;
 }
 
 .comparison-title .y-axis-label {
-  color: #6b7280;
+  color: var(--text-secondary);
   font-size: 0.75rem;
 }
 
@@ -71,7 +71,7 @@
   padding: 0.375rem 0.75rem;
   background: transparent;
   border: none;
-  color: #6b7280;
+  color: var(--text-secondary);
   font-size: 0.75rem;
   font-weight: 500;
   cursor: pointer;
@@ -80,12 +80,12 @@
 }
 
 .time-range-buttons button:hover {
-  color: #374151;
+  color: var(--text-primary);
   background: rgba(99, 102, 241, 0.08);
 }
 
 .time-range-buttons button.active {
-  background: #6366f1;
+  background: var(--brand-primary);
   color: white;
 }
 
@@ -95,18 +95,18 @@
   background: rgba(255, 255, 255, 0.7);
   border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: 0.375rem;
-  color: #374151;
+  color: var(--text-primary);
   font-size: 0.75rem;
   cursor: pointer;
 }
 
 .normalization-select:hover {
-  border-color: #6366f1;
+  border-color: var(--brand-primary);
 }
 
 .normalization-select:focus {
   outline: none;
-  border-color: #6366f1;
+  border-color: var(--brand-primary);
 }
 
 /* Reset Zoom Button */
@@ -119,15 +119,15 @@
   background: rgba(255, 255, 255, 0.7);
   border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: 0.375rem;
-  color: #6b7280;
+  color: var(--text-secondary);
   font-size: 1rem;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .reset-zoom-btn:hover {
-  border-color: #6366f1;
-  color: #374151;
+  border-color: var(--brand-primary);
+  color: var(--text-primary);
 }
 
 /* Series Legend */
@@ -163,26 +163,26 @@
 }
 
 .series-legend .legend-item.hidden .legend-color {
-  background: #9ca3af !important;
+  background: var(--text-tertiary) !important;
 }
 
 .series-legend .legend-color {
   width: 12px;
   height: 12px;
-  border-radius: 2px;
+  border-radius: var(--radius-none);
   background: var(--series-color);
   transition: background 0.15s ease;
 }
 
 .series-legend .legend-name {
   font-size: 0.75rem;
-  color: #374151;
+  color: var(--text-primary);
   font-weight: 500;
 }
 
 .series-legend .legend-value {
   font-size: 0.75rem;
-  color: #6366f1;
+  color: var(--brand-primary);
   font-weight: 600;
   font-family: 'SF Mono', 'Monaco', monospace;
   margin-left: 0.25rem;
@@ -203,7 +203,7 @@
 
 .normalization-info span {
   font-size: 0.65rem;
-  color: #6b7280;
+  color: var(--text-secondary);
   font-style: italic;
 }
 
@@ -215,7 +215,7 @@
 
 .chart-instructions span {
   font-size: 0.65rem;
-  color: #9ca3af;
+  color: var(--text-tertiary);
 }
 
 /* Responsive */

@@ -21,7 +21,7 @@
 
 .bs-header h3 {
   margin: 0;
-  color: #374151;
+  color: var(--text-primary);
 }
 
 .bs-controls {
@@ -34,7 +34,7 @@
 .bs-empty {
   padding: 3rem;
   text-align: center;
-  color: #6b7280;
+  color: var(--text-secondary);
 }
 
 /* View Toggle - Liquid Glass */
@@ -50,7 +50,7 @@
   padding: 0.5rem 1rem;
   border: none;
   background: transparent;
-  color: #6b7280;
+  color: var(--text-secondary);
   border-radius: 0.375rem;
   cursor: pointer;
   font-size: 0.875rem;
@@ -58,11 +58,11 @@
 }
 
 .view-toggle button:hover {
-  color: #374151;
+  color: var(--text-primary);
 }
 
 .view-toggle button.active {
-  background: #6366f1;
+  background: var(--brand-primary);
   color: white;
 }
 
@@ -75,7 +75,7 @@
 }
 
 .period-selector label {
-  color: #6b7280;
+  color: var(--text-secondary);
   font-size: 0.875rem;
 }
 
@@ -84,14 +84,14 @@
   background: rgba(255, 255, 255, 0.7);
   border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 0.5rem;
-  color: #374151;
+  color: var(--text-primary);
   font-size: 0.875rem;
   cursor: pointer;
 }
 
 .period-selector select:focus {
   outline: none;
-  border-color: #6366f1;
+  border-color: var(--brand-primary);
 }
 
 /* Summary Cards - Liquid Glass */
@@ -109,24 +109,24 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  border-left: 3px solid #9ca3af;
+  border-left: var(--space-1) solid var(--text-tertiary);
 }
 
 .bs-summary-card.assets {
-  border-left-color: #3b82f6;
+  border-left-color: var(--info);
 }
 
 .bs-summary-card.liabilities {
-  border-left-color: #ef4444;
+  border-left-color: var(--negative);
 }
 
 .bs-summary-card.equity {
-  border-left-color: #22c55e;
+  border-left-color: var(--positive);
 }
 
 .bs-summary-card .card-label {
   font-size: 0.75rem;
-  color: #6b7280;
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -134,7 +134,7 @@
 .bs-summary-card .card-value {
   font-size: 1.5rem;
   font-weight: 600;
-  color: #374151;
+  color: var(--text-primary);
 }
 
 /* Balance Sheet Equation Visualization */
@@ -147,7 +147,7 @@
 
 .bs-equation-section h4 {
   margin: 0 0 1rem 0;
-  color: #6b7280;
+  color: var(--text-secondary);
   font-size: 0.875rem;
 }
 
@@ -198,21 +198,27 @@
   text-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
 
-.current-assets { background: #60a5fa; }
-.noncurrent-assets { background: #3b82f6; }
-.current-liab { background: #f87171; }
-.noncurrent-liab { background: #ef4444; }
-.equity-segment { background: #22c55e; }
+.current-assets { background: var(--info-light); }
+.noncurrent-assets { background: var(--info); }
+.current-liab { background: var(--negative-light); }
+.noncurrent-liab { background: var(--negative); }
+.equity-segment { background: var(--positive); }
 
 .bar-label {
   font-size: 0.75rem;
-  color: #6b7280;
+  color: var(--text-secondary);
   font-weight: 500;
+}
+
+.bar-total {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
 }
 
 .bs-equals {
   font-size: 2rem;
-  color: #9ca3af;
+  color: var(--text-tertiary);
   font-weight: 300;
 }
 
@@ -225,7 +231,7 @@
 
 .bs-ratios-section h4 {
   margin: 0 0 1rem 0;
-  color: #6b7280;
+  color: var(--text-secondary);
   font-size: 0.875rem;
 }
 
@@ -242,36 +248,36 @@
   display: flex;
   flex-direction: column;
   gap: 0.375rem;
-  border-left: 3px solid #9ca3af;
+  border-left: var(--space-1) solid var(--text-tertiary);
 }
 
 .ratio-card.healthy {
-  border-left-color: #22c55e;
+  border-left-color: var(--positive);
 }
 
 .ratio-card.warning {
-  border-left-color: #f59e0b;
+  border-left-color: var(--warning);
 }
 
 .ratio-card.danger {
-  border-left-color: #ef4444;
+  border-left-color: var(--negative);
 }
 
 .ratio-name {
   font-size: 0.75rem;
-  color: #6b7280;
+  color: var(--text-secondary);
   font-weight: 500;
 }
 
 .ratio-value {
   font-size: 1.25rem;
   font-weight: 600;
-  color: #374151;
+  color: var(--text-primary);
 }
 
 .ratio-desc {
   font-size: 0.65rem;
-  color: #9ca3af;
+  color: var(--text-tertiary);
 }
 
 /* Detail View */
@@ -295,11 +301,11 @@
 }
 
 .assets-section h4 {
-  color: #3b82f6;
+  color: var(--info);
 }
 
 .liabilities-section h4 {
-  color: #ef4444;
+  color: var(--negative);
 }
 
 .bs-subsection {
@@ -308,7 +314,7 @@
 
 .bs-subsection h5 {
   margin: 0 0 0.5rem 0;
-  color: #6b7280;
+  color: var(--text-secondary);
   font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -325,12 +331,12 @@
 }
 
 .bs-table td:first-child {
-  color: #6b7280;
+  color: var(--text-secondary);
 }
 
 .bs-table td:last-child {
   text-align: right;
-  color: #374151;
+  color: var(--text-primary);
   font-family: 'SF Mono', 'Monaco', monospace;
 }
 
@@ -341,11 +347,11 @@
 }
 
 .bs-table .subtotal-row td:first-child {
-  color: #374151;
+  color: var(--text-primary);
 }
 
 .bs-table td.negative {
-  color: #ef4444;
+  color: var(--negative);
 }
 
 .bs-total {
@@ -353,17 +359,17 @@
   justify-content: space-between;
   padding: 1rem;
   margin-top: 1rem;
-  background: rgba(59, 130, 246, 0.1);
+  background: rgba(var(--info-rgb), 0.1);
   border-radius: 0.5rem;
   font-weight: 600;
 }
 
 .bs-total span:first-child {
-  color: #3b82f6;
+  color: var(--info);
 }
 
 .bs-total span:last-child {
-  color: #374151;
+  color: var(--text-primary);
   font-family: 'SF Mono', 'Monaco', monospace;
 }
 
@@ -378,23 +384,23 @@
 }
 
 .bs-subtotal.liab-subtotal {
-  background: rgba(239, 68, 68, 0.1);
+  background: rgba(var(--negative-rgb), 0.1);
 }
 
 .bs-subtotal.liab-subtotal span:first-child {
-  color: #ef4444;
+  color: var(--negative);
 }
 
 .bs-subtotal.equity-subtotal {
-  background: rgba(34, 197, 94, 0.1);
+  background: rgba(var(--positive-rgb), 0.1);
 }
 
 .bs-subtotal.equity-subtotal span:first-child {
-  color: #22c55e;
+  color: var(--positive);
 }
 
 .bs-subtotal span:last-child {
-  color: #374151;
+  color: var(--text-primary);
   font-family: 'SF Mono', 'Monaco', monospace;
 }
 
@@ -413,7 +419,7 @@
 
 .chart-container h4 {
   margin: 0 0 1rem 0;
-  color: #6b7280;
+  color: var(--text-secondary);
   font-size: 0.875rem;
 }
 

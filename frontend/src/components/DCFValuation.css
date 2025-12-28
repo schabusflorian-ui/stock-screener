@@ -57,7 +57,7 @@
 
 .health-badge.caution {
   background: rgba(245, 158, 11, 0.15);
-  color: #f59e0b;
+  color: var(--warning);
 }
 
 .health-badge.review {
@@ -165,7 +165,7 @@
     rgba(239, 68, 68, 0.1) 0%,
     rgba(245, 158, 11, 0.1) 50%,
     rgba(16, 185, 129, 0.1) 100%);
-  border-radius: 16px;
+  border-radius: var(--radius-xl);
   overflow: visible;
   margin-bottom: 0.75rem;
 }
@@ -177,7 +177,7 @@
     rgba(239, 68, 68, 0.3) 0%,
     rgba(245, 158, 11, 0.3) 50%,
     rgba(16, 185, 129, 0.3) 100%);
-  border-radius: 16px;
+  border-radius: var(--radius-xl);
 }
 
 .base-marker {
@@ -385,7 +385,7 @@
 }
 
 .check-value.warning {
-  color: #f59e0b;
+  color: var(--warning);
 }
 
 .check-note {
@@ -694,7 +694,7 @@
 }
 
 .assumption-item .value-sm.warning {
-  color: #f59e0b;
+  color: var(--warning);
 }
 
 .assumption-item.editable {
@@ -965,7 +965,7 @@
 .legend-color {
   width: 12px;
   height: 12px;
-  border-radius: 2px;
+  border-radius: var(--radius-none);
 }
 
 .legend-color.above {

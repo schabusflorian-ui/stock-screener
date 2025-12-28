@@ -1,6 +1,6 @@
 // frontend/src/pages/CompanyPage.js
-import { useState, useEffect, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   BarChart3,
   Building2,
@@ -15,9 +15,18 @@ import {
   RefreshCcw,
   TrendingUp,
   FileText,
-  Globe
+  Globe,
+  Crown,
+  Plus,
+  Bot,
+  Loader,
+  Sparkles,
+  History,
+  ChevronDown,
+  X,
+  BookOpen
 } from 'lucide-react';
-import { companyAPI, trendsAPI, insidersAPI, sentimentAPI, capitalAPI, pricesAPI, dividendsAPI } from '../services/api';
+import { companyAPI, trendsAPI, insidersAPI, sentimentAPI, capitalAPI, pricesAPI, dividendsAPI, indicesAPI, investorsAPI, analystAPI, aiRatingsAPI } from '../services/api';
 import {
   PeriodToggle,
   MetricSelector,
@@ -41,7 +50,12 @@ import { NewsCard } from '../components/NewsCard';
 import CombinedSentimentPanel from '../components/CombinedSentimentPanel';
 import StockTwitsCard from '../components/StockTwitsCard';
 import { PriceChart } from '../components/PriceChart';
+import { AlphaChart } from '../components/AlphaChart';
+import { NLQueryBar } from '../components/nl';
+import { AddToPortfolioButton } from '../components/portfolio';
+import { CompanyNotesPanel } from '../components/notes';
 import { dcfAPI } from '../services/api';
+import { useFormatters } from '../hooks/useFormatters';
 import './CompanyPage.css';
 
 // Format metric value based on type
@@ -138,6 +152,7 @@ const MetricBar = ({ label, value, max, format = 'percent', inverted = false }) 
 
 function CompanyPage() {
   const { symbol } = useParams();
+  const navigate = useNavigate();
   const [company, setCompany] = useState(null);
   const [metrics, setMetrics] = useState([]);
   const [trends, setTrends] = useState(null);
@@ -150,9 +165,18 @@ function CompanyPage() {
   const [analystLoading, setAnalystLoading] = useState(false);
   const [dcfData, setDcfData] = useState(null);
   const [priceData, setPriceData] = useState(null);
+  const [alphaData, setAlphaData] = useState(null);
+  const [benchmarkData, setBenchmarkData] = useState(null);
   const [dividendData, setDividendData] = useState(null);
   const [dividendLoading, setDividendLoading] = useState(false);
+  const [investorOwners, setInvestorOwners] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // AI Rating state
+  const [aiRating, setAiRating] = useState(null);
+  const [aiRatingLoading, setAiRatingLoading] = useState(false);
+  const [aiRatingHistory, setAiRatingHistory] = useState([]);
+  const [showRatingHistory, setShowRatingHistory] = useState(false);
 
   // New state for period and metric selection
   const [periodType, setPeriodType] = useState('annual');
@@ -163,6 +187,9 @@ function CompanyPage() {
   const [mainTab, setMainTab] = useState('overview');
   const [analysisSection, setAnalysisSection] = useState('quality'); // section within analysis tab
   const [sentimentView, setSentimentView] = useState('combined'); // 'combined', 'reddit', 'stocktwits', 'news'
+
+  // Memoize latestMetrics to avoid hoisting issues with useCallback dependencies
+  const latestMetrics = useMemo(() => company?.latest_metrics || {}, [company]);
 
   const loadMetrics = useCallback(async () => {
     try {
@@ -217,6 +244,22 @@ function CompanyPage() {
           console.log('No price data available');
         }
 
+        // Load alpha data (performance vs benchmark)
+        try {
+          const [alphaRes, benchmarkRes] = await Promise.all([
+            indicesAPI.getAlpha(symbol),
+            indicesAPI.getBenchmark()
+          ]);
+          if (alphaRes.data.success && alphaRes.data.data) {
+            setAlphaData(alphaRes.data.data);
+          }
+          if (benchmarkRes.data.success && benchmarkRes.data.data) {
+            setBenchmarkData(benchmarkRes.data.data);
+          }
+        } catch (e) {
+          console.log('No alpha data available');
+        }
+
         // Load DCF data with current price (non-blocking)
         try {
           const dcfRes = await dcfAPI.getValuation(symbol, currentPrice);
@@ -225,6 +268,16 @@ function CompanyPage() {
           }
         } catch (e) {
           console.log('No DCF data available');
+        }
+
+        // Load famous investors who own this stock (non-blocking)
+        try {
+          const investorsRes = await investorsAPI.getByStock(symbol);
+          if (investorsRes.data.success) {
+            setInvestorOwners(investorsRes.data.investors || []);
+          }
+        } catch (e) {
+          console.log('No investor data available');
         }
       } catch (error) {
         console.error('Error loading company:', error);
@@ -275,6 +328,134 @@ function CompanyPage() {
       loadCapitalData();
     }
   }, [mainTab, capitalData, capitalLoading, loadCapitalData]);
+
+  // Load cached AI rating from localStorage and fetch history from database
+  useEffect(() => {
+    // Load from localStorage cache first
+    const cached = localStorage.getItem(`aiRating_${symbol}`);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        // Only use cache if less than 24 hours old
+        const cacheAge = Date.now() - (parsed.timestamp || 0);
+        if (cacheAge < 24 * 60 * 60 * 1000) {
+          setAiRating(parsed.rating);
+        }
+      } catch (e) {
+        // Ignore parse errors
+      }
+    }
+
+    // Also fetch the latest from database
+    const fetchLatestRating = async () => {
+      try {
+        const res = await aiRatingsAPI.getLatest(symbol);
+        if (res.data.success && res.data.rating) {
+          // If database has a more recent rating, use it
+          setAiRating(res.data.rating);
+        }
+      } catch (e) {
+        // Ignore errors, use localStorage cache
+      }
+    };
+    fetchLatestRating();
+  }, [symbol]);
+
+  // Load AI rating history
+  const loadRatingHistory = useCallback(async () => {
+    try {
+      const res = await aiRatingsAPI.getHistory(symbol, 10);
+      if (res.data.success) {
+        setAiRatingHistory(res.data.ratings);
+      }
+    } catch (e) {
+      console.error('Failed to load rating history:', e);
+    }
+  }, [symbol]);
+
+  // Load history when opening the history panel
+  useEffect(() => {
+    if (showRatingHistory) {
+      loadRatingHistory();
+    }
+  }, [showRatingHistory, loadRatingHistory]);
+
+  // Get AI investment rating
+  const getAIRating = useCallback(async (forceRefresh = false) => {
+    if (aiRatingLoading) return;
+    if (!forceRefresh && aiRating) return;
+
+    setAiRatingLoading(true);
+
+    try {
+      // Create a conversation with the value analyst
+      const convResponse = await analystAPI.createConversation({
+        analystId: 'value',
+        companySymbol: symbol
+      });
+
+      // Build context from available data
+      const context = {
+        metrics: latestMetrics,
+        price: priceData,
+        dcf: dcfData,
+        health: trends?.health
+      };
+
+      // Ask for a structured rating
+      const msgResponse = await analystAPI.sendMessage(
+        convResponse.data.conversation.id,
+        `Analyze ${symbol} and provide an investment rating. Consider fundamentals, valuation, financial health, and growth prospects. Respond with ONLY a JSON object: {"score": 7, "label": "Buy", "summary": "Brief 2-3 sentence analysis", "strengths": ["strength1"], "risks": ["risk1"]}. Score from 1-10. Label: "Strong Buy", "Buy", "Hold", "Sell", "Strong Sell".`,
+        { context }
+      );
+
+      // Parse the response
+      const content = msgResponse.data.message.content;
+      let rating;
+
+      try {
+        // Try to extract JSON from the response
+        const jsonMatch = content.match(/\{[\s\S]*?\}/);
+        if (jsonMatch) {
+          rating = JSON.parse(jsonMatch[0]);
+        }
+      } catch (e) {
+        // Fallback parsing if JSON fails
+        const scoreMatch = content.match(/(\d+)/);
+        rating = {
+          score: scoreMatch ? parseInt(scoreMatch[1]) : 5,
+          label: 'Hold',
+          summary: content.slice(0, 200)
+        };
+      }
+
+      // Save to state and localStorage cache
+      setAiRating(rating);
+      localStorage.setItem(`aiRating_${symbol}`, JSON.stringify({
+        rating,
+        timestamp: Date.now()
+      }));
+
+      // Save to database for history tracking
+      try {
+        await aiRatingsAPI.save(symbol, {
+          score: rating.score,
+          label: rating.label,
+          summary: rating.summary,
+          strengths: rating.strengths,
+          risks: rating.risks,
+          analystId: 'value',
+          contextData: context
+        });
+      } catch (dbErr) {
+        console.warn('Failed to save rating to database:', dbErr);
+      }
+    } catch (err) {
+      console.error(`Failed to get AI rating for ${symbol}:`, err);
+    } finally {
+      setAiRatingLoading(false);
+    }
+  }, [symbol, aiRatingLoading, aiRating, latestMetrics, priceData, dcfData, trends]);
 
   // Load dividend data when Stock tab is selected
   const loadDividendData = useCallback(async () => {
@@ -391,8 +572,6 @@ function CompanyPage() {
     healthStatus === 'STABLE' ? 'neutral' :
     healthStatus === 'DETERIORATING' ? 'warning' : 'negative';
 
-  const latestMetrics = company.latest_metrics || {};
-
   return (
     <div className="company-page">
       {/* Company Header */}
@@ -446,82 +625,105 @@ function CompanyPage() {
           </div>
         </div>
 
-        {/* Right side: Stock + Quality + Actions */}
-        <div className="header-right-section">
-          {/* Stock Price */}
+        {/* Right side: Stock + Quality + Actions - evenly spaced */}
+        <div className="header-metrics-row">
+          {/* Stock Price Section */}
           {priceData && priceData.last_price > 0 && (
-            <div className="stock-price-compact">
-              <span className="price-label">Stock Price</span>
-              <span className="price-value">${priceData.last_price.toFixed(2)}</span>
+            <div className="header-metric-box">
+              <span className="header-metric-title">Price</span>
+              <span className="header-metric-value">${priceData.last_price.toFixed(2)}</span>
               {priceData.change_1d !== null && priceData.change_1d !== undefined && (
-                <span className={`price-change ${priceData.change_1d >= 0 ? 'positive' : 'negative'}`}>
+                <span className={`header-metric-sub ${priceData.change_1d >= 0 ? 'positive' : 'negative'}`}>
                   {priceData.change_1d >= 0 ? '+' : ''}{priceData.change_1d.toFixed(2)}%
                 </span>
               )}
             </div>
           )}
 
-          <div className="header-divider" />
-
-          {/* Quality Chart */}
+          {/* Quality Section - Expanded with full legend */}
           {latestMetrics?.data_quality_score !== undefined && (
-            <div className="quality-chart-section">
-              <div className="quality-score-header">
-                <span className="quality-score-value" style={{
+            <div className="header-metric-box quality-box-wide">
+              <span className="header-metric-title">Quality Score</span>
+              <div className="quality-content-wide">
+                <span className="quality-number-large" style={{
                   color: latestMetrics.data_quality_score >= 70 ? '#10b981' :
                          latestMetrics.data_quality_score >= 40 ? '#f59e0b' : '#ef4444'
                 }}>{Math.round(latestMetrics.data_quality_score)}</span>
-                <span className="quality-score-label">Quality</span>
-              </div>
-              <div className="quality-bars-large">
-                {[
-                  { key: 'Value', color: '#6366f1', value: latestMetrics.roic || 0 },
-                  { key: 'Growth', color: '#10b981', value: latestMetrics.revenue_growth_yoy || 0 },
-                  { key: 'Health', color: '#3b82f6', value: latestMetrics.current_ratio ? Math.min(latestMetrics.current_ratio * 33, 100) : 0 },
-                  { key: 'Profit', color: '#f59e0b', value: latestMetrics.net_margin || 0 }
-                ].map((dim) => {
-                  const val = Math.min(Math.max(dim.value, 0), 100);
-                  return (
-                    <div key={dim.key} className="quality-bar-item">
-                      <div className="quality-bar-track">
-                        <div className="quality-bar-fill" style={{ height: `${val}%`, background: dim.color }} />
+                <div className="quality-legend">
+                  {[
+                    { key: 'Value', color: '#6366f1', value: latestMetrics.roic || 0 },
+                    { key: 'Growth', color: '#10b981', value: latestMetrics.revenue_growth_yoy || 0 },
+                    { key: 'Health', color: '#3b82f6', value: latestMetrics.current_ratio ? Math.min(latestMetrics.current_ratio * 33, 100) : 0 },
+                    { key: 'Profit', color: '#f59e0b', value: latestMetrics.net_margin || 0 }
+                  ].map((dim) => {
+                    const val = Math.min(Math.max(dim.value, 0), 100);
+                    return (
+                      <div key={dim.key} className="quality-legend-item">
+                        <div className="quality-legend-bar-bg">
+                          <div className="quality-legend-bar-fg" style={{ width: `${val}%`, background: dim.color }} />
+                        </div>
+                        <span className="quality-legend-label" style={{ color: dim.color }}>{dim.key}</span>
                       </div>
-                      <span className="quality-bar-label">{dim.key}</span>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
           )}
 
-          <div className="header-divider" />
-
-          {/* Actions + Health - Stacked vertically */}
-          <div className="header-actions-group">
-            <WatchlistButton
-              symbol={company.company.symbol}
-              name={company.company.name}
-              sector={company.company.sector}
-              size="small"
-            />
-            <ClassificationEditor
-              symbol={company.company.symbol}
-              companyName={company.company.name}
-              mode="button"
-            />
+          {/* Actions Stack - Classification, Watchlist, Portfolio, Trend */}
+          <div className="header-actions-stack">
+            <div className="action-inline">
+              <span className="inline-title">Classify</span>
+              <ClassificationEditor
+                symbol={company.company.symbol}
+                companyName={company.company.name}
+                mode="button"
+              />
+            </div>
+            <div className="action-inline">
+              <span className="inline-title">Watchlist</span>
+              <WatchlistButton
+                symbol={company.company.symbol}
+                name={company.company.name}
+                sector={company.company.sector}
+                size="small"
+              />
+            </div>
+            <div className="action-inline">
+              <span className="inline-title">Portfolio</span>
+              <AddToPortfolioButton
+                symbol={company.company.symbol}
+                companyId={company.company.id}
+                companyName={company.company.name}
+                currentPrice={priceData?.latestPrice}
+              />
+            </div>
             {healthStatus && (
-              <div className={`health-badge-inline ${healthColor}`}>
-                <Activity size={12} />
-                <span>{healthStatus.replace(/_/g, ' ')}</span>
+              <div className="action-inline">
+                <span className="inline-title">Trend</span>
+                <div className={`health-status-badge ${healthColor}`}>
+                  <Activity size={14} />
+                  <span>{healthStatus.replace(/_/g, ' ')}</span>
+                </div>
               </div>
             )}
           </div>
         </div>
       </header>
 
+      {/* Natural Language Query Bar */}
+      <div className="nl-query-section">
+        <NLQueryBar
+          placeholder={`Ask about ${symbol}... e.g., 'Find stocks similar to ${symbol}' or 'What's driving ${symbol}'s growth?'`}
+          context={{ page: 'company', symbol: symbol }}
+          onResultSelect={(s) => navigate(`/company/${s}`)}
+        />
+      </div>
+
       {/* Main Navigation Tabs */}
       <nav className="main-tabs-new">
-        {['overview', 'analysis', 'financials', 'stock', 'history', 'news'].map(tab => (
+        {['overview', 'analysis', 'financials', 'stock', 'history', 'notes', 'news'].map(tab => (
           <button
             key={tab}
             className={mainTab === tab ? 'active' : ''}
@@ -532,6 +734,7 @@ function CompanyPage() {
             {tab === 'financials' && <DollarSign size={16} />}
             {tab === 'stock' && <TrendingUp size={16} />}
             {tab === 'history' && <Calendar size={16} />}
+            {tab === 'notes' && <BookOpen size={16} />}
             {tab === 'news' && <ExternalLink size={16} />}
             <span>{tab === 'stock' ? 'Stock & Capital' : tab.charAt(0).toUpperCase() + tab.slice(1)}</span>
           </button>
@@ -652,6 +855,110 @@ function CompanyPage() {
                   </div>
                 );
               })()}
+
+              {/* AI Investment Rating - 5th hero metric */}
+              <div className="ai-rating-container">
+                <div
+                  className={`hero-metric ai-rating ${aiRating ? 'has-rating' : 'clickable'} ${aiRatingLoading ? 'loading' : ''}`}
+                  onClick={!aiRating && !aiRatingLoading ? () => getAIRating(false) : undefined}
+                  title={aiRating ? aiRating.summary : 'Click to get AI investment rating'}
+                >
+                  <div className="hero-icon ai-icon">
+                    {aiRatingLoading ? <Loader size={18} className="spin" /> : <Bot size={18} />}
+                  </div>
+                  {aiRating ? (
+                    <>
+                      <div className="hero-content">
+                        <span className="hero-value ai-score">{aiRating.score}/10</span>
+                        <span className="hero-label">
+                          AI Rating
+                          <span className="hero-sublabel ai-label"> · {aiRating.label}</span>
+                        </span>
+                      </div>
+                      <div className={`hero-indicator ${
+                        aiRating.score >= 7 ? 'bullish' :
+                        aiRating.score >= 4 ? 'neutral-ai' : 'bearish'
+                      }`}>
+                        {aiRating.score >= 7 ? 'Bullish' :
+                         aiRating.score >= 4 ? 'Neutral' : 'Bearish'}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="hero-content ai-empty">
+                      <span className="hero-value ai-placeholder">
+                        {aiRatingLoading ? 'Analyzing...' : 'Get Rating'}
+                      </span>
+                      <span className="hero-label">AI Investment Analysis</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* AI Rating Actions */}
+                {aiRating && (
+                  <div className="ai-rating-actions">
+                    <button
+                      className="ai-action-btn refresh"
+                      onClick={() => getAIRating(true)}
+                      disabled={aiRatingLoading}
+                      title="Refresh AI analysis"
+                    >
+                      <RefreshCcw size={14} className={aiRatingLoading ? 'spin' : ''} />
+                    </button>
+                    <button
+                      className={`ai-action-btn history ${showRatingHistory ? 'active' : ''}`}
+                      onClick={() => setShowRatingHistory(!showRatingHistory)}
+                      title="View rating history"
+                    >
+                      <History size={14} />
+                      <ChevronDown size={12} className={showRatingHistory ? 'rotated' : ''} />
+                    </button>
+                  </div>
+                )}
+
+                {/* Rating History Dropdown */}
+                {showRatingHistory && (
+                  <div className="ai-rating-history-dropdown">
+                    <div className="history-header">
+                      <span className="history-title">
+                        <History size={14} />
+                        Rating History
+                      </span>
+                      <button className="close-history" onClick={() => setShowRatingHistory(false)}>
+                        <X size={14} />
+                      </button>
+                    </div>
+                    <div className="history-list">
+                      {aiRatingHistory.length === 0 ? (
+                        <div className="history-empty">No historical ratings yet</div>
+                      ) : (
+                        aiRatingHistory.map((rating, idx) => (
+                          <div key={rating.id || idx} className="history-item">
+                            <div className="history-item-main">
+                              <span className={`history-score ${
+                                rating.score >= 7 ? 'bullish' :
+                                rating.score >= 4 ? 'neutral' : 'bearish'
+                              }`}>
+                                {rating.score}/10
+                              </span>
+                              <span className="history-label">{rating.label}</span>
+                              <span className="history-date">
+                                {new Date(rating.created_at).toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric'
+                                })}
+                              </span>
+                            </div>
+                            {rating.summary && (
+                              <div className="history-summary">{rating.summary}</div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Metrics and Trading Data Row */}
@@ -675,17 +982,19 @@ function CompanyPage() {
                 </div>
 
                 {/* Valuation */}
-                <div className="metric-category">
+                <div className="metric-category valuation-expanded">
                   <div className="category-header">
                     <span className="category-icon valuation">
                       <Target size={14} />
                     </span>
                     <span className="category-title">Valuation</span>
                   </div>
-                  <div className="category-metrics">
+                  <div className="category-metrics valuation-grid">
+                    <MetricBar label="P/E Ratio" value={latestMetrics.pe_ratio} max={40} format="ratio" inverted />
                     <MetricBar label="P/B Ratio" value={latestMetrics.pb_ratio} max={10} format="ratio" inverted />
-                    <MetricBar label="P/S Ratio" value={latestMetrics.ps_ratio} max={15} format="ratio" inverted />
-                    <MetricBar label="EV/EBITDA" value={latestMetrics.ev_to_ebitda} max={25} format="ratio" inverted />
+                    <MetricBar label="P/S Ratio" value={latestMetrics.ps_ratio} max={10} format="ratio" inverted />
+                    <MetricBar label="EV/EBITDA" value={latestMetrics.ev_ebitda} max={25} format="ratio" inverted />
+                    <MetricBar label="PEG Ratio" value={latestMetrics.peg_ratio} max={3} format="ratio" inverted />
                     <MetricBar label="Earnings Yield" value={latestMetrics.earnings_yield} max={15} format="percent" />
                   </div>
                 </div>
@@ -702,7 +1011,7 @@ function CompanyPage() {
                     <MetricBar label="Current Ratio" value={latestMetrics.current_ratio} max={3} format="ratio" />
                     <MetricBar label="Quick Ratio" value={latestMetrics.quick_ratio} max={2} format="ratio" />
                     <MetricBar label="Debt/Equity" value={latestMetrics.debt_to_equity} max={2} format="ratio" inverted />
-                    <MetricBar label="Interest Coverage" value={latestMetrics.interest_coverage} max={20} format="ratio" />
+                    <MetricBar label="Cash Ratio" value={latestMetrics.cash_ratio} max={1} format="ratio" />
                   </div>
                 </div>
 
@@ -718,7 +1027,7 @@ function CompanyPage() {
                     <MetricBar label="Asset Turnover" value={latestMetrics.asset_turnover} max={2} format="ratio" />
                     <MetricBar label="ROCE" value={latestMetrics.roce} max={30} format="percent" />
                     <MetricBar label="ROA" value={latestMetrics.roa} max={20} format="percent" />
-                    <MetricBar label="Inventory Turnover" value={latestMetrics.inventory_turnover} max={15} format="ratio" />
+                    <MetricBar label="DuPont ROE" value={latestMetrics.dupont_roe} max={30} format="percent" />
                   </div>
                 </div>
               </div>
@@ -764,6 +1073,47 @@ function CompanyPage() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Performance vs Market (Alpha) Section */}
+                  {alphaData && (
+                    <div className="trading-section alpha-section">
+                      <span className="trading-section-title">
+                        vs {alphaData.benchmark_symbol || 'SPY'}
+                      </span>
+                      <div className="trading-section-metrics">
+                        <div className="trading-metric">
+                          <span className="trading-label">Alpha 1M</span>
+                          <span className={`trading-value ${
+                            alphaData.alpha_1m > 0 ? 'outperform' : alphaData.alpha_1m < 0 ? 'underperform' : ''
+                          }`}>
+                            {alphaData.alpha_1m != null
+                              ? `${alphaData.alpha_1m >= 0 ? '+' : ''}${alphaData.alpha_1m.toFixed(2)}%`
+                              : '-'}
+                          </span>
+                        </div>
+                        <div className="trading-metric">
+                          <span className="trading-label">Alpha YTD</span>
+                          <span className={`trading-value ${
+                            alphaData.alpha_ytd > 0 ? 'outperform' : alphaData.alpha_ytd < 0 ? 'underperform' : ''
+                          }`}>
+                            {alphaData.alpha_ytd != null
+                              ? `${alphaData.alpha_ytd >= 0 ? '+' : ''}${alphaData.alpha_ytd.toFixed(2)}%`
+                              : '-'}
+                          </span>
+                        </div>
+                        <div className="trading-metric">
+                          <span className="trading-label">Alpha 1Y</span>
+                          <span className={`trading-value ${
+                            alphaData.alpha_1y > 0 ? 'outperform' : alphaData.alpha_1y < 0 ? 'underperform' : ''
+                          }`}>
+                            {alphaData.alpha_1y != null
+                              ? `${alphaData.alpha_1y >= 0 ? '+' : ''}${alphaData.alpha_1y.toFixed(2)}%`
+                              : '-'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* 52-Week Range Section */}
                   <div className="trading-section">
@@ -1114,6 +1464,8 @@ function CompanyPage() {
               </div>
             </section>
 
+            {/* Right Column: Insider + Famous Investors Stack */}
+            <div className="right-panels-stack">
             {/* Insider Activity */}
             <section className="insider-panel-v3">
               <h3>
@@ -1168,6 +1520,52 @@ function CompanyPage() {
                 </div>
               )}
             </section>
+
+            {/* Famous Investors Section */}
+            {investorOwners.length > 0 && (
+              <section className="famous-investors-panel">
+                <div className="panel-header">
+                  <h3>
+                    <Crown size={14} />
+                    Owned by Famous Investors
+                  </h3>
+                  <span className="investor-count">{investorOwners.length} investors</span>
+                </div>
+                <div className="famous-investors-grid">
+                  {investorOwners.slice(0, 3).map((inv) => (
+                    <Link
+                      key={inv.investor_id}
+                      to={`/investors/${inv.investor_id}`}
+                      className="investor-card"
+                    >
+                      <div className="investor-avatar">
+                        {inv.investor_name?.charAt(0) || 'I'}
+                      </div>
+                      <div className="investor-details">
+                        <span className="investor-name">{inv.investor_name}</span>
+                        <span className="investor-manager">{inv.manager_name}</span>
+                      </div>
+                      <div className="investor-position">
+                        <div className="position-weight">
+                          <span className="weight-value">{inv.portfolio_weight?.toFixed(2)}%</span>
+                          <span className="weight-label">of portfolio</span>
+                        </div>
+                        <div className="position-value">
+                          {inv.market_value >= 1e9
+                            ? `$${(inv.market_value / 1e9).toFixed(1)}B`
+                            : `$${(inv.market_value / 1e6).toFixed(0)}M`}
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+                <Link to="/investors" className="view-all-investors-btn">
+                  <Users size={14} />
+                  View All Investors
+                </Link>
+              </section>
+            )}
+            </div>
           </div>
         </div>
       )}
@@ -1278,6 +1676,168 @@ function CompanyPage() {
             <PriceChart symbol={symbol} />
           </section>
 
+          {/* Performance vs Market Section */}
+          {(priceData || alphaData) && (
+            <section className="performance-vs-market-section">
+              <h3>
+                <BarChart3 size={18} />
+                Performance vs Market
+              </h3>
+              <div className="performance-comparison-grid">
+                {/* Stock Performance Column */}
+                <div className="performance-column stock">
+                  <div className="performance-column-header">
+                    <span className="column-symbol">{symbol}</span>
+                    <span className="column-label">Stock</span>
+                  </div>
+                  <div className="performance-periods">
+                    <div className="performance-row">
+                      <span className="period-label">1 Day</span>
+                      <span className={`period-value ${priceData?.change_1d >= 0 ? 'positive' : 'negative'}`}>
+                        {priceData?.change_1d != null ? `${priceData.change_1d >= 0 ? '+' : ''}${priceData.change_1d.toFixed(2)}%` : '-'}
+                      </span>
+                    </div>
+                    <div className="performance-row">
+                      <span className="period-label">1 Week</span>
+                      <span className={`period-value ${priceData?.change_1w >= 0 ? 'positive' : 'negative'}`}>
+                        {priceData?.change_1w != null ? `${priceData.change_1w >= 0 ? '+' : ''}${priceData.change_1w.toFixed(2)}%` : '-'}
+                      </span>
+                    </div>
+                    <div className="performance-row">
+                      <span className="period-label">1 Month</span>
+                      <span className={`period-value ${priceData?.change_1m >= 0 ? 'positive' : 'negative'}`}>
+                        {priceData?.change_1m != null ? `${priceData.change_1m >= 0 ? '+' : ''}${priceData.change_1m.toFixed(2)}%` : '-'}
+                      </span>
+                    </div>
+                    <div className="performance-row">
+                      <span className="period-label">3 Months</span>
+                      <span className={`period-value ${priceData?.change_3m >= 0 ? 'positive' : 'negative'}`}>
+                        {priceData?.change_3m != null ? `${priceData.change_3m >= 0 ? '+' : ''}${priceData.change_3m.toFixed(2)}%` : '-'}
+                      </span>
+                    </div>
+                    <div className="performance-row">
+                      <span className="period-label">YTD</span>
+                      <span className={`period-value ${priceData?.change_ytd >= 0 ? 'positive' : 'negative'}`}>
+                        {priceData?.change_ytd != null ? `${priceData.change_ytd >= 0 ? '+' : ''}${priceData.change_ytd.toFixed(2)}%` : '-'}
+                      </span>
+                    </div>
+                    <div className="performance-row">
+                      <span className="period-label">1 Year</span>
+                      <span className={`period-value ${priceData?.change_1y >= 0 ? 'positive' : 'negative'}`}>
+                        {priceData?.change_1y != null ? `${priceData.change_1y >= 0 ? '+' : ''}${priceData.change_1y.toFixed(2)}%` : '-'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Benchmark Column */}
+                {benchmarkData && (
+                  <div className="performance-column benchmark">
+                    <div className="performance-column-header">
+                      <span className="column-symbol">{benchmarkData.symbol}</span>
+                      <span className="column-label">S&P 500</span>
+                    </div>
+                    <div className="performance-periods">
+                      <div className="performance-row">
+                        <span className="period-label">1 Day</span>
+                        <span className={`period-value ${benchmarkData.change_1d >= 0 ? 'positive' : 'negative'}`}>
+                          {benchmarkData.change_1d != null ? `${benchmarkData.change_1d >= 0 ? '+' : ''}${benchmarkData.change_1d.toFixed(2)}%` : '-'}
+                        </span>
+                      </div>
+                      <div className="performance-row">
+                        <span className="period-label">1 Week</span>
+                        <span className={`period-value ${benchmarkData.change_1w >= 0 ? 'positive' : 'negative'}`}>
+                          {benchmarkData.change_1w != null ? `${benchmarkData.change_1w >= 0 ? '+' : ''}${benchmarkData.change_1w.toFixed(2)}%` : '-'}
+                        </span>
+                      </div>
+                      <div className="performance-row">
+                        <span className="period-label">1 Month</span>
+                        <span className={`period-value ${benchmarkData.change_1m >= 0 ? 'positive' : 'negative'}`}>
+                          {benchmarkData.change_1m != null ? `${benchmarkData.change_1m >= 0 ? '+' : ''}${benchmarkData.change_1m.toFixed(2)}%` : '-'}
+                        </span>
+                      </div>
+                      <div className="performance-row">
+                        <span className="period-label">3 Months</span>
+                        <span className={`period-value ${benchmarkData.change_3m >= 0 ? 'positive' : 'negative'}`}>
+                          {benchmarkData.change_3m != null ? `${benchmarkData.change_3m >= 0 ? '+' : ''}${benchmarkData.change_3m.toFixed(2)}%` : '-'}
+                        </span>
+                      </div>
+                      <div className="performance-row">
+                        <span className="period-label">YTD</span>
+                        <span className={`period-value ${benchmarkData.change_ytd >= 0 ? 'positive' : 'negative'}`}>
+                          {benchmarkData.change_ytd != null ? `${benchmarkData.change_ytd >= 0 ? '+' : ''}${benchmarkData.change_ytd.toFixed(2)}%` : '-'}
+                        </span>
+                      </div>
+                      <div className="performance-row">
+                        <span className="period-label">1 Year</span>
+                        <span className={`period-value ${benchmarkData.change_1y >= 0 ? 'positive' : 'negative'}`}>
+                          {benchmarkData.change_1y != null ? `${benchmarkData.change_1y >= 0 ? '+' : ''}${benchmarkData.change_1y.toFixed(2)}%` : '-'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Alpha Column */}
+                {alphaData && (
+                  <div className="performance-column alpha">
+                    <div className="performance-column-header">
+                      <span className="column-symbol">Alpha</span>
+                      <span className="column-label">vs Market</span>
+                    </div>
+                    <div className="performance-periods">
+                      <div className="performance-row">
+                        <span className="period-label">1 Day</span>
+                        <span className={`period-value alpha-value ${alphaData.alpha_1d > 0 ? 'outperform' : alphaData.alpha_1d < 0 ? 'underperform' : ''}`}>
+                          {alphaData.alpha_1d != null ? `${alphaData.alpha_1d >= 0 ? '+' : ''}${alphaData.alpha_1d.toFixed(2)}%` : '-'}
+                        </span>
+                      </div>
+                      <div className="performance-row">
+                        <span className="period-label">1 Week</span>
+                        <span className={`period-value alpha-value ${alphaData.alpha_1w > 0 ? 'outperform' : alphaData.alpha_1w < 0 ? 'underperform' : ''}`}>
+                          {alphaData.alpha_1w != null ? `${alphaData.alpha_1w >= 0 ? '+' : ''}${alphaData.alpha_1w.toFixed(2)}%` : '-'}
+                        </span>
+                      </div>
+                      <div className="performance-row">
+                        <span className="period-label">1 Month</span>
+                        <span className={`period-value alpha-value ${alphaData.alpha_1m > 0 ? 'outperform' : alphaData.alpha_1m < 0 ? 'underperform' : ''}`}>
+                          {alphaData.alpha_1m != null ? `${alphaData.alpha_1m >= 0 ? '+' : ''}${alphaData.alpha_1m.toFixed(2)}%` : '-'}
+                        </span>
+                      </div>
+                      <div className="performance-row">
+                        <span className="period-label">3 Months</span>
+                        <span className={`period-value alpha-value ${alphaData.alpha_3m > 0 ? 'outperform' : alphaData.alpha_3m < 0 ? 'underperform' : ''}`}>
+                          {alphaData.alpha_3m != null ? `${alphaData.alpha_3m >= 0 ? '+' : ''}${alphaData.alpha_3m.toFixed(2)}%` : '-'}
+                        </span>
+                      </div>
+                      <div className="performance-row">
+                        <span className="period-label">YTD</span>
+                        <span className={`period-value alpha-value ${alphaData.alpha_ytd > 0 ? 'outperform' : alphaData.alpha_ytd < 0 ? 'underperform' : ''}`}>
+                          {alphaData.alpha_ytd != null ? `${alphaData.alpha_ytd >= 0 ? '+' : ''}${alphaData.alpha_ytd.toFixed(2)}%` : '-'}
+                        </span>
+                      </div>
+                      <div className="performance-row">
+                        <span className="period-label">1 Year</span>
+                        <span className={`period-value alpha-value ${alphaData.alpha_1y > 0 ? 'outperform' : alphaData.alpha_1y < 0 ? 'underperform' : ''}`}>
+                          {alphaData.alpha_1y != null ? `${alphaData.alpha_1y >= 0 ? '+' : ''}${alphaData.alpha_1y.toFixed(2)}%` : '-'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* Alpha Time Series Chart */}
+          <section className="alpha-timeseries-section">
+            <h3>
+              <Activity size={18} />
+              Alpha Over Time
+            </h3>
+            <AlphaChart symbol={symbol} height={280} />
+          </section>
+
           {/* Dividend Section */}
           <section className="dividend-section">
             <h3>
@@ -1383,18 +1943,14 @@ function CompanyPage() {
                         <thead>
                           <tr>
                             <th>Ex-Date</th>
-                            <th>Payment Date</th>
                             <th>Amount</th>
-                            <th>Frequency</th>
                           </tr>
                         </thead>
                         <tbody>
                           {dividendData.history.slice(0, 12).map((div, idx) => (
                             <tr key={idx}>
                               <td>{new Date(div.ex_date).toLocaleDateString()}</td>
-                              <td>{div.payment_date ? new Date(div.payment_date).toLocaleDateString() : '-'}</td>
                               <td className="amount">${div.amount?.toFixed(4)}</td>
-                              <td>{div.frequency || '-'}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1585,6 +2141,13 @@ function CompanyPage() {
             </div>
           )}
           </section>
+        </div>
+      )}
+
+      {/* NOTES & RESEARCH TAB */}
+      {mainTab === 'notes' && (
+        <div className="notes-tab-content">
+          <CompanyNotesPanel symbol={symbol} companyName={company?.company?.name} />
         </div>
       )}
 
