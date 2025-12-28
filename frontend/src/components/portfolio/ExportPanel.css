@@ -1,0 +1,213 @@
+/* frontend/src/components/portfolio/ExportPanel.css */
+
+.export-panel {
+  background: var(--surface-color, #1a1a2e);
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.export-panel-header {
+  margin-bottom: 24px;
+}
+
+.export-panel-header h3 {
+  margin: 0 0 8px 0;
+  font-size: 1.25rem;
+  color: var(--text-primary, #fff);
+}
+
+.export-subtitle {
+  margin: 0;
+  color: var(--text-secondary, #8892b0);
+  font-size: 0.9rem;
+}
+
+.export-options {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.export-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px;
+  background: var(--surface-elevated, #16213e);
+  border-radius: 10px;
+  border: 1px solid var(--border-color, #2a2a4a);
+  transition: border-color 0.2s ease;
+}
+
+.export-card:hover {
+  border-color: var(--primary-color, #64ffda);
+}
+
+.export-card-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-color, #1a1a2e);
+  border-radius: 10px;
+}
+
+.export-card-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.export-card-content h4 {
+  margin: 0 0 6px 0;
+  font-size: 1rem;
+  color: var(--text-primary, #fff);
+}
+
+.export-card-content p {
+  margin: 0;
+  color: var(--text-secondary, #8892b0);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.export-btn {
+  flex-shrink: 0;
+  padding: 10px 20px;
+  background: var(--primary-color, #64ffda);
+  color: var(--surface-color, #1a1a2e);
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.export-btn:hover:not(:disabled) {
+  background: var(--primary-hover, #4cd9b4);
+  transform: translateY(-1px);
+}
+
+.export-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Filters */
+.export-filters {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--surface-color, #1a1a2e);
+  border-radius: 8px;
+}
+
+.filter-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.filter-row:last-child {
+  margin-bottom: 0;
+}
+
+.filter-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--text-secondary, #8892b0);
+}
+
+.filter-row input,
+.filter-row select {
+  padding: 8px 12px;
+  background: var(--surface-elevated, #16213e);
+  border: 1px solid var(--border-color, #2a2a4a);
+  border-radius: 6px;
+  color: var(--text-primary, #fff);
+  font-size: 0.9rem;
+}
+
+.filter-row input:focus,
+.filter-row select:focus {
+  outline: none;
+  border-color: var(--primary-color, #64ffda);
+}
+
+.filter-toggle {
+  margin-top: 8px;
+  padding: 4px 8px;
+  background: transparent;
+  border: none;
+  color: var(--primary-color, #64ffda);
+  font-size: 0.8rem;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.filter-toggle:hover {
+  opacity: 0.8;
+}
+
+/* Year Selector */
+.year-selector {
+  margin-top: 12px;
+}
+
+.year-selector label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.85rem;
+  color: var(--text-secondary, #8892b0);
+}
+
+.year-selector select {
+  padding: 6px 12px;
+  background: var(--surface-color, #1a1a2e);
+  border: 1px solid var(--border-color, #2a2a4a);
+  border-radius: 6px;
+  color: var(--text-primary, #fff);
+  font-size: 0.9rem;
+}
+
+.year-selector select:focus {
+  outline: none;
+  border-color: var(--primary-color, #64ffda);
+}
+
+/* Footer */
+.export-footer {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color, #2a2a4a);
+}
+
+.export-note {
+  margin: 0;
+  color: var(--text-muted, #5a6a8a);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .export-card {
+    flex-direction: column;
+  }
+
+  .export-btn {
+    width: 100%;
+    margin-top: 12px;
+  }
+
+  .filter-row {
+    flex-direction: column;
+    gap: 12px;
+  }
+}

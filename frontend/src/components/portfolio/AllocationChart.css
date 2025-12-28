@@ -1,0 +1,221 @@
+/* frontend/src/components/portfolio/AllocationChart.css */
+
+.allocation-chart-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.allocation-chart {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+.allocation-chart.empty {
+  justify-content: center;
+  min-height: 300px;
+}
+
+.empty-chart {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-5);
+  color: var(--text-tertiary);
+  text-align: center;
+  padding: var(--space-10) 20px;
+}
+
+.empty-message {
+  max-width: 300px;
+}
+
+.empty-message h4 {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 8px 0;
+}
+
+.empty-message p {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.chart-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pie-slice {
+  transition: opacity 0.2s, transform 0.2s;
+  transform-origin: center;
+  cursor: pointer;
+}
+
+.pie-slice:hover {
+  opacity: 0.85;
+  transform: scale(1.02);
+}
+
+.chart-center-label {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.center-value {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.center-label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.chart-legend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 300px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  padding: var(--space-1) 8px;
+  border-radius: var(--radius-sm);
+  transition: background 0.2s;
+}
+
+.legend-item:hover {
+  background: var(--bg-hover);
+}
+
+.legend-color {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-none);
+  flex-shrink: 0;
+}
+
+.legend-name {
+  flex: 1;
+  color: var(--text-primary);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.legend-value {
+  color: var(--text-secondary);
+  font-weight: 600;
+  min-width: 50px;
+  text-align: right;
+}
+
+.legend-amount {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  min-width: 60px;
+  text-align: right;
+}
+
+/* Horizontal layout variant */
+.allocation-chart.horizontal {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--space-8);
+}
+
+.allocation-chart.horizontal .chart-legend {
+  max-height: 300px;
+}
+
+/* Compact variant */
+.allocation-chart.compact {
+  gap: var(--space-4);
+}
+
+.allocation-chart.compact .chart-legend {
+  max-height: 150px;
+}
+
+.allocation-chart.compact .legend-item {
+  padding: var(--space-1) 6px;
+  font-size: var(--text-xs);
+}
+
+.allocation-chart.compact .legend-color {
+  width: 10px;
+  height: 10px;
+}
+
+.allocation-chart.compact .legend-amount {
+  display: none;
+}
+
+/* View type toggle */
+.chart-view-toggle {
+  display: flex;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--space-1);
+  margin-bottom: var(--space-4);
+}
+
+.chart-view-toggle button {
+  padding: var(--space-1) 12px;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.chart-view-toggle button:hover {
+  color: var(--text-primary);
+}
+
+.chart-view-toggle button.active {
+  background: var(--accent-primary);
+  color: white;
+}
+
+/* Concentration Warning */
+.concentration-warning {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) 16px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: #f59e0b;
+}
+
+.concentration-warning .warning-icon {
+  font-size: var(--text-md);
+}

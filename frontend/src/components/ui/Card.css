@@ -1,0 +1,112 @@
+/* frontend/src/components/ui/Card.css */
+
+/* Base card styles */
+.ui-card {
+  border-radius: var(--radius-xl);
+  transition: all var(--transition-fast);
+}
+
+/* Variant: base - Standard card with border */
+.ui-card--base {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+}
+
+/* Variant: elevated - Card with shadow */
+.ui-card--elevated {
+  background: var(--bg-elevated);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-md);
+}
+
+/* Variant: interactive - Hoverable card */
+.ui-card--interactive {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  cursor: pointer;
+}
+
+.ui-card--interactive:hover {
+  border-color: var(--brand-primary);
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
+}
+
+/* Variant: glass - Glassmorphism effect */
+.ui-card--glass {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
+.ui-card--glass:hover {
+  background: var(--glass-bg-hover);
+  box-shadow: var(--glass-shadow-hover);
+}
+
+/* Clickable card */
+.ui-card--clickable {
+  cursor: pointer;
+}
+
+/* Padding sizes */
+.ui-card--padding-sm {
+  padding: var(--space-3);
+}
+
+.ui-card--padding-md {
+  padding: var(--space-4);
+}
+
+.ui-card--padding-lg {
+  padding: var(--space-6);
+}
+
+/* Card Header */
+.ui-card__header {
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-primary);
+  margin-bottom: var(--space-4);
+}
+
+/* Card Title */
+.ui-card__title {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin: 0;
+  line-height: var(--leading-tight);
+}
+
+/* Card Description */
+.ui-card__description {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin: var(--space-1) 0 0 0;
+  line-height: var(--leading-normal);
+}
+
+/* Card Content */
+.ui-card__content {
+  /* Content takes remaining space */
+}
+
+/* Card Footer */
+.ui-card__footer {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-primary);
+  margin-top: var(--space-4);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .ui-card--padding-lg {
+    padding: var(--space-4);
+  }
+
+  .ui-card--padding-md {
+    padding: var(--space-3);
+  }
+}

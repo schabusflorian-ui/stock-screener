@@ -1,0 +1,81 @@
+/* frontend/src/components/ui/Grid.css */
+
+.ui-grid {
+  display: grid;
+}
+
+/* Gap sizes */
+.ui-grid--gap-sm {
+  gap: var(--space-3);
+}
+
+.ui-grid--gap-md {
+  gap: var(--space-4);
+}
+
+.ui-grid--gap-lg {
+  gap: var(--space-6);
+}
+
+/* Column configurations */
+.ui-grid--cols-1 {
+  grid-template-columns: 1fr;
+}
+
+.ui-grid--cols-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.ui-grid--cols-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.ui-grid--cols-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.ui-grid--cols-5 {
+  grid-template-columns: repeat(5, 1fr);
+}
+
+.ui-grid--cols-6 {
+  grid-template-columns: repeat(6, 1fr);
+}
+
+/* Responsive breakpoints */
+
+/* Large screens (1024px) */
+@media (max-width: 1024px) {
+  .ui-grid--cols-5,
+  .ui-grid--cols-6 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .ui-grid--cols-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Medium screens (768px) */
+@media (max-width: 768px) {
+  .ui-grid--cols-3,
+  .ui-grid--cols-4,
+  .ui-grid--cols-5,
+  .ui-grid--cols-6 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Small screens (640px) */
+@media (max-width: 640px) {
+  .ui-grid--cols-2,
+  .ui-grid--cols-3,
+  .ui-grid--cols-4 {
+    grid-template-columns: 1fr;
+  }
+
+  .ui-grid--cols-5,
+  .ui-grid--cols-6 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

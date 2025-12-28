@@ -1,0 +1,301 @@
+/* frontend/src/components/PriceAlertButton.css */
+
+.price-alert-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.price-alert-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: var(--surface-elevated, #16213e);
+  border: 1px solid var(--border-color, #2a2a4a);
+  border-radius: 6px;
+  color: var(--text-secondary, #8892b0);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.price-alert-btn:hover {
+  border-color: var(--primary-color, #64ffda);
+  color: var(--primary-color, #64ffda);
+}
+
+.price-alert-btn.has-alerts {
+  background: var(--primary-color, #64ffda);
+  color: var(--surface-color, #1a1a2e);
+  border-color: var(--primary-color, #64ffda);
+}
+
+.price-alert-btn.has-alerts:hover {
+  background: var(--primary-hover, #4cd9b4);
+}
+
+.alert-count {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.price-alert-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  width: 280px;
+  background: var(--surface-elevated, #16213e);
+  border: 1px solid var(--border-color, #2a2a4a);
+  border-radius: 10px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+}
+
+.dropdown-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color, #2a2a4a);
+  color: var(--text-primary, #fff);
+  font-weight: 500;
+}
+
+.dropdown-header .close-btn {
+  margin-left: auto;
+  padding: 4px;
+  background: none;
+  border: none;
+  color: var(--text-secondary, #8892b0);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.dropdown-header .close-btn:hover {
+  background: var(--surface-color, #1a1a2e);
+  color: var(--text-primary, #fff);
+}
+
+.current-price {
+  padding: 10px 16px;
+  background: var(--surface-color, #1a1a2e);
+  color: var(--text-secondary, #8892b0);
+  font-size: 0.85rem;
+}
+
+.current-price strong {
+  color: var(--text-primary, #fff);
+}
+
+/* Add Alert Form */
+.add-alert-form {
+  padding: 16px;
+  border-bottom: 1px solid var(--border-color, #2a2a4a);
+}
+
+.alert-type-selector {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.type-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px;
+  background: var(--surface-color, #1a1a2e);
+  border: 1px solid var(--border-color, #2a2a4a);
+  border-radius: 6px;
+  color: var(--text-secondary, #8892b0);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.85rem;
+}
+
+.type-btn:hover {
+  border-color: var(--text-secondary, #8892b0);
+}
+
+.type-btn.active {
+  background: var(--primary-color, #64ffda);
+  color: var(--surface-color, #1a1a2e);
+  border-color: var(--primary-color, #64ffda);
+}
+
+.price-input-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.currency-prefix {
+  padding: 8px 10px;
+  background: var(--surface-color, #1a1a2e);
+  border: 1px solid var(--border-color, #2a2a4a);
+  border-right: none;
+  border-radius: 6px 0 0 6px;
+  color: var(--text-secondary, #8892b0);
+}
+
+.price-input-row input {
+  flex: 1;
+  padding: 8px 12px;
+  background: var(--surface-color, #1a1a2e);
+  border: 1px solid var(--border-color, #2a2a4a);
+  border-radius: 0 6px 6px 0;
+  color: var(--text-primary, #fff);
+  font-size: 0.9rem;
+}
+
+.price-input-row input:focus {
+  outline: none;
+  border-color: var(--primary-color, #64ffda);
+}
+
+.note-input {
+  width: 100%;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  background: var(--surface-color, #1a1a2e);
+  border: 1px solid var(--border-color, #2a2a4a);
+  border-radius: 6px;
+  color: var(--text-primary, #fff);
+  font-size: 0.85rem;
+}
+
+.note-input:focus {
+  outline: none;
+  border-color: var(--primary-color, #64ffda);
+}
+
+.note-input::placeholder {
+  color: var(--text-muted, #5a6a8a);
+}
+
+.add-alert-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px;
+  background: var(--primary-color, #64ffda);
+  color: var(--surface-color, #1a1a2e);
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.add-alert-btn:hover {
+  background: var(--primary-hover, #4cd9b4);
+}
+
+/* Alerts List */
+.alerts-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.alerts-header {
+  padding: 10px 16px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary, #8892b0);
+  background: var(--surface-color, #1a1a2e);
+}
+
+.alert-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-color, #2a2a4a);
+  position: relative;
+}
+
+.alert-item:last-child {
+  border-bottom: none;
+}
+
+.alert-item.triggered {
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.alert-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.alert-type {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.alert-type.above {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10B981;
+}
+
+.alert-type.below {
+  background: rgba(239, 68, 68, 0.2);
+  color: #EF4444;
+}
+
+.alert-target {
+  font-weight: 600;
+  color: var(--text-primary, #fff);
+}
+
+.triggered-badge {
+  padding: 2px 6px;
+  background: #10B981;
+  color: #fff;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.alert-note {
+  width: 100%;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #8892b0);
+  font-style: italic;
+  margin-top: 4px;
+}
+
+.delete-alert-btn {
+  padding: 4px;
+  background: none;
+  border: none;
+  color: var(--text-muted, #5a6a8a);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.delete-alert-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #EF4444;
+}
+
+.no-alerts {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-muted, #5a6a8a);
+  font-size: 0.85rem;
+}

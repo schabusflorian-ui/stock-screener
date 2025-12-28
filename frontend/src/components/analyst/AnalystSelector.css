@@ -1,0 +1,153 @@
+/* frontend/src/components/analyst/AnalystSelector.css */
+
+.analyst-selector {
+  width: 100%;
+}
+
+.analyst-selector-loading,
+.analyst-selector-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+  color: var(--text-secondary);
+}
+
+.analyst-selector-loading .loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.analyst-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.5rem;
+}
+
+.analyst-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  padding: 1.5rem;
+  background: var(--card-background);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.analyst-card:hover {
+  border-color: var(--analyst-color, var(--primary-color));
+  background: var(--analyst-color-light, var(--card-hover-background));
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.analyst-card.selected {
+  border-color: var(--analyst-color, var(--primary-color));
+  background: var(--analyst-color-light, var(--primary-color-light));
+  box-shadow: 0 0 0 3px var(--analyst-color-light, var(--primary-color-light));
+}
+
+.analyst-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  width: 100%;
+}
+
+.analyst-icon {
+  font-size: 2.5rem;
+  line-height: 1;
+}
+
+.analyst-info {
+  flex: 1;
+}
+
+.analyst-name {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 0.125rem 0;
+}
+
+.analyst-title {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.analyst-description {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0 0 1rem 0;
+  flex: 1;
+}
+
+.analyst-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.analyst-tag {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  background: var(--background-secondary);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+}
+
+.analyst-card.selected .analyst-tag {
+  background: var(--analyst-color, var(--primary-color));
+  color: white;
+}
+
+.analyst-influences {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  width: 100%;
+}
+
+.influences-label {
+  opacity: 0.7;
+}
+
+.influences-list {
+  font-style: italic;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .analyst-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .analyst-card {
+    padding: 1.25rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .analyst-icon {
+    font-size: 2rem;
+  }
+
+  .analyst-name {
+    font-size: 1rem;
+  }
+}

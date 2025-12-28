@@ -1,0 +1,35 @@
+/* frontend/src/components/ui/StandardPage.css */
+
+.ui-standard-page {
+  min-height: 100%;
+  background: var(--bg-primary);
+}
+
+.ui-standard-page__container {
+  max-width: var(--max-content-width);
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-6);
+}
+
+.ui-standard-page__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .ui-standard-page__container {
+    padding: var(--space-6) var(--space-4);
+  }
+}
+
+@media (max-width: 768px) {
+  .ui-standard-page__container {
+    padding: var(--space-4);
+  }
+
+  .ui-standard-page__content {
+    gap: var(--space-6);
+  }
+}

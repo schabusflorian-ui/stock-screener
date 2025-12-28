@@ -1,0 +1,52 @@
+/* frontend/src/components/ui/Badge.css */
+
+.ui-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-full);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+/* Sizes */
+.ui-badge--sm {
+  padding: var(--space-0) var(--space-2);
+  font-size: var(--text-xs);
+}
+
+.ui-badge--md {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+}
+
+/* Variants */
+.ui-badge--gray {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-secondary);
+}
+
+.ui-badge--blue {
+  background: var(--info-muted);
+  color: var(--info);
+}
+
+.ui-badge--green {
+  background: var(--positive-muted);
+  color: var(--positive);
+}
+
+.ui-badge--red {
+  background: var(--negative-muted);
+  color: var(--negative);
+}
+
+.ui-badge--yellow {
+  background: var(--warning-muted);
+  color: var(--warning);
+}
+
+.ui-badge--purple {
+  background: rgba(139, 92, 246, 0.1);
+  color: var(--brand-secondary);
+}

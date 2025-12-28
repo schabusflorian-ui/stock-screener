@@ -1,0 +1,235 @@
+/* frontend/src/components/Skeleton.css */
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg-tertiary) 0%,
+    var(--bg-secondary) 50%,
+    var(--bg-tertiary) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+.skeleton.text {
+  height: 1em;
+  border-radius: var(--radius-sm);
+}
+
+.skeleton.circular {
+  border-radius: 50%;
+}
+
+.skeleton.rectangular {
+  border-radius: var(--radius-md);
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Text skeleton */
+.skeleton-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Card skeleton */
+.skeleton-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+}
+
+.skeleton-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.skeleton-card-title {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.skeleton-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.skeleton-card-stats {
+  display: flex;
+  gap: var(--space-4);
+}
+
+/* Table row skeleton */
+.skeleton-table-row td {
+  padding: var(--space-3) 16px;
+}
+
+/* Stats bar skeleton */
+.skeleton-stats-bar {
+  display: flex;
+  gap: var(--space-6);
+  padding: var(--space-5) 0;
+}
+
+.skeleton-stat-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.skeleton-stat-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* Chart skeleton */
+.skeleton-chart {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+}
+
+.skeleton-chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-4);
+}
+
+.skeleton-chart-controls {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.skeleton-chart-body {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+/* Portfolio detail skeleton */
+.skeleton-portfolio-detail {
+  min-height: 100vh;
+  background: var(--bg-primary);
+}
+
+.skeleton-header {
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  padding: var(--space-4) 32px 0;
+}
+
+.skeleton-header-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: var(--space-4) 0 24px 0;
+}
+
+.skeleton-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.skeleton-title-area {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.skeleton-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.skeleton-tabs {
+  display: flex;
+  gap: var(--space-1);
+  padding: 0 32px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.skeleton-content {
+  padding: var(--space-6) 32px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-5);
+}
+
+@media (max-width: 1000px) {
+  .skeleton-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Portfolio list skeleton */
+.skeleton-portfolio-list {
+  padding: var(--space-6) 32px;
+}
+
+.skeleton-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-6);
+}
+
+.skeleton-list-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.skeleton-list-actions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .skeleton-header {
+    padding: var(--space-4);
+  }
+
+  .skeleton-header-main {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-4);
+  }
+
+  .skeleton-stats-bar {
+    flex-wrap: wrap;
+  }
+
+  .skeleton-tabs {
+    padding: 0 16px;
+    overflow-x: auto;
+  }
+
+  .skeleton-content {
+    padding: var(--space-4);
+  }
+}

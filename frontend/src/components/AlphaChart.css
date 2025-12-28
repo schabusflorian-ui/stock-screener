@@ -1,0 +1,348 @@
+/* frontend/src/components/AlphaChart.css - Updated to match PriceChart styling */
+
+.alpha-chart-container {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+  border: 1px solid var(--border-primary);
+}
+
+/* Loading & Error States */
+.alpha-chart-loading,
+.alpha-chart-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  color: var(--text-secondary);
+  gap: var(--space-4);
+}
+
+.alpha-chart-loading .spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Header - matching PriceChart */
+.alpha-chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.alpha-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+.alpha-current {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  font-weight: 600;
+}
+
+.alpha-current.outperform {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--positive);
+}
+
+.alpha-current.underperform {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--negative);
+}
+
+.alpha-icon {
+  display: flex;
+  align-items: center;
+}
+
+.alpha-value {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: inherit;
+}
+
+.alpha-label {
+  font-size: var(--text-sm);
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+/* Alpha stats - matching price-metrics-row style */
+.alpha-stats {
+  display: flex;
+  gap: 0;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.alpha-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.75rem 1rem;
+  text-align: center;
+  border-right: 1px solid var(--border-primary);
+}
+
+.alpha-stat:last-child {
+  border-right: none;
+}
+
+.alpha-stat .stat-label {
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.alpha-stat .stat-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: var(--font-mono, monospace);
+}
+
+.alpha-stat .stat-value.positive {
+  color: var(--positive);
+}
+
+.alpha-stat .stat-value.negative {
+  color: var(--negative);
+}
+
+/* Controls - matching PriceChart period selector */
+.alpha-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.chart-mode-toggle {
+  display: flex;
+  gap: var(--space-1);
+  background: var(--bg-secondary);
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+}
+
+.chart-mode-toggle button {
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.chart-mode-toggle button:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.chart-mode-toggle button.active {
+  background: var(--brand-primary);
+  color: white;
+}
+
+.period-selector {
+  display: flex;
+  gap: var(--space-1);
+  background: var(--bg-secondary);
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+}
+
+.period-selector button {
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.period-selector button:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.period-selector button.active {
+  background: var(--brand-primary);
+  color: white;
+}
+
+.refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--bg-secondary);
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.refresh-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+/* Chart Area */
+.alpha-chart {
+  margin: var(--space-4) 0;
+}
+
+/* Tooltip - matching PriceChart */
+.alpha-tooltip {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--text-sm);
+  min-width: 180px;
+}
+
+.alpha-tooltip-date {
+  font-weight: 600;
+  margin-bottom: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.alpha-tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-6);
+  padding: var(--space-0) 0;
+}
+
+.alpha-tooltip-row span:first-child {
+  color: var(--text-secondary);
+}
+
+.alpha-tooltip-row span:last-child {
+  font-weight: 500;
+}
+
+.alpha-tooltip-row.stock span:last-child.positive {
+  color: var(--positive);
+}
+
+.alpha-tooltip-row.stock span:last-child.negative {
+  color: var(--negative);
+}
+
+.alpha-tooltip-row.benchmark span:last-child.positive {
+  color: var(--positive);
+}
+
+.alpha-tooltip-row.benchmark span:last-child.negative {
+  color: var(--negative);
+}
+
+.alpha-tooltip-row.alpha.highlight {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-primary);
+  font-weight: 600;
+}
+
+.alpha-tooltip-row.alpha span:last-child.outperform {
+  color: #8b5cf6;
+}
+
+.alpha-tooltip-row.alpha span:last-child.underperform {
+  color: #f97316;
+}
+
+/* Footer - matching PriceChart */
+.alpha-chart-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-primary);
+  justify-content: space-between;
+}
+
+.data-note {
+  font-style: italic;
+}
+
+.data-points {
+  font-family: var(--font-mono);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .alpha-chart-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .alpha-summary {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+
+  .alpha-stats {
+    width: 100%;
+  }
+
+  .alpha-controls {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .chart-mode-toggle {
+    display: none;
+  }
+
+  .alpha-stat {
+    padding: 0.5rem 0.75rem;
+  }
+
+  .period-selector button {
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--text-xs);
+  }
+}

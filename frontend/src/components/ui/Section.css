@@ -1,0 +1,50 @@
+/* frontend/src/components/ui/Section.css */
+
+.ui-section {
+  /* Section container */
+}
+
+.ui-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+  gap: var(--space-4);
+}
+
+.ui-section__title {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin: 0;
+  line-height: var(--leading-tight);
+}
+
+.ui-section__action {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--brand-primary);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.ui-section__action:hover {
+  color: var(--brand-primary-hover);
+  text-decoration: underline;
+}
+
+.ui-section__content {
+  /* Content container */
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .ui-section__header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+}
