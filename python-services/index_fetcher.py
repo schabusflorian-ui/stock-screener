@@ -355,6 +355,297 @@ class IndexFetcher:
             time.sleep(0.5)
 
 
+class IndexConstituents:
+    """Manage index constituents data for multiple indices"""
+
+    # Dow Jones 30 companies (as of late 2024)
+    DOW_30_SYMBOLS = [
+        'AAPL', 'AMGN', 'AMZN', 'AXP', 'BA', 'CAT', 'CRM', 'CSCO', 'CVX', 'DIS',
+        'GS', 'HD', 'HON', 'IBM', 'INTC', 'JNJ', 'JPM', 'KO', 'MCD', 'MMM',
+        'MRK', 'MSFT', 'NKE', 'NVDA', 'PG', 'TRV', 'UNH', 'V', 'VZ', 'WMT'
+    ]
+
+    def __init__(self, db_path=None):
+        self.db_path = db_path or DB_PATH
+
+    def get_connection(self):
+        return sqlite3.connect(self.db_path)
+
+    def populate_stock_indexes(self):
+        """
+        Populate the stock_indexes table with the same indices as market_indices
+        This bridges the two table structures
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            # Map market_indices to stock_indexes
+            index_mapping = {
+                '^GSPC': ('SPX', 'S&P 500', 'US'),
+                '^DJI': ('DJI', 'Dow Jones Industrial Average', 'US'),
+                '^IXIC': ('IXIC', 'NASDAQ Composite', 'US'),
+                '^RUT': ('RUT', 'Russell 2000', 'US'),
+            }
+
+            for symbol, (code, name, country) in index_mapping.items():
+                cursor.execute('''
+                    INSERT OR IGNORE INTO stock_indexes (code, name, country, description)
+                    VALUES (?, ?, ?, ?)
+                ''', (code, name, country, f'{name} index'))
+
+            conn.commit()
+            logger.info(f"Populated stock_indexes table with {len(index_mapping)} indices")
+
+        except Exception as e:
+            logger.error(f"Error populating stock_indexes: {e}")
+            conn.rollback()
+        finally:
+            conn.close()
+
+    def populate_sp500_constituents(self):
+        """
+        Populate index_constituents table with S&P 500 members
+        Uses companies already marked with is_sp500 = 1
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            # Ensure stock_indexes has SPX entry
+            cursor.execute('SELECT id FROM stock_indexes WHERE code = ?', ('SPX',))
+            result = cursor.fetchone()
+            if not result:
+                cursor.execute('''
+                    INSERT INTO stock_indexes (code, name, country, description)
+                    VALUES ('SPX', 'S&P 500', 'US', 'S&P 500 Index - Large cap US equities')
+                ''')
+                index_id = cursor.lastrowid
+            else:
+                index_id = result[0]
+
+            # Get all S&P 500 companies
+            cursor.execute('SELECT id, symbol FROM companies WHERE is_sp500 = 1')
+            companies = cursor.fetchall()
+
+            # Clear existing constituents for this index
+            cursor.execute('DELETE FROM index_constituents WHERE index_id = ?', (index_id,))
+
+            # Insert constituents
+            for company_id, symbol in companies:
+                cursor.execute('''
+                    INSERT INTO index_constituents (index_id, company_id, weight, added_at)
+                    VALUES (?, ?, NULL, CURRENT_TIMESTAMP)
+                ''', (index_id, company_id))
+
+            conn.commit()
+            logger.info(f"Populated S&P 500 with {len(companies)} constituents")
+
+        except Exception as e:
+            logger.error(f"Error populating S&P 500 constituents: {e}")
+            conn.rollback()
+        finally:
+            conn.close()
+
+    def populate_dow30_constituents(self):
+        """
+        Populate index_constituents table with Dow Jones 30 members
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            # Ensure stock_indexes has DJI entry
+            cursor.execute('SELECT id FROM stock_indexes WHERE code = ?', ('DJI',))
+            result = cursor.fetchone()
+            if not result:
+                cursor.execute('''
+                    INSERT INTO stock_indexes (code, name, country, description)
+                    VALUES ('DJI', 'Dow Jones Industrial Average', 'US', 'Dow Jones 30 blue-chip stocks')
+                ''')
+                index_id = cursor.lastrowid
+            else:
+                index_id = result[0]
+
+            # Clear existing constituents for this index
+            cursor.execute('DELETE FROM index_constituents WHERE index_id = ?', (index_id,))
+
+            # Insert constituents
+            added = 0
+            for symbol in self.DOW_30_SYMBOLS:
+                cursor.execute('SELECT id FROM companies WHERE symbol = ?', (symbol,))
+                result = cursor.fetchone()
+                if result:
+                    cursor.execute('''
+                        INSERT INTO index_constituents (index_id, company_id, weight, added_at)
+                        VALUES (?, ?, NULL, CURRENT_TIMESTAMP)
+                    ''', (index_id, result[0]))
+                    added += 1
+                else:
+                    logger.warning(f"Dow 30 company {symbol} not found in database")
+
+            conn.commit()
+            logger.info(f"Populated Dow 30 with {added} constituents")
+
+        except Exception as e:
+            logger.error(f"Error populating Dow 30 constituents: {e}")
+            conn.rollback()
+        finally:
+            conn.close()
+
+    def fetch_nasdaq100_constituents(self):
+        """
+        Fetch NASDAQ-100 constituents from Wikipedia
+        """
+        logger.info("Fetching NASDAQ-100 constituents from Wikipedia")
+
+        try:
+            import urllib.request
+            url = 'https://en.wikipedia.org/wiki/Nasdaq-100'
+
+            req = urllib.request.Request(
+                url,
+                headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'}
+            )
+            html = urllib.request.urlopen(req).read()
+            tables = pd.read_html(html)
+
+            # Find the table with constituents (usually has 'Ticker' or 'Symbol' column)
+            for table in tables:
+                cols = [str(c).lower() for c in table.columns]
+                if 'ticker' in cols or 'symbol' in cols:
+                    if len(table) >= 90:  # NASDAQ-100 should have ~100 companies
+                        # Standardize column name
+                        if 'ticker' in cols:
+                            table = table.rename(columns={'Ticker': 'symbol'})
+                        elif 'Symbol' in table.columns:
+                            table = table.rename(columns={'Symbol': 'symbol'})
+                        logger.info(f"Found {len(table)} NASDAQ-100 constituents")
+                        return table
+
+            logger.error("Could not find NASDAQ-100 constituents table")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error fetching NASDAQ-100 constituents: {e}")
+            return None
+
+    def populate_nasdaq100_constituents(self):
+        """
+        Populate index_constituents table with NASDAQ-100 members
+        """
+        df = self.fetch_nasdaq100_constituents()
+        if df is None:
+            return
+
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            # Ensure stock_indexes has NDX entry
+            cursor.execute('SELECT id FROM stock_indexes WHERE code = ?', ('NDX',))
+            result = cursor.fetchone()
+            if not result:
+                cursor.execute('''
+                    INSERT INTO stock_indexes (code, name, country, description)
+                    VALUES ('NDX', 'NASDAQ-100', 'US', 'NASDAQ-100 Index - Top 100 non-financial NASDAQ stocks')
+                ''')
+                index_id = cursor.lastrowid
+            else:
+                index_id = result[0]
+
+            # Clear existing constituents for this index
+            cursor.execute('DELETE FROM index_constituents WHERE index_id = ?', (index_id,))
+
+            # Get symbols from dataframe
+            symbol_col = 'symbol' if 'symbol' in df.columns else 'Ticker'
+            symbols = df[symbol_col].tolist()
+
+            # Insert constituents
+            added = 0
+            for symbol in symbols:
+                # Clean symbol (remove any extra characters)
+                symbol = str(symbol).strip().upper()
+                cursor.execute('SELECT id FROM companies WHERE symbol = ?', (symbol,))
+                result = cursor.fetchone()
+                if result:
+                    cursor.execute('''
+                        INSERT INTO index_constituents (index_id, company_id, weight, added_at)
+                        VALUES (?, ?, NULL, CURRENT_TIMESTAMP)
+                    ''', (index_id, result[0]))
+                    added += 1
+
+            conn.commit()
+            logger.info(f"Populated NASDAQ-100 with {added} constituents")
+
+        except Exception as e:
+            logger.error(f"Error populating NASDAQ-100 constituents: {e}")
+            conn.rollback()
+        finally:
+            conn.close()
+
+    def populate_russell2000_constituents(self):
+        """
+        Populate index_constituents table with Russell 2000 members
+        Uses small-cap companies from our database (market cap < $10B, not in S&P 500)
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            # Ensure stock_indexes has RUT entry
+            cursor.execute('SELECT id FROM stock_indexes WHERE code = ?', ('RUT',))
+            result = cursor.fetchone()
+            if not result:
+                cursor.execute('''
+                    INSERT INTO stock_indexes (code, name, country, description)
+                    VALUES ('RUT', 'Russell 2000', 'US', 'Russell 2000 Index - US Small Cap')
+                ''')
+                index_id = cursor.lastrowid
+            else:
+                index_id = result[0]
+
+            # Clear existing constituents for this index
+            cursor.execute('DELETE FROM index_constituents WHERE index_id = ?', (index_id,))
+
+            # Get small-cap companies: market cap between $300M and $10B, not in S&P 500
+            # Russell 2000 is typically companies ranked 1001-3000 by market cap
+            cursor.execute('''
+                SELECT id, symbol, market_cap
+                FROM companies
+                WHERE market_cap IS NOT NULL
+                  AND market_cap BETWEEN 300000000 AND 10000000000
+                  AND (is_sp500 IS NULL OR is_sp500 = 0)
+                ORDER BY market_cap DESC
+                LIMIT 2000
+            ''')
+            companies = cursor.fetchall()
+
+            # Insert constituents
+            for company_id, symbol, market_cap in companies:
+                cursor.execute('''
+                    INSERT INTO index_constituents (index_id, company_id, weight, added_at)
+                    VALUES (?, ?, NULL, CURRENT_TIMESTAMP)
+                ''', (index_id, company_id))
+
+            conn.commit()
+            logger.info(f"Populated Russell 2000 with {len(companies)} constituents")
+
+        except Exception as e:
+            logger.error(f"Error populating Russell 2000 constituents: {e}")
+            conn.rollback()
+        finally:
+            conn.close()
+
+    def populate_all_constituents(self):
+        """Populate all index constituents"""
+        self.populate_stock_indexes()
+        self.populate_sp500_constituents()
+        self.populate_dow30_constituents()
+        self.populate_nasdaq100_constituents()
+        self.populate_russell2000_constituents()
+
+
 class SP500Constituents:
     """Manage S&P 500 constituents data"""
 
@@ -470,7 +761,7 @@ class SP500Constituents:
 
 def main():
     parser = argparse.ArgumentParser(description='Fetch market index data')
-    parser.add_argument('command', choices=['historical', 'daily', 'metrics', 'sp500', 'all'],
+    parser.add_argument('command', choices=['historical', 'daily', 'metrics', 'sp500', 'constituents', 'all'],
                        help='Command to run')
     parser.add_argument('--symbol', '-s', help='Specific index symbol (e.g., ^GSPC)')
     parser.add_argument('--years', '-y', type=int, default=10,
@@ -507,6 +798,11 @@ def main():
         sp500 = SP500Constituents(args.db)
         sp500.update_sp500_membership()
 
+    elif args.command == 'constituents':
+        logger.info("Populating index constituents...")
+        constituents = IndexConstituents(args.db)
+        constituents.populate_all_constituents()
+
     elif args.command == 'all':
         logger.info("Running full index data update...")
 
@@ -522,6 +818,11 @@ def main():
         logger.info("\n=== Updating S&P 500 Constituents ===")
         sp500 = SP500Constituents(args.db)
         sp500.update_sp500_membership()
+
+        # Populate index constituents tables
+        logger.info("\n=== Populating Index Constituents ===")
+        constituents = IndexConstituents(args.db)
+        constituents.populate_all_constituents()
 
         logger.info("\n=== Complete ===")
 

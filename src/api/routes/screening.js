@@ -179,6 +179,50 @@ router.get('/presets', (req, res) => {
         minOperatingMargin: 15,
         minNetMargin: 10
       }
+    },
+    // Alpha-based presets
+    {
+      id: 'alpha_outperformers_1m',
+      name: '1M Alpha Outperformers',
+      description: 'Stocks outperforming S&P 500 by >5% in the last month.',
+      criteria: {
+        minAlpha1M: 5
+      }
+    },
+    {
+      id: 'alpha_outperformers_ytd',
+      name: 'YTD Alpha Leaders',
+      description: 'Stocks outperforming S&P 500 by >10% year-to-date.',
+      criteria: {
+        minAlphaYTD: 10
+      }
+    },
+    {
+      id: 'alpha_outperformers_1y',
+      name: '1Y Alpha Champions',
+      description: 'Stocks outperforming S&P 500 by >15% over the past year.',
+      criteria: {
+        minAlpha1Y: 15
+      }
+    },
+    {
+      id: 'alpha_underperformers',
+      name: 'Alpha Laggards (Potential Value)',
+      description: 'Quality stocks (ROIC>10%) underperforming S&P 500 by >10% YTD.',
+      criteria: {
+        maxAlphaYTD: -10,
+        minROIC: 10
+      }
+    },
+    {
+      id: 'quality_momentum',
+      name: 'Quality + Momentum',
+      description: 'High quality stocks (ROIC>15%) with positive alpha >5% YTD.',
+      criteria: {
+        minROIC: 15,
+        minAlphaYTD: 5,
+        maxDebtToEquity: 1.0
+      }
     }
   ];
 
@@ -500,6 +544,333 @@ router.get('/moats', (req, res) => {
       count: results.length,
       results
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Alpha-based preset screens
+ */
+router.get('/alpha_outperformers_1m', (req, res) => {
+  try {
+    const { limit } = req.query;
+    const criteria = {
+      minAlpha1M: 5,
+      sortBy: 'alpha_1m',
+      sortOrder: 'DESC',
+      limit: limit ? parseInt(limit) : undefined
+    };
+    const screenResult = screener.screen(criteria);
+    const results = screenResult.results || screenResult;
+
+    res.json({
+      screen: '1M Alpha Outperformers',
+      description: 'Stocks outperforming S&P 500 by >5% in the last month',
+      criteria: { minAlpha1M: 5 },
+      count: results.length,
+      results
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/alpha_outperformers_ytd', (req, res) => {
+  try {
+    const { limit } = req.query;
+    const criteria = {
+      minAlphaYTD: 10,
+      sortBy: 'alpha_ytd',
+      sortOrder: 'DESC',
+      limit: limit ? parseInt(limit) : undefined
+    };
+    const screenResult = screener.screen(criteria);
+    const results = screenResult.results || screenResult;
+
+    res.json({
+      screen: 'YTD Alpha Leaders',
+      description: 'Stocks outperforming S&P 500 by >10% year-to-date',
+      criteria: { minAlphaYTD: 10 },
+      count: results.length,
+      results
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/alpha_outperformers_1y', (req, res) => {
+  try {
+    const { limit } = req.query;
+    const criteria = {
+      minAlpha1Y: 15,
+      sortBy: 'alpha_1y',
+      sortOrder: 'DESC',
+      limit: limit ? parseInt(limit) : undefined
+    };
+    const screenResult = screener.screen(criteria);
+    const results = screenResult.results || screenResult;
+
+    res.json({
+      screen: '1Y Alpha Champions',
+      description: 'Stocks outperforming S&P 500 by >15% over the past year',
+      criteria: { minAlpha1Y: 15 },
+      count: results.length,
+      results
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/alpha_underperformers', (req, res) => {
+  try {
+    const { limit } = req.query;
+    const criteria = {
+      maxAlphaYTD: -10,
+      minROIC: 10,
+      sortBy: 'alpha_ytd',
+      sortOrder: 'ASC',
+      limit: limit ? parseInt(limit) : undefined
+    };
+    const screenResult = screener.screen(criteria);
+    const results = screenResult.results || screenResult;
+
+    res.json({
+      screen: 'Alpha Laggards (Potential Value)',
+      description: 'Quality stocks (ROIC>10%) underperforming S&P 500 by >10% YTD',
+      criteria: { maxAlphaYTD: -10, minROIC: 10 },
+      count: results.length,
+      results
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/quality_momentum', (req, res) => {
+  try {
+    const { limit } = req.query;
+    const criteria = {
+      minROIC: 15,
+      minAlphaYTD: 5,
+      maxDebtToEquity: 1.0,
+      sortBy: 'alpha_ytd',
+      sortOrder: 'DESC',
+      limit: limit ? parseInt(limit) : undefined
+    };
+    const screenResult = screener.screen(criteria);
+    const results = screenResult.results || screenResult;
+
+    res.json({
+      screen: 'Quality + Momentum',
+      description: 'High quality stocks (ROIC>15%) with positive alpha >5% YTD',
+      criteria: { minROIC: 15, minAlphaYTD: 5, maxDebtToEquity: 1.0 },
+      count: results.length,
+      results
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
+// Factor-Based Screening Endpoints
+// ============================================
+
+/**
+ * GET /api/screening/factors
+ * Screen stocks by factor percentiles
+ */
+router.get('/factors', (req, res) => {
+  try {
+    const db = require('../../database').db;
+    const {
+      min_value, max_value,
+      min_quality, max_quality,
+      min_momentum, max_momentum,
+      min_growth, max_growth,
+      sector,
+      min_market_cap, max_market_cap,
+      sort_by = 'composite',
+      sort_order = 'desc',
+      limit = 50,
+      offset = 0
+    } = req.query;
+
+    let query = `
+      SELECT
+        c.symbol,
+        c.name,
+        c.sector,
+        c.industry,
+        c.market_cap,
+        ROUND(sfs.value_percentile, 1) as value_percentile,
+        ROUND(sfs.quality_percentile, 1) as quality_percentile,
+        ROUND(sfs.momentum_percentile, 1) as momentum_percentile,
+        ROUND(sfs.growth_percentile, 1) as growth_percentile,
+        ROUND(sfs.size_percentile, 1) as size_percentile,
+        ROUND((COALESCE(sfs.value_percentile, 0) + COALESCE(sfs.quality_percentile, 0) +
+         COALESCE(sfs.momentum_percentile, 0) + COALESCE(sfs.growth_percentile, 0)) / 4.0, 1) as composite_score,
+        sfs.score_date
+      FROM stock_factor_scores sfs
+      JOIN companies c ON sfs.company_id = c.id
+      WHERE sfs.score_date = (SELECT MAX(score_date) FROM stock_factor_scores)
+    `;
+    const params = [];
+
+    if (min_value) { query += ` AND sfs.value_percentile >= ?`; params.push(parseFloat(min_value)); }
+    if (max_value) { query += ` AND sfs.value_percentile <= ?`; params.push(parseFloat(max_value)); }
+    if (min_quality) { query += ` AND sfs.quality_percentile >= ?`; params.push(parseFloat(min_quality)); }
+    if (max_quality) { query += ` AND sfs.quality_percentile <= ?`; params.push(parseFloat(max_quality)); }
+    if (min_momentum) { query += ` AND sfs.momentum_percentile >= ?`; params.push(parseFloat(min_momentum)); }
+    if (max_momentum) { query += ` AND sfs.momentum_percentile <= ?`; params.push(parseFloat(max_momentum)); }
+    if (min_growth) { query += ` AND sfs.growth_percentile >= ?`; params.push(parseFloat(min_growth)); }
+    if (max_growth) { query += ` AND sfs.growth_percentile <= ?`; params.push(parseFloat(max_growth)); }
+    if (sector) { query += ` AND c.sector = ?`; params.push(sector); }
+    if (min_market_cap) { query += ` AND c.market_cap >= ?`; params.push(parseFloat(min_market_cap)); }
+    if (max_market_cap) { query += ` AND c.market_cap <= ?`; params.push(parseFloat(max_market_cap)); }
+
+    const sortColumn = {
+      'composite': 'composite_score',
+      'value': 'sfs.value_percentile',
+      'quality': 'sfs.quality_percentile',
+      'momentum': 'sfs.momentum_percentile',
+      'growth': 'sfs.growth_percentile',
+      'market_cap': 'c.market_cap'
+    }[sort_by] || 'composite_score';
+
+    query += ` ORDER BY ${sortColumn} ${sort_order === 'asc' ? 'ASC' : 'DESC'} NULLS LAST`;
+    query += ` LIMIT ? OFFSET ?`;
+    params.push(parseInt(limit), parseInt(offset));
+
+    const stocks = db.prepare(query).all(...params);
+
+    res.json({
+      stocks,
+      filters: { min_value, max_value, min_quality, max_quality, min_momentum, max_momentum, min_growth, max_growth, sector },
+      pagination: { limit: parseInt(limit), offset: parseInt(offset), returned: stocks.length }
+    });
+  } catch (error) {
+    console.error('Factor screening error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/screening/factor-presets/:preset
+ * Pre-defined factor screens
+ */
+router.get('/factor-presets/:preset', (req, res) => {
+  try {
+    const db = require('../../database').db;
+    const { preset } = req.params;
+    const { sector, limit = 20 } = req.query;
+
+    const presets = {
+      'quality-value': {
+        description: 'High quality companies at reasonable valuations (Buffett style)',
+        where: `sfs.quality_percentile >= 70 AND sfs.value_percentile >= 50`,
+        orderBy: `(sfs.value_percentile + sfs.quality_percentile) / 2.0 DESC`
+      },
+      'deep-value': {
+        description: 'Deeply undervalued stocks with minimum quality',
+        where: `sfs.value_percentile >= 80 AND sfs.quality_percentile >= 30`,
+        orderBy: `sfs.value_percentile DESC`
+      },
+      'momentum-quality': {
+        description: 'High quality stocks with strong price momentum',
+        where: `sfs.momentum_percentile >= 70 AND sfs.quality_percentile >= 60`,
+        orderBy: `(sfs.momentum_percentile + sfs.quality_percentile) / 2.0 DESC`
+      },
+      'growth-momentum': {
+        description: 'High growth stocks with positive momentum',
+        where: `sfs.growth_percentile >= 70 AND sfs.momentum_percentile >= 50`,
+        orderBy: `(sfs.growth_percentile + sfs.momentum_percentile) / 2.0 DESC`
+      },
+      'contrarian': {
+        description: 'Quality stocks that are out of favor (potential turnarounds)',
+        where: `sfs.value_percentile >= 60 AND sfs.quality_percentile >= 50 AND sfs.momentum_percentile <= 40`,
+        orderBy: `(sfs.value_percentile + sfs.quality_percentile - sfs.momentum_percentile) / 2.0 DESC`
+      },
+      'all-factor': {
+        description: 'Stocks ranking well across all major factors',
+        where: `sfs.value_percentile >= 50 AND sfs.quality_percentile >= 50 AND sfs.momentum_percentile >= 50 AND sfs.growth_percentile >= 50`,
+        orderBy: `(sfs.value_percentile + sfs.quality_percentile + sfs.momentum_percentile + sfs.growth_percentile) / 4.0 DESC`
+      }
+    };
+
+    const config = presets[preset];
+    if (!config) {
+      return res.status(400).json({ error: `Unknown preset: ${preset}`, available: Object.keys(presets) });
+    }
+
+    let query = `
+      SELECT c.symbol, c.name, c.sector, c.market_cap,
+        ROUND(sfs.value_percentile, 1) as value_percentile,
+        ROUND(sfs.quality_percentile, 1) as quality_percentile,
+        ROUND(sfs.momentum_percentile, 1) as momentum_percentile,
+        ROUND(sfs.growth_percentile, 1) as growth_percentile
+      FROM stock_factor_scores sfs
+      JOIN companies c ON sfs.company_id = c.id
+      WHERE sfs.score_date = (SELECT MAX(score_date) FROM stock_factor_scores)
+        AND ${config.where}
+        ${sector ? `AND c.sector = '${sector}'` : ''}
+      ORDER BY ${config.orderBy}
+      LIMIT ?
+    `;
+
+    const stocks = db.prepare(query).all(parseInt(limit));
+
+    res.json({ preset, description: config.description, stocks, count: stocks.length });
+  } catch (error) {
+    console.error('Factor preset error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/screening/factor-presets
+ * List available factor screening presets
+ */
+router.get('/factor-presets', (req, res) => {
+  res.json({
+    presets: [
+      { id: 'quality-value', name: 'Quality Value', description: 'High quality + reasonable value (Buffett style)' },
+      { id: 'deep-value', name: 'Deep Value', description: 'Deeply undervalued with minimum quality' },
+      { id: 'momentum-quality', name: 'Momentum + Quality', description: 'Strong price momentum with quality' },
+      { id: 'growth-momentum', name: 'Growth + Momentum', description: 'High growth with positive momentum' },
+      { id: 'contrarian', name: 'Contrarian', description: 'Quality stocks out of favor' },
+      { id: 'all-factor', name: 'All-Factor', description: 'Strong across all factors' }
+    ]
+  });
+});
+
+/**
+ * GET /api/screening/sectors-by-factor
+ * Get sector breakdown with factor averages
+ */
+router.get('/sectors-by-factor', (req, res) => {
+  try {
+    const db = require('../../database').db;
+    const sectors = db.prepare(`
+      SELECT
+        c.sector,
+        COUNT(*) as stock_count,
+        ROUND(AVG(sfs.value_percentile), 1) as avg_value,
+        ROUND(AVG(sfs.quality_percentile), 1) as avg_quality,
+        ROUND(AVG(sfs.momentum_percentile), 1) as avg_momentum,
+        ROUND(AVG(sfs.growth_percentile), 1) as avg_growth
+      FROM stock_factor_scores sfs
+      JOIN companies c ON sfs.company_id = c.id
+      WHERE sfs.score_date = (SELECT MAX(score_date) FROM stock_factor_scores)
+        AND c.sector IS NOT NULL
+      GROUP BY c.sector
+      ORDER BY stock_count DESC
+    `).all();
+
+    res.json({ sectors });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

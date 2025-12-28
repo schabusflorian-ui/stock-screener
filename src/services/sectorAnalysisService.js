@@ -181,6 +181,8 @@ class SectorAnalysisService {
           )
           AND c.sector IS NOT NULL
           AND m.${safeMetric} IS NOT NULL
+          AND c.symbol NOT LIKE 'CIK_%'
+          AND c.market_cap IS NOT NULL
       ),
       ranked AS (
         SELECT
@@ -389,7 +391,7 @@ class SectorAnalysisService {
           c.symbol,
           c.name,
           c.market_cap,
-          pm.current_price,
+          pm.last_price,
           pm.change_1d,
           pm.change_1w,
           pm.change_1m,
@@ -417,7 +419,7 @@ class SectorAnalysisService {
         fiscal_period,
 
         -- Price data
-        ROUND(current_price, 2) as current_price,
+        ROUND(last_price, 2) as current_price,
         ROUND(change_1d, 2) as change_1d,
         ROUND(change_1w, 2) as change_1w,
         ROUND(change_1m, 2) as change_1m,
@@ -495,7 +497,7 @@ class SectorAnalysisService {
           c.symbol,
           c.name,
           c.market_cap,
-          pm.current_price,
+          pm.last_price,
           pm.change_1d,
           pm.change_1w,
           pm.change_ytd,
@@ -520,7 +522,7 @@ class SectorAnalysisService {
         fiscal_period,
 
         -- Price data
-        ROUND(current_price, 2) as current_price,
+        ROUND(last_price, 2) as current_price,
         ROUND(change_1d, 2) as change_1d,
         ROUND(change_1w, 2) as change_1w,
         ROUND(change_ytd, 2) as change_ytd,

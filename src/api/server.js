@@ -3,17 +3,64 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const session = require('express-session');
+const SQLiteStore = require('better-sqlite3-session-store')(session);
+const db = require('../database');
+const { configurePassport } = require('../auth/passport');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Make database available to routes via req.app.get('db')
+app.set('db', db.getDatabase());
+
+// Configure Passport (only if Google OAuth is configured)
+let passport = null;
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  passport = configurePassport(db.getDatabase());
+}
+
 // Middleware
-app.use(helmet()); // Security headers
-app.use(cors()); // Enable CORS
-app.use(morgan('dev')); // Logging
-app.use(express.json()); // Parse JSON bodies
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
+
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3001',
+  credentials: true
+}));
+
+app.use(morgan('dev'));
+app.use(express.json());
+
+// Session configuration
+app.use(session({
+  store: new SQLiteStore({
+    client: db.getDatabase(),
+    expired: {
+      clear: true,
+      intervalMs: 900000 // Clear expired sessions every 15 min
+    }
+  }),
+  secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax'
+  }
+}));
+
+// Initialize Passport (if configured)
+if (passport) {
+  app.use(passport.initialize());
+  app.use(passport.session());
+}
 
 // Import routes
+const authRouter = require('./routes/auth');
 const companiesRouter = require('./routes/companies.js');
 const metricsRouter = require('./routes/metrics');
 const screeningRouter = require('./routes/screening');
@@ -35,8 +82,25 @@ const fiscalRouter = require('./routes/fiscal');
 const alertsRouter = require('./routes/alerts');
 const indicesRouter = require('./routes/indices');
 const dividendsRouter = require('./routes/dividends');
+const investorsRouter = require('./routes/investors');
+const portfoliosRouter = require('./routes/portfolios');
+const simulateRouter = require('./routes/simulate');
+const etfsRouter = require('./routes/etfs');
+const knowledgeRouter = require('./routes/knowledge');
+const analystRouter = require('./routes/analyst');
+const aiRouter = require('./routes/ai');
+const nlQueryRouter = require('./routes/nlQuery');
+const secRefreshRouter = require('./routes/secRefresh');
+const aiRatingsRouter = require('./routes/aiRatings');
+const notesRouter = require('./routes/notes');
+const thesesRouter = require('./routes/theses');
+const historicalRouter = require('./routes/historical');
+const factorsRouter = require('./routes/factors');
+const updateSystemRouter = require('./routes/updateSystem');
+const settingsRouter = require('./routes/settings');
 
 // Use routes
+app.use('/api/auth', authRouter);
 app.use('/api/companies', companiesRouter);
 app.use('/api/metrics', metricsRouter);
 app.use('/api/screening', screeningRouter);
@@ -58,6 +122,22 @@ app.use('/api/fiscal', fiscalRouter);
 app.use('/api/alerts', alertsRouter);
 app.use('/api/indices', indicesRouter);
 app.use('/api/dividends', dividendsRouter);
+app.use('/api/investors', investorsRouter);
+app.use('/api/portfolios', portfoliosRouter);
+app.use('/api/simulate', simulateRouter);
+app.use('/api/etfs', etfsRouter);
+app.use('/api/knowledge', knowledgeRouter);
+app.use('/api/analyst', analystRouter);
+app.use('/api/ai', aiRouter);
+app.use('/api/ai-ratings', aiRatingsRouter);
+app.use('/api/nl', nlQueryRouter);
+app.use('/api/sec-refresh', secRefreshRouter);
+app.use('/api/notes', notesRouter);
+app.use('/api/theses', thesesRouter);
+app.use('/api/historical', historicalRouter);
+app.use('/api/factors', factorsRouter);
+app.use('/api/update-system', updateSystemRouter);
+app.use('/api/settings', settingsRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -74,6 +154,7 @@ app.get('/', (req, res) => {
     message: 'Stock Analysis API',
     version: '1.0.0',
     endpoints: {
+      auth: '/api/auth',
       companies: '/api/companies',
       metrics: '/api/metrics',
       screening: '/api/screening',
@@ -93,6 +174,19 @@ app.get('/', (req, res) => {
       priceUpdates: '/api/price-updates',
       alerts: '/api/alerts',
       indices: '/api/indices',
+      investors: '/api/investors',
+      portfolios: '/api/portfolios',
+      simulate: '/api/simulate',
+      knowledge: '/api/knowledge',
+      analyst: '/api/analyst',
+      ai: '/api/ai',
+      nl: '/api/nl',
+      notes: '/api/notes',
+      theses: '/api/theses',
+      historical: '/api/historical',
+      factors: '/api/factors',
+      updateSystem: '/api/update-system',
+      settings: '/api/settings',
       health: '/api/health'
     }
   });
@@ -116,10 +210,44 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`\n🚀 API Server running on http://localhost:${PORT}`);
   console.log(`📚 Health check: http://localhost:${PORT}/api/health`);
-  console.log(`📊 Companies: http://localhost:${PORT}/api/companies\n`);
+  console.log(`📊 Companies: http://localhost:${PORT}/api/companies`);
+
+  if (passport) {
+    console.log(`🔐 Auth enabled: http://localhost:${PORT}/api/auth/google`);
+  } else {
+    console.log(`🔐 Auth disabled (set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to enable)`);
+  }
+
+  // Initialize Update Orchestrator if enabled
+  try {
+    const autoStartScheduler = process.env.AUTO_START_SCHEDULER !== 'false';
+    if (autoStartScheduler) {
+      const { getUpdateOrchestrator } = require('../services/updates/updateOrchestrator');
+      const orchestrator = getUpdateOrchestrator(db.getDatabase());
+
+      // Check if update_jobs table exists (migration has run)
+      const tableExists = db.getDatabase().prepare(`
+        SELECT name FROM sqlite_master
+        WHERE type='table' AND name='update_jobs'
+      `).get();
+
+      if (tableExists) {
+        orchestrator.start();
+        console.log(`📅 Update Scheduler started`);
+      } else {
+        console.log(`📅 Update Scheduler: Migration not yet run. Run: node src/database-migrations/add-update-system.js`);
+      }
+    } else {
+      console.log(`📅 Update Scheduler disabled (AUTO_START_SCHEDULER=false)`);
+    }
+  } catch (err) {
+    console.error('⚠️  Update Scheduler failed to start:', err.message);
+  }
+
+  console.log('');
 });
 
 module.exports = app;

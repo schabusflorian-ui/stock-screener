@@ -142,14 +142,83 @@ function calculateMissingQ4Data(db, companyId, existingQuarterly, limit) {
  * GET /api/companies
  * List all companies
  * Query params:
+ *   - search: search term for symbol or name (optional)
  *   - include_cik: 'true' to include CIK-based symbols (default: false)
  *   - include_inactive: 'true' to include inactive/delisted companies (default: false)
  */
 router.get('/', (req, res) => {
   try {
-    const { include_cik = 'false', include_inactive = 'false' } = req.query;
+    const { search, include_cik = 'false', include_inactive = 'false' } = req.query;
     const excludeCIK = include_cik !== 'true';
     const activeOnly = include_inactive !== 'true';
+
+    // If search provided, do an optimized search
+    if (search && search.length >= 1) {
+      const searchUpper = search.toUpperCase();
+      const searchLower = search.toLowerCase();
+
+      // Build a single query with prioritized results
+      // Symbol exact match > Symbol prefix > Name contains
+      const results = [];
+
+      // 1. Exact symbol match (uses index, instant)
+      const exactMatch = database.prepare(`
+        SELECT id, symbol, name, sector, industry
+        FROM companies
+        WHERE symbol = ?
+          ${activeOnly ? 'AND is_active = 1' : ''}
+      `).get(searchUpper);
+
+      if (exactMatch) {
+        results.push(exactMatch);
+      }
+
+      // 2. Symbol prefix matches (uses index)
+      const prefixMatches = database.prepare(`
+        SELECT id, symbol, name, sector, industry
+        FROM companies
+        WHERE symbol LIKE ? ESCAPE '\\'
+          AND symbol != ?
+          ${activeOnly ? 'AND is_active = 1' : ''}
+          ${excludeCIK ? "AND symbol NOT LIKE 'CIK_%'" : ''}
+        ORDER BY LENGTH(symbol), symbol
+        LIMIT 8
+      `).all(searchUpper + '%', searchUpper);
+
+      results.push(...prefixMatches);
+
+      // 3. Name contains (only if we need more results)
+      if (results.length < 10) {
+        const existingSymbols = results.map(r => r.symbol);
+        const placeholders = existingSymbols.length > 0
+          ? `AND symbol NOT IN (${existingSymbols.map(() => '?').join(',')})`
+          : '';
+        const limit = 10 - results.length;
+
+        const queryParams = ['%' + searchLower + '%', ...existingSymbols, searchLower + '%', limit];
+
+        const nameMatches = database.prepare(`
+          SELECT id, symbol, name, sector, industry
+          FROM companies
+          WHERE LOWER(name) LIKE ? ESCAPE '\\'
+            ${activeOnly ? 'AND is_active = 1' : ''}
+            ${excludeCIK ? "AND symbol NOT LIKE 'CIK_%'" : ''}
+            ${placeholders}
+          ORDER BY
+            CASE WHEN LOWER(name) LIKE ? THEN 0 ELSE 1 END,
+            LENGTH(name),
+            symbol
+          LIMIT ?
+        `).all(...queryParams);
+
+        results.push(...nameMatches);
+      }
+
+      return res.json({
+        count: results.length,
+        companies: results
+      });
+    }
 
     const companies = database.prepare(`
       SELECT
@@ -537,12 +606,35 @@ router.get('/:symbol/metrics', (req, res) => {
         }
       }
 
+      // Fetch raw financial data for this period (revenue, net_income, etc.)
+      const incomeData = database.prepare(`
+        SELECT total_revenue, net_income, operating_income, gross_profit, data
+        FROM financial_data
+        WHERE company_id = ? AND fiscal_date_ending = ? AND statement_type = 'income_statement'
+        LIMIT 1
+      `).get(company.id, m.fiscal_period);
+
+      // Parse EBITDA from JSON data if available
+      let ebitda = null;
+      if (incomeData?.data) {
+        try {
+          const fullData = JSON.parse(incomeData.data);
+          ebitda = parseFloat(fullData.ebitda) || parseFloat(fullData.EBITDA) || null;
+        } catch (e) {}
+      }
+
       return {
         ...m,
         ...liveValuationMetrics,
         current_market_cap: currentMarketCap || null,
         stock_price: priceData ? (priceData.adjusted_close || priceData.close) : null,
         stock_price_date: priceData ? priceData.date : null,
+        // Add raw financial values for charting
+        revenue: incomeData?.total_revenue || null,
+        net_income: incomeData?.net_income || null,
+        operating_income: incomeData?.operating_income || null,
+        gross_profit: incomeData?.gross_profit || null,
+        ebitda: ebitda,
         fiscal_label: fiscalLabel,
         calendar_label: calendarLabel,
         fiscal_info: fiscalInfo ? {

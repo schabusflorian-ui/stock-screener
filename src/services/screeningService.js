@@ -5,11 +5,14 @@ const db = require('../database');
 const VALID_SORT_COLUMNS = [
   'roic', 'roe', 'roa', 'operating_margin', 'net_margin', 'gross_margin',
   'fcf_yield', 'fcf_margin', 'pe_ratio', 'pb_ratio', 'ps_ratio', 'ev_ebitda',
+  'peg_ratio', 'pegy_ratio',
   'debt_to_equity', 'debt_to_assets', 'current_ratio', 'quick_ratio', 'interest_coverage',
   'revenue_growth_yoy', 'earnings_growth_yoy', 'fcf_growth_yoy', 'asset_turnover',
   'data_quality_score', 'market_cap', 'symbol', 'name',
   // Price metrics columns
-  'beta', 'enterprise_value', 'last_price', 'change_1d', 'change_1w', 'change_1m', 'change_ytd'
+  'beta', 'enterprise_value', 'last_price', 'change_1d', 'change_1w', 'change_1m', 'change_ytd',
+  // Alpha columns (vs SPY benchmark)
+  'alpha_1d', 'alpha_1w', 'alpha_1m', 'alpha_3m', 'alpha_6m', 'alpha_ytd', 'alpha_1y'
 ];
 
 /**
@@ -107,6 +110,8 @@ class ScreeningService {
       minPBRatio, maxPBRatio,
       minPSRatio, maxPSRatio,
       minEVEBITDA, maxEVEBITDA,
+      minPEGRatio, maxPEGRatio,
+      minPEGYRatio, maxPEGYRatio,
 
       // Financial health criteria
       minDebtToEquity, maxDebtToEquity,
@@ -122,6 +127,12 @@ class ScreeningService {
 
       // Efficiency criteria
       minAssetTurnover, maxAssetTurnover,
+
+      // Alpha criteria (vs SPY benchmark)
+      minAlpha1M, maxAlpha1M,
+      minAlpha3M, maxAlpha3M,
+      minAlphaYTD, maxAlphaYTD,
+      minAlpha1Y, maxAlpha1Y,
 
       // Quality filter
       minQualityScore,
@@ -234,6 +245,8 @@ class ScreeningService {
     addRangeCriteria('pb_ratio', minPBRatio, maxPBRatio);
     addRangeCriteria('ps_ratio', minPSRatio, maxPSRatio);
     addRangeCriteria('ev_ebitda', minEVEBITDA, maxEVEBITDA);
+    addRangeCriteria('peg_ratio', minPEGRatio, maxPEGRatio);
+    addRangeCriteria('pegy_ratio', minPEGYRatio, maxPEGYRatio);
 
     // Financial health
     addRangeCriteria('debt_to_equity', minDebtToEquity, maxDebtToEquity);
@@ -249,6 +262,22 @@ class ScreeningService {
 
     // Efficiency
     addRangeCriteria('asset_turnover', minAssetTurnover, maxAssetTurnover);
+
+    // Alpha criteria (vs SPY benchmark) - these are in price_metrics table so need special handling
+    const addAlphaCriteria = (column, minVal, maxVal) => {
+      if (minVal !== undefined && minVal !== null && minVal !== '') {
+        where.push(`pm.${column} >= ?`);
+        params.push(parseFloat(minVal));
+      }
+      if (maxVal !== undefined && maxVal !== null && maxVal !== '') {
+        where.push(`pm.${column} <= ?`);
+        params.push(parseFloat(maxVal));
+      }
+    };
+    addAlphaCriteria('alpha_1m', minAlpha1M, maxAlpha1M);
+    addAlphaCriteria('alpha_3m', minAlpha3M, maxAlpha3M);
+    addAlphaCriteria('alpha_ytd', minAlphaYTD, maxAlphaYTD);
+    addAlphaCriteria('alpha_1y', minAlpha1Y, maxAlpha1Y);
 
     // Quality score
     if (minQualityScore !== undefined && minQualityScore !== null) {
@@ -302,7 +331,11 @@ class ScreeningService {
     const safeSortOrder = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
     // Handle sorting by company fields vs metric fields vs price_metrics fields
-    const priceMetricsCols = ['market_cap', 'beta', 'enterprise_value', 'last_price', 'change_1d', 'change_1w', 'change_1m', 'change_ytd'];
+    const priceMetricsCols = [
+      'market_cap', 'beta', 'enterprise_value', 'last_price',
+      'change_1d', 'change_1w', 'change_1m', 'change_ytd',
+      'alpha_1d', 'alpha_1w', 'alpha_1m', 'alpha_3m', 'alpha_6m', 'alpha_ytd', 'alpha_1y'
+    ];
     let sortColumn;
     if (['symbol', 'name'].includes(safeSortBy)) {
       sortColumn = `c.${safeSortBy}`;
@@ -336,6 +369,15 @@ class ScreeningService {
         pm.change_ytd,
         pm.high_52w,
         pm.low_52w,
+        -- Alpha metrics (vs SPY benchmark)
+        pm.alpha_1d,
+        pm.alpha_1w,
+        pm.alpha_1m,
+        pm.alpha_3m,
+        pm.alpha_6m,
+        pm.alpha_1y,
+        pm.alpha_ytd,
+        pm.benchmark_symbol,
         -- Calculated metrics (fundamental data)
         m.fiscal_period,
         m.period_type,
@@ -351,6 +393,8 @@ class ScreeningService {
         m.pb_ratio,
         m.ps_ratio,
         m.ev_ebitda,
+        m.peg_ratio,
+        m.pegy_ratio,
         m.debt_to_equity,
         m.debt_to_assets,
         m.current_ratio,
@@ -590,7 +634,7 @@ class ScreeningService {
         c.symbol, c.name, c.sector, c.industry, c.market_cap,
         m.fiscal_period, m.period_type,
         m.roic, m.roe, m.roa, m.gross_margin, m.operating_margin, m.net_margin,
-        m.fcf_yield, m.fcf_margin, m.pe_ratio, m.pb_ratio, m.ps_ratio, m.ev_ebitda,
+        m.fcf_yield, m.fcf_margin, m.pe_ratio, m.pb_ratio, m.ps_ratio, m.ev_ebitda, m.peg_ratio, m.pegy_ratio,
         m.debt_to_equity, m.debt_to_assets, m.current_ratio, m.quick_ratio,
         m.interest_coverage, m.revenue_growth_yoy, m.earnings_growth_yoy,
         m.fcf_growth_yoy, m.asset_turnover, m.data_quality_score as quality_score,
@@ -630,7 +674,7 @@ class ScreeningService {
         c.symbol, c.name, c.sector, c.industry, c.market_cap,
         m.fiscal_period, m.period_type,
         m.roic, m.roe, m.roa, m.gross_margin, m.operating_margin, m.net_margin,
-        m.fcf_yield, m.fcf_margin, m.pe_ratio, m.pb_ratio, m.ps_ratio, m.ev_ebitda,
+        m.fcf_yield, m.fcf_margin, m.pe_ratio, m.pb_ratio, m.ps_ratio, m.ev_ebitda, m.peg_ratio, m.pegy_ratio,
         m.debt_to_equity, m.debt_to_assets, m.current_ratio, m.quick_ratio,
         m.interest_coverage, m.revenue_growth_yoy, m.earnings_growth_yoy,
         m.fcf_growth_yoy, m.asset_turnover, m.data_quality_score as quality_score,

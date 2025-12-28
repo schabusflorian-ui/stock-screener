@@ -45,6 +45,12 @@ const TAG_MAPPINGS = {
   'PaymentsToAcquirePropertyPlantAndEquipment': 'capital_expenditures',
 };
 
+// Shares outstanding - stored in 'shares' units, not USD
+const SHARES_TAGS = [
+  'CommonStockSharesOutstanding',
+  'CommonStockSharesIssued',  // fallback if outstanding not available
+];
+
 /**
  * Fetch and store financial data for a company from SEC EDGAR
  */
@@ -137,7 +143,57 @@ async function refreshCompanyFromSEC(symbol) {
       }
     }
 
-    console.log(`   📊 Found ${dataPoints.length} data points`);
+    // Extract shares outstanding (stored in 'shares' units, not USD)
+    const sharesDataPoints = [];
+    for (const sharesTag of SHARES_TAGS) {
+      const conceptData = usGaap[sharesTag];
+      if (!conceptData?.units?.shares) continue;
+
+      const values = conceptData.units.shares.filter(v =>
+        v.form === '10-K' || v.form === '10-Q'
+      );
+
+      for (const item of values) {
+        let fiscalPeriod = 'FY';
+        if (item.frame) {
+          if (item.frame.includes('Q1')) fiscalPeriod = 'Q1';
+          else if (item.frame.includes('Q2')) fiscalPeriod = 'Q2';
+          else if (item.frame.includes('Q3')) fiscalPeriod = 'Q3';
+          else if (item.frame.includes('Q4')) fiscalPeriod = 'Q4';
+        } else if (item.fp) {
+          fiscalPeriod = item.fp;
+        }
+
+        let fiscalYear = null;
+        if (item.frame) {
+          const match = item.frame.match(/CY(\d{4})/);
+          if (match) fiscalYear = parseInt(match[1]);
+        }
+        if (!fiscalYear && item.end) {
+          fiscalYear = parseInt(item.end.substring(0, 4));
+        }
+
+        sharesDataPoints.push({
+          company_id: company.id,
+          field: 'shares_outstanding',
+          concept: sharesTag,
+          fiscal_date_ending: item.end,
+          fiscal_period: fiscalPeriod,
+          fiscal_year: fiscalYear,
+          value: item.val,
+          filed_date: item.filed,
+          form: item.form,
+          accn: item.accn,
+        });
+      }
+
+      // If we got CommonStockSharesOutstanding, don't need fallback
+      if (sharesDataPoints.length > 0 && sharesTag === 'CommonStockSharesOutstanding') {
+        break;
+      }
+    }
+
+    console.log(`   📊 Found ${dataPoints.length} financial data points, ${sharesDataPoints.length} shares data points`);
 
     // Group by fiscal period for financial_data table
     const periodGroups = new Map();
@@ -165,6 +221,18 @@ async function refreshCompanyFromSEC(symbol) {
       }
     }
 
+    // Add shares outstanding to period groups
+    for (const sp of sharesDataPoints) {
+      const key = `${sp.fiscal_date_ending}-${sp.fiscal_period}`;
+      if (periodGroups.has(key)) {
+        const group = periodGroups.get(key);
+        // Only set if not already set (prefer first match which is CommonStockSharesOutstanding)
+        if (!group.shares_outstanding) {
+          group.shares_outstanding = sp.value;
+        }
+      }
+    }
+
     // Insert/update financial_data (using actual table columns)
     // UNIQUE constraint is: (company_id, statement_type, fiscal_date_ending, period_type)
     const insertStmt = database.prepare(`
@@ -174,14 +242,16 @@ async function refreshCompanyFromSEC(symbol) {
         total_revenue, gross_profit, operating_income, net_income, cost_of_revenue,
         total_assets, current_assets, cash_and_equivalents,
         total_liabilities, current_liabilities, long_term_debt, short_term_debt,
-        shareholder_equity, operating_cashflow, capital_expenditures
+        shareholder_equity, operating_cashflow, capital_expenditures,
+        shares_outstanding
       ) VALUES (
         ?, 'all', ?, ?, ?,
         ?, ?, ?, '{}',
         ?, ?, ?, ?, ?,
         ?, ?, ?,
         ?, ?, ?, ?,
-        ?, ?, ?
+        ?, ?, ?,
+        ?
       )
       ON CONFLICT(company_id, statement_type, fiscal_date_ending, period_type)
       DO UPDATE SET
@@ -203,7 +273,8 @@ async function refreshCompanyFromSEC(symbol) {
         short_term_debt = COALESCE(excluded.short_term_debt, financial_data.short_term_debt),
         shareholder_equity = COALESCE(excluded.shareholder_equity, financial_data.shareholder_equity),
         operating_cashflow = COALESCE(excluded.operating_cashflow, financial_data.operating_cashflow),
-        capital_expenditures = COALESCE(excluded.capital_expenditures, financial_data.capital_expenditures)
+        capital_expenditures = COALESCE(excluded.capital_expenditures, financial_data.capital_expenditures),
+        shares_outstanding = COALESCE(excluded.shares_outstanding, financial_data.shares_outstanding)
     `);
 
     let inserted = 0;
@@ -233,7 +304,8 @@ async function refreshCompanyFromSEC(symbol) {
           data.short_term_debt || null,
           data.shareholder_equity || null,
           data.operating_cashflow || null,
-          data.capital_expenditures || null
+          data.capital_expenditures || null,
+          data.shares_outstanding || null
         );
 
         if (result.changes > 0) {

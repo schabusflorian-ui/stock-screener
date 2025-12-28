@@ -105,8 +105,11 @@ class IndexService {
    * @returns {Array} Array of price records
    */
   getHistoricalPrices(symbol, options = {}) {
-    const { startDate, endDate, limit = 252 } = options;
+    // Use null to indicate no limit (for 'max' period)
+    const { startDate, endDate } = options;
+    const limit = options.limit === null ? null : (options.limit || 252);
 
+    // Support lookup by symbol (^GSPC) or short_name (SPX)
     let sql = `
       SELECT
         mip.date,
@@ -117,10 +120,10 @@ class IndexService {
         mip.volume
       FROM market_index_prices mip
       JOIN market_indices mi ON mip.index_id = mi.id
-      WHERE mi.symbol = ?
+      WHERE (mi.symbol = ? OR mi.short_name = ?)
     `;
 
-    const params = [symbol];
+    const params = [symbol, symbol];
 
     if (startDate) {
       sql += ' AND mip.date >= ?';
@@ -407,6 +410,81 @@ class IndexService {
       LEFT JOIN market_index_prices mip ON mi.id = mip.index_id
       GROUP BY mi.id
       ORDER BY mi.display_order
+    `;
+
+    return this.db.prepare(sql).all();
+  }
+
+  /**
+   * Get constituents for any index by code
+   * @param {string} indexCode - Index code (SPX, DJI, NDX, RUT, IXIC)
+   * @param {Object} options - Query options
+   * @returns {Array} Array of constituent companies
+   */
+  getConstituents(indexCode, options = {}) {
+    const { limit, sortBy = 'market_cap' } = options;
+
+    // First check index_constituents table
+    const indexCheck = this.db.prepare(`
+      SELECT si.id, si.code, si.name
+      FROM stock_indexes si
+      WHERE si.code = ?
+    `).get(indexCode);
+
+    if (indexCheck) {
+      // Use index_constituents table
+      const validSortColumns = ['market_cap', 'symbol', 'name', 'sector'];
+      const sortColumn = validSortColumns.includes(sortBy) ? sortBy : 'market_cap';
+      const sortOrder = sortColumn === 'market_cap' ? 'DESC' : 'ASC';
+
+      let sql = `
+        SELECT
+          c.id,
+          c.symbol,
+          c.name,
+          c.sector,
+          c.industry,
+          c.market_cap,
+          ic.weight,
+          ic.added_at
+        FROM index_constituents ic
+        JOIN companies c ON ic.company_id = c.id
+        WHERE ic.index_id = ?
+          AND ic.removed_at IS NULL
+        ORDER BY c.${sortColumn} ${sortOrder}
+      `;
+
+      if (limit) {
+        sql += ` LIMIT ${parseInt(limit)}`;
+      }
+
+      return this.db.prepare(sql).all(indexCheck.id);
+    }
+
+    // Fallback: if it's SPX and index_constituents empty, use is_sp500 flag
+    if (indexCode === 'SPX') {
+      return this.getSP500Constituents();
+    }
+
+    return null;
+  }
+
+  /**
+   * Get all index summary with constituent counts
+   * @returns {Array} Array of indices with stats
+   */
+  getIndicesWithStats() {
+    const sql = `
+      SELECT
+        si.id,
+        si.code,
+        si.name,
+        si.country,
+        COUNT(ic.id) as constituent_count
+      FROM stock_indexes si
+      LEFT JOIN index_constituents ic ON si.id = ic.index_id AND ic.removed_at IS NULL
+      GROUP BY si.id
+      ORDER BY si.code
     `;
 
     return this.db.prepare(sql).all();

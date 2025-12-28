@@ -6,6 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const IndexService = require('../../services/indexService');
+const IndexPriceService = require('../../services/indexPriceService');
 
 /**
  * GET /api/indices
@@ -89,6 +90,362 @@ router.get('/sp500/constituents', (req, res) => {
 });
 
 /**
+ * GET /api/indices/constituents/:indexCode
+ * Get constituents for any index by code (SPX, DJI, NDX, RUT)
+ * Query params:
+ *   - limit: number of results (default all)
+ *   - sortBy: column to sort by (market_cap, symbol, name)
+ */
+router.get('/constituents/:indexCode', (req, res) => {
+  try {
+    const { indexCode } = req.params;
+    const { limit, sortBy = 'market_cap' } = req.query;
+
+    const constituents = IndexService.getConstituents(indexCode.toUpperCase(), {
+      limit: limit ? parseInt(limit) : null,
+      sortBy
+    });
+
+    if (!constituents) {
+      return res.status(404).json({
+        success: false,
+        error: `Index ${indexCode} not found`
+      });
+    }
+
+    res.json({
+      success: true,
+      indexCode: indexCode.toUpperCase(),
+      count: constituents.length,
+      data: constituents
+    });
+  } catch (error) {
+    console.error('Error fetching constituents:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch constituents'
+    });
+  }
+});
+
+// ============================================
+// ETF-based Index Endpoints (with alpha)
+// IMPORTANT: These must come BEFORE /:symbol route
+// ============================================
+
+/**
+ * GET /api/indices/etfs
+ * Get all ETF-based indices (SPY, QQQ, DIA, sector ETFs)
+ */
+router.get('/etfs', (req, res) => {
+  try {
+    const db = req.app.get('db');
+    const indexPriceService = new IndexPriceService(db);
+    const indices = indexPriceService.getAllIndices();
+    res.json({
+      success: true,
+      data: indices
+    });
+  } catch (error) {
+    console.error('Error fetching ETF indices:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/indices/etfs/market
+ * Get market ETFs only (SPY, QQQ, DIA, IWM, VTI)
+ */
+router.get('/etfs/market', (req, res) => {
+  try {
+    const db = req.app.get('db');
+    const indexPriceService = new IndexPriceService(db);
+    const indices = indexPriceService.getMarketIndices();
+    res.json({
+      success: true,
+      data: indices
+    });
+  } catch (error) {
+    console.error('Error fetching market ETFs:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/indices/etfs/sectors
+ * Get sector ETFs (XLK, XLF, XLV, etc.)
+ */
+router.get('/etfs/sectors', (req, res) => {
+  try {
+    const db = req.app.get('db');
+    const indexPriceService = new IndexPriceService(db);
+    const sectors = indexPriceService.getSectorIndices();
+    res.json({
+      success: true,
+      data: sectors
+    });
+  } catch (error) {
+    console.error('Error fetching sector ETFs:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/indices/benchmark
+ * Get primary benchmark (SPY) with current performance
+ */
+router.get('/benchmark', (req, res) => {
+  try {
+    const db = req.app.get('db');
+    const indexPriceService = new IndexPriceService(db);
+    const benchmark = indexPriceService.getBenchmark();
+    res.json({
+      success: true,
+      data: benchmark
+    });
+  } catch (error) {
+    console.error('Error fetching benchmark:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/indices/alpha/timeseries/:symbol
+ * Get alpha time series data for a stock (daily alpha vs SPY)
+ * This endpoint returns daily alpha values over time for charting
+ * IMPORTANT: Must come BEFORE /alpha/:symbol to avoid route conflict
+ * Query params:
+ *   - period: '1m', '3m', '6m', '1y', '2y', '5y', 'max' (default '1y')
+ */
+router.get('/alpha/timeseries/:symbol', (req, res) => {
+  try {
+    const db = req.app.get('db');
+    const { symbol } = req.params;
+    const { period = '1y' } = req.query;
+
+    // Get company_id
+    const company = db.prepare(`
+      SELECT id FROM companies WHERE symbol = ? COLLATE NOCASE
+    `).get(symbol);
+
+    if (!company) {
+      return res.status(404).json({
+        success: false,
+        error: 'Company not found'
+      });
+    }
+
+    // Calculate date range based on period
+    const periodDays = {
+      '1m': 30,
+      '3m': 90,
+      '6m': 180,
+      '1y': 365,
+      '2y': 730,
+      '5y': 1825,
+      'max': 3650
+    };
+
+    const days = periodDays[period] || 365;
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    const startDateStr = startDate.toISOString().split('T')[0];
+
+    // Get stock daily prices
+    const stockPrices = db.prepare(`
+      SELECT date, adjusted_close as close
+      FROM daily_prices
+      WHERE company_id = ?
+        AND date >= ?
+        AND adjusted_close IS NOT NULL
+      ORDER BY date ASC
+    `).all(company.id, startDateStr);
+
+    // Get SPY prices for the same period (from index_prices table)
+    let benchmarkPrices = [];
+    try {
+      benchmarkPrices = db.prepare(`
+        SELECT date, close
+        FROM index_daily_prices
+        WHERE symbol = 'SPY'
+          AND date >= ?
+          AND close IS NOT NULL
+        ORDER BY date ASC
+      `).all(startDateStr);
+    } catch (e) {
+      // Table might not exist
+    }
+
+    // If index_daily_prices doesn't exist or is empty, try market_index_prices
+    // Use S&P 500 (^GSPC) as the benchmark
+    if (!benchmarkPrices || benchmarkPrices.length === 0) {
+      benchmarkPrices = db.prepare(`
+        SELECT mip.date, mip.close
+        FROM market_index_prices mip
+        JOIN market_indices mi ON mip.index_id = mi.id
+        WHERE mi.symbol = '^GSPC'
+          AND mip.date >= ?
+          AND mip.close IS NOT NULL
+        ORDER BY mip.date ASC
+      `).all(startDateStr);
+    }
+
+    // Build date-indexed maps for alignment
+    const stockMap = new Map(stockPrices.map(p => [p.date, p.close]));
+    const benchmarkMap = new Map(benchmarkPrices.map(p => [p.date, p.close]));
+
+    // Get all unique dates where we have both stock and benchmark data
+    const commonDates = [...stockMap.keys()].filter(d => benchmarkMap.has(d)).sort();
+
+    if (commonDates.length < 2) {
+      return res.json({
+        success: true,
+        data: {
+          symbol,
+          benchmark: 'SPY',
+          period,
+          timeseries: []
+        }
+      });
+    }
+
+    // Calculate cumulative returns and alpha for each date
+    const baseStockPrice = stockMap.get(commonDates[0]);
+    const baseBenchmarkPrice = benchmarkMap.get(commonDates[0]);
+
+    let prevStockPrice = baseStockPrice;
+    let prevBenchmarkPrice = baseBenchmarkPrice;
+
+    const timeseries = commonDates.map((date, idx) => {
+      const stockPrice = stockMap.get(date);
+      const benchmarkPrice = benchmarkMap.get(date);
+
+      // Cumulative returns from period start
+      const stockReturn = ((stockPrice - baseStockPrice) / baseStockPrice) * 100;
+      const benchmarkReturn = ((benchmarkPrice - baseBenchmarkPrice) / baseBenchmarkPrice) * 100;
+      const alpha = stockReturn - benchmarkReturn;
+
+      // Daily returns (single day change)
+      const dailyStockReturn = idx === 0 ? 0 : ((stockPrice - prevStockPrice) / prevStockPrice) * 100;
+      const dailyBenchmarkReturn = idx === 0 ? 0 : ((benchmarkPrice - prevBenchmarkPrice) / prevBenchmarkPrice) * 100;
+      const dailyAlpha = dailyStockReturn - dailyBenchmarkReturn;
+
+      prevStockPrice = stockPrice;
+      prevBenchmarkPrice = benchmarkPrice;
+
+      return {
+        date,
+        // Cumulative from period start
+        stockReturn: Math.round(stockReturn * 100) / 100,
+        benchmarkReturn: Math.round(benchmarkReturn * 100) / 100,
+        alpha: Math.round(alpha * 100) / 100,
+        // Daily (single day)
+        dailyStockReturn: Math.round(dailyStockReturn * 100) / 100,
+        dailyBenchmarkReturn: Math.round(dailyBenchmarkReturn * 100) / 100,
+        dailyAlpha: Math.round(dailyAlpha * 100) / 100,
+        // Prices
+        stockPrice: Math.round(stockPrice * 100) / 100,
+        benchmarkPrice: Math.round(benchmarkPrice * 100) / 100
+      };
+    });
+
+    // Calculate summary statistics
+    const latestAlpha = timeseries[timeseries.length - 1]?.alpha || 0;
+    const maxAlpha = Math.max(...timeseries.map(t => t.alpha));
+    const minAlpha = Math.min(...timeseries.map(t => t.alpha));
+    const avgAlpha = timeseries.reduce((sum, t) => sum + t.alpha, 0) / timeseries.length;
+
+    res.json({
+      success: true,
+      data: {
+        symbol,
+        benchmark: 'SPY',
+        period,
+        dataPoints: timeseries.length,
+        summary: {
+          currentAlpha: Math.round(latestAlpha * 100) / 100,
+          maxAlpha: Math.round(maxAlpha * 100) / 100,
+          minAlpha: Math.round(minAlpha * 100) / 100,
+          avgAlpha: Math.round(avgAlpha * 100) / 100,
+          outperforming: latestAlpha > 0
+        },
+        timeseries
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching alpha timeseries:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/indices/alpha/:symbol
+ * Get alpha metrics for a specific stock vs SPY (snapshot)
+ */
+router.get('/alpha/:symbol', (req, res) => {
+  try {
+    const db = req.app.get('db');
+    const indexPriceService = new IndexPriceService(db);
+    const alpha = indexPriceService.getStockAlpha(req.params.symbol);
+    if (!alpha) {
+      return res.status(404).json({
+        success: false,
+        error: 'Stock not found or no alpha data'
+      });
+    }
+    res.json({
+      success: true,
+      data: alpha
+    });
+  } catch (error) {
+    console.error('Error fetching alpha:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/indices/etfs/update
+ * Trigger ETF index price update (admin)
+ */
+router.post('/etfs/update', async (req, res) => {
+  try {
+    const db = req.app.get('db');
+    const indexPriceService = new IndexPriceService(db);
+    const result = await indexPriceService.fullUpdate();
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error updating ETF indices:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/indices/alpha/calculate
+ * Recalculate alpha for all stocks
+ */
+router.post('/alpha/calculate', (req, res) => {
+  try {
+    const db = req.app.get('db');
+    const indexPriceService = new IndexPriceService(db);
+    const result = indexPriceService.calculateAlphaForAll();
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error calculating alpha:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================
+// Parameterized Routes (must come LAST)
+// ============================================
+
+/**
  * GET /api/indices/:symbol
  * Get single index by symbol
  */
@@ -132,12 +489,56 @@ router.get('/:symbol/prices', (req, res) => {
   try {
     const { symbol } = req.params;
     const decodedSymbol = decodeURIComponent(symbol);
-    const { startDate, endDate, limit } = req.query;
+    const { startDate, endDate, limit, period } = req.query;
+
+    // Calculate start date based on period if provided
+    let calculatedStartDate = startDate;
+    let calculatedLimit = limit ? parseInt(limit) : null;
+
+    if (period && !startDate) {
+      const now = new Date();
+      const periodMap = {
+        '1m': 30,
+        '3m': 90,
+        '6m': 180,
+        '1y': 365,
+        '2y': 730,
+        '3y': 1095,
+        '5y': 1825,
+        '10y': 3650,
+        'max': null, // No limit - get all data
+        'all': null  // Alias for max
+      };
+
+      const days = periodMap[period];
+      if (days !== undefined) {
+        if (days === null) {
+          // 'max'/'all' - no date limit, no record limit
+          // Explicitly set to null and skip the default below
+          calculatedLimit = null;
+          calculatedStartDate = 'max'; // Flag to skip default limit
+        } else {
+          const startDateObj = new Date(now);
+          startDateObj.setDate(startDateObj.getDate() - days);
+          calculatedStartDate = startDateObj.toISOString().split('T')[0];
+        }
+      }
+    }
+
+    // Default to 1 year if no period or dates specified
+    if (!calculatedStartDate && calculatedLimit === undefined) {
+      calculatedLimit = 252;
+    }
+
+    // Clear the 'max' flag
+    if (calculatedStartDate === 'max') {
+      calculatedStartDate = null;
+    }
 
     const prices = IndexService.getHistoricalPrices(decodedSymbol, {
-      startDate,
+      startDate: calculatedStartDate,
       endDate,
-      limit: limit ? parseInt(limit) : 252
+      limit: calculatedLimit
     });
 
     res.json({

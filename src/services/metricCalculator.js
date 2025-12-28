@@ -81,6 +81,7 @@ class MetricCalculator {
     earnings_cagr_3y: [-50, 200],
     earnings_cagr_5y: [-50, 200],
     pegRatio: [0, 20],
+    pegyRatio: [0, 20],
     earningsYield: [-50, 100],
     tobins_q: [0, 20],
     graham_number: [0, 10000],
@@ -195,6 +196,7 @@ class MetricCalculator {
       equityMultiplier: null,
       dupontRoe: null,
       pegRatio: null,
+      pegyRatio: null,
       evEbitda: null,
       msi: null,
       tobins_q: null,
@@ -356,22 +358,29 @@ class MetricCalculator {
       try {
         // Parse and annualize quarterly net income for P/E ratio
         let netIncome = this.getField(income_statement, ['netIncome', 'NetIncomeLoss', 'ProfitLoss']);
-        if (netIncome) {
+        if (netIncome && netIncome > 0) { // Only calculate P/E for profitable companies
           if (periodType === 'quarterly') {
             netIncome = netIncome * 4;
           }
-          metrics.peRatio = marketCap / netIncome;
+          const peRatio = marketCap / netIncome;
+          // Clamp P/E to reasonable bounds (0-500)
+          if (peRatio > 0 && peRatio <= 500) {
+            metrics.peRatio = Math.round(peRatio * 100) / 100;
+          }
         }
       } catch (e) {}
 
       try {
         // Parse and annualize quarterly revenue for P/S ratio
         let totalRevenue = this.getField(income_statement, ['revenue', 'totalRevenue', 'Revenues']);
-        if (totalRevenue) {
+        if (totalRevenue && totalRevenue > 0) {
           if (periodType === 'quarterly') {
             totalRevenue = totalRevenue * 4;
           }
-          metrics.psRatio = marketCap / totalRevenue;
+          const psRatio = marketCap / totalRevenue;
+          if (psRatio > 0 && psRatio <= 100) {
+            metrics.psRatio = Math.round(psRatio * 100) / 100;
+          }
         }
       } catch (e) {}
     }
@@ -621,6 +630,16 @@ class MetricCalculator {
           // PEG = P/E ratio / Earnings Growth Rate (as a percentage)
           // A PEG of 1 means fair value, <1 is undervalued, >1 is overvalued
           metrics.pegRatio = metrics.peRatio / metrics.earnings_growth_yoy;
+
+          // PEGY Ratio (PEG adjusted for dividend yield)
+          // PEGY = P/E / (Earnings Growth + Dividend Yield)
+          // Useful for dividend-paying stocks - lower is better
+          if (metrics.dividend_yield !== null && metrics.dividend_yield > 0) {
+            const growthPlusYield = metrics.earnings_growth_yoy + metrics.dividend_yield;
+            if (growthPlusYield > 0) {
+              metrics.pegyRatio = metrics.peRatio / growthPlusYield;
+            }
+          }
         } catch (e) {}
       }
 
@@ -1948,6 +1967,289 @@ class MetricCalculator {
     }
     
     return { label: 'N/A', color: 'gray' };
+  }
+
+  /**
+   * Calculate and save all metrics for a company
+   * This is the main entry point for scheduled/batch metric calculation
+   * @param {number} companyId - The company ID
+   * @param {object} db - Database instance (optional, will use default if not provided)
+   * @returns {object} Results summary
+   */
+  async calculateForCompany(companyId, db = null) {
+    if (!db) {
+      db = require('../database').getDatabase();
+    }
+
+    // Get price metrics (market cap, current price)
+    const priceMetrics = db.prepare(`
+      SELECT market_cap, last_price, shares_outstanding
+      FROM price_metrics
+      WHERE company_id = ?
+    `).get(companyId);
+
+    const marketCap = priceMetrics?.market_cap || null;
+    const currentPrice = priceMetrics?.last_price || null;
+
+    // Get all financial periods for this company
+    const periods = db.prepare(`
+      SELECT DISTINCT fiscal_date_ending, period_type, fiscal_year
+      FROM financial_data
+      WHERE company_id = ?
+      ORDER BY fiscal_date_ending DESC
+    `).all(companyId);
+
+    if (periods.length === 0) {
+      return { success: false, message: 'No financial data found' };
+    }
+
+    let updated = 0;
+    let errors = 0;
+
+    // Prepare upsert statement with all metric columns including the missing ones
+    const upsertStmt = db.prepare(`
+      INSERT INTO calculated_metrics (
+        company_id, fiscal_period, period_type, fiscal_year,
+        roic, roe, roa, roce,
+        operating_margin, net_margin, gross_margin,
+        fcf, fcf_yield, fcf_margin, fcf_per_share,
+        pe_ratio, pb_ratio, ps_ratio, peg_ratio, pegy_ratio,
+        tobins_q, ev_ebitda, earnings_yield,
+        debt_to_equity, debt_to_assets, current_ratio, quick_ratio, interest_coverage,
+        revenue_growth_yoy, earnings_growth_yoy, fcf_growth_yoy,
+        revenue_growth_qoq, earnings_growth_qoq,
+        revenue_cagr_3y, revenue_cagr_5y, earnings_cagr_3y, earnings_cagr_5y,
+        asset_turnover, owner_earnings, msi,
+        equity_multiplier, dupont_roe,
+        graham_number, dividend_yield, buyback_yield, shareholder_yield,
+        data_quality_score, updated_at
+      ) VALUES (
+        ?, ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?,
+        ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?,
+        ?, ?,
+        ?, ?, ?, ?,
+        ?, datetime('now')
+      )
+      ON CONFLICT(company_id, fiscal_period, period_type) DO UPDATE SET
+        roic = excluded.roic,
+        roe = excluded.roe,
+        roa = excluded.roa,
+        roce = excluded.roce,
+        operating_margin = excluded.operating_margin,
+        net_margin = excluded.net_margin,
+        gross_margin = excluded.gross_margin,
+        fcf = excluded.fcf,
+        fcf_yield = excluded.fcf_yield,
+        fcf_margin = excluded.fcf_margin,
+        fcf_per_share = excluded.fcf_per_share,
+        pe_ratio = excluded.pe_ratio,
+        pb_ratio = excluded.pb_ratio,
+        ps_ratio = excluded.ps_ratio,
+        peg_ratio = excluded.peg_ratio,
+        pegy_ratio = excluded.pegy_ratio,
+        tobins_q = excluded.tobins_q,
+        ev_ebitda = excluded.ev_ebitda,
+        earnings_yield = excluded.earnings_yield,
+        debt_to_equity = excluded.debt_to_equity,
+        debt_to_assets = excluded.debt_to_assets,
+        current_ratio = excluded.current_ratio,
+        quick_ratio = excluded.quick_ratio,
+        interest_coverage = excluded.interest_coverage,
+        revenue_growth_yoy = excluded.revenue_growth_yoy,
+        earnings_growth_yoy = excluded.earnings_growth_yoy,
+        fcf_growth_yoy = excluded.fcf_growth_yoy,
+        revenue_growth_qoq = excluded.revenue_growth_qoq,
+        earnings_growth_qoq = excluded.earnings_growth_qoq,
+        revenue_cagr_3y = excluded.revenue_cagr_3y,
+        revenue_cagr_5y = excluded.revenue_cagr_5y,
+        earnings_cagr_3y = excluded.earnings_cagr_3y,
+        earnings_cagr_5y = excluded.earnings_cagr_5y,
+        asset_turnover = excluded.asset_turnover,
+        owner_earnings = excluded.owner_earnings,
+        msi = excluded.msi,
+        equity_multiplier = excluded.equity_multiplier,
+        dupont_roe = excluded.dupont_roe,
+        graham_number = excluded.graham_number,
+        dividend_yield = excluded.dividend_yield,
+        buyback_yield = excluded.buyback_yield,
+        shareholder_yield = excluded.shareholder_yield,
+        data_quality_score = excluded.data_quality_score,
+        updated_at = datetime('now')
+    `);
+
+    for (const period of periods) {
+      try {
+        // Get financial data for this period - include both JSON and direct columns
+        const financials = db.prepare(`
+          SELECT statement_type, data,
+            total_assets, total_liabilities, shareholder_equity,
+            current_assets, current_liabilities, cash_and_equivalents,
+            long_term_debt, short_term_debt,
+            total_revenue, net_income, operating_income,
+            cost_of_revenue, gross_profit,
+            operating_cashflow, capital_expenditures, shares_outstanding
+          FROM financial_data
+          WHERE company_id = ?
+            AND fiscal_date_ending = ?
+        `).all(companyId, period.fiscal_date_ending);
+
+        if (financials.length === 0) continue;
+
+        // Parse and organize the data - merge JSON with direct columns
+        const financialData = {};
+        for (const f of financials) {
+          try {
+            // Start with JSON data if available
+            let parsed = {};
+            if (f.data) {
+              try { parsed = JSON.parse(f.data); } catch (e) {}
+            }
+
+            // Merge direct columns (they take precedence as they're more reliable)
+            const directColumns = {
+              totalAssets: f.total_assets,
+              totalLiabilities: f.total_liabilities,
+              shareholderEquity: f.shareholder_equity,
+              currentAssets: f.current_assets,
+              currentLiabilities: f.current_liabilities,
+              cashAndEquivalents: f.cash_and_equivalents,
+              longTermDebt: f.long_term_debt,
+              shortTermDebt: f.short_term_debt,
+              totalRevenue: f.total_revenue,
+              revenue: f.total_revenue,
+              netIncome: f.net_income,
+              operatingIncome: f.operating_income,
+              costOfRevenue: f.cost_of_revenue,
+              grossProfit: f.gross_profit,
+              operatingCashFlow: f.operating_cashflow,
+              operatingCashflow: f.operating_cashflow,
+              capitalExpenditures: f.capital_expenditures,
+              sharesOutstanding: f.shares_outstanding
+            };
+
+            // Merge: direct columns override JSON values if they exist
+            for (const [key, value] of Object.entries(directColumns)) {
+              if (value !== null && value !== undefined) {
+                parsed[key] = value;
+              }
+            }
+
+            financialData[f.statement_type] = parsed;
+          } catch (e) {
+            // Skip if processing fails
+          }
+        }
+
+        // Get previous period data for growth calculations
+        const prevPeriod = db.prepare(`
+          SELECT fd.statement_type, fd.data
+          FROM financial_data fd
+          WHERE fd.company_id = ?
+            AND fd.fiscal_date_ending < ?
+            AND fd.period_type = ?
+          ORDER BY fd.fiscal_date_ending DESC
+          LIMIT 3
+        `).all(companyId, period.fiscal_date_ending, period.period_type);
+
+        const prevFinancialData = {};
+        for (const f of prevPeriod) {
+          try {
+            if (!prevFinancialData[f.statement_type]) {
+              prevFinancialData[f.statement_type] = JSON.parse(f.data);
+            }
+          } catch (e) {}
+        }
+
+        // Calculate metrics
+        const context = {
+          companyId,
+          fiscalDate: period.fiscal_date_ending,
+          periodType: period.period_type
+        };
+
+        const metrics = this.calculateAllMetrics(
+          financialData,
+          marketCap,
+          currentPrice,
+          context,
+          Object.keys(prevFinancialData).length > 0 ? prevFinancialData : null
+        );
+
+        if (metrics) {
+          // Insert/update the calculated metrics
+          upsertStmt.run(
+            companyId,
+            period.fiscal_date_ending,
+            period.period_type,
+            period.fiscal_year,
+            metrics.roic,
+            metrics.roe,
+            metrics.roa,
+            metrics.roce,
+            metrics.operatingMargin,
+            metrics.netMargin,
+            metrics.grossMargin,
+            metrics.fcf,
+            metrics.fcfYield,
+            metrics.fcf_margin,
+            metrics.fcf_per_share,
+            metrics.peRatio,
+            metrics.pbRatio,
+            metrics.psRatio,
+            metrics.pegRatio,
+            metrics.pegyRatio,
+            metrics.tobins_q,
+            metrics.evEbitda,
+            metrics.earningsYield,
+            metrics.debtToEquity,
+            metrics.debtToAssets,
+            metrics.currentRatio,
+            metrics.quickRatio,
+            metrics.interestCoverage,
+            metrics.revenue_growth_yoy,
+            metrics.earnings_growth_yoy,
+            metrics.fcf_growth_yoy,
+            metrics.revenue_growth_qoq,
+            metrics.earnings_growth_qoq,
+            metrics.revenue_cagr_3y,
+            metrics.revenue_cagr_5y,
+            metrics.earnings_cagr_3y,
+            metrics.earnings_cagr_5y,
+            metrics.assetTurnover,
+            metrics.ownerEarnings,
+            metrics.msi,
+            metrics.equityMultiplier,
+            metrics.dupontRoe,
+            metrics.graham_number,
+            metrics.dividend_yield,
+            metrics.buyback_yield,
+            metrics.shareholder_yield,
+            metrics.data_quality_score || 100
+          );
+          updated++;
+        }
+      } catch (e) {
+        errors++;
+        console.error(`Error calculating metrics for company ${companyId}, period ${period.fiscal_date_ending}:`, e.message);
+      }
+    }
+
+    return {
+      success: true,
+      companyId,
+      periodsProcessed: periods.length,
+      updated,
+      errors
+    };
   }
 }
 

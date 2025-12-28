@@ -608,4 +608,126 @@ router.get('/screen/overbought', (req, res) => {
   }
 });
 
+/**
+ * GET /api/prices/screen/outperformers
+ * Get stocks outperforming the market (positive alpha)
+ */
+router.get('/screen/outperformers', (req, res) => {
+  try {
+    const { period = 'ytd', limit = 50 } = req.query;
+
+    const database = db.getDatabase();
+
+    const alphaColumn = {
+      '1d': 'alpha_1d',
+      '1w': 'alpha_1w',
+      '1m': 'alpha_1m',
+      '3m': 'alpha_3m',
+      '6m': 'alpha_6m',
+      '1y': 'alpha_1y',
+      'ytd': 'alpha_ytd'
+    }[period] || 'alpha_ytd';
+
+    const changeColumn = alphaColumn.replace('alpha_', 'change_');
+
+    const outperformers = database.prepare(`
+      SELECT
+        c.symbol,
+        c.name,
+        c.sector,
+        pm.last_price,
+        pm.${changeColumn} as stock_change,
+        pm.${alphaColumn} as alpha,
+        pm.benchmark_symbol
+      FROM price_metrics pm
+      JOIN companies c ON pm.company_id = c.id
+      WHERE c.is_active = 1
+        AND pm.${alphaColumn} IS NOT NULL
+        AND pm.${alphaColumn} > 0
+      ORDER BY pm.${alphaColumn} DESC
+      LIMIT ?
+    `).all(parseInt(limit));
+
+    // Get benchmark performance for context
+    const benchmark = database.prepare(`
+      SELECT symbol, ${changeColumn.replace('change_', 'change_')} as benchmark_change
+      FROM index_prices WHERE is_primary = 1
+    `).get();
+
+    res.json({
+      success: true,
+      data: {
+        period,
+        benchmark: benchmark || null,
+        count: outperformers.length,
+        stocks: outperformers
+      }
+    });
+  } catch (error) {
+    console.error('Error getting outperformers:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/prices/screen/underperformers
+ * Get stocks underperforming the market (negative alpha)
+ */
+router.get('/screen/underperformers', (req, res) => {
+  try {
+    const { period = 'ytd', limit = 50 } = req.query;
+
+    const database = db.getDatabase();
+
+    const alphaColumn = {
+      '1d': 'alpha_1d',
+      '1w': 'alpha_1w',
+      '1m': 'alpha_1m',
+      '3m': 'alpha_3m',
+      '6m': 'alpha_6m',
+      '1y': 'alpha_1y',
+      'ytd': 'alpha_ytd'
+    }[period] || 'alpha_ytd';
+
+    const changeColumn = alphaColumn.replace('alpha_', 'change_');
+
+    const underperformers = database.prepare(`
+      SELECT
+        c.symbol,
+        c.name,
+        c.sector,
+        pm.last_price,
+        pm.${changeColumn} as stock_change,
+        pm.${alphaColumn} as alpha,
+        pm.benchmark_symbol
+      FROM price_metrics pm
+      JOIN companies c ON pm.company_id = c.id
+      WHERE c.is_active = 1
+        AND pm.${alphaColumn} IS NOT NULL
+        AND pm.${alphaColumn} < 0
+      ORDER BY pm.${alphaColumn} ASC
+      LIMIT ?
+    `).all(parseInt(limit));
+
+    // Get benchmark performance for context
+    const benchmark = database.prepare(`
+      SELECT symbol, ${changeColumn.replace('change_', 'change_')} as benchmark_change
+      FROM index_prices WHERE is_primary = 1
+    `).get();
+
+    res.json({
+      success: true,
+      data: {
+        period,
+        benchmark: benchmark || null,
+        count: underperformers.length,
+        stocks: underperformers
+      }
+    });
+  } catch (error) {
+    console.error('Error getting underperformers:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 module.exports = router;
