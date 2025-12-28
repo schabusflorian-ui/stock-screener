@@ -1,0 +1,249 @@
+/* frontend/src/pages/analyst/AnalystPage.css */
+
+.analyst-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+  min-height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header */
+.analyst-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.header-content {
+  flex: 1;
+  min-width: 300px;
+}
+
+.page-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin: 0 0 0.5rem 0;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.title-icon {
+  font-size: 1.5rem;
+}
+
+.page-subtitle {
+  color: var(--text-secondary);
+  margin: 0;
+  font-size: 1rem;
+}
+
+/* Company Input */
+.company-input-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.company-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.company-input-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.company-input {
+  width: 140px;
+  padding: 0.625rem 0.875rem;
+  background: var(--card-background);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  color: var(--text-primary);
+}
+
+.company-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px var(--primary-color-light);
+}
+
+.company-input::placeholder {
+  text-transform: none;
+  font-weight: normal;
+  color: var(--text-muted);
+}
+
+.company-loading {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.company-name {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Error */
+.analyst-error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: var(--error-background, #fef2f2);
+  border: 1px solid var(--error-border, #fecaca);
+  border-radius: var(--radius-md);
+  color: var(--error-text, #b91c1c);
+  font-size: 0.875rem;
+  margin-bottom: 1.5rem;
+}
+
+.error-icon {
+  font-size: 1rem;
+}
+
+.error-dismiss {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 1.25rem;
+  cursor: pointer;
+  opacity: 0.7;
+  padding: 0 0.25rem;
+}
+
+.error-dismiss:hover {
+  opacity: 1;
+}
+
+/* Content */
+.analyst-page-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Layout with sidebar */
+.analyst-selection-layout,
+.analyst-chat-layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 1.5rem;
+  flex: 1;
+}
+
+/* Selection View */
+.analyst-selection {
+  flex: 1;
+}
+
+/* Sidebar */
+.analyst-sidebar {
+  position: sticky;
+  top: 1rem;
+  height: fit-content;
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+}
+
+.section-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem 0;
+  color: var(--text-primary);
+}
+
+.section-description {
+  color: var(--text-secondary);
+  margin: 0 0 1.5rem 0;
+}
+
+/* Chat View */
+.analyst-chat-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 600px;
+  max-height: calc(100vh - 200px);
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .analyst-selection-layout,
+  .analyst-chat-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .analyst-sidebar {
+    order: -1;
+    position: static;
+    max-height: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .analyst-page {
+    padding: 1rem;
+  }
+
+  .analyst-page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .page-title {
+    font-size: 1.5rem;
+  }
+
+  .company-input-wrapper {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .company-label {
+    min-width: 100%;
+    margin-bottom: 0.25rem;
+  }
+
+  .analyst-chat-container {
+    min-height: 500px;
+    max-height: calc(100vh - 180px);
+  }
+}
+
+@media (max-width: 480px) {
+  .analyst-page {
+    padding: 0.75rem;
+  }
+
+  .page-title {
+    font-size: 1.25rem;
+  }
+
+  .page-subtitle {
+    font-size: 0.875rem;
+  }
+
+  .section-title {
+    font-size: 1.125rem;
+  }
+}
