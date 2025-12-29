@@ -740,7 +740,7 @@ function ComparePage() {
                           <XAxis type="number" stroke="#94a3b8" unit="%" />
                           <YAxis dataKey="symbol" type="category" stroke="#94a3b8" width={60} />
                           <Tooltip
-                            contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155' }}
+                            contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem' }}
                             formatter={(v) => `${v.toFixed(1)}%`}
                           />
                           <Bar dataKey="roic" name="ROIC">
@@ -760,7 +760,7 @@ function ComparePage() {
                           <XAxis dataKey="symbol" stroke="#94a3b8" />
                           <YAxis stroke="#94a3b8" unit="%" />
                           <Tooltip
-                            contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155' }}
+                            contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem' }}
                             formatter={(v) => `${v.toFixed(1)}%`}
                           />
                           <Legend />
@@ -810,7 +810,7 @@ function ComparePage() {
                           <XAxis dataKey="date" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 11 }} interval="preserveStartEnd" />
                           <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8' }} tickFormatter={(v) => `${v.toFixed(0)}%`} />
                           <Tooltip
-                            contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem' }}
+                            contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem' }}
                             formatter={(v) => v !== null ? `${v.toFixed(1)}%` : '-'}
                             labelFormatter={(label) => `Date: ${label}`}
                           />
@@ -1072,7 +1072,7 @@ function ComparePage() {
                           <XAxis dataKey="date" stroke="#94a3b8" tick={{ fill: '#94a3b8' }} />
                           <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8' }} />
                           <Tooltip
-                            contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem' }}
+                            contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem' }}
                             formatter={(v) => v !== null ? `${v.toFixed(1)}%` : '-'}
                           />
                           <Legend />
@@ -1107,7 +1107,7 @@ function ComparePage() {
                             <XAxis dataKey="date" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 11 }} interval="preserveStartEnd" />
                             <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8' }} tickFormatter={(v) => `${v.toFixed(0)}%`} />
                             <Tooltip
-                              contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem' }}
+                              contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem' }}
                               formatter={(v) => v !== null ? `${v.toFixed(1)}%` : '-'}
                               labelFormatter={(label) => `Date: ${label}`}
                             />
@@ -1159,7 +1159,7 @@ function ComparePage() {
                           <XAxis dataKey="symbol" stroke="#94a3b8" />
                           <YAxis stroke="#94a3b8" unit="%" />
                           <Tooltip
-                            contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155' }}
+                            contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem' }}
                             formatter={(v) => `${v.toFixed(1)}%`}
                           />
                           <Legend />
@@ -1208,7 +1208,7 @@ function ComparePage() {
                           <XAxis dataKey="date" stroke="#94a3b8" />
                           <YAxis stroke="#94a3b8" unit="B" />
                           <Tooltip
-                            contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155' }}
+                            contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem' }}
                             formatter={(v) => v !== null ? `$${v.toFixed(1)}B` : '-'}
                           />
                           <Legend />
@@ -1272,7 +1272,7 @@ function ComparePage() {
                           <XAxis dataKey="date" stroke="#94a3b8" />
                           <YAxis stroke="#94a3b8" unit="B" />
                           <Tooltip
-                            contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155' }}
+                            contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem' }}
                             formatter={(v) => v !== null ? `$${v.toFixed(1)}B` : '-'}
                           />
                           <Legend />

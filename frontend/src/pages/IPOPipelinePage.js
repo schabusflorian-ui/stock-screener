@@ -17,8 +17,6 @@ const IPO_STAGES = {
 
 // IPO Card Component
 function IPOCard({ ipo, formatCurrency, formatDate }) {
-  const stage = IPO_STAGES[ipo.status] || { name: ipo.status, color: '#6b7280' };
-
   return (
     <Link to={`/ipo/${ipo.id}`} className="ipo-card">
       <div className="ipo-card-header">
