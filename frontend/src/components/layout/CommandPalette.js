@@ -16,7 +16,6 @@ import {
   Clock,
   Zap,
   Bot,
-  Send,
   Sparkles,
   Loader,
   Building2,
@@ -61,6 +60,7 @@ function CommandPalette({ open, onOpenChange }) {
     if (open && currentCompany && !companyContext) {
       loadCompanyContext(currentCompany);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, currentCompany]);
 
   const loadCompanyContext = async (symbol) => {

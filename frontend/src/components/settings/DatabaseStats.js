@@ -4,6 +4,7 @@ import { settingsAPI } from '../../services/api';
 import { Database, RefreshCw, HardDrive, Table, FileText } from 'lucide-react';
 import './SettingsComponents.css';
 
+// eslint-disable-next-line no-unused-vars
 function formatBytes(bytes) {
   if (!bytes || bytes === 0) return '0 B';
   const k = 1024;

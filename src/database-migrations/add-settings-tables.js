@@ -170,6 +170,21 @@ db.exec(`
 `);
 console.log('Created user_preferences table');
 
+// Add new preference columns if they don't exist
+const newPrefColumns = [
+  ['show_percentages', 'INTEGER DEFAULT 1'],
+  ['compact_numbers', 'INTEGER DEFAULT 1'],
+  ['auto_refresh_interval', 'INTEGER DEFAULT 0'],
+  ['notifications_enabled', 'INTEGER DEFAULT 0'],
+];
+
+for (const [colName, colDef] of newPrefColumns) {
+  if (!columnExists('user_preferences', colName)) {
+    db.exec(`ALTER TABLE user_preferences ADD COLUMN ${colName} ${colDef}`);
+    console.log(`Added column ${colName} to user_preferences`);
+  }
+}
+
 // ============================================
 // TABLE 6: Diagnostic Logs
 // ============================================

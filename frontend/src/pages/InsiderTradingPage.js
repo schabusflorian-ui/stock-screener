@@ -9,6 +9,7 @@ import { insidersAPI, pricesAPI } from '../services/api';
 import { WatchlistButton } from '../components';
 import { PageHeader } from '../components/ui';
 import { Clock } from 'lucide-react';
+import { useFormatters } from '../hooks/useFormatters';
 import './InsiderTradingPage.css';
 
 // Sortable table header component
@@ -20,31 +21,6 @@ const SortableHeader = ({ label, sortKey, currentSort, onSort }) => {
       {isActive && <span className="sort-arrow">{currentSort.dir === 'asc' ? '↑' : '↓'}</span>}
     </th>
   );
-};
-
-// Format currency values
-const formatCurrency = (value) => {
-  if (!value || isNaN(value)) return '-';
-  if (Math.abs(value) >= 1e9) return `$${(value / 1e9).toFixed(1)}B`;
-  if (Math.abs(value) >= 1e6) return `$${(value / 1e6).toFixed(1)}M`;
-  if (Math.abs(value) >= 1e3) return `$${(value / 1e3).toFixed(0)}K`;
-  return `$${value.toFixed(0)}`;
-};
-
-// Format number with commas
-const formatNumber = (value) => {
-  if (!value || isNaN(value)) return '-';
-  return value.toLocaleString();
-};
-
-// Format date
-const formatDate = (dateStr) => {
-  if (!dateStr) return '-';
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric'
-  });
 };
 
 // Signal badge component
@@ -79,6 +55,24 @@ const TransactionBadge = ({ type }) => {
 };
 
 function InsiderTradingPage() {
+  const fmt = useFormatters();
+
+  // Format functions using preferences
+  const formatCurrency = (value) => {
+    if (!value || isNaN(value)) return '-';
+    return fmt.currency(value, { compact: true });
+  };
+
+  const formatNumber = (value) => {
+    if (!value || isNaN(value)) return '-';
+    return fmt.number(value, { compact: false });
+  };
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '-';
+    return fmt.date(dateStr);
+  };
+
   // View mode
   const [viewMode, setViewMode] = useState('overview'); // 'overview', 'signals', 'recent', 'cluster'
   const [period, setPeriod] = useState('3m');
@@ -147,7 +141,7 @@ function InsiderTradingPage() {
 
   // Load initial data
   useEffect(() => {
-    loadData();
+    loadData(); // eslint-disable-line react-hooks/exhaustive-deps
   }, [period]);
 
   const loadData = async () => {

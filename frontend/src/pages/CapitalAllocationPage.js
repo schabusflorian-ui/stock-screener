@@ -2,8 +2,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  Legend
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 import { capitalAPI, earningsAPI, pricesAPI } from '../services/api';
 import { WatchlistButton } from '../components';
@@ -181,6 +180,7 @@ function CapitalAllocationPage() {
   // Load initial data
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadData = async () => {
@@ -238,6 +238,7 @@ function CapitalAllocationPage() {
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Load dividend growth leaders
@@ -254,6 +255,7 @@ function CapitalAllocationPage() {
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [growthPeriod]);
 
   // Load dividend aristocrats
@@ -270,6 +272,7 @@ function CapitalAllocationPage() {
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [minYears]);
 
   // Load recent events

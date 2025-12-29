@@ -75,6 +75,8 @@ function PositionSizingPanel({ portfolioValue }) {
           params.targetPct = config.targetPct;
           if (config.entryPrice) params.entryPrice = parseFloat(config.entryPrice);
           break;
+        default:
+          break;
       }
 
       const res = await simulateAPI.calculatePositionSize({

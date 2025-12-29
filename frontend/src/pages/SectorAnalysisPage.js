@@ -12,20 +12,8 @@ import {
   MetricsBarChart,
   Sparkline
 } from '../components';
+import { useFormatters } from '../hooks/useFormatters';
 import './SectorAnalysisPage.css';
-
-// Format helpers
-const formatValue = (value, format) => {
-  if (value === null || value === undefined || isNaN(value)) return '-';
-  switch (format) {
-    case 'percent': return `${value.toFixed(1)}%`;
-    case 'ratio': return value.toFixed(2);
-    case 'currency':
-      if (Math.abs(value) >= 1e3) return `$${(value).toFixed(0)}B`;
-      return `$${value.toFixed(1)}B`;
-    default: return value.toFixed(2);
-  }
-};
 
 const getMomentumClass = (momentum) => {
   switch (momentum) {
@@ -138,6 +126,20 @@ const VIEW_MODES = [
 ];
 
 function SectorAnalysisPage() {
+  const fmt = useFormatters();
+
+  // Format value for display using preferences
+  const formatValue = (value, format) => {
+    if (value === null || value === undefined || isNaN(value)) return '-';
+    switch (format) {
+      case 'percent': return fmt.percent(value, { decimals: 1 });
+      case 'ratio': return fmt.ratio(value, { decimals: 2, suffix: '' });
+      case 'currency': return fmt.currency(value, { compact: true });
+      case 'integer': return fmt.number(value, { compact: false, decimals: 0 });
+      default: return fmt.number(value, { decimals: 2 });
+    }
+  };
+
   const [activeTab, setActiveTab] = useState('indices');
   const [periodType, setPeriodType] = useState('annual');
   const [loading, setLoading] = useState(true);
@@ -1614,6 +1616,18 @@ function SectorAnalysisPage() {
 
 // Sector Detail Sub-component
 function SectorDetailView({ sector, detail, loading, onBack }) {
+  const fmt = useFormatters();
+
+  const formatValue = (value, format) => {
+    if (value === null || value === undefined || isNaN(value)) return '-';
+    switch (format) {
+      case 'percent': return fmt.percent(value, { decimals: 1 });
+      case 'ratio': return fmt.ratio(value, { decimals: 2, suffix: '' });
+      case 'currency': return fmt.currency(value, { compact: true });
+      case 'integer': return fmt.number(value, { compact: false, decimals: 0 });
+      default: return fmt.number(value, { decimals: 2 });
+    }
+  };
   const [sortConfig, setSortConfig] = useState({ key: 'market_cap_b', direction: 'desc' });
   const [filterText, setFilterText] = useState('');
 
@@ -1802,6 +1816,18 @@ function SectorDetailView({ sector, detail, loading, onBack }) {
 
 // Industry Detail Sub-component
 function IndustryDetailView({ industry, detail, loading, onBack }) {
+  const fmt = useFormatters();
+
+  const formatValue = (value, format) => {
+    if (value === null || value === undefined || isNaN(value)) return '-';
+    switch (format) {
+      case 'percent': return fmt.percent(value, { decimals: 1 });
+      case 'ratio': return fmt.ratio(value, { decimals: 2, suffix: '' });
+      case 'currency': return fmt.currency(value, { compact: true });
+      case 'integer': return fmt.number(value, { compact: false, decimals: 0 });
+      default: return fmt.number(value, { decimals: 2 });
+    }
+  };
   const [sortConfig, setSortConfig] = useState({ key: 'market_cap_b', direction: 'desc' });
   const [filterText, setFilterText] = useState('');
 

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, LineChart, Line, AreaChart, Area
+  PieChart, Pie, Cell, Line, AreaChart, Area
 } from 'recharts';
 import {
   TrendingUp, TrendingDown, RefreshCw, MessageCircle,
@@ -14,6 +14,7 @@ import {
 import { sentimentAPI, pricesAPI } from '../services/api';
 import { PageHeader } from '../components/ui';
 import { WatchlistButton } from '../components';
+import { useFormatters } from '../hooks/useFormatters';
 import MarketSentimentCard from '../components/MarketSentimentCard';
 import './TrendingTickersPage.css';
 
@@ -141,6 +142,14 @@ const MoverCard = ({ ticker, direction }) => {
 };
 
 function TrendingTickersPage() {
+  const fmt = useFormatters();
+
+  // Format date for display using preferences
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '-';
+    return fmt.date(dateStr);
+  };
+
   // Core state
   const [activeTab, setActiveTab] = useState('overview');
   const [period, setPeriod] = useState('24h');
@@ -428,28 +437,10 @@ function TrendingTickersPage() {
     sentiment: (t.avgSentiment || 0) * 100
   }));
 
-  // Format date for display
-  const formatDate = (dateStr) => {
-    if (!dateStr) return '-';
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
+  // Use formatter's relativeTime for relative dates
   const formatRelativeDate = (dateStr) => {
     if (!dateStr) return '-';
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffHours = (now - date) / (1000 * 60 * 60);
-
-    if (diffHours < 1) return `${Math.floor(diffHours * 60)}m ago`;
-    if (diffHours < 24) return `${Math.floor(diffHours)}h ago`;
-    if (diffHours < 48) return 'Yesterday';
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return fmt.relativeTime(dateStr);
   };
 
   // Loading state

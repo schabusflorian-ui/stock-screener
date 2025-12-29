@@ -9,6 +9,7 @@ import {
   AreaChart, Area, ComposedChart, Cell, ReferenceLine
 } from 'recharts';
 import { PeriodToggle, WatchlistButton, AlphaCompareChart } from '../components';
+import { useFormatters } from '../hooks/useFormatters';
 import './ComparePage.css';
 
 // Import from unified metrics configuration
@@ -30,30 +31,25 @@ const DEFAULT_TABLE_METRICS = DEFAULT_COMPARE_METRICS;
 
 const COMPANY_COLORS = ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#3b82f6'];
 
-const formatValue = (value, format) => {
-  if (value === null || value === undefined || isNaN(value)) return '-';
-  switch (format) {
-    case 'percent': return `${value.toFixed(1)}%`;
-    case 'ratio': return value.toFixed(2);
-    case 'currency':
-      if (Math.abs(value) >= 1e12) return `$${(value / 1e12).toFixed(1)}T`;
-      if (Math.abs(value) >= 1e9) return `$${(value / 1e9).toFixed(1)}B`;
-      if (Math.abs(value) >= 1e6) return `$${(value / 1e6).toFixed(1)}M`;
-      return `$${value.toFixed(0)}`;
-    case 'currency_price': return `$${value.toFixed(2)}`;
-    default: return value.toFixed(2);
-  }
-};
-
-const formatCurrencyShort = (value) => {
-  if (value === null || value === undefined) return '-';
-  if (Math.abs(value) >= 1e12) return `${(value / 1e12).toFixed(1)}T`;
-  if (Math.abs(value) >= 1e9) return `${(value / 1e9).toFixed(1)}B`;
-  if (Math.abs(value) >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
-  return value.toFixed(0);
-};
-
 function ComparePage() {
+  const fmt = useFormatters();
+
+  // Format value for display using preferences
+  const formatValue = (value, format) => {
+    if (value === null || value === undefined || isNaN(value)) return '-';
+    switch (format) {
+      case 'percent': return fmt.percent(value, { decimals: 1 });
+      case 'ratio': return fmt.ratio(value, { decimals: 2, suffix: '' });
+      case 'currency': return fmt.currency(value, { compact: true });
+      case 'currency_price': return fmt.price(value, { decimals: 2 });
+      default: return fmt.number(value, { decimals: 2 });
+    }
+  };
+
+  const formatCurrencyShort = (value) => {
+    if (value === null || value === undefined) return '-';
+    return fmt.number(value, { compact: true });
+  };
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);

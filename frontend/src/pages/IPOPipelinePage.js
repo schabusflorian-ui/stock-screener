@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { ipoAPI } from '../services/api';
 import { PageHeader, Button } from '../components/ui';
+import { useFormatters } from '../hooks/useFormatters';
 import './IPOPipelinePage.css';
 
 // IPO stage definitions with colors
@@ -14,24 +15,8 @@ const IPO_STAGES = {
   PRICED: { name: 'Priced', shortName: 'Priced', color: '#10b981', order: 5 }
 };
 
-// Format currency values
-const formatCurrency = (value) => {
-  if (!value) return '-';
-  if (value >= 1e9) return `$${(value / 1e9).toFixed(1)}B`;
-  if (value >= 1e6) return `$${(value / 1e6).toFixed(0)}M`;
-  if (value >= 1e3) return `$${(value / 1e3).toFixed(0)}K`;
-  return `$${value.toFixed(0)}`;
-};
-
-// Format date
-const formatDate = (dateStr) => {
-  if (!dateStr) return '-';
-  const date = new Date(dateStr);
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-};
-
 // IPO Card Component
-function IPOCard({ ipo }) {
+function IPOCard({ ipo, formatCurrency, formatDate }) {
   const stage = IPO_STAGES[ipo.status] || { name: ipo.status, color: '#6b7280' };
 
   return (
@@ -81,7 +66,7 @@ function IPOCard({ ipo }) {
 }
 
 // Stats Bar Component
-function StatsBar({ statistics }) {
+function StatsBar({ statistics, formatCurrency }) {
   if (!statistics) return null;
 
   return (
@@ -111,6 +96,18 @@ function StatsBar({ statistics }) {
 }
 
 function IPOPipelinePage() {
+  const fmt = useFormatters();
+
+  // Format functions using preferences
+  const formatCurrency = (value) => {
+    if (!value) return '-';
+    return fmt.currency(value, { compact: true });
+  };
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '-';
+    return fmt.date(dateStr);
+  };
   const [viewMode, setViewMode] = useState('kanban'); // 'kanban' or 'list'
   const [pipeline, setPipeline] = useState({});
   const [listData, setListData] = useState([]);
@@ -290,7 +287,7 @@ function IPOPipelinePage() {
               <p className="no-results">No IPOs found matching "{searchQuery}"</p>
             ) : (
               searchResults.map(ipo => (
-                <IPOCard key={ipo.id} ipo={ipo} />
+                <IPOCard key={ipo.id} ipo={ipo} formatCurrency={formatCurrency} formatDate={formatDate} />
               ))
             )}
           </div>
@@ -298,7 +295,7 @@ function IPOPipelinePage() {
       )}
 
       {/* Statistics Bar */}
-      {!searchResults && <StatsBar statistics={statistics} />}
+      {!searchResults && <StatsBar statistics={statistics} formatCurrency={formatCurrency} />}
 
       {/* Main Content - Kanban or List View */}
       {!searchResults && (
@@ -324,7 +321,7 @@ function IPOPipelinePage() {
                         <div className="empty-column">No IPOs in this stage</div>
                       ) : (
                         ipos.map(ipo => (
-                          <IPOCard key={ipo.id} ipo={ipo} />
+                          <IPOCard key={ipo.id} ipo={ipo} formatCurrency={formatCurrency} formatDate={formatDate} />
                         ))
                       )}
                     </div>

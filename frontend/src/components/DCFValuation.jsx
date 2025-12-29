@@ -61,16 +61,6 @@ export function DCFValuation({ symbol, currentPrice, sharesOutstanding }) {
     bear: 25
   });
 
-  // Legacy assumptions object for API calls
-  const assumptions = {
-    growthStage1: growthAssumptions.stage1,
-    growthStage2: growthAssumptions.stage2,
-    growthStage3: growthAssumptions.stage3,
-    terminalGrowth: growthAssumptions.terminal,
-    wacc: discountAssumptions.wacc,
-    exitMultiple: discountAssumptions.exitMultiple
-  };
-
   const [isCustom, setIsCustom] = useState(false);
 
   // Sensitivity configuration
@@ -161,6 +151,7 @@ export function DCFValuation({ symbol, currentPrice, sharesOutstanding }) {
 
   useEffect(() => {
     fetchDCF();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
 
   const handleBaseFinancialChange = (key, value) => {
@@ -305,9 +296,11 @@ export function DCFValuation({ symbol, currentPrice, sharesOutstanding }) {
     } finally {
       setSensitivityLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, growthAssumptions, discountAssumptions, marginAssumptions, baseFinancials, sensitivityConfig, symbol]);
 
   // Consistent currency formatting - always show unit (M or B)
+  // eslint-disable-next-line no-unused-vars
   const formatCurrency = (value) => {
     if (value === null || value === undefined) return '—';
     const absValue = Math.abs(value);

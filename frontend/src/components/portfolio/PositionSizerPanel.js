@@ -41,7 +41,7 @@ function PositionSizerPanel({ portfolioId, portfolioValue = 100000, positions = 
   const [results, setResults] = useState(null);
   const [riskRewardResults, setRiskRewardResults] = useState(null);
   const [error, setError] = useState(null);
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  // const [showAdvanced, setShowAdvanced] = useState(false);
   const [showRiskOfRuin, setShowRiskOfRuin] = useState(false);
   const [showSensitivity, setShowSensitivity] = useState(false);
 

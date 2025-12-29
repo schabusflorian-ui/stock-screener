@@ -59,7 +59,7 @@ class MetricCalculator {
     netMargin: [-200, 100],
     fcfYield: [-100, 100],
     fcf_margin: [-100, 100],
-    peRatio: [0, 500],
+    peRatio: [0, 1000],  // Raised from 500 to include high-growth stocks
     pbRatio: [0, 100],
     psRatio: [0, 100],
     evEbitda: [0, 100],
@@ -363,8 +363,8 @@ class MetricCalculator {
             netIncome = netIncome * 4;
           }
           const peRatio = marketCap / netIncome;
-          // Clamp P/E to reasonable bounds (0-500)
-          if (peRatio > 0 && peRatio <= 500) {
+          // Clamp P/E to reasonable bounds (0-1000) - raised from 500 to include high-growth stocks
+          if (peRatio > 0 && peRatio <= 1000) {
             metrics.peRatio = Math.round(peRatio * 100) / 100;
           }
         }
@@ -630,15 +630,24 @@ class MetricCalculator {
           // PEG = P/E ratio / Earnings Growth Rate (as a percentage)
           // A PEG of 1 means fair value, <1 is undervalued, >1 is overvalued
           metrics.pegRatio = metrics.peRatio / metrics.earnings_growth_yoy;
+        } catch (e) {}
+      }
 
-          // PEGY Ratio (PEG adjusted for dividend yield)
-          // PEGY = P/E / (Earnings Growth + Dividend Yield)
-          // Useful for dividend-paying stocks - lower is better
-          if (metrics.dividend_yield !== null && metrics.dividend_yield > 0) {
-            const growthPlusYield = metrics.earnings_growth_yoy + metrics.dividend_yield;
-            if (growthPlusYield > 0) {
-              metrics.pegyRatio = metrics.peRatio / growthPlusYield;
-            }
+      // PEGY Ratio (PEG adjusted for dividend yield) - calculated separately from PEG
+      // PEGY = P/E / (Earnings Growth + Dividend Yield)
+      // Useful for dividend-paying stocks - lower is better
+      // This can be calculated even when:
+      // - Growth is negative/zero but dividend yield is positive
+      // - Growth is positive but dividend yield is zero
+      if (metrics.peRatio !== null) {
+        try {
+          const growth = metrics.earnings_growth_yoy || 0;
+          const divYield = metrics.dividend_yield || 0;
+          const growthPlusYield = growth + divYield;
+
+          // Only calculate if combined value is positive
+          if (growthPlusYield > 0) {
+            metrics.pegyRatio = metrics.peRatio / growthPlusYield;
           }
         } catch (e) {}
       }

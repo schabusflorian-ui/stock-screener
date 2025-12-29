@@ -24,6 +24,7 @@ export function StockTwitsCard({ symbol, data: propData, onRefresh, loading: pro
     } else if (symbol && !data) {
       loadData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol, propData]);
 
   const loadData = async (refresh = false) => {

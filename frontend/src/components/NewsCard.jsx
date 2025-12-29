@@ -38,7 +38,7 @@ export function NewsCard({ symbol }) {
     if (symbol) {
       loadNews();
     }
-  }, [symbol]);
+  }, [symbol]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadNews = async (refresh = false) => {
     setLoading(true);

@@ -30,6 +30,7 @@ export function SentimentCard({ data, onRefresh, loading, symbol }) {
     if (showChart && symbol && historyData.length === 0) {
       loadHistory();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showChart, symbol]);
 
   const loadHistory = async () => {

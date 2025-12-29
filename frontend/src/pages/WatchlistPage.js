@@ -8,6 +8,7 @@ import { AddToPortfolioButton } from '../components/portfolio';
 import PriceAlertButton from '../components/PriceAlertButton';
 import WatchlistAlertNotifications from '../components/WatchlistAlertNotifications';
 import { NLQueryBar } from '../components/nl';
+import { useFormatters } from '../hooks/useFormatters';
 import {
   PageHeader,
   Section,
@@ -20,20 +21,19 @@ import {
 } from '../components/ui';
 import './WatchlistPage.css';
 
-const formatValue = (value, format) => {
-  if (value === null || value === undefined) return '-';
-  switch (format) {
-    case 'percent': return `${value.toFixed(1)}%`;
-    case 'ratio': return value.toFixed(2);
-    case 'currency':
-      if (Math.abs(value) >= 1e9) return `$${(value / 1e9).toFixed(1)}B`;
-      if (Math.abs(value) >= 1e6) return `$${(value / 1e6).toFixed(1)}M`;
-      return `$${value.toFixed(0)}`;
-    default: return value.toFixed(2);
-  }
-};
-
 function WatchlistPage() {
+  const fmt = useFormatters();
+
+  // Format value using preferences
+  const formatValue = (value, format) => {
+    if (value === null || value === undefined) return '-';
+    switch (format) {
+      case 'percent': return fmt.percent(value, { decimals: 1 });
+      case 'ratio': return fmt.ratio(value, { decimals: 2, suffix: '' });
+      case 'currency': return fmt.currency(value, { compact: true });
+      default: return fmt.number(value, { decimals: 2 });
+    }
+  };
   const navigate = useNavigate();
   const { watchlist, removeFromWatchlist, clearWatchlist, checkAlerts, priceAlerts } = useWatchlist();
   const [metricsData, setMetricsData] = useState({});
@@ -160,7 +160,7 @@ function WatchlistPage() {
         metrics.net_margin?.toFixed(1) || '',
         metrics.fcf_yield?.toFixed(1) || '',
         metrics.debt_to_equity?.toFixed(2) || '',
-        new Date(item.addedAt).toLocaleDateString()
+        fmt.date(item.addedAt)
       ];
     });
 
@@ -328,7 +328,7 @@ function WatchlistPage() {
                       {formatValue(metrics.fcf_yield, 'percent')}
                     </Table.Cell>
                     <Table.Cell className="date-cell">
-                      {new Date(item.addedAt).toLocaleDateString()}
+                      {fmt.date(item.addedAt)}
                     </Table.Cell>
                     <Table.Cell>
                       <div className="action-buttons">

@@ -17,10 +17,8 @@ import {
   FileText,
   Globe,
   Crown,
-  Plus,
   Bot,
   Loader,
-  Sparkles,
   History,
   ChevronDown,
   X,
@@ -44,7 +42,8 @@ import {
   DEFAULT_CHART_METRICS,
   DEFAULT_TABLE_METRICS
 } from '../components';
-import { SnowflakeChart } from '../components/charts';
+// SnowflakeChart available for future use
+// import { SnowflakeChart } from '../components/charts';
 import { SentimentCard } from '../components/SentimentCard';
 import { NewsCard } from '../components/NewsCard';
 import CombinedSentimentPanel from '../components/CombinedSentimentPanel';
@@ -58,22 +57,7 @@ import { dcfAPI } from '../services/api';
 import { useFormatters } from '../hooks/useFormatters';
 import './CompanyPage.css';
 
-// Format metric value based on type
-const formatValue = (value, format) => {
-  if (value === null || value === undefined) return '-';
-  switch (format) {
-    case 'percent':
-      return `${value.toFixed(1)}%`;
-    case 'ratio':
-      return value.toFixed(2);
-    case 'currency':
-      if (Math.abs(value) >= 1e9) return `$${(value / 1e9).toFixed(1)}B`;
-      if (Math.abs(value) >= 1e6) return `$${(value / 1e6).toFixed(1)}M`;
-      return `$${value.toFixed(0)}`;
-    default:
-      return value.toFixed(2);
-  }
-};
+// Format value function will be defined inside the component to use hook
 
 // Get rating for a metric (excellent, good, fair, poor)
 const getMetricRating = (value, metricKey) => {
@@ -153,6 +137,19 @@ const MetricBar = ({ label, value, max, format = 'percent', inverted = false }) 
 function CompanyPage() {
   const { symbol } = useParams();
   const navigate = useNavigate();
+  const fmt = useFormatters();
+
+  // Format metric value using preferences
+  const formatValue = (value, format) => {
+    if (value === null || value === undefined) return '-';
+    switch (format) {
+      case 'percent': return fmt.percent(value, { decimals: 1 });
+      case 'ratio': return fmt.ratio(value, { decimals: 2, suffix: '' });
+      case 'currency': return fmt.currency(value, { compact: true });
+      default: return fmt.number(value, { decimals: 2 });
+    }
+  };
+
   const [company, setCompany] = useState(null);
   const [metrics, setMetrics] = useState([]);
   const [trends, setTrends] = useState(null);

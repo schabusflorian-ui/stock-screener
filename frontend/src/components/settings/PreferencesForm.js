@@ -48,6 +48,7 @@ function PreferencesForm() {
       }
     };
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleChange = (key, value) => {

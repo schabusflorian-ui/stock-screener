@@ -299,6 +299,7 @@ export default function AlertsPage() {
   useEffect(() => {
     loadAlerts(true);
     loadSummary();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
 
   // Mark as read
@@ -308,7 +309,7 @@ export default function AlertsPage() {
       setAlerts(prev => prev.map(a =>
         a.id === alertId ? { ...a, is_read: 1 } : a
       ));
-      loadSummary();
+      loadSummary(); // eslint-disable-line react-hooks/exhaustive-deps
     } catch (err) {
       console.error('Error marking alert as read:', err);
     }
@@ -319,7 +320,7 @@ export default function AlertsPage() {
     try {
       await alertsAPI.dismiss(alertId);
       setAlerts(prev => prev.filter(a => a.id !== alertId));
-      loadSummary();
+      loadSummary(); // eslint-disable-line react-hooks/exhaustive-deps
     } catch (err) {
       console.error('Error dismissing alert:', err);
     }
@@ -330,7 +331,7 @@ export default function AlertsPage() {
     try {
       await alertsAPI.markAllAsRead();
       setAlerts(prev => prev.map(a => ({ ...a, is_read: 1 })));
-      loadSummary();
+      loadSummary(); // eslint-disable-line react-hooks/exhaustive-deps
     } catch (err) {
       console.error('Error marking all as read:', err);
     }
@@ -346,7 +347,7 @@ export default function AlertsPage() {
         const results = response.data.data;
         alert(`Scan complete: ${results.alertsGenerated} alerts generated from ${results.companiesEvaluated} companies`);
         loadAlerts(true);
-        loadSummary();
+        loadSummary(); // eslint-disable-line react-hooks/exhaustive-deps
       }
     } catch (err) {
       setError(err.message);

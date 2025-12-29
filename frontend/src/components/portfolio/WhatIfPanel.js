@@ -11,8 +11,8 @@ function WhatIfPanel({ portfolioId, positions = [] }) {
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
-  const [searchResults, setSearchResults] = useState([]);
-  const [searching, setSearching] = useState(false);
+  const [, setSearchResults] = useState([]);
+  const [, setSearching] = useState(false);
 
   useEffect(() => {
     // Initialize target weights from current positions

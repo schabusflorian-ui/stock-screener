@@ -6,6 +6,7 @@ import { WatchlistButton, PeriodToggle, ComparisonChart } from '../components';
 import { NLQueryBar } from '../components/nl';
 import { PageHeader, Card } from '../components/ui';
 import { ChevronUp, ChevronDown, Filter, Columns, X } from 'lucide-react';
+import { useFormatters } from '../hooks/useFormatters';
 import './ScreeningPage.css';
 
 // All available columns for the results table
@@ -135,29 +136,21 @@ const METRIC_DEFINITIONS = {
 // Templates storage key
 const TEMPLATES_STORAGE_KEY = 'stock_screener_templates';
 
-// Format value for display
-const formatValue = (value, format) => {
-  if (value === null || value === undefined || isNaN(value)) return '-';
-  switch (format) {
-    case 'percent': return `${value.toFixed(1)}%`;
-    case 'ratio': return value.toFixed(2);
-    case 'currency':
-      if (Math.abs(value) >= 1e9) return `$${(value / 1e9).toFixed(1)}B`;
-      if (Math.abs(value) >= 1e6) return `$${(value / 1e6).toFixed(1)}M`;
-      if (Math.abs(value) >= 1e3) return `$${(value / 1e3).toFixed(1)}K`;
-      return `$${value.toFixed(2)}`;
-    case 'currency_large':
-      // For market cap, enterprise value - larger numbers
-      if (Math.abs(value) >= 1e12) return `$${(value / 1e12).toFixed(2)}T`;
-      if (Math.abs(value) >= 1e9) return `$${(value / 1e9).toFixed(1)}B`;
-      if (Math.abs(value) >= 1e6) return `$${(value / 1e6).toFixed(0)}M`;
-      return `$${value.toFixed(0)}`;
-    case 'number': return Math.round(value).toString();
-    default: return value.toFixed(2);
-  }
-};
-
 function ScreeningPage() {
+  const fmt = useFormatters();
+
+  // Format value for display using preferences
+  const formatValue = (value, format) => {
+    if (value === null || value === undefined || isNaN(value)) return '-';
+    switch (format) {
+      case 'percent': return fmt.percent(value, { decimals: 1 });
+      case 'ratio': return fmt.ratio(value, { decimals: 2, suffix: '' });
+      case 'currency': return fmt.currency(value, { compact: true, decimals: 2 });
+      case 'currency_large': return fmt.currency(value, { compact: true, decimals: 1 });
+      case 'number': return fmt.number(value, { compact: false, decimals: 0 });
+      default: return fmt.number(value, { decimals: 2 });
+    }
+  };
   const navigate = useNavigate();
 
   // View mode: 'presets' or 'custom'

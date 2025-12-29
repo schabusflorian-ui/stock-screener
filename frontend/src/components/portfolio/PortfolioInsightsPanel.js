@@ -83,6 +83,7 @@ Keep your response concise with bullet points.`,
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [portfolio, holdings, performance, riskMetrics, allocation]);
 
   // Build context string for AI
@@ -222,6 +223,7 @@ ${sectorBreakdown}`;
     if (portfolio && holdings.length > 0 && !insights && !loading) {
       setInsights(generateRuleBasedInsights());
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [portfolio, holdings]);
 
   if (!portfolio || holdings.length === 0) {
