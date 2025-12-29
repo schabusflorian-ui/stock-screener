@@ -12,3 +12,16 @@ docs/reports/
 # Temporary files
 *.json.bak
 *.db.bak
+
+# SQLite runtime files
+*.db-shm
+*.db-wal
+*.db-journal
+
+# Test coverage
+.coverage
+coverage/
+htmlcov/
+
+# Checkpoint files
+*checkpoint*.json
