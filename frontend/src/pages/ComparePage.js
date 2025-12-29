@@ -31,6 +31,22 @@ const DEFAULT_TABLE_METRICS = DEFAULT_COMPARE_METRICS;
 
 const COMPANY_COLORS = ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#3b82f6'];
 
+// Helper to get chart styles from CSS variables
+const getChartStyles = () => {
+  const root = document.documentElement;
+  const getVar = (name) => getComputedStyle(root).getPropertyValue(name).trim();
+  return {
+    tooltipStyle: {
+      backgroundColor: getVar('--chart-tooltip-bg') || 'rgba(255, 255, 255, 0.95)',
+      border: `1px solid ${getVar('--chart-tooltip-border') || 'rgba(0, 0, 0, 0.1)'}`,
+      borderRadius: '0.5rem'
+    },
+    gridStroke: getVar('--chart-grid-stroke') || '#e2e8f0',
+    axisStroke: getVar('--chart-axis-stroke') || '#64748b',
+    axisText: getVar('--chart-axis-text') || '#64748b'
+  };
+};
+
 function ComparePage() {
   const fmt = useFormatters();
 
