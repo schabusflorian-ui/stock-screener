@@ -1,0 +1,70 @@
+Title: Mental Models for Better Decision Making
+Source: Farnam Street Mental Models
+Author: Shane Parrish
+Category: mental_models
+
+---
+
+MENTAL MODELS: THE BUILDING BLOCKS OF WISDOM
+
+Mental models are frameworks for thinking. They help us understand how the world works and make better decisions. The best thinkers have a latticework of mental models from many disciplines.
+
+FIRST PRINCIPLES THINKING
+
+First principles thinking means breaking down complex problems to their fundamental truths and building up from there. Instead of reasoning by analogy ("this worked before, it will work again"), you start fresh.
+
+Elon Musk uses this for engineering: "Physics teaches you to reason from first principles rather than by analogy... you boil things down to the most fundamental truths and say 'what are we sure is true?' and then reason up from there."
+
+INVERSION
+
+Instead of asking "how do I succeed?", ask "how do I fail?" and avoid those things. Charlie Munger says: "Invert, always invert."
+
+For investing: instead of asking what stocks to buy, ask what mistakes to avoid. The best investors often win by not losing.
+
+CIRCLE OF COMPETENCE
+
+Know the boundaries of your knowledge. Operate within your circle of competence where you have an advantage. It's not the size of the circle that matters - it's knowing where the edges are.
+
+Warren Buffett: "What an investor needs is the ability to correctly evaluate selected businesses. Note that word 'selected': You don't have to be an expert on every company, or even many. You only have to be able to evaluate companies within your circle of competence."
+
+SECOND-ORDER THINKING
+
+First-order thinking considers immediate consequences. Second-order thinking considers the consequences of the consequences.
+
+Example: Cutting prices might boost sales (first order), but could trigger a price war that destroys industry profitability (second order).
+
+The best decisions come from thinking several steps ahead.
+
+OCCAM'S RAZOR
+
+The simplest explanation is usually correct. Don't multiply entities beyond necessity.
+
+In investing: if a stock is cheap, the simple explanation is often correct - there's something wrong with the business. Complicated explanations for why it's actually a bargain often prove wrong.
+
+INCENTIVES
+
+People respond to incentives. If you want to understand behavior, look at the incentives.
+
+Charlie Munger: "Never, ever, think about something else when you should be thinking about the power of incentives."
+
+Understanding incentives helps predict behavior. It explains why executives make certain decisions, why companies act certain ways, and why markets behave as they do.
+
+CONFIRMATION BIAS
+
+We seek information that confirms what we already believe. This is one of the most dangerous biases for investors.
+
+The antidote: actively seek disconfirming evidence. Ask "what would prove me wrong?" Read critiques of your investment thesis. Talk to people who disagree.
+
+SURVIVORSHIP BIAS
+
+We study success and ignore failure. This leads to wrong conclusions.
+
+We see successful entrepreneurs who dropped out of college, but not the countless dropouts who failed. We study companies that survived, not the ones that died.
+
+To understand reality, study failures as much as successes.
+
+MAP IS NOT THE TERRITORY
+
+Models and reality are different things. All models are simplifications - useful, but limited.
+
+Financial models, economic theories, and investment frameworks are maps. They help us navigate, but they're not the territory itself. Don't mistake the map for reality.

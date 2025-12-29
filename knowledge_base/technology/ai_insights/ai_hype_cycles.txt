@@ -1,0 +1,90 @@
+Title: AI Hype Cycles and Investment Timing
+Source: AI & Robotics Investment Insights
+Type: investment_framework
+
+---
+
+
+AI HYPE CYCLES AND INVESTMENT TIMING
+
+HISTORICAL AI HYPE CYCLES:
+
+1. 1960s - Early AI (GOFAI)
+- Expert systems
+- Symbolic AI
+- Result: AI Winter #1
+
+2. 1980s - Neural Networks Revival
+- Backpropagation
+- Commercial applications
+- Result: AI Winter #2
+
+3. 2012-2022 - Deep Learning Era
+- ImageNet breakthrough
+- GPUs + Big Data
+- Massive funding
+
+4. 2022+ - Foundation Models/LLMs
+- ChatGPT moment
+- Generative AI
+- Current cycle
+
+PATTERNS TO WATCH:
+
+1. The Hype Peak
+- "This changes everything"
+- Valuations detach from reality
+- Every company adds "AI" to name
+- We are likely here now (2024)
+
+2. The Trough
+- Promised capabilities don't materialize
+- Funding dries up
+- Consolidation
+- Best companies emerge stronger
+
+3. The Plateau
+- Real applications mature
+- Sustainable business models
+- Realistic expectations
+
+INVESTMENT IMPLICATIONS:
+
+In Hype Phase:
+- Avoid overvalued pure-plays
+- Look for picks-and-shovels
+- Incumbent beneficiaries often better
+- Focus on cash flow, not story
+
+In Trough Phase:
+- Best buying opportunities
+- Survivors are battle-tested
+- Still avoiding crowds
+
+CURRENT CYCLE SPECIFICS (2024):
+
+Signs of peak hype:
+- Every startup is "AI-first"
+- Massive funding at high valuations
+- Public market premiums for AI exposure
+- Limited revenue traction at many companies
+
+What's different this time:
+- Real, demonstrable capabilities
+- Major tech companies all-in
+- Actual products shipping
+- Revenue at leading companies
+
+What's the same:
+- Overestimating short-term impact
+- Underestimating long-term impact
+- Most startups will fail
+- Winners will be huge
+
+STRATEGY:
+
+1. Accept we don't know the winner
+2. Bet on infrastructure/picks-and-shovels
+3. Prefer profitable tech giants adding AI
+4. Avoid money-losing pure-plays at high valuations
+5. Keep dry powder for the trough

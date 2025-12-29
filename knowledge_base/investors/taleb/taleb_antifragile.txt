@@ -1,0 +1,78 @@
+Title: Antifragility - Nassim Taleb
+Source: Nassim Nicholas Taleb
+Author: Nassim Nicholas Taleb
+Type: investment_philosophy
+
+---
+
+
+ANTIFRAGILITY - Nassim Nicholas Taleb
+
+DEFINITIONS:
+- Fragile: Harmed by volatility/stress (glass)
+- Robust: Unaffected by volatility (rock)
+- Antifragile: BENEFITS from volatility (immune system)
+
+THE KEY INSIGHT:
+Most systems are not just robust - they NEED stress to improve.
+- Muscles need exercise stress
+- Immune systems need pathogen exposure
+- Economies need recessions to clear malinvestment
+
+FRAGILE VS ANTIFRAGILE INVESTMENTS:
+
+FRAGILE:
+- Leveraged positions
+- Short volatility strategies
+- Concentrated portfolios
+- Complex derivatives
+- Illiquid investments
+- Anything that needs "everything to go right"
+
+ANTIFRAGILE:
+- Optionality (limited downside, unlimited upside)
+- Cash + opportunistic deployment
+- Barbell portfolios
+- Small bets with big payoffs
+- Owning convexity
+- Businesses that strengthen from crises
+
+BUILDING ANTIFRAGILE PORTFOLIOS:
+
+1. Eliminate Fragility First (Via Negativa)
+- Remove leverage
+- Remove concentration
+- Remove complexity
+- Remove illiquidity
+
+2. Add Optionality
+- Hold cash for opportunities
+- Own options (explicit or embedded)
+- Maintain flexibility
+
+3. Position for Convexity
+- Asymmetric payoff structures
+- More upside than downside
+- "Win big or lose small"
+
+THE CONVEXITY TEST:
+Ask: "Does this position benefit from volatility?"
+- If yes → Antifragile (own it)
+- If no → Fragile (avoid it)
+
+DOMAIN TRANSFER:
+
+Health: Intermittent fasting (stress → adaptation)
+Learning: Struggle → understanding
+Business: Competition → innovation
+Investing: Volatility → opportunity
+
+"Wind extinguishes a candle but fuels a fire."
+
+PRACTICAL RULES:
+
+1. Never be in a position where a Black Swan can destroy you
+2. Always be in a position where a Black Swan can help you
+3. Reduce downside, don't cap upside
+4. Own things that benefit from disorder
+5. Rent things that are harmed by disorder

@@ -1,0 +1,39 @@
+Title: Are Amazon ads worth more than AWS?
+Source: Benedict Evans
+URL: https://www.ben-evans.com/benedictevans/2021/3/14/do-amazon-ads-bring-in-more-cash-than-aws
+Author: Benedict Evans
+Type: essay
+
+---
+
+Are Amazon ads worth more than AWS?
+There’s an old and common narrative around Amazon that it doesn’t make money, it sells below cost, it’s subsidised by investors and in particular it’s subsidised by AWS. People tend to repeat these to each other as though they’re unquestionably true, but they’re either debatable or objectively false - for example, Amazon hasn’t raised money directly from investors since the IPO in 1997, though it does pay people a lot of stock (Lina Khan made this mistake in her otherwise
+excellent paper
+on the challenges Amazon poses to competition theory).
+AWS is particularly interesting, though, because it
+is
+true that AWS is highly profitable and generates a lot of cash that Amazon can use for other things, and that naturally leads to the policy argument that we should split it apart from the rest of Amazon, so that the retail business would have to run off its own cashflow.
+You could certainly do that (though given that Amazon has
+less than 10% share of US retail
+, it might be hard to win the case), but you also need to understand that AWS is not the only highly profitable part of Amazon - it’s just the only part that the SEC makes Amazon break out. As I wrote
+here
+(back in 2014), Amazon is a bundle of lots of different businesses with different margins, and the net income line only shows you the aggregate. AWS operating income is broken out, but there are other things that aren’t.
+Amazon started disclosing AWS numbers five years ago, but in the last couple of years another big and highly profitable business has quietly emerged in the footnotes at the back of the
+10k
+. Amazon’s ‘Other’ revenue line, which is ‘primarily’ advertising, was over $20bn in 2020.
+How profitable is this? Amazon doesn’t tell us directly. Rather, it gives a divisional breakdown on two different bases:
+Revenue and operating income for North America, International and AWS
+Revenue for online stores, physical stores, Marketplace services, subscriptions (Prime), AWS and ‘other’, which is, again, ‘primarily’ the ad business.
+So we know the profitability of AWS, but not advertising, and the ad business, along with everything else except AWS, is inside ‘North America’ and ‘International’.
+However, we can make an informed guess. Google’s core business had 2020 operating margins before R&D and TAC (neither apply here) of 68%, and that’s for the whole company, including the data centres and Youtube. How much incremental cost on top of Amazon’s existing systems does Amazon need to sell and deliver advertising? And how much of that ‘other’ line is ads anyway?
+At the top end, if we assume that $20bn of Amazon’s $21.5bn ‘Ads and other’ was actually ads, and it matched Google’s operating margin, that would be $13.6bn of operating income, the same as AWS. It could also be, say, $5bn lower - which would be in line with all of Amazon North America. Either way, it’s big, and growing,
+To repeat - this is just an informed guess, and ads will of course change other things, such as directing purchasing to different products that might have higher or lower margins for Amazon. Meanwhile, operating income does not include capex, so it’s not a great way to compare an ad business with a datacenter business. Most of that AWS operating income goes straight out of the door on building more AWS, so a free cash-flow comparison would make ads look better than AWS. But whatever the real number, this is a big business.
+There are a few interesting things to think about here. Amazon’s own ecommerce, which is only 40% of actual sales on the site, increasingly looks like a low-margin anchor to support both Marketplace and now ads. This week the FT reported the EU is having trouble building a competition case against Amazon: its theory is that Amazon unfairly steers customers away from Marketplace vendors towards its own products, but one of Amazon’s arguments is apparently that Marketplace is more profitable, so its incentive is the opposite! Everything at Amazon has an angle - the biggest subsidy, going right back the beginning, is the
+negative working  capital
+, whereby it can charge customers before paying suppliers. Its use of stock to pay people has some of the same character.
+A general point, though - Amazon is not the only retailer to have realised that the time we spend on its site makes it a media owner by accident. ASOS has hundreds of people making content, and a lot of big retailers are now thinking about online media and ad strategies. The more privacy and data rules we have, and the faster that cookies disappear, the more that content silos, large audiences and first party data matter in ads and ecommerce.
+Amazon
+,
+Advertising
+Benedict Evans
+14 March 2021

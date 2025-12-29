@@ -1,0 +1,86 @@
+Title: Vision Pro
+Source: Benedict Evans
+URL: https://www.ben-evans.com/benedictevans/2023/6/15/vision-pro
+Author: Benedict Evans
+Type: essay
+
+---
+
+Vision Pro
+The narrative for VR and AR has been pretty static for years. We have a dream of AR devices that look like a pair of glasses and can place things in the world around you, but we don’t seem close to the optics that would make that practical, beyond prototypes and proofs of concept. We do have practical VR devices that are far beyond prototypes or proofs of concept, and good enough for a passionate base of enthusiasts, and we have games and a few other ideas for use cases (fitness?), but we don’t have mass-market, ‘hockey-stick’ adoption. Perhaps 10m units were sold last year, with, apparently, a very high abandonment rate.
+So the question has been that we know that VR devices can and will get a lot better in the next five and ten years, but as they do, how many people will care, and why? If we had the dream device with the amazing experience, is it the next smartphone - the next universal device and universal platform? Or will it look more like games consoles and be used by a couple of hundred million people at most for one or two things? Might it be much smaller even than that? Meta has bet over $35bn and counting that this will be The Thing, but at the moment we don’t know.
+There’s a strong echo here of mobile 20 years ago. From the late 1990s to 2007, we had mobile internet devices that were OK but not great, and slowly improving, we knew they would eventually be much better, and we thought ‘mobile internet’ would be big - but we didn’t know that smartphones would replace PCs as the centre of tech, and connect five billion people. Then the iPhone came, and the timeline broke.
+Apple’s Vision Pro isn’t an iPhone moment, or at least, not exactly. At $3,500, it’s very expensive in the context of today’s consumer electrics market, where the iPhone launched for $600 (without subsidy, and then rapidly switched to $200 at retail with an operator subsidy). And the iPhone was a more-or-less drop-in replacement for the phone you already had, but nine years after Meta bought Oculus, VR is still a new device and a new category for almost everyone. Indeed, the Vision Pro actually looks a bit more like the original Macintosh, which was over $7,000 (adjusted for inflation) when it launched in 1984, and most people didn’t know why they needed one.
+I think the price and the challenge of category creation are tightly connected. Apple has decided that the capabilities of the Vision Pro are the ‘minimum viable product’ - that it just isn’t worth making or selling a device without a screen so good you can’t see the pixels, pass-through where you can’t see any lag, perfect eye-tracking and perfect hand-tracking. Of course the rest of the industry would
+like
+to do that, and will in due course, but Apple has decided you
+must
+do that.
+This is the opposite decision to Meta: indeed Apple seems to have taken the opposite decision to Meta in most of the important trade-offs in making this. Meta, today, has roughly the right price and is working forward to the right device: Apple has started with the right device and will work back to the right price. Meta is trying to catalyse an ecosystem while we wait for the right hardware - Apple is trying to catalyse an ecosystem while we wait for the right price. So the Vision is a device pulled forward from years into the future, at a price that reflects that. It’s as though Apple had decided to sell the 2007 iPhone in 2002 - what would the price have been?
+Why is that the minimum spec? I think this is driven by another opposite decision, and conceptually a more interesting one: this isn’t primarily a VR device. It’s an AR device. When you put on a Quest you’re placed into another world, but when you put on the Vision you don’t go anywhere. As Apple puts it, you look through it.
+This is only possible because of the hardware that makes it cost $3,500 - a screen with enough pixel-density (at least double anything else on the market) that you can’t see pixels and can read text, and the custom chips and sensors to drive it (and without tethering it to a Mac Pro). I don’t know if you could have done that at any practical price ten years ago.
+I think this is a binary difference, and I think it’s the core of why Apple believes this is the minimum acceptable spec. Better VR screens produce a better VR experience, obviously, but that’s on a spectrum right back to the original Rift in 2011 (
+or indeed the 1990s
+). Conversely, the proposition that you don’t think you’re looking at a screen
+at all
+is binary - it’s more like the difference between using nav keys or a stylus and using multitouch. For VR, better screens are merely better, but for AR Apple thinks this this level of display system is a base below which you don’t have a product at all.
+Hence, one of the things I wondered before the event was how Apple would show a 3D experience in 2D. Meta shows either screenshots from within the system (with the low visual quality inherent in the spec you can make and sell for $500) or shots of someone wearing the headset and grinning - neither are satisfactory. Apple shows the person in the room, with the virtual stuff as though it was really there, because it looks as though it is.
+Apple didn’t
+say
+AR or VR, and it certainly didn’t say ‘metaverse.’ Metaverse (
+as I wrote here
+last year) has become an entirely meaningless word - you cannot know what someone else means when they say it. But when Mark Zuckerberg talks about it, it sounds like a
+place
+- a new environment somehow different from ‘the internet.’ Meta talks about what it will be ‘like’ in the ‘metaverse.’ But Apple makes computers, and Apple thinks this is a computer, that runs software, that could be all sorts of things. For Meta, the device places you in ‘the metaverse’ and there could be many experiences within that. For Apple, this device
+itself
+doesn’t take you anywhere - it’s a screen and there could be five different ‘metaverse’ apps. The iPhone was a piece of glass that could be anything - this is trying to be a piece of glass that can show anything.
+This reminds me a little of when Meta tried to make a phone, and then a
+Home Screen
+for a phone, and Mark Zuckerberg said “your phone should be about people.” I thought “no, this is a computer, and there are many
+apps
+, some of which are about people and some of which are not.” Indeed there’s also an echo of telco thinking: on a feature phone, ‘internet stuff’ was one or two icons on your portable telephone, but on the iPhone the entire telephone was just one icon on your computer. On a Vision Pro, the ‘Meta Metaverse’ is one app amongst many. You have many apps and panels, which could be 2D or 3D, or could be spaces. Developers can make whatever they want.
+Conversely, in all the expensively-produced marketing material, Apple doesn’t show any actual VR. There are 2D planes, 3D objects, 3D video and 2D panoramas, but there’s no demo of the amazing racing game or flying game where you can look over your shoulder. I haven’t yet watched every minute of the roughly 20 hours of developer videos, but Apple clearly isn’t talking about 360 degree 3D. One could speculate that the hardware just isn’t up to it - even with two of Apple’s custom chips, maybe it can’t render good-enough immersive 3D at 23 megapixels. We’ll find out once developers get their hands on it.
+Indeed, there are plenty more trade-offs, and a few paradoxes. To get the performance at an acceptable weight on your head, the battery goes on a cord in your pocket (and even then it’s only good for two hours). That might be a serious problem, or it might be like worrying that the iPhone only lasts a day where a Nokia lasted a week. It’s also interesting that Apple doesn’t show this being used outdoors at all, despite that apparently perfect pass-through. One Apple video clip ends with someone putting it down to go outside: compare with the iPod launch ad. Apple has made an AR experience, with VR hardware, that doesn’t seem to do VR much, but that you don’t take outdoors, which is the AR dream. (
+Inter alia
+, the fact that Apple has announced this device with these use cases also probably means it doesn’t think it will have AR glasses working any time soon.)
+That’s one twenty-year-old Apple product reference - here’s another. This feature is called
+iSight
+.
+If we were doing this with actual glasses, then you could see people’s faces and eyes,
+and there would be no
+awkwardness
+at all
+. In VR, you might need a different solution. Will this work? Maybe, maybe not. Apple has clearly spent a lot of money on it, building in a whole other screen plus a lenticular lens so that the eyes appear differently to different people in the room around you. No-one in the media tour has been allowed to see it (it probably isn’t finished yet), so we’ll find out. There are other moments of awkwardness too - I can imagine 3D video of your kids would be great, but wearing this on your face to video your kids really isn’t the same as holding a phone (and I expect the next iPhone will record 3D video).
+I’m also unconvinced by the idea that the future of productivity software is more and bigger screens. I don’t think the future of financial analysis is seeing more columns at once in Excel - I think the future is an AI system that makes the model for you. More abstraction, not bigger screens.
+View fullsize
+But some of this is just quibbling. A lot of what Apple shows is possibility and experiment - it could be this, this or that, just as when Apple launched the watch it suggested it as fitness, social or fashion, and it turn out to work best for fitness (and is now a huge business). More fundamentally, it is rarely wise to have a strong opinion of a new experience that you haven’t experienced, and even using it for 30 minutes in a demo isn’t really
+using
+it.
+Stepping back, though, these are all interesting issues, but this thing is still $3,500 and nine months away. We know today that the iPhone worked, but Apple still had to change the business model, expand distribution and build a lot more product. Sales didn’t really take off for five years and the launch was pretty soft. (Going back to my comparison with the original Macintosh, Apple sold less than a million of those in the first three years after launch.)
+View fullsize
+Indeed, the future as a whole can take a long time. We spent a decade talking about ‘mobile internet’ before it really worked outside
+Japan
+, and a lot longer talking about portable computers
+of some kind
+.
+View fullsize
+So the Vision Pro will go on sale next year, at $3,500, and Apple will probably have real supply constraint on the screens. The price will come down, and there’ll be new and cheaper models, but it seems unlikely that this will be as big as the iPhone in the next few years, and more likely even then that it will look more like the iPad -  which is a pretty good business.
+View fullsize
+That makes it unlikely that media companies and games companies will invest much in creating custom experiences any time soon. Apple has been spending a lot of money shooting 3D content itself and Disney’s Bob Iger took the stage briefly to show an obviously hasty ‘sizzle reel’ of ideas, while lots of developers are interested in experimenting, but this isn’t going to have millions of new apps in 2024. On the other hand, that may not matter for the people who do buy it - part of the benefit of the AR thesis, and Apple’s broader ecosystem leverage, is that almost all your iPad and iPhone apps will already work. There just won’t be much VR.
+Where does that leave Meta?
+Mark Zuckerberg, speaking to a Meta all-hands after Apple’s event, made the perfectly reasonable point that Apple hasn’t shown much that no-one had thought of before - there’s no ‘magic’ invention. Everyone already knows we need better screens, eye-tracking and hand-tracking, in a thin and light device. Meta is still selling millions of Quests, and it’s not clear how many people will switch or postpone a purchase give the price and timing of the Vision Pro. There will be voices saying that Meta should push even harder to build up its commanding position ahead of Apple’s proposition becoming more mass-market in, say, 2025 or 2026. It could also pursue the Android strategy of licensing a platform to the rest of the industry, leading the ‘open’ side of the market against Apple’s closed side (except that the Android team had a whole industry of phone OEMs hungry for a way to make the jump to smartphones, and who are the hungry VR OEMs today?). It’s worth remembering that Meta isn’t in this to make a games device, nor really to sell devices at all
+per se
+- rather, the thesis is that if VR is the next platform, Meta has to make sure it isn’t controlled by a platform owner who can screw them, as Apple did with IDFA in 2021. (This is also one reason Android was created, yet Google seems to have dropped out of VR entirely, though the Quest runs Android.)
+On the other hand, the Vision Pro is an argument that current devices just aren’t good enough to break out of the enthusiast and gaming market, incremental improvement isn’t good enough either, and you need a step change in capability. That was also the idea behind the much less ambitious (and flopped) Quest Pro. Who won that argument? Meta just announced the Quest 3 for later in the year (an incremental improvement), but should it pause after that and work on a jump forward of its own? Can it? Should it be trying to compete with Apple at frontier hardware tech?
+That takes me to another strand. Apple is showing the power not just of its software ecosystem, as noted above, but its custom silicon capabilities, which makes all these ideas possible in practice, and its supply chain and manufacturing scale and expertise. And, of course, how much capital it can deploy. Apple had $280bn of free cash flow in the last three years, where Meta had $80bn, and Meta’s core business now needs to push hard into generative AI and (it appears) an entirely new level of data center capex to power that, even as Apple squeezes privacy even harder (Apple’s privacy positioning, of course, has new strategic value now that it’s selling a device you wear that’s covered in cameras). Meta’s Reality Labs reported $13.7bn of operating losses last year, on $2.2bn of revenue - that might be both too much and not enough. If you’re trying to pull something into existence through force of will, spending whatever it takes, Apple has more of that.
+Indeed, the sheer scale of investment behind what Apple showed last week is pretty striking. There is of course a vast third-party supply chain behind this, but Apple has created a lot of primary technology itself. Almost everything in the original iPhone (and the iPod before) was off-the-shelf, but combined in new ways. Meta has tried to do that too, mostly (the upcoming Quest 3 is still using a Snapdragon smartphone chip), but even so it’s spent vastly more than Apple spent on the iPhone. But Apple is making the Vision Pro out of whole cloth.
+View fullsize
+There’s an irony here: the genesis of the current wave of VR was the realisation a decade ago that the VR concepts of the 1990s would work now with nothing more than off-the-shelf smartphone components and gaming PCs, plus a bit more work. But ‘a bit more work’ turned out to be thirty or forty billion dollars from Meta and God only knows how much more from Apple - something over $100bn combined, almost certainly.
+Even so, this might not work.
+When we tried VR in the early 1990s, the technology of the day could manage a cool proof of concept or a helmet for fighter pilots, but not a practical consumer product. Now we’re on a path to an affordable device with a perfect display, but it’s still a headset. Some people have an instinctive reaction to the Vision as with all VR headsets - that they don’t want to wear something on their face, and to be cut off from the world around like that, no matter how good the technology. I don’t think we can know this - we all do lots of things that ‘no-one would ever do’ - but it might be correct. Meanwhile Apple itself clearly doesn’t think you’ll walk down the road wearing this.
+So it might be that a wearable screen of any kind, no matter how good, is just another staging post - the summit of a foothill on the way to the top of Everest. Maybe the real Reality device is glasses, or contact lenses projecting onto your retina, or some kind of neural connection, all of which might be a decade or decades away again, and the piece of glass in our pocket remains the right device all the way through.
+AR & VR
+,
+Apple
+Benedict Evans
+15 June 2023

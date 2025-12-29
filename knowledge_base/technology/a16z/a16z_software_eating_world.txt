@@ -1,0 +1,71 @@
+Title: Why Software Is Eating the World - Marc Andreessen
+Source: Andreessen Horowitz (a16z)
+Type: tech_analysis
+
+---
+
+
+WHY SOFTWARE IS EATING THE WORLD - Marc Andreessen (2011, still relevant)
+
+THE THESIS:
+Software companies are poised to take over large swathes of the economy.
+Every industry will be disrupted by software.
+
+WHY NOW:
+
+1. Infrastructure is Ready
+- Ubiquitous internet connectivity
+- Cloud computing reduces capital requirements
+- Mobile devices in every pocket
+- APIs enable rapid integration
+
+2. Software Economics Are Superior
+- Near-zero marginal cost
+- Infinite scalability
+- Continuous improvement possible
+- Network effects compound
+
+3. Talent Has Shifted
+- Best engineers build software companies
+- Software attracts the ambitious
+- Startup culture is mainstream
+
+INDUSTRIES BEING EATEN:
+
+Retail → Amazon, Shopify
+Media → Netflix, Spotify, YouTube
+Transportation → Uber, Lyft
+Finance → Stripe, Square, Robinhood
+Real Estate → Zillow, Redfin, Opendoor
+Healthcare → Teladoc, various
+Education → Coursera, Duolingo
+
+THE PATTERN:
+
+1. Software company enters industry
+2. Offers 10x better user experience
+3. Dramatically lower cost structure
+4. Incumbents can't respond fast enough
+5. Software company captures value
+
+INVESTMENT IMPLICATIONS:
+
+Look for:
+- Industries with bad software
+- High-margin incumbents ripe for disruption
+- Founders with domain expertise + software skills
+- Network effect potential
+- Large TAM (Total Addressable Market)
+
+Avoid:
+- Incumbents without software DNA
+- Companies that outsource tech
+- Businesses that can't attract engineers
+- "Tech-enabled" without tech moat
+
+THE ULTIMATE QUESTION:
+Is this company building software, or using software?
+Builders win. Users get disrupted.
+
+"In the future, there will be two kinds of companies:
+those that are software companies and those that are dead."

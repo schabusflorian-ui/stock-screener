@@ -1,0 +1,103 @@
+Title: How to Think About Market Sizing - Benedict Evans
+Source: Benedict Evans
+Author: Benedict Evans
+Type: tech_analysis
+
+---
+
+
+HOW TO THINK ABOUT MARKET SIZING - Benedict Evans
+
+THE PROBLEM WITH TAM:
+
+Total Addressable Market (TAM) is often misused:
+- "The global X market is $500B"
+- "If we get just 1%..."
+- These numbers are often meaningless
+
+BETTER FRAMEWORKS:
+
+1. BOTTOM-UP vs TOP-DOWN
+
+Top-down (usually wrong):
+"The CRM market is $50B, we'll get 5% = $2.5B"
+- Assumes you can actually reach that market
+- Ignores product-market fit
+- Ignores competition
+
+Bottom-up (usually better):
+"There are 10,000 potential customers"
+"Each could pay $10K/year"
+"We can reach 20% = $20M TAM"
+- Based on actual customer understanding
+- Realistic about reach
+- Grounds assumptions
+
+2. EXPANSION PATH THINKING
+
+Instead of: "The market is X"
+Think: "The market starts at X and expands to Y"
+
+Example - Uber:
+- Start: Black car service ($4B market)
+- Expand: All taxis ($11B market)
+- Then: All car travel ($100B+ market)
+- Eventually: All transportation?
+
+The initial market is the wedge.
+The expansion path is the opportunity.
+
+3. CREATION vs CAPTURE
+
+Some products capture existing spend:
+- CRM software replaces salesforce costs
+- Streaming replaces cable
+- E-commerce replaces retail
+
+Some products create new markets:
+- iPhone created new use cases
+- Cloud created new businesses
+- Social media created new behaviors
+
+Creation is harder to size but often bigger.
+
+SIZING QUESTIONS TO ASK:
+
+1. Who is the actual buyer?
+- Not "enterprises" but specific people
+- What's their budget?
+- How do they buy?
+
+2. What's being replaced?
+- Existing software?
+- Manual processes?
+- Nothing (new behavior)?
+
+3. What's the switching cost?
+- Technical integration
+- Training
+- Organizational change
+
+4. What's the expansion potential?
+- Adjacent markets
+- Geographic expansion
+- Product extensions
+
+RED FLAGS IN MARKET SIZING:
+
+- "We only need 1% of a huge market"
+- Citing analyst reports without questioning
+- Conflating adjacent markets
+- Ignoring competitive dynamics
+- Assuming the market stays static
+
+GREEN FLAGS:
+
+- Clear identification of buyer
+- Realistic reach assumptions
+- Expansion path articulated
+- Competition acknowledged
+- Bottom-up validation
+
+"A small market that you can dominate is better than
+a large market where you're irrelevant."

@@ -1,0 +1,194 @@
+Title: AI Agents and Autonomous Systems Investment
+Source: AI & Robotics Investment Insights
+Type: investment_framework
+
+---
+
+
+AI AGENTS AND AUTONOMOUS SYSTEMS INVESTMENT
+
+WHAT ARE AI AGENTS?
+
+Definition: AI systems that can:
+- Perceive environment
+- Make decisions
+- Take actions
+- Learn from outcomes
+- Operate autonomously
+
+Spectrum of autonomy:
+1. Copilots (human in loop)
+2. Agents (human on loop)
+3. Autonomous systems (human out of loop)
+
+THE AGENT OPPORTUNITY:
+
+Market drivers:
+- LLM capabilities explosion
+- Reasoning improvements
+- Tool use / function calling
+- Multi-modal understanding
+- Memory and planning
+
+Use cases emerging:
+- Customer service agents
+- Coding assistants
+- Research agents
+- Sales development
+- Data analysis
+- Workflow automation
+
+AGENT CATEGORIES:
+
+1. SINGLE-TASK AGENTS
+- Customer support (Intercom, Zendesk AI)
+- Coding (GitHub Copilot, Cursor)
+- Writing (Jasper, Copy.ai)
+- Data analysis (various)
+
+Characteristics:
+- Narrow domain
+- High accuracy achievable
+- Fastest to deploy
+- Lower risk
+
+2. WORKFLOW AGENTS
+- Multi-step task completion
+- Cross-application orchestration
+- Examples: Zapier AI, Microsoft Copilot
+
+Characteristics:
+- Higher complexity
+- Integration challenges
+- Needs robust error handling
+- Emerging category
+
+3. AUTONOMOUS AGENTS
+- Long-running tasks
+- Minimal human intervention
+- Self-correction
+- Examples: AutoGPT concept, Devin (coding)
+
+Characteristics:
+- Most ambitious
+- Hardest to build
+- Highest potential value
+- Highest risk
+
+INVESTMENT FRAMEWORK:
+
+WHERE VALUE ACCRUES:
+
+1. Foundation Model Providers
+- OpenAI, Anthropic, Google
+- Enable agent capabilities
+- Take platform cut?
+
+2. Agent Platforms
+- Orchestration layers
+- Agent marketplaces
+- Development tools
+
+3. Vertical Applications
+- Domain-specific agents
+- Data moat potential
+- Workflow integration
+
+4. Infrastructure
+- Memory/state management
+- Observability
+- Security/governance
+
+EVALUATION CRITERIA:
+
+1. Task completion rate
+- What % of tasks succeed?
+- How do failures degrade?
+- Human escalation rate
+
+2. Economic efficiency
+- Cost per task vs human
+- Speed advantage
+- Quality comparison
+
+3. Defensibility
+- Why not use ChatGPT directly?
+- Data moat exists?
+- Integration moat?
+
+4. Trust and safety
+- Error handling
+- Guardrails
+- Audit trails
+
+RED FLAGS:
+- "Just a GPT wrapper"
+- No unique data/workflow
+- Unreliable task completion
+- No clear unit economics
+- Overpromising autonomy
+
+GREEN FLAGS:
+- Deep domain expertise
+- Proprietary data advantage
+- Proven task completion
+- Clear economic value
+- Thoughtful safety approach
+
+MARKET DYNAMICS:
+
+The commoditization risk:
+- Base models improve rapidly
+- OpenAI/Google add features
+- Thin wrappers get squeezed
+
+Durable advantages:
+- Workflow integration
+- Domain data
+- Customer relationships
+- Regulatory compliance
+
+TIMELINE EXPECTATIONS:
+
+2024: Copilots dominant, agents emerging
+2025: Agents for structured workflows
+2026-2027: More autonomous capabilities
+2028+: Broadly autonomous agents?
+
+INVESTMENT IMPLICATIONS:
+
+Short-term (1-2 years):
+- Copilot plays are safer
+- Vertical specialists
+- Infrastructure providers
+
+Medium-term (3-5 years):
+- Agent platforms consolidate
+- Clear winners emerge
+- Autonomy increases
+
+Long-term (5+ years):
+- Agents reshape work
+- New job categories
+- Economic restructuring
+
+RISKS:
+
+Technical:
+- Reliability plateaus
+- Hallucination problems
+- Security vulnerabilities
+
+Market:
+- Big tech captures value
+- Commoditization
+- Switching costs low
+
+Regulatory:
+- AI liability questions
+- Industry regulations
+- Employment law
+
+"Agents are the killer app for LLMs - but the path
+from demo to reliable production is longer than
+most investors expect."

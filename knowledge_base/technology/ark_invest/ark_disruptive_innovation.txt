@@ -1,0 +1,109 @@
+Title: Disruptive Innovation Framework - ARK Invest
+Source: ARK Invest Research
+Type: research
+
+---
+
+
+DISRUPTIVE INNOVATION FRAMEWORK - ARK Invest
+
+WHAT ARK LOOKS FOR:
+
+Five innovation platforms:
+1. Artificial Intelligence
+2. Robotics & Automation
+3. Energy Storage
+4. DNA Sequencing/Gene Editing
+5. Blockchain Technology
+
+These platforms are:
+- Converging (AI + Robotics = Autonomous systems)
+- Experiencing exponential cost declines
+- Creating new markets
+- Displacing incumbents
+
+EXPONENTIAL COST DECLINES:
+
+Wright's Law: Every doubling of cumulative production
+reduces costs by a consistent percentage.
+
+Historical examples:
+- Computing: Moore's Law (2x performance / 2 years)
+- Solar: 40% cost decline per doubling
+- Batteries: 28% cost decline per doubling
+- DNA sequencing: Faster than Moore's Law
+
+Implication: Today's expensive tech becomes tomorrow's commodity.
+
+THE CONVERGENCE THESIS:
+
+Technologies don't operate in isolation:
+- AI + Batteries + Sensors = Autonomous Vehicles
+- AI + Robotics = Intelligent Automation
+- DNA Sequencing + AI = Precision Medicine
+- Blockchain + AI = Trustless Intelligent Systems
+
+Convergence creates:
+- 10x improvement possibilities
+- New market categories
+- Unexpected applications
+- Winner-take-most dynamics
+
+INVESTMENT APPROACH:
+
+ARK focuses on:
+1. Technology leaders in each platform
+2. Companies benefiting from convergence
+3. Pure-play disruptors (not diversified conglomerates)
+4. High growth over profitability (early stage)
+
+Contrarian elements:
+- Ignore short-term earnings
+- Focus on 5-year potential
+- High conviction, concentrated portfolios
+- Accept high volatility
+
+VALUATION FRAMEWORK:
+
+Traditional metrics fail for disruptive companies:
+- P/E meaningless for growth companies
+- Revenue growth more important than margins
+- TAM expansion is the key variable
+
+ARK methodology:
+1. Model long-term market opportunity
+2. Estimate company's potential market share
+3. Apply normalized margins at scale
+4. Discount to present value
+5. Compare to current price
+
+RISK FACTORS:
+
+Platform risks:
+- Technology doesn't scale as expected
+- Regulatory barriers
+- Incumbent response
+- Competition within platform
+
+Company-specific risks:
+- Execution failure
+- Management issues
+- Capital requirements
+- Valuation compression
+
+Portfolio risks:
+- High correlation in downturns
+- Concentrated positions
+- Style rotation
+- Duration risk (distant profits)
+
+TIME HORIZON:
+
+"The stock market is a device for transferring money
+from the impatient to the patient." - Buffett
+
+ARK's view:
+- 5+ year investment horizon
+- Volatility is opportunity
+- Short-term pain for long-term gain
+- Conviction through cycles

@@ -1,0 +1,132 @@
+Title: AI as Technology Platform - Benedict Evans
+Source: Benedict Evans
+Author: Benedict Evans
+Type: tech_analysis
+
+---
+
+
+AI AS TECHNOLOGY PLATFORM - Benedict Evans
+
+WHAT KIND OF TECHNOLOGY IS AI?
+
+Historical analogies:
+1. Like electricity (enables everything)
+2. Like databases (enterprise infrastructure)
+3. Like the internet (platform shift)
+4. Like SaaS (deployment model change)
+
+Reality: Elements of all, but unique
+
+AI IS AUTOMATION AT SCALE:
+
+Previous automation:
+- Assembly lines (physical tasks)
+- Spreadsheets (calculation tasks)
+- Databases (storage/retrieval tasks)
+
+AI automation:
+- Pattern recognition tasks
+- Language tasks
+- Creative tasks (partially)
+- Decision tasks (partially)
+
+The question isn't "will AI take jobs"
+It's "which tasks will AI do"
+
+ENTERPRISE AI ADOPTION:
+
+Adoption phases:
+1. Point solutions (current)
+   - Specific use cases
+   - Clear ROI
+   - Limited integration
+
+2. Workflow integration (emerging)
+   - AI embedded in existing tools
+   - Augments human workers
+   - Microsoft Copilot model
+
+3. Process transformation (future)
+   - Redesign work around AI
+   - New job categories
+   - New business models
+
+BOTTLENECKS TO AI ADOPTION:
+
+Technical:
+- Model accuracy/reliability
+- Hallucination problem
+- Context limitations
+- Integration complexity
+
+Organizational:
+- Change management
+- Skill gaps
+- Process redesign needed
+- Unclear ROI measurement
+
+Structural:
+- Data quality/access
+- Regulatory uncertainty
+- Liability questions
+- Trust deficit
+
+INVESTMENT OPPORTUNITIES:
+
+Layer analysis:
+- Infrastructure (Nvidia, cloud): Concentrated, clear winners
+- Models (OpenAI, etc.): Competitive, uncertain
+- Tools/middleware: Fragmented, opportunities
+- Applications: Early, biggest opportunity
+
+Horizontal vs Vertical:
+- Horizontal: Word processor, spreadsheet equivalents
+- Vertical: Industry-specific solutions
+- Both can win, vertical often easier
+
+Build vs Buy for enterprises:
+- Most will buy
+- Few will build differentiated models
+- Many will fine-tune
+
+WHERE VALUE WILL CONCENTRATE:
+
+Not obvious it follows previous patterns:
+- Search: One winner (Google)
+- Social: Few winners (FB, Twitter, etc.)
+- SaaS: Many winners (fragmented)
+
+AI could be:
+- Model layer concentrates (few foundation models)
+- Application layer fragments (many winners)
+- Or something new
+
+Watch for:
+- Data network effects
+- Integration moats
+- Distribution advantages
+- Regulatory capture
+
+THE BIG QUESTIONS:
+
+1. How good does AI get?
+- Current: Impressive but limited
+- 5 years: Much better at current tasks
+- 10 years: New capabilities?
+
+2. How fast is adoption?
+- Faster than previous tech transitions?
+- Or slower due to complexity?
+- Industry variation likely
+
+3. Where does value accrue?
+- To model providers?
+- To app builders?
+- To data owners?
+- To end users?
+
+"AI is like teenage sex: everyone talks about it,
+nobody really knows how to do it,
+everyone thinks everyone else is doing it,
+so everyone claims they are doing it."

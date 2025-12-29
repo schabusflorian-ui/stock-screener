@@ -1,0 +1,94 @@
+Title: Fat Tails and Risk - Nassim Taleb
+Source: Nassim Nicholas Taleb
+Author: Nassim Nicholas Taleb
+Type: investment_philosophy
+
+---
+
+
+FAT TAILS AND RISK - Nassim Nicholas Taleb
+
+THE NORMAL DISTRIBUTION LIE:
+
+Finance assumes normal (Gaussian) distributions:
+- Most returns near average
+- Extremes very rare
+- 3+ sigma events almost never happen
+
+Reality has fat tails:
+- Extremes happen FAR more often than predicted
+- 5+ sigma events happen regularly
+- Most damage comes from extremes
+
+EXAMPLES:
+
+Normal distribution says:
+- 1987 crash was 20+ sigma (should never happen)
+- 2008 crisis was 25+ sigma (impossible)
+- Yet these happen every decade
+
+The problem:
+- Risk models dramatically underestimate tail risk
+- Banks, funds, regulators all use bad models
+- This is why crises "surprise" everyone
+
+MEDIOCRISTAN VS EXTREMISTAN:
+
+Mediocristan (normal distributions):
+- Height, weight, calorie consumption
+- No single observation changes the average much
+- Extremes are bounded
+
+Extremistan (fat tail distributions):
+- Wealth, market returns, book sales
+- Single observation can dominate
+- Extremes are unbounded
+
+INVESTING IS EXTREMISTAN:
+- One trade can make a career
+- One crash can end a fund
+- One stock can drive portfolio returns
+- Must plan for extremes
+
+PRACTICAL IMPLICATIONS:
+
+1. NEVER Use VaR (Value at Risk)
+- Tells you nothing about tails
+- Gives false confidence
+- "Like airbag that works except in crashes"
+
+2. Position Sizing
+- Size for worst case, not expected case
+- If you can't survive the extreme, position smaller
+- Leverage amplifies tail risk
+
+3. Correlation in Crises
+- In normal times: Assets uncorrelated
+- In crises: Everything correlates to 1
+- Diversification fails when you need it most
+
+4. Time Horizon
+- Longer horizon → more likely to see fat tail
+- If you invest for 30 years, you WILL see Black Swans
+- Plan accordingly
+
+THE PRECAUTIONARY PRINCIPLE:
+
+When facing:
+- Fat tails (extreme outcomes possible)
+- Uncertainty (don't know distribution)
+- Irreversibility (can't undo damage)
+
+→ Be extremely conservative
+→ Don't rely on models
+→ Eliminate ruin scenarios
+
+"In Extremistan, one should be paranoid."
+
+TALEB'S RULES FOR FAT TAIL WORLD:
+
+1. Don't cross a river that is "on average" 4 feet deep
+2. Never get into a situation where you can blow up
+3. Avoid optimization; seek robustness
+4. Don't confuse absence of evidence with evidence of absence
+5. The safer you feel, the more danger you're probably in

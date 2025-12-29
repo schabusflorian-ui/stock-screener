@@ -1,0 +1,145 @@
+Title: AI Company Valuation Framework
+Source: AI & Robotics Investment Insights
+Type: investment_framework
+
+---
+
+
+AI COMPANY VALUATION FRAMEWORK
+
+WHY TRADITIONAL METRICS FAIL:
+
+P/E Ratio:
+- Most AI companies unprofitable
+- Investing heavily in growth
+- Earnings not meaningful
+
+Revenue Multiples:
+- Better but still challenging
+- Revenue quality varies widely
+- Growth rates very different
+
+THE AI VALUATION CHALLENGE:
+
+Uncertain variables:
+1. How big does the market get?
+2. Who wins market share?
+3. What margins are achievable?
+4. When does profit materialize?
+
+VALUATION APPROACHES:
+
+1. TAM-BASED VALUATION
+
+Start with market opportunity:
+- Current market size
+- Growth rate assumptions
+- Company's potential share
+- Terminal margin assumptions
+
+Example:
+- TAM in 5 years: $100B
+- Company market share: 10%
+- Revenue: $10B
+- Net margin at scale: 20%
+- Profit: $2B
+- 25x multiple: $50B valuation
+
+Problems:
+- TAM often overstated
+- Market share speculative
+- Margins uncertain
+- Discount rate matters hugely
+
+2. RULE OF X (Growth-Adjusted)
+
+For SaaS/software:
+Rule of 40: Growth + Margin > 40% is good
+
+For AI companies:
+May need Rule of 60+ given higher growth expectations
+
+Formula:
+Revenue growth rate + FCF margin
+
+Example:
+- 80% growth + (-10%) margin = 70 (excellent)
+- 30% growth + 5% margin = 35 (mediocre)
+
+3. COHORT ECONOMICS
+
+Analyze unit economics:
+- Customer acquisition cost (CAC)
+- Lifetime value (LTV)
+- Payback period
+- Net revenue retention
+
+For AI specifically:
+- Inference cost per user
+- Gross margin trajectory
+- Scaling economics
+
+4. OPTIONALITY VALUATION
+
+AI companies often have embedded options:
+- Platform expansion potential
+- Adjacent market opportunities
+- Technology breakthroughs
+
+Value like options:
+- Base case + Option value
+- Higher volatility = higher option value
+
+5. COMPARABLE TRANSACTIONS
+
+Look at:
+- M&A in the space
+- Private funding rounds
+- Public company multiples
+
+Adjust for:
+- Growth rate differences
+- Moat strength
+- Market position
+
+PRACTICAL FRAMEWORK:
+
+For each AI investment:
+
+1. Base case scenario
+- Conservative market size
+- Reasonable share capture
+- Achievable margins
+→ What's the company worth?
+
+2. Bull case scenario
+- Market expands
+- Company wins
+- Margins exceed expectations
+→ Upside potential
+
+3. Bear case scenario
+- Market disappoints
+- Competition intensifies
+- Margins compressed
+→ Downside risk
+
+4. Weight scenarios
+- Bull: 20%
+- Base: 50%
+- Bear: 30%
+
+5. Calculate expected value
+- Compare to current price
+- Margin of safety required
+
+RED FLAGS IN AI VALUATIONS:
+
+- "Just needs 1% of market"
+- Ignoring inference costs
+- Assuming no competition
+- Projecting current growth forever
+- No path to profitability
+
+"Price is what you pay. Value is what you get."
+- Warren Buffett (applies to AI too)

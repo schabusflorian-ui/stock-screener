@@ -1,0 +1,120 @@
+Title: Fintech Investment Thesis - a16z
+Source: Andreessen Horowitz (a16z)
+Type: tech_analysis
+
+---
+
+
+FINTECH INVESTMENT THESIS - a16z
+
+THE OPPORTUNITY:
+
+Financial services = $22T+ industry
+Built on 1970s infrastructure
+Ripe for software transformation
+
+FINTECH WAVES:
+
+Wave 1: Payments (2000s-2010s)
+- PayPal, Stripe, Square
+- Digitizing money movement
+- Largely played out in developed markets
+
+Wave 2: Lending (2010s)
+- SoFi, Lending Club, Affirm
+- Alternative credit scoring
+- Direct-to-consumer lending
+- Some wins, many failures
+
+Wave 3: Neobanks (2015-2020)
+- Chime, N26, Revolut
+- Mobile-first banking
+- Challenged by unit economics
+
+Wave 4: Embedded Finance (2020+)
+- Every company becomes a fintech
+- Financial services as feature
+- APIs enable rapid deployment
+- Current opportunity
+
+Wave 5: DeFi/Crypto (Emerging)
+- Programmable money
+- Decentralized infrastructure
+- Regulatory uncertainty
+- Long-term transformative
+
+WHERE TO INVEST NOW:
+
+1. B2B Infrastructure
+- APIs for financial services
+- Compliance-as-a-service
+- Banking-as-a-service
+- Data/analytics providers
+
+2. Vertical Fintech
+- Industry-specific solutions
+- SMB financial stack
+- Creator economy finance
+- Healthcare payments
+
+3. Embedded Finance Enablers
+- Let non-fintechs offer financial products
+- White-label solutions
+- Infrastructure plays
+
+WHAT MAKES FINTECH HARD:
+
+Regulatory complexity:
+- 50 state regulators + federal
+- Changing rules
+- Compliance costs
+- Bank partnerships required
+
+Unit economics challenges:
+- Low take rates
+- High CAC
+- Credit losses
+- Fraud costs
+
+Incumbency advantages:
+- Trust matters in money
+- Regulatory relationships
+- Data advantages
+- Capital requirements
+
+WINNING FINTECH CHARACTERISTICS:
+
+1. Regulatory sophistication
+- Understand compliance deeply
+- Build for it, not around it
+- Turn it into moat
+
+2. Vertical focus
+- Own a specific customer segment
+- Understand their workflow
+- Expand from stronghold
+
+3. Distribution advantage
+- Embedded where users already are
+- Low CAC model
+- Organic growth
+
+4. Unit economics clarity
+- Know LTV:CAC ratio
+- Understand credit costs
+- Path to profitability clear
+
+5. Data leverage
+- Unique data assets
+- Improve with scale
+- Enables better decisions
+
+AVOID:
+
+- "Bank but better" without edge
+- High CAC consumer apps
+- Complex credit without expertise
+- Regulatory arbitrage plays
+
+"The best fintech companies don't feel like fintech companies.
+They feel like the best version of whatever problem they solve."

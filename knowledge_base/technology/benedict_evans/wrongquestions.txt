@@ -1,0 +1,41 @@
+Title: Asking the wrong questions
+Source: Benedict Evans
+URL: https://www.ben-evans.com/benedictevans/2017/01/11/wrongquestions
+Author: Benedict Evans
+Type: essay
+
+---
+
+Asking the wrong questions
+This is a photo of my grandfather, Will Jenkins. It was taken in 1909, when he was 13. He made the glider himself and took it to Cape Henry, about 17 miles by trolley from Norfolk, where his first flight took him eight feet, and his last that day took him 40 feet and broke one of his uprights. They made 13-year-olds differently then, I think.
+He built the glider, incidentally, with a gift of $5 sent to him by an American Civil War veteran after a school essay he'd written about Robert E. Lee was published in the local paper.  The war, after all, had ended only 44 years earlier.
+In 1946, by which time he'd become a notable writer of science fiction, he published a story called '
+A Logic named Joe
+', which described a global computer network with servers and terminals, that starts giving people the information that it thinks they ought to know as opposed to waiting for them to search for it - the Singularity, if you like, or maybe just Alexa. He also, as I recall, predicted reality TV somewhere.
+And yet, despite predicting half of our world, as a father in the 1950s he could not imagine why his daughter - my mother - wanted to work.
+This isn't an uncommon observation - plenty of people have pointed out that vintage scifi is full of rocketships but all the pilots are men. 1950s scifi shows 1950s society, but with robots. Meanwhile, the interstellar liners have paper tickets, that you queue up to buy. With fundamental technology change, we don't so much get our predictions wrong as make predictions about the wrong things. (And, of course, we now have neither
+trolleys
+nor personal gliders.)
+I was reminded of this photo recently when I came across a RAND 'long-range forecasting' study, from 1964. The authors polled a range of experts on what the key developments in coming decades would be and when they'd happen. Fields addressed included space flight and medicine, but the most interesting in this context is what was then called 'automation' (the past tended to describe as 'automatic' what we would now call 'computers'). The double-page spread below shows the conclusions (click to enlarge).
+View fullsize
+View fullsize
+Some of this has happened more or less as predicted - we did get air traffic control, automated subway trains and computerised taxation (except in the USA). There are some great comedy predictions here too - that 'centralised wire tapping' would take until 2030, or never, or that people in both 1964 and 2016 thought we'd have automated driving 'by 2020'.
+However, to me the interesting thing is how often the order is wrong. What we now know to be the hard problems were going to be solved decades before what we now know were the easy ones. So it might take until 2020 to 'fax' a newspaper to your home, and automatic wiretapping might be impossible, but automatic doctors, radar implants for the blind, household robots and machine translation would be all done by 1990 and a machine would be passing human IQ tests at genius level by 2000. Meanwhile, there are a few quite important things missing - there is no general-purpose computing, no internet and no mobile phones. There's no prediction for when everyone on earth would have a pocket computer connected to all the world's knowledge (2020-2025). These aren't random gaps - it's not just that they thought X would work and didn't know we'd invent Y. Rather, what's lacking is an understanding of the structural impetus of computing and software as universal platforms that would shape how all of these things would be created. We didn't make a home newspaper facsimile machine - we made computers.
+You can see this tendency to ask the wrong questions, or questions based on the wrong framework, in this TeleGeography report from 1990. It was clear that the world was changing, and that the telephone network would see new uses. But if you're asking about new uses for the 'telephone network', that of itself probably gets you to the wrong place (again, click to zoom).
+View fullsize
+View fullsize
+Picking this apart:
+We will have home computers ('multi-media terminals') - correct
+And they'll be connected to a network - correct
+And move data across national borders - correct
+So international circuit-switched call volume will go up - um, no.
+And that needs to fit into the regulatory structure of how state-monopoly fixed-line telephone companies exchange and charge each other for international voice calls - 😐
+Today, we don't carry the internet over the PSTN - we carry the PSTN over the internet.
+This time last year
+I wrote a post about how the future of the mobile internet (as we called it then) looked in 2001, and what one could have predicted. It was obvious that we'd all have phones connected to the internet by now, but that didn't get you to the iPhone, Snapchat and Alexa or DJI - we were talking about Nokia, Microsoft, AOL and NTT DoCoMo just as TeleGeography talked about circuits and RAND's experts talked about automation. Openness and permissionless innovation were missing.
+So, a pretty common theme of discussion in tech now is to ask what comes ‘after’ mobile, now that it is
+moving from the creation to deployment phase
+and the smartphone platform wars etc are over. There are a bunch of exciting things going on, certainly, from machine learning to AR and VR to electric and autonomous cars. What content will work in VR? Who will be best placed to make AR glasses? Will EV batteries be a competitive advantage, or end up, like LCD screens, as a low-margin commodity? Who will have enough of the right kind of driving data for autonomy? But every time I think about these, I try to think what questions I'm not asking. I still want a glider though.
+How tech works
+Benedict Evans
+11 January 2017

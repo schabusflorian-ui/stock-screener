@@ -1,0 +1,178 @@
+Title: Humanoid Robotics Investment Thesis
+Source: AI & Robotics Investment Insights
+Type: investment_framework
+
+---
+
+
+HUMANOID ROBOTICS INVESTMENT THESIS
+
+THE HUMANOID OPPORTUNITY:
+
+Why humanoid form factor:
+- Built for human environments
+- Can use human tools
+- Massive TAM (human labor market)
+- General-purpose capability
+
+Market size potential:
+- Human labor market: $30T+ annually
+- Even 1% replacement = $300B+
+- Long-term could exceed auto industry
+
+KEY PLAYERS (2024-2025):
+
+1. TESLA OPTIMUS
+Strengths:
+- Vertical integration (AI, manufacturing)
+- Deep pockets
+- Autopilot AI transfer
+- Manufacturing scale expertise
+
+Challenges:
+- Hardware is hard
+- Competition for talent
+- Timeline optimism
+
+Strategy: Internal deployment first, then external
+
+2. FIGURE AI
+- $675M funding (2024)
+- BMW partnership
+- Focus on manufacturing
+- OpenAI collaboration for AI
+
+3. 1X TECHNOLOGIES (EVE)
+- OpenAI backed
+- Norwegian company
+- Focus on security, logistics
+
+4. AGILITY ROBOTICS (DIGIT)
+- Amazon partnership
+- Focus on logistics
+- More mature than competitors
+
+5. BOSTON DYNAMICS
+- Hyundai owned
+- Best mobility (Atlas)
+- Not focused on cost reduction
+
+6. CHINESE PLAYERS
+- Unitree (low-cost leader)
+- UBTECH
+- Many startups
+- Government support
+
+TECHNOLOGY STACK:
+
+Hardware challenges:
+- Actuators (joints, muscles)
+- Power/battery
+- Manipulation (hands)
+- Sensors
+- Durability
+- Cost reduction
+
+Software/AI challenges:
+- Perception
+- Planning
+- Manipulation learning
+- Human interaction
+- Safety
+
+INVESTMENT TIMELINE:
+
+2024-2025: R&D, demos, limited pilots
+2025-2027: Factory deployments, high cost
+2027-2030: Cost curve decline, broader adoption
+2030+: Consumer applications possible
+
+COST CURVE EXPECTATIONS:
+
+Current (2024): $50K-100K+ per unit
+Target (2030): $20K or less
+Eventually: Cheaper than annual wage
+
+Tesla's Optimus target: Under $20K at scale
+
+INVESTMENT APPROACHES:
+
+1. Direct equity (if accessible)
+- High risk, high reward
+- Most are private
+- Tesla is public proxy
+
+2. Component suppliers
+- Actuator makers
+- Sensor companies
+- Battery technology
+
+3. Pick-and-shovel plays
+- Nvidia (AI training)
+- Simulation software
+- Manufacturing equipment
+
+4. Adoption beneficiaries
+- Companies that will deploy robots
+- Warehouse operators
+- Manufacturers
+
+WHAT TO WATCH:
+
+1. Manipulation capability
+- Can it do useful tasks?
+- Dexterity improvements
+- Tool use ability
+
+2. Reliability metrics
+- Mean time between failures
+- Maintenance requirements
+- Uptime percentage
+
+3. Unit economics
+- Cost per hour vs human
+- Deployment costs
+- Training time
+
+4. Customer adoption
+- Real deployments (not demos)
+- Use case expansion
+- Customer satisfaction
+
+RISKS:
+
+1. Technical
+- Harder than expected
+- AI plateaus
+- Safety incidents
+
+2. Economic
+- Cost reduction slower
+- Use cases limited
+- Competition intense
+
+3. Social/Regulatory
+- Job displacement concerns
+- Safety regulations
+- Public acceptance
+
+4. Business model
+- Capital intensive
+- Long development cycles
+- Winner-take-all dynamics?
+
+THE BULL CASE:
+"The last great hardware opportunity of our lifetime.
+Human-like robots will be as transformative as
+smartphones and automobiles."
+
+THE BEAR CASE:
+"Humanoid robots are a solution looking for a problem.
+Specialized robots are more practical. General-purpose
+robotics is decades away from practical deployment."
+
+POSITION SIZING:
+Given uncertainty, treat as venture-style bet:
+- Small allocation to direct plays
+- Larger allocation to picks-and-shovels
+- Prepare for 5-10 year horizon

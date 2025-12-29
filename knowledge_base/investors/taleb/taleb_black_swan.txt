@@ -1,0 +1,66 @@
+Title: Black Swan Theory - Nassim Taleb
+Source: Nassim Nicholas Taleb
+Author: Nassim Nicholas Taleb
+Type: investment_philosophy
+
+---
+
+
+BLACK SWAN THEORY - Nassim Nicholas Taleb
+
+DEFINITION:
+A Black Swan is an event that:
+1. Is an outlier (outside regular expectations)
+2. Has extreme impact
+3. Is retrospectively predictable (we invent explanations after)
+
+THE PROBLEM:
+- We systematically underestimate rare events
+- Our models assume normal distributions
+- Reality has "fat tails" - extremes happen more often
+
+INVESTING IMPLICATIONS:
+
+1. Don't Trust Models
+- VaR (Value at Risk) is dangerous
+- Models work until they catastrophically fail
+- "All models are wrong, some are dangerous"
+
+2. Position for Black Swans
+- Negative Black Swans: Prepare for crashes
+- Positive Black Swans: Position for unexpected upside
+- Asymmetric payoffs are key
+
+3. Avoid Fragility
+- Leverage kills in Black Swans
+- Concentration kills in Black Swans
+- Complexity kills in Black Swans
+
+4. The Barbell Strategy
+- 85-90% in extremely safe assets (T-bills)
+- 10-15% in extremely risky/speculative bets
+- NOTHING in the middle (pseudo-safe is dangerous)
+
+WHY THE BARBELL WORKS:
+- Safe portion: Survives any Black Swan
+- Risky portion: Benefits from positive Black Swans
+- Middle ground: Destroyed by negative Black Swans
+
+PRACTICAL APPLICATIONS:
+
+Portfolio:
+- Avoid "moderate risk" funds (fragile)
+- Hold real cash (not "cash equivalents")
+- Small bets on asymmetric opportunities
+
+Career:
+- Have optionality (multiple income sources)
+- Avoid single points of failure
+- Build skills that compound
+
+Business:
+- Avoid excessive debt
+- Maintain optionality
+- Be ready to pivot
+
+"The inability to predict outliers implies the inability to predict the course of history."

@@ -1,0 +1,18 @@
+Title: Unknown
+Source: Benedict Evans
+URL: https://www.ben-evans.com/benedictevans/category/Artificial+Intelligence
+Author: Benedict Evans
+Type: essay
+
+---
+
+AI, networks and Mechanical Turks
+How far do LLMs give us a step change in how good a search and recommendation system can be?  Do they let you build one without needing a vast user base of your own?
+Read More
+Artificial Intelligence
+,
+Discovery
+,
+Ecommerce
+Benedict Evans
+23 November 2025

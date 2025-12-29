@@ -1,0 +1,116 @@
+Title: Disruption Patterns in Technology - Benedict Evans
+Source: Benedict Evans
+Author: Benedict Evans
+Type: tech_analysis
+
+---
+
+
+DISRUPTION PATTERNS IN TECHNOLOGY - Benedict Evans
+
+CLASSIC DISRUPTION (Christensen Model):
+
+New product is:
+- Worse on traditional metrics
+- Better on new dimension
+- Cheaper or more convenient
+- Improves faster than market needs
+
+Example - Digital cameras:
+- Worse image quality initially
+- More convenient (instant viewing)
+- Improved until "good enough"
+- Killed film industry
+
+BUT TECH DISRUPTION IS DIFFERENT:
+
+Not always from below:
+- iPhone was MORE expensive
+- Tesla started at premium
+- Salesforce was enterprise-grade
+
+Tech disruption often comes from:
+- Changing the basis of competition
+- Enabling new behaviors
+- Redefining the product
+
+PATTERNS OF TECH DISRUPTION:
+
+1. HORIZONTAL TO VERTICAL
+- Start: General purpose tool
+- End: Industry-specific solutions
+- Example: Excel → industry-specific software
+
+2. BUNDLING TO UNBUNDLING
+- Newspaper → multiple digital products
+- Cable → streaming services
+- Banks → fintech specialists
+
+3. UNBUNDLING TO RE-BUNDLING
+- Individual apps → super apps
+- Point solutions → platforms
+- Cycle continues
+
+4. HARDWARE TO SOFTWARE
+- Dedicated devices → apps on phones
+- Example: GPS, cameras, music players
+
+5. ON-PREMISE TO CLOUD
+- Enterprise software transformation
+- SaaS as default
+- API-first architecture
+
+6. ANALOG TO DIGITAL TO AI
+- First: Digitize the process
+- Then: Optimize with software
+- Finally: Automate with AI
+
+PREDICTING DISRUPTION:
+
+Look for:
+- Customer frustration with incumbents
+- New technology enabling new solutions
+- Changing customer expectations
+- Regulatory shifts
+- Generational changes
+
+Questions:
+- What can you now do that you couldn't before?
+- What will be possible in 5 years?
+- What do young people expect?
+- What are incumbents ignoring?
+
+INCUMBENT RESPONSES:
+
+Usually fail because:
+- Protect existing revenue
+- Organizational antibodies
+- Wrong metrics
+- Too slow
+
+Sometimes succeed when:
+- CEO drives transformation
+- Separate unit created
+- Acquisition of disruptor
+- Threat is existential enough
+
+TIMING:
+
+"Being early is the same as being wrong"
+
+Disruption takes longer than expected:
+- Technology needs to mature
+- Customer behavior needs to change
+- Infrastructure needs to build
+- Regulation needs to adapt
+
+But when it hits, it's fast:
+- Adoption curves are S-curves
+- Slow start, rapid growth, plateau
+- Hard to predict inflection point
+
+"The future is already here, it's just not evenly distributed."
+- William Gibson
+
+Investment implication:
+Be patient on timing, aggressive on outcome.
