@@ -49,7 +49,6 @@ const formatShortDate = (dateStr) => {
 
 // Timeline Progress Component
 function TimelineProgress({ ipo }) {
-  const currentStage = IPO_STAGES[ipo.status];
   const stages = ['S1_FILED', 'S1_AMENDED', 'PRICE_RANGE_SET', 'EFFECTIVE', 'PRICED', 'TRADING'];
 
   if (ipo.status === 'WITHDRAWN') {
