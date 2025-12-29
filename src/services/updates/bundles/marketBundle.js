@@ -1,0 +1,266 @@
+// src/services/updates/bundles/marketBundle.js
+/**
+ * Market Data Update Bundle
+ *
+ * Handles all market-wide data update jobs:
+ * - market.indices - Major index data updates
+ * - market.sectors - Sector performance data
+ * - market.calendar - Earnings and economic calendar
+ */
+
+const path = require('path');
+
+class MarketBundle {
+  constructor() {
+    this.projectRoot = path.join(__dirname, '../../../..');
+  }
+
+  async execute(jobKey, db, context) {
+    const { onProgress } = context;
+
+    switch (jobKey) {
+      case 'market.indices':
+        return this.runIndicesUpdate(db, onProgress);
+      case 'market.sectors':
+        return this.runSectorsUpdate(db, onProgress);
+      case 'market.calendar':
+        return this.runCalendarUpdate(db, onProgress);
+      default:
+        throw new Error(`Unknown market job: ${jobKey}`);
+    }
+  }
+
+  async runIndicesUpdate(db, onProgress) {
+    await onProgress(5, 'Starting index data update...');
+
+    try {
+      // Import index service
+      const indexService = require('../../../services/indexService');
+
+      await onProgress(10, 'Fetching major indices...');
+
+      const indices = ['SPY', 'QQQ', 'DIA', 'IWM', 'VTI'];
+      let updated = 0;
+      let failed = 0;
+
+      for (let i = 0; i < indices.length; i++) {
+        const symbol = indices[i];
+        try {
+          await indexService.updateIndexData(symbol);
+          updated++;
+        } catch (error) {
+          console.error(`Error updating index ${symbol}:`, error.message);
+          failed++;
+        }
+
+        const progress = 10 + Math.round(((i + 1) / indices.length) * 85);
+        await onProgress(progress, `Updated ${symbol}`);
+      }
+
+      await onProgress(100, 'Index update complete');
+
+      return {
+        itemsTotal: indices.length,
+        itemsProcessed: indices.length,
+        itemsUpdated: updated,
+        itemsFailed: failed
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async runSectorsUpdate(db, onProgress) {
+    await onProgress(5, 'Starting sector performance update...');
+
+    try {
+      // Get sector ETFs
+      const sectorETFs = [
+        { symbol: 'XLK', sector: 'Technology' },
+        { symbol: 'XLF', sector: 'Financials' },
+        { symbol: 'XLV', sector: 'Healthcare' },
+        { symbol: 'XLE', sector: 'Energy' },
+        { symbol: 'XLI', sector: 'Industrials' },
+        { symbol: 'XLY', sector: 'Consumer Discretionary' },
+        { symbol: 'XLP', sector: 'Consumer Staples' },
+        { symbol: 'XLU', sector: 'Utilities' },
+        { symbol: 'XLB', sector: 'Materials' },
+        { symbol: 'XLRE', sector: 'Real Estate' },
+        { symbol: 'XLC', sector: 'Communication Services' }
+      ];
+
+      await onProgress(10, `Updating ${sectorETFs.length} sector ETFs...`);
+
+      let updated = 0;
+      let failed = 0;
+
+      for (let i = 0; i < sectorETFs.length; i++) {
+        const etf = sectorETFs[i];
+        try {
+          // Get latest price for sector ETF
+          const priceData = await this.fetchSectorPrice(etf.symbol);
+
+          if (priceData) {
+            // Update sector_performance table
+            db.prepare(`
+              INSERT OR REPLACE INTO sector_performance (
+                sector, symbol, close_price, change_percent,
+                volume, date, updated_at
+              ) VALUES (?, ?, ?, ?, ?, date('now'), datetime('now'))
+            `).run(
+              etf.sector,
+              etf.symbol,
+              priceData.close,
+              priceData.changePercent,
+              priceData.volume
+            );
+            updated++;
+          }
+        } catch (error) {
+          console.error(`Error updating sector ${etf.sector}:`, error.message);
+          failed++;
+        }
+
+        const progress = 10 + Math.round(((i + 1) / sectorETFs.length) * 85);
+        await onProgress(progress, `Updated ${etf.sector}`);
+      }
+
+      await onProgress(100, 'Sector update complete');
+
+      return {
+        itemsTotal: sectorETFs.length,
+        itemsProcessed: sectorETFs.length,
+        itemsUpdated: updated,
+        itemsFailed: failed
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async runCalendarUpdate(db, onProgress) {
+    await onProgress(5, 'Starting calendar update...');
+
+    try {
+      await onProgress(10, 'Fetching earnings calendar...');
+
+      // Get upcoming earnings from FMP or other source
+      const earningsData = await this.fetchEarningsCalendar();
+
+      if (earningsData && earningsData.length > 0) {
+        await onProgress(50, `Processing ${earningsData.length} earnings events...`);
+
+        let inserted = 0;
+        for (const event of earningsData) {
+          try {
+            db.prepare(`
+              INSERT OR REPLACE INTO earnings_calendar (
+                symbol, company_name, report_date, fiscal_quarter,
+                eps_estimate, revenue_estimate, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+            `).run(
+              event.symbol,
+              event.companyName,
+              event.date,
+              event.fiscalQuarter,
+              event.epsEstimate,
+              event.revenueEstimate
+            );
+            inserted++;
+          } catch (err) {
+            // Ignore duplicate errors
+          }
+        }
+
+        await onProgress(100, 'Calendar update complete');
+
+        return {
+          itemsTotal: earningsData.length,
+          itemsProcessed: earningsData.length,
+          itemsUpdated: inserted,
+          itemsFailed: earningsData.length - inserted
+        };
+      }
+
+      await onProgress(100, 'No calendar data available');
+
+      return {
+        itemsTotal: 0,
+        itemsProcessed: 0,
+        itemsUpdated: 0,
+        itemsFailed: 0
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async fetchSectorPrice(symbol) {
+    try {
+      const apiKey = process.env.FMP_API_KEY;
+      if (!apiKey) {
+        console.warn('FMP_API_KEY not set, skipping sector price fetch');
+        return null;
+      }
+
+      const response = await fetch(
+        `https://financialmodelingprep.com/api/v3/quote/${symbol}?apikey=${apiKey}`
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data && data[0]) {
+        return {
+          close: data[0].price,
+          changePercent: data[0].changesPercentage,
+          volume: data[0].volume
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error(`Error fetching price for ${symbol}:`, error.message);
+      return null;
+    }
+  }
+
+  async fetchEarningsCalendar() {
+    try {
+      const apiKey = process.env.FMP_API_KEY;
+      if (!apiKey) {
+        console.warn('FMP_API_KEY not set, skipping earnings calendar fetch');
+        return [];
+      }
+
+      // Get next 30 days of earnings
+      const today = new Date();
+      const endDate = new Date(today);
+      endDate.setDate(endDate.getDate() + 30);
+
+      const fromStr = today.toISOString().split('T')[0];
+      const toStr = endDate.toISOString().split('T')[0];
+
+      const response = await fetch(
+        `https://financialmodelingprep.com/api/v3/earning_calendar?from=${fromStr}&to=${toStr}&apikey=${apiKey}`
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data || [];
+    } catch (error) {
+      console.error('Error fetching earnings calendar:', error.message);
+      return [];
+    }
+  }
+}
+
+const marketBundle = new MarketBundle();
+
+module.exports = {
+  execute: (jobKey, db, context) => marketBundle.execute(jobKey, db, context)
+};
