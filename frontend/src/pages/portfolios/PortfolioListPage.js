@@ -125,10 +125,16 @@ function PortfolioListPage() {
             </div>
           </div>
           <div className="header-actions">
-            <Link to="/investors" className="btn btn-secondary">
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                setCreateModalMode('clone');
+                setShowCreateModal(true);
+              }}
+            >
               <Copy size={16} />
-              Clone from Investor
-            </Link>
+              Clone Investor
+            </button>
             <button
               className="btn btn-secondary"
               onClick={() => {
@@ -207,10 +213,16 @@ function PortfolioListPage() {
                 <PieChart size={16} />
                 ETF Model
               </button>
-              <Link to="/investors" className="btn btn-secondary">
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  setCreateModalMode('clone');
+                  setShowCreateModal(true);
+                }}
+              >
                 <Copy size={16} />
-                Clone from Investor
-              </Link>
+                Clone Investor
+              </button>
             </div>
           </div>
         ) : (

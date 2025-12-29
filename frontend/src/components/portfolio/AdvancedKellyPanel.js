@@ -36,7 +36,15 @@ function AdvancedKellyPanel({ portfolioId }) {
 
       // Load comparison data first (most useful)
       const compareRes = await simulateAPI.getKellyCompare(parseInt(portfolioId), { period });
-      setCompareData(compareRes.data.data || compareRes.data);
+      const data = compareRes.data.data || compareRes.data;
+
+      // Check for error in response
+      if (data?.error) {
+        setError(data.error);
+        setCompareData(null);
+      } else {
+        setCompareData(data);
+      }
 
     } catch (err) {
       console.error('Failed to load Kelly data:', err);
@@ -51,29 +59,39 @@ function AdvancedKellyPanel({ portfolioId }) {
       setLoading(true);
       setError(null);
 
+      const handleResponse = (res, setter) => {
+        const data = res.data.data || res.data;
+        if (data?.error) {
+          setError(data.error);
+          setter(null);
+        } else {
+          setter(data);
+        }
+      };
+
       switch (tab) {
         case 'backtest':
           if (!backtestData) {
             const res = await simulateAPI.getKellyBacktest(parseInt(portfolioId), { period });
-            setBacktestData(res.data.data || res.data);
+            handleResponse(res, setBacktestData);
           }
           break;
         case 'optimize':
           if (!optimizeData) {
             const res = await simulateAPI.getKellyOptimize(parseInt(portfolioId), { period });
-            setOptimizeData(res.data.data || res.data);
+            handleResponse(res, setOptimizeData);
           }
           break;
         case 'regime':
           if (!regimeData) {
             const res = await simulateAPI.getKellyRegime(parseInt(portfolioId), { period: '5y' });
-            setRegimeData(res.data.data || res.data);
+            handleResponse(res, setRegimeData);
           }
           break;
         case 'drawdown':
           if (!drawdownData) {
             const res = await simulateAPI.getKellyDrawdown(parseInt(portfolioId), { period: '5y' });
-            setDrawdownData(res.data.data || res.data);
+            handleResponse(res, setDrawdownData);
           }
           break;
         default:

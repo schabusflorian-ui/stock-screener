@@ -1012,9 +1012,27 @@ export const portfoliosAPI = {
 
   // ============ Export ============
 
+  // Helper function to trigger download using a hidden anchor
+  _downloadFile: (url, filename) => {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename || 'export.csv';
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  },
+
   // Export holdings as CSV (triggers download)
   exportHoldings: (id) => {
-    window.open(`${API_BASE_URL}/portfolios/${id}/export/holdings`, '_blank');
+    const url = `${API_BASE_URL}/portfolios/${id}/export/holdings`;
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `holdings-${id}.csv`;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   },
 
   // Export transactions as CSV (triggers download)
@@ -1024,7 +1042,14 @@ export const portfoliosAPI = {
     if (endDate) params.append('endDate', endDate);
     if (type) params.append('type', type);
     const queryString = params.toString();
-    window.open(`${API_BASE_URL}/portfolios/${id}/export/transactions${queryString ? '?' + queryString : ''}`, '_blank');
+    const url = `${API_BASE_URL}/portfolios/${id}/export/transactions${queryString ? '?' + queryString : ''}`;
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `transactions-${id}.csv`;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   },
 
   // Get portfolio summary JSON
@@ -1032,12 +1057,26 @@ export const portfoliosAPI = {
 
   // Export tax report as CSV (triggers download)
   exportTaxReport: (id, year = new Date().getFullYear()) => {
-    window.open(`${API_BASE_URL}/portfolios/${id}/export/tax?year=${year}`, '_blank');
+    const url = `${API_BASE_URL}/portfolios/${id}/export/tax?year=${year}`;
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `tax-report-${id}-${year}.csv`;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   },
 
   // Export dividend report as CSV (triggers download)
   exportDividendReport: (id, year = new Date().getFullYear()) => {
-    window.open(`${API_BASE_URL}/portfolios/${id}/export/dividends?year=${year}`, '_blank');
+    const url = `${API_BASE_URL}/portfolios/${id}/export/dividends?year=${year}`;
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `dividend-report-${id}-${year}.csv`;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   }
 };
 
@@ -1541,6 +1580,67 @@ export const settingsAPI = {
 
   // Exchange Rates
   getExchangeRates: () => api.get('/settings/exchange-rates'),
+};
+
+// ============================================
+// Historical Intelligence API
+// ============================================
+export const historicalAPI = {
+  // Get overall stats
+  getStats: () => api.get('/historical/stats'),
+
+  // Query decisions with filters
+  getDecisions: (filters = {}) => {
+    const params = new URLSearchParams();
+    if (filters.investor_id) params.append('investor_id', filters.investor_id);
+    if (filters.symbol) params.append('symbol', filters.symbol);
+    if (filters.decision_type) params.append('decision_type', filters.decision_type);
+    if (filters.sector) params.append('sector', filters.sector);
+    if (filters.start_date) params.append('start_date', filters.start_date);
+    if (filters.end_date) params.append('end_date', filters.end_date);
+    if (filters.min_value) params.append('min_value', filters.min_value);
+    if (filters.limit) params.append('limit', filters.limit);
+    if (filters.offset) params.append('offset', filters.offset);
+    return api.get(`/historical/decisions?${params.toString()}`);
+  },
+
+  // Get investor patterns
+  getInvestorPatterns: (investorId) => api.get(`/historical/investors/${investorId}/patterns`),
+
+  // Get investors for a stock
+  getStockInvestors: (symbol) => api.get(`/historical/stocks/${symbol}/investors`),
+
+  // Find similar decisions
+  getSimilarDecisions: (filters = {}) => {
+    const params = new URLSearchParams();
+    if (filters.investment_style) params.append('investment_style', filters.investment_style);
+    if (filters.sector) params.append('sector', filters.sector);
+    if (filters.decision_type) params.append('decision_type', filters.decision_type);
+    if (filters.min_portfolio_weight) params.append('min_portfolio_weight', filters.min_portfolio_weight);
+    if (filters.has_positive_return) params.append('has_positive_return', filters.has_positive_return);
+    if (filters.limit) params.append('limit', filters.limit);
+    return api.get(`/historical/similar-decisions?${params.toString()}`);
+  },
+
+  // Get factor performance data
+  getFactorPerformance: (factor = 'value', minDecisions = 50) =>
+    api.get(`/historical/performance-by-factor?factor=${factor}&min_decisions=${minDecisions}`),
+
+  // Get investor track record
+  getInvestorTrackRecord: (investorId, periodType = 'all_time') =>
+    api.get(`/historical/investor-track-record/${investorId}?periodType=${periodType}`),
+
+  // Calculate investor track record (POST)
+  calculateInvestorTrackRecord: (investorId, periodType = 'all_time') =>
+    api.post('/historical/calculate-investor-track-record', { investorId, periodType }),
+
+  // Calculate outcomes for decisions
+  calculateOutcomes: (limit = 1000, minDaysOld = 365) =>
+    api.post('/historical/calculate-outcomes', { limit, minDaysOld }),
+
+  // Refresh outcomes
+  refreshOutcomes: (daysOld = 30, limit = 500) =>
+    api.post('/historical/refresh-outcomes', { daysOld, limit })
 };
 
 export default api;

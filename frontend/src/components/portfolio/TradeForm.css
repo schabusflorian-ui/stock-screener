@@ -444,3 +444,30 @@
   color: var(--text-tertiary);
   margin-top: var(--space-1);
 }
+
+/* Holdings Selector for Sell Mode */
+.holdings-selector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.holdings-dropdown {
+  cursor: pointer;
+}
+
+.holdings-dropdown option {
+  padding: var(--space-2);
+}
+
+.no-holdings-message {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: var(--radius-md);
+  color: #ef4444;
+  font-size: var(--text-sm);
+}

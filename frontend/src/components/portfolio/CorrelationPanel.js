@@ -43,18 +43,29 @@ function CorrelationPanel({ portfolioId }) {
       setError(null);
 
       const [corrRes, covRes, riskRes, rollingRes, clusterRes] = await Promise.all([
-        simulateAPI.getCorrelation(parseInt(portfolioId), period),
-        simulateAPI.getCovariance(parseInt(portfolioId), period),
-        simulateAPI.getRiskContribution(parseInt(portfolioId), period),
-        simulateAPI.getRollingCorrelation(parseInt(portfolioId), period, 60),
-        simulateAPI.getClusterAnalysis(parseInt(portfolioId), period)
+        simulateAPI.getCorrelation(parseInt(portfolioId), period).catch(e => ({ data: { data: { error: e.response?.data?.error || e.message } } })),
+        simulateAPI.getCovariance(parseInt(portfolioId), period).catch(e => ({ data: { data: { error: e.response?.data?.error || e.message } } })),
+        simulateAPI.getRiskContribution(parseInt(portfolioId), period).catch(e => ({ data: { data: { error: e.response?.data?.error || e.message } } })),
+        simulateAPI.getRollingCorrelation(parseInt(portfolioId), period, 60).catch(e => ({ data: { data: { error: e.response?.data?.error || e.message } } })),
+        simulateAPI.getClusterAnalysis(parseInt(portfolioId), period).catch(e => ({ data: { data: { error: e.response?.data?.error || e.message } } }))
       ]);
 
-      setCorrelationData(corrRes.data.data || corrRes.data);
-      setCovarianceData(covRes.data.data || covRes.data);
-      setRiskContribution(riskRes.data.data || riskRes.data);
-      setRollingData(rollingRes.data.data || rollingRes.data);
-      setClusterData(clusterRes.data.data || clusterRes.data);
+      const corrData = corrRes.data.data || corrRes.data;
+      const covData = covRes.data.data || covRes.data;
+      const riskData = riskRes.data.data || riskRes.data;
+      const rollData = rollingRes.data.data || rollingRes.data;
+      const clustData = clusterRes.data.data || clusterRes.data;
+
+      // Check if we have valid data or errors
+      if (corrData?.error) {
+        setError(corrData.error);
+      }
+
+      setCorrelationData(corrData?.error ? null : corrData);
+      setCovarianceData(covData?.error ? null : covData);
+      setRiskContribution(riskData?.error ? null : riskData);
+      setRollingData(rollData?.error ? null : rollData);
+      setClusterData(clustData?.error ? null : clustData);
     } catch (err) {
       console.error('Failed to load correlation data:', err);
       setError(err.response?.data?.error || err.message);

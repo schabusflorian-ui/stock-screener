@@ -168,47 +168,95 @@ function TradeForm({ portfolioId, holdings, cashBalance, onClose, onComplete }) 
               </button>
             </div>
 
-            {/* Symbol Search */}
+            {/* Symbol Selection - Different UI for Buy vs Sell */}
             <div className="form-section">
               <label className="form-label">Symbol</label>
-              <div className="search-container">
-                <div className="search-input-wrapper">
-                  <Search size={16} className="search-icon" />
-                  <input
-                    type="text"
-                    className="form-input search-input"
-                    value={searchQuery}
-                    onChange={(e) => {
-                      setSearchQuery(e.target.value.toUpperCase());
-                      if (symbol && e.target.value.toUpperCase() !== symbol) {
-                        clearSelection();
-                      }
-                      setShowResults(true);
-                    }}
-                    onFocus={() => searchResults.length > 0 && setShowResults(true)}
-                    placeholder="Search by symbol or company name..."
-                  />
-                  {searching && <Loader className="spinning search-loader" size={16} />}
-                </div>
 
-                {showResults && searchResults.length > 0 && !companyId && (
-                  <div className="search-results">
-                    {searchResults.slice(0, 8).map(company => (
-                      <button
-                        key={company.id}
-                        type="button"
-                        className="search-result-item"
-                        onClick={() => handleSelectCompany(company)}
+              {/* For SELL: Show dropdown of current holdings */}
+              {tradeType === 'sell' ? (
+                <div className="holdings-selector">
+                  {holdings && holdings.length > 0 ? (
+                    <>
+                      <select
+                        className="form-input holdings-dropdown"
+                        value={symbol}
+                        onChange={(e) => {
+                          const selectedHolding = holdings.find(h => h.symbol === e.target.value);
+                          if (selectedHolding) {
+                            setSymbol(selectedHolding.symbol);
+                            setCompanyId(selectedHolding.company_id);
+                            setCompanyInfo({
+                              name: selectedHolding.name || selectedHolding.symbol,
+                              current_price: selectedHolding.current_price
+                            });
+                            if (selectedHolding.current_price) {
+                              setPrice(selectedHolding.current_price.toFixed(2));
+                            }
+                          }
+                        }}
                       >
-                        <span className="result-symbol">{company.symbol}</span>
-                        <span className="result-name">{company.name}</span>
-                      </button>
-                    ))}
+                        <option value="">Select a holding to sell...</option>
+                        {holdings.map(h => (
+                          <option key={h.company_id || h.symbol} value={h.symbol}>
+                            {h.symbol} - {h.shares?.toLocaleString()} shares @ {formatValue(h.current_price)}
+                          </option>
+                        ))}
+                      </select>
+                      {existingHolding && (
+                        <div className="holding-info">
+                          You own {existingHolding.shares.toLocaleString()} shares (worth {formatValue(existingHolding.current_value)})
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="no-holdings-message">
+                      <AlertCircle size={16} />
+                      No holdings to sell. Buy some stocks first.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* For BUY: Show search input */
+                <div className="search-container">
+                  <div className="search-input-wrapper">
+                    <Search size={16} className="search-icon" />
+                    <input
+                      type="text"
+                      className="form-input search-input"
+                      value={searchQuery}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value.toUpperCase());
+                        if (symbol && e.target.value.toUpperCase() !== symbol) {
+                          clearSelection();
+                        }
+                        setShowResults(true);
+                      }}
+                      onFocus={() => searchResults.length > 0 && setShowResults(true)}
+                      placeholder="Search by symbol or company name..."
+                    />
+                    {searching && <Loader className="spinning search-loader" size={16} />}
                   </div>
-                )}
-              </div>
 
-              {companyInfo && companyId && (
+                  {showResults && searchResults.length > 0 && !companyId && (
+                    <div className="search-results">
+                      {searchResults.slice(0, 8).map(company => (
+                        <button
+                          key={company.id}
+                          type="button"
+                          className="search-result-item"
+                          onClick={() => handleSelectCompany(company)}
+                        >
+                          <span className="result-symbol">{company.symbol}</span>
+                          <span className="result-name">{company.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Selected stock info - only show for buy mode */}
+              {tradeType === 'buy' && companyInfo && companyId && (
                 <div className="selected-stock">
                   <div className="stock-details">
                     <span className="stock-symbol">{symbol}</span>
@@ -222,12 +270,6 @@ function TradeForm({ portfolioId, holdings, cashBalance, onClose, onComplete }) 
                   <button type="button" className="clear-btn" onClick={clearSelection}>
                     <X size={14} />
                   </button>
-                </div>
-              )}
-
-              {existingHolding && tradeType === 'sell' && (
-                <div className="holding-info">
-                  You own {existingHolding.shares.toLocaleString()} shares
                 </div>
               )}
             </div>
