@@ -1,13 +1,60 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   X, Save, Target, TrendingUp, TrendingDown, Plus, Trash2,
-  CheckCircle, AlertTriangle, XCircle, HelpCircle, Calendar, Building2
+  HelpCircle, Calendar, Building2
 } from 'lucide-react';
 import { thesesAPI, companyAPI } from '../../services/api';
-import { Button, Badge, Card } from '../../components/ui';
+import { Button, Card } from '../../components/ui';
 import './ThesisEditor.css';
 
-function ThesisEditor({ thesis, onSave, onClose }) {
+function ThesisEditor({ thesis: thesisProp, onSave: onSaveProp, onClose: onCloseProp }) {
+  const { thesisId } = useParams();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // State for loading thesis from API when in standalone mode
+  const [loadedThesis, setLoadedThesis] = useState(null);
+  const [loadingThesis, setLoadingThesis] = useState(false);
+
+  // Use loaded thesis or prop thesis
+  const thesis = thesisProp || loadedThesis;
+
+  // Load thesis if we have a thesisId and no thesis prop
+  useEffect(() => {
+    if (thesisId && !thesisProp) {
+      setLoadingThesis(true);
+      thesesAPI.getOne(thesisId)
+        .then(res => {
+          setLoadedThesis(res.data.thesis);
+        })
+        .catch(err => {
+          console.error('Error loading thesis:', err);
+        })
+        .finally(() => {
+          setLoadingThesis(false);
+        });
+    }
+  }, [thesisId, thesisProp]);
+
+  // Handle standalone save
+  const handleStandaloneSave = async (thesisData) => {
+    if (thesisId) {
+      await thesesAPI.update(thesisId, thesisData);
+    } else {
+      await thesesAPI.create(thesisData);
+    }
+    navigate('/notes?view=theses');
+  };
+
+  // Handle standalone close
+  const handleStandaloneClose = () => {
+    navigate('/notes?view=theses');
+  };
+
+  // Use prop callbacks or standalone handlers
+  const onSave = onSaveProp || handleStandaloneSave;
+  const onClose = onCloseProp || handleStandaloneClose;
   // Basic form state
   const [symbol, setSymbol] = useState(thesis?.symbol || '');
   const [title, setTitle] = useState(thesis?.title || '');
@@ -29,15 +76,43 @@ function ThesisEditor({ thesis, onSave, onClose }) {
   const [catalysts, setCatalysts] = useState(thesis?.catalysts || []);
 
   // Templates
-  const [templates, setTemplates] = useState([]);
-  const [selectedTemplate, setSelectedTemplate] = useState(thesis?.template_id || 'long-standard');
+  const [, setTemplates] = useState([]);
+  const [selectedTemplate] = useState(thesis?.template_id || 'long-standard');
 
   // UI state
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [symbolSuggestions, setSymbolSuggestions] = useState([]);
   const [companyInfo, setCompanyInfo] = useState(null);
+  const [currentPrice, setCurrentPrice] = useState(null);
   const [currentSection, setCurrentSection] = useState('overview');
+  const [showSymbolDropdown, setShowSymbolDropdown] = useState(false);
+
+  // Initialize symbol from URL params when creating new thesis
+  useEffect(() => {
+    const urlSymbol = searchParams.get('symbol');
+    if (urlSymbol && !thesis) {
+      setSymbol(urlSymbol.toUpperCase());
+    }
+  }, [searchParams, thesis]);
+
+  // Update form state when thesis loads (for async loading)
+  useEffect(() => {
+    if (thesis) {
+      setSymbol(thesis.symbol || '');
+      setTitle(thesis.title || '');
+      setContent(thesis.content || '');
+      setThesisType(thesis.thesis_type || 'long');
+      setConvictionLevel(thesis.conviction_level || 3);
+      setTargetPrice(thesis.target_price || '');
+      setStopLossPrice(thesis.stop_loss_price || '');
+      setEntryPrice(thesis.entry_price || '');
+      setTimeHorizonMonths(thesis.time_horizon_months || 12);
+      setReviewDate(thesis.review_date || '');
+      setAssumptions(thesis.assumptions || []);
+      setCatalysts(thesis.catalysts || []);
+    }
+  }, [thesis]);
 
   // Load templates
   useEffect(() => {
@@ -65,9 +140,16 @@ function ThesisEditor({ thesis, onSave, onClose }) {
       const res = await companyAPI.getOne(sym);
       if (res.data.company) {
         setCompanyInfo(res.data.company);
+        // Extract current price from price_metrics if available
+        if (res.data.price_metrics?.last_price) {
+          setCurrentPrice(res.data.price_metrics.last_price);
+        } else {
+          setCurrentPrice(null);
+        }
       }
     } catch (error) {
       setCompanyInfo(null);
+      setCurrentPrice(null);
     }
   };
 
@@ -171,6 +253,18 @@ function ThesisEditor({ thesis, onSave, onClose }) {
     { id: 'notes', label: 'Notes' }
   ];
 
+  // Show loading state while thesis is being loaded
+  if (loadingThesis) {
+    return (
+      <div className="thesis-editor">
+        <div className="thesis-loading">
+          <div className="loading-spinner" />
+          <span>Loading thesis...</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="thesis-editor">
       <div className="editor-header">
@@ -213,7 +307,7 @@ function ThesisEditor({ thesis, onSave, onClose }) {
             {/* Symbol & Title */}
             <div className="form-row">
               <div className="form-group symbol-group">
-                <label>Symbol</label>
+                <label>Symbol / Company</label>
                 <div className="symbol-input-wrapper">
                   <input
                     type="text"
@@ -221,11 +315,22 @@ function ThesisEditor({ thesis, onSave, onClose }) {
                     onChange={(e) => {
                       setSymbol(e.target.value.toUpperCase());
                       searchSymbols(e.target.value);
+                      setShowSymbolDropdown(true);
                     }}
-                    placeholder="AAPL"
+                    onFocus={() => {
+                      if (symbol.length >= 1) {
+                        searchSymbols(symbol);
+                        setShowSymbolDropdown(true);
+                      }
+                    }}
+                    onBlur={() => {
+                      // Delay to allow click on suggestion
+                      setTimeout(() => setShowSymbolDropdown(false), 200);
+                    }}
+                    placeholder="Search by symbol or name..."
                     disabled={!!thesis}
                   />
-                  {symbolSuggestions.length > 0 && !thesis && (
+                  {showSymbolDropdown && symbolSuggestions.length > 0 && !thesis && (
                     <ul className="symbol-suggestions">
                       {symbolSuggestions.map(company => (
                         <li
@@ -233,6 +338,7 @@ function ThesisEditor({ thesis, onSave, onClose }) {
                           onClick={() => {
                             setSymbol(company.symbol);
                             setSymbolSuggestions([]);
+                            setShowSymbolDropdown(false);
                           }}
                         >
                           <strong>{company.symbol}</strong>
@@ -247,6 +353,9 @@ function ThesisEditor({ thesis, onSave, onClose }) {
                     <Building2 size={14} />
                     <span>{companyInfo.name}</span>
                     <span className="sector">{companyInfo.sector}</span>
+                    {currentPrice && (
+                      <span className="current-price">${currentPrice.toFixed(2)}</span>
+                    )}
                   </div>
                 )}
               </div>
@@ -304,17 +413,34 @@ function ThesisEditor({ thesis, onSave, onClose }) {
               </div>
             </div>
 
+            {/* Current Price Display */}
+            {currentPrice && (
+              <div className="current-price-banner">
+                <span className="label">Current Price:</span>
+                <span className="price">${currentPrice.toFixed(2)}</span>
+                <button
+                  type="button"
+                  className="use-price-btn"
+                  onClick={() => setEntryPrice(currentPrice.toFixed(2))}
+                >
+                  Use as Entry Price
+                </button>
+              </div>
+            )}
+
             {/* Price Targets */}
             <div className="form-row">
               <div className="form-group">
                 <label>Entry Price</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={entryPrice}
-                  onChange={(e) => setEntryPrice(e.target.value)}
-                  placeholder="0.00"
-                />
+                <div className="price-input-wrapper">
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={entryPrice}
+                    onChange={(e) => setEntryPrice(e.target.value)}
+                    placeholder="0.00"
+                  />
+                </div>
               </div>
               <div className="form-group">
                 <label>Target Price</label>
@@ -326,8 +452,8 @@ function ThesisEditor({ thesis, onSave, onClose }) {
                   placeholder="0.00"
                 />
                 {entryPrice && targetPrice && (
-                  <span className="price-calc positive">
-                    +{((parseFloat(targetPrice) - parseFloat(entryPrice)) / parseFloat(entryPrice) * 100).toFixed(1)}%
+                  <span className={`price-calc ${parseFloat(targetPrice) >= parseFloat(entryPrice) ? 'positive' : 'negative'}`}>
+                    {parseFloat(targetPrice) >= parseFloat(entryPrice) ? '+' : ''}{((parseFloat(targetPrice) - parseFloat(entryPrice)) / parseFloat(entryPrice) * 100).toFixed(1)}%
                   </span>
                 )}
               </div>

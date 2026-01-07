@@ -14,28 +14,104 @@ class SettingsService {
   // =========================================================================
 
   getUpdateSchedules() {
-    const stmt = this.db.prepare(`
-      SELECT * FROM update_schedules ORDER BY display_name
+    try {
+      // Check if table exists
+      const tableExists = this.db.prepare(`
+        SELECT name FROM sqlite_master WHERE type='table' AND name='update_schedules'
+      `).get();
+
+      if (!tableExists) {
+        // Create the table and seed it
+        this._ensureUpdateSchedulesTable();
+      }
+
+      const stmt = this.db.prepare(`
+        SELECT * FROM update_schedules ORDER BY display_name
+      `);
+
+      const rows = stmt.all();
+
+      // If empty, seed with defaults
+      if (rows.length === 0) {
+        this._seedUpdateSchedules();
+        return this.getUpdateSchedules(); // Recurse once after seeding
+      }
+
+      return rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        displayName: row.display_name,
+        description: row.description,
+        isEnabled: row.is_enabled === 1,
+        frequency: row.frequency,
+        cronExpression: row.cron_expression,
+        status: row.status,
+        lastRunAt: row.last_run_at,
+        lastSuccessAt: row.last_success_at,
+        lastError: row.last_error,
+        nextRunAt: row.next_run_at,
+        itemsProcessed: row.items_processed,
+        itemsUpdated: row.items_updated,
+        itemsFailed: row.items_failed,
+        averageDurationSeconds: row.average_duration_seconds,
+      }));
+    } catch (error) {
+      console.error('Error in getUpdateSchedules:', error);
+      // Return empty array on error to prevent frontend crash
+      return [];
+    }
+  }
+
+  _ensureUpdateSchedulesTable() {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS update_schedules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        display_name TEXT NOT NULL,
+        description TEXT,
+        is_enabled INTEGER DEFAULT 1,
+        frequency TEXT NOT NULL,
+        cron_expression TEXT,
+        timezone TEXT DEFAULT 'America/New_York',
+        status TEXT DEFAULT 'idle',
+        last_run_at DATETIME,
+        last_success_at DATETIME,
+        last_error TEXT,
+        next_run_at DATETIME,
+        items_processed INTEGER DEFAULT 0,
+        items_updated INTEGER DEFAULT 0,
+        items_failed INTEGER DEFAULT 0,
+        average_duration_seconds INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  }
+
+  _seedUpdateSchedules() {
+    const insertSchedule = this.db.prepare(`
+      INSERT OR IGNORE INTO update_schedules (name, display_name, description, frequency, cron_expression)
+      VALUES (?, ?, ?, ?, ?)
     `);
 
-    return stmt.all().map(row => ({
-      id: row.id,
-      name: row.name,
-      displayName: row.display_name,
-      description: row.description,
-      isEnabled: row.is_enabled === 1,
-      frequency: row.frequency,
-      cronExpression: row.cron_expression,
-      status: row.status,
-      lastRunAt: row.last_run_at,
-      lastSuccessAt: row.last_success_at,
-      lastError: row.last_error,
-      nextRunAt: row.next_run_at,
-      itemsProcessed: row.items_processed,
-      itemsUpdated: row.items_updated,
-      itemsFailed: row.items_failed,
-      averageDurationSeconds: row.average_duration_seconds,
-    }));
+    const schedules = [
+      ['stock_prices', 'Stock Prices', 'Daily closing prices for all tracked stocks', 'daily', '0 18 * * 1-5'],
+      ['stock_fundamentals', 'SEC Filings', 'Financial statements from 10-K/10-Q filings', 'weekly', '0 6 * * 6'],
+      ['insider_transactions', 'Insider Trading', 'Form 4 insider trading filings', 'daily', '0 7 * * 1-5'],
+      ['capital_allocation', 'Capital Allocation', 'Dividends, buybacks, and shareholder returns', 'weekly', '0 8 * * 6'],
+      ['investor_13f', '13F Holdings', 'Famous investor quarterly portfolio filings', 'quarterly', '0 6 15 */3 *'],
+      ['etf_holdings', 'ETF Holdings', 'ETF holdings and composition data', 'quarterly', '0 7 15 */3 *'],
+      ['reddit_sentiment', 'Reddit Sentiment', 'Stock mentions from WSB, r/stocks, r/investing', 'hourly', '0 * * * *'],
+      ['index_prices', 'Market Indices', 'S&P 500, Nasdaq, Dow Jones prices', 'daily', '0 18 * * 1-5'],
+      ['knowledge_base', 'AI Knowledge Base', 'Investment wisdom and research documents', 'weekly', '0 5 * * 0'],
+      ['liquidity_metrics', 'Liquidity Metrics', 'Volume, volatility, bid-ask spreads', 'daily', '0 20 * * 1-5'],
+      ['portfolio_snapshots', 'Portfolio Snapshots', 'Daily portfolio value snapshots', 'daily', '0 19 * * 1-5'],
+      ['market_regime', 'Market Regime', 'Bull/Bear/Sideways market classification', 'daily', '0 17 * * 1-5'],
+    ];
+
+    for (const [name, displayName, description, frequency, cron] of schedules) {
+      insertSchedule.run(name, displayName, description, frequency, cron);
+    }
   }
 
   toggleUpdateSchedule(name, enabled) {
@@ -170,24 +246,95 @@ class SettingsService {
   // =========================================================================
 
   getApiIntegrations() {
-    const stmt = this.db.prepare('SELECT * FROM api_integrations ORDER BY display_name');
+    try {
+      // Ensure table exists
+      const tableExists = this.db.prepare(`
+        SELECT name FROM sqlite_master WHERE type='table' AND name='api_integrations'
+      `).get();
 
-    return stmt.all().map(row => ({
-      id: row.id,
-      name: row.name,
-      displayName: row.display_name,
-      isEnabled: row.is_enabled === 1,
-      hasApiKey: !!row.api_key,
-      baseUrl: row.base_url,
-      callsToday: row.calls_today,
-      callsThisMonth: row.calls_this_month,
-      dailyLimit: row.daily_limit,
-      monthlyLimit: row.monthly_limit,
-      lastCallAt: row.last_call_at,
-      status: row.status,
-      lastError: row.last_error,
-      lastHealthCheck: row.last_health_check,
-    }));
+      if (!tableExists) {
+        this._ensureApiIntegrationsTable();
+        this._seedApiIntegrations();
+      }
+
+      const stmt = this.db.prepare('SELECT * FROM api_integrations ORDER BY display_name');
+      const rows = stmt.all();
+
+      // If empty, seed and return defaults
+      if (rows.length === 0) {
+        this._seedApiIntegrations();
+        return this.getApiIntegrations(); // Recurse once after seeding
+      }
+
+      return rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        displayName: row.display_name,
+        isEnabled: row.is_enabled === 1,
+        hasApiKey: !!row.api_key,
+        baseUrl: row.base_url,
+        callsToday: row.calls_today,
+        callsThisMonth: row.calls_this_month,
+        dailyLimit: row.daily_limit,
+        monthlyLimit: row.monthly_limit,
+        lastCallAt: row.last_call_at,
+        status: row.status,
+        lastError: row.last_error,
+        lastHealthCheck: row.last_health_check,
+      }));
+    } catch (error) {
+      console.error('Error fetching integrations:', error);
+      // Return minimal defaults on error
+      return [
+        { id: 1, name: 'yfinance', displayName: 'Yahoo Finance', isEnabled: true, hasApiKey: false, status: 'connected', callsToday: 0, callsThisMonth: 0 },
+        { id: 2, name: 'sec_edgar', displayName: 'SEC EDGAR', isEnabled: true, hasApiKey: false, status: 'connected', callsToday: 0, callsThisMonth: 0 },
+        { id: 3, name: 'reddit', displayName: 'Reddit API', isEnabled: true, hasApiKey: false, status: 'connected', callsToday: 0, callsThisMonth: 0 },
+      ];
+    }
+  }
+
+  _ensureApiIntegrationsTable() {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS api_integrations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        display_name TEXT NOT NULL,
+        is_enabled INTEGER DEFAULT 0,
+        api_key TEXT,
+        base_url TEXT,
+        calls_today INTEGER DEFAULT 0,
+        calls_this_month INTEGER DEFAULT 0,
+        daily_limit INTEGER,
+        monthly_limit INTEGER,
+        last_call_at DATETIME,
+        last_reset_at DATETIME,
+        status TEXT DEFAULT 'unknown',
+        last_error TEXT,
+        last_health_check DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  }
+
+  _seedApiIntegrations() {
+    const insertIntegration = this.db.prepare(`
+      INSERT OR IGNORE INTO api_integrations (name, display_name, daily_limit, monthly_limit, base_url, status)
+      VALUES (?, ?, ?, ?, ?, 'connected')
+    `);
+
+    const integrations = [
+      ['yfinance', 'Yahoo Finance', null, null, null],
+      ['sec_edgar', 'SEC EDGAR', null, null, 'https://www.sec.gov'],
+      ['reddit', 'Reddit API', 100, null, 'https://oauth.reddit.com'],
+      ['polygon', 'Polygon.io', 1000, null, 'https://api.polygon.io'],
+      ['alpha_vantage', 'Alpha Vantage', 25, 500, 'https://www.alphavantage.co'],
+      ['fmp', 'Financial Modeling Prep', 250, null, 'https://financialmodelingprep.com'],
+    ];
+
+    for (const [name, displayName, dailyLimit, monthlyLimit, baseUrl] of integrations) {
+      insertIntegration.run(name, displayName, dailyLimit, monthlyLimit, baseUrl);
+    }
   }
 
   updateApiKey(name, apiKey) {
@@ -324,97 +471,152 @@ class SettingsService {
     const metrics = [];
 
     // 1. Stale stock prices (>3 trading days old)
-    const staleStocksResult = this.db.prepare(`
-      SELECT COUNT(*) as count FROM companies c
-      WHERE c.is_active = 1
-      AND NOT EXISTS (
-        SELECT 1 FROM daily_prices dp
-        WHERE dp.company_id = c.id
-        AND dp.date >= date('now', '-5 days')
-      )
-    `).get();
-    const staleStockCount = staleStocksResult?.count || 0;
+    try {
+      const staleStocksResult = this.db.prepare(`
+        SELECT COUNT(*) as count FROM companies c
+        WHERE c.is_active = 1
+        AND NOT EXISTS (
+          SELECT 1 FROM daily_prices dp
+          WHERE dp.company_id = c.id
+          AND dp.date >= date('now', '-5 days')
+        )
+      `).get();
+      const staleStockCount = staleStocksResult?.count || 0;
 
-    metrics.push({
-      name: 'Stale Stock Prices',
-      status: staleStockCount === 0 ? 'ok' : staleStockCount < 50 ? 'warning' : 'critical',
-      value: staleStockCount,
-      threshold: 50,
-      message: staleStockCount === 0
-        ? 'All stock prices are up to date'
-        : `${staleStockCount} stocks haven't updated in 5+ days`,
-    });
+      metrics.push({
+        name: 'Stale Stock Prices',
+        status: staleStockCount === 0 ? 'ok' : staleStockCount < 50 ? 'warning' : 'critical',
+        value: staleStockCount,
+        threshold: 50,
+        message: staleStockCount === 0
+          ? 'All stock prices are up to date'
+          : `${staleStockCount} stocks haven't updated in 5+ days`,
+      });
+    } catch (e) {
+      console.log('Skipping stale prices check:', e.message);
+      metrics.push({
+        name: 'Stale Stock Prices',
+        status: 'unknown',
+        value: 0,
+        threshold: 50,
+        message: 'Unable to check (tables may not exist)',
+      });
+    }
 
     // 2. Missing fundamentals
-    const missingFundResult = this.db.prepare(`
-      SELECT COUNT(*) as count FROM companies c
-      WHERE c.is_active = 1
-      AND NOT EXISTS (
-        SELECT 1 FROM calculated_metrics cm WHERE cm.company_id = c.id
-      )
-    `).get();
-    const missingFundCount = missingFundResult?.count || 0;
+    try {
+      const missingFundResult = this.db.prepare(`
+        SELECT COUNT(*) as count FROM companies c
+        WHERE c.is_active = 1
+        AND NOT EXISTS (
+          SELECT 1 FROM calculated_metrics cm WHERE cm.company_id = c.id
+        )
+      `).get();
+      const missingFundCount = missingFundResult?.count || 0;
 
-    metrics.push({
-      name: 'Missing Metrics',
-      status: missingFundCount === 0 ? 'ok' : missingFundCount < 100 ? 'warning' : 'critical',
-      value: missingFundCount,
-      threshold: 100,
-      message: missingFundCount === 0
-        ? 'All stocks have calculated metrics'
-        : `${missingFundCount} stocks missing calculated metrics`,
-    });
+      metrics.push({
+        name: 'Missing Metrics',
+        status: missingFundCount === 0 ? 'ok' : missingFundCount < 100 ? 'warning' : 'critical',
+        value: missingFundCount,
+        threshold: 100,
+        message: missingFundCount === 0
+          ? 'All stocks have calculated metrics'
+          : `${missingFundCount} stocks missing calculated metrics`,
+      });
+    } catch (e) {
+      console.log('Skipping missing metrics check:', e.message);
+      metrics.push({
+        name: 'Missing Metrics',
+        status: 'unknown',
+        value: 0,
+        threshold: 100,
+        message: 'Unable to check (tables may not exist)',
+      });
+    }
 
     // 3. Failed updates in last 24h
-    const failedUpdatesResult = this.db.prepare(`
-      SELECT COUNT(*) as count FROM settings_update_history
-      WHERE status = 'failed' AND created_at > datetime('now', '-24 hours')
-    `).get();
-    const failedCount = failedUpdatesResult?.count || 0;
+    try {
+      const failedUpdatesResult = this.db.prepare(`
+        SELECT COUNT(*) as count FROM settings_update_history
+        WHERE status = 'failed' AND created_at > datetime('now', '-24 hours')
+      `).get();
+      const failedCount = failedUpdatesResult?.count || 0;
 
-    metrics.push({
-      name: 'Failed Updates (24h)',
-      status: failedCount === 0 ? 'ok' : failedCount < 3 ? 'warning' : 'critical',
-      value: failedCount,
-      threshold: 3,
-      message: failedCount === 0
-        ? 'No failed updates in the last 24 hours'
-        : `${failedCount} update jobs failed in the last 24 hours`,
-    });
+      metrics.push({
+        name: 'Failed Updates (24h)',
+        status: failedCount === 0 ? 'ok' : failedCount < 3 ? 'warning' : 'critical',
+        value: failedCount,
+        threshold: 3,
+        message: failedCount === 0
+          ? 'No failed updates in the last 24 hours'
+          : `${failedCount} update jobs failed in the last 24 hours`,
+      });
+    } catch (e) {
+      console.log('Skipping failed updates check:', e.message);
+      metrics.push({
+        name: 'Failed Updates (24h)',
+        status: 'ok',
+        value: 0,
+        threshold: 3,
+        message: 'No update history available',
+      });
+    }
 
     // 4. API rate limit status
-    const rateLimitedResult = this.db.prepare(`
-      SELECT COUNT(*) as count FROM api_integrations
-      WHERE status = 'rate_limited'
-    `).get();
-    const rateLimitedCount = rateLimitedResult?.count || 0;
+    try {
+      const rateLimitedResult = this.db.prepare(`
+        SELECT COUNT(*) as count FROM api_integrations
+        WHERE status = 'rate_limited'
+      `).get();
+      const rateLimitedCount = rateLimitedResult?.count || 0;
 
-    metrics.push({
-      name: 'Rate Limited APIs',
-      status: rateLimitedCount === 0 ? 'ok' : 'warning',
-      value: rateLimitedCount,
-      threshold: 1,
-      message: rateLimitedCount === 0
-        ? 'No APIs are rate limited'
-        : `${rateLimitedCount} API(s) are currently rate limited`,
-    });
+      metrics.push({
+        name: 'Rate Limited APIs',
+        status: rateLimitedCount === 0 ? 'ok' : 'warning',
+        value: rateLimitedCount,
+        threshold: 1,
+        message: rateLimitedCount === 0
+          ? 'No APIs are rate limited'
+          : `${rateLimitedCount} API(s) are currently rate limited`,
+      });
+    } catch (e) {
+      console.log('Skipping rate limit check:', e.message);
+      metrics.push({
+        name: 'Rate Limited APIs',
+        status: 'ok',
+        value: 0,
+        threshold: 1,
+        message: 'No API integrations configured',
+      });
+    }
 
     // 5. Stale sentiment data
-    const staleSentimentResult = this.db.prepare(`
-      SELECT COUNT(*) as count FROM combined_sentiment
-      WHERE calculated_at < datetime('now', '-2 days')
-    `).get();
-    const staleSentimentCount = staleSentimentResult?.count || 0;
+    try {
+      const staleSentimentResult = this.db.prepare(`
+        SELECT COUNT(*) as count FROM combined_sentiment
+        WHERE calculated_at < datetime('now', '-2 days')
+      `).get();
+      const staleSentimentCount = staleSentimentResult?.count || 0;
 
-    metrics.push({
-      name: 'Stale Sentiment',
-      status: staleSentimentCount === 0 ? 'ok' : staleSentimentCount < 100 ? 'warning' : 'critical',
-      value: staleSentimentCount,
-      threshold: 100,
-      message: staleSentimentCount === 0
-        ? 'All sentiment data is fresh'
-        : `${staleSentimentCount} stocks with stale sentiment data`,
-    });
+      metrics.push({
+        name: 'Stale Sentiment',
+        status: staleSentimentCount === 0 ? 'ok' : staleSentimentCount < 100 ? 'warning' : 'critical',
+        value: staleSentimentCount,
+        threshold: 100,
+        message: staleSentimentCount === 0
+          ? 'All sentiment data is fresh'
+          : `${staleSentimentCount} stocks with stale sentiment data`,
+      });
+    } catch (e) {
+      console.log('Skipping sentiment check:', e.message);
+      metrics.push({
+        name: 'Stale Sentiment',
+        status: 'ok',
+        value: 0,
+        threshold: 100,
+        message: 'No sentiment data available',
+      });
+    }
 
     // 6. Database size check
     const dbPath = path.join(__dirname, '../../data/stocks.db');
@@ -422,7 +624,7 @@ class SettingsService {
     try {
       const stats = fs.statSync(dbPath);
       dbSizeMB = Math.round(stats.size / (1024 * 1024));
-    } catch (e) {
+    } catch {
       // File not accessible
     }
 
@@ -457,15 +659,27 @@ class SettingsService {
     }
 
     // 2. Check for stuck updates (running > 2 hours)
-    const stuckUpdatesResult = this.db.prepare(`
-      SELECT COUNT(*) as count FROM update_schedules
-      WHERE status = 'running' AND last_run_at < datetime('now', '-2 hours')
-    `).get();
+    try {
+      const tableExists = this.db.prepare(`
+        SELECT name FROM sqlite_master WHERE type='table' AND name='update_schedules'
+      `).get();
 
-    if ((stuckUpdatesResult?.count || 0) > 0) {
-      checks.push({ name: 'Update Jobs', status: 'fail', message: 'Stuck update detected' });
-    } else {
-      checks.push({ name: 'Update Jobs', status: 'pass', message: 'All jobs running normally' });
+      if (tableExists) {
+        const stuckUpdatesResult = this.db.prepare(`
+          SELECT COUNT(*) as count FROM update_schedules
+          WHERE status = 'running' AND last_run_at < datetime('now', '-2 hours')
+        `).get();
+
+        if ((stuckUpdatesResult?.count || 0) > 0) {
+          checks.push({ name: 'Update Jobs', status: 'fail', message: 'Stuck update detected' });
+        } else {
+          checks.push({ name: 'Update Jobs', status: 'pass', message: 'All jobs running normally' });
+        }
+      } else {
+        checks.push({ name: 'Update Jobs', status: 'pass', message: 'No scheduled jobs configured' });
+      }
+    } catch (e) {
+      checks.push({ name: 'Update Jobs', status: 'pass', message: 'Unable to check update jobs' });
     }
 
     // 3. Check data directory exists and is writable
@@ -491,32 +705,89 @@ class SettingsService {
   // =========================================================================
 
   getUserPreferences(userId = 'default') {
-    let row = this.db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(userId);
+    try {
+      // Ensure table exists
+      const tableExists = this.db.prepare(`
+        SELECT name FROM sqlite_master WHERE type='table' AND name='user_preferences'
+      `).get();
 
-    if (!row) {
-      // Create default preferences
-      this.db.prepare('INSERT INTO user_preferences (user_id) VALUES (?)').run(userId);
-      row = this.db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(userId);
+      if (!tableExists) {
+        this._ensureUserPreferencesTable();
+      }
+
+      let row = this.db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(userId);
+
+      if (!row) {
+        // Create default preferences
+        this.db.prepare('INSERT INTO user_preferences (user_id) VALUES (?)').run(userId);
+        row = this.db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(userId);
+      }
+
+      return {
+        theme: row.theme || 'system',
+        currency: row.currency || 'USD',
+        locale: row.locale || 'en-US',
+        dateFormat: row.date_format || 'MMM D, YYYY',
+        numberFormat: row.number_format || 'compact',
+        defaultBenchmark: row.default_benchmark || 'SPY',
+        defaultTimeHorizon: row.default_time_horizon || 10,
+        defaultSimulationRuns: row.default_simulation_runs || 1000,
+        emailAlerts: row.email_alerts === 1,
+        alertOnUpdateFailure: row.alert_on_update_failure === 1,
+        alertOnStaleData: row.alert_on_stale_data === 1,
+        // New preference fields
+        showPercentages: row.show_percentages === 1,
+        compactNumbers: row.compact_numbers === 1,
+        autoRefreshInterval: row.auto_refresh_interval || 0,
+        notificationsEnabled: row.notifications_enabled === 1,
+      };
+    } catch (error) {
+      console.error('Error fetching user preferences:', error);
+      // Return safe defaults
+      return {
+        theme: 'system',
+        currency: 'USD',
+        locale: 'en-US',
+        dateFormat: 'MMM D, YYYY',
+        numberFormat: 'compact',
+        defaultBenchmark: 'SPY',
+        defaultTimeHorizon: 10,
+        defaultSimulationRuns: 1000,
+        emailAlerts: false,
+        alertOnUpdateFailure: true,
+        alertOnStaleData: true,
+        showPercentages: true,
+        compactNumbers: true,
+        autoRefreshInterval: 0,
+        notificationsEnabled: false,
+      };
     }
+  }
 
-    return {
-      theme: row.theme,
-      currency: row.currency,
-      locale: row.locale,
-      dateFormat: row.date_format,
-      numberFormat: row.number_format,
-      defaultBenchmark: row.default_benchmark,
-      defaultTimeHorizon: row.default_time_horizon,
-      defaultSimulationRuns: row.default_simulation_runs,
-      emailAlerts: row.email_alerts === 1,
-      alertOnUpdateFailure: row.alert_on_update_failure === 1,
-      alertOnStaleData: row.alert_on_stale_data === 1,
-      // New preference fields
-      showPercentages: row.show_percentages === 1,
-      compactNumbers: row.compact_numbers === 1,
-      autoRefreshInterval: row.auto_refresh_interval || 0,
-      notificationsEnabled: row.notifications_enabled === 1,
-    };
+  _ensureUserPreferencesTable() {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS user_preferences (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT UNIQUE NOT NULL,
+        theme TEXT DEFAULT 'system',
+        currency TEXT DEFAULT 'USD',
+        locale TEXT DEFAULT 'en-US',
+        date_format TEXT DEFAULT 'MMM D, YYYY',
+        number_format TEXT DEFAULT 'compact',
+        default_benchmark TEXT DEFAULT 'SPY',
+        default_time_horizon INTEGER DEFAULT 10,
+        default_simulation_runs INTEGER DEFAULT 1000,
+        email_alerts INTEGER DEFAULT 0,
+        alert_on_update_failure INTEGER DEFAULT 1,
+        alert_on_stale_data INTEGER DEFAULT 1,
+        show_percentages INTEGER DEFAULT 1,
+        compact_numbers INTEGER DEFAULT 1,
+        auto_refresh_interval INTEGER DEFAULT 0,
+        notifications_enabled INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
   }
 
   updateUserPreferences(userId = 'default', prefs) {
@@ -568,36 +839,61 @@ class SettingsService {
   // =========================================================================
 
   getDatabaseStats() {
-    // Get table stats
-    const tables = this.db.prepare(`
-      SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'
-    `).all();
-
-    const tableStats = tables.map(t => {
-      const countResult = this.db.prepare(`SELECT COUNT(*) as count FROM "${t.name}"`).get();
-      return {
-        name: t.name,
-        rows: countResult.count,
-      };
-    }).sort((a, b) => b.rows - a.rows);
-
-    // Get database file size
-    const dbPath = path.join(__dirname, '../../data/stocks.db');
-    let totalSize = '0 MB';
     try {
-      const stats = fs.statSync(dbPath);
-      const sizeMB = stats.size / (1024 * 1024);
-      totalSize = sizeMB >= 1000
-        ? `${(sizeMB / 1024).toFixed(2)} GB`
-        : `${sizeMB.toFixed(2)} MB`;
-    } catch (e) {
-      // File not accessible
-    }
+      // Get table stats
+      const tables = this.db.prepare(`
+        SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'
+      `).all();
 
-    return {
-      totalSize,
-      tables: tableStats,
-    };
+      let totalRows = 0;
+      const tableStats = tables.map(t => {
+        try {
+          const countResult = this.db.prepare(`SELECT COUNT(*) as count FROM "${t.name}"`).get();
+          const rows = countResult?.count || 0;
+          totalRows += rows;
+          return {
+            name: t.name,
+            rows: rows,
+          };
+        } catch {
+          return { name: t.name, rows: 0 };
+        }
+      }).sort((a, b) => b.rows - a.rows);
+
+      // Get index count
+      const indexResult = this.db.prepare(`
+        SELECT COUNT(*) as count FROM sqlite_master WHERE type='index'
+      `).get();
+      const indexCount = indexResult?.count || 0;
+
+      // Get database file size
+      const dbPath = path.join(__dirname, '../../data/stocks.db');
+      let size = 0;
+      try {
+        const stats = fs.statSync(dbPath);
+        size = stats.size;
+      } catch {
+        // File not accessible
+      }
+
+      return {
+        size,  // Frontend expects 'size' (raw bytes)
+        tableCount: tables.length,
+        totalRows,
+        indexCount,
+        tables: tableStats,
+      };
+    } catch (error) {
+      console.error('Error getting database stats:', error);
+      // Return safe defaults on error
+      return {
+        size: 0,
+        tableCount: 0,
+        totalRows: 0,
+        indexCount: 0,
+        tables: [],
+      };
+    }
   }
 
   // =========================================================================

@@ -8,7 +8,10 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer
+  ResponsiveContainer,
+  Area,
+  ComposedChart,
+  ReferenceLine
 } from 'recharts';
 import { TrendingUp, TrendingDown, Activity, Calendar } from 'lucide-react';
 import { pricesAPI, indicesAPI } from '../services/api';
@@ -29,7 +32,8 @@ const OVERLAY_OPTIONS = [
   { key: 'sma200', label: 'SMA 200', color: '#f59e0b', type: 'indicator' },
   { key: 'spy', label: 'S&P 500', color: '#8b5cf6', type: 'index', symbol: '^GSPC' },
   { key: 'qqq', label: 'NASDAQ', color: '#06b6d4', type: 'index', symbol: '^IXIC' },
-  { key: 'dia', label: 'Dow Jones', color: '#f97316', type: 'index', symbol: '^DJI' }
+  { key: 'dia', label: 'Dow Jones', color: '#f97316', type: 'index', symbol: '^DJI' },
+  { key: 'alpha', label: 'Alpha vs SPY', color: '#8b5cf6', type: 'alpha' }
 ];
 
 const formatPrice = (value) => {
@@ -101,11 +105,22 @@ export function PriceChart({ symbol }) {
     sma200: true,
     spy: false,
     qqq: false,
-    dia: false
+    dia: false,
+    alpha: false
   });
 
+  // View mode: 'price' (absolute) or 'returns' (percentage returns with alpha)
+  const [viewMode, setViewMode] = useState('price');
+
   const toggleOverlay = (key) => {
-    setOverlays(prev => ({ ...prev, [key]: !prev[key] }));
+    if (key === 'alpha') {
+      // Toggle alpha mode - switches to returns view
+      const newAlphaState = !overlays.alpha;
+      setOverlays(prev => ({ ...prev, alpha: newAlphaState }));
+      setViewMode(newAlphaState ? 'returns' : 'price');
+    } else {
+      setOverlays(prev => ({ ...prev, [key]: !prev[key] }));
+    }
   };
 
   useEffect(() => {
@@ -229,15 +244,38 @@ export function PriceChart({ symbol }) {
   const qqqByDate = createIndexMap(indexData.qqq);
   const diaByDate = createIndexMap(indexData.dia);
 
-  const chartData = prices.map((p, i) => ({
-    ...p,
-    price: p.adjusted_close || p.close,
-    sma50: sma50[i],
-    sma200: sma200[i],
-    spy: spyByDate.get(p.date) || null,
-    qqq: qqqByDate.get(p.date) || null,
-    dia: diaByDate.get(p.date) || null
-  }));
+  // Calculate cumulative returns for alpha view
+  const spyStartPrice = indexData.spy?.[0]?.adjusted_close || indexData.spy?.[0]?.close;
+
+  const chartData = prices.map((p, i) => {
+    const stockPrice = p.adjusted_close || p.close;
+    const stockReturn = ((stockPrice - startPrice) / startPrice) * 100;
+
+    // Get SPY return for same date
+    const spyPrice = indexData.spy?.find(s => s.date === p.date);
+    const spyReturn = spyPrice && spyStartPrice
+      ? (((spyPrice.adjusted_close || spyPrice.close) - spyStartPrice) / spyStartPrice) * 100
+      : null;
+
+    // Alpha = Stock Return - SPY Return
+    const alpha = spyReturn !== null ? stockReturn - spyReturn : null;
+
+    return {
+      ...p,
+      price: stockPrice,
+      sma50: sma50[i],
+      sma200: sma200[i],
+      spy: spyByDate.get(p.date) || null,
+      qqq: qqqByDate.get(p.date) || null,
+      dia: diaByDate.get(p.date) || null,
+      stockReturn,
+      spyReturn,
+      alpha
+    };
+  });
+
+  // Calculate current alpha for display
+  const currentAlpha = chartData.length > 0 ? chartData[chartData.length - 1].alpha : null;
 
   return (
     <div className="price-chart-container">
@@ -250,6 +288,11 @@ export function PriceChart({ symbol }) {
             {formatPercent(periodChange)}
             <span className="price-chart-period-label">({period.toUpperCase()})</span>
           </span>
+          {currentAlpha !== null && (
+            <span className={`price-chart-alpha ${currentAlpha >= 0 ? 'outperform' : 'underperform'}`}>
+              α {currentAlpha >= 0 ? '+' : ''}{currentAlpha.toFixed(1)}%
+            </span>
+          )}
         </div>
 
         {/* Period selector */}
@@ -310,11 +353,12 @@ export function PriceChart({ symbol }) {
                             (opt.key === 'sma200' && sma200.length === 0) ||
                             (opt.key === 'spy' && !indexData.spy) ||
                             (opt.key === 'qqq' && !indexData.qqq) ||
-                            (opt.key === 'dia' && !indexData.dia);
+                            (opt.key === 'dia' && !indexData.dia) ||
+                            (opt.key === 'alpha' && !indexData.spy);
           return (
             <button
               key={opt.key}
-              className={`overlay-toggle ${overlays[opt.key] ? 'active' : ''} ${isDisabled ? 'disabled' : ''}`}
+              className={`overlay-toggle ${overlays[opt.key] ? 'active' : ''} ${isDisabled ? 'disabled' : ''} ${opt.type === 'alpha' ? 'alpha-toggle' : ''}`}
               onClick={() => !isDisabled && toggleOverlay(opt.key)}
               disabled={isDisabled}
               style={{ '--toggle-color': opt.color }}
@@ -326,107 +370,205 @@ export function PriceChart({ symbol }) {
         })}
       </div>
 
-      {/* Price chart */}
+      {/* Chart - switches between price view and returns/alpha view */}
       <div className="price-chart-wrapper">
         <ResponsiveContainer width="100%" height={350}>
-          <LineChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
-            <XAxis
-              dataKey="date"
-              tickFormatter={(date) => {
-                const d = new Date(date);
-                return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-              }}
-              tick={{ fontSize: 11, fill: '#6b7280' }}
-              tickLine={false}
-              axisLine={{ stroke: 'rgba(0,0,0,0.06)' }}
-              interval="preserveStartEnd"
-            />
-            <YAxis
-              domain={['auto', 'auto']}
-              tickFormatter={(val) => `$${val.toFixed(0)}`}
-              tick={{ fontSize: 11, fill: '#6b7280' }}
-              tickLine={false}
-              axisLine={{ stroke: 'rgba(0,0,0,0.06)' }}
-              width={60}
-            />
-            <Tooltip content={<CustomTooltip />} />
-
-            {/* Price line */}
-            <Line
-              type="monotone"
-              dataKey="price"
-              stroke={isPositive ? '#10b981' : '#ef4444'}
-              strokeWidth={2}
-              dot={false}
-              activeDot={{ r: 4 }}
-            />
-
-            {/* SMA 50 */}
-            {sma50.length > 0 && overlays.sma50 && (
-              <Line
-                type="monotone"
-                dataKey="sma50"
-                stroke="#6366f1"
-                strokeWidth={1}
-                strokeDasharray="5 5"
-                dot={false}
-                name="SMA 50"
+          {viewMode === 'returns' ? (
+            /* Alpha/Returns Chart */
+            <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="alphaPositiveGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.05} />
+                </linearGradient>
+                <linearGradient id="alphaNegativeGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#f97316" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#f97316" stopOpacity={0.05} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
+              <XAxis
+                dataKey="date"
+                tickFormatter={(date) => {
+                  const d = new Date(date);
+                  return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+                }}
+                tick={{ fontSize: 11, fill: '#6b7280' }}
+                tickLine={false}
+                axisLine={{ stroke: 'rgba(0,0,0,0.06)' }}
+                interval="preserveStartEnd"
               />
-            )}
-
-            {/* SMA 200 */}
-            {sma200.length > 0 && overlays.sma200 && (
-              <Line
-                type="monotone"
-                dataKey="sma200"
-                stroke="#f59e0b"
-                strokeWidth={1}
-                strokeDasharray="5 5"
-                dot={false}
-                name="SMA 200"
+              <YAxis
+                domain={['auto', 'auto']}
+                tickFormatter={(val) => `${val >= 0 ? '+' : ''}${val.toFixed(0)}%`}
+                tick={{ fontSize: 11, fill: '#6b7280' }}
+                tickLine={false}
+                axisLine={{ stroke: 'rgba(0,0,0,0.06)' }}
+                width={60}
               />
-            )}
+              <Tooltip
+                content={({ active, payload }) => {
+                  if (!active || !payload || !payload.length) return null;
+                  const d = payload[0].payload;
+                  return (
+                    <div className="price-tooltip">
+                      <div className="price-tooltip-date">{formatDate(d.date)}</div>
+                      <div className="price-tooltip-row">
+                        <span>{symbol} Return:</span>
+                        <span className={d.stockReturn >= 0 ? 'positive' : 'negative'}>
+                          {d.stockReturn >= 0 ? '+' : ''}{d.stockReturn?.toFixed(2)}%
+                        </span>
+                      </div>
+                      <div className="price-tooltip-row">
+                        <span>S&P 500 Return:</span>
+                        <span className={d.spyReturn >= 0 ? 'positive' : 'negative'}>
+                          {d.spyReturn >= 0 ? '+' : ''}{d.spyReturn?.toFixed(2)}%
+                        </span>
+                      </div>
+                      <div className="price-tooltip-row highlight">
+                        <span>Alpha:</span>
+                        <span className={d.alpha >= 0 ? 'alpha-positive' : 'alpha-negative'}>
+                          {d.alpha >= 0 ? '+' : ''}{d.alpha?.toFixed(2)}%
+                        </span>
+                      </div>
+                    </div>
+                  );
+                }}
+              />
+              <ReferenceLine y={0} stroke="#6b7280" strokeDasharray="3 3" />
 
-            {/* S&P 500 Index */}
-            {indexData.spy && overlays.spy && (
+              {/* Alpha filled area */}
+              <Area
+                type="monotone"
+                dataKey="alpha"
+                stroke={currentAlpha >= 0 ? '#8b5cf6' : '#f97316'}
+                strokeWidth={2}
+                fill={currentAlpha >= 0 ? 'url(#alphaPositiveGradient)' : 'url(#alphaNegativeGradient)'}
+                name="Alpha"
+              />
+
+              {/* Stock return line */}
               <Line
                 type="monotone"
-                dataKey="spy"
-                stroke="#8b5cf6"
+                dataKey="stockReturn"
+                stroke={isPositive ? '#10b981' : '#ef4444'}
+                strokeWidth={2}
+                dot={false}
+                name={symbol}
+              />
+
+              {/* SPY return line */}
+              <Line
+                type="monotone"
+                dataKey="spyReturn"
+                stroke="#94a3b8"
                 strokeWidth={1.5}
-                strokeDasharray="3 3"
+                strokeDasharray="5 5"
                 dot={false}
                 name="S&P 500"
               />
-            )}
+            </ComposedChart>
+          ) : (
+            /* Standard Price Chart */
+            <LineChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
+              <XAxis
+                dataKey="date"
+                tickFormatter={(date) => {
+                  const d = new Date(date);
+                  return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+                }}
+                tick={{ fontSize: 11, fill: '#6b7280' }}
+                tickLine={false}
+                axisLine={{ stroke: 'rgba(0,0,0,0.06)' }}
+                interval="preserveStartEnd"
+              />
+              <YAxis
+                domain={['auto', 'auto']}
+                tickFormatter={(val) => `$${val.toFixed(0)}`}
+                tick={{ fontSize: 11, fill: '#6b7280' }}
+                tickLine={false}
+                axisLine={{ stroke: 'rgba(0,0,0,0.06)' }}
+                width={60}
+              />
+              <Tooltip content={<CustomTooltip />} />
 
-            {/* NASDAQ (QQQ) Index */}
-            {indexData.qqq && overlays.qqq && (
+              {/* Price line */}
               <Line
                 type="monotone"
-                dataKey="qqq"
-                stroke="#06b6d4"
-                strokeWidth={1.5}
-                strokeDasharray="3 3"
+                dataKey="price"
+                stroke={isPositive ? '#10b981' : '#ef4444'}
+                strokeWidth={2}
                 dot={false}
-                name="NASDAQ"
+                activeDot={{ r: 4 }}
               />
-            )}
 
-            {/* Dow Jones (DIA) Index */}
-            {indexData.dia && overlays.dia && (
-              <Line
-                type="monotone"
-                dataKey="dia"
-                stroke="#f97316"
-                strokeWidth={1.5}
-                strokeDasharray="3 3"
-                dot={false}
-                name="Dow Jones"
-              />
-            )}
-          </LineChart>
+              {/* SMA 50 */}
+              {sma50.length > 0 && overlays.sma50 && (
+                <Line
+                  type="monotone"
+                  dataKey="sma50"
+                  stroke="#6366f1"
+                  strokeWidth={1}
+                  strokeDasharray="5 5"
+                  dot={false}
+                  name="SMA 50"
+                />
+              )}
+
+              {/* SMA 200 */}
+              {sma200.length > 0 && overlays.sma200 && (
+                <Line
+                  type="monotone"
+                  dataKey="sma200"
+                  stroke="#f59e0b"
+                  strokeWidth={1}
+                  strokeDasharray="5 5"
+                  dot={false}
+                  name="SMA 200"
+                />
+              )}
+
+              {/* S&P 500 Index */}
+              {indexData.spy && overlays.spy && (
+                <Line
+                  type="monotone"
+                  dataKey="spy"
+                  stroke="#8b5cf6"
+                  strokeWidth={1.5}
+                  strokeDasharray="3 3"
+                  dot={false}
+                  name="S&P 500"
+                />
+              )}
+
+              {/* NASDAQ (QQQ) Index */}
+              {indexData.qqq && overlays.qqq && (
+                <Line
+                  type="monotone"
+                  dataKey="qqq"
+                  stroke="#06b6d4"
+                  strokeWidth={1.5}
+                  strokeDasharray="3 3"
+                  dot={false}
+                  name="NASDAQ"
+                />
+              )}
+
+              {/* Dow Jones (DIA) Index */}
+              {indexData.dia && overlays.dia && (
+                <Line
+                  type="monotone"
+                  dataKey="dia"
+                  stroke="#f97316"
+                  strokeWidth={1.5}
+                  strokeDasharray="3 3"
+                  dot={false}
+                  name="Dow Jones"
+                />
+              )}
+            </LineChart>
+          )}
         </ResponsiveContainer>
       </div>
 

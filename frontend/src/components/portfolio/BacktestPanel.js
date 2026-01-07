@@ -126,17 +126,37 @@ function BacktestPanel({ portfolioId, holdings }) {
     });
   }, [equityCurveData]);
 
+  // Normalize annual returns to object format
+  const normalizedAnnualReturns = useMemo(() => {
+    if (!results?.annualReturns) return null;
+
+    // If it's already an object (year -> return), return as-is
+    if (!Array.isArray(results.annualReturns)) {
+      return results.annualReturns;
+    }
+
+    // Convert array [{year, return}] to object {year: return}
+    const obj = {};
+    results.annualReturns.forEach(item => {
+      if (item && item.year !== undefined) {
+        obj[item.year] = typeof item.return === 'number' ? item.return : 0;
+      }
+    });
+    return obj;
+  }, [results]);
+
   // Generate monthly returns heatmap data
   const monthlyReturnsData = useMemo(() => {
     if (!results?.monthlyReturns) {
       // Generate mock data from annual returns
-      if (!results?.annualReturns) return [];
+      if (!normalizedAnnualReturns || Object.keys(normalizedAnnualReturns).length === 0) return [];
 
       const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       const data = [];
 
-      Object.entries(results.annualReturns).forEach(([year, annualReturn]) => {
-        const avgMonthly = annualReturn / 12;
+      Object.entries(normalizedAnnualReturns).forEach(([year, annualReturn]) => {
+        const returnValue = typeof annualReturn === 'number' ? annualReturn : 0;
+        const avgMonthly = returnValue / 12;
         months.forEach((month, idx) => {
           const variance = (Math.random() - 0.5) * 10;
           data.push({
@@ -151,7 +171,7 @@ function BacktestPanel({ portfolioId, holdings }) {
       return data;
     }
     return results.monthlyReturns;
-  }, [results]);
+  }, [results, normalizedAnnualReturns]);
 
   const getReturnColor = (value) => {
     if (value > 5) return 'var(--success-color)';
@@ -441,10 +461,10 @@ function BacktestPanel({ portfolioId, holdings }) {
             )}
 
             {/* Annual Returns Chart */}
-            {activeTab === 'annual' && results.annualReturns && (
+            {activeTab === 'annual' && normalizedAnnualReturns && Object.keys(normalizedAnnualReturns).length > 0 && (
               <div className="bt-chart-container">
                 <AnnualReturnsChart
-                  data={results.annualReturns}
+                  data={normalizedAnnualReturns}
                   benchmarkData={results.benchmarkAnnualReturns}
                   formatPercent={formatPercent}
                 />
@@ -533,8 +553,8 @@ function EquityCurveChart({ data, initial, formatValue }) {
   if (!data || data.length === 0) return <div className="no-data">No data available</div>;
 
   const width = 600;
-  const height = 250;
-  const padding = { top: 20, right: 60, bottom: 40, left: 70 };
+  const height = 270;
+  const padding = { top: 20, right: 65, bottom: 45, left: 70 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
 
@@ -544,8 +564,8 @@ function EquityCurveChart({ data, initial, formatValue }) {
   const xScale = (i) => padding.left + (i / (data.length - 1)) * chartWidth;
   const yScale = (value) => padding.top + chartHeight - ((value - minValue) / (maxValue - minValue)) * chartHeight;
 
-  const generatePath = (data, key) => {
-    return data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(d[key])}`).join(' ');
+  const generatePath = (dataArr, key) => {
+    return dataArr.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(d[key])}`).join(' ');
   };
 
   const formatAxisValue = (value) => {
@@ -555,6 +575,14 @@ function EquityCurveChart({ data, initial, formatValue }) {
   };
 
   const yTicks = Array.from({ length: 5 }, (_, i) => minValue + (maxValue - minValue) * (i / 4));
+
+  // X-axis date labels
+  const dateLabels = [];
+  const labelCount = 5;
+  for (let i = 0; i < labelCount; i++) {
+    const idx = Math.floor((i / (labelCount - 1)) * (data.length - 1));
+    dateLabels.push({ idx, date: data[idx]?.date });
+  }
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="equity-chart-svg">
@@ -607,6 +635,18 @@ function EquityCurveChart({ data, initial, formatValue }) {
         fill="rgba(99, 102, 241, 0.1)"
       />
 
+      {/* Y-axis label */}
+      <text
+        x={15}
+        y={height / 2}
+        textAnchor="middle"
+        fontSize="10"
+        fill="var(--text-tertiary)"
+        transform={`rotate(-90, 15, ${height / 2})`}
+      >
+        Portfolio Value
+      </text>
+
       {/* Y Axis */}
       {yTicks.map((tick, i) => (
         <text
@@ -619,6 +659,20 @@ function EquityCurveChart({ data, initial, formatValue }) {
           fill="var(--text-tertiary)"
         >
           {formatAxisValue(tick)}
+        </text>
+      ))}
+
+      {/* X-axis date labels */}
+      {dateLabels.map((label, i) => (
+        <text
+          key={i}
+          x={xScale(label.idx)}
+          y={height - padding.bottom + 18}
+          textAnchor="middle"
+          fontSize="9"
+          fill="var(--text-tertiary)"
+        >
+          {label.date?.substring(0, 7) || ''}
         </text>
       ))}
 
@@ -651,8 +705,8 @@ function DrawdownChart({ data, maxDrawdown }) {
   if (!data || data.length === 0) return <div className="no-data">No data available</div>;
 
   const width = 600;
-  const height = 150;
-  const padding = { top: 10, right: 40, bottom: 30, left: 50 };
+  const height = 180;
+  const padding = { top: 20, right: 40, bottom: 40, left: 55 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
 
@@ -664,17 +718,60 @@ function DrawdownChart({ data, maxDrawdown }) {
   const areaPath = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(d.drawdown)}`).join(' ') +
     ` L ${xScale(data.length - 1)} ${yScale(0)} L ${padding.left} ${yScale(0)} Z`;
 
+  // Generate Y-axis ticks (0%, -10%, -20%, etc.)
+  const yTickStep = Math.ceil(Math.abs(minDrawdown) / 4 / 5) * 5; // Round to nearest 5
+  const yTicks = [];
+  for (let tick = 0; tick >= minDrawdown; tick -= yTickStep) {
+    yTicks.push(tick);
+  }
+
+  // X-axis date labels
+  const dateLabels = [];
+  const labelCount = 5;
+  for (let i = 0; i < labelCount; i++) {
+    const idx = Math.floor((i / (labelCount - 1)) * (data.length - 1));
+    dateLabels.push({ idx, date: data[idx]?.date });
+  }
+
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="drawdown-chart-svg">
-      {/* Zero line */}
-      <line
-        x1={padding.left}
-        y1={yScale(0)}
-        x2={width - padding.right}
-        y2={yScale(0)}
-        stroke="var(--border-color)"
-        strokeWidth="1"
-      />
+      {/* Y-axis grid and labels */}
+      {yTicks.map((tick, i) => (
+        <g key={i}>
+          <line
+            x1={padding.left}
+            y1={yScale(tick)}
+            x2={width - padding.right}
+            y2={yScale(tick)}
+            stroke="var(--border-color)"
+            strokeWidth="1"
+            strokeDasharray={tick === 0 ? "0" : "3,3"}
+            opacity={tick === 0 ? 1 : 0.5}
+          />
+          <text
+            x={padding.left - 8}
+            y={yScale(tick)}
+            textAnchor="end"
+            alignmentBaseline="middle"
+            fontSize="10"
+            fill={tick === maxDrawdown ? 'var(--danger-color)' : 'var(--text-tertiary)'}
+          >
+            {tick}%
+          </text>
+        </g>
+      ))}
+
+      {/* Y-axis label */}
+      <text
+        x={12}
+        y={height / 2}
+        textAnchor="middle"
+        fontSize="10"
+        fill="var(--text-tertiary)"
+        transform={`rotate(-90, 12, ${height / 2})`}
+      >
+        Drawdown
+      </text>
 
       {/* Max drawdown line */}
       <line
@@ -683,9 +780,9 @@ function DrawdownChart({ data, maxDrawdown }) {
         x2={width - padding.right}
         y2={yScale(maxDrawdown)}
         stroke="var(--danger-color)"
-        strokeWidth="1"
+        strokeWidth="1.5"
         strokeDasharray="4,4"
-        opacity="0.5"
+        opacity="0.7"
       />
 
       {/* Drawdown area */}
@@ -694,40 +791,41 @@ function DrawdownChart({ data, maxDrawdown }) {
         fill="rgba(239, 68, 68, 0.3)"
       />
 
-      {/* Y Axis label */}
-      <text
-        x={padding.left - 10}
-        y={yScale(0)}
-        textAnchor="end"
-        alignmentBaseline="middle"
-        fontSize="10"
-        fill="var(--text-tertiary)"
-      >
-        0%
-      </text>
-      <text
-        x={padding.left - 10}
-        y={yScale(maxDrawdown)}
-        textAnchor="end"
-        alignmentBaseline="middle"
-        fontSize="10"
-        fill="var(--danger-color)"
-      >
-        {maxDrawdown?.toFixed(0)}%
-      </text>
+      {/* X-axis date labels */}
+      {dateLabels.map((label, i) => (
+        <text
+          key={i}
+          x={xScale(label.idx)}
+          y={height - padding.bottom + 18}
+          textAnchor="middle"
+          fontSize="9"
+          fill="var(--text-tertiary)"
+        >
+          {label.date?.substring(0, 7) || ''}
+        </text>
+      ))}
     </svg>
   );
 }
 
 // Annual Returns Bar Chart
 function AnnualReturnsChart({ data, benchmarkData, formatPercent }) {
+  if (!data || typeof data !== 'object') {
+    return <div className="no-data">No annual returns data</div>;
+  }
+
   const years = Object.keys(data).sort();
-  const values = Object.values(data);
+  const values = Object.values(data).map(v => typeof v === 'number' ? v : 0);
+
+  if (years.length === 0) {
+    return <div className="no-data">No annual returns data</div>;
+  }
+
   const maxAbs = Math.max(...values.map(Math.abs), 30);
 
   const width = 600;
-  const height = 200;
-  const padding = { top: 20, right: 20, bottom: 40, left: 50 };
+  const height = 220;
+  const padding = { top: 30, right: 20, bottom: 40, left: 55 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
   const barWidth = Math.min(40, (chartWidth / years.length) * 0.7);
@@ -735,21 +833,53 @@ function AnnualReturnsChart({ data, benchmarkData, formatPercent }) {
 
   const yScale = (value) => padding.top + chartHeight / 2 - (value / maxAbs) * (chartHeight / 2);
 
+  // Y-axis ticks
+  const yTicks = [-maxAbs, -maxAbs/2, 0, maxAbs/2, maxAbs].map(v => Math.round(v / 5) * 5);
+
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="annual-returns-svg">
-      {/* Zero line */}
-      <line
-        x1={padding.left}
-        y1={yScale(0)}
-        x2={width - padding.right}
-        y2={yScale(0)}
-        stroke="var(--border-color)"
-        strokeWidth="1"
-      />
+      {/* Y-axis grid lines */}
+      {yTicks.map((tick, i) => (
+        <g key={i}>
+          <line
+            x1={padding.left}
+            y1={yScale(tick)}
+            x2={width - padding.right}
+            y2={yScale(tick)}
+            stroke="var(--border-color)"
+            strokeWidth="1"
+            strokeDasharray={tick === 0 ? "0" : "3,3"}
+            opacity={tick === 0 ? 1 : 0.5}
+          />
+          <text
+            x={padding.left - 8}
+            y={yScale(tick)}
+            textAnchor="end"
+            alignmentBaseline="middle"
+            fontSize="10"
+            fill="var(--text-tertiary)"
+          >
+            {tick > 0 ? '+' : ''}{tick}%
+          </text>
+        </g>
+      ))}
+
+      {/* Y-axis label */}
+      <text
+        x={15}
+        y={height / 2}
+        textAnchor="middle"
+        fontSize="10"
+        fill="var(--text-tertiary)"
+        transform={`rotate(-90, 15, ${height / 2})`}
+      >
+        Annual Return
+      </text>
 
       {/* Bars */}
       {years.map((year, i) => {
-        const value = data[year];
+        const rawValue = data[year];
+        const value = typeof rawValue === 'number' ? rawValue : 0;
         const x = padding.left + gap + i * (barWidth + gap);
         const barHeight = Math.abs(value / maxAbs) * (chartHeight / 2);
         const y = value >= 0 ? yScale(value) : yScale(0);
@@ -760,7 +890,7 @@ function AnnualReturnsChart({ data, benchmarkData, formatPercent }) {
               x={x}
               y={y}
               width={barWidth}
-              height={barHeight}
+              height={Math.max(barHeight, 1)}
               rx={3}
               fill={value >= 0 ? 'var(--success-color)' : 'var(--danger-color)'}
               opacity="0.8"

@@ -216,12 +216,13 @@ router.get('/benchmark', (req, res) => {
  * IMPORTANT: Must come BEFORE /alpha/:symbol to avoid route conflict
  * Query params:
  *   - period: '1m', '3m', '6m', '1y', '2y', '5y', 'max' (default '1y')
+ *   - rollingWindow: '30d', '60d', '90d' - calculate rolling alpha instead of cumulative
  */
 router.get('/alpha/timeseries/:symbol', (req, res) => {
   try {
     const db = req.app.get('db');
     const { symbol } = req.params;
-    const { period = '1y' } = req.query;
+    const { period = '1y', rollingWindow } = req.query;
 
     // Get company_id
     const company = db.prepare(`
@@ -309,6 +310,15 @@ router.get('/alpha/timeseries/:symbol', (req, res) => {
       });
     }
 
+    // Parse rolling window if specified (e.g., '30d' -> 30)
+    let rollingDays = null;
+    if (rollingWindow) {
+      const match = rollingWindow.match(/^(\d+)d$/);
+      if (match) {
+        rollingDays = parseInt(match[1], 10);
+      }
+    }
+
     // Calculate cumulative returns and alpha for each date
     const baseStockPrice = stockMap.get(commonDates[0]);
     const baseBenchmarkPrice = benchmarkMap.get(commonDates[0]);
@@ -330,10 +340,27 @@ router.get('/alpha/timeseries/:symbol', (req, res) => {
       const dailyBenchmarkReturn = idx === 0 ? 0 : ((benchmarkPrice - prevBenchmarkPrice) / prevBenchmarkPrice) * 100;
       const dailyAlpha = dailyStockReturn - dailyBenchmarkReturn;
 
+      // Rolling window returns (if specified)
+      let rollingStockReturn = null;
+      let rollingBenchmarkReturn = null;
+      let rollingAlpha = null;
+
+      if (rollingDays && idx >= rollingDays) {
+        const rollingBaseDate = commonDates[idx - rollingDays];
+        const rollingBaseStockPrice = stockMap.get(rollingBaseDate);
+        const rollingBaseBenchmarkPrice = benchmarkMap.get(rollingBaseDate);
+
+        if (rollingBaseStockPrice && rollingBaseBenchmarkPrice) {
+          rollingStockReturn = ((stockPrice - rollingBaseStockPrice) / rollingBaseStockPrice) * 100;
+          rollingBenchmarkReturn = ((benchmarkPrice - rollingBaseBenchmarkPrice) / rollingBaseBenchmarkPrice) * 100;
+          rollingAlpha = rollingStockReturn - rollingBenchmarkReturn;
+        }
+      }
+
       prevStockPrice = stockPrice;
       prevBenchmarkPrice = benchmarkPrice;
 
-      return {
+      const result = {
         date,
         // Cumulative from period start
         stockReturn: Math.round(stockReturn * 100) / 100,
@@ -347,6 +374,15 @@ router.get('/alpha/timeseries/:symbol', (req, res) => {
         stockPrice: Math.round(stockPrice * 100) / 100,
         benchmarkPrice: Math.round(benchmarkPrice * 100) / 100
       };
+
+      // Add rolling window data if calculated
+      if (rollingDays) {
+        result.rollingStockReturn = rollingStockReturn !== null ? Math.round(rollingStockReturn * 100) / 100 : null;
+        result.rollingBenchmarkReturn = rollingBenchmarkReturn !== null ? Math.round(rollingBenchmarkReturn * 100) / 100 : null;
+        result.rollingAlpha = rollingAlpha !== null ? Math.round(rollingAlpha * 100) / 100 : null;
+      }
+
+      return result;
     });
 
     // Calculate summary statistics
@@ -355,12 +391,33 @@ router.get('/alpha/timeseries/:symbol', (req, res) => {
     const minAlpha = Math.min(...timeseries.map(t => t.alpha));
     const avgAlpha = timeseries.reduce((sum, t) => sum + t.alpha, 0) / timeseries.length;
 
+    // Calculate rolling alpha summary if rolling window was requested
+    // Uses same field names as summary for consistent frontend consumption
+    let rollingSummary = null;
+    if (rollingDays) {
+      const rollingAlphas = timeseries
+        .map(t => t.rollingAlpha)
+        .filter(a => a !== null);
+      if (rollingAlphas.length > 0) {
+        const latestRollingAlpha = rollingAlphas[rollingAlphas.length - 1];
+        rollingSummary = {
+          windowDays: rollingDays,
+          currentAlpha: Math.round(latestRollingAlpha * 100) / 100,
+          maxAlpha: Math.round(Math.max(...rollingAlphas) * 100) / 100,
+          minAlpha: Math.round(Math.min(...rollingAlphas) * 100) / 100,
+          avgAlpha: Math.round(rollingAlphas.reduce((s, a) => s + a, 0) / rollingAlphas.length * 100) / 100,
+          outperforming: latestRollingAlpha > 0
+        };
+      }
+    }
+
     res.json({
       success: true,
       data: {
         symbol,
         benchmark: 'SPY',
         period,
+        rollingWindow: rollingDays ? `${rollingDays}d` : null,
         dataPoints: timeseries.length,
         summary: {
           currentAlpha: Math.round(latestAlpha * 100) / 100,
@@ -369,6 +426,7 @@ router.get('/alpha/timeseries/:symbol', (req, res) => {
           avgAlpha: Math.round(avgAlpha * 100) / 100,
           outperforming: latestAlpha > 0
         },
+        rollingSummary,
         timeseries
       }
     });

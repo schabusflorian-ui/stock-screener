@@ -132,9 +132,9 @@ function AlphaAnalyticsPanel({ portfolioId }) {
   return (
     <div className="simulation-panel alpha-analytics-panel">
       {/* Controls */}
-      <div className="panel-controls">
+      <div className="alpha-controls">
         <div className="control-group">
-          <label>Period:</label>
+          <label>Period</label>
           <select value={period} onChange={(e) => setPeriod(e.target.value)}>
             <option value="6m">6 Months</option>
             <option value="1y">1 Year</option>
@@ -144,7 +144,7 @@ function AlphaAnalyticsPanel({ portfolioId }) {
           </select>
         </div>
         <div className="control-group">
-          <label>Benchmark:</label>
+          <label>Benchmark</label>
           <select value={benchmark} onChange={(e) => setBenchmark(e.target.value)}>
             <option value="SPY">S&P 500 (SPY)</option>
             <option value="QQQ">Nasdaq (QQQ)</option>
@@ -158,7 +158,7 @@ function AlphaAnalyticsPanel({ portfolioId }) {
       </div>
 
       {/* Tabs */}
-      <div className="panel-tabs">
+      <div className="analytics-tabs">
         {['summary', 'factors', 'rolling', 'skill', 'attribution'].map(tab => (
           <button
             key={tab}
@@ -324,7 +324,7 @@ function AlphaAnalyticsPanel({ portfolioId }) {
                     className="factor-bar"
                     style={{
                       width: `${Math.min(100, Math.abs((data.exposure || 0) * 50))}%`,
-                      backgroundColor: data.exposure >= 0 ? 'var(--color-success)' : 'var(--color-danger)'
+                      backgroundColor: data.exposure >= 0 ? 'var(--positive)' : 'var(--negative)'
                     }}
                   />
                 </div>
@@ -559,7 +559,7 @@ function AlphaAnalyticsPanel({ portfolioId }) {
                     className="sector-bar"
                     style={{
                       width: `${Math.min(100, Math.abs(sector.alphaContribution || 0) * 10)}%`,
-                      backgroundColor: (sector.alphaContribution || 0) >= 0 ? 'var(--color-success)' : 'var(--color-danger)'
+                      backgroundColor: (sector.alphaContribution || 0) >= 0 ? 'var(--positive)' : 'var(--negative)'
                     }}
                   />
                 </div>

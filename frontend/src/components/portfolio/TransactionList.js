@@ -6,8 +6,11 @@ import {
   TrendingDown,
   DollarSign,
   Filter,
-  Calendar
+  Calendar,
+  BarChart3,
+  X
 } from 'lucide-react';
+import { TradeAttributionDetail } from '../agent';
 import './TransactionList.css';
 
 const TRANSACTION_TYPES = {
@@ -22,10 +25,19 @@ const TRANSACTION_TYPES = {
 
 function TransactionList({ transactions, onLoadMore }) {
   const [filterType, setFilterType] = useState('all');
+  const [selectedTransaction, setSelectedTransaction] = useState(null);
+
+  // Normalize transactions to handle both API field naming conventions
+  const normalizedTransactions = transactions.map(t => ({
+    ...t,
+    type: t.type || t.transaction_type,
+    price: t.price || t.price_per_share,
+    amount: t.amount || t.total_amount
+  }));
 
   const filteredTransactions = filterType === 'all'
-    ? transactions
-    : transactions.filter(t => t.type === filterType);
+    ? normalizedTransactions
+    : normalizedTransactions.filter(t => t.type === filterType);
 
   const formatValue = (value) => {
     if (!value && value !== 0) return '-';
@@ -114,6 +126,17 @@ function TransactionList({ transactions, onLoadMore }) {
                   {formatDate(tx.created_at)}
                 </span>
               </div>
+
+              {/* Attribution button for sell transactions */}
+              {tx.type === 'sell' && tx.id && (
+                <button
+                  className="transaction-attribution-btn"
+                  onClick={() => setSelectedTransaction(tx)}
+                  title="View trade attribution"
+                >
+                  <BarChart3 size={16} />
+                </button>
+              )}
             </div>
           );
         })}
@@ -130,6 +153,24 @@ function TransactionList({ transactions, onLoadMore }) {
           <button className="btn btn-secondary" onClick={onLoadMore}>
             Load More
           </button>
+        </div>
+      )}
+
+      {/* Attribution Modal */}
+      {selectedTransaction && (
+        <div className="attribution-modal-overlay" onClick={() => setSelectedTransaction(null)}>
+          <div className="attribution-modal" onClick={e => e.stopPropagation()}>
+            <button
+              className="attribution-modal-close"
+              onClick={() => setSelectedTransaction(null)}
+            >
+              <X size={20} />
+            </button>
+            <TradeAttributionDetail
+              transactionId={selectedTransaction.id}
+              onClose={() => setSelectedTransaction(null)}
+            />
+          </div>
         </div>
       )}
     </div>

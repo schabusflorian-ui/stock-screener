@@ -5,6 +5,7 @@ import { PageHeader, Callout } from '../components/ui';
 import { UpdateSystemPanel } from '../components/updates';
 import './UpdatesPage.css';
 
+
 // Format date for display
 const formatDate = (dateStr) => {
   if (!dateStr) return '-';
@@ -241,7 +242,7 @@ function UpdateHistory({ history }) {
 }
 
 // Main Updates Page
-function UpdatesPage() {
+function UpdatesPage({ embedded = false }) {
   const [status, setStatus] = useState(null);
   const [progress, setProgress] = useState(null);
   const [history, setHistory] = useState([]);
@@ -323,6 +324,7 @@ function UpdatesPage() {
     } catch (err) {
       console.error('Error loading progress:', err);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadStatus]);
 
   // Load history
@@ -653,11 +655,13 @@ function UpdatesPage() {
   const isRunning = status?.updateInProgress;
 
   return (
-    <div className="updates-page">
-      <PageHeader
-        title="Data Updates"
-        subtitle="Manage quarterly SEC data imports"
-      />
+    <div className={`updates-page ${embedded ? 'updates-page--embedded' : ''}`}>
+      {!embedded && (
+        <PageHeader
+          title="Data Updates"
+          subtitle="Manage quarterly SEC data imports"
+        />
+      )}
 
       {error && (
         <Callout type="error" dismissible onDismiss={() => setError(null)}>

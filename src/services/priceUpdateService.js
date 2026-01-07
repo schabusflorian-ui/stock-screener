@@ -144,7 +144,7 @@ class PriceUpdateService {
   }
 
   /**
-   * Run Python command
+   * Run Python command (waits for completion)
    */
   _runPythonCommand(command) {
     return new Promise((resolve, reject) => {
@@ -178,10 +178,49 @@ class PriceUpdateService {
   }
 
   /**
-   * Trigger daily price update (runs in background)
+   * Run Python command in background (returns immediately)
+   */
+  _runPythonCommandBackground(command) {
+    const pythonProcess = spawn('python3', [
+      this.pythonScript,
+      '--db', this.dbPath,
+      command
+    ], {
+      detached: true,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    // Log output but don't wait
+    pythonProcess.stdout.on('data', (data) => {
+      console.log(`[PriceUpdate:${command}] ${data.toString().trim()}`);
+    });
+
+    pythonProcess.stderr.on('data', (data) => {
+      console.error(`[PriceUpdate:${command}] ${data.toString().trim()}`);
+    });
+
+    pythonProcess.on('close', (code) => {
+      console.log(`[PriceUpdate:${command}] Process exited with code ${code}`);
+    });
+
+    // Unref so Node doesn't wait for child process
+    pythonProcess.unref();
+
+    return { pid: pythonProcess.pid, started: true };
+  }
+
+  /**
+   * Trigger daily price update (waits for completion)
    */
   async runDailyUpdate() {
     return this._runPythonCommand('update');
+  }
+
+  /**
+   * Trigger daily price update (runs in background, returns immediately)
+   */
+  runDailyUpdateBackground() {
+    return this._runPythonCommandBackground('update');
   }
 
   /**

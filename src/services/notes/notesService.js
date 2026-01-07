@@ -48,7 +48,10 @@ class NotesService {
           nb.color as notebook_color,
           GROUP_CONCAT(DISTINCT na.symbol) as symbols,
           (SELECT GROUP_CONCAT(t.name) FROM note_tags nt
-           JOIN tags t ON nt.tag_id = t.id WHERE nt.note_id = n.id) as tag_names
+           JOIN tags t ON nt.tag_id = t.id WHERE nt.note_id = n.id) as tag_names,
+          (SELECT GROUP_CONCAT(p.name) FROM note_attachments na2
+           JOIN portfolios p ON na2.portfolio_id = p.id
+           WHERE na2.note_id = n.id AND na2.attachment_type = 'portfolio') as portfolio_names
         FROM notes n
         JOIN notebooks nb ON n.notebook_id = nb.id
         LEFT JOIN note_attachments na ON n.id = na.note_id AND na.attachment_type = 'company'
@@ -80,6 +83,19 @@ class NotesService {
         JOIN notebooks nb ON n.notebook_id = nb.id
         JOIN note_attachments na ON n.id = na.note_id
         WHERE na.symbol = ? AND n.deleted_at IS NULL
+        ORDER BY n.is_pinned DESC, n.updated_at DESC
+      `),
+
+      getNotesByPortfolio: this.db.prepare(`
+        SELECT n.*,
+          nb.name as notebook_name,
+          nb.color as notebook_color,
+          (SELECT GROUP_CONCAT(t.name) FROM note_tags nt
+           JOIN tags t ON nt.tag_id = t.id WHERE nt.note_id = n.id) as tag_names
+        FROM notes n
+        JOIN notebooks nb ON n.notebook_id = nb.id
+        JOIN note_attachments na ON n.id = na.note_id
+        WHERE na.portfolio_id = ? AND na.attachment_type = 'portfolio' AND n.deleted_at IS NULL
         ORDER BY n.is_pinned DESC, n.updated_at DESC
       `),
 
@@ -304,6 +320,10 @@ class NotesService {
     return this.stmts.getNotesBySymbol.all(symbol.toUpperCase()).map(this._formatNote);
   }
 
+  getNotesByPortfolio(portfolioId) {
+    return this.stmts.getNotesByPortfolio.all(portfolioId).map(this._formatNote);
+  }
+
   getNote(noteId) {
     const note = this.stmts.getNote.get(noteId);
     if (!note) return null;
@@ -325,6 +345,7 @@ class NotesService {
     noteType = 'general',
     status = 'draft',
     symbols = [],
+    portfolioIds = [],
     tagIds = []
   }) {
     const excerpt = this._generateExcerpt(content);
@@ -339,6 +360,11 @@ class NotesService {
     // Add company attachments
     for (const symbol of symbols) {
       this._addCompanyAttachment(noteId, symbol, symbols.indexOf(symbol) === 0);
+    }
+
+    // Add portfolio attachments
+    for (const portfolioId of portfolioIds) {
+      this._addPortfolioAttachment(noteId, portfolioId);
     }
 
     // Add tags
@@ -360,6 +386,7 @@ class NotesService {
     noteType = null,
     status = null,
     symbols = null,
+    portfolioIds = null,
     tagIds = null,
     createVersion = true
   }) {
@@ -378,11 +405,20 @@ class NotesService {
       title, content, excerpt, noteType, status, wordCount, readingTime, noteId
     );
 
-    // Update attachments if provided
-    if (symbols !== null) {
+    // Update attachments if symbols or portfolioIds provided
+    if (symbols !== null || portfolioIds !== null) {
       this.stmts.clearAttachments.run(noteId);
-      for (const symbol of symbols) {
-        this._addCompanyAttachment(noteId, symbol, symbols.indexOf(symbol) === 0);
+      // Re-add company attachments
+      if (symbols !== null) {
+        for (const symbol of symbols) {
+          this._addCompanyAttachment(noteId, symbol, symbols.indexOf(symbol) === 0);
+        }
+      }
+      // Re-add portfolio attachments
+      if (portfolioIds !== null) {
+        for (const portfolioId of portfolioIds) {
+          this._addPortfolioAttachment(noteId, portfolioId);
+        }
       }
     }
 
@@ -573,11 +609,25 @@ class NotesService {
     );
   }
 
+  _addPortfolioAttachment(noteId, portfolioId) {
+    this.stmts.addAttachment.run(
+      noteId,
+      'portfolio',
+      null,
+      null,
+      portfolioId,
+      null,
+      null,
+      0
+    );
+  }
+
   _formatNote(note) {
     return {
       ...note,
       symbols: note.symbols ? note.symbols.split(',') : [],
       tagNames: note.tag_names ? note.tag_names.split(',') : [],
+      portfolioNames: note.portfolio_names ? note.portfolio_names.split(',') : [],
       isPinned: !!note.is_pinned
     };
   }

@@ -19,6 +19,17 @@ const getService = (req) => {
 router.get('/', (req, res) => {
   try {
     const service = getService(req);
+    const { refresh = 'true' } = req.query;
+
+    // Refresh portfolio values by default to ensure accurate totals
+    if (refresh !== 'false') {
+      try {
+        service.refreshAllPortfolios();
+      } catch (refreshError) {
+        console.warn('Failed to refresh portfolio values:', refreshError.message);
+      }
+    }
+
     const portfolios = service.getAllPortfolios();
     res.json({
       success: true,
@@ -241,12 +252,114 @@ router.get('/:id/positions/:positionId/lots', (req, res) => {
   }
 });
 
+// GET /api/portfolios/:id/underlying - Get underlying holdings breakdown for ETF positions
+router.get('/:id/underlying', async (req, res) => {
+  try {
+    const service = getService(req);
+    const db = require('../../database').getDatabase();
+    const { getEtfService } = require('../../services/etfService');
+    const etfService = getEtfService();
+
+    const portfolioId = parseInt(req.params.id);
+    const { refresh = 'false' } = req.query;
+
+    // Refresh values first
+    service.refreshValues(portfolioId);
+
+    // Get positions
+    const positions = service.getPositions(portfolioId);
+
+    // Find ETF positions
+    const etfPositions = positions.filter(p => p.sector === 'ETF' || p.is_etf);
+
+    // Build underlying exposure
+    const underlyingExposure = new Map(); // symbol -> { name, value, sources: [] }
+    const etfBreakdown = [];
+
+    for (const pos of etfPositions) {
+      // Check if this is an ETF in our database
+      const etf = db.prepare('SELECT id, symbol FROM etf_definitions WHERE symbol = ?').get(pos.symbol);
+
+      if (etf) {
+        // Get holdings (fetch from Yahoo if needed)
+        const holdingsData = await etfService.getHoldingsWithFetch(pos.symbol, {
+          forceRefresh: refresh === 'true',
+          limit: 100
+        });
+
+        const etfValue = pos.currentValue || pos.current_value || 0;
+        const holdingsList = [];
+
+        for (const holding of holdingsData.holdings || []) {
+          const exposureValue = etfValue * (holding.weight / 100);
+
+          // Add to underlying exposure map
+          const key = holding.symbol || holding.security_name;
+          if (underlyingExposure.has(key)) {
+            const existing = underlyingExposure.get(key);
+            existing.value += exposureValue;
+            existing.sources.push({ etf: pos.symbol, weight: holding.weight, contribution: exposureValue });
+          } else {
+            underlyingExposure.set(key, {
+              symbol: holding.symbol,
+              name: holding.security_name || holding.company_name || holding.symbol,
+              sector: holding.company_sector || holding.sector,
+              value: exposureValue,
+              sources: [{ etf: pos.symbol, weight: holding.weight, contribution: exposureValue }]
+            });
+          }
+
+          holdingsList.push({
+            symbol: holding.symbol,
+            name: holding.security_name || holding.company_name,
+            weight: holding.weight,
+            exposureValue
+          });
+        }
+
+        etfBreakdown.push({
+          symbol: pos.symbol,
+          name: pos.name,
+          shares: pos.shares,
+          value: etfValue,
+          holdingsCount: holdingsList.length,
+          topHoldings: holdingsList.slice(0, 10)
+        });
+      }
+    }
+
+    // Convert map to sorted array
+    const underlyingHoldings = Array.from(underlyingExposure.values())
+      .sort((a, b) => b.value - a.value);
+
+    // Calculate total underlying value
+    const totalUnderlyingValue = underlyingHoldings.reduce((sum, h) => sum + h.value, 0);
+
+    // Add weight percentage
+    underlyingHoldings.forEach(h => {
+      h.weight = totalUnderlyingValue > 0 ? (h.value / totalUnderlyingValue) * 100 : 0;
+    });
+
+    res.json({
+      success: true,
+      portfolioId,
+      etfPositions: etfBreakdown,
+      underlyingHoldings: underlyingHoldings.slice(0, 100), // Top 100 underlying holdings
+      totalUnderlyingValue,
+      totalHoldings: underlyingHoldings.length
+    });
+  } catch (error) {
+    console.error('Error getting underlying holdings:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ============================================
 // Trading Routes
 // ============================================
 
 // POST /api/portfolios/:id/trade - Execute buy or sell
-router.post('/:id/trade', (req, res) => {
+router.post('/:id/trade', async (req, res) => {
   try {
     const service = getService(req);
     const db = require('../../database').getDatabase();
@@ -262,7 +375,9 @@ router.post('/:id/trade', (req, res) => {
       fees = 0,
       notes,
       executedAt,
-      lotMethod
+      lotMethod,
+      skipRiskCheck = false, // Allow bypassing risk checks
+      acknowledgeWarnings = false // Acknowledge warnings and proceed
     } = req.body;
 
     // Support alternative field names
@@ -292,6 +407,48 @@ router.post('/:id/trade', (req, res) => {
       });
     }
 
+    const positionValue = parseFloat(shares) * parseFloat(pricePerShare);
+
+    // ============================================
+    // RISK ASSESSMENT (for buys only, unless forced)
+    // ============================================
+    let riskAssessment = null;
+    if (side === 'buy' && !skipRiskCheck) {
+      try {
+        const { BuffettTalebRiskManager } = require('../../services/riskManagement');
+        const riskManager = new BuffettTalebRiskManager(db);
+
+        riskAssessment = await riskManager.assessTradeRisk(
+          portfolioId,
+          parseInt(companyId),
+          positionValue,
+          { skipMOS: false }
+        );
+
+        // Block if risk check fails and warnings not acknowledged
+        if (!riskAssessment.approved) {
+          return res.status(400).json({
+            error: 'Trade blocked by risk assessment',
+            riskAssessment,
+            message: 'Set skipRiskCheck=true to bypass or address the blockers'
+          });
+        }
+
+        // Warn if there are warnings and not acknowledged
+        if (riskAssessment.warnings.length > 0 && !acknowledgeWarnings) {
+          return res.status(400).json({
+            error: 'Trade has risk warnings',
+            riskAssessment,
+            message: 'Set acknowledgeWarnings=true to proceed despite warnings'
+          });
+        }
+      } catch (riskError) {
+        // Log but don't block if risk service fails
+        console.error('Risk assessment error:', riskError.message);
+        riskAssessment = { error: riskError.message, skipped: true };
+      }
+    }
+
     let result;
     if (side === 'buy') {
       result = service.executeBuy(portfolioId, {
@@ -312,6 +469,11 @@ router.post('/:id/trade', (req, res) => {
         executedAt,
         lotMethod
       });
+    }
+
+    // Include risk assessment in response
+    if (riskAssessment) {
+      result.riskAssessment = riskAssessment;
     }
 
     res.json(result);
@@ -553,6 +715,167 @@ router.post('/:id/snapshots', (req, res) => {
   }
 });
 
+// GET /api/portfolios/:id/value-history - Get portfolio value history for charting
+router.get('/:id/value-history', (req, res) => {
+  try {
+    const service = getService(req);
+    const portfolioId = parseInt(req.params.id);
+    const { period = '1y' } = req.query;
+
+    // Calculate days based on period
+    const periodDays = {
+      '1m': 30,
+      '3m': 90,
+      '6m': 180,
+      '1y': 365,
+      '3y': 1095,
+      '5y': 1825,
+      'all': 10000
+    };
+    const days = periodDays[period] || 365;
+
+    // Get snapshots for the period
+    const snapshots = service.getSnapshots(portfolioId, days);
+
+    // Transform to chart-friendly format
+    const history = snapshots
+      .sort((a, b) => new Date(a.snapshot_date) - new Date(b.snapshot_date))
+      .map(s => ({
+        date: s.snapshot_date,
+        value: s.total_value,
+        cashValue: s.cash_value,
+        positionsValue: s.positions_value,
+        costBasis: s.total_cost_basis,
+        unrealizedPnl: s.unrealized_pnl,
+        positionsCount: s.positions_count
+      }));
+
+    res.json({
+      success: true,
+      portfolioId,
+      period,
+      count: history.length,
+      history
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/portfolios/:id/performance - Get portfolio performance metrics
+router.get('/:id/performance', (req, res) => {
+  try {
+    const service = getService(req);
+    const portfolioId = parseInt(req.params.id);
+    const { period = '1y' } = req.query;
+
+    // Get portfolio and snapshots
+    const portfolio = service.getPortfolio(portfolioId);
+    if (!portfolio) {
+      return res.status(404).json({ error: 'Portfolio not found' });
+    }
+
+    const periodDays = {
+      '1m': 30,
+      '3m': 90,
+      '6m': 180,
+      '1y': 365,
+      '3y': 1095,
+      '5y': 1825,
+      'all': 10000
+    };
+    const days = periodDays[period] || 365;
+
+    const snapshots = service.getSnapshots(portfolioId, days);
+    const sortedSnapshots = snapshots.sort((a, b) =>
+      new Date(a.snapshot_date) - new Date(b.snapshot_date)
+    );
+
+    if (sortedSnapshots.length < 2) {
+      return res.json({
+        success: true,
+        portfolioId,
+        period,
+        history: sortedSnapshots.map(s => ({
+          date: s.snapshot_date,
+          value: s.total_value
+        })),
+        metrics: null
+      });
+    }
+
+    const first = sortedSnapshots[0];
+    const last = sortedSnapshots[sortedSnapshots.length - 1];
+
+    // Calculate performance metrics
+    const totalReturn = last.total_value - first.total_value;
+    const totalReturnPct = first.total_value > 0
+      ? (totalReturn / first.total_value) * 100
+      : 0;
+
+    // Calculate daily returns for volatility
+    const dailyReturns = [];
+    for (let i = 1; i < sortedSnapshots.length; i++) {
+      const prevValue = sortedSnapshots[i - 1].total_value;
+      const currValue = sortedSnapshots[i].total_value;
+      if (prevValue > 0) {
+        dailyReturns.push((currValue - prevValue) / prevValue);
+      }
+    }
+
+    // Annualized volatility
+    const avgReturn = dailyReturns.reduce((a, b) => a + b, 0) / dailyReturns.length;
+    const variance = dailyReturns.reduce((a, b) => a + Math.pow(b - avgReturn, 2), 0) / dailyReturns.length;
+    const volatility = Math.sqrt(variance) * Math.sqrt(252) * 100; // Annualized
+
+    // Max drawdown
+    let peak = first.total_value;
+    let maxDrawdown = 0;
+    for (const s of sortedSnapshots) {
+      if (s.total_value > peak) peak = s.total_value;
+      const drawdown = (s.total_value - peak) / peak;
+      if (drawdown < maxDrawdown) maxDrawdown = drawdown;
+    }
+
+    // Annualized return (simple)
+    const daysHeld = Math.max(1, sortedSnapshots.length);
+    const annualizedReturn = ((1 + totalReturnPct / 100) ** (365 / daysHeld) - 1) * 100;
+
+    // Sharpe ratio (assuming 4% risk-free rate)
+    const riskFreeRate = 0.04;
+    const sharpeRatio = volatility > 0
+      ? (annualizedReturn / 100 - riskFreeRate) / (volatility / 100)
+      : 0;
+
+    res.json({
+      success: true,
+      portfolioId,
+      period,
+      history: sortedSnapshots.map(s => ({
+        date: s.snapshot_date,
+        value: s.total_value,
+        cashValue: s.cash_value,
+        positionsValue: s.positions_value
+      })),
+      metrics: {
+        totalReturn,
+        totalReturnPct,
+        annualizedReturn,
+        volatility,
+        maxDrawdown: maxDrawdown * 100,
+        sharpeRatio,
+        startValue: first.total_value,
+        endValue: last.total_value,
+        startDate: first.snapshot_date,
+        endDate: last.snapshot_date,
+        daysHeld
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ============================================
 // Utility Routes
 // ============================================
@@ -587,7 +910,7 @@ router.post('/refresh-all', (req, res) => {
 router.post('/snapshot-all', (req, res) => {
   try {
     const service = getService(req);
-    const { date } = req.body;
+    const date = req.body?.date || null;
     const results = service.takeAllSnapshots(date);
     res.json({
       success: true,
@@ -846,19 +1169,73 @@ router.post('/:id/stock-split', (req, res) => {
 // ============================================
 
 // POST /api/portfolios/:id/validate-trade - Validate a trade before execution
-router.post('/:id/validate-trade', (req, res) => {
+router.post('/:id/validate-trade', async (req, res) => {
   try {
     const service = getService(req);
+    const db = require('../../database').getDatabase();
     const portfolioId = parseInt(req.params.id);
-    const { companyId, side, shares, price } = req.body;
+    let { companyId, symbol, side, shares, price, includeRisk = true } = req.body;
 
-    const result = service.validateTrade(portfolioId, {
+    // Look up companyId from symbol if needed
+    if (!companyId && symbol) {
+      const company = db.prepare('SELECT id FROM companies WHERE symbol = ?').get(symbol.toUpperCase());
+      if (company) companyId = company.id;
+    }
+
+    // Basic trade validation
+    const basicResult = service.validateTrade(portfolioId, {
       companyId: parseInt(companyId),
       side,
       shares: parseFloat(shares),
       price: parseFloat(price)
     });
-    res.json(result);
+
+    // Add risk assessment for buys
+    let riskAssessment = null;
+    if (includeRisk && side === 'buy' && companyId) {
+      try {
+        const { BuffettTalebRiskManager } = require('../../services/riskManagement');
+        const riskManager = new BuffettTalebRiskManager(db);
+
+        const positionValue = parseFloat(shares) * parseFloat(price);
+        riskAssessment = await riskManager.assessTradeRisk(
+          portfolioId,
+          parseInt(companyId),
+          positionValue,
+          { skipMOS: false }
+        );
+      } catch (riskError) {
+        riskAssessment = { error: riskError.message };
+      }
+    }
+
+    // Add margin of safety data
+    let marginOfSafety = null;
+    if (companyId) {
+      try {
+        const { MarginOfSafetyCalculator } = require('../../services/riskManagement');
+        const mosCalc = new MarginOfSafetyCalculator(db);
+        const mosResult = await mosCalc.calculateIntrinsicValue(parseInt(companyId));
+        if (mosResult.success) {
+          marginOfSafety = {
+            intrinsicValue: mosResult.weightedIntrinsicValue,
+            currentPrice: mosResult.currentPrice,
+            marginOfSafety: mosResult.marginOfSafety,
+            valuationSignal: mosResult.valuationSignal,
+            confidence: mosResult.confidence,
+            methods: Object.keys(mosResult.methods).filter(m => mosResult.methods[m]?.value)
+          };
+        }
+      } catch (mosError) {
+        marginOfSafety = { error: mosError.message };
+      }
+    }
+
+    res.json({
+      ...basicResult,
+      riskAssessment,
+      marginOfSafety
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1079,6 +1456,229 @@ router.get('/:id/export/dividends', (req, res) => {
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="portfolio_${portfolioId}_dividends_${year}.csv"`);
     res.send(csv);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
+// Hedge Suggestions Routes
+// ============================================
+
+// GET /api/portfolios/:id/hedge-suggestions - Get hedge recommendations
+router.get('/:id/hedge-suggestions', async (req, res) => {
+  try {
+    const db = req.app.get('db');
+    const { HedgeOptimizer } = require('../../services/portfolio/hedgeOptimizer');
+    const hedgeOptimizer = new HedgeOptimizer(db);
+
+    const portfolioId = parseInt(req.params.id);
+
+    // Get current regime if available
+    let regime = null;
+    try {
+      const { RegimeDetector } = require('../../services/trading/regimeDetector');
+      const regimeDetector = new RegimeDetector({ getDatabase: () => db });
+      regime = await regimeDetector.detectRegime();
+    } catch (regimeError) {
+      // Use a default high-vol regime if detection fails
+      regime = { regime: 'HIGH_VOL', confidence: 0.5 };
+    }
+
+    const suggestions = hedgeOptimizer.suggestHedges(portfolioId, regime);
+
+    res.json({
+      success: true,
+      portfolioId,
+      ...suggestions
+    });
+  } catch (error) {
+    console.error('Error getting hedge suggestions:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/portfolios/:id/hedge-history - Get hedge suggestion history
+router.get('/:id/hedge-history', (req, res) => {
+  try {
+    const db = req.app.get('db');
+    const { HedgeOptimizer } = require('../../services/portfolio/hedgeOptimizer');
+    const hedgeOptimizer = new HedgeOptimizer(db);
+
+    const portfolioId = parseInt(req.params.id);
+    const { limit = 10 } = req.query;
+
+    const history = hedgeOptimizer.getRecentSuggestions(portfolioId, parseInt(limit));
+
+    res.json({
+      success: true,
+      portfolioId,
+      count: history.length,
+      suggestions: history
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/portfolios/:id/hedge-suggestions/:suggestionId/status - Update suggestion status
+router.post('/:id/hedge-suggestions/:suggestionId/status', (req, res) => {
+  try {
+    const db = req.app.get('db');
+    const { HedgeOptimizer } = require('../../services/portfolio/hedgeOptimizer');
+    const hedgeOptimizer = new HedgeOptimizer(db);
+
+    const { suggestionId } = req.params;
+    const { status } = req.body;
+
+    if (!['implemented', 'dismissed'].includes(status)) {
+      return res.status(400).json({ error: 'Status must be "implemented" or "dismissed"' });
+    }
+
+    const result = hedgeOptimizer.updateSuggestionStatus(parseInt(suggestionId), status);
+
+    res.json({
+      success: true,
+      suggestionId: parseInt(suggestionId),
+      ...result
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/portfolios/:id/hedge-summary - Get hedge summary
+router.get('/:id/hedge-summary', (req, res) => {
+  try {
+    const db = req.app.get('db');
+    const { HedgeOptimizer } = require('../../services/portfolio/hedgeOptimizer');
+    const hedgeOptimizer = new HedgeOptimizer(db);
+
+    const portfolioId = parseInt(req.params.id);
+    const summary = hedgeOptimizer.getHedgeSummary(portfolioId);
+
+    res.json({
+      success: true,
+      portfolioId,
+      ...summary
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
+// Dividend Processing Routes
+// ============================================
+
+// POST /api/portfolios/process-dividends - Process dividends for all portfolios
+router.post('/process-dividends', (req, res) => {
+  try {
+    const db = req.app.get('db');
+    const { getDividendProcessor } = require('../../services/portfolio/dividendProcessor');
+    const processor = getDividendProcessor(db);
+
+    const { lookbackDays = 7, dryRun = false } = req.body;
+
+    const result = processor.processAllDividends({
+      lookbackDays: parseInt(lookbackDays),
+      dryRun: dryRun === true || dryRun === 'true'
+    });
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/portfolios/pending-dividends - Preview pending dividends
+router.get('/pending-dividends', (req, res) => {
+  try {
+    const db = req.app.get('db');
+    const { getDividendProcessor } = require('../../services/portfolio/dividendProcessor');
+    const processor = getDividendProcessor(db);
+
+    const { lookbackDays = 7 } = req.query;
+
+    const result = processor.getPendingDividends({ lookbackDays: parseInt(lookbackDays) });
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/portfolios/:id/process-dividends - Process dividends for a specific portfolio
+router.post('/:id/process-dividends', (req, res) => {
+  try {
+    const db = req.app.get('db');
+    const { getDividendProcessor } = require('../../services/portfolio/dividendProcessor');
+    const processor = getDividendProcessor(db);
+
+    const portfolioId = parseInt(req.params.id);
+    const { lookbackDays = 7, dryRun = false } = req.body;
+
+    const result = processor.processPortfolioDividends(portfolioId, {
+      lookbackDays: parseInt(lookbackDays),
+      dryRun: dryRun === true || dryRun === 'true'
+    });
+
+    res.json({
+      success: true,
+      portfolioId,
+      ...result
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/portfolios/:id/pending-dividends - Preview pending dividends for a portfolio
+router.get('/:id/pending-dividends', (req, res) => {
+  try {
+    const db = req.app.get('db');
+    const { getDividendProcessor } = require('../../services/portfolio/dividendProcessor');
+    const processor = getDividendProcessor(db);
+
+    const portfolioId = parseInt(req.params.id);
+    const { lookbackDays = 7 } = req.query;
+
+    const result = processor.getPendingDividends({ portfolioId, lookbackDays: parseInt(lookbackDays) });
+
+    res.json({
+      success: true,
+      portfolioId,
+      ...result
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/portfolios/:id/dividend-history - Get dividend transaction history
+router.get('/:id/dividend-history', (req, res) => {
+  try {
+    const db = req.app.get('db');
+    const { getDividendProcessor } = require('../../services/portfolio/dividendProcessor');
+    const processor = getDividendProcessor(db);
+
+    const portfolioId = parseInt(req.params.id);
+    const { limit = 50 } = req.query;
+
+    const history = processor.getDividendHistory(portfolioId, parseInt(limit));
+
+    res.json({
+      success: true,
+      portfolioId,
+      count: history.length,
+      history
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

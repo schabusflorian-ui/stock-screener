@@ -1,6 +1,6 @@
 // frontend/src/components/portfolio/TradeForm.js
-import { useState, useEffect } from 'react';
-import { X, TrendingUp, TrendingDown, Loader, Search, AlertCircle } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { X, TrendingUp, TrendingDown, Loader, Search, AlertCircle, Shield, AlertTriangle, CheckCircle } from 'lucide-react';
 import { portfoliosAPI, companyAPI } from '../../services/api';
 import './TradeForm.css';
 
@@ -15,12 +15,56 @@ function TradeForm({ portfolioId, holdings, cashBalance, onClose, onComplete }) 
   const [error, setError] = useState(null);
   const [companyInfo, setCompanyInfo] = useState(null);
 
+  // Risk assessment state
+  const [riskAssessment, setRiskAssessment] = useState(null);
+  const [marginOfSafety, setMarginOfSafety] = useState(null);
+  const [validating, setValidating] = useState(false);
+  const [acknowledgeWarnings, setAcknowledgeWarnings] = useState(false);
+
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [showResults, setShowResults] = useState(false);
 
   const existingHolding = holdings?.find(h => h.symbol?.toUpperCase() === symbol.toUpperCase());
+
+  // Validate trade with risk assessment (debounced)
+  const validateTrade = useCallback(async () => {
+    if (!companyId || !shares || !price || parseFloat(shares) <= 0 || tradeType !== 'buy') {
+      setRiskAssessment(null);
+      setMarginOfSafety(null);
+      return;
+    }
+
+    try {
+      setValidating(true);
+      const res = await portfoliosAPI.validateTrade(portfolioId, {
+        symbol: symbol.toUpperCase(),
+        side: tradeType,
+        shares: parseFloat(shares),
+        price: parseFloat(price),
+        includeRisk: true
+      });
+
+      setRiskAssessment(res.data.riskAssessment);
+      setMarginOfSafety(res.data.marginOfSafety);
+    } catch (err) {
+      console.error('Validation failed:', err);
+    } finally {
+      setValidating(false);
+    }
+  }, [portfolioId, companyId, symbol, shares, price, tradeType]);
+
+  // Debounce risk validation
+  useEffect(() => {
+    if (tradeType !== 'buy') return;
+
+    const timer = setTimeout(() => {
+      validateTrade();
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [validateTrade, tradeType]);
 
   // Debounced search
   useEffect(() => {
@@ -105,16 +149,119 @@ function TradeForm({ portfolioId, holdings, cashBalance, onClose, onComplete }) 
         type: tradeType,
         symbol: symbol.toUpperCase(),
         shares: parseFloat(shares),
-        price: parseFloat(price)
+        price: parseFloat(price),
+        acknowledgeWarnings: acknowledgeWarnings
       });
 
       onComplete();
     } catch (err) {
       console.error('Trade failed:', err);
-      setError(err.response?.data?.error || 'Trade failed');
+      const errorData = err.response?.data;
+      if (errorData?.riskAssessment) {
+        setRiskAssessment(errorData.riskAssessment);
+        setError(errorData.message || 'Trade blocked by risk checks');
+      } else {
+        setError(errorData?.error || 'Trade failed');
+      }
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // Render risk assessment panel
+  const renderRiskAssessment = () => {
+    if (tradeType !== 'buy' || !companyId) return null;
+
+    return (
+      <div className="risk-assessment-panel">
+        <div className="risk-header">
+          <Shield size={16} />
+          <span>Risk Assessment</span>
+          {validating && <Loader className="spinning" size={14} />}
+        </div>
+
+        {/* Margin of Safety */}
+        {marginOfSafety && !marginOfSafety.error && (
+          <div className={`mos-indicator ${marginOfSafety.marginOfSafety >= 0.25 ? 'positive' : marginOfSafety.marginOfSafety >= 0 ? 'neutral' : 'negative'}`}>
+            <div className="mos-label">Margin of Safety</div>
+            <div className="mos-value">
+              {marginOfSafety.marginOfSafety !== null
+                ? `${(marginOfSafety.marginOfSafety * 100).toFixed(1)}%`
+                : 'N/A'}
+            </div>
+            {marginOfSafety.valuationSignal && (
+              <div className="mos-signal">{marginOfSafety.valuationSignal.replace(/_/g, ' ')}</div>
+            )}
+            {marginOfSafety.intrinsicValue && (
+              <div className="mos-detail">
+                Intrinsic Value: ${marginOfSafety.intrinsicValue.toFixed(2)}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Risk Check Results */}
+        {riskAssessment && !riskAssessment.error && (
+          <div className="risk-checks">
+            {riskAssessment.approved ? (
+              <div className="risk-status approved">
+                <CheckCircle size={14} />
+                <span>Risk checks passed</span>
+              </div>
+            ) : (
+              <div className="risk-status blocked">
+                <AlertCircle size={14} />
+                <span>Trade blocked</span>
+              </div>
+            )}
+
+            {/* Blockers */}
+            {riskAssessment.blockers?.length > 0 && (
+              <div className="risk-blockers">
+                {riskAssessment.blockers.map((b, i) => (
+                  <div key={i} className="risk-blocker-item">
+                    <AlertCircle size={12} />
+                    {b}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Warnings */}
+            {riskAssessment.warnings?.length > 0 && (
+              <div className="risk-warnings">
+                {riskAssessment.warnings.map((w, i) => (
+                  <div key={i} className="risk-warning-item">
+                    <AlertTriangle size={12} />
+                    {w}
+                  </div>
+                ))}
+                <label className="acknowledge-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={acknowledgeWarnings}
+                    onChange={(e) => setAcknowledgeWarnings(e.target.checked)}
+                  />
+                  I acknowledge these warnings and want to proceed
+                </label>
+              </div>
+            )}
+
+            {/* Individual Check Results */}
+            {riskAssessment.checks && (
+              <div className="risk-check-details">
+                {Object.entries(riskAssessment.checks).map(([key, check]) => (
+                  <div key={key} className={`check-item ${check.passed ? 'passed' : 'failed'}`}>
+                    {check.passed ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
+                    <span className="check-name">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
   };
 
   const formatValue = (value) => {
@@ -324,6 +471,9 @@ function TradeForm({ portfolioId, holdings, cashBalance, onClose, onComplete }) 
                 </div>
               )}
             </div>
+
+            {/* Risk Assessment Panel */}
+            {renderRiskAssessment()}
 
             {error && (
               <div className="error-message">

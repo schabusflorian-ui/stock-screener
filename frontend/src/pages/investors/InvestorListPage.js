@@ -3,8 +3,6 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Users,
-  TrendingUp,
-  TrendingDown,
   DollarSign,
   Calendar,
   RefreshCw,
@@ -12,9 +10,7 @@ import {
   Filter,
   ChevronRight,
   Briefcase,
-  Target,
   BarChart3,
-  Zap,
   Plus,
   Award,
   Activity,
@@ -57,8 +53,6 @@ const STYLE_COLORS = {
 
 function InvestorListPage() {
   const [investors, setInvestors] = useState([]);
-  const [mostOwned, setMostOwned] = useState([]);
-  const [recentActivity, setRecentActivity] = useState([]);
   const [benchmarkData, setBenchmarkData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -86,16 +80,12 @@ function InvestorListPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [investorsRes, mostOwnedRes, activityRes, indicesRes] = await Promise.all([
+      const [investorsRes, indicesRes] = await Promise.all([
         investorsAPI.getAll(),
-        investorsAPI.getMostOwned(10),
-        investorsAPI.getActivity(20),
         indicesAPI.getAll().catch(() => ({ data: { indices: [] } }))
       ]);
 
       setInvestors(investorsRes.data.investors || []);
-      setMostOwned(mostOwnedRes.data.stocks || []);
-      setRecentActivity(activityRes.data.activity || []);
 
       // Calculate aggregate benchmark data
       const totalPortfolioValue = investorsRes.data.investors.reduce((sum, inv) =>
@@ -425,234 +415,167 @@ function InvestorListPage() {
           </div>
         </div>
 
-        {/* Main Grid */}
-        <div className="investors-grid">
-          {/* Investor List */}
-          <div className="investors-main">
-            <h2 className="section-title">
-              <Briefcase size={20} />
-              Investors ({sortedInvestors.length})
-            </h2>
+        {/* Investors List */}
+        <div className="investors-main">
+          <h2 className="section-title">
+            <Briefcase size={20} />
+            Investors ({sortedInvestors.length})
+          </h2>
 
-            {/* Table View */}
-            {viewMode === 'table' && (
-              <div className="investors-table-container">
-                <table className="investors-table">
-                  <thead>
-                    <tr>
-                      <th className="sortable" onClick={() => handleSort('name')}>
-                        <span>Investor</span>
-                        {getSortIcon('name')}
-                      </th>
-                      <th className="sortable" onClick={() => handleSort('investment_style')}>
-                        <span>Style</span>
-                        {getSortIcon('investment_style')}
-                      </th>
-                      <th className="sortable right" onClick={() => handleSort('latest_portfolio_value')}>
-                        <span>Portfolio Value</span>
-                        {getSortIcon('latest_portfolio_value')}
-                      </th>
-                      <th className="sortable right" onClick={() => handleSort('latest_positions_count')}>
-                        <span>Positions</span>
-                        {getSortIcon('latest_positions_count')}
-                      </th>
-                      <th className="sortable right" onClick={() => handleSort('latest_filing_date')}>
-                        <span>Last Filing</span>
-                        {getSortIcon('latest_filing_date')}
-                      </th>
-                      <th className="actions-col">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedInvestors.map(investor => (
-                      <tr key={investor.id}>
-                        <td>
-                          <Link to={`/investors/${investor.id}`} className="investor-link">
-                            <div className="investor-avatar-sm">
-                              {investor.name?.charAt(0) || 'I'}
-                            </div>
-                            <div className="investor-name-cell">
-                              <span className="investor-name">{investor.name}</span>
-                              <span className="fund-name">{investor.fund_name}</span>
-                            </div>
-                          </Link>
-                        </td>
-                        <td>
-                          <span
-                            className="style-badge-sm"
-                            style={{ backgroundColor: STYLE_COLORS[investor.investment_style] }}
-                          >
-                            {STYLE_LABELS[investor.investment_style] || investor.investment_style}
-                          </span>
-                        </td>
-                        <td className="right value-cell">
-                          {formatValue(investor.latest_portfolio_value)}
-                        </td>
-                        <td className="right">
-                          {investor.latest_positions_count || '-'}
-                        </td>
-                        <td className="right date-cell">
-                          {formatDate(investor.latest_filing_date)}
-                        </td>
-                        <td className="actions-cell">
-                          <Link
-                            to={`/investors/${investor.id}`}
-                            className="action-btn"
-                            title="View details"
-                          >
-                            <ChevronRight size={16} />
-                          </Link>
-                          {investor.cik && (
-                            <a
-                              href={`https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${investor.cik}&type=13F-HR`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="action-btn"
-                              title="SEC Filing"
-                            >
-                              <ExternalLink size={14} />
-                            </a>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {/* Card View */}
-            {viewMode === 'cards' && (
-              <div className="investor-cards">
-                {sortedInvestors.map(investor => (
-                  <Link
-                    key={investor.id}
-                    to={`/investors/${investor.id}`}
-                    className="investor-card"
-                  >
-                    <div className="investor-card-header">
-                      <div className="investor-avatar">
-                        {investor.name?.charAt(0) || 'I'}
-                      </div>
-                      <div className="investor-info">
-                        <h3>{investor.name}</h3>
-                        <p className="fund-name">{investor.fund_name}</p>
-                      </div>
-                      <ChevronRight size={20} className="card-arrow" />
-                    </div>
-
-                    <div className="investor-style">
-                      <span
-                        className="style-badge"
-                        style={{ backgroundColor: STYLE_COLORS[investor.investment_style] }}
-                      >
-                        {STYLE_LABELS[investor.investment_style] || investor.investment_style}
-                      </span>
-                    </div>
-
-                    <p className="investor-description">
-                      {investor.description}
-                    </p>
-
-                    <div className="investor-stats">
-                      <div className="stat">
-                        <DollarSign size={14} />
-                        <span className="stat-label">Portfolio</span>
-                        <span className="stat-value">
-                          {formatValue(investor.latest_portfolio_value)}
-                        </span>
-                      </div>
-                      <div className="stat">
-                        <BarChart3 size={14} />
-                        <span className="stat-label">Positions</span>
-                        <span className="stat-value">
-                          {investor.latest_positions_count || '-'}
-                        </span>
-                      </div>
-                      <div className="stat">
-                        <Calendar size={14} />
-                        <span className="stat-label">Updated</span>
-                        <span className="stat-value">
-                          {formatDate(investor.latest_filing_date)}
-                        </span>
-                      </div>
-                    </div>
-
-                    {investor.followers_count > 0 && (
-                      <div className="investor-followers">
-                        <Users size={12} />
-                        {investor.followers_count} followers
-                      </div>
-                    )}
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Sidebar */}
-          <aside className="investors-sidebar">
-            {/* Most Owned Stocks */}
-            <div className="sidebar-section">
-              <h3 className="sidebar-title">
-                <Target size={18} />
-                Most Owned by Gurus
-              </h3>
-              <div className="most-owned-list">
-                {mostOwned.map((stock, idx) => (
-                  <Link
-                    key={stock.id}
-                    to={`/company/${stock.symbol}`}
-                    className="most-owned-item"
-                  >
-                    <span className="rank">{idx + 1}</span>
-                    <div className="stock-info">
-                      <span className="symbol">{stock.symbol}</span>
-                      <span className="name">{stock.name}</span>
-                    </div>
-                    <div className="ownership">
-                      <span className="count">{stock.investor_count} investors</span>
-                      <span className="value">{formatValue(stock.total_value)}</span>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </div>
-
-            {/* Recent Activity */}
-            <div className="sidebar-section">
-              <h3 className="sidebar-title">
-                <Zap size={18} />
-                Recent Activity
-              </h3>
-              <div className="activity-list">
-                {recentActivity.slice(0, 10).map((activity, idx) => (
-                  <div key={idx} className="activity-item">
-                    <div className={`activity-icon ${activity.change_type}`}>
-                      {activity.change_type === 'new' && <TrendingUp size={14} />}
-                      {activity.change_type === 'increased' && <TrendingUp size={14} />}
-                      {activity.change_type === 'sold' && <TrendingDown size={14} />}
-                    </div>
-                    <div className="activity-content">
-                      <div className="activity-header">
-                        <Link to={`/company/${activity.symbol}`} className="activity-symbol">
-                          {activity.symbol || activity.security_name?.slice(0, 10)}
+          {/* Table View */}
+          {viewMode === 'table' && (
+            <div className="investors-table-container">
+              <table className="investors-table">
+                <thead>
+                  <tr>
+                    <th className="sortable" onClick={() => handleSort('name')}>
+                      <span>Investor</span>
+                      {getSortIcon('name')}
+                    </th>
+                    <th className="sortable" onClick={() => handleSort('investment_style')}>
+                      <span>Style</span>
+                      {getSortIcon('investment_style')}
+                    </th>
+                    <th className="sortable right" onClick={() => handleSort('latest_portfolio_value')}>
+                      <span>Portfolio Value</span>
+                      {getSortIcon('latest_portfolio_value')}
+                    </th>
+                    <th className="sortable right" onClick={() => handleSort('latest_positions_count')}>
+                      <span>Positions</span>
+                      {getSortIcon('latest_positions_count')}
+                    </th>
+                    <th className="sortable right" onClick={() => handleSort('latest_filing_date')}>
+                      <span>Last Filing</span>
+                      {getSortIcon('latest_filing_date')}
+                    </th>
+                    <th className="actions-col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedInvestors.map(investor => (
+                    <tr key={investor.id}>
+                      <td>
+                        <Link to={`/investors/${investor.id}`} className="investor-link">
+                          <div className="investor-avatar-sm">
+                            {investor.name?.charAt(0) || 'I'}
+                          </div>
+                          <div className="investor-name-cell">
+                            <span className="investor-name">{investor.name}</span>
+                            <span className="fund-name">{investor.fund_name}</span>
+                          </div>
                         </Link>
-                        <span className={`activity-type ${activity.change_type}`}>
-                          {activity.change_type === 'new' ? 'NEW' :
-                           activity.change_type === 'increased' ? 'BUY' : 'SOLD'}
+                      </td>
+                      <td>
+                        <span
+                          className="style-badge-sm"
+                          style={{ backgroundColor: STYLE_COLORS[investor.investment_style] }}
+                        >
+                          {STYLE_LABELS[investor.investment_style] || investor.investment_style}
                         </span>
-                      </div>
-                      <span className="activity-investor">{activity.investor_name}</span>
+                      </td>
+                      <td className="right value-cell">
+                        {formatValue(investor.latest_portfolio_value)}
+                      </td>
+                      <td className="right">
+                        {investor.latest_positions_count || '-'}
+                      </td>
+                      <td className="right date-cell">
+                        {formatDate(investor.latest_filing_date)}
+                      </td>
+                      <td className="actions-cell">
+                        <Link
+                          to={`/investors/${investor.id}`}
+                          className="action-btn"
+                          title="View details"
+                        >
+                          <ChevronRight size={16} />
+                        </Link>
+                        {investor.cik && (
+                          <a
+                            href={`https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${investor.cik}&type=13F-HR`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="action-btn"
+                            title="SEC Filing"
+                          >
+                            <ExternalLink size={14} />
+                          </a>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Card View */}
+          {viewMode === 'cards' && (
+            <div className="investor-cards">
+              {sortedInvestors.map(investor => (
+                <Link
+                  key={investor.id}
+                  to={`/investors/${investor.id}`}
+                  className="investor-card"
+                >
+                  <div className="investor-card-header">
+                    <div className="investor-avatar">
+                      {investor.name?.charAt(0) || 'I'}
                     </div>
-                    <span className="activity-value">
-                      {formatValue(activity.market_value)}
+                    <div className="investor-info">
+                      <h3>{investor.name}</h3>
+                      <p className="fund-name">{investor.fund_name}</p>
+                    </div>
+                    <ChevronRight size={20} className="card-arrow" />
+                  </div>
+
+                  <div className="investor-style">
+                    <span
+                      className="style-badge"
+                      style={{ backgroundColor: STYLE_COLORS[investor.investment_style] }}
+                    >
+                      {STYLE_LABELS[investor.investment_style] || investor.investment_style}
                     </span>
                   </div>
-                ))}
-              </div>
+
+                  <p className="investor-description">
+                    {investor.description}
+                  </p>
+
+                  <div className="investor-stats">
+                    <div className="stat">
+                      <DollarSign size={14} />
+                      <span className="stat-label">Portfolio</span>
+                      <span className="stat-value">
+                        {formatValue(investor.latest_portfolio_value)}
+                      </span>
+                    </div>
+                    <div className="stat">
+                      <BarChart3 size={14} />
+                      <span className="stat-label">Positions</span>
+                      <span className="stat-value">
+                        {investor.latest_positions_count || '-'}
+                      </span>
+                    </div>
+                    <div className="stat">
+                      <Calendar size={14} />
+                      <span className="stat-label">Updated</span>
+                      <span className="stat-value">
+                        {formatDate(investor.latest_filing_date)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {investor.followers_count > 0 && (
+                    <div className="investor-followers">
+                      <Users size={12} />
+                      {investor.followers_count} followers
+                    </div>
+                  )}
+                </Link>
+              ))}
             </div>
-          </aside>
+          )}
         </div>
       </div>
 

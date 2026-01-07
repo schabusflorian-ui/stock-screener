@@ -564,6 +564,43 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_analyst_upside ON analyst_estimates(upside_potential DESC);
 `);
 
+// ============================================
+// TABLE: Liquidity Metrics (Agent 2 - Trading)
+// ============================================
+db.exec(`
+  CREATE TABLE IF NOT EXISTS liquidity_metrics (
+    company_id INTEGER PRIMARY KEY,
+
+    -- Volume metrics
+    avg_volume_30d REAL,              -- Average daily volume (shares)
+    avg_value_30d REAL,               -- Average daily dollar volume
+    volume_volatility REAL,           -- Std dev of daily volume
+
+    -- Spread and impact
+    bid_ask_spread_bps REAL,          -- Estimated spread in basis points
+    amihud_illiquidity REAL,          -- Price impact per $ traded
+
+    -- Volatility
+    volatility_30d REAL,              -- 30-day annualized volatility
+    volatility_60d REAL,              -- 60-day annualized volatility
+
+    -- Turnover
+    turnover_ratio REAL,              -- Daily volume / shares outstanding
+
+    -- Trading cost estimates
+    estimated_impact_1pct REAL,       -- Impact cost for 1% of ADV
+    estimated_impact_5pct REAL,       -- Impact cost for 5% of ADV
+
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+  );
+`);
+
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_liquidity_volume ON liquidity_metrics(avg_volume_30d DESC);
+  CREATE INDEX IF NOT EXISTS idx_liquidity_volatility ON liquidity_metrics(volatility_30d);
+`);
+
 // Add sentiment columns to companies table if not exists
 try {
   db.exec(`ALTER TABLE companies ADD COLUMN sentiment_signal TEXT`);

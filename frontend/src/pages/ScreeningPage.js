@@ -4,7 +4,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { screeningAPI, companyAPI } from '../services/api';
 import { WatchlistButton, PeriodToggle, ComparisonChart } from '../components';
 import { NLQueryBar } from '../components/nl';
-import { PageHeader, Card } from '../components/ui';
+import { PageHeader } from '../components/ui';
+import { SkeletonScreeningResults } from '../components/Skeleton';
 import { ChevronUp, ChevronDown, Filter, Columns, X } from 'lucide-react';
 import { useFormatters } from '../hooks/useFormatters';
 import './ScreeningPage.css';
@@ -853,7 +854,17 @@ function ScreeningPage() {
       )}
 
       {/* Results Section */}
-      {loading && <div className="loading">Running screen...</div>}
+      {loading && (
+        <div className="results-section">
+          <div className="results-header">
+            <h2>
+              {activeScreen || 'Running Screen'}
+              <span className="result-count">(loading...)</span>
+            </h2>
+          </div>
+          <SkeletonScreeningResults rows={10} />
+        </div>
+      )}
 
       {!loading && results.length > 0 && (
         <div className="results-section">

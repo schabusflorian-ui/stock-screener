@@ -117,14 +117,21 @@ router.post('/tags', (req, res) => {
       return res.status(400).json({ error: 'Name is required' });
     }
 
-    const result = notes.createTag({ name, color });
+    const result = notes.createTag({ name, color: color || '#6B7280' });
     if (!result.success) {
       return res.status(400).json({ error: result.error, tagId: result.tagId });
     }
 
+    // Return the full tag object so the frontend can use it
     res.status(201).json({
       success: true,
-      tagId: result.tagId
+      tagId: result.tagId,
+      tag: {
+        id: result.tagId,
+        name: name.trim(),
+        color: color || '#6B7280',
+        usage_count: 0
+      }
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -243,6 +250,24 @@ router.get('/company/:symbol', (req, res) => {
   }
 });
 
+// GET /api/notes/portfolio/:portfolioId - Get notes for a portfolio
+router.get('/portfolio/:portfolioId', (req, res) => {
+  try {
+    const { notes } = getServices(req);
+    const portfolioId = parseInt(req.params.portfolioId);
+
+    const portfolioNotes = notes.getNotesByPortfolio(portfolioId);
+
+    res.json({
+      success: true,
+      portfolioId,
+      notes: portfolioNotes
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ============================================
 // Notes CRUD Routes
 // ============================================
@@ -307,6 +332,7 @@ router.post('/', (req, res) => {
       noteType,
       status,
       symbols = [],
+      portfolioIds = [],
       tagIds = [],
       captureSnapshots = true
     } = req.body;
@@ -322,6 +348,7 @@ router.post('/', (req, res) => {
       noteType,
       status,
       symbols,
+      portfolioIds,
       tagIds
     });
 
@@ -352,6 +379,7 @@ router.put('/:id', (req, res) => {
       noteType,
       status,
       symbols,
+      portfolioIds,
       tagIds,
       createVersion = true
     } = req.body;
@@ -362,6 +390,7 @@ router.put('/:id', (req, res) => {
       noteType,
       status,
       symbols,
+      portfolioIds,
       tagIds,
       createVersion
     });

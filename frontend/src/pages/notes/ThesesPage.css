@@ -2,6 +2,7 @@
 
 .theses-page {
   padding: var(--space-6);
+  padding-left: var(--space-8);
   max-width: 1400px;
   margin: 0 auto;
 }

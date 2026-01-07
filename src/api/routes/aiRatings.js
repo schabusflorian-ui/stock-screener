@@ -3,7 +3,7 @@
 
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
+const { db } = require('../../database');
 const crypto = require('crypto');
 
 // ============================================
@@ -14,7 +14,7 @@ const crypto = require('crypto');
  * POST /api/ai-ratings/:symbol
  * Store a new AI rating for a company
  */
-router.post('/:symbol', async (req, res) => {
+router.post('/:symbol', (req, res) => {
   try {
     const { symbol } = req.params;
     const { score, label, summary, strengths, risks, analystId, contextData } = req.body;
@@ -27,13 +27,7 @@ router.post('/:symbol', async (req, res) => {
     }
 
     // Get company_id
-    const company = await new Promise((resolve, reject) => {
-      db.get(
-        'SELECT id FROM companies WHERE symbol = ?',
-        [symbol.toUpperCase()],
-        (err, row) => err ? reject(err) : resolve(row)
-      );
-    });
+    const company = db.prepare('SELECT id FROM companies WHERE symbol = ?').get(symbol.toUpperCase());
 
     if (!company) {
       return res.status(404).json({
@@ -43,32 +37,25 @@ router.post('/:symbol', async (req, res) => {
     }
 
     // Insert rating
-    const result = await new Promise((resolve, reject) => {
-      db.run(
-        `INSERT INTO ai_rating_history
-         (company_id, symbol, score, label, summary, strengths, risks, analyst_id, context_data)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          company.id,
-          symbol.toUpperCase(),
-          score,
-          label,
-          summary || null,
-          strengths ? JSON.stringify(strengths) : null,
-          risks ? JSON.stringify(risks) : null,
-          analystId || 'value',
-          contextData ? JSON.stringify(contextData) : null
-        ],
-        function(err) {
-          if (err) reject(err);
-          else resolve({ id: this.lastID });
-        }
-      );
-    });
+    const result = db.prepare(`
+      INSERT INTO ai_rating_history
+      (company_id, symbol, score, label, summary, strengths, risks, analyst_id, context_data)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      company.id,
+      symbol.toUpperCase(),
+      score,
+      label,
+      summary || null,
+      strengths ? JSON.stringify(strengths) : null,
+      risks ? JSON.stringify(risks) : null,
+      analystId || 'value',
+      contextData ? JSON.stringify(contextData) : null
+    );
 
     res.json({
       success: true,
-      ratingId: result.id
+      ratingId: result.lastInsertRowid
     });
   } catch (error) {
     console.error('Error storing AI rating:', error);
@@ -83,25 +70,18 @@ router.post('/:symbol', async (req, res) => {
  * GET /api/ai-ratings/:symbol
  * Get AI rating history for a company
  */
-router.get('/:symbol', async (req, res) => {
+router.get('/:symbol', (req, res) => {
   try {
     const { symbol } = req.params;
     const { limit = 10 } = req.query;
 
-    const ratings = await new Promise((resolve, reject) => {
-      db.all(
-        `SELECT id, score, label, summary, strengths, risks, analyst_id, created_at
-         FROM ai_rating_history
-         WHERE symbol = ?
-         ORDER BY created_at DESC
-         LIMIT ?`,
-        [symbol.toUpperCase(), parseInt(limit)],
-        (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows || []);
-        }
-      );
-    });
+    const ratings = db.prepare(`
+      SELECT id, score, label, summary, strengths, risks, analyst_id, created_at
+      FROM ai_rating_history
+      WHERE symbol = ?
+      ORDER BY created_at DESC
+      LIMIT ?
+    `).all(symbol.toUpperCase(), parseInt(limit));
 
     // Parse JSON fields
     const parsedRatings = ratings.map(r => ({
@@ -129,24 +109,17 @@ router.get('/:symbol', async (req, res) => {
  * GET /api/ai-ratings/:symbol/latest
  * Get the latest AI rating for a company
  */
-router.get('/:symbol/latest', async (req, res) => {
+router.get('/:symbol/latest', (req, res) => {
   try {
     const { symbol } = req.params;
 
-    const rating = await new Promise((resolve, reject) => {
-      db.get(
-        `SELECT id, score, label, summary, strengths, risks, analyst_id, created_at
-         FROM ai_rating_history
-         WHERE symbol = ?
-         ORDER BY created_at DESC
-         LIMIT 1`,
-        [symbol.toUpperCase()],
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
-      );
-    });
+    const rating = db.prepare(`
+      SELECT id, score, label, summary, strengths, risks, analyst_id, created_at
+      FROM ai_rating_history
+      WHERE symbol = ?
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).get(symbol.toUpperCase());
 
     if (!rating) {
       return res.json({
@@ -178,25 +151,18 @@ router.get('/:symbol/latest', async (req, res) => {
  * GET /api/ai-ratings/:symbol/trend
  * Get AI rating trend data for charting
  */
-router.get('/:symbol/trend', async (req, res) => {
+router.get('/:symbol/trend', (req, res) => {
   try {
     const { symbol } = req.params;
     const { days = 90 } = req.query;
 
-    const ratings = await new Promise((resolve, reject) => {
-      db.all(
-        `SELECT score, label, created_at
-         FROM ai_rating_history
-         WHERE symbol = ?
-           AND created_at >= datetime('now', '-' || ? || ' days')
-         ORDER BY created_at ASC`,
-        [symbol.toUpperCase(), parseInt(days)],
-        (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows || []);
-        }
-      );
-    });
+    const ratings = db.prepare(`
+      SELECT score, label, created_at
+      FROM ai_rating_history
+      WHERE symbol = ?
+        AND created_at >= datetime('now', '-' || ? || ' days')
+      ORDER BY created_at ASC
+    `).all(symbol.toUpperCase(), parseInt(days));
 
     // Calculate trend
     let trend = 'stable';
@@ -237,7 +203,7 @@ router.get('/:symbol/trend', async (req, res) => {
  */
 router.post('/screening/suggest', async (req, res) => {
   try {
-    const { goal, presets } = req.body;
+    const { goal } = req.body;
 
     if (!goal || goal.trim().length < 5) {
       return res.status(400).json({
@@ -250,18 +216,11 @@ router.post('/screening/suggest', async (req, res) => {
     const goalHash = crypto.createHash('md5').update(goal.toLowerCase().trim()).digest('hex');
 
     // Check cache first
-    const cached = await new Promise((resolve, reject) => {
-      db.get(
-        `SELECT * FROM ai_screening_suggestions
-         WHERE goal_hash = ?
-           AND (expires_at IS NULL OR expires_at > datetime('now'))`,
-        [goalHash],
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
-      );
-    });
+    const cached = db.prepare(`
+      SELECT * FROM ai_screening_suggestions
+      WHERE goal_hash = ?
+        AND (expires_at IS NULL OR expires_at > datetime('now'))
+    `).get(goalHash);
 
     if (cached) {
       return res.json({
@@ -326,24 +285,17 @@ Only include filters that are directly relevant to the goal. Use reasonable thre
     }
 
     // Cache the suggestion (expires in 7 days)
-    await new Promise((resolve, reject) => {
-      db.run(
-        `INSERT OR REPLACE INTO ai_screening_suggestions
-         (user_goal, goal_hash, suggested_filters, explanation, suggested_presets, expires_at)
-         VALUES (?, ?, ?, ?, ?, datetime('now', '+7 days'))`,
-        [
-          goal,
-          goalHash,
-          JSON.stringify(suggestion.filters || {}),
-          suggestion.explanation || '',
-          JSON.stringify(suggestion.suggestedPresets || [])
-        ],
-        (err) => {
-          if (err) reject(err);
-          else resolve();
-        }
-      );
-    });
+    db.prepare(`
+      INSERT OR REPLACE INTO ai_screening_suggestions
+      (user_goal, goal_hash, suggested_filters, explanation, suggested_presets, expires_at)
+      VALUES (?, ?, ?, ?, ?, datetime('now', '+7 days'))
+    `).run(
+      goal,
+      goalHash,
+      JSON.stringify(suggestion.filters || {}),
+      suggestion.explanation || '',
+      JSON.stringify(suggestion.suggestedPresets || [])
+    );
 
     res.json({
       success: true,

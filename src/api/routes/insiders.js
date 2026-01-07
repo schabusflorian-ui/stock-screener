@@ -409,7 +409,7 @@ router.get('/cluster-buying', (req, res) => {
  */
 router.post('/update', async (req, res) => {
   try {
-    const { days = 30, limit = 50 } = req.body;
+    const { days = 30, limit = 50 } = req.body || {};
 
     // Return immediately with status
     res.json({

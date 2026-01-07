@@ -99,6 +99,96 @@ class EtfService {
     return { etf, holdings };
   }
 
+  /**
+   * Fetch and store holdings for an ETF from Yahoo Finance
+   * @param {string} symbol - ETF symbol
+   * @returns {Object} Result with holdings count
+   */
+  async fetchAndStoreHoldings(symbol) {
+    const { getYFinanceETFFetcher } = require('./yfinanceETFFetcher');
+    const fetcher = getYFinanceETFFetcher();
+
+    // Get ETF ID
+    const etf = this.getEtfBySymbol(symbol);
+    if (!etf) {
+      throw new Error(`ETF not found: ${symbol}`);
+    }
+
+    // Fetch holdings from Yahoo Finance
+    const holdingsData = await fetcher.fetchHoldings(symbol);
+    if (!holdingsData || !holdingsData.holdings || holdingsData.holdings.length === 0) {
+      return { success: false, message: 'No holdings data available', holdings: 0 };
+    }
+
+    // Delete existing holdings for this ETF
+    this.db.prepare('DELETE FROM etf_holdings WHERE etf_id = ?').run(etf.id);
+
+    // Insert new holdings
+    const insertStmt = this.db.prepare(`
+      INSERT INTO etf_holdings (etf_id, symbol, security_name, weight, company_id, as_of_date)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    let insertedCount = 0;
+    for (const holding of holdingsData.holdings) {
+      // Try to find matching company
+      const company = this.db.prepare(
+        'SELECT id FROM companies WHERE symbol = ?'
+      ).get(holding.symbol?.toUpperCase());
+
+      insertStmt.run(
+        etf.id,
+        holding.symbol || 'UNKNOWN',
+        holding.name || holding.symbol,
+        holding.weight,
+        company?.id || null,
+        holdingsData.asOfDate
+      );
+      insertedCount++;
+    }
+
+    // Update last_holdings_update timestamp
+    this.db.prepare(`
+      UPDATE etf_definitions SET last_holdings_update = CURRENT_TIMESTAMP WHERE id = ?
+    `).run(etf.id);
+
+    return {
+      success: true,
+      holdings: insertedCount,
+      asOfDate: holdingsData.asOfDate,
+      sectorWeightings: holdingsData.sectorWeightings,
+      stockPosition: holdingsData.stockPosition,
+      bondPosition: holdingsData.bondPosition
+    };
+  }
+
+  /**
+   * Get holdings for an ETF, fetching from Yahoo Finance if not in database
+   * @param {string} symbol - ETF symbol
+   * @param {Object} options
+   * @returns {Object} Holdings data
+   */
+  async getHoldingsWithFetch(symbol, options = {}) {
+    const { forceRefresh = false, limit = 50 } = options;
+
+    // Check existing holdings
+    const existing = this.getEtfHoldings(symbol, { limit });
+
+    // If we have recent holdings and not forcing refresh, return them
+    if (existing.holdings.length > 0 && !forceRefresh) {
+      return existing;
+    }
+
+    // Fetch from Yahoo Finance
+    try {
+      await this.fetchAndStoreHoldings(symbol);
+      return this.getEtfHoldings(symbol, { limit });
+    } catch (error) {
+      console.error(`Failed to fetch holdings for ${symbol}:`, error.message);
+      return existing; // Return whatever we have
+    }
+  }
+
   // ============================================
   // Model Portfolios
   // ============================================

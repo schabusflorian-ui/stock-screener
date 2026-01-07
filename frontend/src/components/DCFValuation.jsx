@@ -3,14 +3,17 @@ import { dcfAPI } from '../services/api';
 import './DCFValuation.css';
 
 /**
- * Professional DCF Valuation Component
+ * Professional DCF Valuation Component - PE/Hedge Fund Grade
  *
  * Features:
  * - Full control over base financials and assumptions
  * - Editable scenario probabilities
  * - Multi-stage growth model visualization
  * - Bull/Base/Bear scenario comparison (football field style)
- * - Sensitivity analysis matrix with multiple parameters
+ * - Sensitivity analysis matrix with CUSTOM INTERVALS
+ * - Reverse DCF ("What's Priced In?")
+ * - Tornado chart for key driver analysis
+ * - Break-even analysis
  * - Sanity checks and warnings
  * - Implicit model assumptions disclosure
  */
@@ -22,6 +25,17 @@ export function DCFValuation({ symbol, currentPrice, sharesOutstanding }) {
   const [sensitivityData, setSensitivityData] = useState(null);
   const [sensitivityLoading, setSensitivityLoading] = useState(false);
   const [showImplicitAssumptions, setShowImplicitAssumptions] = useState(false);
+
+  // NEW: Reverse DCF state
+  const [reverseData, setReverseData] = useState(null);
+  const [reverseLoading, setReverseLoading] = useState(false);
+
+  // NEW: Tornado chart state
+  const [tornadoData, setTornadoData] = useState(null);
+  const [tornadoLoading, setTornadoLoading] = useState(false);
+
+  // NEW: Projections table state
+  const [showProjections, setShowProjections] = useState(false);
 
   // Base financials (actuals - revenue is the primary driver)
   const [baseFinancials, setBaseFinancials] = useState({
@@ -63,10 +77,19 @@ export function DCFValuation({ symbol, currentPrice, sharesOutstanding }) {
 
   const [isCustom, setIsCustom] = useState(false);
 
-  // Sensitivity configuration
+  // Sensitivity configuration - NOW WITH CUSTOM INTERVALS
   const [sensitivityConfig, setSensitivityConfig] = useState({
     rowVariable: 'wacc',
     colVariable: 'growthStage1',
+    // Custom interval mode
+    useCustomIntervals: false,
+    rowMin: 0.06,
+    rowMax: 0.14,
+    rowStep: 0.01,
+    colMin: 0.00,
+    colMax: 0.20,
+    colStep: 0.02,
+    // Legacy mode (deltas from base)
     rowSteps: [-0.02, -0.01, 0, 0.01, 0.02],
     colSteps: [-0.04, -0.02, 0, 0.02, 0.04]
   });
@@ -151,7 +174,39 @@ export function DCFValuation({ symbol, currentPrice, sharesOutstanding }) {
 
   useEffect(() => {
     fetchDCF();
+    // Also fetch reverse DCF data on load
+    fetchReverseDCF();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol]);
+
+  // NEW: Fetch reverse DCF data ("What's Priced In?")
+  const fetchReverseDCF = useCallback(async () => {
+    setReverseLoading(true);
+    try {
+      const response = await dcfAPI.getReverse(symbol);
+      if (response.data.success) {
+        setReverseData(response.data);
+      }
+    } catch (err) {
+      console.error('Reverse DCF error:', err);
+    } finally {
+      setReverseLoading(false);
+    }
+  }, [symbol]);
+
+  // NEW: Fetch tornado chart data
+  const fetchTornadoData = useCallback(async () => {
+    setTornadoLoading(true);
+    try {
+      const response = await dcfAPI.getTornado(symbol, 20); // ±20% variation
+      if (response.data.success) {
+        setTornadoData(response.data);
+      }
+    } catch (err) {
+      console.error('Tornado chart error:', err);
+    } finally {
+      setTornadoLoading(false);
+    }
   }, [symbol]);
 
   const handleBaseFinancialChange = (key, value) => {
@@ -243,54 +298,83 @@ export function DCFValuation({ symbol, currentPrice, sharesOutstanding }) {
     }
   };
 
-  // Generate sensitivity matrix
+  // Generate sensitivity matrix - NOW WITH CUSTOM INTERVALS
   const generateSensitivityMatrix = useCallback(async () => {
     if (!data) return;
 
     setSensitivityLoading(true);
     try {
-      const { rowVariable, colVariable, rowSteps, colSteps } = sensitivityConfig;
+      const { rowVariable, colVariable, useCustomIntervals, rowMin, rowMax, rowStep, colMin, colMax, colStep, rowSteps, colSteps } = sensitivityConfig;
       const baseRowValue = getSensitivityValue(rowVariable);
       const baseColValue = getSensitivityValue(colVariable);
 
-      const matrix = [];
+      if (useCustomIntervals) {
+        // NEW: Use API with custom intervals
+        const response = await dcfAPI.getSensitivity(symbol, {
+          rowVariable,
+          colVariable,
+          rowMin,
+          rowMax,
+          rowStep,
+          colMin,
+          colMax,
+          colStep
+        });
 
-      for (const rowDelta of rowSteps) {
-        const row = [];
-        for (const colDelta of colSteps) {
-          const params = {
-            growthStage1: growthAssumptions.stage1,
-            growthStage2: growthAssumptions.stage2,
-            growthStage3: growthAssumptions.stage3,
-            terminalGrowth: growthAssumptions.terminal,
-            wacc: discountAssumptions.wacc,
-            exitMultiple: discountAssumptions.exitMultiple,
-            ebitdaMargin: marginAssumptions.ebitdaMargin,
-            targetEbitdaMargin: marginAssumptions.targetEbitdaMargin,
-            revenue: baseFinancials.revenue,
-            [rowVariable]: baseRowValue + rowDelta,
-            [colVariable]: baseColValue + colDelta
-          };
-
-          try {
-            const response = await dcfAPI.calculateCustom(symbol, params);
-            row.push(response.data.success ? response.data.intrinsicValue : null);
-          } catch {
-            row.push(null);
-          }
+        if (response.data.success && response.data.sensitivity) {
+          const sens = response.data.sensitivity;
+          setSensitivityData({
+            rowVariable: sens.rowVariable,
+            colVariable: sens.colVariable,
+            rowValues: sens.rowValues,
+            colValues: sens.colValues,
+            matrix: sens.matrix,
+            baseRowValue,
+            baseColValue,
+            gridSize: sens.gridSize
+          });
         }
-        matrix.push(row);
-      }
+      } else {
+        // Legacy mode: calculate locally with deltas
+        const matrix = [];
 
-      setSensitivityData({
-        rowVariable,
-        colVariable,
-        rowValues: rowSteps.map(d => baseRowValue + d),
-        colValues: colSteps.map(d => baseColValue + d),
-        matrix,
-        baseRowValue,
-        baseColValue
-      });
+        for (const rowDelta of rowSteps) {
+          const row = [];
+          for (const colDelta of colSteps) {
+            const params = {
+              growthStage1: growthAssumptions.stage1,
+              growthStage2: growthAssumptions.stage2,
+              growthStage3: growthAssumptions.stage3,
+              terminalGrowth: growthAssumptions.terminal,
+              wacc: discountAssumptions.wacc,
+              exitMultiple: discountAssumptions.exitMultiple,
+              ebitdaMargin: marginAssumptions.ebitdaMargin,
+              targetEbitdaMargin: marginAssumptions.targetEbitdaMargin,
+              revenue: baseFinancials.revenue,
+              [rowVariable]: baseRowValue + rowDelta,
+              [colVariable]: baseColValue + colDelta
+            };
+
+            try {
+              const response = await dcfAPI.calculateCustom(symbol, params);
+              row.push(response.data.success ? response.data.intrinsicValue : null);
+            } catch {
+              row.push(null);
+            }
+          }
+          matrix.push(row);
+        }
+
+        setSensitivityData({
+          rowVariable,
+          colVariable,
+          rowValues: rowSteps.map(d => baseRowValue + d),
+          colValues: colSteps.map(d => baseColValue + d),
+          matrix,
+          baseRowValue,
+          baseColValue
+        });
+      }
     } catch (err) {
       console.error('Sensitivity analysis error:', err);
     } finally {
@@ -298,6 +382,17 @@ export function DCFValuation({ symbol, currentPrice, sharesOutstanding }) {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, growthAssumptions, discountAssumptions, marginAssumptions, baseFinancials, sensitivityConfig, symbol]);
+
+  // Calculate grid size preview for custom intervals
+  const getGridSizePreview = () => {
+    if (!sensitivityConfig.useCustomIntervals) return '5x5';
+    const rows = Math.floor((sensitivityConfig.rowMax - sensitivityConfig.rowMin) / sensitivityConfig.rowStep) + 1;
+    const cols = Math.floor((sensitivityConfig.colMax - sensitivityConfig.colMin) / sensitivityConfig.colStep) + 1;
+    return `${rows}x${cols}`;
+  };
+
+  const gridSize = getGridSizePreview();
+  const gridCells = gridSize.split('x').reduce((a, b) => parseInt(a) * parseInt(b), 1);
 
   // Consistent currency formatting - always show unit (M or B)
   // eslint-disable-next-line no-unused-vars
@@ -392,6 +487,15 @@ export function DCFValuation({ symbol, currentPrice, sharesOutstanding }) {
             onClick={() => setActiveTab('valuation')}
           >
             Valuation
+          </button>
+          <button
+            className={`dcf-tab ${activeTab === 'analysis' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('analysis');
+              if (!tornadoData) fetchTornadoData();
+            }}
+          >
+            Analysis
           </button>
           <button
             className={`dcf-tab ${activeTab === 'sensitivity' ? 'active' : ''}`}
@@ -688,6 +792,66 @@ export function DCFValuation({ symbol, currentPrice, sharesOutstanding }) {
             </div>
           </div>
 
+          {/* NEW: Reverse DCF - "What's Priced In?" */}
+          {reverseData && (
+            <div className="reverse-dcf-section">
+              <h3>What's Priced In?</h3>
+              <p className="reverse-dcf-subtitle">Market expectations implied by current price</p>
+              <div className="reverse-dcf-grid">
+                {reverseData.impliedGrowth && (
+                  <div className="implied-metric">
+                    <div className="implied-header">
+                      <span className="implied-label">Implied Growth (Yr 1-3)</span>
+                      <span className={`implied-gap ${reverseData.impliedGrowth.gapPct > 0 ? 'negative' : 'positive'}`}>
+                        {reverseData.impliedGrowth.gapPct > 0 ? '+' : ''}{reverseData.impliedGrowth.gapPct?.toFixed(1)}pp vs your estimate
+                      </span>
+                    </div>
+                    <div className="implied-comparison">
+                      <div className="implied-value">
+                        <span className="value-large">{reverseData.impliedGrowth.valuePct?.toFixed(1)}%</span>
+                        <span className="value-note">Market expects</span>
+                      </div>
+                      <span className="vs-divider">vs</span>
+                      <div className="implied-value">
+                        <span className="value-large">{reverseData.impliedGrowth.baseValuePct?.toFixed(1)}%</span>
+                        <span className="value-note">Your estimate</span>
+                      </div>
+                    </div>
+                    <p className="implied-interpretation">{reverseData.impliedGrowth.interpretation}</p>
+                  </div>
+                )}
+                {reverseData.impliedWACC && (
+                  <div className="implied-metric">
+                    <div className="implied-header">
+                      <span className="implied-label">Implied WACC</span>
+                      <span className={`implied-gap ${reverseData.impliedWACC.gapPct < 0 ? 'negative' : 'positive'}`}>
+                        {reverseData.impliedWACC.gapPct > 0 ? '+' : ''}{(reverseData.impliedWACC.gapPct * 100)?.toFixed(0)}bps vs your estimate
+                      </span>
+                    </div>
+                    <div className="implied-comparison">
+                      <div className="implied-value">
+                        <span className="value-large">{reverseData.impliedWACC.valuePct?.toFixed(1)}%</span>
+                        <span className="value-note">Market expects</span>
+                      </div>
+                      <span className="vs-divider">vs</span>
+                      <div className="implied-value">
+                        <span className="value-large">{reverseData.impliedWACC.baseValuePct?.toFixed(1)}%</span>
+                        <span className="value-note">Your estimate</span>
+                      </div>
+                    </div>
+                    <p className="implied-interpretation">{reverseData.impliedWACC.interpretation}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          {reverseLoading && (
+            <div className="reverse-dcf-section loading">
+              <div className="loading-spinner small"></div>
+              <span>Calculating market-implied assumptions...</span>
+            </div>
+          )}
+
           {/* Football Field - Scenario Range */}
           <div className="scenario-range">
             <h3>Valuation Range</h3>
@@ -869,6 +1033,120 @@ export function DCFValuation({ symbol, currentPrice, sharesOutstanding }) {
         </>
       )}
 
+      {/* NEW: Analysis Tab - Tornado Chart & Key Drivers */}
+      {activeTab === 'analysis' && (
+        <div className="analysis-section">
+          <div className="tornado-section">
+            <div className="tornado-header">
+              <h3>Key Value Drivers</h3>
+              <p className="tornado-subtitle">Which assumptions have the biggest impact on valuation?</p>
+            </div>
+
+            {tornadoLoading && (
+              <div className="tornado-loading">
+                <div className="loading-spinner"></div>
+                <span>Calculating sensitivity for all variables...</span>
+              </div>
+            )}
+
+            {tornadoData && !tornadoLoading && (
+              <>
+                <div className="top-drivers">
+                  <span className="drivers-label">Top 3 Drivers:</span>
+                  {tornadoData.topDrivers?.map((driver, i) => (
+                    <span key={i} className="driver-badge">{i + 1}. {driver}</span>
+                  ))}
+                </div>
+
+                <div className="tornado-chart">
+                  {tornadoData.variables?.map((v, i) => {
+                    const maxRange = Math.max(...tornadoData.variables.map(x => x.impact));
+                    const barWidth = (v.impact / maxRange) * 100;
+                    const baseValue = tornadoData.baseIntrinsicValue;
+                    const lowPct = ((v.lowValue - baseValue) / baseValue) * 100;
+                    const highPct = ((v.highValue - baseValue) / baseValue) * 100;
+
+                    return (
+                      <div key={v.variable} className="tornado-row">
+                        <div className="tornado-label">
+                          <span className="var-name">{v.label}</span>
+                          <span className="var-base">
+                            Base: {v.variable === 'exitMultiple' ? `${v.baseValue?.toFixed(1)}x` : formatPercent(v.baseValue)}
+                          </span>
+                        </div>
+                        <div className="tornado-bar-container">
+                          <div className="tornado-bar-wrapper">
+                            <div
+                              className="tornado-bar low"
+                              style={{ width: `${Math.abs(lowPct) / (Math.abs(lowPct) + Math.abs(highPct)) * barWidth}%` }}
+                              title={`Low: $${v.lowValue?.toFixed(0)} (${lowPct >= 0 ? '+' : ''}${lowPct.toFixed(1)}%)`}
+                            >
+                              <span className="bar-value">${v.lowValue?.toFixed(0)}</span>
+                            </div>
+                            <div className="tornado-center-line" style={{ left: `${Math.abs(lowPct) / (Math.abs(lowPct) + Math.abs(highPct)) * barWidth}%` }}></div>
+                            <div
+                              className="tornado-bar high"
+                              style={{ width: `${Math.abs(highPct) / (Math.abs(lowPct) + Math.abs(highPct)) * barWidth}%` }}
+                              title={`High: $${v.highValue?.toFixed(0)} (${highPct >= 0 ? '+' : ''}${highPct.toFixed(1)}%)`}
+                            >
+                              <span className="bar-value">${v.highValue?.toFixed(0)}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="tornado-range">
+                          <span className="range-value">{v.rangePct?.toFixed(0)}%</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="tornado-legend">
+                  <span className="legend-note">
+                    Bars show value range when each variable is changed ±{tornadoData.variationPct}% from base.
+                    Base intrinsic value: ${tornadoData.baseIntrinsicValue?.toFixed(2)}
+                  </span>
+                </div>
+
+                <button className="btn-refresh" onClick={fetchTornadoData}>
+                  Refresh Analysis
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Break-Even Summary */}
+          {reverseData && (
+            <div className="breakeven-summary">
+              <h3>Break-Even Analysis</h3>
+              <p className="breakeven-subtitle">What assumptions would make intrinsic value = current price?</p>
+              <div className="breakeven-grid">
+                {reverseData.impliedGrowth && (
+                  <div className="breakeven-item">
+                    <span className="breakeven-label">Break-even Growth</span>
+                    <span className="breakeven-value">{reverseData.impliedGrowth.valuePct?.toFixed(1)}%</span>
+                    <span className="breakeven-note">
+                      You use {reverseData.impliedGrowth.baseValuePct?.toFixed(1)}%
+                      ({reverseData.impliedGrowth.gapPct > 0 ? '+' : ''}{reverseData.impliedGrowth.gapPct?.toFixed(1)}pp gap)
+                    </span>
+                  </div>
+                )}
+                {reverseData.impliedWACC && (
+                  <div className="breakeven-item">
+                    <span className="breakeven-label">Break-even WACC</span>
+                    <span className="breakeven-value">{reverseData.impliedWACC.valuePct?.toFixed(1)}%</span>
+                    <span className="breakeven-note">
+                      You use {reverseData.impliedWACC.baseValuePct?.toFixed(1)}%
+                      ({reverseData.impliedWACC.gapPct > 0 ? '+' : ''}{(reverseData.impliedWACC.gapPct * 100)?.toFixed(0)}bps gap)
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Sensitivity Tab */}
       {activeTab === 'sensitivity' && (
         <div className="sensitivity-section">
@@ -914,6 +1192,97 @@ export function DCFValuation({ symbol, currentPrice, sharesOutstanding }) {
               >
                 {sensitivityLoading ? 'Generating...' : 'Generate Matrix'}
               </button>
+            </div>
+
+            {/* NEW: Custom Intervals Toggle */}
+            <div className="custom-intervals-section">
+              <label className="toggle-label">
+                <input
+                  type="checkbox"
+                  checked={sensitivityConfig.useCustomIntervals}
+                  onChange={(e) => setSensitivityConfig(prev => ({ ...prev, useCustomIntervals: e.target.checked }))}
+                />
+                <span>Use Custom Intervals</span>
+              </label>
+
+              {sensitivityConfig.useCustomIntervals && (
+                <div className="custom-intervals-grid">
+                  <div className="interval-row">
+                    <span className="interval-label">Row ({variableLabels[sensitivityConfig.rowVariable]}):</span>
+                    <div className="interval-inputs">
+                      <label>
+                        Min
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={(sensitivityConfig.rowMin * 100).toFixed(1)}
+                          onChange={(e) => setSensitivityConfig(prev => ({ ...prev, rowMin: parseFloat(e.target.value) / 100 }))}
+                        />
+                        <span className="unit">%</span>
+                      </label>
+                      <label>
+                        Max
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={(sensitivityConfig.rowMax * 100).toFixed(1)}
+                          onChange={(e) => setSensitivityConfig(prev => ({ ...prev, rowMax: parseFloat(e.target.value) / 100 }))}
+                        />
+                        <span className="unit">%</span>
+                      </label>
+                      <label>
+                        Step
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={(sensitivityConfig.rowStep * 100).toFixed(1)}
+                          onChange={(e) => setSensitivityConfig(prev => ({ ...prev, rowStep: parseFloat(e.target.value) / 100 }))}
+                        />
+                        <span className="unit">%</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div className="interval-row">
+                    <span className="interval-label">Column ({variableLabels[sensitivityConfig.colVariable]}):</span>
+                    <div className="interval-inputs">
+                      <label>
+                        Min
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={(sensitivityConfig.colMin * 100).toFixed(1)}
+                          onChange={(e) => setSensitivityConfig(prev => ({ ...prev, colMin: parseFloat(e.target.value) / 100 }))}
+                        />
+                        <span className="unit">%</span>
+                      </label>
+                      <label>
+                        Max
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={(sensitivityConfig.colMax * 100).toFixed(1)}
+                          onChange={(e) => setSensitivityConfig(prev => ({ ...prev, colMax: parseFloat(e.target.value) / 100 }))}
+                        />
+                        <span className="unit">%</span>
+                      </label>
+                      <label>
+                        Step
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={(sensitivityConfig.colStep * 100).toFixed(1)}
+                          onChange={(e) => setSensitivityConfig(prev => ({ ...prev, colStep: parseFloat(e.target.value) / 100 }))}
+                        />
+                        <span className="unit">%</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div className="grid-preview">
+                    Grid Size: <strong>{gridSize}</strong> ({gridCells} calculations)
+                    {gridCells > 200 && <span className="grid-warning"> - Large grid may be slow</span>}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

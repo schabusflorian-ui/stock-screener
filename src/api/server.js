@@ -100,6 +100,19 @@ const historicalRouter = require('./routes/historical');
 const factorsRouter = require('./routes/factors');
 const updateSystemRouter = require('./routes/updateSystem');
 const settingsRouter = require('./routes/settings');
+const tradingRouter = require('./routes/trading');
+const macroRouter = require('./routes/macro');
+const agentRouter = require('./routes/agent');
+const orchestratorRouter = require('./routes/orchestrator');
+const attributionRouter = require('./routes/attribution');
+const transcriptsRouter = require('./routes/transcripts');
+const optimizationRouter = require('./routes/optimization');
+const alternativeDataRouter = require('./routes/alternativeData');
+const riskRouter = require('./routes/risk');
+const signalsRouter = require('./routes/signals');
+const recommendationsRouter = require('./routes/recommendations');
+const executionRouter = require('./routes/execution');
+const backtestingRouter = require('./routes/backtesting');
 
 // Use routes
 app.use('/api/auth', authRouter);
@@ -140,6 +153,19 @@ app.use('/api/historical', historicalRouter);
 app.use('/api/factors', factorsRouter);
 app.use('/api/update-system', updateSystemRouter);
 app.use('/api/settings', settingsRouter);
+app.use('/api/trading', tradingRouter);
+app.use('/api/macro', macroRouter);
+app.use('/api/agent', agentRouter);
+app.use('/api/orchestrator', orchestratorRouter);
+app.use('/api/attribution', attributionRouter);
+app.use('/api/transcripts', transcriptsRouter);
+app.use('/api/optimization', optimizationRouter);
+app.use('/api/alt-data', alternativeDataRouter);
+app.use('/api/risk', riskRouter);
+app.use('/api/signals', signalsRouter);
+app.use('/api/recommendations', recommendationsRouter);
+app.use('/api/execution', executionRouter);
+app.use('/api/backtesting', backtestingRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -189,6 +215,14 @@ app.get('/', (req, res) => {
       factors: '/api/factors',
       updateSystem: '/api/update-system',
       settings: '/api/settings',
+      trading: '/api/trading',
+      macro: '/api/macro',
+      agent: '/api/agent',
+      orchestrator: '/api/orchestrator',
+      transcripts: '/api/transcripts',
+      recommendations: '/api/recommendations',
+      execution: '/api/execution',
+      backtesting: '/api/backtesting',
       health: '/api/health'
     }
   });

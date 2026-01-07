@@ -147,6 +147,54 @@ router.get('/search-cik', async (req, res) => {
   }
 });
 
+// Cache for investor status
+let investorStatusCache = { data: null, lastUpdated: null };
+const INVESTOR_STATUS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * GET /api/investors/status
+ * Quick status for 13F holdings - used by Updates Dashboard
+ */
+router.get('/status', (req, res) => {
+  try {
+    // Return cached if fresh
+    if (investorStatusCache.data && investorStatusCache.lastUpdated &&
+        (Date.now() - investorStatusCache.lastUpdated) < INVESTOR_STATUS_CACHE_TTL) {
+      return res.json({ ...investorStatusCache.data, cached: true });
+    }
+
+    const db = req.app.get('db');
+    // Simple fast query - just get counts and latest filing date
+    const stats = db.prepare(`
+      SELECT
+        COUNT(*) as investor_count,
+        MAX(latest_filing_date) as latest_filing
+      FROM famous_investors
+      WHERE latest_filing_date IS NOT NULL
+    `).get();
+
+    const holdingsCount = db.prepare(`
+      SELECT COUNT(*) as count FROM investor_holdings
+    `).get();
+
+    const result = {
+      success: true,
+      investorCount: stats.investor_count,
+      holdingsCount: holdingsCount.count,
+      latestFiling: stats.latest_filing,
+      lastUpdate: stats.latest_filing
+    };
+
+    // Cache it
+    investorStatusCache = { data: result, lastUpdated: Date.now() };
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching investor status:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 /**
  * GET /api/investors
  * List all famous investors
@@ -502,6 +550,7 @@ router.post('/:id/clone', (req, res) => {
 /**
  * GET /api/investors/:id/clone-preview
  * Preview what a clone would look like without creating it
+ * Returns trades array with shares, currentPrice for executing purchases
  */
 router.get('/:id/clone-preview', (req, res) => {
   try {
@@ -517,8 +566,10 @@ router.get('/:id/clone-preview', (req, res) => {
       return res.status(400).json({ success: false, error: 'No holdings found' });
     }
 
+    // Filter to holdings that have symbols and meet weight threshold
+    // Also filter out holdings without current price (can't calculate shares)
     let filteredHoldings = holdings
-      .filter(h => h.symbol && h.portfolio_weight >= minWeight)
+      .filter(h => h.symbol && h.portfolio_weight >= minWeight && h.current_price > 0)
       .sort((a, b) => b.portfolio_weight - a.portfolio_weight);
 
     if (maxPositions) {
@@ -527,25 +578,46 @@ router.get('/:id/clone-preview', (req, res) => {
 
     const totalWeight = filteredHoldings.reduce((sum, h) => sum + h.portfolio_weight, 0);
 
-    const preview = filteredHoldings.map(h => {
+    // Build trades array with shares and prices for executing purchases
+    const trades = filteredHoldings.map(h => {
       const normalizedWeight = h.portfolio_weight / totalWeight;
+      const targetValue = amount * normalizedWeight;
+      const currentPrice = h.current_price;
+      // Calculate whole shares (most brokers don't support fractional shares)
+      const shares = Math.floor(targetValue / currentPrice);
+      const estimatedCost = shares * currentPrice;
+
       return {
         symbol: h.symbol,
+        companyId: h.company_id,
         companyName: h.company_name,
         sector: h.sector,
         weight: normalizedWeight * 100,
-        targetValue: amount * normalizedWeight,
+        targetValue,
+        currentPrice,
+        shares,
+        estimatedCost,
         originalWeight: h.portfolio_weight
       };
     });
+
+    // Filter out trades where we can't afford even 1 share
+    const viableTrades = trades.filter(t => t.shares > 0);
+
+    // Calculate summary stats
+    const totalEstimatedCost = viableTrades.reduce((sum, t) => sum + t.estimatedCost, 0);
+    const remainingCash = amount - totalEstimatedCost;
 
     res.json({
       success: true,
       filingDate,
       amount,
-      positionsCount: preview.length,
+      positionsCount: viableTrades.length,
       excludedCount: holdings.length - filteredHoldings.length,
-      preview
+      skippedCount: trades.length - viableTrades.length, // Trades we couldn't afford
+      totalEstimatedCost,
+      remainingCash,
+      trades: viableTrades
     });
   } catch (error) {
     console.error('Error generating clone preview:', error);

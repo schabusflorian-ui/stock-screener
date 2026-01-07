@@ -9,9 +9,10 @@ import {
 import {
   TrendingUp, TrendingDown, RefreshCw, MessageCircle,
   MessageSquare, Newspaper, Activity, ArrowUpRight, ArrowDownRight,
-  Clock, AlertCircle, ExternalLink, History, Target
+  Clock, AlertCircle, ExternalLink, History, Target, Briefcase
 } from 'lucide-react';
 import { sentimentAPI, pricesAPI } from '../services/api';
+import SmartMoneySignals from '../components/SmartMoneySignals';
 import { PageHeader } from '../components/ui';
 import { WatchlistButton } from '../components';
 import { useFormatters } from '../hooks/useFormatters';
@@ -88,6 +89,7 @@ const SentimentMeter = ({ score }) => {
 };
 
 // Source icon component
+// eslint-disable-next-line no-unused-vars
 const SourceIcon = ({ source, size = 14 }) => {
   switch (source) {
     case 'reddit': return <MessageCircle size={size} color="#FF4500" />;
@@ -542,6 +544,7 @@ function TrendingTickersPage() {
       <div className="main-tabs">
         {[
           { id: 'overview', label: 'Overview', icon: Activity },
+          { id: 'smartmoney', label: 'Smart Money', icon: Briefcase },
           { id: 'reddit', label: 'Reddit', icon: MessageCircle },
           { id: 'stocktwits', label: 'StockTwits', icon: MessageSquare },
           { id: 'news', label: 'News', icon: Newspaper },
@@ -835,6 +838,7 @@ function TrendingTickersPage() {
                     <th>Company</th>
                     <th>Price</th>
                     <th>1D</th>
+                    <th>Alpha 1M</th>
                     <th className="sortable" onClick={() => handleSort('mentionCount')}>
                       Mentions{getSortIndicator('mentionCount')}
                     </th>
@@ -879,6 +883,14 @@ function TrendingTickersPage() {
                           ? `${priceData[ticker.symbol].change_1d > 0 ? '+' : ''}${priceData[ticker.symbol].change_1d.toFixed(1)}%`
                           : '-'}
                       </td>
+                      <td className={`alpha-cell ${
+                        priceData[ticker.symbol]?.alpha_1m > 0 ? 'positive' :
+                        priceData[ticker.symbol]?.alpha_1m < 0 ? 'negative' : ''
+                      }`}>
+                        {priceData[ticker.symbol]?.alpha_1m != null
+                          ? `${priceData[ticker.symbol].alpha_1m > 0 ? '+' : ''}${priceData[ticker.symbol].alpha_1m.toFixed(1)}%`
+                          : '-'}
+                      </td>
                       <td className="highlight">{ticker.mentionCount || 0}</td>
                       <td>{ticker.uniquePosts || 0}</td>
                       <td>
@@ -897,6 +909,11 @@ function TrendingTickersPage() {
             </div>
           </div>
         </>
+      )}
+
+      {/* Smart Money Tab */}
+      {activeTab === 'smartmoney' && (
+        <SmartMoneySignals />
       )}
 
       {/* Reddit Tab */}

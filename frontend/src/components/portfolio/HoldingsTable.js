@@ -9,9 +9,11 @@ import {
   Search,
   Bot,
   RefreshCw,
-  Loader
+  Loader,
+  PieChart
 } from 'lucide-react';
 import { pricesAPI, analystAPI, companyAPI } from '../../services/api';
+import ETFDetailModal from './ETFDetailModal';
 import './HoldingsTable.css';
 
 // Simple SVG Sparkline component
@@ -76,7 +78,7 @@ function AIRatingBadge({ rating, loading, onClick }) {
   );
 }
 
-function HoldingsTable({ holdings, portfolioId, onRefresh }) {
+function HoldingsTable({ holdings, portfolioId, onRefresh, benchmarkReturn = null, showAlpha = true }) {
   const [sortBy, setSortBy] = useState('current_value');
   const [sortOrder, setSortOrder] = useState('desc');
   const [searchTerm, setSearchTerm] = useState('');
@@ -84,6 +86,18 @@ function HoldingsTable({ holdings, portfolioId, onRefresh }) {
   const [aiRatings, setAiRatings] = useState({});
   const [loadingRatings, setLoadingRatings] = useState({});
   const [showAiColumn] = useState(true);
+  const [selectedETF, setSelectedETF] = useState(null);
+
+  // Helper to check if a holding is an ETF
+  const isETF = (holding) => {
+    return holding.sector === 'ETF' || holding.is_etf;
+  };
+
+  // Calculate portfolio totals for alpha contribution
+  const portfolioTotals = holdings.reduce((acc, h) => ({
+    totalValue: acc.totalValue + (h.current_value || 0),
+    totalCostBasis: acc.totalCostBasis + (h.cost_basis || 0)
+  }), { totalValue: 0, totalCostBasis: 0 });
 
   // Load sparkline data for holdings
   useEffect(() => {
@@ -233,6 +247,29 @@ function HoldingsTable({ holdings, portfolioId, onRefresh }) {
     return `${sign}${value.toFixed(2)}%`;
   };
 
+  // Calculate alpha for a holding (stock return - benchmark return)
+  const calculateAlpha = (holding) => {
+    if (benchmarkReturn === null) return null;
+    const stockReturn = holding.unrealized_pnl_pct || holding.unrealized_gain_pct || 0;
+    return stockReturn - benchmarkReturn;
+  };
+
+  // Calculate alpha contribution (weight * alpha)
+  const calculateAlphaContribution = (holding) => {
+    const alpha = calculateAlpha(holding);
+    if (alpha === null) return null;
+    const weight = portfolioTotals.totalValue > 0
+      ? (holding.current_value || 0) / portfolioTotals.totalValue
+      : 0;
+    return alpha * weight;
+  };
+
+  // Get alpha class for styling
+  const getAlphaClass = (alpha) => {
+    if (alpha === null) return '';
+    return alpha >= 0 ? 'alpha-positive' : 'alpha-negative';
+  };
+
   const SortIcon = ({ column }) => {
     if (sortBy !== column) return null;
     return sortOrder === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />;
@@ -296,20 +333,43 @@ function HoldingsTable({ holdings, portfolioId, onRefresh }) {
               <th onClick={() => handleSort('unrealized_gain_pct')} className="sortable right">
                 Return <SortIcon column="unrealized_gain_pct" />
               </th>
+              {showAlpha && benchmarkReturn !== null && (
+                <>
+                  <th className="sortable right alpha-header" title="Stock return minus benchmark return">
+                    Alpha
+                  </th>
+                  <th className="right alpha-header" title="Position weight x alpha (contribution to portfolio alpha)">
+                    α Contrib
+                  </th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
             {sortedHoldings.map((holding, idx) => {
-              const isPositive = (holding.unrealized_gain || 0) >= 0;
+              const isPositive = (holding.unrealized_pnl || holding.unrealized_gain || 0) >= 0;
               const sparkData = sparklineData[holding.symbol] || [];
               const sparkPositive = sparkData.length > 1 ? sparkData[sparkData.length - 1] >= sparkData[0] : isPositive;
               return (
                 <tr key={idx}>
                   <td>
                     <div className="symbol-cell">
-                      <Link to={`/company/${holding.symbol}`} className="symbol-link">
-                        {holding.symbol}
-                      </Link>
+                      {isETF(holding) ? (
+                        <button
+                          className="symbol-link etf-symbol"
+                          onClick={() => setSelectedETF(holding.symbol)}
+                        >
+                          {holding.symbol}
+                          <span className="etf-badge">
+                            <PieChart size={10} />
+                            ETF
+                          </span>
+                        </button>
+                      ) : (
+                        <Link to={`/company/${holding.symbol}`} className="symbol-link">
+                          {holding.symbol}
+                        </Link>
+                      )}
                       {holding.company_name && (
                         <span className="company-name">{holding.company_name}</span>
                       )}
@@ -333,18 +393,28 @@ function HoldingsTable({ holdings, portfolioId, onRefresh }) {
                     </td>
                   )}
                   <td className="right">{holding.shares?.toLocaleString()}</td>
-                  <td className="right">{formatValue(holding.avg_cost)}</td>
+                  <td className="right">{formatValue(holding.average_cost || holding.avg_cost)}</td>
                   <td className="right">{formatValue(holding.current_price)}</td>
                   <td className="right font-medium">{formatValue(holding.current_value)}</td>
                   <td className={`right ${isPositive ? 'positive' : 'negative'}`}>
                     <div className="gain-cell">
                       {isPositive ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                      {formatValue(holding.unrealized_gain)}
+                      {formatValue(holding.unrealized_pnl || holding.unrealized_gain)}
                     </div>
                   </td>
                   <td className={`right ${isPositive ? 'positive' : 'negative'}`}>
-                    {formatPercent(holding.unrealized_gain_pct)}
+                    {formatPercent(holding.unrealized_pnl_pct || holding.unrealized_gain_pct)}
                   </td>
+                  {showAlpha && benchmarkReturn !== null && (
+                    <>
+                      <td className={`right ${getAlphaClass(calculateAlpha(holding))}`}>
+                        {formatPercent(calculateAlpha(holding))}
+                      </td>
+                      <td className={`right ${getAlphaClass(calculateAlphaContribution(holding))}`}>
+                        {formatPercent(calculateAlphaContribution(holding))}
+                      </td>
+                    </>
+                  )}
                 </tr>
               );
             })}
@@ -378,11 +448,35 @@ function HoldingsTable({ holdings, portfolioId, onRefresh }) {
           </div>
           <div className="summary-item">
             <span className="summary-label">Total Gain/Loss</span>
-            <span className={`summary-value ${holdings.reduce((sum, h) => sum + (h.unrealized_gain || 0), 0) >= 0 ? 'positive' : 'negative'}`}>
-              {formatValue(holdings.reduce((sum, h) => sum + (h.unrealized_gain || 0), 0))}
+            <span className={`summary-value ${holdings.reduce((sum, h) => sum + (h.unrealized_pnl || h.unrealized_gain || 0), 0) >= 0 ? 'positive' : 'negative'}`}>
+              {formatValue(holdings.reduce((sum, h) => sum + (h.unrealized_pnl || h.unrealized_gain || 0), 0))}
             </span>
           </div>
+          {showAlpha && benchmarkReturn !== null && (
+            <>
+              <div className="summary-item alpha-summary">
+                <span className="summary-label">Benchmark</span>
+                <span className={`summary-value ${benchmarkReturn >= 0 ? 'positive' : 'negative'}`}>
+                  {formatPercent(benchmarkReturn)}
+                </span>
+              </div>
+              <div className="summary-item alpha-summary">
+                <span className="summary-label">Portfolio Alpha</span>
+                <span className={`summary-value ${holdings.reduce((sum, h) => sum + (calculateAlphaContribution(h) || 0), 0) >= 0 ? 'alpha-positive' : 'alpha-negative'}`}>
+                  {formatPercent(holdings.reduce((sum, h) => sum + (calculateAlphaContribution(h) || 0), 0))}
+                </span>
+              </div>
+            </>
+          )}
         </div>
+      )}
+
+      {/* ETF Detail Modal */}
+      {selectedETF && (
+        <ETFDetailModal
+          symbol={selectedETF}
+          onClose={() => setSelectedETF(null)}
+        />
       )}
     </div>
   );

@@ -278,7 +278,11 @@ function HomePage() {
                       </div>
                       <div className="values-col">
                         <span className="value positive">{company.roic?.toFixed(1)}%</span>
-                        {price?.change_1m != null && (
+                        {price?.alpha_1m != null ? (
+                          <span className={`alpha-badge ${price.alpha_1m >= 0 ? 'positive' : 'negative'}`}>
+                            {price.alpha_1m >= 0 ? '+' : ''}{price.alpha_1m.toFixed(1)}% α
+                          </span>
+                        ) : price?.change_1m != null && (
                           <span className={`price-change ${price.change_1m >= 0 ? 'up' : 'down'}`}>
                             {price.change_1m >= 0 ? '+' : ''}{price.change_1m.toFixed(1)}%
                           </span>
@@ -308,7 +312,11 @@ function HomePage() {
                       </div>
                       <div className="values-col">
                         <span className="value">{company.earnings_yield?.toFixed(1)}%</span>
-                        {price?.change_1m != null && (
+                        {price?.alpha_1m != null ? (
+                          <span className={`alpha-badge ${price.alpha_1m >= 0 ? 'positive' : 'negative'}`}>
+                            {price.alpha_1m >= 0 ? '+' : ''}{price.alpha_1m.toFixed(1)}% α
+                          </span>
+                        ) : price?.change_1m != null && (
                           <span className={`price-change ${price.change_1m >= 0 ? 'up' : 'down'}`}>
                             {price.change_1m >= 0 ? '+' : ''}{price.change_1m.toFixed(1)}%
                           </span>
@@ -338,7 +346,11 @@ function HomePage() {
                       </div>
                       <div className="values-col">
                         <span className="value positive">+{company.revenue_growth_yoy?.toFixed(1)}%</span>
-                        {price?.change_1m != null && (
+                        {price?.alpha_1m != null ? (
+                          <span className={`alpha-badge ${price.alpha_1m >= 0 ? 'positive' : 'negative'}`}>
+                            {price.alpha_1m >= 0 ? '+' : ''}{price.alpha_1m.toFixed(1)}% α
+                          </span>
+                        ) : price?.change_1m != null && (
                           <span className={`price-change ${price.change_1m >= 0 ? 'up' : 'down'}`}>
                             {price.change_1m >= 0 ? '+' : ''}{price.change_1m.toFixed(1)}%
                           </span>
@@ -368,7 +380,11 @@ function HomePage() {
                       </div>
                       <div className="values-col">
                         <span className="value">{company.current_ratio?.toFixed(1)}x</span>
-                        {price?.change_1m != null && (
+                        {price?.alpha_1m != null ? (
+                          <span className={`alpha-badge ${price.alpha_1m >= 0 ? 'positive' : 'negative'}`}>
+                            {price.alpha_1m >= 0 ? '+' : ''}{price.alpha_1m.toFixed(1)}% α
+                          </span>
+                        ) : price?.change_1m != null && (
                           <span className={`price-change ${price.change_1m >= 0 ? 'up' : 'down'}`}>
                             {price.change_1m >= 0 ? '+' : ''}{price.change_1m.toFixed(1)}%
                           </span>

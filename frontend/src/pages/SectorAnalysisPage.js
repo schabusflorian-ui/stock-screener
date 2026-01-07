@@ -1682,12 +1682,12 @@ function SectorDetailView({ sector, detail, loading, onBack }) {
         <span className="company-count">{aggregate.company_count} companies</span>
       </div>
 
-      {/* Aggregate Metrics */}
+      {/* Aggregate Metrics with Avg/Median */}
       <div className="aggregate-metrics">
         <div className="metric-card">
-          <span className="label">Avg ROIC</span>
+          <span className="label">ROIC (Avg / Med)</span>
           <span className={`value ${getValueClass(aggregate.avg_roic, { good: 15, bad: 5 })}`}>
-            {formatValue(aggregate.avg_roic, 'percent')}
+            {formatValue(aggregate.avg_roic, 'percent')} / {formatValue(aggregate.median_roic, 'percent')}
           </span>
         </div>
         <div className="metric-card">
@@ -1697,31 +1697,33 @@ function SectorDetailView({ sector, detail, loading, onBack }) {
           </span>
         </div>
         <div className="metric-card">
-          <span className="label">Avg Net Margin</span>
+          <span className="label">Net Margin (Avg / Med)</span>
           <span className={`value ${getValueClass(aggregate.avg_net_margin, { good: 15, bad: 0 })}`}>
-            {formatValue(aggregate.avg_net_margin, 'percent')}
+            {formatValue(aggregate.avg_net_margin, 'percent')} / {formatValue(aggregate.median_net_margin, 'percent')}
           </span>
         </div>
         <div className="metric-card">
-          <span className="label">Avg P/E</span>
-          <span className="value">{formatValue(aggregate.avg_pe_ratio, 'ratio')}</span>
+          <span className="label">P/E (Avg / Med)</span>
+          <span className="value">
+            {formatValue(aggregate.avg_pe_ratio, 'ratio')} / {formatValue(aggregate.median_pe_ratio, 'ratio')}
+          </span>
         </div>
         <div className="metric-card">
-          <span className="label">Avg D/E</span>
+          <span className="label">D/E (Avg / Med)</span>
           <span className={`value ${getValueClass(aggregate.avg_debt_to_equity, { bad: 2 })}`}>
-            {formatValue(aggregate.avg_debt_to_equity, 'ratio')}
+            {formatValue(aggregate.avg_debt_to_equity, 'ratio')} / {formatValue(aggregate.median_debt_to_equity, 'ratio')}
           </span>
         </div>
         <div className="metric-card">
-          <span className="label">Avg Growth</span>
+          <span className="label">Growth (Avg / Med)</span>
           <span className={`value ${getValueClass(aggregate.avg_revenue_growth, { good: 10, bad: 0 })}`}>
-            {formatValue(aggregate.avg_revenue_growth, 'percent')}
+            {formatValue(aggregate.avg_revenue_growth, 'percent')} / {formatValue(aggregate.median_revenue_growth, 'percent')}
           </span>
         </div>
         <div className="metric-card">
-          <span className="label">Avg FCF Yield</span>
+          <span className="label">FCF Yield (Avg / Med)</span>
           <span className={`value ${getValueClass(aggregate.avg_fcf_yield, { good: 5, bad: 0 })}`}>
-            {formatValue(aggregate.avg_fcf_yield, 'percent')}
+            {formatValue(aggregate.avg_fcf_yield, 'percent')} / {formatValue(aggregate.median_fcf_yield, 'percent')}
           </span>
         </div>
         <div className="metric-card">
@@ -1884,12 +1886,12 @@ function IndustryDetailView({ industry, detail, loading, onBack }) {
         <span className="company-count">{aggregate.company_count} companies</span>
       </div>
 
-      {/* Aggregate Metrics */}
+      {/* Aggregate Metrics with Avg/Median */}
       <div className="aggregate-metrics">
         <div className="metric-card">
-          <span className="label">Avg ROIC</span>
+          <span className="label">ROIC (Avg / Med)</span>
           <span className={`value ${getValueClass(aggregate.avg_roic, { good: 15, bad: 5 })}`}>
-            {formatValue(aggregate.avg_roic, 'percent')}
+            {formatValue(aggregate.avg_roic, 'percent')} / {formatValue(aggregate.median_roic, 'percent')}
           </span>
         </div>
         <div className="metric-card">
@@ -1899,9 +1901,9 @@ function IndustryDetailView({ industry, detail, loading, onBack }) {
           </span>
         </div>
         <div className="metric-card">
-          <span className="label">Avg Net Margin</span>
+          <span className="label">Net Margin (Avg / Med)</span>
           <span className={`value ${getValueClass(aggregate.avg_net_margin, { good: 15, bad: 0 })}`}>
-            {formatValue(aggregate.avg_net_margin, 'percent')}
+            {formatValue(aggregate.avg_net_margin, 'percent')} / {formatValue(aggregate.median_net_margin, 'percent')}
           </span>
         </div>
         <div className="metric-card">
@@ -1911,19 +1913,21 @@ function IndustryDetailView({ industry, detail, loading, onBack }) {
           </span>
         </div>
         <div className="metric-card">
-          <span className="label">Avg P/E</span>
-          <span className="value">{formatValue(aggregate.avg_pe_ratio, 'ratio')}</span>
-        </div>
-        <div className="metric-card">
-          <span className="label">Avg D/E</span>
-          <span className={`value ${getValueClass(aggregate.avg_debt_to_equity, { bad: 2 })}`}>
-            {formatValue(aggregate.avg_debt_to_equity, 'ratio')}
+          <span className="label">P/E (Avg / Med)</span>
+          <span className="value">
+            {formatValue(aggregate.avg_pe_ratio, 'ratio')} / {formatValue(aggregate.median_pe_ratio, 'ratio')}
           </span>
         </div>
         <div className="metric-card">
-          <span className="label">Avg Growth</span>
+          <span className="label">D/E (Avg / Med)</span>
+          <span className={`value ${getValueClass(aggregate.avg_debt_to_equity, { bad: 2 })}`}>
+            {formatValue(aggregate.avg_debt_to_equity, 'ratio')} / {formatValue(aggregate.median_debt_to_equity, 'ratio')}
+          </span>
+        </div>
+        <div className="metric-card">
+          <span className="label">Growth (Avg / Med)</span>
           <span className={`value ${getValueClass(aggregate.avg_revenue_growth, { good: 10, bad: 0 })}`}>
-            {formatValue(aggregate.avg_revenue_growth, 'percent')}
+            {formatValue(aggregate.avg_revenue_growth, 'percent')} / {formatValue(aggregate.median_revenue_growth, 'percent')}
           </span>
         </div>
         <div className="metric-card">

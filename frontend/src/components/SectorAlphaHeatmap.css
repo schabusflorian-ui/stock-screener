@@ -1,0 +1,224 @@
+/* frontend/src/components/SectorAlphaHeatmap.css */
+
+.sector-alpha-heatmap {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+}
+
+.sector-alpha-heatmap.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: var(--text-tertiary);
+}
+
+.heatmap-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.heatmap-title h3 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.heatmap-subtitle {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.period-selector {
+  display: flex;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  padding: var(--space-1);
+}
+
+.period-btn {
+  padding: var(--space-1) 12px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.period-btn:hover {
+  color: var(--text-primary);
+}
+
+.period-btn.active {
+  background: var(--accent-primary);
+  color: white;
+}
+
+.heatmap-container {
+  margin-bottom: var(--space-4);
+}
+
+.heatmap-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2);
+}
+
+.heatmap-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4) var(--space-3);
+  border-radius: var(--radius-md);
+  min-width: 140px;
+  min-height: 100px;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.heatmap-cell:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.cell-name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: var(--space-1);
+  opacity: 0.9;
+}
+
+.cell-alpha {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.cell-details {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  opacity: 0.8;
+  gap: 2px;
+}
+
+.cell-return,
+.cell-companies {
+  font-weight: 500;
+}
+
+/* Legend */
+.heatmap-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border-color);
+  margin-top: var(--space-3);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.legend-color {
+  width: 40px;
+  height: 12px;
+  border-radius: var(--radius-sm);
+}
+
+.legend-neutral {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-tertiary);
+  padding: 0 var(--space-4);
+}
+
+/* Summary stats */
+.heatmap-summary {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-8);
+  padding-top: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.summary-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.summary-label {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.summary-value {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.summary-value.outperform {
+  color: #8b5cf6;
+}
+
+.summary-value.underperform {
+  color: #f97316;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .heatmap-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .heatmap-cell {
+    min-width: 100px;
+    min-height: 80px;
+    padding: var(--space-3) var(--space-2);
+  }
+
+  .cell-name {
+    font-size: var(--text-xs);
+  }
+
+  .cell-alpha {
+    font-size: var(--text-lg);
+  }
+
+  .heatmap-legend {
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+
+  .heatmap-summary {
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+}

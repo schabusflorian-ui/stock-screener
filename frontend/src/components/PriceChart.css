@@ -73,6 +73,26 @@
   font-size: var(--text-sm);
 }
 
+/* Alpha badge in header */
+.price-chart-alpha {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.price-chart-alpha.outperform {
+  background: rgba(139, 92, 246, 0.15);
+  color: #8b5cf6;
+}
+
+.price-chart-alpha.underperform {
+  background: rgba(249, 115, 22, 0.15);
+  color: #f97316;
+}
+
 /* Period selector */
 .price-chart-periods {
   display: flex;
@@ -273,6 +293,16 @@
   cursor: not-allowed;
 }
 
+.overlay-toggle.alpha-toggle {
+  border-color: #8b5cf6;
+}
+
+.overlay-toggle.alpha-toggle.active {
+  background: rgba(139, 92, 246, 0.15);
+  border-color: #8b5cf6;
+  color: #8b5cf6;
+}
+
 .overlay-indicator {
   width: 10px;
   height: 10px;
@@ -339,6 +369,14 @@
 
 .price-tooltip-row.highlight span:last-child {
   color: var(--brand-primary);
+}
+
+.price-tooltip-row span.alpha-positive {
+  color: #8b5cf6;
+}
+
+.price-tooltip-row span.alpha-negative {
+  color: #f97316;
 }
 
 /* Legend */

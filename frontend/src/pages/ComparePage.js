@@ -31,22 +31,6 @@ const DEFAULT_TABLE_METRICS = DEFAULT_COMPARE_METRICS;
 
 const COMPANY_COLORS = ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#3b82f6'];
 
-// Helper to get chart styles from CSS variables
-const getChartStyles = () => {
-  const root = document.documentElement;
-  const getVar = (name) => getComputedStyle(root).getPropertyValue(name).trim();
-  return {
-    tooltipStyle: {
-      backgroundColor: getVar('--chart-tooltip-bg') || 'rgba(255, 255, 255, 0.95)',
-      border: `1px solid ${getVar('--chart-tooltip-border') || 'rgba(0, 0, 0, 0.1)'}`,
-      borderRadius: '0.5rem'
-    },
-    gridStroke: getVar('--chart-grid-stroke') || '#e2e8f0',
-    axisStroke: getVar('--chart-axis-stroke') || '#64748b',
-    axisText: getVar('--chart-axis-text') || '#64748b'
-  };
-};
-
 function ComparePage() {
   const fmt = useFormatters();
 
@@ -736,9 +720,9 @@ function ComparePage() {
                       <h4>Profitability (ROIC)</h4>
                       <ResponsiveContainer width="100%" height={200}>
                         <BarChart data={getProfitabilityData()} layout="vertical">
-                          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                          <XAxis type="number" stroke="#94a3b8" unit="%" />
-                          <YAxis dataKey="symbol" type="category" stroke="#94a3b8" width={60} />
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                          <XAxis type="number" stroke="#64748b" unit="%" />
+                          <YAxis dataKey="symbol" type="category" stroke="#64748b" width={60} />
                           <Tooltip
                             contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem' }}
                             formatter={(v) => `${v.toFixed(1)}%`}
@@ -756,9 +740,9 @@ function ComparePage() {
                       <h4>Margin Comparison</h4>
                       <ResponsiveContainer width="100%" height={200}>
                         <BarChart data={getMarginComparisonData()}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                          <XAxis dataKey="symbol" stroke="#94a3b8" />
-                          <YAxis stroke="#94a3b8" unit="%" />
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                          <XAxis dataKey="symbol" stroke="#64748b" />
+                          <YAxis stroke="#64748b" unit="%" />
                           <Tooltip
                             contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem' }}
                             formatter={(v) => `${v.toFixed(1)}%`}
@@ -775,8 +759,8 @@ function ComparePage() {
                       <h4>Quality Radar</h4>
                       <ResponsiveContainer width="100%" height={250}>
                         <RadarChart data={getRadarData()}>
-                          <PolarGrid stroke="#334155" />
-                          <PolarAngleAxis dataKey="metric" tick={{ fill: '#94a3b8', fontSize: 11 }} />
+                          <PolarGrid stroke="#e2e8f0" />
+                          <PolarAngleAxis dataKey="metric" tick={{ fill: '#64748b', fontSize: 11 }} />
                           <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#64748b', fontSize: 10 }} />
                           {selectedCompanies.map((symbol, idx) => (
                             <Radar
@@ -806,9 +790,9 @@ function ComparePage() {
                       </h3>
                       <ResponsiveContainer width="100%" height={300}>
                         <LineChart data={getPricePerformanceData()}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                          <XAxis dataKey="date" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 11 }} interval="preserveStartEnd" />
-                          <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8' }} tickFormatter={(v) => `${v.toFixed(0)}%`} />
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                          <XAxis dataKey="date" stroke="#64748b" tick={{ fill: '#64748b', fontSize: 11 }} interval="preserveStartEnd" />
+                          <YAxis stroke="#64748b" tick={{ fill: '#64748b' }} tickFormatter={(v) => `${v.toFixed(0)}%`} />
                           <Tooltip
                             contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem' }}
                             formatter={(v) => v !== null ? `${v.toFixed(1)}%` : '-'}
@@ -1068,9 +1052,9 @@ function ComparePage() {
                       <h4>Historical {ALL_METRICS.find(m => m.key === selectedMetric)?.label} Trend</h4>
                       <ResponsiveContainer width="100%" height={350}>
                         <LineChart data={getHistoricalChartData()}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                          <XAxis dataKey="date" stroke="#94a3b8" tick={{ fill: '#94a3b8' }} />
-                          <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8' }} />
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                          <XAxis dataKey="date" stroke="#64748b" tick={{ fill: '#64748b' }} />
+                          <YAxis stroke="#64748b" tick={{ fill: '#64748b' }} />
                           <Tooltip
                             contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem' }}
                             formatter={(v) => v !== null ? `${v.toFixed(1)}%` : '-'}
@@ -1103,9 +1087,9 @@ function ComparePage() {
                         </h4>
                         <ResponsiveContainer width="100%" height={350}>
                           <LineChart data={getPricePerformanceData()}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                            <XAxis dataKey="date" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 11 }} interval="preserveStartEnd" />
-                            <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8' }} tickFormatter={(v) => `${v.toFixed(0)}%`} />
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                            <XAxis dataKey="date" stroke="#64748b" tick={{ fill: '#64748b', fontSize: 11 }} interval="preserveStartEnd" />
+                            <YAxis stroke="#64748b" tick={{ fill: '#64748b' }} tickFormatter={(v) => `${v.toFixed(0)}%`} />
                             <Tooltip
                               contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem' }}
                               formatter={(v) => v !== null ? `${v.toFixed(1)}%` : '-'}
@@ -1155,9 +1139,9 @@ function ComparePage() {
                       <h4>Profitability Comparison</h4>
                       <ResponsiveContainer width="100%" height={300}>
                         <BarChart data={getProfitabilityData()}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                          <XAxis dataKey="symbol" stroke="#94a3b8" />
-                          <YAxis stroke="#94a3b8" unit="%" />
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                          <XAxis dataKey="symbol" stroke="#64748b" />
+                          <YAxis stroke="#64748b" unit="%" />
                           <Tooltip
                             contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem' }}
                             formatter={(v) => `${v.toFixed(1)}%`}
@@ -1174,8 +1158,8 @@ function ComparePage() {
                       <h4>Quality Radar</h4>
                       <ResponsiveContainer width="100%" height={300}>
                         <RadarChart data={getRadarData()}>
-                          <PolarGrid stroke="#334155" />
-                          <PolarAngleAxis dataKey="metric" tick={{ fill: '#94a3b8', fontSize: 11 }} />
+                          <PolarGrid stroke="#e2e8f0" />
+                          <PolarAngleAxis dataKey="metric" tick={{ fill: '#64748b', fontSize: 11 }} />
                           <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#64748b' }} />
                           {selectedCompanies.map((symbol, idx) => (
                             <Radar
@@ -1204,9 +1188,9 @@ function ComparePage() {
                       <h4>Revenue Trend (in Billions)</h4>
                       <ResponsiveContainer width="100%" height={300}>
                         <AreaChart data={getRevenueComparisonData()}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                          <XAxis dataKey="date" stroke="#94a3b8" />
-                          <YAxis stroke="#94a3b8" unit="B" />
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                          <XAxis dataKey="date" stroke="#64748b" />
+                          <YAxis stroke="#64748b" unit="B" />
                           <Tooltip
                             contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem' }}
                             formatter={(v) => v !== null ? `$${v.toFixed(1)}B` : '-'}
@@ -1268,9 +1252,9 @@ function ComparePage() {
                       <h4>Net Income Trend (in Billions)</h4>
                       <ResponsiveContainer width="100%" height={300}>
                         <ComposedChart data={getRevenueComparisonData()}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                          <XAxis dataKey="date" stroke="#94a3b8" />
-                          <YAxis stroke="#94a3b8" unit="B" />
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                          <XAxis dataKey="date" stroke="#64748b" />
+                          <YAxis stroke="#64748b" unit="B" />
                           <Tooltip
                             contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem' }}
                             formatter={(v) => v !== null ? `$${v.toFixed(1)}B` : '-'}

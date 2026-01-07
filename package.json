@@ -9,6 +9,10 @@
   "scripts": {
     "start": "node src/api/server.js",
     "dev": "nodemon src/api/server.js",
+    "test": "jest --config jest.config.js",
+    "test:watch": "jest --config jest.config.js --watch",
+    "test:coverage": "jest --config jest.config.js --coverage",
+    "test:agent": "jest --config jest.config.js --testPathPattern=agent",
     "scheduler": "node src/jobs/masterScheduler.js",
     "scheduler:status": "node src/jobs/masterScheduler.js --status",
     "scheduler:list": "node src/jobs/masterScheduler.js --list",
@@ -50,6 +54,7 @@
     "yahoo-finance2": "^3.10.2"
   },
   "devDependencies": {
+    "jest": "^29.7.0",
     "nodemon": "^3.1.11"
   }
 }

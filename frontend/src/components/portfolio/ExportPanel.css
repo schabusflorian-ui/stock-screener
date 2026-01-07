@@ -1,9 +1,13 @@
 /* frontend/src/components/portfolio/ExportPanel.css */
 
 .export-panel {
-  background: var(--surface-color, #1a1a2e);
-  border-radius: 12px;
+  background: var(--bg-secondary);
+  border-radius: 16px;
   padding: 24px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-md);
 }
 
 .export-panel-header {
@@ -13,12 +17,13 @@
 .export-panel-header h3 {
   margin: 0 0 8px 0;
   font-size: 1.25rem;
-  color: var(--text-primary, #fff);
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 .export-subtitle {
   margin: 0;
-  color: var(--text-secondary, #8892b0);
+  color: var(--text-secondary);
   font-size: 0.9rem;
 }
 
@@ -33,14 +38,16 @@
   align-items: flex-start;
   gap: 16px;
   padding: 20px;
-  background: var(--surface-elevated, #16213e);
-  border-radius: 10px;
-  border: 1px solid var(--border-color, #2a2a4a);
-  transition: border-color 0.2s ease;
+  background: var(--bg-tertiary);
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  transition: all 0.2s ease;
 }
 
 .export-card:hover {
-  border-color: var(--primary-color, #64ffda);
+  border-color: var(--accent-primary);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
 }
 
 .export-card-icon {
@@ -51,8 +58,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--surface-color, #1a1a2e);
+  background: var(--bg-secondary);
   border-radius: 10px;
+  border: 1px solid var(--border-color);
 }
 
 .export-card-content {
@@ -63,12 +71,13 @@
 .export-card-content h4 {
   margin: 0 0 6px 0;
   font-size: 1rem;
-  color: var(--text-primary, #fff);
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .export-card-content p {
   margin: 0;
-  color: var(--text-secondary, #8892b0);
+  color: var(--text-secondary);
   font-size: 0.85rem;
   line-height: 1.5;
 }
@@ -76,10 +85,10 @@
 .export-btn {
   flex-shrink: 0;
   padding: 10px 20px;
-  background: var(--primary-color, #64ffda);
-  color: var(--surface-color, #1a1a2e);
+  background: var(--accent-primary);
+  color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
@@ -88,8 +97,9 @@
 }
 
 .export-btn:hover:not(:disabled) {
-  background: var(--primary-hover, #4cd9b4);
+  background: var(--accent-primary-hover);
   transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
 }
 
 .export-btn:disabled {
@@ -101,8 +111,9 @@
 .export-filters {
   margin-top: 12px;
   padding: 12px;
-  background: var(--surface-color, #1a1a2e);
+  background: var(--bg-secondary);
   border-radius: 8px;
+  border: 1px solid var(--border-color);
 }
 
 .filter-row {
@@ -120,23 +131,26 @@
   flex-direction: column;
   gap: 4px;
   font-size: 0.8rem;
-  color: var(--text-secondary, #8892b0);
+  color: var(--text-secondary);
+  font-weight: 500;
 }
 
 .filter-row input,
 .filter-row select {
   padding: 8px 12px;
-  background: var(--surface-elevated, #16213e);
-  border: 1px solid var(--border-color, #2a2a4a);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
-  color: var(--text-primary, #fff);
+  color: var(--text-primary);
   font-size: 0.9rem;
+  transition: border-color 0.2s ease;
 }
 
 .filter-row input:focus,
 .filter-row select:focus {
   outline: none;
-  border-color: var(--primary-color, #64ffda);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-primary-alpha);
 }
 
 .filter-toggle {
@@ -144,10 +158,11 @@
   padding: 4px 8px;
   background: transparent;
   border: none;
-  color: var(--primary-color, #64ffda);
+  color: var(--accent-primary);
   font-size: 0.8rem;
   cursor: pointer;
   text-decoration: underline;
+  font-weight: 500;
 }
 
 .filter-toggle:hover {
@@ -164,33 +179,36 @@
   align-items: center;
   gap: 10px;
   font-size: 0.85rem;
-  color: var(--text-secondary, #8892b0);
+  color: var(--text-secondary);
+  font-weight: 500;
 }
 
 .year-selector select {
   padding: 6px 12px;
-  background: var(--surface-color, #1a1a2e);
-  border: 1px solid var(--border-color, #2a2a4a);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
-  color: var(--text-primary, #fff);
+  color: var(--text-primary);
   font-size: 0.9rem;
+  transition: border-color 0.2s ease;
 }
 
 .year-selector select:focus {
   outline: none;
-  border-color: var(--primary-color, #64ffda);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-primary-alpha);
 }
 
 /* Footer */
 .export-footer {
   margin-top: 24px;
   padding-top: 16px;
-  border-top: 1px solid var(--border-color, #2a2a4a);
+  border-top: 1px solid var(--border-color);
 }
 
 .export-note {
   margin: 0;
-  color: var(--text-muted, #5a6a8a);
+  color: var(--text-tertiary);
   font-size: 0.8rem;
   font-style: italic;
 }

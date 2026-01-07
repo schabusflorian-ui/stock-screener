@@ -9,6 +9,7 @@
  * - Sentiment refresh (every 4 hours)
  * - Knowledge base refresh (daily 6 AM, full weekly Sunday 3 AM)
  * - SEC filing checks (weekdays 7 PM ET)
+ * - Dividend data refresh (weekly Sunday 4 AM ET)
  *
  * Usage:
  *   node src/jobs/masterScheduler.js              # Start scheduler daemon
@@ -193,6 +194,59 @@ class MasterScheduler {
   }
 
   /**
+   * Run dividend data refresh job
+   * Fetches dividend history and metrics from Yahoo Finance
+   */
+  async runDividendRefresh(sp500Only = true) {
+    return new Promise((resolve, reject) => {
+      const script = path.join(this.projectRoot, 'python-services', 'dividend_fetcher.py');
+      const args = sp500Only ? ['sp500'] : ['fetch'];
+      const child = spawn('python3', [script, ...args], {
+        cwd: this.projectRoot,
+        stdio: 'pipe'
+      });
+
+      let output = '';
+      child.stdout.on('data', (data) => { output += data.toString(); });
+      child.stderr.on('data', (data) => { output += data.toString(); });
+
+      child.on('close', (code) => {
+        if (code === 0) {
+          resolve(output);
+        } else {
+          reject(new Error(`Dividend refresh failed with code ${code}: ${output}`));
+        }
+      });
+
+      child.on('error', reject);
+    });
+  }
+
+  /**
+   * Process portfolio dividends
+   * Credits dividends to portfolios when stocks go ex-dividend
+   */
+  async processPortfolioDividends(lookbackDays = 7) {
+    const { getDatabase } = require('../database');
+    const { getDividendProcessor } = require('../services/portfolio/dividendProcessor');
+
+    const db = getDatabase();
+    const processor = getDividendProcessor(db);
+
+    const result = processor.processAllDividends({ lookbackDays });
+
+    this.log(`Portfolio dividends processed: ${result.dividendsProcessed} dividends, $${result.totalAmount.toFixed(2)} total`);
+    if (result.dripShares > 0) {
+      this.log(`DRIP shares purchased: ${result.dripShares.toFixed(4)}`);
+    }
+    if (result.errors.length > 0) {
+      this.log(`Dividend processing errors: ${result.errors.length}`, 'WARN');
+    }
+
+    return result;
+  }
+
+  /**
    * Get status of all jobs
    */
   getStatus() {
@@ -207,6 +261,8 @@ class MasterScheduler {
         { name: 'Knowledge Base (Incremental)', schedule: 'Mon-Sat 6:00 AM ET' },
         { name: 'Knowledge Base (Full)', schedule: 'Sunday 3:00 AM ET' },
         { name: 'SEC Filing Check', schedule: 'Weekdays 7:00 PM ET' },
+        { name: 'Dividend Refresh', schedule: 'Sunday 4:00 AM ET' },
+        { name: 'Portfolio Dividend Processing', schedule: 'Weekdays 6:30 PM ET' },
         { name: 'ETF Update (Tier 1)', schedule: 'Weekdays 6:30 AM ET' },
         { name: 'ETF Update (Tier 2)', schedule: 'Saturday 8:00 AM ET' },
         { name: 'ETF Tier 3 Promotion', schedule: 'Sunday 7:00 AM ET' }
@@ -292,6 +348,32 @@ class MasterScheduler {
     }, { timezone: 'America/New_York' });
 
     this.log('Scheduled: SEC Filing Check (Weekdays 7:00 PM ET)');
+
+    // ============================================
+    // DIVIDEND DATA REFRESH
+    // ============================================
+
+    // Sunday at 4:00 AM ET - Weekly dividend data refresh (S&P 500)
+    cron.schedule('0 4 * * 0', async () => {
+      await this.runJob('Dividend Refresh', async () => {
+        await this.runDividendRefresh(true);
+      });
+    }, { timezone: 'America/New_York' });
+
+    this.log('Scheduled: Dividend Refresh (Sunday 4:00 AM ET)');
+
+    // ============================================
+    // PORTFOLIO DIVIDEND PROCESSING
+    // ============================================
+
+    // Weekdays at 6:30 PM ET - Process portfolio dividends (after price update)
+    cron.schedule('30 18 * * 1-5', async () => {
+      await this.runJob('Portfolio Dividend Processing', async () => {
+        await this.processPortfolioDividends();
+      });
+    }, { timezone: 'America/New_York' });
+
+    this.log('Scheduled: Portfolio Dividend Processing (Weekdays 6:30 PM ET)');
 
     // ============================================
     // ETF UPDATES
@@ -418,6 +500,7 @@ if (require.main === module) {
     console.log('  4. Knowledge Incremental - Mon-Sat 6:00 AM ET');
     console.log('  5. Knowledge Full       - Sunday 3:00 AM ET');
     console.log('  6. SEC Filing Check     - Weekdays 7:00 PM ET');
+    console.log('  7. Dividend Refresh     - Sunday 4:00 AM ET');
     console.log('');
 
   } else if (args.includes('--run-all')) {
@@ -447,6 +530,7 @@ Jobs:
   - Knowledge Incremental: Updates tech sources in knowledge base (daily)
   - Knowledge Full:        Full knowledge base rebuild (weekly)
   - SEC Filing Check:      Checks for new 10-K/10-Q filings (weekdays)
+  - Dividend Refresh:      Updates dividend history and metrics (weekly)
 `);
 
   } else {

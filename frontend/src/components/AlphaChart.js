@@ -27,6 +27,13 @@ const PERIODS = [
   { key: '5y', label: '5Y' }
 ];
 
+const ROLLING_WINDOWS = [
+  { key: null, label: 'Cumulative' },
+  { key: '30d', label: '30-Day' },
+  { key: '60d', label: '60-Day' },
+  { key: '90d', label: '90-Day' }
+];
+
 const formatPercent = (value) => {
   if (value === null || value === undefined) return '-';
   const sign = value >= 0 ? '+' : '';
@@ -97,10 +104,12 @@ const CustomTooltip = ({ active, payload, label, showDaily }) => {
 export function AlphaChart({ symbol, height = 300, showControls = true }) {
   const [data, setData] = useState(null);
   const [summary, setSummary] = useState(null);
+  const [rollingSummary, setRollingSummary] = useState(null);
   const [period, setPeriod] = useState('1y');
+  const [rollingWindow, setRollingWindow] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [chartMode, setChartMode] = useState('alpha'); // 'alpha', 'daily', 'comparison', 'all'
+  const [chartMode, setChartMode] = useState('alpha'); // 'alpha', 'daily', 'rolling', 'comparison', 'all'
 
   const fetchData = useCallback(async () => {
     if (!symbol) return;
@@ -109,11 +118,12 @@ export function AlphaChart({ symbol, height = 300, showControls = true }) {
     setError(null);
 
     try {
-      const res = await indicesAPI.getAlphaTimeseries(symbol, period);
+      const res = await indicesAPI.getAlphaTimeseries(symbol, period, rollingWindow);
 
       if (res.data.success && res.data.data) {
         setData(res.data.data.timeseries);
         setSummary(res.data.data.summary);
+        setRollingSummary(res.data.data.rollingSummary);
       } else {
         setError('No alpha data available');
       }
@@ -123,7 +133,7 @@ export function AlphaChart({ symbol, height = 300, showControls = true }) {
     } finally {
       setLoading(false);
     }
-  }, [symbol, period]);
+  }, [symbol, period, rollingWindow]);
 
   useEffect(() => {
     fetchData();
@@ -147,7 +157,9 @@ export function AlphaChart({ symbol, height = 300, showControls = true }) {
     );
   }
 
-  const isOutperforming = summary?.currentAlpha > 0;
+  // Use rolling summary when in rolling mode, otherwise use cumulative summary
+  const displaySummary = chartMode === 'rolling' && rollingSummary ? rollingSummary : summary;
+  const isOutperforming = displaySummary?.currentAlpha > 0;
 
   return (
     <div className="alpha-chart-container">
@@ -158,26 +170,26 @@ export function AlphaChart({ symbol, height = 300, showControls = true }) {
             <span className="alpha-icon">
               {isOutperforming ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
             </span>
-            <span className="alpha-value">{formatPercent(summary?.currentAlpha)}</span>
-            <span className="alpha-label">vs SPY</span>
+            <span className="alpha-value">{formatPercent(displaySummary?.currentAlpha)}</span>
+            <span className="alpha-label">{chartMode === 'rolling' ? `${rollingWindow} vs SPY` : 'vs SPY'}</span>
           </div>
           <div className="alpha-stats">
             <div className="alpha-stat">
               <span className="stat-label">Max</span>
-              <span className={`stat-value ${summary?.maxAlpha > 0 ? 'positive' : 'negative'}`}>
-                {formatPercent(summary?.maxAlpha)}
+              <span className={`stat-value ${displaySummary?.maxAlpha > 0 ? 'positive' : 'negative'}`}>
+                {formatPercent(displaySummary?.maxAlpha)}
               </span>
             </div>
             <div className="alpha-stat">
               <span className="stat-label">Min</span>
-              <span className={`stat-value ${summary?.minAlpha > 0 ? 'positive' : 'negative'}`}>
-                {formatPercent(summary?.minAlpha)}
+              <span className={`stat-value ${displaySummary?.minAlpha > 0 ? 'positive' : 'negative'}`}>
+                {formatPercent(displaySummary?.minAlpha)}
               </span>
             </div>
             <div className="alpha-stat">
               <span className="stat-label">Avg</span>
-              <span className={`stat-value ${summary?.avgAlpha > 0 ? 'positive' : 'negative'}`}>
-                {formatPercent(summary?.avgAlpha)}
+              <span className={`stat-value ${displaySummary?.avgAlpha > 0 ? 'positive' : 'negative'}`}>
+                {formatPercent(displaySummary?.avgAlpha)}
               </span>
             </div>
           </div>
@@ -192,6 +204,16 @@ export function AlphaChart({ symbol, height = 300, showControls = true }) {
                 title="Cumulative alpha from period start"
               >
                 Cumulative
+              </button>
+              <button
+                className={chartMode === 'rolling' ? 'active' : ''}
+                onClick={() => {
+                  setChartMode('rolling');
+                  if (!rollingWindow) setRollingWindow('30d');
+                }}
+                title="Rolling window alpha"
+              >
+                Rolling
               </button>
               <button
                 className={chartMode === 'daily' ? 'active' : ''}
@@ -215,6 +237,21 @@ export function AlphaChart({ symbol, height = 300, showControls = true }) {
                 All
               </button>
             </div>
+
+            {/* Rolling Window Selector */}
+            {chartMode === 'rolling' && (
+              <div className="rolling-selector">
+                {ROLLING_WINDOWS.filter(w => w.key).map((w) => (
+                  <button
+                    key={w.key}
+                    className={rollingWindow === w.key ? 'active' : ''}
+                    onClick={() => setRollingWindow(w.key)}
+                  >
+                    {w.label}
+                  </button>
+                ))}
+              </div>
+            )}
 
             <div className="period-selector">
               {PERIODS.map((p) => (
@@ -275,6 +312,70 @@ export function AlphaChart({ symbol, height = 300, showControls = true }) {
                 stroke="#8b5cf6"
                 strokeWidth={2}
                 fill="url(#alphaPositive)"
+              />
+            </AreaChart>
+          ) : chartMode === 'rolling' ? (
+            <AreaChart data={data.filter(d => d.rollingAlpha !== null)} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="rollingAlphaGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.4} />
+                  <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.1} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.5} />
+              <XAxis
+                dataKey="date"
+                tickFormatter={formatDate}
+                tick={{ fontSize: 11, fill: 'var(--color-text-secondary)' }}
+                tickLine={false}
+                axisLine={{ stroke: 'var(--color-border)' }}
+                interval="preserveStartEnd"
+                minTickGap={50}
+              />
+              <YAxis
+                tickFormatter={(v) => `${v}%`}
+                tick={{ fontSize: 11, fill: 'var(--color-text-secondary)' }}
+                tickLine={false}
+                axisLine={{ stroke: 'var(--color-border)' }}
+                domain={['auto', 'auto']}
+              />
+              <Tooltip
+                content={({ active, payload }) => {
+                  if (!active || !payload || !payload.length) return null;
+                  const d = payload[0].payload;
+                  return (
+                    <div className="alpha-tooltip">
+                      <div className="alpha-tooltip-date">{formatDate(d.date)}</div>
+                      <div className="alpha-tooltip-row stock">
+                        <span>{rollingWindow} Stock:</span>
+                        <span className={d.rollingStockReturn >= 0 ? 'positive' : 'negative'}>
+                          {formatPercent(d.rollingStockReturn)}
+                        </span>
+                      </div>
+                      <div className="alpha-tooltip-row benchmark">
+                        <span>{rollingWindow} SPY:</span>
+                        <span className={d.rollingBenchmarkReturn >= 0 ? 'positive' : 'negative'}>
+                          {formatPercent(d.rollingBenchmarkReturn)}
+                        </span>
+                      </div>
+                      <div className="alpha-tooltip-row alpha highlight">
+                        <span>{rollingWindow} Alpha:</span>
+                        <span className={d.rollingAlpha >= 0 ? 'outperform' : 'underperform'}>
+                          {formatPercent(d.rollingAlpha)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                }}
+              />
+              <ReferenceLine y={0} stroke="var(--color-text-secondary)" strokeDasharray="3 3" />
+              <Area
+                type="monotone"
+                dataKey="rollingAlpha"
+                stroke="#f59e0b"
+                strokeWidth={2}
+                fill="url(#rollingAlphaGradient)"
+                name={`${rollingWindow} Rolling Alpha`}
               />
             </AreaChart>
           ) : chartMode === 'daily' ? (
@@ -369,9 +470,17 @@ export function AlphaChart({ symbol, height = 300, showControls = true }) {
       {/* Footer */}
       <div className="alpha-chart-footer">
         <span className="data-note">
-          Alpha = Stock Return - SPY Return (cumulative from period start)
+          {chartMode === 'rolling' && rollingWindow
+            ? `Rolling ${rollingWindow} Alpha = Stock Return - SPY Return over trailing ${rollingWindow.replace('d', ' days')}`
+            : chartMode === 'daily'
+            ? 'Daily Alpha = Single day stock return - SPY return'
+            : 'Alpha = Stock Return - SPY Return (cumulative from period start)'}
         </span>
-        <span className="data-points">{data.length} data points</span>
+        <span className="data-points">
+          {chartMode === 'rolling'
+            ? `${data.filter(d => d.rollingAlpha !== null).length} data points`
+            : `${data.length} data points`}
+        </span>
       </div>
     </div>
   );

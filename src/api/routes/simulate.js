@@ -1263,6 +1263,95 @@ router.get('/portfolios/:id/kelly/compare', (req, res) => {
   }
 });
 
+/**
+ * GET /api/simulate/kelly/options
+ * Get available Kelly configuration options and defaults
+ */
+router.get('/kelly/options', (req, res) => {
+  try {
+    const options = advancedKelly.getOptions();
+    res.json({
+      success: true,
+      data: options
+    });
+  } catch (error) {
+    console.error('Error getting Kelly options:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/simulate/kelly/analyze/:symbol
+ * Analyze Kelly sizing for a single holding
+ */
+router.get('/kelly/analyze/:symbol', (req, res) => {
+  try {
+    const { symbol } = req.params;
+    const {
+      portfolioId,
+      period = '3y',
+      riskFreeRate = 0.05,
+      benchmarkSymbol = 'SPY',
+      kellyFractions
+    } = req.query;
+
+    const result = advancedKelly.analyzeSingleHolding({
+      symbol,
+      portfolioId: portfolioId ? parseInt(portfolioId) : null,
+      period,
+      riskFreeRate: parseFloat(riskFreeRate),
+      benchmarkSymbol,
+      kellyFractions: kellyFractions ? JSON.parse(kellyFractions) : undefined
+    });
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error analyzing single holding Kelly:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/simulate/portfolios/:id/kelly/taleb-risk
+ * Get Taleb/Spitznagel risk analysis
+ */
+router.get('/portfolios/:id/kelly/taleb-risk', (req, res) => {
+  try {
+    const portfolioId = parseInt(req.params.id);
+    const {
+      period = '5y',
+      initialCapital = 100000,
+      riskFreeRate = 0.05
+    } = req.query;
+
+    const result = advancedKelly.getTalebRiskAnalysis(portfolioId, {
+      period,
+      initialCapital: parseFloat(initialCapital),
+      riskFreeRate: parseFloat(riskFreeRate)
+    });
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error getting Taleb risk analysis:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // ============================================
 // Alpha Analytics Routes
 // ============================================

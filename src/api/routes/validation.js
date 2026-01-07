@@ -13,6 +13,8 @@ const fs = require('fs');
 // Lazy load dependencies
 let db = null;
 let validator = null;
+let signalPerformanceTracker = null;
+let mlSignalCombiner = null;
 let validationInProgress = false;
 let lastResults = null;
 let currentProgress = null;
@@ -32,6 +34,41 @@ function initializeValidator() {
   }
 
   return validator;
+}
+
+/**
+ * Initialize Signal Performance Tracker
+ */
+function initializeSignalTracker() {
+  if (!db) {
+    const database = require('../../database');
+    db = database.getDatabase();
+  }
+
+  if (!signalPerformanceTracker) {
+    const { SignalPerformanceTracker } = require('../../services/agent/signalPerformanceTracker');
+    signalPerformanceTracker = new SignalPerformanceTracker(db);
+  }
+
+  return signalPerformanceTracker;
+}
+
+/**
+ * Initialize ML Signal Combiner
+ */
+function initializeMLCombiner() {
+  if (!db) {
+    const database = require('../../database');
+    db = database.getDatabase();
+  }
+
+  if (!mlSignalCombiner) {
+    const { MLSignalCombiner } = require('../../services/ml/signalCombiner');
+    mlSignalCombiner = new MLSignalCombiner(db);
+    mlSignalCombiner.loadModels();
+  }
+
+  return mlSignalCombiner;
 }
 
 /**
@@ -372,6 +409,279 @@ router.delete('/cancel', (req, res) => {
     message: 'Cancellation requested',
     note: 'Validation will stop after current company completes'
   });
+});
+
+// ============================================
+// SIGNAL PERFORMANCE ENDPOINTS
+// ============================================
+
+/**
+ * GET /api/validation/signals/health
+ * Get comprehensive signal health report
+ */
+router.get('/signals/health', (req, res) => {
+  try {
+    const tracker = initializeSignalTracker();
+    const { lookback = 180 } = req.query;
+
+    const report = tracker.getSignalHealthReport(parseInt(lookback));
+
+    res.json({
+      success: true,
+      ...report,
+    });
+  } catch (error) {
+    console.error('Signal health error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/validation/signals/ic-decay
+ * Get IC decay analysis for all signals
+ */
+router.get('/signals/ic-decay', (req, res) => {
+  try {
+    const tracker = initializeSignalTracker();
+    const { lookback = 180 } = req.query;
+
+    const decay = tracker.getICDecay(parseInt(lookback));
+
+    res.json({
+      success: true,
+      ...decay,
+    });
+  } catch (error) {
+    console.error('IC decay error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/validation/signals/hit-rates
+ * Get hit rates by holding period
+ */
+router.get('/signals/hit-rates', (req, res) => {
+  try {
+    const tracker = initializeSignalTracker();
+    const { lookback = 180 } = req.query;
+
+    const hitRates = tracker.getHitRatesByPeriod(parseInt(lookback));
+
+    res.json({
+      success: true,
+      ...hitRates,
+    });
+  } catch (error) {
+    console.error('Hit rates error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/validation/signals/regime-stability
+ * Get signal performance stability across regimes
+ */
+router.get('/signals/regime-stability', (req, res) => {
+  try {
+    const tracker = initializeSignalTracker();
+    const { lookback = 365 } = req.query;
+
+    const stability = tracker.getRegimeStability(parseInt(lookback));
+
+    res.json({
+      success: true,
+      ...stability,
+    });
+  } catch (error) {
+    console.error('Regime stability error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/validation/signals/rolling-ic/:signalType
+ * Get rolling IC trend for a specific signal
+ */
+router.get('/signals/rolling-ic/:signalType', (req, res) => {
+  try {
+    const tracker = initializeSignalTracker();
+    const { signalType } = req.params;
+    const { window = 60, step = 7, lookback = 365 } = req.query;
+
+    const trend = tracker.getRollingICTrend(
+      signalType,
+      parseInt(window),
+      parseInt(step),
+      parseInt(lookback)
+    );
+
+    res.json({
+      success: true,
+      ...trend,
+    });
+  } catch (error) {
+    console.error('Rolling IC error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/validation/signals/recalculate
+ * Trigger recalculation of all signal performance metrics
+ */
+router.post('/signals/recalculate', (req, res) => {
+  try {
+    const tracker = initializeSignalTracker();
+    const results = tracker.recalculateAll();
+
+    res.json({
+      success: true,
+      message: 'Signal performance metrics recalculated',
+      ...results,
+    });
+  } catch (error) {
+    console.error('Recalculation error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/validation/signals/history
+ * Get historical signal performance trends
+ */
+router.get('/signals/history', (req, res) => {
+  try {
+    const tracker = initializeSignalTracker();
+    const { days = 90 } = req.query;
+
+    const history = tracker.getHistoricalTrends(parseInt(days));
+
+    res.json({
+      success: true,
+      data: history,
+    });
+  } catch (error) {
+    console.error('Signal history error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
+// ML SIGNAL COMBINER ENDPOINTS
+// ============================================
+
+/**
+ * GET /api/validation/ml/status
+ * Get ML signal combiner status and training info
+ */
+router.get('/ml/status', (req, res) => {
+  try {
+    const combiner = initializeMLCombiner();
+    const status = combiner.getStatus();
+
+    res.json({
+      success: true,
+      data: status,
+    });
+  } catch (error) {
+    console.error('ML status error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/validation/ml/train
+ * Train the ML signal combiner on historical data
+ */
+router.post('/ml/train', (req, res) => {
+  try {
+    const combiner = initializeMLCombiner();
+    const { lookbackDays = 730 } = req.body; // 2 years default
+
+    const results = combiner.train({ lookbackDays });
+
+    res.json({
+      success: results.success,
+      data: results,
+    });
+  } catch (error) {
+    console.error('ML training error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/validation/ml/combine
+ * Combine signals using ML model
+ */
+router.post('/ml/combine', (req, res) => {
+  try {
+    const combiner = initializeMLCombiner();
+    const { signals, context = {}, horizon = 21 } = req.body;
+
+    if (!signals) {
+      return res.status(400).json({ error: 'signals object is required' });
+    }
+
+    const result = combiner.combine(signals, context, horizon);
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    console.error('ML combine error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/validation/ml/importance
+ * Get feature importance from trained models
+ */
+router.get('/ml/importance', (req, res) => {
+  try {
+    const combiner = initializeMLCombiner();
+    const { horizon = 21 } = req.query;
+
+    const status = combiner.getStatus();
+
+    if (!status.modelsLoaded) {
+      return res.status(404).json({
+        error: 'No ML models loaded',
+        message: 'Train the model first using POST /api/validation/ml/train'
+      });
+    }
+
+    const model = combiner.models[parseInt(horizon)];
+    if (!model) {
+      return res.status(404).json({
+        error: `No model for ${horizon}d horizon`,
+        availableHorizons: status.horizons
+      });
+    }
+
+    const importances = combiner._getFeatureImportanceMap(model);
+
+    // Sort by importance
+    const sorted = Object.entries(importances)
+      .sort((a, b) => b[1] - a[1])
+      .map(([feature, importance]) => ({
+        feature,
+        importance,
+        percentContribution: (importance * 100).toFixed(2) + '%'
+      }));
+
+    res.json({
+      success: true,
+      horizon: parseInt(horizon),
+      data: sorted,
+    });
+  } catch (error) {
+    console.error('ML importance error:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 module.exports = router;

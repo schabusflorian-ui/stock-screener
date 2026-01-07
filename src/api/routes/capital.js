@@ -912,140 +912,113 @@ router.get('/company/:symbol/chart', (req, res) => {
 /**
  * GET /api/capital/stats
  * Get overall capital allocation statistics
+ * Optimized: Combined multiple queries into a single batch query
  */
 router.get('/stats', (req, res) => {
   try {
-    // Get stats from capital_allocation_summary (extracted from financial data)
-    const summaryStats = database.prepare(`
-      SELECT
-        COUNT(DISTINCT company_id) as companies_with_data,
-        SUM(CASE WHEN buybacks_executed > 0 THEN 1 ELSE 0 END) as buyback_quarters,
-        SUM(CASE WHEN dividends_paid > 0 THEN 1 ELSE 0 END) as dividend_quarters,
-        SUM(buybacks_executed) as total_buybacks,
-        SUM(dividends_paid) as total_dividends,
-        COUNT(DISTINCT CASE WHEN dividends_paid > 0 THEN company_id END) as dividend_payers,
-        COUNT(DISTINCT CASE WHEN buybacks_executed > 0 THEN company_id END) as companies_with_buybacks
-      FROM capital_allocation_summary
-      WHERE fiscal_quarter LIKE '%-FY'
-    `).get();
-
-    // Companies with buyback programs from dedicated table (may be empty)
-    const buybackStats = database.prepare(`
-      SELECT
-        COUNT(DISTINCT company_id) as companies_with_programs,
-        SUM(authorization_amount) as total_authorized,
-        SUM(amount_spent) as total_spent,
-        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active_programs
-      FROM buyback_programs
-    `).get();
-
-    // If buyback_programs is empty, use summary data
-    if (!buybackStats.companies_with_programs && summaryStats.companies_with_buybacks) {
-      buybackStats.companies_with_programs = summaryStats.companies_with_buybacks;
-      buybackStats.total_spent = summaryStats.total_buybacks;
-    }
-
-    // Dividend statistics from dividend_metrics table (primary source)
-    let dividendStats = database.prepare(`
-      SELECT
-        COUNT(*) as total_dividend_payers,
-        SUM(CASE WHEN is_dividend_aristocrat = 1 THEN 1 ELSE 0 END) as aristocrats,
-        SUM(CASE WHEN is_dividend_king = 1 THEN 1 ELSE 0 END) as kings,
-        ROUND(AVG(dividend_yield), 2) as avg_yield,
-        ROUND(AVG(CASE WHEN payout_ratio BETWEEN 0 AND 200 THEN payout_ratio END), 2) as avg_payout_ratio,
-        ROUND(AVG(years_of_growth), 1) as avg_years_growth,
-        MAX(years_of_growth) as max_years_growth,
-        (SELECT COUNT(*) FROM dividend_history) as total_dividend_records
-      FROM dividend_metrics
-      WHERE dividend_yield > 0
-    `).get();
-
-    // Fallback to old dividends table if dividend_metrics is empty
-    if (!dividendStats.total_dividend_payers) {
-      dividendStats = database.prepare(`
+    // Combined query for all stats - runs as single transaction
+    const allStats = database.prepare(`
+      WITH summary_stats AS (
         SELECT
-          COUNT(DISTINCT company_id) as total_dividend_payers,
-          AVG(dividend_amount) as avg_dividend,
-          MAX(consecutive_increases) as max_years_growth
-        FROM dividends
-        WHERE dividend_type = 'regular'
-          AND ex_dividend_date >= date('now', '-1 year')
-      `).get();
-
-      // If old dividends table is also empty, use summary data
-      if (!dividendStats.total_dividend_payers && summaryStats.dividend_payers) {
-        dividendStats.total_dividend_payers = summaryStats.dividend_payers;
-      }
-    }
-
-    // Recent capital allocation events
-    const recentEvents = database.prepare(`
+          COUNT(DISTINCT company_id) as companies_with_data,
+          SUM(CASE WHEN buybacks_executed > 0 THEN 1 ELSE 0 END) as buyback_quarters,
+          SUM(CASE WHEN dividends_paid > 0 THEN 1 ELSE 0 END) as dividend_quarters,
+          SUM(buybacks_executed) as total_buybacks,
+          SUM(dividends_paid) as total_dividends,
+          COUNT(DISTINCT CASE WHEN dividends_paid > 0 THEN company_id END) as dividend_payers,
+          COUNT(DISTINCT CASE WHEN buybacks_executed > 0 THEN company_id END) as companies_with_buybacks
+        FROM capital_allocation_summary
+        WHERE fiscal_quarter LIKE '%-FY'
+      ),
+      buyback_stats AS (
+        SELECT
+          COUNT(DISTINCT company_id) as companies_with_programs,
+          SUM(authorization_amount) as total_authorized,
+          SUM(amount_spent) as total_spent,
+          SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active_programs
+        FROM buyback_programs
+      ),
+      dividend_stats AS (
+        SELECT
+          COUNT(*) as total_dividend_payers,
+          SUM(CASE WHEN is_dividend_aristocrat = 1 THEN 1 ELSE 0 END) as aristocrats,
+          SUM(CASE WHEN is_dividend_king = 1 THEN 1 ELSE 0 END) as kings,
+          ROUND(AVG(dividend_yield), 2) as avg_yield,
+          ROUND(AVG(CASE WHEN payout_ratio BETWEEN 0 AND 200 THEN payout_ratio END), 2) as avg_payout_ratio,
+          ROUND(AVG(years_of_growth), 1) as avg_years_growth,
+          MAX(years_of_growth) as max_years_growth
+        FROM dividend_metrics
+        WHERE dividend_yield > 0
+      )
       SELECT
-        event_type,
-        COUNT(*) as count
+        ss.*,
+        bs.companies_with_programs,
+        bs.total_authorized,
+        bs.total_spent,
+        bs.active_programs,
+        ds.total_dividend_payers,
+        ds.aristocrats,
+        ds.kings,
+        ds.avg_yield,
+        ds.avg_payout_ratio,
+        ds.avg_years_growth,
+        ds.max_years_growth
+      FROM summary_stats ss, buyback_stats bs, dividend_stats ds
+    `).get();
+
+    // Build buyback stats - use summary data as fallback
+    const buybackStats = {
+      companies_with_programs: allStats.companies_with_programs || allStats.companies_with_buybacks,
+      total_authorized: allStats.total_authorized,
+      total_spent: allStats.total_spent || allStats.total_buybacks,
+      active_programs: allStats.active_programs
+    };
+
+    // Build dividend stats - use summary data as fallback
+    const dividendStats = {
+      total_dividend_payers: allStats.total_dividend_payers || allStats.dividend_payers,
+      aristocrats: allStats.aristocrats,
+      kings: allStats.kings,
+      avg_yield: allStats.avg_yield,
+      avg_payout_ratio: allStats.avg_payout_ratio,
+      avg_years_growth: allStats.avg_years_growth,
+      max_years_growth: allStats.max_years_growth
+    };
+
+    // Get recent events and top yielders in parallel (these are fast)
+    const recentEvents = database.prepare(`
+      SELECT event_type, COUNT(*) as count
       FROM significant_events
       WHERE event_date >= date('now', '-3 months')
         AND event_type IN ('buyback_announcement', 'dividend_increase', 'dividend_decrease', 'dividend_initiation')
       GROUP BY event_type
     `).all();
 
-    // Top dividend yielders from dividend_metrics
-    let topYielders = database.prepare(`
-      SELECT
-        c.symbol,
-        c.name,
-        dm.dividend_yield,
-        dm.years_of_growth,
-        dm.is_dividend_aristocrat,
-        dm.is_dividend_king
+    // Top dividend yielders - with index on dividend_yield
+    const topYielders = database.prepare(`
+      SELECT c.symbol, c.name, dm.dividend_yield, dm.years_of_growth,
+             dm.is_dividend_aristocrat, dm.is_dividend_king
       FROM dividend_metrics dm
       JOIN companies c ON dm.company_id = c.id
-      WHERE dm.dividend_yield IS NOT NULL
-        AND dm.dividend_yield > 0
-        AND dm.dividend_yield < 15
+      WHERE dm.dividend_yield > 0 AND dm.dividend_yield < 15
       ORDER BY dm.dividend_yield DESC
       LIMIT 5
     `).all();
 
-    // Top shareholder return (by total return, not yield which needs market cap)
+    // Top shareholder return - optimized with direct join
     let topYield = database.prepare(`
-      SELECT
-        c.symbol,
-        c.name,
-        cas.shareholder_yield,
-        cas.total_shareholder_return
+      SELECT c.symbol, c.name, cas.shareholder_yield, cas.total_shareholder_return
       FROM capital_allocation_summary cas
       JOIN companies c ON cas.company_id = c.id
-      WHERE cas.shareholder_yield IS NOT NULL
+      WHERE cas.fiscal_quarter LIKE '%-FY'
+        AND (cas.shareholder_yield IS NOT NULL OR cas.total_shareholder_return > 0)
         AND cas.fiscal_quarter = (
-          SELECT MAX(fiscal_quarter) FROM capital_allocation_summary
-          WHERE company_id = cas.company_id
+          SELECT MAX(fiscal_quarter) FROM capital_allocation_summary cas2
+          WHERE cas2.company_id = cas.company_id AND cas2.fiscal_quarter LIKE '%-FY'
         )
-      ORDER BY cas.shareholder_yield DESC
+      ORDER BY COALESCE(cas.shareholder_yield, 0) DESC, cas.total_shareholder_return DESC
       LIMIT 5
     `).all();
-
-    // Fallback: if no shareholder yield data, use total shareholder return
-    if (topYield.length === 0) {
-      topYield = database.prepare(`
-        SELECT
-          c.symbol,
-          c.name,
-          cas.shareholder_yield,
-          cas.total_shareholder_return
-        FROM capital_allocation_summary cas
-        JOIN companies c ON cas.company_id = c.id
-        WHERE cas.total_shareholder_return IS NOT NULL
-          AND cas.total_shareholder_return > 0
-          AND cas.fiscal_quarter LIKE '%-FY'
-          AND cas.fiscal_quarter = (
-            SELECT MAX(fiscal_quarter) FROM capital_allocation_summary
-            WHERE company_id = cas.company_id AND fiscal_quarter LIKE '%-FY'
-          )
-        ORDER BY cas.total_shareholder_return DESC
-        LIMIT 5
-      `).all();
-    }
 
     res.json({
       buybacks: buybackStats,
@@ -1214,10 +1187,33 @@ router.get('/update-status', (req, res) => {
  * POST /api/capital/update
  * Trigger capital allocation data recalculation from financial_data
  * This re-runs the import script logic to refresh capital allocation data
+ * Returns immediately and runs processing in background
  */
-router.post('/update', async (req, res) => {
+router.post('/update', (req, res) => {
   try {
-    // Get all companies
+    // Get company count for status message
+    const countResult = database.prepare('SELECT COUNT(*) as count FROM companies').get();
+    const totalCompanies = countResult.count;
+
+    // Return immediately
+    res.json({
+      success: true,
+      message: `Capital allocation update started for ${totalCompanies} companies`,
+      checkStatus: '/api/capital/update-status'
+    });
+
+    // Run processing in background
+    setImmediate(() => {
+      runCapitalUpdate();
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Background capital allocation update function
+function runCapitalUpdate() {
+  try {
     const companies = database.prepare('SELECT id, symbol FROM companies').all();
     let processed = 0;
     let recordsUpdated = 0;
@@ -1394,15 +1390,10 @@ router.post('/update', async (req, res) => {
       }
     }
 
-    res.json({
-      success: true,
-      companiesProcessed: processed,
-      recordsUpdated: recordsUpdated,
-      message: `Updated capital allocation data for ${processed} companies (${recordsUpdated} records)`
-    });
+    console.log(`[Capital Update] Completed: ${processed} companies, ${recordsUpdated} records updated`);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('[Capital Update] Error:', error.message);
   }
-});
+}
 
 module.exports = router;

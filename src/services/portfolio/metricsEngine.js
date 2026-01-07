@@ -259,10 +259,10 @@ class MetricsEngine {
     // Get transaction flows for the day
     const flows = this.db.prepare(`
       SELECT
-        SUM(CASE WHEN transaction_type IN ('deposit') THEN total_value ELSE 0 END) as deposits,
-        SUM(CASE WHEN transaction_type IN ('withdraw') THEN total_value ELSE 0 END) as withdrawals
+        SUM(CASE WHEN transaction_type IN ('deposit') THEN total_amount ELSE 0 END) as deposits,
+        SUM(CASE WHEN transaction_type IN ('withdraw') THEN total_amount ELSE 0 END) as withdrawals
       FROM portfolio_transactions
-      WHERE portfolio_id = ? AND DATE(transaction_date) = ?
+      WHERE portfolio_id = ? AND DATE(executed_at) = ?
     `).get(portfolioId, snapshotDate);
 
     const netFlows = (flows?.deposits || 0) - (flows?.withdrawals || 0);
@@ -279,10 +279,10 @@ class MetricsEngine {
     // Get cumulative deposits/withdrawals
     const cumFlows = this.db.prepare(`
       SELECT
-        SUM(CASE WHEN transaction_type = 'deposit' THEN total_value ELSE 0 END) as total_deposited,
-        SUM(CASE WHEN transaction_type = 'withdraw' THEN total_value ELSE 0 END) as total_withdrawn
+        SUM(CASE WHEN transaction_type = 'deposit' THEN total_amount ELSE 0 END) as total_deposited,
+        SUM(CASE WHEN transaction_type = 'withdraw' THEN total_amount ELSE 0 END) as total_withdrawn
       FROM portfolio_transactions
-      WHERE portfolio_id = ? AND DATE(transaction_date) <= ?
+      WHERE portfolio_id = ? AND DATE(executed_at) <= ?
     `).get(portfolioId, snapshotDate);
 
     // Upsert snapshot
@@ -340,7 +340,7 @@ class MetricsEngine {
 
   createAllDailySnapshots(date = null) {
     const portfolios = this.db.prepare(`
-      SELECT id, name FROM portfolios WHERE is_active = 1
+      SELECT id, name FROM portfolios WHERE is_archived = 0
     `).all();
 
     const results = [];

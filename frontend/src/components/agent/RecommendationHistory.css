@@ -1,0 +1,228 @@
+/* frontend/src/components/agent/RecommendationHistory.css */
+
+.recommendation-history__filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+}
+
+.recommendation-history__filters select {
+  padding: 6px 12px;
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.recommendation-history__skeleton-row {
+  height: 56px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+}
+
+.recommendation-history--error {
+  padding: 24px;
+  text-align: center;
+}
+
+.recommendation-history__error {
+  color: var(--negative);
+}
+
+.recommendation-history__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 48px;
+  color: var(--text-tertiary);
+}
+
+.recommendation-history__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Recommendation Row */
+.recommendation-row {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: all 0.2s;
+}
+
+.recommendation-row:hover {
+  border-color: var(--border-secondary);
+}
+
+.recommendation-row.expanded {
+  border-color: var(--brand-primary);
+}
+
+.recommendation-row__header {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto auto auto;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  cursor: pointer;
+}
+
+.recommendation-row__symbol {
+  display: flex;
+  flex-direction: column;
+}
+
+.recommendation-row__symbol-text {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.recommendation-row__company {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recommendation-row__action .ui-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.recommendation-row__score {
+  text-align: center;
+}
+
+.recommendation-row__score-value {
+  display: block;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.recommendation-row__confidence {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+.recommendation-row__status {
+  font-size: 0.85rem;
+}
+
+.recommendation-row__executed {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--positive);
+}
+
+.recommendation-row__pending {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-tertiary);
+}
+
+.recommendation-row__date {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.recommendation-row__expand {
+  color: var(--text-tertiary);
+}
+
+/* Details */
+.recommendation-row__details {
+  padding: 16px;
+  border-top: 1px solid var(--border-primary);
+  background: var(--bg-tertiary);
+}
+
+.recommendation-row__detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.recommendation-row__detail {
+  text-align: center;
+}
+
+.recommendation-row__detail-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+}
+
+.recommendation-row__detail-value {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Reasoning */
+.recommendation-row__reasoning h5 {
+  margin: 0 0 12px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.recommendation-row__reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.recommendation-row__reason {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.recommendation-row__reason-indicator {
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+}
+
+.recommendation-row__reason--bullish .recommendation-row__reason-indicator {
+  color: var(--positive);
+}
+
+.recommendation-row__reason--bearish .recommendation-row__reason-indicator {
+  color: var(--negative);
+}
+
+.recommendation-row__reason-factor {
+  font-weight: 500;
+  color: var(--text-primary);
+  text-transform: capitalize;
+}
+
+.recommendation-row__reason-details {
+  color: var(--text-secondary);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .recommendation-row__header {
+    grid-template-columns: 1fr auto auto;
+    gap: 12px;
+  }
+
+  .recommendation-row__score,
+  .recommendation-row__date {
+    display: none;
+  }
+}

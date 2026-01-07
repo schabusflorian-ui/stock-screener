@@ -1,11 +1,13 @@
 // frontend/src/components/portfolio/PositionSizingPanel.js
 import { useState } from 'react';
-import { Loader, Calculator, DollarSign, Target, Percent, AlertTriangle } from 'lucide-react';
+import { Loader, Calculator, DollarSign, Target, Percent, AlertTriangle, ChevronDown, ChevronUp, BarChart3 } from 'lucide-react';
 import { simulateAPI } from '../../services/api';
+import AdvancedKellyPanel from './AdvancedKellyPanel';
 import './SimulationPanels.css';
 
-function PositionSizingPanel({ portfolioValue }) {
+function PositionSizingPanel({ portfolioId, portfolioValue, holdings }) {
   const [method, setMethod] = useState('kelly');
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [config, setConfig] = useState({
     // Common
     portfolioValue: portfolioValue || 100000,
@@ -401,6 +403,27 @@ function PositionSizingPanel({ portfolioValue }) {
                     <> Using {config.kellyFraction * 100}% Kelly reduces to <strong>{formatPercent(result.positionPct)}</strong>.</>
                   )}
                 </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Advanced Kelly Analysis Section */}
+        {portfolioId && (
+          <div className="advanced-analysis-section">
+            <button
+              className="advanced-toggle"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+            >
+              <BarChart3 size={18} />
+              <span>Advanced Portfolio Analysis</span>
+              <span className="toggle-hint">Multi-asset Kelly optimization, tail risk, regime analysis</span>
+              {showAdvanced ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+
+            {showAdvanced && (
+              <div className="advanced-content">
+                <AdvancedKellyPanel portfolioId={portfolioId} />
               </div>
             )}
           </div>

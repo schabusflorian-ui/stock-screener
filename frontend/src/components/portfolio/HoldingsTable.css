@@ -108,10 +108,41 @@
   font-weight: 600;
   color: var(--accent-primary);
   text-decoration: none;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
 }
 
 .symbol-link:hover {
   text-decoration: underline;
+}
+
+/* ETF Symbol Button */
+.symbol-link.etf-symbol {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.etf-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  background: rgba(139, 92, 246, 0.15);
+  color: #8b5cf6;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.etf-badge svg {
+  flex-shrink: 0;
 }
 
 .company-name {
@@ -306,12 +337,52 @@
   white-space: nowrap;
 }
 
+/* Alpha columns */
+.alpha-header {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.05), rgba(139, 92, 246, 0.02)) !important;
+  color: #8b5cf6 !important;
+}
+
+.alpha-positive {
+  color: #8b5cf6 !important;
+}
+
+.alpha-negative {
+  color: #f97316 !important;
+}
+
+/* Alpha summary items */
+.summary-item.alpha-summary {
+  padding-left: var(--space-4);
+  border-left: 2px solid rgba(139, 92, 246, 0.3);
+}
+
+.summary-value.alpha-positive {
+  color: #8b5cf6;
+}
+
+.summary-value.alpha-negative {
+  color: #f97316;
+}
+
 /* Responsive - hide sparklines and AI column on small screens */
 @media (max-width: 900px) {
   .sparkline-header,
   .sparkline-cell,
   .ai-rating-header,
   .ai-rating-cell {
+    display: none;
+  }
+
+  .alpha-header {
+    display: none;
+  }
+
+  .holdings-table td:nth-last-child(-n+2) {
+    display: none;
+  }
+
+  .summary-item.alpha-summary {
     display: none;
   }
 }

@@ -38,6 +38,7 @@ import {
   NewsAndEvents,
   AnalystHistoryChart,
   EarningsCalendar,
+  EnhancedSignalsPanel,
   AVAILABLE_METRICS,
   DEFAULT_CHART_METRICS,
   DEFAULT_TABLE_METRICS
@@ -54,6 +55,7 @@ import { NLQueryBar } from '../components/nl';
 import { AddToPortfolioButton } from '../components/portfolio';
 import { CompanyNotesPanel } from '../components/notes';
 import { dcfAPI } from '../services/api';
+import { SectionErrorBoundary } from '../components/ErrorBoundary';
 import { useFormatters } from '../hooks/useFormatters';
 import './CompanyPage.css';
 
@@ -656,10 +658,10 @@ function CompanyPage() {
                     const val = Math.min(Math.max(dim.value, 0), 100);
                     return (
                       <div key={dim.key} className="quality-legend-item">
+                        <span className="quality-legend-label" style={{ color: dim.color }}>{dim.key}</span>
                         <div className="quality-legend-bar-bg">
                           <div className="quality-legend-bar-fg" style={{ width: `${val}%`, background: dim.color }} />
                         </div>
-                        <span className="quality-legend-label" style={{ color: dim.color }}>{dim.key}</span>
                       </div>
                     );
                   })}
@@ -693,7 +695,7 @@ function CompanyPage() {
                 symbol={company.company.symbol}
                 companyId={company.company.id}
                 companyName={company.company.name}
-                currentPrice={priceData?.latestPrice}
+                currentPrice={priceData?.last_price}
               />
             </div>
             {healthStatus && (
@@ -762,17 +764,19 @@ function CompanyPage() {
               />
             </div>
             {chartData.length > 0 ? (
-              <MultiMetricChart
-                data={chartData}
-                metrics={chartMetrics.map(key => ({
-                  key,
-                  label: AVAILABLE_METRICS[key]?.label || key,
-                  format: AVAILABLE_METRICS[key]?.format || 'number'
-                }))}
-                height={280}
-                title=""
-                periodType={periodType}
-              />
+              <SectionErrorBoundary section="Metrics Chart">
+                <MultiMetricChart
+                  data={chartData}
+                  metrics={chartMetrics.map(key => ({
+                    key,
+                    label: AVAILABLE_METRICS[key]?.label || key,
+                    format: AVAILABLE_METRICS[key]?.format || 'number'
+                  }))}
+                  height={280}
+                  title=""
+                  periodType={periodType}
+                />
+              </SectionErrorBoundary>
             ) : (
               <div className="no-data-new">
                 <BarChart3 size={32} />
@@ -960,25 +964,9 @@ function CompanyPage() {
 
             {/* Metrics and Trading Data Row */}
             <div className="metrics-trading-row">
-              {/* Metric Categories - Left Side */}
+              {/* Metric Categories - Valuation first (wider), then others */}
               <div className="metrics-categories">
-                {/* Profitability */}
-                <div className="metric-category">
-                  <div className="category-header">
-                    <span className="category-icon profitability">
-                      <Activity size={14} />
-                    </span>
-                    <span className="category-title">Profitability</span>
-                  </div>
-                  <div className="category-metrics">
-                    <MetricBar label="ROE" value={latestMetrics.roe} max={30} format="percent" />
-                    <MetricBar label="Net Margin" value={latestMetrics.net_margin} max={40} format="percent" />
-                    <MetricBar label="Gross Margin" value={latestMetrics.gross_margin} max={80} format="percent" />
-                    <MetricBar label="Operating Margin" value={latestMetrics.operating_margin} max={40} format="percent" />
-                  </div>
-                </div>
-
-                {/* Valuation */}
+                {/* Valuation - First and wider */}
                 <div className="metric-category valuation-expanded">
                   <div className="category-header">
                     <span className="category-icon valuation">
@@ -992,7 +980,25 @@ function CompanyPage() {
                     <MetricBar label="P/S Ratio" value={latestMetrics.ps_ratio} max={10} format="ratio" inverted />
                     <MetricBar label="EV/EBITDA" value={latestMetrics.ev_ebitda} max={25} format="ratio" inverted />
                     <MetricBar label="PEG Ratio" value={latestMetrics.peg_ratio} max={3} format="ratio" inverted />
+                    <MetricBar label="PEGY Ratio" value={latestMetrics.pegy_ratio} max={3} format="ratio" inverted />
                     <MetricBar label="Earnings Yield" value={latestMetrics.earnings_yield} max={15} format="percent" />
+                    <MetricBar label="Div. Yield" value={latestMetrics.dividend_yield} max={8} format="percent" />
+                  </div>
+                </div>
+
+                {/* Profitability */}
+                <div className="metric-category">
+                  <div className="category-header">
+                    <span className="category-icon profitability">
+                      <Activity size={14} />
+                    </span>
+                    <span className="category-title">Profitability</span>
+                  </div>
+                  <div className="category-metrics">
+                    <MetricBar label="ROE" value={latestMetrics.roe} max={30} format="percent" />
+                    <MetricBar label="Net Margin" value={latestMetrics.net_margin} max={40} format="percent" />
+                    <MetricBar label="Gross Margin" value={latestMetrics.gross_margin} max={80} format="percent" />
+                    <MetricBar label="Operating Margin" value={latestMetrics.operating_margin} max={40} format="percent" />
                   </div>
                 </div>
 
@@ -1531,16 +1537,16 @@ function CompanyPage() {
                 <div className="famous-investors-grid">
                   {investorOwners.slice(0, 3).map((inv) => (
                     <Link
-                      key={inv.investor_id}
-                      to={`/investors/${inv.investor_id}`}
+                      key={inv.id || inv.investor_id}
+                      to={`/investors/${inv.id || inv.investor_id}`}
                       className="investor-card"
                     >
                       <div className="investor-avatar">
-                        {inv.investor_name?.charAt(0) || 'I'}
+                        {(inv.investor_name || inv.name)?.charAt(0) || 'I'}
                       </div>
                       <div className="investor-details">
-                        <span className="investor-name">{inv.investor_name}</span>
-                        <span className="investor-manager">{inv.manager_name}</span>
+                        <span className="investor-name">{inv.investor_name || inv.name}</span>
+                        <span className="investor-manager">{inv.manager_name || inv.fund_name}</span>
                       </div>
                       <div className="investor-position">
                         <div className="position-weight">
@@ -1562,6 +1568,11 @@ function CompanyPage() {
                 </Link>
               </section>
             )}
+
+            {/* Enhanced Signals Panel - 13F, Earnings Momentum, Insider Classification */}
+            <SectionErrorBoundary section="Enhanced Signals">
+              <EnhancedSignalsPanel symbol={symbol} />
+            </SectionErrorBoundary>
             </div>
           </div>
         </div>
@@ -1670,7 +1681,9 @@ function CompanyPage() {
               <TrendingUp size={18} />
               Stock Price
             </h3>
-            <PriceChart symbol={symbol} />
+            <SectionErrorBoundary section="Price Chart">
+              <PriceChart symbol={symbol} />
+            </SectionErrorBoundary>
           </section>
 
           {/* Performance vs Market Section */}
@@ -1832,7 +1845,9 @@ function CompanyPage() {
               <Activity size={18} />
               Alpha Over Time
             </h3>
-            <AlphaChart symbol={symbol} height={280} />
+            <SectionErrorBoundary section="Alpha Chart">
+              <AlphaChart symbol={symbol} height={280} />
+            </SectionErrorBoundary>
           </section>
 
           {/* Dividend Section */}

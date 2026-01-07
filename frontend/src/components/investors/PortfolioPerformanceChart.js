@@ -55,38 +55,46 @@ const CustomTooltip = ({ active, payload, label }) => {
   const data = payload[0]?.payload;
   if (!data) return null;
 
+  // Support both camelCase (API) and snake_case field names
+  const filingDate = data.filing_date || data.date;
+  const totalValue = data.total_value || data.value;
+  const positionsCount = data.positions_count ?? data.positionsCount;
+  const qoqReturn = data.qoq_return ?? data.qoqReturn;
+  const newPositions = data.new_positions ?? data.newPositions;
+  const soldPositions = data.sold_positions ?? data.soldPositions;
+
   return (
     <div className="perf-chart-tooltip">
       <div className="tooltip-header">
-        <span className="tooltip-date">{formatFullDate(data.filing_date)}</span>
-        {data.report_date && (
+        <span className="tooltip-date">{formatFullDate(filingDate)}</span>
+        {data.quarterLabel && (
           <span className="tooltip-quarter">Q{data.quarterLabel}</span>
         )}
       </div>
       <div className="tooltip-row primary">
         <span className="tooltip-label">Portfolio Value</span>
-        <span className="tooltip-value">{formatValue(data.total_value)}</span>
+        <span className="tooltip-value">{formatValue(totalValue)}</span>
       </div>
       <div className="tooltip-row">
         <span className="tooltip-label">Positions</span>
-        <span className="tooltip-value">{data.positions_count}</span>
+        <span className="tooltip-value">{positionsCount}</span>
       </div>
-      {data.qoq_return !== null && data.qoq_return !== undefined && (
-        <div className={`tooltip-row ${data.qoq_return >= 0 ? 'positive' : 'negative'}`}>
+      {qoqReturn !== null && qoqReturn !== undefined && (
+        <div className={`tooltip-row ${qoqReturn >= 0 ? 'positive' : 'negative'}`}>
           <span className="tooltip-label">QoQ Return</span>
-          <span className="tooltip-value">{formatPercent(data.qoq_return)}</span>
+          <span className="tooltip-value">{formatPercent(qoqReturn)}</span>
         </div>
       )}
-      {data.new_positions > 0 && (
+      {newPositions > 0 && (
         <div className="tooltip-row activity">
           <span className="tooltip-label">New Buys</span>
-          <span className="tooltip-value positive">+{data.new_positions}</span>
+          <span className="tooltip-value positive">+{newPositions}</span>
         </div>
       )}
-      {data.sold_positions > 0 && (
+      {soldPositions > 0 && (
         <div className="tooltip-row activity">
           <span className="tooltip-label">Sold</span>
-          <span className="tooltip-value negative">-{data.sold_positions}</span>
+          <span className="tooltip-value negative">-{soldPositions}</span>
         </div>
       )}
     </div>
@@ -151,27 +159,45 @@ export function PortfolioPerformanceChart({ investorId, investorName }) {
 
   const { history, summary } = data;
 
-  // Process chart data
+  // Process chart data - normalize API response to consistent field names
   const chartData = history.map((item, idx) => {
-    const quarter = new Date(item.report_date);
+    // Support both camelCase (API) and snake_case field names
+    const reportDate = item.report_date || item.reportDate;
+    const filingDate = item.filing_date || item.date;
+    const totalValue = item.total_value ?? item.value;
+    const positionsCount = item.positions_count ?? item.positionsCount;
+    const newPositions = item.new_positions ?? item.newPositions;
+    const soldPositions = item.sold_positions ?? item.soldPositions;
+    const qoqReturn = item.qoq_return ?? item.qoqReturn;
+
+    const quarter = new Date(reportDate);
     const quarterNum = Math.ceil((quarter.getMonth() + 1) / 3);
     return {
       ...item,
+      // Normalized fields
+      filing_date: filingDate,
+      report_date: reportDate,
+      total_value: totalValue,
+      positions_count: positionsCount,
+      new_positions: newPositions,
+      sold_positions: soldPositions,
+      qoq_return: qoqReturn,
+      // Chart display fields
       quarterLabel: `${quarterNum}/${quarter.getFullYear().toString().slice(-2)}`,
-      displayDate: formatDate(item.filing_date),
-      valueBillions: item.total_value / 1e9
+      displayDate: formatDate(filingDate),
+      valueBillions: totalValue / 1e9
     };
   });
 
-  const latestValue = history[history.length - 1]?.total_value || 0;
-  const startValue = history[0]?.total_value || 0;
+  const latestValue = chartData[chartData.length - 1]?.total_value || 0;
+  const startValue = chartData[0]?.total_value || 0;
   const totalReturn = startValue > 0 ? ((latestValue - startValue) / startValue) * 100 : 0;
   const isPositive = totalReturn >= 0;
 
   // Calculate additional stats
-  const positiveQuarters = history.filter(h => h.qoq_return > 0).length;
-  const negativeQuarters = history.filter(h => h.qoq_return < 0).length;
-  const maxValue = Math.max(...history.map(h => h.total_value));
+  const positiveQuarters = chartData.filter(h => h.qoq_return > 0).length;
+  const negativeQuarters = chartData.filter(h => h.qoq_return < 0).length;
+  const maxValue = Math.max(...chartData.map(h => h.total_value));
 
   return (
     <div className="perf-chart-container">
@@ -180,7 +206,7 @@ export function PortfolioPerformanceChart({ investorId, investorName }) {
         <div className="perf-chart-title">
           <h3>Portfolio Value History</h3>
           <span className="perf-chart-subtitle">
-            {history.length} quarters from {formatFullDate(history[0]?.filing_date)} to {formatFullDate(history[history.length - 1]?.filing_date)}
+            {chartData.length} quarters from {formatFullDate(chartData[0]?.filing_date)} to {formatFullDate(chartData[chartData.length - 1]?.filing_date)}
           </span>
         </div>
 
@@ -317,7 +343,7 @@ export function PortfolioPerformanceChart({ investorId, investorName }) {
         <div className="extreme-card best">
           <h4><TrendingUp size={16} /> Best Quarter</h4>
           {(() => {
-            const best = [...history].sort((a, b) => (b.qoq_return || -999) - (a.qoq_return || -999))[0];
+            const best = [...chartData].sort((a, b) => (b.qoq_return || -999) - (a.qoq_return || -999))[0];
             if (!best || best.qoq_return === null) return <span className="no-data">No data</span>;
             return (
               <div className="extreme-content">
@@ -331,7 +357,7 @@ export function PortfolioPerformanceChart({ investorId, investorName }) {
         <div className="extreme-card worst">
           <h4><TrendingDown size={16} /> Worst Quarter</h4>
           {(() => {
-            const worst = [...history].filter(h => h.qoq_return !== null).sort((a, b) => a.qoq_return - b.qoq_return)[0];
+            const worst = [...chartData].filter(h => h.qoq_return !== null).sort((a, b) => a.qoq_return - b.qoq_return)[0];
             if (!worst || worst.qoq_return === null) return <span className="no-data">No data</span>;
             return (
               <div className="extreme-content">
@@ -347,15 +373,15 @@ export function PortfolioPerformanceChart({ investorId, investorName }) {
           <div className="extreme-content">
             <div className="activity-row">
               <span>Avg Positions</span>
-              <span>{Math.round(history.reduce((sum, h) => sum + h.positions_count, 0) / history.length)}</span>
+              <span>{Math.round(chartData.reduce((sum, h) => sum + h.positions_count, 0) / chartData.length)}</span>
             </div>
             <div className="activity-row">
               <span>Total Buys</span>
-              <span className="positive">{history.reduce((sum, h) => sum + (h.new_positions || 0), 0)}</span>
+              <span className="positive">{chartData.reduce((sum, h) => sum + (h.new_positions || 0), 0)}</span>
             </div>
             <div className="activity-row">
               <span>Total Sells</span>
-              <span className="negative">{history.reduce((sum, h) => sum + (h.sold_positions || 0), 0)}</span>
+              <span className="negative">{chartData.reduce((sum, h) => sum + (h.sold_positions || 0), 0)}</span>
             </div>
           </div>
         </div>
@@ -365,7 +391,7 @@ export function PortfolioPerformanceChart({ investorId, investorName }) {
       <div className="perf-chart-info">
         <Calendar size={14} />
         <span>
-          Based on {history.length} quarterly 13F filings. Returns calculated from portfolio value changes.
+          Based on {chartData.length} quarterly 13F filings. Returns calculated from portfolio value changes.
         </span>
       </div>
     </div>

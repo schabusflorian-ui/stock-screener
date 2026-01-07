@@ -33,16 +33,15 @@ function CompanyNotesPanel({ symbol, companyName }) {
 
     setLoading(true);
     try {
-      // Load notes for this company
-      const [notesRes, thesesRes, snapshotsRes] = await Promise.all([
-        notesAPI.search({ company: symbol, limit: 10 }),
-        thesesAPI.getByCompany(symbol),
-        notesAPI.getSnapshotsBySymbol(symbol)
+      // Load notes for this company using the dedicated endpoint
+      const [companyDataRes, thesesRes] = await Promise.all([
+        notesAPI.getByCompany(symbol),
+        thesesAPI.getByCompany(symbol)
       ]);
 
-      setNotes(notesRes.data.notes || []);
+      setNotes(companyDataRes.data.notes || []);
       setThesis(thesesRes.data.activeThesis || null);
-      setSnapshots(snapshotsRes.data.snapshots || []);
+      setSnapshots(companyDataRes.data.snapshots || []);
     } catch (error) {
       console.error('Error loading notes data:', error);
     } finally {
@@ -162,9 +161,9 @@ function CompanyNotesPanel({ symbol, companyName }) {
                   <span className="note-title">{note.title}</span>
                   <span className="note-date">{formatDate(note.updated_at)}</span>
                 </div>
-                {note.tags && note.tags.length > 0 && (
+                {note.tagNames && note.tagNames.length > 0 && (
                   <div className="note-tags">
-                    {note.tags.slice(0, 3).map(tag => (
+                    {note.tagNames.slice(0, 3).map(tag => (
                       <span key={tag} className="note-tag">{tag}</span>
                     ))}
                   </div>
@@ -246,10 +245,10 @@ function CompanyNotesPanel({ symbol, companyName }) {
                   <span className="note-notebook">{note.notebook_name}</span>
                 )}
               </div>
-              {note.tags && note.tags.length > 0 && (
+              {note.tagNames && note.tagNames.length > 0 && (
                 <div className="note-tags">
                   <Tag size={12} />
-                  {note.tags.map(tag => (
+                  {note.tagNames.map(tag => (
                     <span key={tag} className="tag">{tag}</span>
                   ))}
                 </div>

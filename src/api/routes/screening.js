@@ -847,6 +847,261 @@ router.get('/factor-presets', (req, res) => {
   });
 });
 
+// ============================================
+// Macro-Aware Screening Endpoints
+// ============================================
+
+/**
+ * GET /api/screening/macro/context
+ * Get current macro context for screening decisions
+ */
+router.get('/macro/context', (req, res) => {
+  try {
+    const macro = screener.getMacroContext();
+    res.json({
+      timestamp: new Date().toISOString(),
+      context: macro
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/screening/macro/value-with-macro
+ * Comprehensive value screen with macro overlay
+ */
+router.get('/macro/value-with-macro', (req, res) => {
+  try {
+    const { limit } = req.query;
+    const result = screener.valueInvestingWithMacro(limit ? parseInt(limit) : undefined);
+
+    res.json({
+      screen: 'Value Investing + Macro Overlay',
+      description: 'Fundamental value screen adjusted for current macro conditions',
+      regime: result.regime,
+      strategy: result.strategy,
+      count: result.results.length,
+      total: result.total,
+      macroContext: result.macroContext,
+      results: result.results
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/screening/macro/recession-resistant
+ * Defensive stocks for late cycle/recession
+ */
+router.get('/macro/recession-resistant', (req, res) => {
+  try {
+    const { limit } = req.query;
+    const result = screener.recessionResistantValue(limit ? parseInt(limit) : undefined);
+
+    res.json({
+      screen: 'Recession-Resistant Value',
+      description: 'Defensive sectors with strong FCF and low debt',
+      criteria: {
+        sectors: ['Consumer Staples', 'Healthcare', 'Utilities'],
+        minFCFYield: 5,
+        maxDebtToEquity: 1.0
+      },
+      count: result.results.length,
+      macroContext: result.macroContext,
+      results: result.results
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/screening/macro/deep-value-safe
+ * Deep value only when macro is favorable
+ */
+router.get('/macro/deep-value-safe', (req, res) => {
+  try {
+    const { limit } = req.query;
+    const result = screener.deepValueSafeMacro(limit ? parseInt(limit) : undefined);
+
+    res.json({
+      screen: 'Deep Value + Safe Macro',
+      description: 'Deep value stocks with yield curve safety check',
+      criteria: {
+        maxPERatio: 12,
+        minFCFYield: 8,
+        maxDebtToEquity: 0.5
+      },
+      warning: result.warning,
+      count: result.results.length,
+      macroContext: result.macroContext,
+      results: result.results
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/screening/macro/garp-low-vol
+ * GARP when volatility is calm
+ */
+router.get('/macro/garp-low-vol', (req, res) => {
+  try {
+    const { limit } = req.query;
+    const result = screener.garpLowVol(limit ? parseInt(limit) : undefined);
+
+    res.json({
+      screen: 'GARP + Low Volatility',
+      description: 'Quality at reasonable price with VIX context',
+      criteria: {
+        minROIC: 15,
+        maxPERatio: 25,
+        minRevenueGrowth: 5
+      },
+      recommendation: result.recommendation,
+      count: result.results.length,
+      macroContext: result.macroContext,
+      results: result.results
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/screening/macro/cyclical
+ * Cyclicals when curve is steep (early cycle)
+ */
+router.get('/macro/cyclical', (req, res) => {
+  try {
+    const { limit } = req.query;
+    const result = screener.cyclicalValue(limit ? parseInt(limit) : undefined);
+
+    res.json({
+      screen: 'Cyclical Value',
+      description: 'Cyclical sectors for early-cycle investing',
+      criteria: {
+        sectors: ['Materials', 'Industrials', 'Consumer Discretionary', 'Energy', 'Financials'],
+        maxPERatio: 15,
+        minROIC: 10
+      },
+      recommendation: result.recommendation,
+      count: result.results.length,
+      macroContext: result.macroContext,
+      results: result.results
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/screening/macro/fear-buying
+ * Quality accumulation during fear (high VIX)
+ */
+router.get('/macro/fear-buying', (req, res) => {
+  try {
+    const { limit } = req.query;
+    const result = screener.fearBuying(limit ? parseInt(limit) : undefined);
+
+    res.json({
+      screen: 'Fear Buying',
+      description: 'High quality companies to buy during market fear',
+      criteria: {
+        minROIC: 20,
+        minNetMargin: 10,
+        maxDebtToEquity: 0.5,
+        minCurrentRatio: 1.5
+      },
+      mode: result.mode,
+      recommendation: result.recommendation,
+      count: result.results.length,
+      macroContext: result.macroContext,
+      results: result.results
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/screening/macro/credit-stress
+ * Fortress balance sheets during credit stress
+ */
+router.get('/macro/credit-stress', (req, res) => {
+  try {
+    const { limit } = req.query;
+    const result = screener.creditStressOpportunities(limit ? parseInt(limit) : undefined);
+
+    res.json({
+      screen: 'Credit Stress Opportunities',
+      description: 'Strong balance sheets for credit stress environments',
+      criteria: {
+        maxDebtToEquity: 0.3,
+        minCurrentRatio: 2.0,
+        minInterestCoverage: 10,
+        minFCFMargin: 10
+      },
+      stressLevel: result.stressLevel,
+      recommendation: result.recommendation,
+      count: result.results.length,
+      macroContext: result.macroContext,
+      results: result.results
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/screening/macro/presets
+ * List available macro-aware screening presets
+ */
+router.get('/macro/presets', (req, res) => {
+  res.json({
+    presets: [
+      {
+        id: 'value-with-macro',
+        name: 'Value + Macro Overlay',
+        description: 'Automatically adjusts strategy based on VIX, yield curve, and credit spreads'
+      },
+      {
+        id: 'recession-resistant',
+        name: 'Recession-Resistant Value',
+        description: 'Defensive sectors (Healthcare, Staples, Utilities) with strong FCF'
+      },
+      {
+        id: 'deep-value-safe',
+        name: 'Deep Value + Safe Macro',
+        description: 'Deep value only when yield curve is not inverted'
+      },
+      {
+        id: 'garp-low-vol',
+        name: 'GARP + Low Volatility',
+        description: 'Quality at reasonable price when VIX is calm'
+      },
+      {
+        id: 'cyclical',
+        name: 'Cyclical Value',
+        description: 'Cyclical sectors for early-cycle investing (steep yield curve)'
+      },
+      {
+        id: 'fear-buying',
+        name: 'Fear Buying',
+        description: 'Quality companies to accumulate during high VIX periods'
+      },
+      {
+        id: 'credit-stress',
+        name: 'Credit Stress Opportunities',
+        description: 'Fortress balance sheets for credit stress environments'
+      }
+    ]
+  });
+});
+
 /**
  * GET /api/screening/sectors-by-factor
  * Get sector breakdown with factor averages

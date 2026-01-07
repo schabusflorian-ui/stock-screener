@@ -1,15 +1,54 @@
 // src/services/portfolio/advancedKelly.js
 // Advanced Kelly Criterion Analytics with Historical Data
+// Enhanced with Taleb/Spitznagel safety: Kelly caps, ruin awareness, convexity
 
 const db = require('../../database');
 
-const TRADING_DAYS_PER_YEAR = 252;
-const RISK_FREE_RATE = 0.05; // 5% annual risk-free rate
+// TALEB/SPITZNAGEL SAFETY CONSTANTS
+// "The Kelly formula assumes ergodicity, which doesn't hold in real markets" - Taleb
+const MAX_SAFE_KELLY = 0.25; // Never bet more than 1/4 Kelly (Spitznagel recommendation)
+const KELLY_WARNING_THRESHOLD = 0.5; // Warn at half Kelly
+const MIN_OBSERVATIONS_FOR_KELLY = 252; // Need at least 1 year of data
+const TAIL_PERCENTILE = 0.01; // 1% for extreme value analysis
+const RUIN_THRESHOLD = 0.5; // 50% drawdown = effective ruin
+
+// Default configuration - can be overridden per-request
+const DEFAULT_CONFIG = {
+  TRADING_DAYS_PER_YEAR: 252,
+  RISK_FREE_RATE: 0.05,           // 5% annual risk-free rate
+  DEFAULT_PERIOD: '3y',
+  DEFAULT_KELLY_FRACTIONS: [0.10, 0.25, 0.5], // Safer defaults (removed 0.75, 1.0)
+  DEFAULT_REBALANCE_FREQ: 'monthly',
+  DEFAULT_INITIAL_CAPITAL: 100000,
+  DEFAULT_MAX_WEIGHT: 0.40,
+  DEFAULT_MIN_WEIGHT: 0.02,
+  DEFAULT_LOOKBACK_WINDOW: 60,    // Days for rolling calculations
+  VOLATILITY_THRESHOLDS: { low: 15, high: 25 },
+  // Taleb/Spitznagel additions
+  MAX_SAFE_KELLY: MAX_SAFE_KELLY,
+  ENFORCE_KELLY_CAP: true // Set to true to hard-cap Kelly at MAX_SAFE_KELLY
+};
 
 class AdvancedKelly {
   constructor() {
     this.db = db.getDatabase();
+    this.config = { ...DEFAULT_CONFIG };
     console.log('🎯 Advanced Kelly Engine initialized');
+  }
+
+  // Get current configuration
+  getConfig() {
+    return { ...this.config };
+  }
+
+  // Get available options for frontend
+  getOptions() {
+    return {
+      periods: ['1y', '2y', '3y', '5y', '10y'],
+      rebalanceFrequencies: ['daily', 'weekly', 'monthly', 'quarterly'],
+      kellyFractions: [0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5],
+      defaults: this.config
+    };
   }
 
   // ============================================
@@ -18,11 +57,15 @@ class AdvancedKelly {
   // ============================================
   historicalKellyBacktest(portfolioId, params = {}) {
     const {
-      period = '3y',
-      kellyFractions = [0.25, 0.5, 0.75, 1.0], // Test multiple fractions
-      rebalanceFrequency = 'monthly', // daily, weekly, monthly, quarterly
-      initialCapital = 100000
+      period = this.config.DEFAULT_PERIOD,
+      kellyFractions = this.config.DEFAULT_KELLY_FRACTIONS,
+      rebalanceFrequency = this.config.DEFAULT_REBALANCE_FREQ,
+      initialCapital = this.config.DEFAULT_INITIAL_CAPITAL,
+      riskFreeRate = this.config.RISK_FREE_RATE
     } = params;
+
+    // Store risk-free rate for this calculation
+    this._currentRiskFreeRate = riskFreeRate;
 
     const positions = this._getPortfolioPositions(portfolioId);
     if (positions.length === 0) {
@@ -31,15 +74,23 @@ class AdvancedKelly {
 
     const { startDate } = this._getPeriodDates(period);
     const returns = this._loadDailyReturns(positions, startDate);
+    const missingData = returns._missingData || [];
 
-    if (Object.keys(returns).length === 0) {
-      return { error: 'No historical price data available' };
+    const symbolsWithData = Object.keys(returns).filter(k => k !== '_missingData');
+    if (symbolsWithData.length === 0) {
+      const errorMsg = missingData.length > 0
+        ? `Missing price data for: ${missingData.join(', ')}. Load historical prices for these securities.`
+        : 'No historical price data available';
+      return { error: errorMsg, missingData };
     }
 
     // Get aligned dates across all positions
     const dates = this._getAlignedDates(returns);
     if (dates.length < 60) {
-      return { error: 'Insufficient historical data (need at least 60 days)' };
+      const errorMsg = missingData.length > 0
+        ? `Insufficient data. Missing prices for: ${missingData.join(', ')}`
+        : 'Insufficient historical data (need at least 60 days)';
+      return { error: errorMsg, daysAvailable: dates.length, missingData };
     }
 
     // Run backtest for each Kelly fraction
@@ -72,7 +123,8 @@ class AdvancedKelly {
       positions: positions.map(p => p.symbol),
       strategies: results,
       comparison,
-      recommendation: this._getKellyRecommendation(results)
+      recommendation: this._getKellyRecommendation(results),
+      missingData: missingData.length > 0 ? missingData : undefined
     };
   }
 
@@ -82,15 +134,18 @@ class AdvancedKelly {
   // ============================================
   optimizeKellyWeights(portfolioId, params = {}) {
     const {
-      period = '3y',
-      targetVolatility = null, // Optional vol constraint
-      maxWeight = 0.40, // Max 40% in any single position
-      minWeight = 0.02, // Min 2% if included
-      leverageAllowed = false
+      period = this.config.DEFAULT_PERIOD,
+      targetVolatility = null,
+      maxWeight = this.config.DEFAULT_MAX_WEIGHT,
+      minWeight = this.config.DEFAULT_MIN_WEIGHT,
+      leverageAllowed = false,
+      riskFreeRate = this.config.RISK_FREE_RATE
     } = params;
 
+    this._currentRiskFreeRate = riskFreeRate;
+
     const positions = this._getPortfolioPositions(portfolioId);
-    if (positions.length < 2) {
+    if (!positions || positions.length < 2) {
       return { error: 'Need at least 2 positions for optimization' };
     }
 
@@ -125,8 +180,8 @@ class AdvancedKelly {
         currentWeight: currentWeights[i] * 100,
         optimalWeight: optimizedWeights[i] * 100,
         change: (optimizedWeights[i] - currentWeights[i]) * 100,
-        expectedReturn: stats.meanReturns[i] * TRADING_DAYS_PER_YEAR * 100,
-        volatility: Math.sqrt(stats.covariance[i][i] * TRADING_DAYS_PER_YEAR) * 100
+        expectedReturn: stats.meanReturns[i] * this.config.TRADING_DAYS_PER_YEAR * 100,
+        volatility: Math.sqrt(stats.covariance[i][i] * this.config.TRADING_DAYS_PER_YEAR) * 100
       })),
       current: {
         expectedReturn: currentStats.expectedReturn * 100,
@@ -158,9 +213,12 @@ class AdvancedKelly {
   regimeAwareKelly(portfolioId, params = {}) {
     const {
       period = '5y',
-      regimeWindow = 60, // Days to assess regime
-      volatilityThresholds = { low: 15, high: 25 } // Annualized vol thresholds
+      regimeWindow = this.config.DEFAULT_LOOKBACK_WINDOW,
+      volatilityThresholds = this.config.VOLATILITY_THRESHOLDS,
+      riskFreeRate = this.config.RISK_FREE_RATE
     } = params;
+
+    this._currentRiskFreeRate = riskFreeRate;
 
     const positions = this._getPortfolioPositions(portfolioId);
     if (positions.length === 0) {
@@ -236,8 +294,11 @@ class AdvancedKelly {
     const {
       period = '5y',
       kellyFractions = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5],
-      initialCapital = 100000
+      initialCapital = this.config.DEFAULT_INITIAL_CAPITAL,
+      riskFreeRate = this.config.RISK_FREE_RATE
     } = params;
+
+    this._currentRiskFreeRate = riskFreeRate;
 
     const positions = this._getPortfolioPositions(portfolioId);
     if (positions.length === 0) {
@@ -309,9 +370,12 @@ class AdvancedKelly {
   compareKellyStrategies(portfolioId, params = {}) {
     const {
       period = '5y',
-      initialCapital = 100000,
-      rebalanceFrequency = 'monthly'
+      initialCapital = this.config.DEFAULT_INITIAL_CAPITAL,
+      rebalanceFrequency = this.config.DEFAULT_REBALANCE_FREQ,
+      riskFreeRate = this.config.RISK_FREE_RATE
     } = params;
+
+    this._currentRiskFreeRate = riskFreeRate;
 
     const positions = this._getPortfolioPositions(portfolioId);
     if (positions.length === 0) {
@@ -320,10 +384,14 @@ class AdvancedKelly {
 
     const { startDate } = this._getPeriodDates(period);
     const returns = this._loadDailyReturns(positions, startDate);
+    const missingData = returns._missingData || [];
     const dates = this._getAlignedDates(returns);
 
     if (dates.length < 252) {
-      return { error: 'Need at least 1 year of data for comparison' };
+      const errorMsg = missingData.length > 0
+        ? `Insufficient data (need 1 year). Missing prices for: ${missingData.join(', ')}`
+        : 'Need at least 1 year of data for comparison';
+      return { error: errorMsg, daysAvailable: dates.length, missingData };
     }
 
     // Run all strategies
@@ -434,6 +502,7 @@ class AdvancedKelly {
 
   _loadDailyReturns(positions, startDate) {
     const returns = {};
+    const missingData = [];
 
     for (const pos of positions) {
       const prices = this.db.prepare(`
@@ -443,7 +512,10 @@ class AdvancedKelly {
         ORDER BY date ASC
       `).all(pos.company_id, startDate);
 
-      if (prices.length < 2) continue;
+      if (prices.length < 2) {
+        missingData.push(pos.symbol);
+        continue;
+      }
 
       returns[pos.symbol] = {
         dates: [],
@@ -462,11 +534,17 @@ class AdvancedKelly {
       }
     }
 
+    // Attach missing data info for error reporting
+    returns._missingData = missingData;
+
     return returns;
   }
 
   _getAlignedDates(returns) {
-    const symbols = Object.keys(returns);
+    // Filter out _missingData and any non-data keys
+    const symbols = Object.keys(returns).filter(s =>
+      s !== '_missingData' && returns[s] && returns[s].dates
+    );
     if (symbols.length === 0) return [];
 
     // Find common dates across all symbols
@@ -524,12 +602,17 @@ class AdvancedKelly {
   _calculateKellyWeights(returnsArrays, kellyFraction) {
     const n = returnsArrays.length;
     if (n === 0 || returnsArrays.some(r => r.length === 0)) {
-      return new Array(n).fill(1 / n);
+      return new Array(Math.max(n, 1)).fill(1 / Math.max(n, 1));
     }
 
     // Calculate mean returns and covariance
     const means = returnsArrays.map(r => r.reduce((a, b) => a + b, 0) / r.length);
     const minLen = Math.min(...returnsArrays.map(r => r.length));
+
+    // Need at least 2 data points for covariance calculation
+    if (minLen < 2) {
+      return new Array(n).fill(1 / n);
+    }
 
     // Covariance matrix
     const cov = [];
@@ -647,7 +730,7 @@ class AdvancedKelly {
           const window = returns[sym].returns.slice(idx - lookback, idx);
           const mean = window.reduce((a, b) => a + b, 0) / window.length;
           const variance = window.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / window.length;
-          return Math.sqrt(variance * TRADING_DAYS_PER_YEAR) || 1;
+          return Math.sqrt(variance * this.config.TRADING_DAYS_PER_YEAR) || 1;
         });
 
         // Inverse volatility weighting
@@ -707,16 +790,18 @@ class AdvancedKelly {
     // Volatility
     const meanReturn = dailyReturns.reduce((a, b) => a + b, 0) / dailyReturns.length;
     const variance = dailyReturns.reduce((s, r) => s + Math.pow(r - meanReturn, 2), 0) / dailyReturns.length;
-    const volatility = Math.sqrt(variance * TRADING_DAYS_PER_YEAR) * 100;
+    const tradingDays = this.config.TRADING_DAYS_PER_YEAR;
+    const volatility = Math.sqrt(variance * tradingDays) * 100;
 
     // CAGR
-    const years = equityCurve.length / TRADING_DAYS_PER_YEAR;
+    const years = equityCurve.length / tradingDays;
     const cagr = (Math.pow(finalValue / initialCapital, 1 / years) - 1) * 100;
 
-    // Sharpe Ratio
-    const annualizedReturn = meanReturn * TRADING_DAYS_PER_YEAR;
-    const annualizedVol = Math.sqrt(variance * TRADING_DAYS_PER_YEAR);
-    const sharpe = annualizedVol > 0 ? (annualizedReturn - RISK_FREE_RATE) / annualizedVol : 0;
+    // Sharpe Ratio (use current risk-free rate or default)
+    const riskFreeRate = this._currentRiskFreeRate || this.config.RISK_FREE_RATE;
+    const annualizedReturn = meanReturn * tradingDays;
+    const annualizedVol = Math.sqrt(variance * tradingDays);
+    const sharpe = annualizedVol > 0 ? (annualizedReturn - riskFreeRate) / annualizedVol : 0;
 
     // Max Drawdown
     let peak = equityCurve[0].value;
@@ -837,10 +922,12 @@ class AdvancedKelly {
 
   _calculatePortfolioStats(stats, weights) {
     const n = weights.length;
+    const tradingDays = this.config.TRADING_DAYS_PER_YEAR;
+    const riskFreeRate = this._currentRiskFreeRate || this.config.RISK_FREE_RATE;
 
     // Expected return (annualized)
     const expectedReturn = weights.reduce((sum, w, i) =>
-      sum + w * stats.meanReturns[i], 0) * TRADING_DAYS_PER_YEAR;
+      sum + w * stats.meanReturns[i], 0) * tradingDays;
 
     // Variance
     let variance = 0;
@@ -849,9 +936,9 @@ class AdvancedKelly {
         variance += weights[i] * weights[j] * stats.covariance[i][j];
       }
     }
-    const volatility = Math.sqrt(variance * TRADING_DAYS_PER_YEAR);
+    const volatility = Math.sqrt(variance * tradingDays);
 
-    const sharpe = volatility > 0 ? (expectedReturn - RISK_FREE_RATE) / volatility : 0;
+    const sharpe = volatility > 0 ? (expectedReturn - riskFreeRate) / volatility : 0;
 
     // Kelly growth rate: g ≈ μ - σ²/2
     const kellyGrowth = expectedReturn - (volatility * volatility) / 2;
@@ -877,8 +964,8 @@ class AdvancedKelly {
           const windowReturns = returns[sym].returns.slice(idx - window, idx);
           const meanRet = windowReturns.reduce((a, b) => a + b, 0) / window;
           const variance = windowReturns.reduce((s, r) => s + Math.pow(r - meanRet, 2), 0) / window;
-          totalReturn += meanRet * TRADING_DAYS_PER_YEAR * 100;
-          volatilities.push(Math.sqrt(variance * TRADING_DAYS_PER_YEAR) * 100);
+          totalReturn += meanRet * this.config.TRADING_DAYS_PER_YEAR * 100;
+          volatilities.push(Math.sqrt(variance * this.config.TRADING_DAYS_PER_YEAR) * 100);
         }
       }
 
@@ -1111,20 +1198,629 @@ class AdvancedKelly {
 
   _getDrawdownRecommendation(analysis) {
     const halfKelly = analysis.find(a => a.kellyFraction === 0.5);
-    const fullKelly = analysis.find(a => a.kellyFraction === 1.0);
+    const quarterKelly = analysis.find(a => a.kellyFraction === 0.25);
 
-    if (!halfKelly) return 'Insufficient data';
+    if (!halfKelly && !quarterKelly) return 'Insufficient data';
 
-    if (Math.abs(halfKelly.maxDrawdown) > 40) {
-      return 'High drawdown risk detected. Consider Quarter Kelly (0.25) or lower for this portfolio.';
-    } else if (Math.abs(halfKelly.maxDrawdown) > 25) {
-      return 'Moderate drawdown risk. Half Kelly (0.5) is appropriate but monitor closely.';
+    // Taleb/Spitznagel philosophy: always recommend conservative Kelly
+    if (halfKelly && Math.abs(halfKelly.maxDrawdown) > 40) {
+      return 'DANGER: High drawdown risk. Taleb recommends Quarter Kelly (0.25) or lower. Full Kelly assumes ergodicity which markets lack.';
+    } else if (halfKelly && Math.abs(halfKelly.maxDrawdown) > 25) {
+      return 'CAUTION: Moderate drawdown risk. Use Quarter Kelly (0.25) for safety. Remember: you cannot recover from ruin.';
     } else {
-      if (fullKelly && Math.abs(fullKelly.maxDrawdown) < 30 && fullKelly.cagr > halfKelly.cagr * 1.3) {
-        return 'Low drawdown risk. Could consider 0.75 Kelly for higher returns.';
-      }
-      return 'Low drawdown risk. Half Kelly (0.5) provides good balance.';
+      return 'Quarter Kelly (0.25) recommended. Even with low historical drawdowns, tail risks are underestimated by historical data.';
     }
+  }
+
+  // ============================================
+  // Taleb/Spitznagel Risk Analysis
+  // Non-ergodic, tail-aware risk assessment
+  // ============================================
+  getTalebRiskAnalysis(portfolioId, params = {}) {
+    const {
+      period = '5y',
+      initialCapital = this.config.DEFAULT_INITIAL_CAPITAL
+    } = params;
+
+    const positions = this._getPortfolioPositions(portfolioId);
+    if (positions.length === 0) {
+      return { error: 'Portfolio has no positions' };
+    }
+
+    const { startDate } = this._getPeriodDates(period);
+    const returns = this._loadDailyReturns(positions, startDate);
+    const dates = this._getAlignedDates(returns);
+
+    if (dates.length < MIN_OBSERVATIONS_FOR_KELLY) {
+      return {
+        error: `Insufficient data for reliable Kelly analysis. Need ${MIN_OBSERVATIONS_FOR_KELLY} days, have ${dates.length}.`,
+        talebWarning: 'Small samples dramatically underestimate tail risk. Do not use Kelly with limited data.'
+      };
+    }
+
+    // Calculate portfolio returns
+    const symbols = positions.map(p => p.symbol);
+    const totalValue = positions.reduce((sum, p) => sum + p.value, 0);
+    const weights = positions.map(p => totalValue > 0 ? p.value / totalValue : 1 / positions.length);
+
+    const portfolioReturns = dates.map(date => {
+      let dayReturn = 0;
+      symbols.forEach((sym, i) => {
+        const idx = returns[sym]?.dates.indexOf(date);
+        if (idx >= 0) {
+          dayReturn += weights[i] * returns[sym].returns[idx];
+        }
+      });
+      return dayReturn;
+    });
+
+    // Extreme Value Theory analysis
+    const evtAnalysis = this._calculateEVTMetrics(portfolioReturns);
+
+    // Non-ergodic risk (path dependency)
+    const pathDependencyRisk = this._analyzePathDependency(portfolioReturns, initialCapital);
+
+    // Calculate safe Kelly fraction
+    const safeKelly = this._calculateSafeKellyFraction(portfolioReturns, evtAnalysis);
+
+    // Convexity analysis
+    const convexityAnalysis = this._analyzePortfolioConvexity(portfolioReturns);
+
+    return {
+      portfolioId,
+      period,
+      tradingDays: dates.length,
+      extremeValueAnalysis: evtAnalysis,
+      pathDependencyRisk,
+      safeKellyFraction: safeKelly,
+      convexityAnalysis,
+      talebWarnings: this._generateTalebWarnings(evtAnalysis, pathDependencyRisk, safeKelly),
+      spitznagelRecommendation: this._getSpitznagelRecommendation(safeKelly, evtAnalysis)
+    };
+  }
+
+  // Extreme Value Theory metrics
+  _calculateEVTMetrics(returns) {
+    const n = returns.length;
+    const sorted = [...returns].sort((a, b) => a - b);
+
+    // Left tail (losses) - this is what matters for ruin
+    const tailCount = Math.max(10, Math.floor(n * TAIL_PERCENTILE));
+    const leftTail = sorted.slice(0, tailCount);
+
+    // Calculate tail statistics
+    const tailMean = leftTail.reduce((a, b) => a + b, 0) / tailCount;
+    const tailVariance = leftTail.reduce((s, r) => s + Math.pow(r - tailMean, 2), 0) / tailCount;
+    const tailStdDev = Math.sqrt(tailVariance);
+
+    // Expected Shortfall (CVaR) - average loss beyond VaR
+    const var99 = sorted[Math.floor(n * 0.01)];
+    const var95 = sorted[Math.floor(n * 0.05)];
+    const cvar99 = leftTail.slice(0, Math.floor(n * 0.01)).reduce((a, b) => a + b, 0) / Math.floor(n * 0.01) || var99;
+
+    // Estimate tail index (alpha) - lower alpha = fatter tails
+    // Using Hill estimator
+    const k = tailCount;
+    const threshold = sorted[k];
+    let hillSum = 0;
+    for (let i = 0; i < k; i++) {
+      if (sorted[i] < threshold && threshold < 0) {
+        hillSum += Math.log(Math.abs(threshold) / Math.abs(sorted[i]));
+      }
+    }
+    const tailIndex = k / hillSum || 4; // Default to 4 if calculation fails
+
+    // Calculate kurtosis for comparison
+    const mean = returns.reduce((a, b) => a + b, 0) / n;
+    const stdDev = Math.sqrt(returns.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / n);
+    const kurtosis = stdDev > 0
+      ? returns.reduce((s, r) => s + Math.pow((r - mean) / stdDev, 4), 0) / n
+      : 3;
+
+    // Max observed loss
+    const maxLoss = Math.min(...returns);
+
+    // Fat tail indicator
+    const isFatTailed = kurtosis > 4 || tailIndex < 3;
+
+    return {
+      var95: Math.round(var95 * 10000) / 100, // as percentage
+      var99: Math.round(var99 * 10000) / 100,
+      cvar99: Math.round(cvar99 * 10000) / 100,
+      expectedShortfall: Math.round(cvar99 * 10000) / 100,
+      tailIndex: Math.round(tailIndex * 100) / 100,
+      kurtosis: Math.round(kurtosis * 100) / 100,
+      maxObservedLoss: Math.round(maxLoss * 10000) / 100,
+      isFatTailed,
+      tailWarning: isFatTailed
+        ? 'DANGER: Fat tails detected. Historical VaR underestimates true risk by 2-10x.'
+        : tailIndex < 4
+        ? 'CAUTION: Moderate tail risk. Standard models may underestimate risk.'
+        : 'Tail behavior appears relatively normal, but remain cautious.',
+      gaussianVsRealityRatio: kurtosis > 3 ? Math.round((kurtosis / 3) * 10) / 10 : 1
+    };
+  }
+
+  // Path dependency analysis (non-ergodicity)
+  _analyzePathDependency(returns, initialCapital) {
+    // Simulate multiple paths to show non-ergodicity
+    const numPaths = 1000;
+    const pathLength = Math.min(252, returns.length);
+    const finalValues = [];
+    let ruinCount = 0;
+
+    for (let p = 0; p < numPaths; p++) {
+      let capital = initialCapital;
+      // Random sampling with replacement
+      for (let d = 0; d < pathLength; d++) {
+        const randomIdx = Math.floor(Math.random() * returns.length);
+        capital *= (1 + returns[randomIdx]);
+
+        // Check for ruin
+        if (capital < initialCapital * (1 - RUIN_THRESHOLD)) {
+          ruinCount++;
+          break;
+        }
+      }
+      finalValues.push(capital);
+    }
+
+    // Calculate statistics
+    const avgFinal = finalValues.reduce((a, b) => a + b, 0) / numPaths;
+    const medianFinal = [...finalValues].sort((a, b) => a - b)[Math.floor(numPaths / 2)];
+    const minFinal = Math.min(...finalValues);
+    const maxFinal = Math.max(...finalValues);
+
+    // Ergodicity gap: difference between ensemble average and time average
+    const ergodicityGap = (avgFinal - medianFinal) / avgFinal;
+
+    return {
+      ensembleAverage: Math.round(avgFinal),
+      medianOutcome: Math.round(medianFinal),
+      worstPath: Math.round(minFinal),
+      bestPath: Math.round(maxFinal),
+      ergodicityGap: Math.round(ergodicityGap * 100),
+      ruinProbability: Math.round((ruinCount / numPaths) * 100),
+      talebInsight: ergodicityGap > 0.1
+        ? 'CRITICAL: Large ergodicity gap. The "expected" return is not what you will experience. Focus on median, not mean.'
+        : ergodicityGap > 0.05
+        ? 'CAUTION: Moderate ergodicity gap. Your actual outcome will likely be below the average.'
+        : 'Ergodicity gap is manageable, but still prioritize survival over optimization.',
+      nonErgodicityExplainer: 'In non-ergodic systems, the ensemble average (what happens across many people) differs from the time average (what happens to you over time). Ruin is absorbing - you cannot recover.'
+    };
+  }
+
+  // Calculate truly safe Kelly fraction
+  _calculateSafeKellyFraction(returns, evtAnalysis) {
+    const n = returns.length;
+    const mean = returns.reduce((a, b) => a + b, 0) / n;
+    const variance = returns.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / n;
+
+    // Traditional Kelly
+    const traditionalKelly = variance > 0 ? mean / variance : 0;
+
+    // Adjust for fat tails - reduce Kelly proportionally to excess kurtosis
+    const kurtosisAdjustment = evtAnalysis.kurtosis > 3
+      ? 3 / evtAnalysis.kurtosis
+      : 1;
+
+    // Adjust for tail index - lower index = more reduction
+    const tailAdjustment = evtAnalysis.tailIndex < 4
+      ? evtAnalysis.tailIndex / 4
+      : 1;
+
+    // Adjusted Kelly
+    let adjustedKelly = traditionalKelly * kurtosisAdjustment * tailAdjustment;
+
+    // Apply hard cap (Spitznagel recommendation)
+    const cappedKelly = Math.min(adjustedKelly, MAX_SAFE_KELLY);
+
+    // Final recommendation
+    const recommendedKelly = Math.max(0.05, Math.min(cappedKelly, 0.25));
+
+    return {
+      traditionalKelly: Math.round(traditionalKelly * 100) / 100,
+      kurtosisAdjusted: Math.round((traditionalKelly * kurtosisAdjustment) * 100) / 100,
+      tailAdjusted: Math.round(adjustedKelly * 100) / 100,
+      recommended: Math.round(recommendedKelly * 100) / 100,
+      maxSafe: MAX_SAFE_KELLY,
+      adjustments: {
+        kurtosisMultiplier: Math.round(kurtosisAdjustment * 100) / 100,
+        tailMultiplier: Math.round(tailAdjustment * 100) / 100
+      },
+      warning: traditionalKelly > 0.5
+        ? 'DANGER: Traditional Kelly suggests aggressive sizing. This assumes Gaussian returns and ergodicity - both false. Use recommended fraction.'
+        : traditionalKelly > 0.25
+        ? 'CAUTION: Traditional Kelly suggests moderate sizing. Apply safety margin.'
+        : null
+    };
+  }
+
+  // Portfolio convexity analysis
+  _analyzePortfolioConvexity(returns) {
+    const n = returns.length;
+    const mean = returns.reduce((a, b) => a + b, 0) / n;
+    const stdDev = Math.sqrt(returns.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / n);
+
+    // Calculate skewness
+    const skewness = stdDev > 0
+      ? returns.reduce((s, r) => s + Math.pow((r - mean) / stdDev, 3), 0) / n
+      : 0;
+
+    // Analyze upside vs downside capture
+    const positiveReturns = returns.filter(r => r > 0);
+    const negativeReturns = returns.filter(r => r < 0);
+
+    const avgUpside = positiveReturns.length > 0
+      ? positiveReturns.reduce((a, b) => a + b, 0) / positiveReturns.length
+      : 0;
+    const avgDownside = negativeReturns.length > 0
+      ? Math.abs(negativeReturns.reduce((a, b) => a + b, 0) / negativeReturns.length)
+      : 0;
+
+    const upsideDownsideRatio = avgDownside > 0 ? avgUpside / avgDownside : 1;
+
+    // Convexity score: positive = antifragile, negative = fragile
+    const convexityScore = (skewness * 20) + ((upsideDownsideRatio - 1) * 30);
+
+    return {
+      skewness: Math.round(skewness * 100) / 100,
+      upsideDownsideRatio: Math.round(upsideDownsideRatio * 100) / 100,
+      avgUpside: Math.round(avgUpside * 10000) / 100,
+      avgDownside: Math.round(avgDownside * 10000) / 100,
+      convexityScore: Math.round(convexityScore),
+      interpretation: convexityScore > 10
+        ? 'Positive convexity - gains tend to exceed losses'
+        : convexityScore < -10
+        ? 'Negative convexity - losses tend to exceed gains (fragile)'
+        : 'Neutral convexity',
+      talebRecommendation: convexityScore < 0
+        ? 'Add positions with positive skew to improve portfolio convexity'
+        : 'Convexity is acceptable but consider tail hedges for protection'
+    };
+  }
+
+  _generateTalebWarnings(evtAnalysis, pathDependency, safeKelly) {
+    const warnings = [];
+
+    if (evtAnalysis.isFatTailed) {
+      warnings.push({
+        severity: 'high',
+        category: 'fat_tails',
+        message: `Fat tails detected (kurtosis: ${evtAnalysis.kurtosis}). Your risk is ${evtAnalysis.gaussianVsRealityRatio}x higher than Gaussian models suggest.`
+      });
+    }
+
+    if (pathDependency.ruinProbability > 5) {
+      warnings.push({
+        severity: 'critical',
+        category: 'ruin_risk',
+        message: `${pathDependency.ruinProbability}% probability of 50%+ drawdown in simulations. Reduce position sizing immediately.`
+      });
+    }
+
+    if (pathDependency.ergodicityGap > 10) {
+      warnings.push({
+        severity: 'high',
+        category: 'non_ergodicity',
+        message: 'Large gap between average and median outcomes. Do not use expected returns for planning - use median.'
+      });
+    }
+
+    if (safeKelly.traditionalKelly > 0.5) {
+      warnings.push({
+        severity: 'high',
+        category: 'kelly_danger',
+        message: `Traditional Kelly (${safeKelly.traditionalKelly}) is dangerously high. Capped at ${safeKelly.recommended} for safety.`
+      });
+    }
+
+    if (warnings.length === 0) {
+      warnings.push({
+        severity: 'info',
+        category: 'general',
+        message: 'No critical risks detected, but maintain conservative sizing. Black swans are by definition unexpected.'
+      });
+    }
+
+    return warnings;
+  }
+
+  _getSpitznagelRecommendation(safeKelly, evtAnalysis) {
+    const fraction = safeKelly.recommended;
+
+    if (evtAnalysis.isFatTailed && evtAnalysis.kurtosis > 6) {
+      return {
+        recommendation: 'MINIMAL EXPOSURE',
+        kellyFraction: 0.10,
+        rationale: 'Extreme fat tails detected. Use 10% Kelly or less. Consider tail hedge overlay.',
+        action: 'Reduce equity exposure significantly. Add explicit tail protection (OTM puts, VIX calls).'
+      };
+    } else if (fraction <= 0.15) {
+      return {
+        recommendation: 'VERY CONSERVATIVE',
+        kellyFraction: fraction,
+        rationale: 'Risk metrics suggest minimal sizing. This protects against ruin.',
+        action: 'Maintain small positions. Focus on survival over returns.'
+      };
+    } else if (fraction <= 0.25) {
+      return {
+        recommendation: 'CONSERVATIVE (SPITZNAGEL OPTIMAL)',
+        kellyFraction: fraction,
+        rationale: 'Quarter Kelly is the sweet spot - captures most of the growth with fraction of the risk.',
+        action: 'This is the recommended approach. Rebalance monthly.'
+      };
+    } else {
+      return {
+        recommendation: 'CAPPED AT SAFE MAXIMUM',
+        kellyFraction: MAX_SAFE_KELLY,
+        rationale: 'Even favorable metrics warrant caution. Historical data underestimates tail risk.',
+        action: `Using ${MAX_SAFE_KELLY * 100}% Kelly cap. Never exceed this regardless of apparent edge.`
+      };
+    }
+  }
+
+  // ============================================
+  // Single Holding Kelly Analysis
+  // Analyze Kelly sizing for a single stock (existing or potential)
+  // ============================================
+  analyzeSingleHolding(params = {}) {
+    const {
+      symbol,
+      portfolioId = null,
+      period = this.config.DEFAULT_PERIOD,
+      kellyFractions = this.config.DEFAULT_KELLY_FRACTIONS,
+      riskFreeRate = this.config.RISK_FREE_RATE,
+      benchmarkSymbol = 'SPY'
+    } = params;
+
+    if (!symbol) {
+      return { error: 'Symbol is required' };
+    }
+
+    this._currentRiskFreeRate = riskFreeRate;
+
+    // Look up company
+    const company = this.db.prepare(`
+      SELECT id, symbol, name, sector
+      FROM companies
+      WHERE symbol = ? COLLATE NOCASE
+    `).get(symbol);
+
+    if (!company) {
+      return { error: `Company not found: ${symbol}` };
+    }
+
+    // Get price history
+    const { startDate } = this._getPeriodDates(period);
+    const prices = this.db.prepare(`
+      SELECT date, adjusted_close, close
+      FROM daily_prices
+      WHERE company_id = ? AND date >= ?
+      ORDER BY date ASC
+    `).all(company.id, startDate);
+
+    if (prices.length < MIN_OBSERVATIONS_FOR_KELLY) {
+      return {
+        error: `Insufficient price history for ${symbol}. Need at least ${MIN_OBSERVATIONS_FOR_KELLY} days.`,
+        daysAvailable: prices.length
+      };
+    }
+
+    // Calculate daily returns
+    const returns = [];
+    const dates = [];
+    for (let i = 1; i < prices.length; i++) {
+      const prev = prices[i - 1].adjusted_close || prices[i - 1].close;
+      const curr = prices[i].adjusted_close || prices[i].close;
+      if (prev && curr) {
+        returns.push((curr - prev) / prev);
+        dates.push(prices[i].date);
+      }
+    }
+
+    // Calculate statistics
+    const tradingDays = this.config.TRADING_DAYS_PER_YEAR;
+    const meanReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
+    const variance = returns.reduce((s, r) => s + Math.pow(r - meanReturn, 2), 0) / returns.length;
+    const annualReturn = meanReturn * tradingDays;
+    const annualVol = Math.sqrt(variance * tradingDays);
+
+    // Win/Loss statistics
+    const wins = returns.filter(r => r > 0);
+    const losses = returns.filter(r => r < 0);
+    const winRate = wins.length / returns.length;
+    const avgWin = wins.length > 0 ? wins.reduce((a, b) => a + b, 0) / wins.length : 0;
+    const avgLoss = losses.length > 0 ? Math.abs(losses.reduce((a, b) => a + b, 0) / losses.length) : 0;
+
+    // Classic Kelly: f* = (bp - q) / b
+    const b = avgLoss > 0 ? avgWin / avgLoss : 0;
+    const classicKelly = b > 0 ? ((b * winRate) - (1 - winRate)) / b : 0;
+
+    // Continuous Kelly: f* = (μ - r) / σ²
+    const continuousKelly = variance > 0 ? (annualReturn - riskFreeRate) / (annualVol * annualVol) : 0;
+
+    // Sharpe ratio
+    const sharpe = annualVol > 0 ? (annualReturn - riskFreeRate) / annualVol : 0;
+
+    // Tail analysis for this holding
+    const sortedReturns = [...returns].sort((a, b) => a - b);
+    const var95 = sortedReturns[Math.floor(returns.length * 0.05)];
+    const var99 = sortedReturns[Math.floor(returns.length * 0.01)];
+    const maxLoss = Math.min(...returns);
+
+    // Kurtosis for fat tail detection
+    const stdDev = Math.sqrt(variance);
+    const kurtosis = stdDev > 0
+      ? returns.reduce((s, r) => s + Math.pow((r - meanReturn) / stdDev, 4), 0) / returns.length
+      : 3;
+
+    // Kelly fraction analysis
+    const fractionAnalysis = kellyFractions.map(fraction => {
+      const kellyGrowth = (fraction * annualReturn) - (fraction * fraction * variance * tradingDays) / 2;
+      const expectedMaxDD = fraction * annualVol * 2;
+      const riskOf50DD = fraction > 0.5 ? Math.min(99, Math.pow(fraction / 0.5, 2) * 15) : fraction * 20;
+
+      return {
+        fraction,
+        kellyGrowth: Math.round(kellyGrowth * 10000) / 100,
+        expectedReturn: Math.round(fraction * annualReturn * 10000) / 100,
+        expectedVolatility: Math.round(fraction * annualVol * 10000) / 100,
+        expectedMaxDrawdown: Math.round(expectedMaxDD * 10000) / 100,
+        riskOf50pctDrawdown: Math.round(riskOf50DD)
+      };
+    });
+
+    // Benchmark comparison
+    let benchmarkComparison = null;
+    const benchmark = this.db.prepare(`
+      SELECT id FROM companies WHERE symbol = ? COLLATE NOCASE
+    `).get(benchmarkSymbol);
+
+    if (benchmark) {
+      const benchPrices = this.db.prepare(`
+        SELECT date, adjusted_close, close
+        FROM daily_prices
+        WHERE company_id = ? AND date >= ?
+        ORDER BY date ASC
+      `).all(benchmark.id, startDate);
+
+      if (benchPrices.length > MIN_OBSERVATIONS_FOR_KELLY) {
+        const benchReturns = [];
+        for (let i = 1; i < benchPrices.length; i++) {
+          const prev = benchPrices[i - 1].adjusted_close || benchPrices[i - 1].close;
+          const curr = benchPrices[i].adjusted_close || benchPrices[i].close;
+          if (prev && curr) benchReturns.push((curr - prev) / prev);
+        }
+        const benchMean = benchReturns.reduce((a, b) => a + b, 0) / benchReturns.length;
+        const benchVar = benchReturns.reduce((s, r) => s + Math.pow(r - benchMean, 2), 0) / benchReturns.length;
+        const benchAnnualReturn = benchMean * tradingDays;
+        const benchAnnualVol = Math.sqrt(benchVar * tradingDays);
+
+        // Beta calculation
+        const minLen = Math.min(returns.length, benchReturns.length);
+        let covariance = 0;
+        for (let i = 0; i < minLen; i++) {
+          covariance += (returns[i] - meanReturn) * (benchReturns[i] - benchMean);
+        }
+        covariance /= minLen;
+        const beta = benchVar > 0 ? covariance / benchVar : 1;
+        const alpha = annualReturn - (riskFreeRate + beta * (benchAnnualReturn - riskFreeRate));
+
+        benchmarkComparison = {
+          benchmark: benchmarkSymbol,
+          beta: Math.round(beta * 100) / 100,
+          alpha: Math.round(alpha * 10000) / 100,
+          benchmarkReturn: Math.round(benchAnnualReturn * 10000) / 100,
+          benchmarkVol: Math.round(benchAnnualVol * 10000) / 100,
+          excessReturn: Math.round((annualReturn - benchAnnualReturn) * 10000) / 100
+        };
+      }
+    }
+
+    // Portfolio context
+    let portfolioContext = null;
+    if (portfolioId) {
+      const positions = this._getPortfolioPositions(portfolioId);
+      const existingPosition = positions.find(p => p.symbol.toUpperCase() === symbol.toUpperCase());
+
+      if (existingPosition) {
+        const totalValue = positions.reduce((sum, p) => sum + p.value, 0);
+        portfolioContext = {
+          currentShares: existingPosition.shares,
+          currentValue: Math.round(existingPosition.value * 100) / 100,
+          currentWeight: totalValue > 0 ? Math.round((existingPosition.value / totalValue) * 10000) / 100 : 0,
+          isExisting: true
+        };
+      } else {
+        portfolioContext = {
+          isExisting: false,
+          message: 'Stock not currently in portfolio'
+        };
+      }
+    }
+
+    // Safe Kelly recommendation (Taleb-adjusted)
+    const safeKelly = this._calculateSafeKellyForHolding(classicKelly, continuousKelly, sharpe, annualVol, kurtosis);
+
+    return {
+      symbol: company.symbol,
+      name: company.name,
+      sector: company.sector,
+      period,
+      tradingDays: returns.length,
+      startDate,
+      endDate: dates[dates.length - 1],
+      statistics: {
+        annualReturn: Math.round(annualReturn * 10000) / 100,
+        annualVolatility: Math.round(annualVol * 10000) / 100,
+        sharpeRatio: Math.round(sharpe * 100) / 100,
+        winRate: Math.round(winRate * 10000) / 100,
+        avgWin: Math.round(avgWin * 10000) / 100,
+        avgLoss: Math.round(avgLoss * 10000) / 100,
+        winLossRatio: avgLoss > 0 ? Math.round((avgWin / avgLoss) * 100) / 100 : 0
+      },
+      tailRisk: {
+        var95: Math.round(var95 * 10000) / 100,
+        var99: Math.round(var99 * 10000) / 100,
+        maxObservedLoss: Math.round(maxLoss * 10000) / 100,
+        kurtosis: Math.round(kurtosis * 100) / 100,
+        isFatTailed: kurtosis > 4,
+        warning: kurtosis > 6 ? 'DANGER: Extreme fat tails' : kurtosis > 4 ? 'CAUTION: Fat tails detected' : null
+      },
+      kelly: {
+        classic: Math.round(Math.max(0, Math.min(1, classicKelly)) * 10000) / 100,
+        continuous: Math.round(Math.max(0, Math.min(2, continuousKelly)) * 10000) / 100,
+        recommended: safeKelly
+      },
+      fractionAnalysis,
+      benchmarkComparison,
+      portfolioContext,
+      parameters: {
+        riskFreeRate: Math.round(riskFreeRate * 10000) / 100,
+        period,
+        kellyFractions
+      }
+    };
+  }
+
+  _calculateSafeKellyForHolding(classicKelly, continuousKelly, sharpe, volatility, kurtosis) {
+    const baseKelly = Math.min(classicKelly, continuousKelly);
+
+    // Kurtosis adjustment
+    const kurtosisAdj = kurtosis > 3 ? 3 / kurtosis : 1;
+
+    // Volatility adjustment
+    let volAdj = 1;
+    if (volatility > 0.4) volAdj = 0.5;
+    else if (volatility > 0.25) volAdj = 0.75;
+
+    // Sharpe adjustment
+    let sharpeAdj = 1;
+    if (sharpe < 0.5) sharpeAdj = 0.5;
+    else if (sharpe < 1.0) sharpeAdj = 0.75;
+
+    const adjustedKelly = baseKelly * kurtosisAdj * volAdj * sharpeAdj;
+    const finalKelly = Math.max(0.05, Math.min(MAX_SAFE_KELLY, adjustedKelly));
+
+    let recommendation;
+    if (sharpe < 0) {
+      recommendation = { fraction: 0, label: 'Avoid', reason: 'Negative risk-adjusted returns' };
+    } else if (finalKelly >= 0.20) {
+      recommendation = { fraction: 0.25, label: 'Quarter Kelly', reason: 'Favorable metrics - use conservative sizing' };
+    } else if (finalKelly >= 0.10) {
+      recommendation = { fraction: 0.10, label: 'Tenth Kelly', reason: 'Moderate opportunity with higher risk' };
+    } else {
+      recommendation = { fraction: 0.05, label: 'Minimal', reason: 'High volatility or poor risk-adjusted returns' };
+    }
+
+    recommendation.adjustments = {
+      kurtosis: Math.round(kurtosisAdj * 100) / 100,
+      volatility: Math.round(volAdj * 100) / 100,
+      sharpe: Math.round(sharpeAdj * 100) / 100
+    };
+
+    return recommendation;
   }
 }
 

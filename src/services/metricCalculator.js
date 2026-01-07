@@ -80,8 +80,8 @@ class MetricCalculator {
     revenue_cagr_5y: [-50, 200],
     earnings_cagr_3y: [-50, 200],
     earnings_cagr_5y: [-50, 200],
-    pegRatio: [0, 20],
-    pegyRatio: [0, 20],
+    pegRatio: [-20, 20],  // Negative PEG indicates declining earnings
+    pegyRatio: [-20, 20], // Negative PEGY indicates declining earnings + dividend
     earningsYield: [-50, 100],
     tobins_q: [0, 20],
     graham_number: [0, 10000],
@@ -624,24 +624,42 @@ class MetricCalculator {
       }
 
       // PEG Ratio (P/E divided by Earnings Growth)
-      // Only calculate if we have both P/E and positive earnings growth
-      if (metrics.peRatio !== null && metrics.earnings_growth_yoy !== null && metrics.earnings_growth_yoy > 0) {
+      // Calculate for any non-zero growth (positive or negative)
+      // Note: Negative PEG indicates declining earnings - use with caution
+      // Fallback: Use revenue growth when earnings growth is unavailable
+      if (metrics.peRatio !== null) {
         try {
-          // PEG = P/E ratio / Earnings Growth Rate (as a percentage)
-          // A PEG of 1 means fair value, <1 is undervalued, >1 is overvalued
-          metrics.pegRatio = metrics.peRatio / metrics.earnings_growth_yoy;
+          let growthForPEG = null;
+
+          // Primary: Use earnings growth if available and non-zero
+          if (metrics.earnings_growth_yoy !== null && metrics.earnings_growth_yoy !== 0) {
+            growthForPEG = metrics.earnings_growth_yoy;
+          }
+          // Fallback: Use revenue growth if earnings growth unavailable/zero and revenue growth is non-zero
+          else if (metrics.revenue_growth_yoy !== null && metrics.revenue_growth_yoy !== 0) {
+            growthForPEG = metrics.revenue_growth_yoy;
+          }
+
+          if (growthForPEG !== null && growthForPEG !== 0) {
+            // PEG = P/E ratio / Growth Rate (as a percentage)
+            // Positive PEG with positive growth: <1 undervalued, >1 overvalued
+            // Negative PEG: indicates declining earnings, signals caution
+            metrics.pegRatio = metrics.peRatio / growthForPEG;
+          }
         } catch (e) {}
       }
 
       // PEGY Ratio (PEG adjusted for dividend yield) - calculated separately from PEG
-      // PEGY = P/E / (Earnings Growth + Dividend Yield)
+      // PEGY = P/E / (Growth + Dividend Yield)
       // Useful for dividend-paying stocks - lower is better
       // This can be calculated even when:
       // - Growth is negative/zero but dividend yield is positive
       // - Growth is positive but dividend yield is zero
+      // Fallback: Use revenue growth when earnings growth is unavailable
       if (metrics.peRatio !== null) {
         try {
-          const growth = metrics.earnings_growth_yoy || 0;
+          // Use earnings growth if available, otherwise fall back to revenue growth
+          const growth = metrics.earnings_growth_yoy ?? metrics.revenue_growth_yoy ?? 0;
           const divYield = metrics.dividend_yield || 0;
           const growthPlusYield = growth + divYield;
 
@@ -1572,6 +1590,7 @@ class MetricCalculator {
    * Formula: ((Current Net Income - Prior Year Net Income) / |Prior Year Net Income|) * 100
    *
    * Uses absolute value in denominator to handle negative-to-positive transitions correctly.
+   * Uses direct database columns for better reliability (same fix as FCF).
    *
    * @param {Number} companyId - Company ID for database query
    * @param {String} fiscalDate - Current fiscal period end date
@@ -1591,18 +1610,19 @@ class MetricCalculator {
       const priorYearDate = new Date(currentDate);
       priorYearDate.setFullYear(currentDate.getFullYear() - 1);
 
-      // Format date range for query (allow +/- 45 days for quarterly matching)
+      // Format date range for query (allow +/- 90 days for better matching)
+      // Extended from 45 days to accommodate irregular fiscal years
       const minDate = new Date(priorYearDate);
-      minDate.setDate(minDate.getDate() - 45);
+      minDate.setDate(minDate.getDate() - 90);
       const maxDate = new Date(priorYearDate);
-      maxDate.setDate(maxDate.getDate() + 45);
+      maxDate.setDate(maxDate.getDate() + 90);
 
       const minDateStr = minDate.toISOString().split('T')[0];
       const maxDateStr = maxDate.toISOString().split('T')[0];
 
-      // Query prior year data
+      // Query prior year data using direct columns (more reliable than JSON parsing)
       const priorData = database.prepare(`
-        SELECT data
+        SELECT net_income, data
         FROM financial_data
         WHERE company_id = ?
           AND statement_type = 'income_statement'
@@ -1615,8 +1635,18 @@ class MetricCalculator {
 
       if (!priorData) return null;
 
-      const priorIncomeStatement = JSON.parse(priorData.data);
-      const priorNetIncome = this.getField(priorIncomeStatement, ['netIncome', 'NetIncomeLoss', 'ProfitLoss']);
+      // Try direct column first (more reliable), fall back to JSON parsing
+      let priorNetIncome = priorData.net_income;
+
+      if (priorNetIncome === null || priorNetIncome === undefined) {
+        // Fallback to JSON parsing for older data
+        try {
+          const priorIncomeStatement = JSON.parse(priorData.data);
+          priorNetIncome = this.getField(priorIncomeStatement, ['netIncome', 'NetIncomeLoss', 'ProfitLoss']);
+        } catch (e) {
+          return null;
+        }
+      }
 
       // Skip if prior year had zero earnings (undefined growth)
       if (priorNetIncome === null || priorNetIncome === undefined || priorNetIncome === 0) return null;

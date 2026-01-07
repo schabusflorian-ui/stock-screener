@@ -19,6 +19,7 @@ function CorrelationPanel({ portfolioId }) {
   const [period, setPeriod] = useState('1y');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [dataErrors, setDataErrors] = useState({}); // Track errors per data source
 
   // Data states
   const [correlationData, setCorrelationData] = useState(null);
@@ -41,31 +42,51 @@ function CorrelationPanel({ portfolioId }) {
     try {
       setLoading(true);
       setError(null);
+      setDataErrors({});
 
-      const [corrRes, covRes, riskRes, rollingRes, clusterRes] = await Promise.all([
-        simulateAPI.getCorrelation(parseInt(portfolioId), period).catch(e => ({ data: { data: { error: e.response?.data?.error || e.message } } })),
-        simulateAPI.getCovariance(parseInt(portfolioId), period).catch(e => ({ data: { data: { error: e.response?.data?.error || e.message } } })),
-        simulateAPI.getRiskContribution(parseInt(portfolioId), period).catch(e => ({ data: { data: { error: e.response?.data?.error || e.message } } })),
-        simulateAPI.getRollingCorrelation(parseInt(portfolioId), period, 60).catch(e => ({ data: { data: { error: e.response?.data?.error || e.message } } })),
-        simulateAPI.getClusterAnalysis(parseInt(portfolioId), period).catch(e => ({ data: { data: { error: e.response?.data?.error || e.message } } }))
+      // Helper to safely fetch and extract data/error
+      const safeFetch = async (fetchFn, name) => {
+        try {
+          const res = await fetchFn();
+          const data = res.data?.data || res.data;
+          // Check for error inside the data object (backend pattern)
+          if (data?.error) {
+            return { error: data.error, data: null };
+          }
+          return { error: null, data };
+        } catch (e) {
+          return { error: e.response?.data?.error || e.message, data: null };
+        }
+      };
+
+      const [corrResult, covResult, riskResult, rollingResult, clusterResult] = await Promise.all([
+        safeFetch(() => simulateAPI.getCorrelation(parseInt(portfolioId), period), 'correlation'),
+        safeFetch(() => simulateAPI.getCovariance(parseInt(portfolioId), period), 'covariance'),
+        safeFetch(() => simulateAPI.getRiskContribution(parseInt(portfolioId), period), 'risk'),
+        safeFetch(() => simulateAPI.getRollingCorrelation(parseInt(portfolioId), period, 60), 'rolling'),
+        safeFetch(() => simulateAPI.getClusterAnalysis(parseInt(portfolioId), period), 'clusters')
       ]);
 
-      const corrData = corrRes.data.data || corrRes.data;
-      const covData = covRes.data.data || covRes.data;
-      const riskData = riskRes.data.data || riskRes.data;
-      const rollData = rollingRes.data.data || rollingRes.data;
-      const clustData = clusterRes.data.data || clusterRes.data;
+      // Track individual errors
+      const errors = {};
+      if (corrResult.error) errors.correlation = corrResult.error;
+      if (covResult.error) errors.covariance = covResult.error;
+      if (riskResult.error) errors.risk = riskResult.error;
+      if (rollingResult.error) errors.rolling = rollingResult.error;
+      if (clusterResult.error) errors.clusters = clusterResult.error;
+      setDataErrors(errors);
 
-      // Check if we have valid data or errors
-      if (corrData?.error) {
-        setError(corrData.error);
+      // Set main error if correlation (primary data) failed
+      if (corrResult.error) {
+        setError(corrResult.error);
       }
 
-      setCorrelationData(corrData?.error ? null : corrData);
-      setCovarianceData(covData?.error ? null : covData);
-      setRiskContribution(riskData?.error ? null : riskData);
-      setRollingData(rollData?.error ? null : rollData);
-      setClusterData(clustData?.error ? null : clustData);
+      // Set data (null if error)
+      setCorrelationData(corrResult.data);
+      setCovarianceData(covResult.data);
+      setRiskContribution(riskResult.data);
+      setRollingData(rollingResult.data);
+      setClusterData(clusterResult.data);
     } catch (err) {
       console.error('Failed to load correlation data:', err);
       setError(err.response?.data?.error || err.message);
@@ -699,32 +720,40 @@ function CorrelationPanel({ portfolioId }) {
         {/* Tab Navigation */}
         <div className="correlation-tabs">
           <button
-            className={`tab-btn ${activeTab === 'matrix' ? 'active' : ''}`}
+            className={`tab-btn ${activeTab === 'matrix' ? 'active' : ''} ${dataErrors.correlation ? 'has-error' : ''}`}
             onClick={() => setActiveTab('matrix')}
+            title={dataErrors.correlation || 'Correlation Matrix'}
           >
             <Grid3X3 size={16} />
             Correlation Matrix
+            {dataErrors.correlation && <AlertCircle size={12} className="tab-error-icon" />}
           </button>
           <button
-            className={`tab-btn ${activeTab === 'risk' ? 'active' : ''}`}
+            className={`tab-btn ${activeTab === 'risk' ? 'active' : ''} ${dataErrors.risk ? 'has-error' : ''}`}
             onClick={() => setActiveTab('risk')}
+            title={dataErrors.risk || 'Risk Contribution'}
           >
             <PieChart size={16} />
             Risk Contribution
+            {dataErrors.risk && <AlertCircle size={12} className="tab-error-icon" />}
           </button>
           <button
-            className={`tab-btn ${activeTab === 'rolling' ? 'active' : ''}`}
+            className={`tab-btn ${activeTab === 'rolling' ? 'active' : ''} ${dataErrors.rolling ? 'has-error' : ''}`}
             onClick={() => setActiveTab('rolling')}
+            title={dataErrors.rolling || 'Rolling Correlation'}
           >
             <TrendingUp size={16} />
             Rolling Correlation
+            {dataErrors.rolling && <AlertCircle size={12} className="tab-error-icon" />}
           </button>
           <button
-            className={`tab-btn ${activeTab === 'clusters' ? 'active' : ''}`}
+            className={`tab-btn ${activeTab === 'clusters' ? 'active' : ''} ${dataErrors.clusters ? 'has-error' : ''}`}
             onClick={() => setActiveTab('clusters')}
+            title={dataErrors.clusters || 'Cluster Analysis'}
           >
             <Layers size={16} />
             Cluster Analysis
+            {dataErrors.clusters && <AlertCircle size={12} className="tab-error-icon" />}
           </button>
         </div>
 

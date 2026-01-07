@@ -42,9 +42,11 @@ class HoldingsEngine {
 
       // Position queries (filter out closed positions with 0 shares)
       getPositions: this.db.prepare(`
-        SELECT pp.*, c.symbol, c.name as company_name, c.sector
+        SELECT pp.*, c.symbol, c.name as company_name, c.sector,
+               COALESCE(dm.dividend_yield, 0) as dividend_yield
         FROM portfolio_positions pp
         JOIN companies c ON pp.company_id = c.id
+        LEFT JOIN dividend_metrics dm ON dm.company_id = c.id
         WHERE pp.portfolio_id = ? AND pp.shares > 0
         ORDER BY pp.current_value DESC
       `),

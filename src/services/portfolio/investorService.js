@@ -162,6 +162,7 @@ function getLatestHoldings(investorId, { limit = 100, sortBy = 'market_value', s
     LEFT JOIN companies c ON ih.company_id = c.id
     WHERE ih.investor_id = ? AND ih.filing_date = ?
     GROUP BY ih.cusip
+    HAVING SUM(ih.shares) > 0
     ORDER BY ${sortColumn} ${order}
     LIMIT ?
   `).all(investorId, investor.latest_filing_date, limit);
@@ -291,8 +292,8 @@ function getInvestorsByStock(companyId) {
   return db.prepare(`
     SELECT
       fi.id,
-      fi.name,
-      fi.fund_name,
+      fi.name as investor_name,
+      fi.fund_name as manager_name,
       fi.investment_style,
       ih.shares,
       ih.market_value,
@@ -372,51 +373,93 @@ function getPortfolioReturns(investorId, { limit = 50 } = {}) {
     return { returns: [], summary: null, benchmark: null };
   }
 
+  // OPTIMIZED: Batch fetch all holdings and prices upfront
+  const allDates = dates.map(d => d.report_date);
+  const minDate = allDates[0];
+  const maxDate = allDates[allDates.length - 1];
+
+  // Get all holdings for all periods in one query
+  const allHoldings = db.prepare(`
+    SELECT
+      h.report_date,
+      c.id as company_id,
+      c.symbol,
+      SUM(h.market_value) as position_value
+    FROM investor_holdings h
+    JOIN companies c ON h.company_id = c.id
+    WHERE h.investor_id = ?
+      AND h.report_date IN (${allDates.map(() => '?').join(',')})
+      AND c.symbol IS NOT NULL
+    GROUP BY h.report_date, c.id
+  `).all(investorId, ...allDates);
+
+  // Build map of holdings by date
+  const holdingsByDate = {};
+  allHoldings.forEach(h => {
+    if (!holdingsByDate[h.report_date]) holdingsByDate[h.report_date] = [];
+    holdingsByDate[h.report_date].push(h);
+  });
+
+  // Get all unique company IDs
+  const companyIds = [...new Set(allHoldings.map(h => h.company_id))];
+
+  // OPTIMIZED: Batch fetch all prices we need in one query using window function
+  const pricesByCompanyDate = {};
+  if (companyIds.length > 0) {
+    const prices = db.prepare(`
+      WITH target_dates AS (
+        SELECT value as target_date FROM json_each(?)
+      ),
+      target_companies AS (
+        SELECT value as company_id FROM json_each(?)
+      ),
+      price_lookup AS (
+        SELECT
+          dp.company_id,
+          td.target_date,
+          dp.close,
+          ROW_NUMBER() OVER (PARTITION BY dp.company_id, td.target_date ORDER BY dp.date DESC) as rn
+        FROM daily_prices dp
+        CROSS JOIN target_dates td
+        CROSS JOIN target_companies tc
+        WHERE dp.company_id = tc.company_id
+          AND dp.date <= td.target_date
+          AND dp.date >= date(td.target_date, '-30 days')
+      )
+      SELECT company_id, target_date, close
+      FROM price_lookup
+      WHERE rn = 1
+    `).all(JSON.stringify(allDates), JSON.stringify(companyIds));
+
+    prices.forEach(p => {
+      const key = `${p.company_id}_${p.target_date}`;
+      pricesByCompanyDate[key] = p.close;
+    });
+  }
+
   const quarterlyReturns = [];
 
   for (let i = 0; i < dates.length - 1; i++) {
     const startDate = dates[i].report_date;
     const endDate = dates[i + 1].report_date;
 
-    // Get holdings at start of period with weights
-    const holdings = db.prepare(`
-      SELECT
-        c.id as company_id,
-        c.symbol,
-        SUM(h.market_value) as position_value
-      FROM investor_holdings h
-      JOIN companies c ON h.company_id = c.id
-      WHERE h.investor_id = ? AND h.report_date = ?
-        AND c.symbol IS NOT NULL
-      GROUP BY c.id
-    `).all(investorId, startDate);
-
+    const holdings = holdingsByDate[startDate] || [];
     if (holdings.length === 0) continue;
 
     const totalValue = holdings.reduce((sum, h) => sum + h.position_value, 0);
 
-    // Calculate weighted return for this quarter
+    // Calculate weighted return for this quarter using pre-fetched prices
     let weightedReturn = 0;
     let matchedWeight = 0;
 
     for (const holding of holdings) {
       const weight = holding.position_value / totalValue;
 
-      // Get prices at start and end of period
-      const startPrice = db.prepare(`
-        SELECT close FROM daily_prices
-        WHERE company_id = ? AND date <= ?
-        ORDER BY date DESC LIMIT 1
-      `).get(holding.company_id, startDate);
+      const startPrice = pricesByCompanyDate[`${holding.company_id}_${startDate}`];
+      const endPrice = pricesByCompanyDate[`${holding.company_id}_${endDate}`];
 
-      const endPrice = db.prepare(`
-        SELECT close FROM daily_prices
-        WHERE company_id = ? AND date <= ?
-        ORDER BY date DESC LIMIT 1
-      `).get(holding.company_id, endDate);
-
-      if (startPrice?.close && endPrice?.close && startPrice.close > 0) {
-        const stockReturn = (endPrice.close - startPrice.close) / startPrice.close;
+      if (startPrice && endPrice && startPrice > 0) {
+        const stockReturn = (endPrice - startPrice) / startPrice;
         weightedReturn += weight * stockReturn;
         matchedWeight += weight;
       }
@@ -436,14 +479,18 @@ function getPortfolioReturns(investorId, { limit = 50 } = {}) {
     });
   }
 
-  // Get S&P 500 returns for the same periods
+  // OPTIMIZED: Batch fetch S&P 500 returns for all periods
   const benchmarkReturns = [];
+  const spyReturnsCache = {};
   for (const qtr of quarterlyReturns) {
-    const spyReturn = getSpyReturn(qtr.startDate, qtr.endDate);
+    const cacheKey = `${qtr.startDate}_${qtr.endDate}`;
+    if (!spyReturnsCache[cacheKey]) {
+      spyReturnsCache[cacheKey] = getSpyReturn(qtr.startDate, qtr.endDate);
+    }
     benchmarkReturns.push({
       startDate: qtr.startDate,
       endDate: qtr.endDate,
-      return: spyReturn
+      return: spyReturnsCache[cacheKey]
     });
   }
 

@@ -40,6 +40,7 @@ export default function AnalystPage() {
         handleSelectAnalyst(analystParam);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analysts, searchParams]);
 
   // Load company context when symbol changes

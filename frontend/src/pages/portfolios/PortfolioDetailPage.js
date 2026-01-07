@@ -1,5 +1,5 @@
 // frontend/src/pages/portfolios/PortfolioDetailPage.js
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -17,19 +17,18 @@ import {
   Wallet,
   Target,
   Activity,
-  Info,
   Download,
   Shield,
-  Percent,
   LineChart as LineChartIcon,
   AlertTriangle,
   Trash2,
   MoreVertical,
   Grid3X3,
-  Zap,
-  Award
+  Award,
+  Brain,
+  FileText
 } from 'lucide-react';
-import { portfoliosAPI, simulateAPI, indicesAPI } from '../../services/api';
+import { portfoliosAPI, simulateAPI, indicesAPI, attributionAPI } from '../../services/api';
 import HoldingsTable from '../../components/portfolio/HoldingsTable';
 import TradeForm from '../../components/portfolio/TradeForm';
 import OrderForm from '../../components/portfolio/OrderForm';
@@ -42,10 +41,22 @@ import PositionSizingPanel from '../../components/portfolio/PositionSizingPanel'
 import PerformanceChart from '../../components/portfolio/PerformanceChart';
 import PortfolioInsightsPanel from '../../components/portfolio/PortfolioInsightsPanel';
 import CorrelationPanel from '../../components/portfolio/CorrelationPanel';
-import AdvancedKellyPanel from '../../components/portfolio/AdvancedKellyPanel';
 import AlphaAnalyticsPanel from '../../components/portfolio/AlphaAnalyticsPanel';
 import ExportPanel from '../../components/portfolio/ExportPanel';
 import { SkeletonPortfolioDetail } from '../../components/Skeleton';
+import {
+  AgentRecommendation,
+  RecommendationHistory,
+  FactorPerformance,
+  AttributionSummary,
+  RiskLimitsSettings,
+  RecommendationPerformance,
+  ExecutionSettingsPanel,
+  PendingExecutionsPanel,
+  HedgeSuggestionsPanel
+} from '../../components/agent';
+import { PortfolioNotesPanel } from '../../components/notes';
+import ETFDetailModal from '../../components/portfolio/ETFDetailModal';
 import './PortfolioDetailPage.css';
 
 // Tooltip component
@@ -98,13 +109,13 @@ function RiskMetricsCard({ riskData, performance }) {
   const metrics = [
     {
       label: 'Beta',
-      value: riskData?.beta?.toFixed(2) || performance?.beta?.toFixed(2),
+      value: riskData?.beta?.toFixed(2) || performance?.benchmark?.beta?.toFixed(2),
       tooltip: 'Portfolio volatility relative to S&P 500. Beta > 1 means more volatile than the market.',
       isGood: (v) => v && Math.abs(parseFloat(v) - 1) < 0.3
     },
     {
       label: 'Alpha',
-      value: riskData?.alpha?.toFixed(2) || performance?.alpha?.toFixed(2),
+      value: riskData?.alpha?.toFixed(2) || performance?.benchmark?.alpha?.toFixed(2),
       suffix: '%',
       tooltip: 'Excess return over benchmark. Positive alpha indicates outperformance.',
       isGood: (v) => v && parseFloat(v) > 0
@@ -159,8 +170,11 @@ function RiskMetricsCard({ riskData, performance }) {
 // Dividend Summary Card
 function DividendCard({ holdings, transactions }) {
   // Calculate dividend stats from transactions
-  const dividendTxns = transactions.filter(t => t.type === 'dividend');
-  const totalDividends = dividendTxns.reduce((sum, t) => sum + (t.amount || 0), 0);
+  // Support both 'type' and 'transaction_type' field names for compatibility
+  const dividendTxns = transactions.filter(t =>
+    (t.type || t.transaction_type) === 'dividend'
+  );
+  const totalDividends = dividendTxns.reduce((sum, t) => sum + (t.amount || t.total_amount || 0), 0);
 
   // Calculate estimated annual yield from holdings
   const holdingsWithDividends = holdings.filter(h => h.dividend_yield && h.dividend_yield > 0);
@@ -219,7 +233,6 @@ function SimulateSection({ portfolioId, holdings, initialValue }) {
     { id: 'backtest', label: 'Backtest', icon: Clock },
     { id: 'position', label: 'Position Sizing', icon: Target },
     { id: 'correlation', label: 'Correlation', icon: Grid3X3 },
-    { id: 'kelly', label: 'Kelly Criterion', icon: Zap },
     { id: 'alpha', label: 'Alpha Analytics', icon: Award }
   ];
 
@@ -267,16 +280,97 @@ function SimulateSection({ portfolioId, holdings, initialValue }) {
           />
         )}
 
-        {activeSimTab === 'kelly' && (
-          <AdvancedKellyPanel
-            portfolioId={portfolioId}
-          />
-        )}
-
         {activeSimTab === 'alpha' && (
           <AlphaAnalyticsPanel
             portfolioId={portfolioId}
           />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// AI Trading Section with sub-tabs
+function AITradingSection({ portfolioId }) {
+  const [activeAITab, setActiveAITab] = useState('recommendations');
+  const [recommendation, setRecommendation] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchRecommendation = async () => {
+      try {
+        setLoading(true);
+        const res = await attributionAPI.getRecommendation(portfolioId);
+        if (res.data?.success) {
+          setRecommendation(res.data.data);
+        }
+      } catch (err) {
+        console.log('No recommendation available:', err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchRecommendation();
+  }, [portfolioId]);
+
+  const AI_TABS = [
+    { id: 'recommendations', label: 'Latest Signal', icon: Brain },
+    { id: 'performance', label: 'Performance', icon: Target },
+    { id: 'pending', label: 'Pending Trades', icon: Clock },
+    { id: 'hedges', label: 'Hedges', icon: Shield },
+    { id: 'history', label: 'History', icon: Activity },
+    { id: 'factors', label: 'Factors', icon: BarChart3 },
+    { id: 'settings', label: 'Settings', icon: Zap }
+  ];
+
+  return (
+    <div className="ai-trading-section">
+      <div className="simulate-tabs">
+        {AI_TABS.map(tab => (
+          <button
+            key={tab.id}
+            className={`simulate-tab ${activeAITab === tab.id ? 'active' : ''}`}
+            onClick={() => setActiveAITab(tab.id)}
+          >
+            <tab.icon size={16} />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="simulate-content">
+        {activeAITab === 'recommendations' && (
+          <AgentRecommendation
+            recommendation={recommendation}
+            loading={loading}
+          />
+        )}
+
+        {activeAITab === 'performance' && (
+          <RecommendationPerformance />
+        )}
+
+        {activeAITab === 'pending' && (
+          <PendingExecutionsPanel portfolioId={portfolioId} />
+        )}
+
+        {activeAITab === 'hedges' && (
+          <HedgeSuggestionsPanel portfolioId={portfolioId} />
+        )}
+
+        {activeAITab === 'history' && (
+          <RecommendationHistory portfolioId={portfolioId} />
+        )}
+
+        {activeAITab === 'factors' && (
+          <FactorPerformance portfolioId={portfolioId} />
+        )}
+
+        {activeAITab === 'settings' && (
+          <div className="settings-panels">
+            <ExecutionSettingsPanel portfolioId={portfolioId} />
+            <RiskLimitsSettings portfolioId={portfolioId} />
+          </div>
         )}
       </div>
     </div>
@@ -290,6 +384,8 @@ const TABS = [
   { id: 'orders', label: 'Orders', icon: Target },
   { id: 'transactions', label: 'Transactions', icon: Clock },
   { id: 'allocation', label: 'Allocation', icon: PieChart },
+  { id: 'notes', label: 'Notes', icon: FileText },
+  { id: 'ai', label: 'AI Trading', icon: Brain },
   { id: 'simulate', label: 'Simulate', icon: Activity },
   { id: 'alerts', label: 'Alerts', icon: AlertCircle },
   { id: 'export', label: 'Export', icon: Download }
@@ -319,6 +415,12 @@ function PortfolioDetailPage() {
   const [chartPeriod, setChartPeriod] = useState('1y');
   const [exporting, setExporting] = useState(false);
   const [showActionsMenu, setShowActionsMenu] = useState(false);
+  const [selectedETF, setSelectedETF] = useState(null);
+
+  // Helper to check if a holding is an ETF
+  const isETF = (holding) => {
+    return holding.sector === 'ETF' || holding.is_etf;
+  };
 
   useEffect(() => {
     loadPortfolio();
@@ -330,6 +432,7 @@ function PortfolioDetailPage() {
     if (portfolio) {
       loadChartData(chartPeriod);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chartPeriod, portfolio]);
 
   const loadPortfolio = async () => {
@@ -349,7 +452,14 @@ function PortfolioDetailPage() {
         total_value: portfolioRes.data.values?.totalValue ?? 0,
         positions_value: portfolioRes.data.values?.positionsValue ?? 0,
         total_deposited: portfolioRes.data.values?.totalDeposited ?? 0,
-        total_withdrawn: portfolioRes.data.values?.totalWithdrawn ?? 0
+        total_withdrawn: portfolioRes.data.values?.totalWithdrawn ?? 0,
+        // Map performance data for meta ribbon
+        total_gain: portfolioRes.data.performance?.totalReturn ?? 0,
+        total_gain_pct: portfolioRes.data.performance?.totalReturnPct ?? 0,
+        unrealized_pnl: portfolioRes.data.performance?.unrealizedPnl ?? 0,
+        unrealized_pnl_pct: portfolioRes.data.performance?.unrealizedPnlPct ?? 0,
+        // Map positions count
+        positions_count: portfolioRes.data.positions?.count ?? 0
       });
       setHoldings(holdingsRes.data.holdings || []);
       setOrders(ordersRes.data.orders || []);
@@ -565,6 +675,7 @@ function PortfolioDetailPage() {
     <div className="portfolio-detail-page">
       {/* Header */}
       <header className="detail-header">
+        <div className="header-inner">
         <Link to="/portfolios" className="back-link">
           <ArrowLeft size={18} />
           Back to Portfolios
@@ -673,7 +784,7 @@ function PortfolioDetailPage() {
               <BarChart3 size={20} />
               <div>
                 <span className="stat-label">Positions</span>
-                <span className="stat-value">{holdings.length}</span>
+                <span className="stat-value">{portfolio.positions_count || holdings.length}</span>
               </div>
             </div>
           </Tooltip>
@@ -690,10 +801,12 @@ function PortfolioDetailPage() {
             </Tooltip>
           )}
         </div>
+        </div>
       </header>
 
       {/* Tabs */}
       <div className="tabs-container">
+        <div className="tabs-inner">
         <div className="tabs">
           {TABS.map(tab => (
             <button
@@ -705,6 +818,7 @@ function PortfolioDetailPage() {
               <span>{tab.label}</span>
             </button>
           ))}
+        </div>
         </div>
       </div>
 
@@ -721,8 +835,8 @@ function PortfolioDetailPage() {
                     <Tooltip text="Total return over the past year">
                       <div className="perf-item">
                         <span className="perf-label">1Y Return</span>
-                        <span className={`perf-value ${(performance.totalReturn || 0) >= 0 ? 'positive' : 'negative'}`}>
-                          {formatPercent(performance.totalReturn)}
+                        <span className={`perf-value ${(performance.totalReturnPct || 0) >= 0 ? 'positive' : 'negative'}`}>
+                          {formatPercent(performance.totalReturnPct)}
                         </span>
                       </div>
                     </Tooltip>
@@ -742,7 +856,7 @@ function PortfolioDetailPage() {
                       <div className="perf-item">
                         <span className="perf-label">Max Drawdown</span>
                         <span className="perf-value negative">
-                          {formatPercent(performance.maxDrawdown)}
+                          {formatPercent(performance.maxDrawdown ? -performance.maxDrawdown : null)}
                         </span>
                       </div>
                     </Tooltip>
@@ -776,14 +890,24 @@ function PortfolioDetailPage() {
                   {holdings.slice(0, 5).map((h, idx) => (
                     <div key={idx} className="top-holding-item">
                       <div className="holding-rank">{idx + 1}</div>
-                      <Link to={`/company/${h.symbol}`} className="holding-symbol">
-                        {h.symbol}
-                      </Link>
+                      {isETF(h) ? (
+                        <button
+                          className="holding-symbol etf-link"
+                          onClick={() => setSelectedETF(h.symbol)}
+                        >
+                          {h.symbol}
+                          <span className="etf-badge-mini">ETF</span>
+                        </button>
+                      ) : (
+                        <Link to={`/company/${h.symbol}`} className="holding-symbol">
+                          {h.symbol}
+                        </Link>
+                      )}
                       <div className="holding-weight">
                         {((h.current_value / portfolio.total_value) * 100).toFixed(1)}%
                       </div>
-                      <div className={`holding-gain ${h.unrealized_gain >= 0 ? 'positive' : 'negative'}`}>
-                        {formatPercent(h.unrealized_gain_pct)}
+                      <div className={`holding-gain ${(h.unrealized_pnl || h.unrealized_gain || 0) >= 0 ? 'positive' : 'negative'}`}>
+                        {formatPercent(h.unrealized_pnl_pct || h.unrealized_gain_pct)}
                       </div>
                     </div>
                   ))}
@@ -950,6 +1074,17 @@ function PortfolioDetailPage() {
           />
         )}
 
+        {activeTab === 'notes' && (
+          <PortfolioNotesPanel
+            portfolioId={parseInt(id)}
+            portfolioName={portfolio.name}
+          />
+        )}
+
+        {activeTab === 'ai' && (
+          <AITradingSection portfolioId={parseInt(id)} />
+        )}
+
         {activeTab === 'alerts' && (
           <PortfolioAlerts portfolioId={id} />
         )}
@@ -1064,6 +1199,14 @@ function PortfolioDetailPage() {
           isDestructive={confirmDialog.isDestructive}
           onConfirm={confirmDialog.onConfirm}
           onCancel={confirmDialog.onCancel}
+        />
+      )}
+
+      {/* ETF Detail Modal */}
+      {selectedETF && (
+        <ETFDetailModal
+          symbol={selectedETF}
+          onClose={() => setSelectedETF(null)}
         />
       )}
     </div>

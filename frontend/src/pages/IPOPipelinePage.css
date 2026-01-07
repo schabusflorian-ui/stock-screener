@@ -625,6 +625,35 @@
   color: var(--brand-primary);
 }
 
+.quick-link.active {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: white;
+}
+
+.quick-link.active:hover {
+  background: var(--brand-primary-dark, #5558e3);
+  color: white;
+}
+
+/* Filtered IPO Views */
+.filtered-ipo-view {
+  margin-top: 1.5rem;
+}
+
+.filtered-ipo-view h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ipo-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
 /* Responsive adjustments */
 @media (max-width: 1024px) {
   .ipo-stats-bar {

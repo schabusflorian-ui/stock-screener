@@ -208,7 +208,217 @@
   gap: var(--space-3);
 }
 
+/* Screening results skeleton */
+.skeleton-screening-results {
+  padding: var(--space-4) 0;
+}
+
+.skeleton-results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.skeleton-results-controls {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.skeleton-table-container {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.skeleton-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.skeleton-table th,
+.skeleton-table td {
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.skeleton-table thead th {
+  background: var(--bg-tertiary);
+}
+
+/* Watchlist skeleton */
+.skeleton-watchlist {
+  padding: var(--space-4) 0;
+}
+
+.skeleton-watchlist-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-5);
+}
+
+.skeleton-watchlist-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.skeleton-watchlist-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-4);
+}
+
+.skeleton-watchlist-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+
+.skeleton-watchlist-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.skeleton-watchlist-card-price {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+}
+
+.skeleton-watchlist-card-metrics {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* IPO pipeline skeleton */
+.skeleton-ipo-pipeline {
+  padding: var(--space-4) 0;
+}
+
+.skeleton-ipo-header {
+  margin-bottom: var(--space-5);
+}
+
+.skeleton-ipo-columns {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-4);
+}
+
+.skeleton-ipo-column {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+
+.skeleton-ipo-column-title {
+  margin-bottom: var(--space-4);
+}
+
+.skeleton-ipo-card {
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.skeleton-ipo-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+/* Insider trading skeleton */
+.skeleton-insider-trading {
+  padding: var(--space-4) 0;
+}
+
+.skeleton-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.skeleton-section-filters {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.skeleton-two-column {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-5);
+  margin-top: var(--space-4);
+}
+
+.skeleton-column {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+
+.skeleton-list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.skeleton-list-row:last-child {
+  border-bottom: none;
+}
+
+/* Capital allocation skeleton */
+.skeleton-capital-allocation {
+  padding: var(--space-4) 0;
+}
+
+.skeleton-tabs-row {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.skeleton-capital-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+/* Generic page skeleton */
+.skeleton-page {
+  padding: var(--space-4) 0;
+}
+
+.skeleton-page-header {
+  margin-bottom: var(--space-5);
+}
+
+.skeleton-page-content {
+  margin-top: var(--space-4);
+}
+
 /* Responsive */
+@media (max-width: 1200px) {
+  .skeleton-ipo-columns {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 @media (max-width: 768px) {
   .skeleton-header {
     padding: var(--space-4);
@@ -231,5 +441,35 @@
 
   .skeleton-content {
     padding: var(--space-4);
+  }
+
+  .skeleton-two-column {
+    grid-template-columns: 1fr;
+  }
+
+  .skeleton-ipo-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .skeleton-watchlist-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .skeleton-section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+
+  .skeleton-results-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+
+  .skeleton-watchlist-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
   }
 }

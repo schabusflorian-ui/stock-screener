@@ -471,3 +471,184 @@
   color: #ef4444;
   font-size: var(--text-sm);
 }
+
+/* Risk Assessment Panel */
+.risk-assessment-panel {
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+
+.risk-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-3);
+}
+
+.risk-header svg:first-child {
+  color: var(--accent-primary);
+}
+
+/* Margin of Safety Indicator */
+.mos-indicator {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-3);
+}
+
+.mos-indicator.positive {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.mos-indicator.neutral {
+  background: rgba(234, 179, 8, 0.1);
+  border: 1px solid rgba(234, 179, 8, 0.3);
+}
+
+.mos-indicator.negative {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.mos-label {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mos-value {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.mos-indicator.positive .mos-value { color: #22c55e; }
+.mos-indicator.neutral .mos-value { color: #eab308; }
+.mos-indicator.negative .mos-value { color: #ef4444; }
+
+.mos-signal {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  margin-top: var(--space-1);
+}
+
+.mos-indicator.positive .mos-signal { color: #22c55e; }
+.mos-indicator.neutral .mos-signal { color: #eab308; }
+.mos-indicator.negative .mos-signal { color: #ef4444; }
+
+.mos-detail {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-top: var(--space-1);
+}
+
+/* Risk Checks */
+.risk-checks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.risk-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+.risk-status.approved {
+  background: rgba(34, 197, 94, 0.1);
+  color: #22c55e;
+}
+
+.risk-status.blocked {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+.risk-blockers,
+.risk-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+}
+
+.risk-blocker-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  color: #ef4444;
+  padding: var(--space-2);
+  background: rgba(239, 68, 68, 0.05);
+  border-radius: var(--radius-sm);
+}
+
+.risk-warning-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  color: #eab308;
+  padding: var(--space-2);
+  background: rgba(234, 179, 8, 0.05);
+  border-radius: var(--radius-sm);
+}
+
+.acknowledge-checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding: var(--space-2);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.acknowledge-checkbox input {
+  accent-color: var(--accent-primary);
+}
+
+.risk-check-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.check-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+}
+
+.check-item.passed {
+  background: rgba(34, 197, 94, 0.1);
+  color: #22c55e;
+}
+
+.check-item.failed {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+.check-name {
+  text-transform: capitalize;
+}

@@ -2,8 +2,8 @@
 
 .note-editor {
   position: fixed;
-  top: 0;
-  left: 0;
+  top: var(--header-height, 56px);
+  left: var(--sidebar-width, 240px);
   right: 0;
   bottom: 0;
   z-index: 100;
@@ -57,6 +57,29 @@
   background: var(--danger-bg);
   color: var(--danger);
   font-size: var(--text-sm);
+}
+
+/* Draft Restore Banner */
+.draft-restore-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-6);
+  background: var(--accent-bg);
+  border-bottom: 1px solid var(--accent);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.draft-restore-banner span {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.draft-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 /* Toolbar */
@@ -389,6 +412,178 @@
 
 .selected-tags .badge button:hover {
   opacity: 1;
+}
+
+/* Portfolio Selector */
+.portfolio-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.portfolio-selector .badge {
+  font-size: var(--text-xs);
+}
+
+.selected-portfolios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.selected-portfolios .badge {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.selected-portfolios .badge button {
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+.selected-portfolios .badge button:hover {
+  opacity: 1;
+}
+
+/* Tag Manager */
+.tag-manager {
+  margin-bottom: var(--space-3);
+}
+
+.create-tag-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--bg-primary);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-3);
+}
+
+.create-tag-form input {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+}
+
+.create-tag-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.color-picker {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.color-picker.compact {
+  gap: 2px;
+}
+
+.color-picker .color-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.color-picker .color-btn:hover {
+  transform: scale(1.1);
+}
+
+.color-picker .color-btn.active {
+  border-color: var(--text-primary);
+  box-shadow: 0 0 0 2px var(--bg-primary);
+}
+
+.color-picker.compact .color-btn {
+  width: 16px;
+  height: 16px;
+}
+
+.tag-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tag-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--bg-primary);
+  border-radius: var(--radius-md);
+  flex-wrap: wrap;
+}
+
+.tag-item input {
+  flex: 1;
+  min-width: 80px;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-sm);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+}
+
+.tag-item .tag-count {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-left: auto;
+}
+
+.tag-item .edit-btn,
+.tag-item .delete-btn,
+.tag-item .save-btn,
+.tag-item .cancel-btn {
+  padding: var(--space-1);
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s ease;
+}
+
+.tag-item .edit-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--accent);
+}
+
+.tag-item .delete-btn:hover {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.tag-item .save-btn:hover {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.tag-item .cancel-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.no-tags-hint {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-align: center;
+  padding: var(--space-2);
 }
 
 /* Tips Card */

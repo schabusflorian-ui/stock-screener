@@ -294,21 +294,218 @@ class FearGreedFetcher {
   }
 
   /**
+   * Fetch Put/Call Ratio from CBOE via Yahoo Finance
+   * High P/C (>1.0) = bearish, Low P/C (<0.7) = bullish
+   */
+  async fetchPutCallRatio() {
+    return this.getCachedOrFetch('put_call_ratio', async () => {
+      console.log('Fetching Put/Call Ratio...');
+
+      // Try to get equity put/call from market data
+      // Using a proxy approach - estimate from VIX options or index data
+      const apiUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=5d';
+
+      try {
+        const response = await fetch(apiUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'Accept': 'application/json',
+          },
+          timeout: 10000,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Yahoo Finance error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const result = data.chart?.result?.[0];
+
+        if (!result) {
+          throw new Error('No data');
+        }
+
+        // Estimate put/call from VIX level (correlation-based approximation)
+        // VIX 15 -> P/C ~0.7, VIX 25 -> P/C ~1.0, VIX 35 -> P/C ~1.3
+        const vixValue = result.meta?.regularMarketPrice || 18;
+        const estimatedPutCall = 0.4 + (vixValue / 50);
+
+        return {
+          source: 'estimated',
+          value: Math.round(estimatedPutCall * 100) / 100,
+          label: estimatedPutCall > 1.0 ? 'bearish' : estimatedPutCall < 0.7 ? 'bullish' : 'neutral',
+          timestamp: new Date().toISOString(),
+          note: 'Estimated from VIX correlation',
+        };
+      } catch (error) {
+        // Default neutral value
+        return {
+          source: 'default',
+          value: 0.85,
+          label: 'neutral',
+          timestamp: new Date().toISOString(),
+          error: error.message,
+        };
+      }
+    });
+  }
+
+  /**
+   * Fetch High Yield Credit Spread (HY OAS)
+   * Spread > 5% = stress, < 3% = complacency
+   */
+  async fetchHighYieldSpread() {
+    return this.getCachedOrFetch('high_yield_spread', async () => {
+      console.log('Fetching High Yield Spread...');
+
+      // Try HYG (high yield ETF) vs LQD (investment grade) as proxy
+      try {
+        const [hygResponse, lqdResponse] = await Promise.all([
+          fetch('https://query1.finance.yahoo.com/v8/finance/chart/HYG?interval=1d&range=5d', {
+            headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
+            timeout: 10000,
+          }),
+          fetch('https://query1.finance.yahoo.com/v8/finance/chart/LQD?interval=1d&range=5d', {
+            headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
+            timeout: 10000,
+          }),
+        ]);
+
+        if (!hygResponse.ok || !lqdResponse.ok) {
+          throw new Error('Failed to fetch bond ETFs');
+        }
+
+        const hygData = await hygResponse.json();
+        const lqdData = await lqdResponse.json();
+
+        const hygPrice = hygData.chart?.result?.[0]?.meta?.regularMarketPrice;
+        const lqdPrice = lqdData.chart?.result?.[0]?.meta?.regularMarketPrice;
+
+        if (!hygPrice || !lqdPrice) {
+          throw new Error('No bond ETF data');
+        }
+
+        // Approximate spread from price ratio changes
+        // This is a rough proxy - actual OAS would require FRED data
+        // HYG/LQD ratio declining = spreads widening
+        const ratio = hygPrice / lqdPrice;
+        // Typical ratio is ~0.65-0.75, lower = wider spreads
+        // Convert to approximate OAS spread (3-7% typical range)
+        const estimatedSpread = 8.0 - (ratio * 6.0);
+
+        let label;
+        if (estimatedSpread > 5.0) label = 'stress';
+        else if (estimatedSpread > 4.0) label = 'elevated';
+        else if (estimatedSpread > 3.0) label = 'normal';
+        else label = 'tight';
+
+        return {
+          source: 'etf_proxy',
+          value: Math.round(estimatedSpread * 100) / 100,
+          label,
+          hygPrice: Math.round(hygPrice * 100) / 100,
+          lqdPrice: Math.round(lqdPrice * 100) / 100,
+          timestamp: new Date().toISOString(),
+          note: 'Estimated from HYG/LQD ratio',
+        };
+      } catch (error) {
+        // Default normal spread
+        return {
+          source: 'default',
+          value: 3.5,
+          label: 'normal',
+          timestamp: new Date().toISOString(),
+          error: error.message,
+        };
+      }
+    });
+  }
+
+  /**
+   * Calculate advance/decline ratio from market data
+   */
+  async fetchAdvanceDecline() {
+    return this.getCachedOrFetch('advance_decline', async () => {
+      console.log('Calculating Advance/Decline from database...');
+
+      try {
+        // Calculate from our price data - stocks up vs down today
+        const result = this.db.prepare(`
+          WITH latest_prices AS (
+            SELECT
+              dp.company_id,
+              dp.close as current_close,
+              LAG(dp.close) OVER (PARTITION BY dp.company_id ORDER BY dp.date) as prev_close
+            FROM daily_prices dp
+            WHERE dp.date >= date('now', '-5 days')
+          )
+          SELECT
+            SUM(CASE WHEN current_close > prev_close THEN 1 ELSE 0 END) as advances,
+            SUM(CASE WHEN current_close < prev_close THEN 1 ELSE 0 END) as declines,
+            SUM(CASE WHEN current_close = prev_close THEN 1 ELSE 0 END) as unchanged
+          FROM latest_prices
+          WHERE prev_close IS NOT NULL
+        `).get();
+
+        if (!result || !result.advances) {
+          throw new Error('No price data for A/D calculation');
+        }
+
+        const ratio = result.declines > 0 ? result.advances / result.declines : result.advances;
+        const netAdvances = result.advances - result.declines;
+
+        let label;
+        if (ratio > 2.0) label = 'very_bullish';
+        else if (ratio > 1.5) label = 'bullish';
+        else if (ratio > 1.0) label = 'slightly_bullish';
+        else if (ratio > 0.67) label = 'slightly_bearish';
+        else if (ratio > 0.5) label = 'bearish';
+        else label = 'very_bearish';
+
+        return {
+          source: 'database',
+          value: Math.round(ratio * 100) / 100,
+          advances: result.advances,
+          declines: result.declines,
+          unchanged: result.unchanged,
+          netAdvances,
+          label,
+          timestamp: new Date().toISOString(),
+        };
+      } catch (error) {
+        return {
+          source: 'default',
+          value: 1.0,
+          label: 'neutral',
+          timestamp: new Date().toISOString(),
+          error: error.message,
+        };
+      }
+    });
+  }
+
+  /**
    * Get all market sentiment indicators
    */
   async fetchAllIndicators() {
     console.log('Fetching all market sentiment indicators...');
 
-    const [cnnFearGreed, cryptoFearGreed, vix] = await Promise.all([
+    const [cnnFearGreed, cryptoFearGreed, vix, putCallRatio, highYieldSpread, advanceDecline] = await Promise.all([
       this.fetchCNNFearGreed().catch((e) => ({ source: 'cnn', error: e.message })),
       this.fetchCryptoFearGreed().catch((e) => ({ source: 'crypto', error: e.message })),
       this.fetchVIX().catch((e) => ({ source: 'vix', error: e.message })),
+      this.fetchPutCallRatio().catch((e) => ({ source: 'put_call', error: e.message })),
+      this.fetchHighYieldSpread().catch((e) => ({ source: 'hy_spread', error: e.message })),
+      this.fetchAdvanceDecline().catch((e) => ({ source: 'ad_ratio', error: e.message })),
     ]);
 
     const result = {
       cnn: cnnFearGreed,
       crypto: cryptoFearGreed,
       vix,
+      putCallRatio,
+      highYieldSpread,
+      advanceDecline,
       overall: this.calculateOverallSentiment(cnnFearGreed, vix),
       timestamp: new Date().toISOString(),
     };
@@ -412,6 +609,42 @@ class FearGreedFetcher {
           null,
           data.vix.previousClose,
           data.vix.change
+        );
+      }
+
+      // Store Put/Call Ratio
+      if (data.putCallRatio && !data.putCallRatio.error) {
+        stmt.run(
+          'put_call_ratio',
+          data.putCallRatio.value,
+          data.putCallRatio.label,
+          JSON.stringify({ source: data.putCallRatio.source, note: data.putCallRatio.note }),
+          null,
+          null
+        );
+      }
+
+      // Store High Yield Spread
+      if (data.highYieldSpread && !data.highYieldSpread.error) {
+        stmt.run(
+          'high_yield_spread',
+          data.highYieldSpread.value,
+          data.highYieldSpread.label,
+          JSON.stringify({ hygPrice: data.highYieldSpread.hygPrice, lqdPrice: data.highYieldSpread.lqdPrice }),
+          null,
+          null
+        );
+      }
+
+      // Store Advance/Decline
+      if (data.advanceDecline && !data.advanceDecline.error) {
+        stmt.run(
+          'advance_decline',
+          data.advanceDecline.value,
+          data.advanceDecline.label,
+          JSON.stringify({ advances: data.advanceDecline.advances, declines: data.advanceDecline.declines }),
+          null,
+          data.advanceDecline.netAdvances
         );
       }
 

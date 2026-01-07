@@ -8,8 +8,10 @@ import {
 import { insidersAPI, pricesAPI } from '../services/api';
 import { WatchlistButton } from '../components';
 import { PageHeader } from '../components/ui';
+import { SkeletonInsiderTrading } from '../components/Skeleton';
 import { Clock } from 'lucide-react';
 import { useFormatters } from '../hooks/useFormatters';
+import { SectionErrorBoundary } from '../components/ErrorBoundary';
 import './InsiderTradingPage.css';
 
 // Sortable table header component
@@ -141,7 +143,8 @@ function InsiderTradingPage() {
 
   // Load initial data
   useEffect(() => {
-    loadData(); // eslint-disable-line react-hooks/exhaustive-deps
+    loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period]);
 
   const loadData = async () => {
@@ -273,20 +276,22 @@ function InsiderTradingPage() {
       {monthlyTrend.length > 0 && (
         <div className="card chart-card">
           <h3>Monthly Insider Activity (TTM)</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={monthlyTrend}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-primary)" />
-              <XAxis dataKey="month" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} />
-              <YAxis tickFormatter={(v) => formatCurrency(v)} tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} />
-              <Tooltip
-                contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}
-                formatter={(value) => formatCurrency(value)}
-              />
-              <Legend />
-              <Bar dataKey="buy_value" name="Buy Value" fill="#10b981" />
-              <Bar dataKey="sell_value" name="Sell Value" fill="#ef4444" />
-            </BarChart>
-          </ResponsiveContainer>
+          <SectionErrorBoundary section="Monthly Trend Chart">
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={monthlyTrend}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-primary)" />
+                <XAxis dataKey="month" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} />
+                <YAxis tickFormatter={(v) => formatCurrency(v)} tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} />
+                <Tooltip
+                  contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}
+                  formatter={(value) => formatCurrency(value)}
+                />
+                <Legend />
+                <Bar dataKey="buy_value" name="Buy Value" fill="#10b981" />
+                <Bar dataKey="sell_value" name="Sell Value" fill="#ef4444" />
+              </BarChart>
+            </ResponsiveContainer>
+          </SectionErrorBoundary>
         </div>
       )}
 
@@ -573,6 +578,19 @@ function InsiderTradingPage() {
           <span>Error loading data: {error}</span>
           <button onClick={loadData}>Retry</button>
         </div>
+      </div>
+    );
+  }
+
+  // Show skeleton on initial load
+  if (loading && !stats) {
+    return (
+      <div className="insider-page">
+        <PageHeader
+          title="Insider Trading"
+          subtitle="Track insider buying and selling activity"
+        />
+        <SkeletonInsiderTrading />
       </div>
     );
   }

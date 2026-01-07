@@ -40,18 +40,18 @@
   to { transform: rotate(360deg); }
 }
 
-/* Header */
+/* Header - Matches PortfolioListPage */
 .page-header {
   background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-primary);
-  padding: var(--space-6) var(--space-8);
+  border-bottom: 1px solid var(--border-color);
+  padding: var(--space-6) 32px;
 }
 
 .header-content {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  max-width: 1600px;
+  max-width: 1400px;
   margin: 0 auto;
 }
 
@@ -62,7 +62,7 @@
 }
 
 .header-title svg {
-  color: var(--brand-primary);
+  color: var(--accent-primary);
 }
 
 .header-title h1 {
@@ -73,7 +73,7 @@
 }
 
 .header-subtitle {
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   color: var(--text-secondary);
   margin: var(--space-1) 0 0 0;
 }
@@ -97,18 +97,18 @@
 }
 
 .btn-primary {
-  background: var(--brand-primary);
+  background: var(--accent-primary);
   color: white;
 }
 
 .btn-primary:hover {
-  background: var(--brand-tertiary);
+  background: var(--accent-hover);
 }
 
 .btn-secondary {
   background: var(--bg-tertiary);
   color: var(--text-primary);
-  border: 1px solid var(--border-primary);
+  border: 1px solid var(--border-color);
 }
 
 .btn-secondary:hover {
@@ -126,9 +126,9 @@
 
 /* Page Content */
 .page-content {
-  max-width: 1600px;
+  max-width: 1400px;
   margin: 0 auto;
-  padding: var(--space-6) var(--space-8);
+  padding: var(--space-8);
 }
 
 /* Filters */
@@ -143,7 +143,7 @@
   align-items: center;
   gap: var(--space-3);
   background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   padding: var(--space-3) var(--space-4);
   flex: 1;
@@ -172,7 +172,7 @@
   align-items: center;
   gap: var(--space-2);
   background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   padding: var(--space-3) var(--space-4);
 }
@@ -194,7 +194,7 @@
 .view-toggle {
   display: flex;
   background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   padding: var(--space-1);
   gap: var(--space-1);
@@ -220,7 +220,7 @@
 }
 
 .view-btn.active {
-  background: var(--brand-primary);
+  background: var(--accent-primary);
   color: white;
 }
 
@@ -249,29 +249,29 @@
 }
 
 .section-title svg {
-  color: var(--brand-primary);
+  color: var(--accent-primary);
 }
 
 /* Investor Cards */
 .investor-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: var(--space-5);
 }
 
 .investor-card {
   background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-lg);
-  padding: var(--space-5);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
   text-decoration: none;
   transition: all 0.2s;
 }
 
 .investor-card:hover {
-  border-color: var(--brand-primary);
+  border-color: var(--accent-primary);
   transform: translateY(-2px);
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
 }
 
 .investor-card-header {
@@ -282,14 +282,14 @@
 }
 
 .investor-avatar {
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, var(--brand-primary), var(--brand-secondary));
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--text-xl);
+  font-size: var(--text-lg);
   font-weight: 600;
   color: white;
 }
@@ -325,7 +325,7 @@
 
 .investor-card:hover .card-arrow {
   transform: translateX(4px);
-  color: var(--brand-primary);
+  color: var(--accent-primary);
 }
 
 .investor-style {
@@ -359,7 +359,7 @@
   grid-template-columns: repeat(3, 1fr);
   gap: var(--space-3);
   padding-top: var(--space-4);
-  border-top: 1px solid var(--border-primary);
+  border-top: 1px solid var(--border-color);
 }
 
 .stat {
@@ -403,8 +403,8 @@
 
 .sidebar-section {
   background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
   padding: var(--space-5);
 }
 
@@ -419,7 +419,7 @@
 }
 
 .sidebar-title svg {
-  color: var(--brand-primary);
+  color: var(--accent-primary);
 }
 
 /* Most Owned List */
@@ -487,7 +487,7 @@
 .ownership .count {
   font-size: var(--text-xs);
   font-weight: 500;
-  color: var(--brand-primary);
+  color: var(--accent-primary);
 }
 
 .ownership .value {
@@ -549,7 +549,7 @@
 }
 
 .activity-symbol:hover {
-  color: var(--brand-primary);
+  color: var(--accent-primary);
 }
 
 .activity-type {
@@ -601,7 +601,7 @@
 }
 
 .section-title svg {
-  color: var(--brand-primary);
+  color: var(--accent-primary);
 }
 
 .benchmark-stats {
@@ -621,23 +621,20 @@
 }
 
 .stat-card.glass {
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
 }
 
 .stat-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
 }
 
 .stat-icon {
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, var(--brand-primary), var(--brand-secondary));
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -696,10 +693,8 @@
 }
 
 .index-card.glass {
-  background: rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
 }
 
 .index-card:hover {
@@ -753,59 +748,17 @@
 }
 
 /* ==========================================================================
-   Improved Investor Cards
+   Improved Investor Cards - Aligned with PortfolioListPage
    ========================================================================== */
 
-.investor-card {
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: var(--radius-xl);
-  padding: var(--space-5);
-  text-decoration: none;
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
-}
-
-.investor-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 48px rgba(99, 102, 241, 0.15);
-  border-color: var(--brand-primary);
-}
-
-.investor-avatar {
-  width: 56px;
-  height: 56px;
-  border-radius: var(--radius-xl);
-  background: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-secondary) 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-xl);
-  font-weight: 700;
-  color: white;
-  flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
-}
-
-.investor-description {
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  line-height: 1.5;
-  margin: var(--space-3) 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
+/* Note: Main investor card styles are defined above in Investor Cards section */
 
 .investor-stats {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding-top: var(--space-3);
-  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-color);
 }
 
 .investor-stats .stat {
@@ -818,13 +771,13 @@
 }
 
 .investor-stats .stat svg {
-  color: var(--brand-primary);
+  color: var(--accent-primary);
   flex-shrink: 0;
   opacity: 0.8;
 }
 
 .investor-stats .stat-label {
-  font-size: 0.7rem;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
   font-weight: 500;
   min-width: 55px;
@@ -832,7 +785,7 @@
 }
 
 .investor-stats .stat-value {
-  font-size: 0.75rem;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
@@ -876,7 +829,7 @@
   align-items: center;
   justify-content: space-between;
   padding: var(--space-6);
-  border-bottom: 1px solid var(--border-primary);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .modal-header h2 {
@@ -927,7 +880,7 @@
 .form-group textarea {
   width: 100%;
   padding: var(--space-3);
-  border: 1px solid var(--border-primary);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   font-size: var(--text-sm);
   font-family: inherit;
@@ -938,7 +891,7 @@
 .form-group select:focus,
 .form-group textarea:focus {
   outline: none;
-  border-color: var(--brand-primary);
+  border-color: var(--accent-primary);
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
 }
 
@@ -962,7 +915,7 @@
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  background: var(--brand-primary);
+  background: var(--accent-primary);
   color: white;
   border: none;
   border-radius: var(--radius-md);
@@ -974,7 +927,7 @@
 }
 
 .btn-search-cik:hover:not(:disabled) {
-  background: var(--brand-primary-dark);
+  background: var(--accent-hover);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
 }
@@ -996,9 +949,9 @@
 .cik-search-results {
   max-height: 300px;
   overflow-y: auto;
-  border: 1px solid var(--border-primary);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  background: white;
+  background: var(--bg-primary);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
@@ -1063,7 +1016,7 @@
 }
 
 .form-hint a {
-  color: var(--brand-primary);
+  color: var(--accent-primary);
   text-decoration: none;
 }
 
@@ -1076,7 +1029,7 @@
   gap: var(--space-3);
   justify-content: flex-end;
   padding-top: var(--space-4);
-  border-top: 1px solid var(--border-primary);
+  border-top: 1px solid var(--border-color);
 }
 
 /* ==========================================================================
@@ -1138,13 +1091,10 @@
    ========================================================================== */
 
 .investors-table-container {
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-xl);
   overflow: hidden;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
 }
 
 .investors-table {
@@ -1154,7 +1104,7 @@
 
 .investors-table thead {
   background: var(--bg-tertiary);
-  border-bottom: 1px solid var(--border-primary);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .investors-table th {
@@ -1175,7 +1125,7 @@
 }
 
 .investors-table th.sortable:hover {
-  color: var(--brand-primary);
+  color: var(--accent-primary);
   background: var(--bg-hover);
 }
 
@@ -1205,7 +1155,7 @@
 }
 
 .investors-table tbody tr {
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-color);
   transition: background 0.2s;
 }
 
@@ -1214,7 +1164,7 @@
 }
 
 .investors-table tbody tr:hover {
-  background: rgba(99, 102, 241, 0.04);
+  background: var(--bg-hover);
 }
 
 .investors-table td {
@@ -1237,14 +1187,14 @@
 }
 
 .investor-link:hover .investor-name {
-  color: var(--brand-primary);
+  color: var(--accent-primary);
 }
 
 .investor-avatar-sm {
   width: 40px;
   height: 40px;
   border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-secondary) 100%);
+  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1252,7 +1202,6 @@
   font-weight: 600;
   color: white;
   flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
 }
 
 .investor-name-cell {
@@ -1322,7 +1271,7 @@
   height: 32px;
   border-radius: var(--radius-md);
   background: var(--bg-tertiary);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-color);
   color: var(--text-secondary);
   text-decoration: none;
   cursor: pointer;
@@ -1330,8 +1279,8 @@
 }
 
 .action-btn:hover {
-  background: var(--brand-primary);
-  border-color: var(--brand-primary);
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
   color: white;
   transform: translateY(-1px);
 }

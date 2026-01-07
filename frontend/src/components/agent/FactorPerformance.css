@@ -1,0 +1,116 @@
+/* frontend/src/components/agent/FactorPerformance.css */
+
+.factor-performance {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.factor-performance--loading {
+  min-height: 350px;
+}
+
+.factor-performance__skeleton-header {
+  height: 32px;
+  width: 50%;
+}
+
+.factor-performance__skeleton-chart {
+  height: 200px;
+}
+
+.factor-performance--error {
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.factor-performance__error {
+  color: var(--text-secondary);
+}
+
+/* Header */
+.factor-performance__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.factor-performance__title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.factor-performance__period-select {
+  padding: 6px 12px;
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.factor-performance__period-select:focus {
+  outline: none;
+  border-color: var(--brand-primary);
+}
+
+/* Chart */
+.factor-performance__chart {
+  margin-top: 8px;
+}
+
+/* Summary */
+.factor-performance__summary {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.factor-performance__summary-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 8px;
+}
+
+.factor-performance__summary-item--positive {
+  background: var(--positive-muted);
+  color: var(--positive);
+}
+
+.factor-performance__summary-item--negative {
+  background: var(--negative-muted);
+  color: var(--negative);
+}
+
+.factor-performance__summary-item svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.factor-performance__summary-label {
+  display: block;
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+.factor-performance__summary-value {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* Footer */
+.factor-performance__footer {
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}

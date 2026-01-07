@@ -6,10 +6,45 @@ const db = require('../../database');
 const TRADING_DAYS_PER_YEAR = 252;
 const RISK_FREE_RATE = 0.05;
 
+// Default transaction cost parameters
+const DEFAULT_COSTS = {
+  commissionBps: 5,        // 5 basis points commission
+  spreadBps: 5,            // 5 bps half-spread
+  impactCoefficient: 0.1,  // Market impact coefficient
+};
+
 class BacktestEngine {
   constructor() {
     this.db = db.getDatabase();
     console.log('📈 Backtest Engine initialized');
+  }
+
+  /**
+   * Calculate transaction cost for a trade
+   * Uses Almgren-Chriss style market impact model
+   */
+  _calculateTransactionCost(tradeValue, avgDailyVolume, volatility, costConfig) {
+    const config = { ...DEFAULT_COSTS, ...costConfig };
+
+    // Commission cost
+    const commission = tradeValue * (config.commissionBps / 10000);
+
+    // Spread cost
+    const spreadCost = tradeValue * (config.spreadBps / 10000);
+
+    // Market impact (simplified Almgren-Chriss)
+    // Impact = η × σ × sqrt(Q/V)
+    const participationRate = avgDailyVolume > 0 ? tradeValue / avgDailyVolume : 0.01;
+    const vol = volatility || 0.02;
+    const impactCost = tradeValue * config.impactCoefficient * vol * Math.sqrt(Math.min(participationRate, 0.3));
+
+    return {
+      commission,
+      spreadCost,
+      impactCost,
+      totalCost: commission + spreadCost + impactCost,
+      totalCostBps: tradeValue > 0 ? ((commission + spreadCost + impactCost) / tradeValue) * 10000 : 0,
+    };
   }
 
   // ============================================
@@ -26,8 +61,15 @@ class BacktestEngine {
       initialValue = 100000,
       benchmarkIndexId = 1, // S&P 500 by default
       rebalanceFrequency = 'never', // monthly, quarterly, annually, never
-      reinvestDividends = true
+      reinvestDividends = true,
+      includeTransactionCosts = true,  // NEW: Enable transaction cost modeling
+      transactionCosts = {},            // NEW: Custom cost parameters
     } = config;
+
+    // Store cost config for use in trades
+    this._costConfig = includeTransactionCosts ? { ...DEFAULT_COSTS, ...transactionCosts } : null;
+    this._totalTransactionCosts = 0;
+    this._transactionCostBreakdown = { commission: 0, spread: 0, impact: 0 };
 
     // Validate inputs
     if (!allocations || allocations.length === 0) {
@@ -164,6 +206,19 @@ class BacktestEngine {
 
     const executionTimeMs = Date.now() - startTime;
 
+    // Calculate transaction cost impact on returns
+    const transactionCostImpact = this._costConfig ? {
+      totalCosts: Math.round(this._totalTransactionCosts * 100) / 100,
+      totalCostsBps: Math.round((this._totalTransactionCosts / initialValue) * 10000 * 10) / 10,
+      breakdown: {
+        commission: Math.round(this._transactionCostBreakdown.commission * 100) / 100,
+        spread: Math.round(this._transactionCostBreakdown.spread * 100) / 100,
+        marketImpact: Math.round(this._transactionCostBreakdown.impact * 100) / 100,
+      },
+      costPerTrade: totalTrades > 0 ? Math.round((this._totalTransactionCosts / totalTrades) * 100) / 100 : 0,
+      returnDrag: Math.round((this._totalTransactionCosts / initialValue) * 100 * 100) / 100, // As percentage
+    } : null;
+
     // Save backtest to database
     const result = {
       name,
@@ -190,6 +245,7 @@ class BacktestEngine {
       trackingError: benchmarkMetrics?.trackingError,
       informationRatio: benchmarkMetrics?.informationRatio,
       totalTrades,
+      transactionCostImpact,  // NEW: Transaction cost summary
       annualReturns: JSON.stringify(annualReturnsList),
       valueSeries: JSON.stringify(this._sampleSeries(valueSeries, 500)),
       drawdownSeries: JSON.stringify(this._sampleSeries(drawdownSeries, 500)),
@@ -348,11 +404,27 @@ class BacktestEngine {
     };
 
     for (const pos of positions) {
-      const allocationAmount = initialValue * pos.weight;
+      let allocationAmount = initialValue * pos.weight;
       const startPrice = priceData[pos.companyId]?.[startDate]?.close;
 
       if (!startPrice) {
         throw new Error(`No price data for ${pos.symbol} on ${startDate}`);
+      }
+
+      // Apply transaction costs on initial purchase
+      if (this._costConfig) {
+        const avgVolume = priceData[pos.companyId]?.[startDate]?.volume || 1000000;
+        const avgDailyValue = avgVolume * startPrice;
+        const costs = this._calculateTransactionCost(allocationAmount, avgDailyValue, 0.02, this._costConfig);
+
+        // Deduct costs from allocation
+        allocationAmount -= costs.totalCost;
+
+        // Track costs
+        this._totalTransactionCosts += costs.totalCost;
+        this._transactionCostBreakdown.commission += costs.commission;
+        this._transactionCostBreakdown.spread += costs.spreadCost;
+        this._transactionCostBreakdown.impact += costs.impactCost;
       }
 
       const shares = allocationAmount / startPrice;
@@ -404,12 +476,31 @@ class BacktestEngine {
 
       const targetValue = portfolioValue * target.weight;
       const currentValue = pos.currentValue;
-      const diff = targetValue - currentValue;
+      let diff = targetValue - currentValue;
 
       const currentPrice = priceData[pos.companyId]?.[date]?.close;
       if (!currentPrice) continue;
 
       if (Math.abs(diff) > portfolioValue * 0.01) { // 1% threshold
+        // Apply transaction costs on rebalance trades
+        if (this._costConfig) {
+          const tradeValue = Math.abs(diff);
+          const avgVolume = priceData[pos.companyId]?.[date]?.volume || 1000000;
+          const avgDailyValue = avgVolume * currentPrice;
+          const costs = this._calculateTransactionCost(tradeValue, avgDailyValue, 0.02, this._costConfig);
+
+          // Reduce trade amount by cost (for buys) or deduct from proceeds (for sells)
+          if (diff > 0) {
+            diff -= costs.totalCost;
+          }
+
+          // Track costs
+          this._totalTransactionCosts += costs.totalCost;
+          this._transactionCostBreakdown.commission += costs.commission;
+          this._transactionCostBreakdown.spread += costs.spreadCost;
+          this._transactionCostBreakdown.impact += costs.impactCost;
+        }
+
         const sharesToTrade = diff / currentPrice;
         pos.shares += sharesToTrade;
         pos.currentValue = pos.shares * currentPrice;

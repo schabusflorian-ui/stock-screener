@@ -245,7 +245,7 @@ router.get('/:symbol/metrics', (req, res) => {
  */
 router.post('/import', (req, res) => {
   try {
-    const { limit, batchSize = 50, delay = 2 } = req.body;
+    const { limit, batchSize = 50, delay = 2 } = req.body || {};
 
     const pythonScript = path.join(__dirname, '../../../python-services/price_fetcher.py');
     const dbPath = path.join(__dirname, '../../../data/stocks.db');

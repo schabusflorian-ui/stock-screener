@@ -18,6 +18,15 @@ const advancedAnalytics = require('./advancedAnalytics');
 const whatIfAnalysis = require('./whatIfAnalysis');
 const rebalanceCalculator = require('./rebalanceCalculator');
 
+// Hedge fund-grade optimization (Agent 2 - Phase 2)
+const { VaRCalculator } = require('./varCalculator');
+const { EfficientFrontierCalculator } = require('./efficientFrontier');
+const { HierarchicalRiskParity } = require('./hierarchicalRiskParity');
+const { PerformanceAttribution } = require('./performanceAttribution');
+
+// Dividend processing
+const { DividendProcessor, getDividendProcessor } = require('./dividendProcessor');
+
 class PortfolioService {
   constructor(db) {
     this.db = db;
@@ -32,6 +41,14 @@ class PortfolioService {
       // Portfolio CRUD
       getAllPortfolios: this.db.prepare(`
         SELECT p.*,
+          p.current_value as total_value,
+          p.current_cash as cash_balance,
+          (p.current_value - p.total_deposited + p.total_withdrawn) as total_gain,
+          CASE
+            WHEN p.total_deposited > 0
+            THEN ((p.current_value - p.total_deposited + p.total_withdrawn) / p.total_deposited) * 100
+            ELSE 0
+          END as total_gain_pct,
           (SELECT COUNT(*) FROM portfolio_positions WHERE portfolio_id = p.id) as positions_count
         FROM portfolios p
         WHERE p.is_archived = 0
@@ -924,5 +941,13 @@ module.exports = {
   STRESS_SCENARIOS,
   advancedAnalytics,
   whatIfAnalysis,
-  rebalanceCalculator
+  rebalanceCalculator,
+  // Hedge fund-grade optimization (Agent 2 - Phase 2)
+  VaRCalculator,
+  EfficientFrontierCalculator,
+  HierarchicalRiskParity,
+  PerformanceAttribution,
+  // Dividend processing
+  DividendProcessor,
+  getDividendProcessor,
 };

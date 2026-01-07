@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { ipoAPI } from '../services/api';
 import { PageHeader, Button } from '../components/ui';
+import { SkeletonIPOPipeline } from '../components/Skeleton';
 import { useFormatters } from '../hooks/useFormatters';
 import './IPOPipelinePage.css';
 
@@ -120,6 +121,9 @@ function IPOPipelinePage() {
     sortBy: 'initial_s1_date',
     sortOrder: 'DESC'
   });
+  const [filterType, setFilterType] = useState('all'); // 'all' | 'watchlist' | 'recent'
+  const [watchlistData, setWatchlistData] = useState([]);
+  const [recentData, setRecentData] = useState([]);
 
   // Load pipeline data
   const loadData = useCallback(async () => {
@@ -156,13 +160,45 @@ function IPOPipelinePage() {
     }
   }, [filters]);
 
+  // Load watchlist data
+  const loadWatchlist = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await ipoAPI.getWatchlist();
+      setWatchlistData(res.data.data || []);
+    } catch (error) {
+      console.error('Error loading watchlist:', error);
+      setWatchlistData([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Load recently completed IPOs
+  const loadRecent = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await ipoAPI.getRecent(20);
+      setRecentData(res.data.data || []);
+    } catch (error) {
+      console.error('Error loading recent IPOs:', error);
+      setRecentData([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    if (viewMode === 'kanban') {
+    if (filterType === 'watchlist') {
+      loadWatchlist();
+    } else if (filterType === 'recent') {
+      loadRecent();
+    } else if (viewMode === 'kanban') {
       loadData();
     } else {
       loadListData();
     }
-  }, [viewMode, loadData, loadListData]);
+  }, [viewMode, filterType, loadData, loadListData, loadWatchlist, loadRecent]);
 
   // Check for new filings
   const checkForNewFilings = async () => {
@@ -208,7 +244,15 @@ function IPOPipelinePage() {
   };
 
   if (loading && !pipeline.S1_FILED) {
-    return <div className="loading">Loading IPO Pipeline...</div>;
+    return (
+      <div className="ipo-pipeline-page">
+        <PageHeader
+          title="IPO Pipeline"
+          subtitle="Track upcoming IPOs from S-1 filing to trading"
+        />
+        <SkeletonIPOPipeline />
+      </div>
+    );
   }
 
   return (
@@ -293,10 +337,10 @@ function IPOPipelinePage() {
       )}
 
       {/* Statistics Bar */}
-      {!searchResults && <StatsBar statistics={statistics} formatCurrency={formatCurrency} />}
+      {!searchResults && filterType === 'all' && <StatsBar statistics={statistics} formatCurrency={formatCurrency} />}
 
       {/* Main Content - Kanban or List View */}
-      {!searchResults && (
+      {!searchResults && filterType === 'all' && (
         <>
           {viewMode === 'kanban' ? (
             <div className="ipo-kanban">
@@ -425,15 +469,71 @@ function IPOPipelinePage() {
         </>
       )}
 
-      {/* Quick Links */}
+      {/* Quick Filter Buttons */}
       <div className="ipo-quick-links">
-        <Link to="/ipo/watchlist" className="quick-link">
+        <button
+          className={`quick-link ${filterType === 'all' ? 'active' : ''}`}
+          onClick={() => setFilterType('all')}
+        >
+          All IPOs
+        </button>
+        <button
+          className={`quick-link ${filterType === 'watchlist' ? 'active' : ''}`}
+          onClick={() => setFilterType('watchlist')}
+        >
           My Watchlist
-        </Link>
-        <Link to="/ipo/recent" className="quick-link">
+        </button>
+        <button
+          className={`quick-link ${filterType === 'recent' ? 'active' : ''}`}
+          onClick={() => setFilterType('recent')}
+        >
           Recently Completed
-        </Link>
+        </button>
       </div>
+
+      {/* Watchlist View */}
+      {filterType === 'watchlist' && !loading && (
+        <div className="filtered-ipo-view">
+          <h3>My IPO Watchlist</h3>
+          {watchlistData.length === 0 ? (
+            <div className="no-results">
+              No IPOs in your watchlist yet. Click the star icon on any IPO to add it.
+            </div>
+          ) : (
+            <div className="ipo-cards-grid">
+              {watchlistData.map(ipo => (
+                <IPOCard
+                  key={ipo.id}
+                  ipo={ipo}
+                  formatCurrency={formatCurrency}
+                  formatDate={formatDate}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Recently Completed View */}
+      {filterType === 'recent' && !loading && (
+        <div className="filtered-ipo-view">
+          <h3>Recently Completed IPOs</h3>
+          {recentData.length === 0 ? (
+            <div className="no-results">No recently completed IPOs found.</div>
+          ) : (
+            <div className="ipo-cards-grid">
+              {recentData.map(ipo => (
+                <IPOCard
+                  key={ipo.id}
+                  ipo={ipo}
+                  formatCurrency={formatCurrency}
+                  formatDate={formatDate}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

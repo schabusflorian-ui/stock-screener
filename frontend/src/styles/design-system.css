@@ -41,6 +41,11 @@
   --brand-accent: #a78bfa;
   --brand-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
 
+  /* Accent Colors (aliases for consistency across components) */
+  --accent-primary: #6366f1;
+  --accent-secondary: #8b5cf6;
+  --color-accent: #6366f1;
+
   /* Semantic Colors */
   --positive: #10b981;
   --positive-muted: rgba(16, 185, 129, 0.1);

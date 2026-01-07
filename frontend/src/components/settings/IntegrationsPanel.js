@@ -16,11 +16,14 @@ function IntegrationsPanel() {
   const fetchIntegrations = async () => {
     try {
       const response = await settingsAPI.getIntegrations();
-      setIntegrations(response.data.integrations || []);
+      // API returns { success: true, data: [...] }
+      const data = response.data?.data || response.data?.integrations || response.data || [];
+      setIntegrations(Array.isArray(data) ? data : []);
       setError(null);
     } catch (err) {
-      setError('Failed to load integrations');
-      console.error(err);
+      const errorMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to load integrations';
+      setError(errorMsg);
+      console.error('Integrations error:', err);
     } finally {
       setLoading(false);
     }

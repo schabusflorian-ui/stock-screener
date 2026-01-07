@@ -1,18 +1,19 @@
 // frontend/src/components/portfolio/PerformanceChart.js
 // Line chart showing portfolio value over time with benchmark comparison
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
-  LineChart,
+  ComposedChart,
   Line,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
   ReferenceLine
 } from 'recharts';
+import { indicesAPI } from '../../services/api';
 import './PerformanceChart.css';
 
 const PERIOD_OPTIONS = [
@@ -25,49 +26,126 @@ const PERIOD_OPTIONS = [
   { value: 'all', label: 'ALL' }
 ];
 
+// Overlay toggle options for index comparison
+const OVERLAY_OPTIONS = [
+  { key: 'spy', label: 'S&P 500', color: '#94a3b8', type: 'index', symbol: '^GSPC' },
+  { key: 'qqq', label: 'NASDAQ', color: '#06b6d4', type: 'index', symbol: '^IXIC' },
+  { key: 'dia', label: 'Dow Jones', color: '#f97316', type: 'index', symbol: '^DJI' },
+  { key: 'alpha', label: 'Alpha', color: '#8b5cf6', type: 'alpha' }
+];
+
 function PerformanceChart({
   data = [],
-  benchmarkData = [],
   period = '1y',
   onPeriodChange,
   showBenchmark = true,
-  showVolume = false,
-  height = 300,
-  portfolioName = 'Portfolio',
-  benchmarkName = 'S&P 500'
+  initialShowAlpha = false,
+  height = 350,
+  portfolioName = 'Portfolio'
 }) {
-  // Process data for chart
+  // Index data state
+  const [indexData, setIndexData] = useState({ spy: null, qqq: null, dia: null });
+
+  // Overlay toggles - SPY default on (as benchmark), others off
+  const [overlays, setOverlays] = useState({
+    spy: showBenchmark,
+    qqq: false,
+    dia: false,
+    alpha: initialShowAlpha
+  });
+
+  // Fetch index data when period changes
+  useEffect(() => {
+    async function fetchIndexData() {
+      if (!data || data.length === 0) return;
+
+      const indexSymbols = [
+        { key: 'spy', symbol: '^GSPC' },
+        { key: 'qqq', symbol: '^IXIC' },
+        { key: 'dia', symbol: '^DJI' }
+      ];
+
+      const indexPromises = indexSymbols.map(async (idx) => {
+        try {
+          const res = await indicesAPI.getPrices(idx.symbol, period);
+          if (res.data.success && res.data.data && res.data.data.length > 0) {
+            const sortedData = [...res.data.data].reverse();
+            return { key: idx.key, data: sortedData };
+          }
+        } catch (e) {
+          console.log(`No ${idx.key} data available`);
+        }
+        return { key: idx.key, data: null };
+      });
+
+      const results = await Promise.all(indexPromises);
+      const newIndexData = {};
+      results.forEach(r => { newIndexData[r.key] = r.data; });
+      setIndexData(newIndexData);
+    }
+
+    fetchIndexData();
+  }, [period, data]);
+
+  const toggleOverlay = (key) => {
+    setOverlays(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  // Process data for chart with index overlays
   const chartData = useMemo(() => {
     if (!data || data.length === 0) return [];
 
-    // Create a map for benchmark values
-    const benchmarkMap = new Map();
-    if (benchmarkData && benchmarkData.length > 0) {
-      benchmarkData.forEach(item => {
-        benchmarkMap.set(item.date, item.value);
-      });
-    }
-
     // Calculate percentage returns from start
     const startValue = data[0].value;
-    const startBenchmark = benchmarkData?.[0]?.value || 1;
 
-    return data.map((item, index) => {
+    // Get start prices for indices
+    const spyStart = indexData.spy?.[0]?.adjusted_close || indexData.spy?.[0]?.close;
+    const qqqStart = indexData.qqq?.[0]?.adjusted_close || indexData.qqq?.[0]?.close;
+    const diaStart = indexData.dia?.[0]?.adjusted_close || indexData.dia?.[0]?.close;
+
+    // Create date maps for index lookups
+    const createIndexMap = (idxData) => {
+      const map = new Map();
+      if (idxData) {
+        idxData.forEach(p => {
+          map.set(p.date, p.adjusted_close || p.close);
+        });
+      }
+      return map;
+    };
+
+    const spyMap = createIndexMap(indexData.spy);
+    const qqqMap = createIndexMap(indexData.qqq);
+    const diaMap = createIndexMap(indexData.dia);
+
+    return data.map((item) => {
       const portfolioReturn = ((item.value - startValue) / startValue) * 100;
-      const benchmarkValue = benchmarkMap.get(item.date) || benchmarkData?.[index]?.value;
-      const benchmarkReturn = benchmarkValue
-        ? ((benchmarkValue - startBenchmark) / startBenchmark) * 100
-        : null;
+
+      // Get index returns
+      const spyPrice = spyMap.get(item.date);
+      const spyReturn = spyPrice && spyStart ? ((spyPrice - spyStart) / spyStart) * 100 : null;
+
+      const qqqPrice = qqqMap.get(item.date);
+      const qqqReturn = qqqPrice && qqqStart ? ((qqqPrice - qqqStart) / qqqStart) * 100 : null;
+
+      const diaPrice = diaMap.get(item.date);
+      const diaReturn = diaPrice && diaStart ? ((diaPrice - diaStart) / diaStart) * 100 : null;
+
+      // Alpha = Portfolio Return - S&P 500 Return
+      const alpha = spyReturn !== null ? portfolioReturn - spyReturn : null;
 
       return {
         date: item.date,
         value: item.value,
         portfolioReturn,
-        benchmarkReturn,
+        spyReturn,
+        qqqReturn,
+        diaReturn,
+        alpha,
         volume: item.volume
       };
     });
-  }, [data, benchmarkData]);
+  }, [data, indexData]);
 
   // Calculate summary stats
   const stats = useMemo(() => {
@@ -78,10 +156,8 @@ function PerformanceChart({
 
     return {
       totalReturn: lastPoint.portfolioReturn,
-      benchmarkReturn: lastPoint.benchmarkReturn,
-      alpha: lastPoint.benchmarkReturn !== null
-        ? lastPoint.portfolioReturn - lastPoint.benchmarkReturn
-        : null,
+      spyReturn: lastPoint.spyReturn,
+      alpha: lastPoint.alpha,
       currentValue: lastPoint.value,
       startValue: firstPoint.value,
       high: Math.max(...chartData.map(d => d.portfolioReturn)),
@@ -93,19 +169,35 @@ function PerformanceChart({
   const CustomTooltip = ({ active, payload, label }) => {
     if (!active || !payload || payload.length === 0) return null;
 
+    // Find alpha value from data point
+    const dataPoint = payload[0]?.payload;
+    const alpha = dataPoint?.alpha;
+
     return (
       <div className="performance-tooltip">
         <div className="tooltip-date">{formatDate(label)}</div>
-        {payload.map((entry, index) => (
-          <div key={index} className="tooltip-row" style={{ color: entry.color }}>
-            <span className="tooltip-label">{entry.name}:</span>
+        {payload.map((entry, index) => {
+          // Skip alphaRange from tooltip display
+          if (entry.dataKey === 'alphaRange') return null;
+          return (
+            <div key={index} className="tooltip-row" style={{ color: entry.color }}>
+              <span className="tooltip-label">{entry.name}:</span>
+              <span className="tooltip-value">
+                {entry.dataKey === 'value'
+                  ? formatCurrency(entry.value)
+                  : `${entry.value >= 0 ? '+' : ''}${entry.value.toFixed(2)}%`}
+              </span>
+            </div>
+          );
+        })}
+        {alpha !== null && alpha !== undefined && (
+          <div className={`tooltip-row alpha-row ${alpha >= 0 ? 'outperform' : 'underperform'}`}>
+            <span className="tooltip-label">Alpha:</span>
             <span className="tooltip-value">
-              {entry.dataKey === 'value'
-                ? formatCurrency(entry.value)
-                : `${entry.value >= 0 ? '+' : ''}${entry.value.toFixed(2)}%`}
+              {alpha >= 0 ? '+' : ''}{alpha.toFixed(2)}%
             </span>
           </div>
-        ))}
+        )}
       </div>
     );
   };
@@ -150,18 +242,18 @@ function PerformanceChart({
                   {formatPercent(stats.totalReturn)}
                 </span>
               </div>
-              {stats.benchmarkReturn !== null && (
+              {stats.spyReturn !== null && (
                 <div className="stat-item">
-                  <span className="stat-label">{benchmarkName}</span>
-                  <span className={`stat-value ${stats.benchmarkReturn >= 0 ? 'positive' : 'negative'}`}>
-                    {formatPercent(stats.benchmarkReturn)}
+                  <span className="stat-label">S&P 500</span>
+                  <span className={`stat-value ${stats.spyReturn >= 0 ? 'positive' : 'negative'}`}>
+                    {formatPercent(stats.spyReturn)}
                   </span>
                 </div>
               )}
               {stats.alpha !== null && (
-                <div className="stat-item">
+                <div className="stat-item alpha-stat">
                   <span className="stat-label">Alpha</span>
-                  <span className={`stat-value ${stats.alpha >= 0 ? 'positive' : 'negative'}`}>
+                  <span className={`stat-value ${stats.alpha >= 0 ? 'alpha-positive' : 'alpha-negative'}`}>
                     {formatPercent(stats.alpha)}
                   </span>
                 </div>
@@ -170,66 +262,105 @@ function PerformanceChart({
           )}
         </div>
 
-        {onPeriodChange && (
-          <div className="period-selector">
-            {PERIOD_OPTIONS.map(option => (
-              <button
-                key={option.value}
-                className={`period-btn ${period === option.value ? 'active' : ''}`}
-                onClick={() => onPeriodChange(option.value)}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="chart-controls">
+          {onPeriodChange && (
+            <div className="period-selector">
+              {PERIOD_OPTIONS.map(option => (
+                <button
+                  key={option.value}
+                  className={`period-btn ${period === option.value ? 'active' : ''}`}
+                  onClick={() => onPeriodChange(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Overlay toggles */}
+      <div className="overlay-toggles">
+        <span className="overlay-label">Compare:</span>
+        {OVERLAY_OPTIONS.map(opt => {
+          const isDisabled = (opt.type === 'index' && !indexData[opt.key]) ||
+                            (opt.type === 'alpha' && !indexData.spy);
+          return (
+            <button
+              key={opt.key}
+              className={`overlay-toggle ${overlays[opt.key] ? 'active' : ''} ${isDisabled ? 'disabled' : ''} ${opt.type === 'alpha' ? 'alpha-toggle' : ''}`}
+              onClick={() => !isDisabled && toggleOverlay(opt.key)}
+              disabled={isDisabled}
+              style={{ '--toggle-color': opt.color }}
+            >
+              <span className="overlay-indicator" style={{ backgroundColor: overlays[opt.key] ? opt.color : 'transparent' }} />
+              {opt.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Chart */}
       <div className="chart-container" style={{ height }}>
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart
+          <ComposedChart
             data={chartData}
             margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
           >
+            <defs>
+              {/* Gradient for positive alpha (outperformance) */}
+              <linearGradient id="alphaPositive" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0.05} />
+              </linearGradient>
+              {/* Gradient for negative alpha (underperformance) */}
+              <linearGradient id="alphaNegative" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#f97316" stopOpacity={0.05} />
+                <stop offset="100%" stopColor="#f97316" stopOpacity={0.3} />
+              </linearGradient>
+            </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
             <XAxis
               dataKey="date"
               tickFormatter={(date) => {
                 const d = new Date(date);
-                return d.toLocaleDateString('en-US', { month: 'short' });
+                return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
               }}
-              stroke="var(--text-tertiary)"
-              fontSize={11}
+              tick={{ fontSize: 11, fill: '#6b7280' }}
               tickLine={false}
+              axisLine={{ stroke: 'rgba(0,0,0,0.06)' }}
+              interval="preserveStartEnd"
             />
             <YAxis
+              domain={['auto', 'auto']}
               tickFormatter={(val) => `${val >= 0 ? '+' : ''}${val.toFixed(0)}%`}
-              stroke="var(--text-tertiary)"
-              fontSize={11}
+              tick={{ fontSize: 11, fill: '#6b7280' }}
               tickLine={false}
-              axisLine={false}
-              domain={['dataMin - 5', 'dataMax + 5']}
+              axisLine={{ stroke: 'rgba(0,0,0,0.06)' }}
+              width={55}
             />
             <Tooltip content={<CustomTooltip />} />
-            <Legend />
-            <ReferenceLine y={0} stroke="var(--text-tertiary)" strokeDasharray="3 3" />
+            <ReferenceLine y={0} stroke="#6b7280" strokeDasharray="3 3" />
 
-            <Line
-              type="monotone"
-              dataKey="portfolioReturn"
-              name={portfolioName}
-              stroke="#6366f1"
-              strokeWidth={2}
-              dot={false}
-              activeDot={{ r: 4, strokeWidth: 0 }}
-            />
+            {/* Alpha filled area (when enabled) */}
+            {overlays.alpha && indexData.spy && (
+              <Area
+                type="monotone"
+                dataKey="alpha"
+                stroke={stats?.alpha >= 0 ? '#8b5cf6' : '#f97316'}
+                strokeWidth={1}
+                fill={stats?.alpha >= 0 ? 'url(#alphaPositive)' : 'url(#alphaNegative)'}
+                name="Alpha"
+                legendType="none"
+              />
+            )}
 
-            {showBenchmark && benchmarkData.length > 0 && (
+            {/* S&P 500 line */}
+            {overlays.spy && indexData.spy && (
               <Line
                 type="monotone"
-                dataKey="benchmarkReturn"
-                name={benchmarkName}
+                dataKey="spyReturn"
+                name="S&P 500"
                 stroke="#94a3b8"
                 strokeWidth={1.5}
                 strokeDasharray="5 5"
@@ -237,7 +368,46 @@ function PerformanceChart({
                 activeDot={{ r: 3, strokeWidth: 0 }}
               />
             )}
-          </LineChart>
+
+            {/* NASDAQ line */}
+            {overlays.qqq && indexData.qqq && (
+              <Line
+                type="monotone"
+                dataKey="qqqReturn"
+                name="NASDAQ"
+                stroke="#06b6d4"
+                strokeWidth={1.5}
+                strokeDasharray="5 5"
+                dot={false}
+                activeDot={{ r: 3, strokeWidth: 0 }}
+              />
+            )}
+
+            {/* Dow Jones line */}
+            {overlays.dia && indexData.dia && (
+              <Line
+                type="monotone"
+                dataKey="diaReturn"
+                name="Dow Jones"
+                stroke="#f97316"
+                strokeWidth={1.5}
+                strokeDasharray="5 5"
+                dot={false}
+                activeDot={{ r: 3, strokeWidth: 0 }}
+              />
+            )}
+
+            {/* Portfolio line (always on top) */}
+            <Line
+              type="monotone"
+              dataKey="portfolioReturn"
+              name={portfolioName}
+              stroke={stats?.totalReturn >= 0 ? '#10b981' : '#ef4444'}
+              strokeWidth={2}
+              dot={false}
+              activeDot={{ r: 4, strokeWidth: 0 }}
+            />
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
 

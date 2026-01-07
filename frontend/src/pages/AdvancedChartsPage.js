@@ -347,48 +347,48 @@ function formatCorrelation(value, type) {
 
 // Correlation Heatmap Component
 function CorrelationHeatmap({ matrix, labels, type, onCellClick }) {
-  // Dynamic cell sizing - ensure minimum readability while fitting larger matrices
-  const cellSize = Math.max(45, Math.min(70, 500 / labels.length));
+  const cellSize = Math.max(50, Math.min(70, 500 / labels.length));
 
   return (
     <div className="heatmap-container">
-      <div className="heatmap" style={{ '--cell-size': `${cellSize}px` }}>
-        {/* Column headers */}
-        <div className="heatmap-row header-row">
-          <div className="heatmap-cell corner"></div>
-          {labels.map(label => (
-            <div key={label} className="heatmap-cell header">{label}</div>
+      <table className="heatmap-table" style={{ '--cell-size': `${cellSize}px` }}>
+        <thead>
+          <tr>
+            <th className="heatmap-corner"></th>
+            {labels.map(label => (
+              <th key={label} className="heatmap-col-header">{label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {labels.map((rowLabel, i) => (
+            <tr key={rowLabel}>
+              <td className="heatmap-row-header">{rowLabel}</td>
+              {labels.map((colLabel, j) => {
+                const value = matrix[rowLabel]?.[colLabel];
+                const color = getCorrelationColor(value, type);
+                const isDiagonal = i === j;
+
+                return (
+                  <td
+                    key={colLabel}
+                    className={`heatmap-data ${isDiagonal ? 'diagonal' : ''}`}
+                    style={{
+                      backgroundColor: isDiagonal ? 'rgba(0, 0, 0, 0.05)' : `${color}20`,
+                      color: isDiagonal ? '#9ca3af' : color,
+                      cursor: !isDiagonal ? 'pointer' : 'default'
+                    }}
+                    onClick={() => !isDiagonal && onCellClick && onCellClick(rowLabel, colLabel)}
+                    title={`${rowLabel} vs ${colLabel}: ${formatCorrelation(value, type)}`}
+                  >
+                    {formatCorrelation(value, type)}
+                  </td>
+                );
+              })}
+            </tr>
           ))}
-        </div>
-
-        {/* Data rows */}
-        {labels.map((rowLabel, i) => (
-          <div key={rowLabel} className="heatmap-row">
-            <div className="heatmap-cell row-header">{rowLabel}</div>
-            {labels.map((colLabel, j) => {
-              const value = matrix[rowLabel]?.[colLabel];
-              const color = getCorrelationColor(value, type);
-              const isDiagonal = i === j;
-
-              return (
-                <div
-                  key={colLabel}
-                  className={`heatmap-cell data ${isDiagonal ? 'diagonal' : ''}`}
-                  style={{
-                    backgroundColor: isDiagonal ? 'rgba(0, 0, 0, 0.05)' : `${color}20`,
-                    color: isDiagonal ? '#9ca3af' : color,
-                    cursor: !isDiagonal ? 'pointer' : 'default'
-                  }}
-                  onClick={() => !isDiagonal && onCellClick && onCellClick(rowLabel, colLabel)}
-                  title={`${rowLabel} vs ${colLabel}: ${formatCorrelation(value, type)}`}
-                >
-                  {formatCorrelation(value, type)}
-                </div>
-              );
-            })}
-          </div>
-        ))}
-      </div>
+        </tbody>
+      </table>
 
       {/* Color scale legend */}
       <div className="heatmap-legend">
@@ -422,8 +422,19 @@ function CorrelationHeatmap({ matrix, labels, type, onCellClick }) {
   );
 }
 
+// Format scatter value based on metric type
+function formatScatterValue(value, format) {
+  if (value === null || value === undefined || isNaN(value)) return '-';
+  switch (format) {
+    case 'percent': return `${value.toFixed(1)}%`;
+    case 'currency': return value >= 1e9 ? `$${(value / 1e9).toFixed(1)}B` : value >= 1e6 ? `$${(value / 1e6).toFixed(1)}M` : `$${value.toFixed(0)}`;
+    case 'ratio': return value.toFixed(2);
+    default: return value.toFixed(2);
+  }
+}
+
 // Scatter Plot Component with regression line
-function ScatterPlot({ data, xLabel, yLabel, companies, colors }) {
+function ScatterPlot({ data, xLabel, yLabel, xFormat, yFormat, companies, colors }) {
   if (!data || data.length === 0) {
     return <div className="empty-scatter">No data available for scatter plot</div>;
   }
@@ -464,10 +475,14 @@ function ScatterPlot({ data, xLabel, yLabel, companies, colors }) {
   // Combine scatter data with regression data for the chart
   const combinedData = data.map(d => ({ ...d, regression: null }));
 
+  // Create tick formatter based on format
+  const xTickFormatter = (v) => formatScatterValue(v, xFormat);
+  const yTickFormatter = (v) => formatScatterValue(v, yFormat);
+
   return (
     <div className="scatter-plot-wrapper">
       <ResponsiveContainer width="100%" height={350}>
-        <ScatterChart margin={{ top: 20, right: 30, bottom: 40, left: 20 }}>
+        <ScatterChart margin={{ top: 20, right: 30, bottom: 40, left: 50 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(0, 0, 0, 0.08)" />
           <XAxis
             dataKey="x"
@@ -475,6 +490,7 @@ function ScatterPlot({ data, xLabel, yLabel, companies, colors }) {
             name={xLabel}
             stroke="rgba(0, 0, 0, 0.2)"
             tick={{ fill: '#6b7280', fontSize: 11 }}
+            tickFormatter={xTickFormatter}
             label={{ value: xLabel, position: 'bottom', offset: -5, fill: '#6b7280', fontSize: 12 }}
             domain={[xMin - (xMax - xMin) * 0.05, xMax + (xMax - xMin) * 0.05]}
           />
@@ -484,11 +500,15 @@ function ScatterPlot({ data, xLabel, yLabel, companies, colors }) {
             name={yLabel}
             stroke="rgba(0, 0, 0, 0.2)"
             tick={{ fill: '#6b7280', fontSize: 11 }}
+            tickFormatter={yTickFormatter}
             label={{ value: yLabel, angle: -90, position: 'insideLeft', fill: '#6b7280', fontSize: 12 }}
           />
           <Tooltip
             contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '0.5rem', backdropFilter: 'blur(8px)' }}
-            formatter={(value, name) => [value?.toFixed(2), name]}
+            formatter={(value, name) => {
+              const format = name === xLabel ? xFormat : yFormat;
+              return [formatScatterValue(value, format), name];
+            }}
             labelFormatter={(_, payload) => payload[0]?.payload?.label || ''}
           />
           <Scatter data={combinedData} fill="#8b5cf6">
@@ -602,6 +622,7 @@ function AdvancedChartsPage() {
   const [activeTab, setActiveTab] = useState('comparison'); // default to comparison (chart overlay)
   const [correlationType, setCorrelationType] = useState('pearson');
   const [selectedScatterPair, setSelectedScatterPair] = useState(null);
+  const [selectedMetricCorrelationCompany, setSelectedMetricCorrelationCompany] = useState(null);
   // Metrics tab state (company comparison data)
   const [comparisonData, setComparisonData] = useState({});
   // Stock price data for comparison chart
@@ -956,11 +977,13 @@ function AdvancedChartsPage() {
     return matrix;
   }, [activeTab, selectedCompanies, chartData, correlationType]);
 
-  // Metric correlation matrix (all metrics for first company)
+  // Metric correlation matrix (all metrics for selected company)
+  const metricCorrelationCompany = selectedMetricCorrelationCompany || selectedCompanies[0];
   const metricCorrelationMatrix = useMemo(() => {
     if (activeTab !== 'correlation' || selectedCompanies.length === 0) return null;
 
-    const symbol = selectedCompanies[0];
+    const symbol = metricCorrelationCompany;
+    if (!symbol) return null;
     const metrics = companyData[symbol] || [];
     if (metrics.length < 3) return null;
 
@@ -996,7 +1019,7 @@ function AdvancedChartsPage() {
     });
 
     return matrix;
-  }, [activeTab, selectedCompanies, companyData, correlationType]);
+  }, [activeTab, selectedCompanies, companyData, correlationType, metricCorrelationCompany]);
 
   // Scatter plot data
   const scatterData = useMemo(() => {
@@ -1949,24 +1972,50 @@ function AdvancedChartsPage() {
                         data={scatterData}
                         xLabel={`${selectedScatterPair[0]} ${metricInfo?.label}`}
                         yLabel={`${selectedScatterPair[1]} ${metricInfo?.label}`}
+                        xFormat={metricInfo?.format}
+                        yFormat={metricInfo?.format}
                         companies={selectedCompanies}
                         colors={SERIES_COLORS}
                       />
                     </div>
                   )}
 
-                  {/* Metric Correlation Heatmap (for first company) */}
-                  {metricCorrelationMatrix && (
+                  {/* Metric Correlation Heatmap (for selected company) */}
+                  {selectedCompanies.length > 0 && (
                     <div className="correlation-card">
-                      <h3>Metric Correlation Heatmap ({selectedCompanies[0]})</h3>
+                      <div className="correlation-card-header">
+                        <h3>Metric Correlation Heatmap</h3>
+                        {selectedCompanies.length > 1 && (
+                          <div className="company-selector">
+                            {selectedCompanies.map((symbol, idx) => (
+                              <button
+                                key={symbol}
+                                className={`company-selector-btn ${(metricCorrelationCompany || selectedCompanies[0]) === symbol ? 'active' : ''}`}
+                                onClick={() => setSelectedMetricCorrelationCompany(symbol)}
+                                style={{ '--btn-color': SERIES_COLORS[idx % SERIES_COLORS.length] }}
+                              >
+                                {symbol}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                       <p className="card-description">
-                        How different metrics correlate within {selectedCompanies[0]}
+                        How different metrics correlate within {metricCorrelationCompany || selectedCompanies[0]}. Click to compare across companies.
                       </p>
-                      <CorrelationHeatmap
-                        matrix={metricCorrelationMatrix}
-                        labels={CHART_METRICS.slice(0, 8).map(m => m.label)}
-                        type={correlationType}
-                      />
+                      {metricCorrelationMatrix ? (
+                        <CorrelationHeatmap
+                          matrix={metricCorrelationMatrix}
+                          labels={CHART_METRICS.slice(0, 8).map(m => m.label)}
+                          type={correlationType}
+                        />
+                      ) : (
+                        <div className="correlation-empty-state">
+                          <div className="empty-icon">📉</div>
+                          <h4>Insufficient Data</h4>
+                          <p>{metricCorrelationCompany || selectedCompanies[0]} needs at least 3 periods of historical data to calculate metric correlations.</p>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1981,6 +2030,8 @@ function AdvancedChartsPage() {
                         data={metricScatterData}
                         xLabel={metricInfo?.label}
                         yLabel={secondaryMetricInfo?.label}
+                        xFormat={metricInfo?.format}
+                        yFormat={secondaryMetricInfo?.format}
                         companies={selectedCompanies}
                         colors={SERIES_COLORS}
                       />

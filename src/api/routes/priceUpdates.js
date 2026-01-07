@@ -72,20 +72,19 @@ router.get('/stale', (req, res) => {
  * POST /api/price-updates/run
  * Trigger daily update (runs in background)
  */
-router.post('/run', async (req, res) => {
+router.post('/run', (req, res) => {
   try {
     if (!updateService) {
       return res.status(500).json({ success: false, error: 'Service not initialized' });
     }
 
-    // Start update in background
-    updateService.runDailyUpdate()
-      .then(result => console.log('Price update completed:', result))
-      .catch(err => console.error('Price update failed:', err));
+    // Start update in background - returns immediately
+    const result = updateService.runDailyUpdateBackground();
 
     res.json({
       success: true,
       message: 'Price update started in background',
+      pid: result.pid,
       checkStatus: '/api/price-updates/stats'
     });
   } catch (error) {

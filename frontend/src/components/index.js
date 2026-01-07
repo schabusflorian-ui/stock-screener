@@ -17,6 +17,9 @@ export { default as AnalystHistoryChart } from './AnalystHistoryChart';
 export { default as EarningsCalendar } from './EarningsCalendar';
 export { default as AlphaChart } from './AlphaChart';
 export { default as AlphaCompareChart } from './AlphaCompareChart';
+export { default as SectorAlphaHeatmap } from './SectorAlphaHeatmap';
+export { default as EnhancedSignalsPanel } from './EnhancedSignalsPanel';
+export { default as SmartMoneySignals } from './SmartMoneySignals';
 export {
   AVAILABLE_METRICS,
   DEFAULT_CHART_METRICS,

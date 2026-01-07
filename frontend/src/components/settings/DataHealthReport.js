@@ -13,11 +13,13 @@ function DataHealthReport() {
   const fetchHealth = async () => {
     try {
       const response = await settingsAPI.getDataHealth();
-      setHealth(response.data);
+      // API returns { success: true, data: { generatedAt, overall, metrics } }
+      setHealth(response.data?.data || response.data);
       setError(null);
     } catch (err) {
-      setError('Failed to load health report');
-      console.error(err);
+      const errorMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to load health report';
+      setError(errorMsg);
+      console.error('Health report error:', err);
     } finally {
       setLoading(false);
       setRefreshing(false);

@@ -489,6 +489,20 @@
   font-size: 0.75rem;
 }
 
+.data-table .alpha-cell {
+  font-weight: 500;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-size: 0.75rem;
+}
+
+.data-table .alpha-cell.positive {
+  color: #8b5cf6;
+}
+
+.data-table .alpha-cell.negative {
+  color: #f97316;
+}
+
 .data-table .no-data {
   text-align: center;
   color: var(--text-tertiary);

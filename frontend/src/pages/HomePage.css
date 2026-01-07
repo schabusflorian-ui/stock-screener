@@ -528,6 +528,23 @@
   background: var(--negative-muted);
 }
 
+.leaderboard-item .alpha-badge {
+  font-size: 0.625rem;
+  font-weight: var(--font-semibold);
+  padding: var(--space-1) var(--space-1);
+  border-radius: var(--radius-sm);
+}
+
+.leaderboard-item .alpha-badge.positive {
+  color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.15);
+}
+
+.leaderboard-item .alpha-badge.negative {
+  color: #f97316;
+  background: rgba(249, 115, 22, 0.15);
+}
+
 /* Side Column */
 .side-column {
   display: flex;

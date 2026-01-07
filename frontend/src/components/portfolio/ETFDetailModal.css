@@ -1,0 +1,289 @@
+/* frontend/src/components/portfolio/ETFDetailModal.css */
+
+.etf-detail-modal {
+  background-color: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  width: 100%;
+  max-width: 600px;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+[data-theme="dark"] .etf-detail-modal {
+  background-color: #1e293b;
+}
+
+.etf-detail-modal .modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  background: inherit;
+  z-index: 1;
+}
+
+.etf-detail-modal .modal-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.etf-detail-modal .modal-title svg {
+  color: var(--accent-primary);
+}
+
+.etf-detail-modal .etf-title-info h2 {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.etf-detail-modal .etf-title-info .etf-name {
+  display: block;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.etf-detail-modal .header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.etf-detail-modal .refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.etf-detail-modal .refresh-btn:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+  color: var(--accent-primary);
+}
+
+.etf-detail-modal .refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.etf-detail-modal .modal-body {
+  padding: var(--space-5);
+}
+
+/* Loading and Error States */
+.etf-detail-modal .loading-state,
+.etf-detail-modal .error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-10);
+  text-align: center;
+  gap: var(--space-4);
+  color: var(--text-secondary);
+}
+
+.etf-detail-modal .error-state {
+  color: var(--color-error);
+}
+
+/* ETF Overview Section */
+.etf-overview {
+  margin-bottom: var(--space-6);
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-3);
+}
+
+.overview-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+
+.overview-item svg {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.overview-item .label {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.overview-item .value {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+  text-transform: capitalize;
+}
+
+.etf-description {
+  margin-top: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* Holdings Section */
+.holdings-section {
+  margin-top: var(--space-4);
+}
+
+.holdings-section h3 {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 var(--space-4) 0;
+}
+
+.holdings-table-wrapper {
+  max-height: 350px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.holdings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.holdings-table th {
+  text-align: left;
+  padding: var(--space-3);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  position: sticky;
+  top: 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.holdings-table td {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.holdings-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.holdings-table tbody tr:hover {
+  background: var(--bg-secondary);
+}
+
+.holdings-table .symbol-cell a {
+  color: var(--accent-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.holdings-table .symbol-cell a:hover {
+  text-decoration: underline;
+}
+
+.holdings-table .symbol-cell .symbol-text {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.holdings-table .name-cell {
+  color: var(--text-secondary);
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.holdings-table .weight-cell {
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+.holdings-table .text-right {
+  text-align: right;
+}
+
+/* No Holdings State */
+.no-holdings {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-8);
+  text-align: center;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--border-color);
+  gap: var(--space-4);
+}
+
+.no-holdings p {
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.no-holdings .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Spinning animation */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+/* Mobile responsive */
+@media (max-width: 640px) {
+  .etf-detail-modal {
+    max-width: 100%;
+    max-height: 100vh;
+    border-radius: 0;
+  }
+
+  .overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .holdings-table .name-cell {
+    max-width: 120px;
+  }
+}

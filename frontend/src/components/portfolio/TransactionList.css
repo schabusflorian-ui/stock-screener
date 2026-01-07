@@ -248,3 +248,85 @@
 .btn-secondary:hover {
   background: var(--bg-hover);
 }
+
+/* Attribution button */
+.transaction-attribution-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-left: var(--space-2);
+}
+
+.transaction-attribution-btn:hover {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: white;
+}
+
+/* Attribution Modal */
+.attribution-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: var(--space-4);
+}
+
+.attribution-modal {
+  position: relative;
+  max-width: 900px;
+  max-height: 90vh;
+  width: 100%;
+  overflow-y: auto;
+  border-radius: var(--radius-lg);
+}
+
+.attribution-modal-close {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  cursor: pointer;
+  z-index: 10;
+  transition: all 0.2s ease;
+}
+
+.attribution-modal-close:hover {
+  background: var(--negative);
+  border-color: var(--negative);
+  color: white;
+}
+
+@media (max-width: 600px) {
+  .attribution-modal {
+    max-height: 95vh;
+  }
+
+  .transaction-attribution-btn {
+    width: 32px;
+    height: 32px;
+  }
+}

@@ -24,6 +24,7 @@ function ThesesPage() {
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter]);
 
   const loadData = async () => {
@@ -62,21 +63,6 @@ function ThesesPage() {
   const handleCloseEditor = () => {
     setShowEditor(false);
     setEditingThesis(null);
-  };
-
-  const statusColors = {
-    active: 'success',
-    achieved: 'primary',
-    invalidated: 'danger',
-    expired: 'warning',
-    closed: 'secondary'
-  };
-
-  const typeIcons = {
-    long: TrendingUp,
-    short: TrendingDown,
-    hold: Clock,
-    avoid: XCircle
   };
 
   if (showEditor) {

@@ -13,9 +13,26 @@ const database = db.getDatabase();
  * GET /api/sec-refresh/status
  * Get status of SEC direct refresh
  */
+// Cache for SEC status to avoid slow queries on every request
+let secStatusCache = {
+  data: null,
+  lastUpdated: null
+};
+const SEC_STATUS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 router.get('/status', (req, res) => {
   try {
-    // Get watchlist count
+    // Return cached data if fresh enough
+    if (secStatusCache.data && secStatusCache.lastUpdated &&
+        (Date.now() - secStatusCache.lastUpdated) < SEC_STATUS_CACHE_TTL) {
+      return res.json({
+        success: true,
+        data: secStatusCache.data,
+        cached: true
+      });
+    }
+
+    // Get watchlist count (fast)
     const watchlistCount = database.prepare(`
       SELECT COUNT(*) as count
       FROM watchlist w
@@ -23,47 +40,33 @@ router.get('/status', (req, res) => {
       WHERE c.symbol IS NOT NULL AND c.symbol NOT LIKE 'CIK_%'
     `).get();
 
-    // Get recent updates
-    const recentUpdates = database.prepare(`
-      SELECT
-        c.symbol,
-        c.name,
-        MAX(fd.filed_date) as latest_filing,
-        COUNT(DISTINCT fd.fiscal_date_ending) as periods
-      FROM companies c
-      JOIN financial_data fd ON fd.company_id = c.id
-      WHERE c.symbol IS NOT NULL
-        AND fd.filed_date >= date('now', '-30 days')
-      GROUP BY c.id
-      ORDER BY latest_filing DESC
-      LIMIT 10
-    `).all();
+    // Get total active companies count (fast)
+    const activeCompaniesCount = database.prepare(`
+      SELECT COUNT(*) as count FROM companies WHERE is_active = 1 AND symbol IS NOT NULL
+    `).get();
 
-    // Get companies with stale data (no filing in 120 days)
-    const staleCompanies = database.prepare(`
-      SELECT
-        c.symbol,
-        c.name,
-        MAX(fd.filed_date) as latest_filing,
-        julianday('now') - julianday(MAX(fd.filed_date)) as days_since
-      FROM companies c
-      JOIN financial_data fd ON fd.company_id = c.id
-      WHERE c.symbol IS NOT NULL
-        AND c.is_active = 1
-      GROUP BY c.id
-      HAVING days_since > 120
-      ORDER BY days_since DESC
-      LIMIT 20
-    `).all();
+    // Get total filings count (fast - simple count)
+    const filingsCount = database.prepare(`
+      SELECT COUNT(*) as count FROM financial_data
+    `).get();
+
+    // Skip the slow recentUpdates query - just return basic status
+    const statusData = {
+      watchlistCount: watchlistCount.count,
+      activeCompanies: activeCompaniesCount.count,
+      totalFilings: filingsCount.count,
+      lastCheck: new Date().toISOString()
+    };
+
+    // Cache the result
+    secStatusCache = {
+      data: statusData,
+      lastUpdated: Date.now()
+    };
 
     res.json({
       success: true,
-      data: {
-        watchlistCount: watchlistCount.count,
-        recentUpdates,
-        staleCompanies,
-        lastCheck: new Date().toISOString()
-      }
+      data: statusData
     });
   } catch (error) {
     console.error('Error getting SEC refresh status:', error);
@@ -81,7 +84,7 @@ router.get('/status', (req, res) => {
  */
 router.post('/run', (req, res) => {
   try {
-    const { mode = 'watchlist', symbols = [] } = req.body;
+    const { mode = 'watchlist', symbols = [] } = req.body || {};
 
     const scriptPath = path.join(__dirname, '..', '..', 'jobs', 'secDirectRefresh.js');
 

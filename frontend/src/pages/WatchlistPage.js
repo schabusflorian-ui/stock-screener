@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Star, Download, Trash2, Eye, X, TrendingUp, TrendingDown, Plus } from 'lucide-react';
+import { Star, Download, Trash2, Eye, X, TrendingUp, TrendingDown } from 'lucide-react';
 import { companyAPI, pricesAPI, indicesAPI } from '../services/api';
 import { useWatchlist } from '../context/WatchlistContext';
 import { AlphaCompareChart } from '../components';
@@ -8,6 +8,7 @@ import { AddToPortfolioButton } from '../components/portfolio';
 import PriceAlertButton from '../components/PriceAlertButton';
 import WatchlistAlertNotifications from '../components/WatchlistAlertNotifications';
 import { NLQueryBar } from '../components/nl';
+import { SkeletonWatchlist } from '../components/Skeleton';
 import { useFormatters } from '../hooks/useFormatters';
 import {
   PageHeader,
@@ -226,7 +227,9 @@ function WatchlistPage() {
         />
       </Section>
 
-      {loading && <div className="loading">Loading metrics...</div>}
+      {loading && watchlist.length > 0 && Object.keys(metricsData).length === 0 && (
+        <SkeletonWatchlist />
+      )}
 
       {watchlist.length === 0 ? (
         <Card variant="base" padding="none">

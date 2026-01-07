@@ -5,10 +5,68 @@ const express = require('express');
 const router = express.Router();
 const { getEtfService } = require('../../services/etfService');
 const { getETFResolver } = require('../../services/etfResolver');
+const { getDatabase } = require('../../database');
 
 // Initialize services
 const etfService = getEtfService();
 const etfResolver = getETFResolver();
+const db = getDatabase();
+
+// ============================================
+// ETF Holdings Status (for Updates Dashboard)
+// ============================================
+
+/**
+ * GET /api/etfs/holdings/status
+ * Get ETF holdings status for the Updates Dashboard
+ */
+router.get('/holdings/status', (req, res) => {
+  try {
+    const stats = db.prepare(`
+      SELECT
+        COUNT(DISTINCT etf_id) as etfs_with_holdings,
+        COUNT(*) as total_holdings,
+        MAX(as_of_date) as last_update
+      FROM etf_holdings
+    `).get();
+
+    const totalEtfs = db.prepare('SELECT COUNT(*) as count FROM etf_definitions WHERE tier IN (1,2)').get();
+
+    res.json({
+      success: true,
+      etfsWithHoldings: stats.etfs_with_holdings || 0,
+      totalEtfs: totalEtfs.count || 0,
+      totalHoldings: stats.total_holdings || 0,
+      lastUpdate: stats.last_update || null
+    });
+  } catch (error) {
+    console.error('Error fetching ETF holdings status:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/etfs/holdings/refresh
+ * Trigger ETF holdings refresh (uses static data fallback)
+ */
+router.post('/holdings/refresh', async (req, res) => {
+  try {
+    const etfBundle = require('../../services/updates/bundles/etfBundle');
+
+    const result = await etfBundle.execute('etf.holdings_static', db, {
+      onProgress: (p, s) => console.log(`[ETF Holdings] [${p}%] ${s}`)
+    });
+
+    res.json({
+      success: true,
+      message: 'ETF holdings refreshed',
+      ...result
+    });
+  } catch (error) {
+    console.error('Error refreshing ETF holdings:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 // ============================================
 // ETF Definitions
@@ -224,14 +282,19 @@ router.get('/:symbol', async (req, res) => {
 
 /**
  * GET /api/etfs/:symbol/holdings
- * Get holdings for an ETF
+ * Get holdings for an ETF (fetches from Yahoo Finance if not cached)
+ * Query params:
+ *   - limit: max holdings to return (default 50)
+ *   - refresh: set to 'true' to force refresh from Yahoo Finance
  */
-router.get('/:symbol/holdings', (req, res) => {
+router.get('/:symbol/holdings', async (req, res) => {
   try {
     const { symbol } = req.params;
     const limit = parseInt(req.query.limit) || 50;
+    const forceRefresh = req.query.refresh === 'true';
 
-    const data = etfService.getEtfHoldings(symbol, { limit });
+    // Use the new method that fetches on demand
+    const data = await etfService.getHoldingsWithFetch(symbol, { limit, forceRefresh });
 
     if (!data.etf) {
       return res.status(404).json({ success: false, error: 'ETF not found' });
@@ -243,6 +306,26 @@ router.get('/:symbol/holdings', (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching ETF holdings:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/etfs/:symbol/holdings/refresh
+ * Force refresh holdings from Yahoo Finance
+ */
+router.post('/:symbol/holdings/refresh', async (req, res) => {
+  try {
+    const { symbol } = req.params;
+
+    const result = await etfService.fetchAndStoreHoldings(symbol);
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    console.error('Error refreshing ETF holdings:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

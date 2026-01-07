@@ -8,7 +8,6 @@ import {
   Star,
   Settings,
   PieChart,
-  RefreshCw,
   ChevronLeft,
   ChevronRight,
   LineChart,
@@ -21,7 +20,11 @@ import {
   Bot,
   Command,
   BookOpen,
-  Target
+  BarChart3,
+  Scale,
+  Brain,
+  FlaskConical,
+  Activity
 } from 'lucide-react';
 import './Sidebar.css';
 
@@ -42,15 +45,18 @@ const portfolioItems = [
 ];
 
 const researchItems = [
+  { path: '/value-investing', icon: Scale, label: 'Value', shortcut: 'G V' },
+  { path: '/analytics', icon: BarChart3, label: 'Analytics', shortcut: 'G Y' },
   { path: '/notes', icon: BookOpen, label: 'Notes', shortcut: 'G O' },
-  { path: '/theses', icon: Target, label: 'Theses', shortcut: 'G B' },
 ];
 
 const secondaryItems = [
   { path: '/analyst', icon: Bot, label: 'AI Analyst', shortcut: 'G A' },
+  { path: '/ai-trading', icon: Brain, label: 'AI Trading', shortcut: 'G X' },
+  { path: '/backtesting', icon: FlaskConical, label: 'Backtest', shortcut: 'G B' },
+  { path: '/validation', icon: Activity, label: 'Signals', shortcut: 'G J' },
   { path: '/alerts', icon: Bell, label: 'Alerts', shortcut: 'G L' },
   { path: '/watchlist', icon: Star, label: 'Watchlist', shortcut: 'G W' },
-  { path: '/updates', icon: RefreshCw, label: 'Updates', shortcut: 'G U' },
 ];
 
 const bottomItems = [

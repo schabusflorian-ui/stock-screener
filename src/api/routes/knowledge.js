@@ -570,7 +570,7 @@ router.get('/update/status', async (req, res) => {
  */
 router.post('/update/refresh', async (req, res) => {
   try {
-    const { mode = 'incremental' } = req.body;
+    const { mode = 'incremental' } = req.body || {};
     const { spawn } = require('child_process');
     const path = require('path');
 

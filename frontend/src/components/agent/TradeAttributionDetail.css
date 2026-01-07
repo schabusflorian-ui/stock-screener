@@ -1,0 +1,268 @@
+/* frontend/src/components/agent/TradeAttributionDetail.css */
+
+.trade-attribution-detail {
+  max-width: 900px;
+}
+
+.trade-attribution-detail__skeleton {
+  height: 600px;
+  border-radius: 12px;
+}
+
+/* Header */
+.trade-attribution-detail .ui-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.trade-attribution-detail .ui-card__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Error & Empty */
+.trade-attribution-detail__error,
+.trade-attribution-detail__empty {
+  text-align: center;
+  padding: 32px;
+  color: var(--text-tertiary);
+}
+
+.trade-attribution-detail__error {
+  color: var(--negative);
+}
+
+/* Summary */
+.trade-attribution-detail__summary {
+  padding: 20px;
+  background: var(--bg-tertiary);
+  border-radius: 12px;
+  margin-bottom: 24px;
+}
+
+.trade-attribution-detail__trade-info {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.trade-attribution-detail__symbol {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.trade-attribution-detail__symbol svg {
+  color: var(--positive);
+}
+
+.trade-attribution-detail__summary.negative .trade-attribution-detail__symbol svg {
+  color: var(--negative);
+}
+
+.trade-attribution-detail__metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 600px) {
+  .trade-attribution-detail__metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.trade-attribution-detail__metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.trade-attribution-detail__metric-label {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+}
+
+.trade-attribution-detail__metric-value {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.trade-attribution-detail__metric.positive .trade-attribution-detail__metric-value {
+  color: var(--positive);
+}
+
+.trade-attribution-detail__metric.negative .trade-attribution-detail__metric-value {
+  color: var(--negative);
+}
+
+.trade-attribution-detail__dates {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.trade-attribution-detail__date {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.trade-attribution-detail__date svg {
+  color: var(--text-tertiary);
+}
+
+/* Sections */
+.trade-attribution-detail__section {
+  margin-bottom: 24px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.trade-attribution-detail__section:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.trade-attribution-detail__section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.trade-attribution-detail__section-title svg {
+  color: var(--brand-primary);
+}
+
+/* Chart container */
+.trade-attribution-detail__chart-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 768px) {
+  .trade-attribution-detail__chart-container {
+    grid-template-columns: 1fr;
+  }
+}
+
+.trade-attribution-detail__pie {
+  min-height: 250px;
+}
+
+/* Factors */
+.trade-attribution-detail__factors {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.trade-attribution-detail__factor {
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+}
+
+.trade-attribution-detail__factor-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.trade-attribution-detail__factor-label {
+  flex: 1;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.trade-attribution-detail__factor-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.trade-attribution-detail__factor-stat {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+}
+
+.trade-attribution-detail__factor-stat span:first-child {
+  color: var(--text-secondary);
+}
+
+.trade-attribution-detail__factor-stat span:last-child {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.trade-attribution-detail__factor-stat span.positive {
+  color: var(--positive);
+}
+
+.trade-attribution-detail__factor-stat span.negative {
+  color: var(--negative);
+}
+
+.trade-attribution-detail__factor-signal {
+  font-size: 0.8rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+  margin-top: 4px;
+}
+
+/* Tooltip */
+.trade-attribution-detail__tooltip {
+  padding: 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+}
+
+.trade-attribution-detail__tooltip-title {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.trade-attribution-detail__tooltip-item {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* Analysis */
+.trade-attribution-detail__analysis {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+}
+
+.trade-attribution-detail__analysis-item {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.trade-attribution-detail__analysis-item strong {
+  color: var(--text-primary);
+}

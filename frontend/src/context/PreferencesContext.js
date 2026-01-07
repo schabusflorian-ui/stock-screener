@@ -71,7 +71,7 @@ export const THEMES = [
 
 // Default preferences
 const DEFAULT_PREFERENCES = {
-  theme: 'dark',
+  theme: 'light',
   currency: 'USD',
   dateFormat: 'MMM D, YYYY',
   numberFormat: 'en-US',

@@ -4,33 +4,48 @@
 import React, { useState, useMemo } from 'react';
 import './AllocationChart.css';
 
+// Softer, more cohesive colors matching the liquid glass theme
 const SECTOR_COLORS = {
-  'Technology': '#3b82f6',
-  'Healthcare': '#22c55e',
-  'Financial Services': '#f59e0b',
-  'Consumer Cyclical': '#ec4899',
-  'Communication Services': '#8b5cf6',
-  'Industrials': '#64748b',
-  'Consumer Defensive': '#14b8a6',
-  'Energy': '#ef4444',
-  'Utilities': '#6366f1',
-  'Real Estate': '#84cc16',
-  'Basic Materials': '#f97316',
-  'Cash': '#94a3b8',
-  'Other': '#71717a'
+  'Technology': '#6366f1',         // Indigo (brand primary)
+  'Healthcare': '#10b981',         // Emerald
+  'Financial Services': '#8b5cf6', // Violet (brand secondary)
+  'Consumer Cyclical': '#ec4899',  // Pink
+  'Communication Services': '#06b6d4', // Cyan
+  'Industrials': '#64748b',        // Slate
+  'Consumer Defensive': '#14b8a6', // Teal
+  'Energy': '#f59e0b',             // Amber
+  'Utilities': '#3b82f6',          // Blue
+  'Real Estate': '#84cc16',        // Lime
+  'Basic Materials': '#f97316',    // Orange
+  'Cash': '#94a3b8',               // Gray
+  'ETF': '#a78bfa',                // Purple accent
+  'Other': '#9ca3af'               // Gray
 };
 
 const MARKET_CAP_COLORS = {
-  'Large Cap (>$10B)': '#3b82f6',
-  'Mid Cap ($2B-$10B)': '#22c55e',
-  'Small Cap (<$2B)': '#f59e0b',
+  'Large Cap (>$10B)': '#6366f1',  // Indigo
+  'Mid Cap ($2B-$10B)': '#8b5cf6', // Violet
+  'Small Cap (<$2B)': '#a78bfa',   // Light violet
   'Cash': '#94a3b8'
 };
 
+// Use brand-aligned colors for position view
 const DEFAULT_COLORS = [
-  '#3b82f6', '#22c55e', '#f59e0b', '#ec4899', '#8b5cf6',
-  '#64748b', '#14b8a6', '#ef4444', '#6366f1', '#84cc16',
-  '#f97316', '#06b6d4', '#a855f7', '#eab308', '#0ea5e9'
+  '#6366f1', // Indigo (primary)
+  '#8b5cf6', // Violet (secondary)
+  '#ec4899', // Pink
+  '#10b981', // Emerald
+  '#f59e0b', // Amber
+  '#06b6d4', // Cyan
+  '#3b82f6', // Blue
+  '#14b8a6', // Teal
+  '#f97316', // Orange
+  '#84cc16', // Lime
+  '#a78bfa', // Light violet
+  '#64748b', // Slate
+  '#22c55e', // Green
+  '#0ea5e9', // Sky
+  '#e879f9'  // Fuchsia
 ];
 
 function AllocationChart({

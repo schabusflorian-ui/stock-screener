@@ -1,5 +1,6 @@
 // src/services/screeningService.js
 const db = require('../database');
+const { FREDService } = require('./data');
 
 // Valid sortable columns to prevent SQL injection
 const VALID_SORT_COLUMNS = [
@@ -750,6 +751,354 @@ class ScreeningService {
       ...(limit && { limit })
     });
     return result.results;
+  }
+
+  // ========================================
+  // MACRO-AWARE SCREENING METHODS
+  // ========================================
+
+  /**
+   * Get current macro context for screening decisions
+   */
+  getMacroContext() {
+    try {
+      const fredService = new FREDService(this.db);
+      return fredService.getMacroSignals();
+    } catch (error) {
+      console.error('Failed to get macro context:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Recession-Resistant Value Screen
+   * Defensive sectors when yield curve is flat/inverted or VIX elevated
+   */
+  recessionResistantValue(limit) {
+    console.log('\n🎯 RECESSION-RESISTANT VALUE SCREEN');
+    console.log('   Criteria: Defensive sectors, FCF Yield > 5%, Low debt\n');
+
+    const macro = this.getMacroContext();
+    if (macro) {
+      console.log(`   Macro Context: VIX ${macro.vix?.value?.toFixed(1) || 'N/A'}, ` +
+                  `2s10s Spread ${macro.yieldCurve?.spread2s10s?.toFixed(2) || 'N/A'}%\n`);
+    }
+
+    const result = this.screen({
+      sectors: ['Consumer Staples', 'Healthcare', 'Utilities'],
+      minFCFYield: 5,
+      maxDebtToEquity: 1.0,
+      minNetMargin: 5,
+      sortBy: 'fcf_yield',
+      maxDataAge: 2,
+      excludeCIKOnly: true,
+      ...(limit && { limit })
+    });
+
+    return {
+      results: result.results,
+      macroContext: macro
+    };
+  }
+
+  /**
+   * Deep Value with Safe Macro
+   * Only buy deep value when yield curve is not inverted
+   */
+  deepValueSafeMacro(limit) {
+    console.log('\n🎯 DEEP VALUE + SAFE MACRO SCREEN');
+
+    const macro = this.getMacroContext();
+    const curveInverted = macro?.yieldCurve?.isInverted2s10s;
+
+    if (curveInverted) {
+      console.log('   ⚠️  Yield curve INVERTED - Deep value carries higher risk\n');
+    } else {
+      console.log('   ✅ Yield curve NORMAL - Favorable for deep value\n');
+    }
+
+    console.log('   Criteria: P/E < 12, FCF Yield > 8%, Low debt\n');
+
+    const result = this.screen({
+      maxPERatio: 12,
+      minFCFYield: 8,
+      maxDebtToEquity: 0.5,
+      sortBy: 'fcf_yield',
+      maxDataAge: 2,
+      excludeCIKOnly: true,
+      ...(limit && { limit })
+    });
+
+    return {
+      results: result.results,
+      macroContext: macro,
+      warning: curveInverted ? 'Yield curve inverted - elevated recession risk' : null
+    };
+  }
+
+  /**
+   * Quality at Reasonable Price (GARP) with Low Volatility
+   * Buy quality when VIX is calm
+   */
+  garpLowVol(limit) {
+    console.log('\n🎯 GARP + LOW VOLATILITY SCREEN');
+
+    const macro = this.getMacroContext();
+    const vixLevel = macro?.vix?.value;
+    const vixElevated = vixLevel > 20;
+
+    if (vixElevated) {
+      console.log(`   ⚠️  VIX elevated at ${vixLevel?.toFixed(1)} - Wait for better entry\n`);
+    } else {
+      console.log(`   ✅ VIX calm at ${vixLevel?.toFixed(1)} - Good conditions for quality\n`);
+    }
+
+    console.log('   Criteria: ROIC > 15%, P/E < 25, Revenue Growth > 5%\n');
+
+    const result = this.screen({
+      minROIC: 15,
+      maxPERatio: 25,
+      minRevenueGrowth: 5,
+      sortBy: 'roic',
+      maxDataAge: 2,
+      excludeCIKOnly: true,
+      ...(limit && { limit })
+    });
+
+    return {
+      results: result.results,
+      macroContext: macro,
+      recommendation: vixElevated
+        ? 'Consider waiting for VIX < 20 for better entry'
+        : 'Favorable conditions for quality purchases'
+    };
+  }
+
+  /**
+   * Cyclical Value Screen
+   * Buy cyclicals when curve is steep (early cycle)
+   */
+  cyclicalValue(limit) {
+    console.log('\n🎯 CYCLICAL VALUE SCREEN');
+
+    const macro = this.getMacroContext();
+    const spread = macro?.yieldCurve?.spread2s10s;
+    const steepCurve = spread > 1.0;
+
+    if (steepCurve) {
+      console.log(`   ✅ Yield curve steep (${spread?.toFixed(2)}%) - Favorable for cyclicals\n`);
+    } else {
+      console.log(`   ⚠️  Yield curve flat/inverted (${spread?.toFixed(2)}%) - Cyclicals risky\n`);
+    }
+
+    console.log('   Criteria: Cyclical sectors, P/E < 15, ROIC > 10%\n');
+
+    const result = this.screen({
+      sectors: ['Materials', 'Industrials', 'Consumer Discretionary', 'Energy', 'Financials'],
+      maxPERatio: 15,
+      minROIC: 10,
+      minFCFMargin: 5,
+      sortBy: 'pe_ratio',
+      sortOrder: 'ASC',
+      maxDataAge: 2,
+      excludeCIKOnly: true,
+      ...(limit && { limit })
+    });
+
+    return {
+      results: result.results,
+      macroContext: macro,
+      recommendation: steepCurve
+        ? 'Early cycle conditions - cyclicals may outperform'
+        : 'Late cycle/recession risk - prefer defensive positions'
+    };
+  }
+
+  /**
+   * Fear Buying Screen
+   * Aggressive buying during high VIX (crisis) periods
+   */
+  fearBuying(limit) {
+    console.log('\n🎯 FEAR BUYING SCREEN');
+
+    const macro = this.getMacroContext();
+    const vixLevel = macro?.vix?.value;
+    const fearMode = vixLevel > 25;
+
+    if (fearMode) {
+      console.log(`   🔥 VIX at ${vixLevel?.toFixed(1)} - FEAR MODE - Aggressive buying opportunity\n`);
+    } else {
+      console.log(`   📊 VIX at ${vixLevel?.toFixed(1)} - Normal conditions\n`);
+    }
+
+    console.log('   Criteria: High quality companies at any reasonable price\n');
+
+    const result = this.screen({
+      minROIC: 20,
+      minNetMargin: 10,
+      maxDebtToEquity: 0.5,
+      minCurrentRatio: 1.5,
+      sortBy: 'roic',
+      maxDataAge: 2,
+      excludeCIKOnly: true,
+      ...(limit && { limit })
+    });
+
+    return {
+      results: result.results,
+      macroContext: macro,
+      mode: fearMode ? 'FEAR_MODE' : 'NORMAL',
+      recommendation: fearMode
+        ? 'High quality companies on sale - aggressive accumulation opportunity'
+        : 'Normal conditions - be selective'
+    };
+  }
+
+  /**
+   * Credit Stress Opportunities
+   * Special situations when credit spreads widen
+   */
+  creditStressOpportunities(limit) {
+    console.log('\n🎯 CREDIT STRESS OPPORTUNITIES SCREEN');
+
+    const macro = this.getMacroContext();
+    const hySpread = macro?.credit?.hySpread;
+    const stressed = hySpread > 5;
+
+    if (stressed) {
+      console.log(`   🔥 HY Spread at ${hySpread?.toFixed(2)}% - Credit stress - Distressed opportunities\n`);
+    } else {
+      console.log(`   📊 HY Spread at ${hySpread?.toFixed(2)}% - Normal credit conditions\n`);
+    }
+
+    console.log('   Criteria: Strong balance sheets that can weather credit stress\n');
+
+    // Look for companies with fortress balance sheets during stress
+    const result = this.screen({
+      maxDebtToEquity: 0.3,
+      minCurrentRatio: 2.0,
+      minInterestCoverage: 10,
+      minFCFMargin: 10,
+      sortBy: 'current_ratio',
+      maxDataAge: 2,
+      excludeCIKOnly: true,
+      ...(limit && { limit })
+    });
+
+    return {
+      results: result.results,
+      macroContext: macro,
+      stressLevel: stressed ? 'ELEVATED' : 'NORMAL',
+      recommendation: stressed
+        ? 'Credit stress period - fortress balance sheets will outperform'
+        : 'Normal credit - broader opportunities available'
+    };
+  }
+
+  /**
+   * Comprehensive Value Investing Screen with Macro Overlay
+   * Combines fundamental quality with macro context
+   */
+  valueInvestingWithMacro(limit) {
+    console.log('\n🎯 VALUE INVESTING + MACRO OVERLAY SCREEN');
+
+    const macro = this.getMacroContext();
+
+    // Determine market regime
+    let regime = 'NEUTRAL';
+    let screenType = 'balanced';
+
+    if (macro) {
+      const vix = macro.vix?.value || 15;
+      const spread = macro.yieldCurve?.spread2s10s || 0.5;
+      const hySpread = macro.credit?.hySpread || 3;
+
+      if (vix > 30 || hySpread > 7) {
+        regime = 'CRISIS';
+        screenType = 'defensive_quality';
+      } else if (macro.yieldCurve?.isInverted2s10s) {
+        regime = 'LATE_CYCLE';
+        screenType = 'defensive';
+      } else if (spread > 1.5 && vix < 20) {
+        regime = 'EARLY_CYCLE';
+        screenType = 'cyclical_value';
+      } else if (vix > 25) {
+        regime = 'FEAR';
+        screenType = 'quality_accumulation';
+      }
+
+      console.log(`   Macro Regime: ${regime}`);
+      console.log(`   VIX: ${vix.toFixed(1)}, 2s10s: ${spread.toFixed(2)}%, HY Spread: ${hySpread.toFixed(2)}%\n`);
+    }
+
+    let criteria = {
+      sortBy: 'roic',
+      maxDataAge: 2,
+      excludeCIKOnly: true,
+      ...(limit && { limit })
+    };
+
+    switch (screenType) {
+      case 'defensive_quality':
+        console.log('   Strategy: Defensive Quality (crisis conditions)\n');
+        criteria = {
+          ...criteria,
+          sectors: ['Consumer Staples', 'Healthcare', 'Utilities'],
+          minROIC: 15,
+          maxDebtToEquity: 0.5,
+          minCurrentRatio: 1.5
+        };
+        break;
+
+      case 'defensive':
+        console.log('   Strategy: Defensive (late cycle)\n');
+        criteria = {
+          ...criteria,
+          minFCFYield: 5,
+          maxDebtToEquity: 0.8,
+          minNetMargin: 8
+        };
+        break;
+
+      case 'cyclical_value':
+        console.log('   Strategy: Cyclical Value (early cycle)\n');
+        criteria = {
+          ...criteria,
+          maxPERatio: 15,
+          minROIC: 12,
+          minRevenueGrowth: 5
+        };
+        break;
+
+      case 'quality_accumulation':
+        console.log('   Strategy: Quality Accumulation (fear)\n');
+        criteria = {
+          ...criteria,
+          minROIC: 18,
+          maxDebtToEquity: 0.5,
+          minGrossMargin: 40
+        };
+        break;
+
+      default:
+        console.log('   Strategy: Balanced Value (neutral)\n');
+        criteria = {
+          ...criteria,
+          minROIC: 15,
+          maxPERatio: 20,
+          maxDebtToEquity: 1.0
+        };
+    }
+
+    const result = this.screen(criteria);
+
+    return {
+      results: result.results,
+      regime,
+      strategy: screenType,
+      macroContext: macro,
+      total: result.total
+    };
   }
 }
 

@@ -7,6 +7,8 @@ import {
 import { capitalAPI, earningsAPI, pricesAPI } from '../services/api';
 import { WatchlistButton } from '../components';
 import { PageHeader } from '../components/ui';
+import { SkeletonCapitalAllocation } from '../components/Skeleton';
+import { SectionErrorBoundary } from '../components/ErrorBoundary';
 import './CapitalAllocationPage.css';
 
 // Format currency values
@@ -367,18 +369,20 @@ function CapitalAllocationPage() {
       {dividendsBySector.length > 0 && (
         <div className="card chart-card">
           <h3>Average Dividend Yield by Sector</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={dividendsBySector.slice(0, 12)} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-primary)" />
-              <XAxis type="number" tickFormatter={(v) => `${v}%`} tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} />
-              <YAxis type="category" dataKey="sector" width={150} tick={{ fill: 'var(--text-secondary)', fontSize: 10 }} />
-              <Tooltip
-                contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}
-                formatter={(value) => `${value?.toFixed(2)}%`}
-              />
-              <Bar dataKey="avg_yield" name="Avg Yield" fill="#10b981" />
-            </BarChart>
-          </ResponsiveContainer>
+          <SectionErrorBoundary section="Dividend Yield by Sector Chart">
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={dividendsBySector.slice(0, 12)} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-primary)" />
+                <XAxis type="number" tickFormatter={(v) => `${v}%`} tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} />
+                <YAxis type="category" dataKey="sector" width={150} tick={{ fill: 'var(--text-secondary)', fontSize: 10 }} />
+                <Tooltip
+                  contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}
+                  formatter={(value) => `${value?.toFixed(2)}%`}
+                />
+                <Bar dataKey="avg_yield" name="Avg Yield" fill="#10b981" />
+              </BarChart>
+            </ResponsiveContainer>
+          </SectionErrorBoundary>
         </div>
       )}
 
@@ -750,7 +754,16 @@ function CapitalAllocationPage() {
         </div>
 
         {filteredDates.length === 0 ? (
-          <div className="no-data-card">No upcoming events found</div>
+          <div className="no-data-card">
+            <p>No upcoming {calendarTab === 'dividends' ? 'dividend ex-dates' : calendarTab === 'earnings' ? 'earnings announcements' : 'events'} found in the next {calendarDays} days.</p>
+            <p style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)', marginTop: '0.5rem' }}>
+              {calendarTab === 'dividends'
+                ? 'Dividend data is fetched from company filings. Try increasing the days ahead or run a data update.'
+                : calendarTab === 'earnings'
+                ? 'Earnings calendar data may need to be refreshed. Check the Updates page for data sync status.'
+                : 'Calendar data shows dividend ex-dates and earnings announcements. Try refreshing or increasing the time range.'}
+            </p>
+          </div>
         ) : (
           <div className="calendar-grid">
             {filteredDates.map(date => (
@@ -873,6 +886,19 @@ function CapitalAllocationPage() {
           <span>Error loading data: {error}</span>
           <button onClick={loadData}>Retry</button>
         </div>
+      </div>
+    );
+  }
+
+  // Show skeleton on initial load
+  if (loading && !stats) {
+    return (
+      <div className="capital-page">
+        <PageHeader
+          title="Capital Allocation"
+          subtitle="Track dividends, buybacks, and shareholder returns"
+        />
+        <SkeletonCapitalAllocation />
       </div>
     );
   }

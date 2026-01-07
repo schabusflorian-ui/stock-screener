@@ -21,7 +21,6 @@ const SectorAnalysisPage = lazy(() => import('./pages/SectorAnalysisPage'));
 const AdvancedChartsPage = lazy(() => import('./pages/AdvancedChartsPage'));
 const IPOPipelinePage = lazy(() => import('./pages/IPOPipelinePage'));
 const IPODetailPage = lazy(() => import('./pages/IPODetailPage'));
-const UpdatesPage = lazy(() => import('./pages/UpdatesPage'));
 const InsiderTradingPage = lazy(() => import('./pages/InsiderTradingPage'));
 const CapitalAllocationPage = lazy(() => import('./pages/CapitalAllocationPage'));
 const TrendingTickersPage = lazy(() => import('./pages/TrendingTickersPage'));
@@ -36,15 +35,29 @@ const PortfolioDetailPage = lazy(() => import('./pages/portfolios/PortfolioDetai
 // Lazy load AI analyst page
 const AnalystPage = lazy(() => import('./pages/analyst/AnalystPage'));
 
+// Lazy load AI Trading page
+const AITradingPage = lazy(() => import('./pages/agent/AITradingPage'));
+
+// Lazy load historical analytics page
+const HistoricalAnalyticsPage = lazy(() => import('./pages/HistoricalAnalyticsPage'));
+
+// Lazy load value investing page
+const ValueInvestingPage = lazy(() => import('./pages/ValueInvestingPage'));
+
 // Lazy load notes and theses pages
 const NotesPage = lazy(() => import('./pages/notes/NotesPage'));
-const ThesesPage = lazy(() => import('./pages/notes/ThesesPage'));
 const NoteEditorPage = lazy(() => import('./pages/notes/NoteEditor'));
 const ThesisEditorPage = lazy(() => import('./pages/notes/ThesisEditor'));
 const NoteVersionHistoryPage = lazy(() => import('./components/notes/NoteVersionHistory'));
 
 // Lazy load settings page
 const SettingsPage = lazy(() => import('./pages/settings/SettingsPage'));
+
+// Lazy load backtesting dashboard
+const BacktestDashboard = lazy(() => import('./pages/backtesting/BacktestDashboard'));
+
+// Lazy load validation dashboard
+const ValidationDashboard = lazy(() => import('./pages/validation/ValidationDashboard'));
 
 // Lazy load login page
 const LoginPage = lazy(() => import('./pages/LoginPage'));
@@ -86,7 +99,7 @@ function App() {
                           <Route path="/compare" element={<Navigate to="/charts" replace />} />
                           <Route path="/charts" element={<AdvancedChartsPage />} />
                           <Route path="/watchlist" element={<WatchlistPage />} />
-                          <Route path="/updates" element={<UpdatesPage />} />
+                          <Route path="/updates" element={<Navigate to="/settings" replace />} />
                           <Route path="/insiders" element={<InsiderTradingPage />} />
                           <Route path="/capital" element={<CapitalAllocationPage />} />
                           <Route path="/trending" element={<TrendingTickersPage />} />
@@ -96,14 +109,22 @@ function App() {
                           <Route path="/portfolios" element={<PortfolioListPage />} />
                           <Route path="/portfolios/:id" element={<PortfolioDetailPage />} />
                           <Route path="/analyst" element={<AnalystPage />} />
+                          <Route path="/ai-trading" element={<AITradingPage />} />
+                          <Route path="/ai-trading/:portfolioId" element={<AITradingPage />} />
+                          <Route path="/analytics" element={<HistoricalAnalyticsPage />} />
+                          <Route path="/value-investing" element={<ValueInvestingPage />} />
                           <Route path="/notes" element={<NotesPage />} />
                           <Route path="/notes/new" element={<NoteEditorPage />} />
                           <Route path="/notes/:noteId" element={<NoteEditorPage />} />
                           <Route path="/notes/:noteId/history" element={<NoteVersionHistoryPage />} />
-                          <Route path="/theses" element={<ThesesPage />} />
+                          <Route path="/theses" element={<NotesPage />} />
                           <Route path="/theses/new" element={<ThesisEditorPage />} />
                           <Route path="/theses/:thesisId" element={<ThesisEditorPage />} />
                           <Route path="/theses/:thesisId/edit" element={<ThesisEditorPage />} />
+                          <Route path="/research" element={<NotesPage />} />
+                          <Route path="/backtesting" element={<BacktestDashboard />} />
+                          <Route path="/backtesting/:portfolioId" element={<BacktestDashboard />} />
+                          <Route path="/validation" element={<ValidationDashboard />} />
                           <Route path="/settings" element={<SettingsPage />} />
                         </Routes>
                       </Layout>

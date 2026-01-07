@@ -16,7 +16,6 @@ import {
   PieChart,
   ChevronDown,
   ChevronUp,
-  Filter,
   Search
 } from 'lucide-react';
 import { investorsAPI } from '../../services/api';
@@ -37,6 +36,45 @@ const STYLE_LABELS = {
   long_short: 'Long/Short',
   multi_strategy: 'Multi-Strategy'
 };
+
+// Sector colors matching portfolio AllocationChart for consistency
+const SECTOR_COLORS = {
+  'Technology': '#6366f1',
+  'Healthcare': '#10b981',
+  'Financial Services': '#8b5cf6',
+  'Consumer Cyclical': '#ec4899',
+  'Communication Services': '#06b6d4',
+  'Industrials': '#64748b',
+  'Consumer Defensive': '#14b8a6',
+  'Energy': '#f59e0b',
+  'Utilities': '#3b82f6',
+  'Real Estate': '#84cc16',
+  'Basic Materials': '#f97316',
+  'Cash': '#94a3b8',
+  'ETF': '#a78bfa',
+  'Other': '#9ca3af'
+};
+
+const DEFAULT_COLORS = [
+  '#6366f1', '#8b5cf6', '#ec4899', '#10b981', '#f59e0b',
+  '#06b6d4', '#3b82f6', '#14b8a6', '#f97316', '#84cc16',
+  '#a78bfa', '#64748b', '#22c55e', '#0ea5e9', '#e879f9'
+];
+
+// Helper to get sector color
+const getSectorColor = (sectorName, index) => {
+  return SECTOR_COLORS[sectorName] || DEFAULT_COLORS[index % DEFAULT_COLORS.length];
+};
+
+// Tooltip component (matches portfolio page)
+function Tooltip({ text, children }) {
+  return (
+    <div className="tooltip-wrapper">
+      {children}
+      <div className="tooltip-content">{text}</div>
+    </div>
+  );
+}
 
 function InvestorDetailPage() {
   const { id } = useParams();
@@ -114,11 +152,6 @@ function InvestorDetailPage() {
     if (value >= 1e9) return `$${(value / 1e9).toFixed(2)}B`;
     if (value >= 1e6) return `$${(value / 1e6).toFixed(2)}M`;
     return `$${value.toLocaleString()}`;
-  };
-
-  const formatPercent = (value) => {
-    if (value === null || value === undefined) return '-';
-    return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
   };
 
   const formatDate = (dateStr) => {
@@ -213,7 +246,7 @@ function InvestorDetailPage() {
               Clone Portfolio
             </button>
             <a
-              href={investor.latest_filing_url || `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${investor.cik}&type=13F-HR&dateb=&owner=include&count=40`}
+              href={investor.latest_filing_url || `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${investor.cik?.replace(/^0+/, '') || ''}&type=13F-HR&dateb=&owner=include&count=40`}
               target="_blank"
               rel="noopener noreferrer"
               className="btn btn-secondary"
@@ -226,43 +259,53 @@ function InvestorDetailPage() {
 
         {/* Stats Bar */}
         <div className="stats-bar">
-          <div className="stat-item">
-            <DollarSign size={16} />
-            <div>
-              <span className="stat-label">Portfolio Value</span>
-              <span className="stat-value">{formatValue(investor.latest_portfolio_value)}</span>
+          <Tooltip text="Total portfolio value from latest 13F filing">
+            <div className="stat-item main">
+              <DollarSign size={20} />
+              <div>
+                <span className="stat-label">Portfolio Value</span>
+                <span className="stat-value large">{formatValue(investor.latest_portfolio_value)}</span>
+              </div>
             </div>
-          </div>
-          <div className="stat-item">
-            <BarChart3 size={16} />
-            <div>
-              <span className="stat-label">Positions</span>
-              <span className="stat-value">{investor.latest_positions_count || '-'}</span>
+          </Tooltip>
+          <Tooltip text="Number of unique stock positions">
+            <div className="stat-item">
+              <BarChart3 size={20} />
+              <div>
+                <span className="stat-label">Positions</span>
+                <span className="stat-value">{investor.latest_positions_count || '-'}</span>
+              </div>
             </div>
-          </div>
-          <div className="stat-item">
-            <Calendar size={16} />
-            <div>
-              <span className="stat-label">Last Filing</span>
-              <span className="stat-value">{formatDate(investor.latest_filing_date)}</span>
+          </Tooltip>
+          <Tooltip text="Date of most recent 13F-HR filing">
+            <div className="stat-item">
+              <Calendar size={20} />
+              <div>
+                <span className="stat-label">Last Filing</span>
+                <span className="stat-value">{formatDate(investor.latest_filing_date)}</span>
+              </div>
             </div>
-          </div>
+          </Tooltip>
           {changes && (
             <>
-              <div className="stat-item positive">
-                <TrendingUp size={16} />
-                <div>
-                  <span className="stat-label">New Positions</span>
-                  <span className="stat-value">{changes.new?.length || 0}</span>
+              <Tooltip text="New positions added since previous filing">
+                <div className="stat-item positive">
+                  <TrendingUp size={20} />
+                  <div>
+                    <span className="stat-label">New Positions</span>
+                    <span className="stat-value">{changes.new?.length || 0}</span>
+                  </div>
                 </div>
-              </div>
-              <div className="stat-item negative">
-                <TrendingDown size={16} />
-                <div>
-                  <span className="stat-label">Sold</span>
-                  <span className="stat-value">{changes.sold?.length || 0}</span>
+              </Tooltip>
+              <Tooltip text="Positions completely sold since previous filing">
+                <div className="stat-item negative">
+                  <TrendingDown size={20} />
+                  <div>
+                    <span className="stat-label">Sold</span>
+                    <span className="stat-value">{changes.sold?.length || 0}</span>
+                  </div>
                 </div>
-              </div>
+              </Tooltip>
             </>
           )}
         </div>
@@ -316,34 +359,42 @@ function InvestorDetailPage() {
           <div className="overview-section">
             {/* Key Metrics Grid */}
             <div className="overview-metrics">
-              <div className="metric-card primary">
-                <DollarSign size={24} />
-                <div className="metric-content">
-                  <span className="metric-value">{formatValue(investor.latest_portfolio_value)}</span>
-                  <span className="metric-label">Portfolio Value</span>
+              <Tooltip text="Total portfolio value from latest 13F-HR filing">
+                <div className="metric-card primary">
+                  <DollarSign size={24} />
+                  <div className="metric-content">
+                    <span className="metric-value">{formatValue(investor.latest_portfolio_value)}</span>
+                    <span className="metric-label">Portfolio Value</span>
+                  </div>
                 </div>
-              </div>
-              <div className="metric-card">
-                <Briefcase size={24} />
-                <div className="metric-content">
-                  <span className="metric-value">{investor.latest_positions_count || holdings.length}</span>
-                  <span className="metric-label">Positions</span>
+              </Tooltip>
+              <Tooltip text="Number of unique equity positions held">
+                <div className="metric-card">
+                  <Briefcase size={24} />
+                  <div className="metric-content">
+                    <span className="metric-value">{investor.latest_positions_count || holdings.length}</span>
+                    <span className="metric-label">Positions</span>
+                  </div>
                 </div>
-              </div>
-              <div className="metric-card">
-                <PieChart size={24} />
-                <div className="metric-content">
-                  <span className="metric-value">{stats.sectorAllocation?.length || 0}</span>
-                  <span className="metric-label">Sectors</span>
+              </Tooltip>
+              <Tooltip text="Number of distinct sectors represented in holdings">
+                <div className="metric-card">
+                  <PieChart size={24} />
+                  <div className="metric-content">
+                    <span className="metric-value">{stats.sectorAllocation?.length || 0}</span>
+                    <span className="metric-label">Sectors</span>
+                  </div>
                 </div>
-              </div>
-              <div className="metric-card">
-                <Calendar size={24} />
-                <div className="metric-content">
-                  <span className="metric-value">{investor.latest_filing_date || 'N/A'}</span>
-                  <span className="metric-label">Last Filing</span>
+              </Tooltip>
+              <Tooltip text="Date of most recent 13F-HR filing with SEC">
+                <div className="metric-card">
+                  <Calendar size={24} />
+                  <div className="metric-content">
+                    <span className="metric-value">{formatDate(investor.latest_filing_date)}</span>
+                    <span className="metric-label">Last Filing</span>
+                  </div>
                 </div>
-              </div>
+              </Tooltip>
             </div>
 
             {/* Diversification Stats */}
@@ -831,6 +882,38 @@ function InvestorDetailPage() {
                 </tbody>
               </table>
             </div>
+
+            {/* Holdings Summary */}
+            {holdings.length > 0 && (
+              <div className="holdings-summary">
+                <div className="summary-item">
+                  <span className="summary-label">Filing Value</span>
+                  <span className="summary-value">
+                    {formatValue(holdings.reduce((sum, h) => sum + (h.market_value || 0), 0))}
+                  </span>
+                </div>
+                <div className="summary-item">
+                  <span className="summary-label">Current Value</span>
+                  <span className="summary-value">
+                    {formatValue(holdings.reduce((sum, h) => sum + (h.current_value || 0), 0))}
+                  </span>
+                </div>
+                <div className="summary-item">
+                  <span className="summary-label">Total Gain/Loss</span>
+                  <span className={`summary-value ${holdings.reduce((sum, h) => sum + (h.gain_loss_value || 0), 0) >= 0 ? 'positive' : 'negative'}`}>
+                    {formatValue(holdings.reduce((sum, h) => sum + (h.gain_loss_value || 0), 0))}
+                  </span>
+                </div>
+                <div className="summary-item">
+                  <span className="summary-label">Winners / Losers</span>
+                  <span className="summary-value">
+                    <span className="positive">{holdings.filter(h => h.gain_loss_pct > 0).length}</span>
+                    {' / '}
+                    <span className="negative">{holdings.filter(h => h.gain_loss_pct < 0).length}</span>
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -999,7 +1082,7 @@ function InvestorDetailPage() {
                       const percentage = sector.total_weight / total;
                       const dashLength = percentage * circumference;
                       const dashOffset = -cumulativeAngle * circumference / 100;
-                      const color = `hsl(${(idx * 40 + 200) % 360}, 65%, 55%)`;
+                      const color = getSectorColor(sector.sector, idx);
 
                       cumulativeAngle += sector.total_weight;
 
@@ -1025,7 +1108,7 @@ function InvestorDetailPage() {
                     <div key={idx} className="legend-item">
                       <span
                         className="legend-color"
-                        style={{ backgroundColor: `hsl(${(idx * 40 + 200) % 360}, 65%, 55%)` }}
+                        style={{ backgroundColor: getSectorColor(sector.sector, idx) }}
                       />
                       <span className="legend-label">{sector.sector || 'Unknown'}</span>
                       <span className="legend-value">{sector.total_weight?.toFixed(1)}%</span>
@@ -1040,7 +1123,7 @@ function InvestorDetailPage() {
               <h2>By Allocation</h2>
               <div className="sector-chart">
                 {stats.sectorAllocation?.slice(0, 8).map((sector, idx) => {
-                  const color = `hsl(${(idx * 40 + 200) % 360}, 65%, 55%)`;
+                  const color = getSectorColor(sector.sector, idx);
                   const maxWeight = stats.sectorAllocation[0]?.total_weight || 100;
                   return (
                     <div key={idx} className="sector-bar-row">

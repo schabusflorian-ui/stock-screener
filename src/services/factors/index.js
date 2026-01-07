@@ -3,6 +3,7 @@
 
 const FactorCalculator = require('./factorCalculator');
 const FactorAnalyzer = require('./factorAnalyzer');
+const { FactorExposureAnalyzer } = require('./factorExposure');
 
 /**
  * Factor Analysis Service
@@ -296,5 +297,6 @@ module.exports = {
   FactorAnalysisService,
   FactorCalculator,
   FactorAnalyzer,
+  FactorExposureAnalyzer,
   getFactorAnalysisService
 };

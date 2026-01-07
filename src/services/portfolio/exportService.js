@@ -33,10 +33,11 @@ class ExportService {
         pm.change_ytd as ytd_change_pct,
         pm.change_1y as year_change_pct,
         pm.beta,
-        pm.dividend_yield
+        dm.dividend_yield
       FROM portfolio_positions pp
       JOIN companies c ON pp.company_id = c.id
       LEFT JOIN price_metrics pm ON c.id = pm.company_id
+      LEFT JOIN dividend_metrics dm ON c.id = dm.company_id
       WHERE pp.portfolio_id = ?
       ORDER BY pp.shares * COALESCE(pm.last_price, 0) DESC
     `).all(portfolioId);
@@ -80,15 +81,14 @@ class ExportService {
     let query = `
       SELECT
         t.executed_at,
-        t.type,
+        t.transaction_type,
         c.symbol,
         c.name,
         t.shares,
         t.price_per_share,
         t.total_amount,
         t.fees,
-        t.notes,
-        t.realized_pnl
+        t.notes
       FROM portfolio_transactions t
       LEFT JOIN companies c ON t.company_id = c.id
       WHERE t.portfolio_id = ?
@@ -104,7 +104,7 @@ class ExportService {
       params.push(endDate);
     }
     if (type) {
-      query += ' AND t.type = ?';
+      query += ' AND t.transaction_type = ?';
       params.push(type);
     }
 
@@ -114,19 +114,18 @@ class ExportService {
 
     const headers = [
       'Date', 'Type', 'Symbol', 'Name', 'Shares', 'Price',
-      'Total', 'Fees', 'Realized P&L', 'Notes'
+      'Total', 'Fees', 'Notes'
     ];
 
     const rows = transactions.map(t => [
       t.executed_at,
-      t.type,
+      t.transaction_type,
       t.symbol || '',
       `"${(t.name || '').replace(/"/g, '""')}"`,
       t.shares?.toFixed(4) || '',
       t.price_per_share?.toFixed(2) || '',
       t.total_amount?.toFixed(2),
       t.fees?.toFixed(2) || '0.00',
-      t.realized_pnl?.toFixed(2) || '',
       `"${(t.notes || '').replace(/"/g, '""')}"`
     ]);
 
@@ -141,7 +140,7 @@ class ExportService {
     const portfolio = this.db.prepare(`
       SELECT
         p.id, p.name, p.description, p.portfolio_type, p.currency,
-        p.cash_balance, p.created_at,
+        p.current_cash as cash_balance, p.created_at,
         (SELECT COUNT(*) FROM portfolio_positions WHERE portfolio_id = p.id) as position_count
       FROM portfolios p
       WHERE p.id = ?
@@ -195,9 +194,8 @@ class ExportService {
     const transactionStats = this.db.prepare(`
       SELECT
         COUNT(*) as total_trades,
-        SUM(CASE WHEN type = 'buy' THEN 1 ELSE 0 END) as buys,
-        SUM(CASE WHEN type = 'sell' THEN 1 ELSE 0 END) as sells,
-        SUM(CASE WHEN type = 'sell' THEN realized_pnl ELSE 0 END) as total_realized_pnl,
+        SUM(CASE WHEN transaction_type = 'buy' THEN 1 ELSE 0 END) as buys,
+        SUM(CASE WHEN transaction_type = 'sell' THEN 1 ELSE 0 END) as sells,
         MIN(executed_at) as first_trade,
         MAX(executed_at) as last_trade
       FROM portfolio_transactions
@@ -244,7 +242,6 @@ class ExportService {
         totalTrades: transactionStats?.total_trades || 0,
         buys: transactionStats?.buys || 0,
         sells: transactionStats?.sells || 0,
-        realizedPnL: Math.round((transactionStats?.total_realized_pnl || 0) * 100) / 100,
         firstTrade: transactionStats?.first_trade,
         lastTrade: transactionStats?.last_trade
       }
@@ -258,26 +255,23 @@ class ExportService {
     const startDate = `${year}-01-01`;
     const endDate = `${year}-12-31`;
 
-    const sells = this.db.prepare(`
+    // Get closed lots (sales) within the year
+    const closedLots = this.db.prepare(`
       SELECT
-        t.executed_at as sell_date,
+        pl.closed_at as sell_date,
         c.symbol,
         c.name,
-        t.shares,
-        t.price_per_share as sell_price,
-        t.total_amount as proceeds,
-        t.realized_pnl,
-        t.cost_basis_used,
-        t.fees,
-        tl.acquired_at,
-        tl.cost_basis as lot_cost_basis
-      FROM portfolio_transactions t
-      JOIN companies c ON t.company_id = c.id
-      LEFT JOIN tax_lots tl ON t.id = tl.sell_transaction_id
-      WHERE t.portfolio_id = ?
-        AND t.type = 'sell'
-        AND t.executed_at BETWEEN ? AND ?
-      ORDER BY t.executed_at ASC
+        pl.shares_sold as shares,
+        pl.total_cost / NULLIF(pl.shares_original, 0) as cost_per_share,
+        pl.shares_sold * (pl.total_cost / NULLIF(pl.shares_original, 0)) as cost_basis,
+        pl.realized_pnl,
+        pl.acquired_at
+      FROM portfolio_lots pl
+      JOIN companies c ON pl.company_id = c.id
+      WHERE pl.portfolio_id = ?
+        AND pl.is_closed = 1
+        AND pl.closed_at BETWEEN ? AND ?
+      ORDER BY pl.closed_at ASC
     `).all(portfolioId, startDate, endDate);
 
     // Calculate short-term vs long-term
@@ -286,11 +280,11 @@ class ExportService {
     let longTermGains = 0;
 
     const headers = [
-      'Sell Date', 'Symbol', 'Name', 'Shares', 'Proceeds', 'Cost Basis',
-      'Gain/Loss', 'Acquired', 'Holding Period', 'Fees'
+      'Sell Date', 'Symbol', 'Name', 'Shares', 'Cost Basis',
+      'Gain/Loss', 'Acquired', 'Holding Period'
     ];
 
-    const rows = sells.map(s => {
+    const rows = closedLots.map(s => {
       const sellDate = new Date(s.sell_date);
       const acquiredDate = s.acquired_at ? new Date(s.acquired_at) : null;
       const isLongTerm = acquiredDate && (sellDate - acquiredDate) > oneYearMs;
@@ -308,21 +302,19 @@ class ExportService {
         s.symbol,
         `"${(s.name || '').replace(/"/g, '""')}"`,
         s.shares?.toFixed(4),
-        s.proceeds?.toFixed(2),
-        (s.cost_basis_used || s.lot_cost_basis)?.toFixed(2) || '',
+        s.cost_basis?.toFixed(2) || '',
         s.realized_pnl?.toFixed(2) || '',
         s.acquired_at || 'Various',
-        isLongTerm ? 'Long-term' : 'Short-term',
-        s.fees?.toFixed(2) || '0.00'
+        isLongTerm ? 'Long-term' : 'Short-term'
       ];
     });
 
     // Add summary row
     rows.push([]);
     rows.push(['SUMMARY']);
-    rows.push(['Short-term gains/losses:', '', '', '', '', '', shortTermGains.toFixed(2)]);
-    rows.push(['Long-term gains/losses:', '', '', '', '', '', longTermGains.toFixed(2)]);
-    rows.push(['Total gains/losses:', '', '', '', '', '', (shortTermGains + longTermGains).toFixed(2)]);
+    rows.push(['Short-term gains/losses:', '', '', '', '', shortTermGains.toFixed(2)]);
+    rows.push(['Long-term gains/losses:', '', '', '', '', longTermGains.toFixed(2)]);
+    rows.push(['Total gains/losses:', '', '', '', '', (shortTermGains + longTermGains).toFixed(2)]);
 
     return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
   }
@@ -344,7 +336,7 @@ class ExportService {
       FROM portfolio_transactions t
       LEFT JOIN companies c ON t.company_id = c.id
       WHERE t.portfolio_id = ?
-        AND t.type = 'dividend'
+        AND t.transaction_type = 'dividend'
         AND t.executed_at BETWEEN ? AND ?
       ORDER BY t.executed_at ASC
     `).all(portfolioId, startDate, endDate);

@@ -908,31 +908,548 @@ class DCFCalculator {
   }
 
   /**
-   * Get sensitivity matrix
+   * Get sensitivity matrix with custom intervals
    */
-  async calculateSensitivity(companyId, baseWACC, baseGrowth) {
-    const waccRange = [-0.02, -0.01, 0, 0.01, 0.02];
-    const growthRange = [-0.03, -0.015, 0, 0.015, 0.03];
+  async calculateSensitivity(companyId, baseWACC, baseGrowth, options = {}) {
+    // Support custom intervals or use defaults
+    const {
+      rowVariable = 'wacc',
+      colVariable = 'growthStage1',
+      rowMin,
+      rowMax,
+      rowStep,
+      colMin,
+      colMax,
+      colStep,
+      baseInputs = {}
+    } = options;
+
+    // Default ranges if not specified
+    let rowValues, colValues;
+
+    if (rowMin !== undefined && rowMax !== undefined && rowStep !== undefined) {
+      // Custom row range
+      rowValues = [];
+      for (let v = rowMin; v <= rowMax + 0.0001; v += rowStep) {
+        rowValues.push(Math.round(v * 10000) / 10000); // Avoid floating point issues
+      }
+    } else {
+      // Default: use deltas from base value
+      const baseRowValue = rowVariable === 'wacc' ? baseWACC : baseGrowth;
+      const defaultDeltas = [-0.02, -0.01, 0, 0.01, 0.02];
+      rowValues = defaultDeltas.map(d => baseRowValue + d);
+    }
+
+    if (colMin !== undefined && colMax !== undefined && colStep !== undefined) {
+      // Custom column range
+      colValues = [];
+      for (let v = colMin; v <= colMax + 0.0001; v += colStep) {
+        colValues.push(Math.round(v * 10000) / 10000);
+      }
+    } else {
+      // Default: use deltas from base value
+      const baseColValue = colVariable === 'wacc' ? baseWACC : baseGrowth;
+      const defaultDeltas = [-0.03, -0.015, 0, 0.015, 0.03];
+      colValues = defaultDeltas.map(d => baseColValue + d);
+    }
 
     const matrix = [];
 
-    for (const waccDelta of waccRange) {
+    for (const rowVal of rowValues) {
       const row = [];
-      for (const growthDelta of growthRange) {
-        const result = await this.calculateDCF(companyId, {
-          wacc: baseWACC + waccDelta,
-          growthStage1: baseGrowth + growthDelta
-        });
+      for (const colVal of colValues) {
+        const overrides = {
+          ...baseInputs,
+          [rowVariable]: rowVal,
+          [colVariable]: colVal
+        };
+        const result = await this.calculateDCF(companyId, overrides);
         row.push(result.success ? result.intrinsicValue : null);
       }
       matrix.push(row);
     }
 
     return {
-      waccValues: waccRange.map(d => baseWACC + d),
-      growthValues: growthRange.map(d => baseGrowth + d),
-      matrix
+      rowVariable,
+      colVariable,
+      rowValues,
+      colValues,
+      matrix,
+      gridSize: `${rowValues.length}x${colValues.length}`
     };
+  }
+
+  /**
+   * Reverse DCF: Calculate implied growth rate given a target price
+   * Uses binary search to find the growth rate that produces the target intrinsic value
+   */
+  async calculateImpliedGrowth(companyId, targetPrice, options = {}) {
+    const {
+      baseInputs = {},
+      tolerance = 0.01, // Stop when within 1% of target
+      maxIterations = 50,
+      growthVariable = 'growthStage1' // Which growth rate to solve for
+    } = options;
+
+    // Get current price if target not specified
+    if (!targetPrice || targetPrice <= 0) {
+      const priceData = this.db.prepare(`
+        SELECT pm.last_price FROM price_metrics pm
+        JOIN companies c ON c.id = pm.company_id
+        WHERE c.id = ?
+      `).get(companyId);
+      targetPrice = priceData?.last_price || 0;
+    }
+
+    if (targetPrice <= 0) {
+      return { success: false, error: 'No valid target price' };
+    }
+
+    // Binary search bounds
+    let lowGrowth = -0.10; // -10%
+    let highGrowth = 0.50;  // 50%
+    let iterations = 0;
+
+    // Get base case to understand starting point
+    const baseCase = await this.calculateDCF(companyId, baseInputs);
+    if (!baseCase.success) {
+      return { success: false, error: 'Cannot calculate base case' };
+    }
+
+    while (iterations < maxIterations) {
+      const midGrowth = (lowGrowth + highGrowth) / 2;
+
+      const result = await this.calculateDCF(companyId, {
+        ...baseInputs,
+        [growthVariable]: midGrowth
+      });
+
+      if (!result.success) {
+        iterations++;
+        continue;
+      }
+
+      const pctDiff = Math.abs(result.intrinsicValue - targetPrice) / targetPrice;
+
+      if (pctDiff < tolerance) {
+        return {
+          success: true,
+          impliedGrowth: midGrowth,
+          impliedGrowthPct: midGrowth * 100,
+          targetPrice,
+          calculatedValue: result.intrinsicValue,
+          iterations,
+          baseGrowth: baseCase.assumptions.growth.stage1,
+          baseGrowthPct: baseCase.assumptions.growth.stage1 * 100,
+          growthGap: midGrowth - baseCase.assumptions.growth.stage1,
+          growthGapPct: (midGrowth - baseCase.assumptions.growth.stage1) * 100,
+          interpretation: this.interpretGrowthGap(midGrowth, baseCase.assumptions)
+        };
+      }
+
+      // Adjust bounds: higher growth = higher value (usually)
+      if (result.intrinsicValue < targetPrice) {
+        lowGrowth = midGrowth;
+      } else {
+        highGrowth = midGrowth;
+      }
+
+      iterations++;
+    }
+
+    // Return best guess after max iterations
+    const finalGrowth = (lowGrowth + highGrowth) / 2;
+    return {
+      success: true,
+      impliedGrowth: finalGrowth,
+      impliedGrowthPct: finalGrowth * 100,
+      targetPrice,
+      approximation: true,
+      iterations,
+      baseGrowth: baseCase.assumptions.growth.stage1,
+      baseGrowthPct: baseCase.assumptions.growth.stage1 * 100,
+      growthGap: finalGrowth - baseCase.assumptions.growth.stage1,
+      growthGapPct: (finalGrowth - baseCase.assumptions.growth.stage1) * 100,
+      interpretation: this.interpretGrowthGap(finalGrowth, baseCase.assumptions)
+    };
+  }
+
+  /**
+   * Reverse DCF: Calculate implied WACC given a target price
+   */
+  async calculateImpliedWACC(companyId, targetPrice, options = {}) {
+    const {
+      baseInputs = {},
+      tolerance = 0.01,
+      maxIterations = 50
+    } = options;
+
+    // Get current price if target not specified
+    if (!targetPrice || targetPrice <= 0) {
+      const priceData = this.db.prepare(`
+        SELECT pm.last_price FROM price_metrics pm
+        JOIN companies c ON c.id = pm.company_id
+        WHERE c.id = ?
+      `).get(companyId);
+      targetPrice = priceData?.last_price || 0;
+    }
+
+    if (targetPrice <= 0) {
+      return { success: false, error: 'No valid target price' };
+    }
+
+    // Binary search bounds for WACC
+    let lowWACC = 0.03;  // 3%
+    let highWACC = 0.25; // 25%
+    let iterations = 0;
+
+    const baseCase = await this.calculateDCF(companyId, baseInputs);
+    if (!baseCase.success) {
+      return { success: false, error: 'Cannot calculate base case' };
+    }
+
+    while (iterations < maxIterations) {
+      const midWACC = (lowWACC + highWACC) / 2;
+
+      const result = await this.calculateDCF(companyId, {
+        ...baseInputs,
+        wacc: midWACC
+      });
+
+      if (!result.success) {
+        iterations++;
+        continue;
+      }
+
+      const pctDiff = Math.abs(result.intrinsicValue - targetPrice) / targetPrice;
+
+      if (pctDiff < tolerance) {
+        return {
+          success: true,
+          impliedWACC: midWACC,
+          impliedWACCPct: midWACC * 100,
+          targetPrice,
+          calculatedValue: result.intrinsicValue,
+          iterations,
+          baseWACC: baseCase.assumptions.wacc,
+          baseWACCPct: baseCase.assumptions.wacc * 100,
+          waccGap: midWACC - baseCase.assumptions.wacc,
+          waccGapPct: (midWACC - baseCase.assumptions.wacc) * 100,
+          interpretation: this.interpretWACCGap(midWACC, baseCase.assumptions.wacc)
+        };
+      }
+
+      // Higher WACC = lower value (inverse relationship)
+      if (result.intrinsicValue > targetPrice) {
+        lowWACC = midWACC;
+      } else {
+        highWACC = midWACC;
+      }
+
+      iterations++;
+    }
+
+    const finalWACC = (lowWACC + highWACC) / 2;
+    return {
+      success: true,
+      impliedWACC: finalWACC,
+      impliedWACCPct: finalWACC * 100,
+      targetPrice,
+      approximation: true,
+      iterations,
+      baseWACC: baseCase.assumptions.wacc,
+      baseWACCPct: baseCase.assumptions.wacc * 100,
+      waccGap: finalWACC - baseCase.assumptions.wacc,
+      waccGapPct: (finalWACC - baseCase.assumptions.wacc) * 100,
+      interpretation: this.interpretWACCGap(finalWACC, baseCase.assumptions.wacc)
+    };
+  }
+
+  /**
+   * Interpret growth gap between implied and base assumptions
+   */
+  interpretGrowthGap(impliedGrowth, baseAssumptions) {
+    const baseGrowth = baseAssumptions.growth.stage1;
+    const historical = baseAssumptions.historicalGrowth?.threeYearCAGR || baseGrowth;
+    const gap = impliedGrowth - baseGrowth;
+    const gapPct = gap * 100;
+
+    if (Math.abs(gap) < 0.01) {
+      return 'Market pricing is aligned with your growth assumptions';
+    } else if (gap > 0.10) {
+      return `Market expects ${gapPct.toFixed(1)}pp higher growth than your estimate - stock may be overvalued`;
+    } else if (gap > 0.03) {
+      return `Market expects moderately higher growth (+${gapPct.toFixed(1)}pp) - verify if justified`;
+    } else if (gap > 0) {
+      return `Market expects slightly higher growth (+${gapPct.toFixed(1)}pp)`;
+    } else if (gap < -0.10) {
+      return `Market expects ${Math.abs(gapPct).toFixed(1)}pp lower growth - potential undervaluation`;
+    } else if (gap < -0.03) {
+      return `Market expects moderately lower growth (${gapPct.toFixed(1)}pp) - possible opportunity`;
+    } else {
+      return `Market expects slightly lower growth (${gapPct.toFixed(1)}pp)`;
+    }
+  }
+
+  /**
+   * Interpret WACC gap
+   */
+  interpretWACCGap(impliedWACC, baseWACC) {
+    const gap = impliedWACC - baseWACC;
+    const gapBps = gap * 10000;
+
+    if (Math.abs(gapBps) < 50) {
+      return 'Market risk assessment aligns with your WACC';
+    } else if (gapBps > 200) {
+      return `Market demands ${gapBps.toFixed(0)}bps higher return - stock may be undervalued or riskier`;
+    } else if (gapBps > 0) {
+      return `Market demands slightly higher return (+${gapBps.toFixed(0)}bps)`;
+    } else if (gapBps < -200) {
+      return `Market accepts ${Math.abs(gapBps).toFixed(0)}bps lower return - stock may be overvalued`;
+    } else {
+      return `Market accepts slightly lower return (${gapBps.toFixed(0)}bps)`;
+    }
+  }
+
+  /**
+   * Calculate break-even points for key variables
+   */
+  async calculateBreakeven(companyId, currentPrice, options = {}) {
+    const { baseInputs = {} } = options;
+
+    // Calculate implied values for multiple variables
+    const [impliedGrowth, impliedWACC] = await Promise.all([
+      this.calculateImpliedGrowth(companyId, currentPrice, { baseInputs }),
+      this.calculateImpliedWACC(companyId, currentPrice, { baseInputs })
+    ]);
+
+    // Get base case for comparison
+    const baseCase = await this.calculateDCF(companyId, baseInputs);
+
+    return {
+      success: true,
+      currentPrice,
+      baseIntrinsicValue: baseCase.success ? baseCase.intrinsicValue : null,
+      breakeven: {
+        growth: impliedGrowth.success ? {
+          value: impliedGrowth.impliedGrowth,
+          valuePct: impliedGrowth.impliedGrowthPct,
+          baseValue: impliedGrowth.baseGrowth,
+          baseValuePct: impliedGrowth.baseGrowthPct,
+          gap: impliedGrowth.growthGap,
+          gapPct: impliedGrowth.growthGapPct,
+          interpretation: impliedGrowth.interpretation
+        } : null,
+        wacc: impliedWACC.success ? {
+          value: impliedWACC.impliedWACC,
+          valuePct: impliedWACC.impliedWACCPct,
+          baseValue: impliedWACC.baseWACC,
+          baseValuePct: impliedWACC.baseWACCPct,
+          gap: impliedWACC.waccGap,
+          gapPct: impliedWACC.waccGapPct,
+          interpretation: impliedWACC.interpretation
+        } : null
+      }
+    };
+  }
+
+  /**
+   * Calculate tornado chart data - sensitivity of each variable
+   */
+  async calculateTornadoChart(companyId, options = {}) {
+    const {
+      baseInputs = {},
+      variationPct = 0.20 // ±20% variation by default
+    } = options;
+
+    // Get base case
+    const baseCase = await this.calculateDCF(companyId, baseInputs);
+    if (!baseCase.success) {
+      return { success: false, error: 'Cannot calculate base case' };
+    }
+
+    const baseValue = baseCase.intrinsicValue;
+    const currentPrice = baseCase.currentPrice;
+
+    // Variables to test
+    const variables = [
+      { key: 'wacc', label: 'WACC', base: baseCase.assumptions.wacc, isInverse: true },
+      { key: 'growthStage1', label: 'Growth (Yr 1-3)', base: baseCase.assumptions.growth.stage1 },
+      { key: 'growthStage2', label: 'Growth (Yr 4-7)', base: baseCase.assumptions.growth.stage2 },
+      { key: 'growthStage3', label: 'Growth (Yr 8-10)', base: baseCase.assumptions.growth.stage3 },
+      { key: 'terminalGrowth', label: 'Terminal Growth', base: baseCase.assumptions.growth.terminal },
+      { key: 'exitMultiple', label: 'Exit Multiple', base: baseCase.assumptions.exitMultiple },
+      { key: 'ebitdaMargin', label: 'EBITDA Margin', base: baseCase.assumptions.margins?.ebitdaMargin || 0.20 },
+      { key: 'targetEbitdaMargin', label: 'Target Margin', base: baseCase.assumptions.margins?.targetEbitdaMargin || 0.25 }
+    ];
+
+    const results = [];
+
+    for (const variable of variables) {
+      const lowInput = variable.base * (1 - variationPct);
+      const highInput = variable.base * (1 + variationPct);
+
+      // Calculate at low and high values
+      const [lowResult, highResult] = await Promise.all([
+        this.calculateDCF(companyId, { ...baseInputs, [variable.key]: lowInput }),
+        this.calculateDCF(companyId, { ...baseInputs, [variable.key]: highInput })
+      ]);
+
+      const lowValue = lowResult.success ? lowResult.intrinsicValue : baseValue;
+      const highValue = highResult.success ? highResult.intrinsicValue : baseValue;
+
+      // For inverse variables (like WACC), low input = high value
+      const actualLow = variable.isInverse ? highValue : lowValue;
+      const actualHigh = variable.isInverse ? lowValue : highValue;
+
+      const range = actualHigh - actualLow;
+      const rangeVsBase = range / baseValue * 100;
+
+      results.push({
+        variable: variable.key,
+        label: variable.label,
+        baseValue: variable.base,
+        lowInput,
+        highInput,
+        lowValue: actualLow,
+        highValue: actualHigh,
+        range,
+        rangeVsBase,
+        rangePct: rangeVsBase,
+        impact: Math.abs(rangeVsBase)
+      });
+    }
+
+    // Sort by absolute impact (largest first)
+    results.sort((a, b) => b.impact - a.impact);
+
+    return {
+      success: true,
+      baseIntrinsicValue: baseValue,
+      currentPrice,
+      variationPct: variationPct * 100,
+      variables: results,
+      topDrivers: results.slice(0, 3).map(r => r.label)
+    };
+  }
+
+  /**
+   * Calculate WACC with detailed build-up (improved version)
+   */
+  calculateWACCDetailed(company, financials, benchmarks) {
+    const riskFreeRate = this.defaults.riskFreeRate;
+    const equityRiskPremium = this.defaults.equityRiskPremium;
+
+    // Get beta from benchmarks or company data
+    const beta = company.beta || benchmarks?.beta_median || this.defaults.defaultBeta;
+
+    // Cost of equity (CAPM)
+    const costOfEquity = riskFreeRate + beta * equityRiskPremium;
+
+    // Calculate actual capital structure from balance sheet
+    const totalDebt = (financials.latestShortTermDebt || 0) + (financials.latestLongTermDebt || 0);
+    const cash = financials.latestCash || 0;
+    const netDebt = totalDebt - cash;
+    const marketCap = company.market_cap || 0;
+
+    // Enterprise value proxy
+    const evProxy = marketCap + netDebt;
+
+    // Capital structure weights (market-based)
+    let equityWeight, debtWeight;
+    if (evProxy > 0 && marketCap > 0) {
+      equityWeight = marketCap / evProxy;
+      debtWeight = Math.max(0, netDebt / evProxy);
+    } else {
+      // Fallback to industry average or 80/20
+      equityWeight = 0.80;
+      debtWeight = 0.20;
+    }
+
+    // Cost of debt based on interest coverage
+    const interestExpense = financials.latestInterestExpense || 0;
+    const ebit = financials.latestEBIT || financials.latestOperatingIncome || 0;
+    const interestCoverage = interestExpense > 0 ? ebit / interestExpense : 10;
+
+    // Synthetic credit rating based on interest coverage
+    let creditSpread;
+    if (interestCoverage > 8.5) {
+      creditSpread = 0.0063; // AAA: 63bps
+    } else if (interestCoverage > 6.5) {
+      creditSpread = 0.0078; // AA: 78bps
+    } else if (interestCoverage > 5.5) {
+      creditSpread = 0.0098; // A+: 98bps
+    } else if (interestCoverage > 4.25) {
+      creditSpread = 0.0108; // A: 108bps
+    } else if (interestCoverage > 3) {
+      creditSpread = 0.0122; // A-: 122bps
+    } else if (interestCoverage > 2.5) {
+      creditSpread = 0.0156; // BBB: 156bps
+    } else if (interestCoverage > 2) {
+      creditSpread = 0.0200; // BB+: 200bps
+    } else if (interestCoverage > 1.5) {
+      creditSpread = 0.0300; // BB: 300bps
+    } else {
+      creditSpread = 0.0450; // B or below: 450bps
+    }
+
+    const costOfDebt = riskFreeRate + creditSpread;
+    const taxRate = 0.21; // US corporate tax rate
+    const afterTaxCostOfDebt = costOfDebt * (1 - taxRate);
+
+    // Size premium (simplified - based on market cap)
+    let sizePremium = 0;
+    if (marketCap > 0) {
+      if (marketCap < 250e6) {
+        sizePremium = 0.05; // Micro cap: +5%
+      } else if (marketCap < 1e9) {
+        sizePremium = 0.03; // Small cap: +3%
+      } else if (marketCap < 5e9) {
+        sizePremium = 0.015; // Mid cap: +1.5%
+      }
+      // Large cap: no premium
+    }
+
+    // Final WACC calculation
+    const wacc = (costOfEquity + sizePremium) * equityWeight + afterTaxCostOfDebt * debtWeight;
+
+    return {
+      wacc: Math.max(0.05, Math.min(wacc, 0.20)),
+      buildUp: {
+        riskFreeRate,
+        beta,
+        equityRiskPremium,
+        costOfEquity,
+        sizePremium,
+        costOfEquityWithSize: costOfEquity + sizePremium,
+        interestCoverage,
+        syntheticRating: this.getSyntheticRating(interestCoverage),
+        creditSpread,
+        costOfDebt,
+        taxRate,
+        afterTaxCostOfDebt,
+        equityWeight,
+        debtWeight,
+        marketCap,
+        totalDebt,
+        netDebt
+      }
+    };
+  }
+
+  /**
+   * Get synthetic credit rating from interest coverage
+   */
+  getSyntheticRating(coverage) {
+    if (coverage > 8.5) return 'AAA';
+    if (coverage > 6.5) return 'AA';
+    if (coverage > 5.5) return 'A+';
+    if (coverage > 4.25) return 'A';
+    if (coverage > 3) return 'A-';
+    if (coverage > 2.5) return 'BBB';
+    if (coverage > 2) return 'BB+';
+    if (coverage > 1.5) return 'BB';
+    return 'B';
   }
 }
 

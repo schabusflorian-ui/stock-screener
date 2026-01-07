@@ -1,0 +1,205 @@
+/* frontend/src/components/agent/RiskLimitsSettings.css */
+
+.risk-limits-settings {
+  max-width: 800px;
+}
+
+.risk-limits-settings__skeleton {
+  height: 400px;
+}
+
+/* Header title with icon */
+.risk-limits-settings .ui-card__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Sections */
+.risk-limits-settings__sections {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.risk-limits-settings__section {
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.risk-limits-settings__section:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.risk-limits-settings__section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.risk-limits-settings__section-title svg {
+  color: var(--brand-primary);
+}
+
+/* Fields */
+.risk-limits-settings__field {
+  margin-bottom: 16px;
+}
+
+.risk-limits-settings__field:last-child {
+  margin-bottom: 0;
+}
+
+.risk-limits-settings__field label {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.risk-limits-settings__field label span:first-child {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.risk-limits-settings__field-hint {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-tertiary);
+  font-weight: 400;
+  margin-top: 2px;
+}
+
+/* Slider Group */
+.risk-limits-settings__slider-group {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.risk-limits-settings__slider-group input[type="range"] {
+  flex: 1;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  outline: none;
+}
+
+.risk-limits-settings__slider-group input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  background: var(--brand-primary);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s ease;
+}
+
+.risk-limits-settings__slider-group input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+}
+
+.risk-limits-settings__slider-group input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  background: var(--brand-primary);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.risk-limits-settings__value {
+  min-width: 48px;
+  text-align: right;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+/* Toggle Fields */
+.risk-limits-settings__field--toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.risk-limits-settings__field--toggle label {
+  margin-bottom: 0;
+  flex: 1;
+}
+
+.risk-limits-settings__field--toggle input[type="checkbox"] {
+  width: 44px;
+  height: 24px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--bg-tertiary);
+  border-radius: 12px;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.risk-limits-settings__field--toggle input[type="checkbox"]::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background: white;
+  border-radius: 50%;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s ease;
+}
+
+.risk-limits-settings__field--toggle input[type="checkbox"]:checked {
+  background: var(--brand-primary);
+}
+
+.risk-limits-settings__field--toggle input[type="checkbox"]:checked::before {
+  transform: translateX(20px);
+}
+
+/* Error */
+.risk-limits-settings__error {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: var(--negative-muted);
+  border-radius: 8px;
+  color: var(--negative);
+  font-size: 0.9rem;
+}
+
+/* Actions */
+.risk-limits-settings__actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.risk-limits-settings__actions-left {
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width: 600px) {
+  .risk-limits-settings__actions {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .risk-limits-settings__actions-left {
+    width: 100%;
+    justify-content: center;
+  }
+}

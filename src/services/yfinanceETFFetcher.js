@@ -234,6 +234,53 @@ class YFinanceETFFetcher {
   }
 
   /**
+   * Fetch ETF holdings (top holdings from quoteSummary)
+   * @param {string} symbol
+   * @returns {Object|null} Holdings data or null if not available
+   */
+  async fetchHoldings(symbol) {
+    await this.throttle();
+
+    try {
+      const result = await yahooFinance.quoteSummary(symbol.toUpperCase(), {
+        modules: ['topHoldings']
+      });
+
+      if (!result || !result.topHoldings) {
+        console.log(`YFinance: No holdings data for ${symbol}`);
+        return null;
+      }
+
+      const th = result.topHoldings;
+
+      return {
+        symbol: symbol.toUpperCase(),
+        asOfDate: new Date().toISOString().split('T')[0],
+        stockPosition: th.stockPosition || 0,
+        bondPosition: th.bondPosition || 0,
+        cashPosition: th.cashPosition || 0,
+        otherPosition: th.otherPosition || 0,
+        holdings: (th.holdings || []).map(h => ({
+          symbol: h.symbol,
+          name: h.holdingName,
+          weight: h.holdingPercent * 100 // Convert from decimal to percent
+        })),
+        sectorWeightings: th.sectorWeightings || [],
+        equityHoldings: th.equityHoldings || {},
+        bondRatings: th.bondRatings || []
+      };
+    } catch (error) {
+      if (error.message?.includes('Not Found') || error.message?.includes('404')) {
+        console.log(`YFinance: Holdings not found for ${symbol}`);
+        return null;
+      }
+
+      console.error(`YFinance holdings error for ${symbol}:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
    * Search for ETFs matching a query
    * @param {string} query
    * @param {number} limit

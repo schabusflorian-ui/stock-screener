@@ -16,7 +16,6 @@ export { default as BacktestPanel } from './BacktestPanel';
 export { default as StressTestPanel } from './StressTestPanel';
 export { default as WhatIfPanel } from './WhatIfPanel';
 export { default as RebalancePanel } from './RebalancePanel';
-export { default as PositionSizerPanel } from './PositionSizerPanel';
 export { default as FactorExposurePanel } from './FactorExposurePanel';
 export { default as CorrelationPanel } from './CorrelationPanel';
 export { default as AdvancedKellyPanel } from './AdvancedKellyPanel';

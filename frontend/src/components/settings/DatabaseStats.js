@@ -4,7 +4,6 @@ import { settingsAPI } from '../../services/api';
 import { Database, RefreshCw, HardDrive, Table, FileText } from 'lucide-react';
 import './SettingsComponents.css';
 
-// eslint-disable-next-line no-unused-vars
 function formatBytes(bytes) {
   if (!bytes || bytes === 0) return '0 B';
   const k = 1024;
@@ -25,8 +24,9 @@ function DatabaseStats() {
       setStats(response.data.data || response.data);
       setError(null);
     } catch (err) {
-      setError('Failed to load database statistics');
-      console.error(err);
+      const errorMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to load database statistics';
+      setError(errorMsg);
+      console.error('Database stats error:', err);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -65,7 +65,7 @@ function DatabaseStats() {
             <HardDrive size={24} />
           </div>
           <div className="stat-content">
-            <span className="stat-value">{stats?.size || 'N/A'}</span>
+            <span className="stat-value">{stats?.size ? formatBytes(stats.size) : 'N/A'}</span>
             <span className="stat-label">Database Size</span>
           </div>
         </div>
@@ -112,8 +112,8 @@ function DatabaseStats() {
           {(stats?.tables || []).map((table, index) => (
             <div key={index} className="table-row">
               <span className="table-name-col">{table.name}</span>
-              <span className="table-rows-col">{(table.rowCount || 0).toLocaleString()}</span>
-              <span className="table-size-col">{table.size || 'N/A'}</span>
+              <span className="table-rows-col">{(table.rows || table.rowCount || 0).toLocaleString()}</span>
+              <span className="table-size-col">{table.size || '-'}</span>
             </div>
           ))}
         </div>

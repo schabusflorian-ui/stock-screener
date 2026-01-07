@@ -463,9 +463,10 @@ class SectorAnalysisService {
 
     const companies = this.db.prepare(sql).all(periodType, periodType, sector);
 
-    // Calculate sector aggregates
+    // Calculate sector aggregates with both average and median
     const aggregate = {
       company_count: companies.length,
+      // Averages
       avg_roic: this.avg(companies, 'roic'),
       avg_roe: this.avg(companies, 'roe'),
       avg_net_margin: this.avg(companies, 'net_margin'),
@@ -474,7 +475,14 @@ class SectorAnalysisService {
       avg_debt_to_equity: this.avg(companies, 'debt_to_equity'),
       avg_revenue_growth: this.avg(companies, 'revenue_growth'),
       avg_fcf_yield: this.avg(companies, 'fcf_yield'),
-      total_market_cap_b: this.sum(companies, 'market_cap_b')
+      total_market_cap_b: this.sum(companies, 'market_cap_b'),
+      // Medians (for metrics where outliers significantly skew averages)
+      median_roic: this.median(companies, 'roic'),
+      median_pe_ratio: this.median(companies, 'pe_ratio'),
+      median_net_margin: this.median(companies, 'net_margin'),
+      median_debt_to_equity: this.median(companies, 'debt_to_equity'),
+      median_revenue_growth: this.median(companies, 'revenue_growth'),
+      median_fcf_yield: this.median(companies, 'fcf_yield')
     };
 
     return {
@@ -549,6 +557,7 @@ class SectorAnalysisService {
     const aggregate = {
       company_count: companies.length,
       sector: companies[0]?.sector,
+      // Averages
       avg_roic: this.avg(companies, 'roic'),
       avg_roe: this.avg(companies, 'roe'),
       avg_net_margin: this.avg(companies, 'net_margin'),
@@ -557,7 +566,14 @@ class SectorAnalysisService {
       avg_debt_to_equity: this.avg(companies, 'debt_to_equity'),
       avg_revenue_growth: this.avg(companies, 'revenue_growth'),
       avg_fcf_yield: this.avg(companies, 'fcf_yield'),
-      total_market_cap_b: this.sum(companies, 'market_cap_b')
+      total_market_cap_b: this.sum(companies, 'market_cap_b'),
+      // Medians (for metrics where outliers significantly skew averages)
+      median_roic: this.median(companies, 'roic'),
+      median_pe_ratio: this.median(companies, 'pe_ratio'),
+      median_net_margin: this.median(companies, 'net_margin'),
+      median_debt_to_equity: this.median(companies, 'debt_to_equity'),
+      median_revenue_growth: this.median(companies, 'revenue_growth'),
+      median_fcf_yield: this.median(companies, 'fcf_yield')
     };
 
     return {
@@ -611,6 +627,19 @@ class SectorAnalysisService {
       .filter(v => v !== null && v !== undefined && v >= bounds[0] && v <= bounds[1]);
     if (values.length === 0) return null;
     return +(values.reduce((a, b) => a + b, 0) / values.length).toFixed(2);
+  }
+
+  median(arr, field) {
+    const bounds = SectorAnalysisService.BOUNDS[field] || [-Infinity, Infinity];
+    const values = arr.map(x => x[field])
+      .filter(v => v !== null && v !== undefined && v >= bounds[0] && v <= bounds[1])
+      .sort((a, b) => a - b);
+    if (values.length === 0) return null;
+    const mid = Math.floor(values.length / 2);
+    if (values.length % 2 === 0) {
+      return +((values[mid - 1] + values[mid]) / 2).toFixed(2);
+    }
+    return +values[mid].toFixed(2);
   }
 
   sum(arr, field) {

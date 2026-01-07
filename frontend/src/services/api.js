@@ -7,8 +7,15 @@ const API_BASE_URL = process.env.REACT_APP_API_URL
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 30000, // 30 seconds for most requests
   withCredentials: true // Enable credentials for session cookies
+});
+
+// Extended timeout instance for long-running operations
+const apiLong = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 300000, // 5 minutes for update operations
+  withCredentials: true
 });
 
 // Response interceptor to handle 401 errors
@@ -310,7 +317,7 @@ export const sentimentAPI = {
 
   // Force refresh sentiment from Reddit
   refresh: (symbol) =>
-    api.post(`/sentiment/${symbol}/refresh`, {}, { timeout: 120000 }),
+    apiLong.post(`/sentiment/${symbol}/refresh`),
 
   // Get Reddit posts for a stock
   getPosts: (symbol, { limit = 50, sort = 'score', subreddit = null } = {}) => {
@@ -525,8 +532,14 @@ export const indicesAPI = {
   getAlpha: (symbol) => api.get(`/indices/alpha/${symbol}`),
 
   // Get alpha time series for charting (daily alpha over time)
-  getAlphaTimeseries: (symbol, period = '1y') =>
-    api.get(`/indices/alpha/timeseries/${symbol}?period=${period}`),
+  // rollingWindow: optional '30d', '60d', '90d' for rolling alpha calculation
+  getAlphaTimeseries: (symbol, period = '1y', rollingWindow = null) => {
+    let url = `/indices/alpha/timeseries/${symbol}?period=${period}`;
+    if (rollingWindow) {
+      url += `&rollingWindow=${rollingWindow}`;
+    }
+    return api.get(url);
+  },
 
   // Get stocks outperforming the market
   getOutperformers: (period = 'ytd', limit = 50) =>
@@ -537,7 +550,7 @@ export const indicesAPI = {
     api.get(`/prices/screen/underperformers?period=${period}&limit=${limit}`),
 
   // Trigger index price update (admin)
-  update: () => api.post('/indices/update', {}, { timeout: 120000 }),
+  update: () => api.post('/indices/etfs/update', {}, { timeout: 120000 }),
 
   // Recalculate alpha for all stocks
   calculateAlpha: () => api.post('/indices/alpha/calculate')
@@ -599,9 +612,9 @@ export const updatesAPI = {
     return response.data;
   },
 
-  // Trigger quarterly update
+  // Trigger quarterly update (long-running)
   run: async (quarter, forceFullUpdate = false) => {
-    const response = await api.post('/updates/run', { quarter, forceFullUpdate });
+    const response = await apiLong.post('/updates/run', { quarter, forceFullUpdate });
     return response.data;
   },
 
@@ -665,16 +678,16 @@ export const priceUpdatesAPI = {
   getStale: (limit = 50) => api.get(`/price-updates/stale?limit=${limit}`),
 
   // Trigger daily price update (runs in background)
-  run: () => api.post('/price-updates/run'),
+  run: () => apiLong.post('/price-updates/run'),
 
   // Run dry-run to see what would be updated
-  dryRun: () => api.post('/price-updates/dry-run', {}, { timeout: 60000 }),
+  dryRun: () => apiLong.post('/price-updates/dry-run'),
 
   // Run backfill for stale companies
-  backfill: () => api.post('/price-updates/backfill'),
+  backfill: () => apiLong.post('/price-updates/backfill'),
 
   // Recalculate company tier assignments
-  recalculateTiers: () => api.post('/price-updates/recalculate-tiers', {}, { timeout: 120000 })
+  recalculateTiers: () => apiLong.post('/price-updates/recalculate-tiers')
 };
 
 export const alertsAPI = {
@@ -745,9 +758,34 @@ export const dcfAPI = {
   calculateCustom: (symbol, assumptions) =>
     api.post(`/dcf/${symbol}`, assumptions, { timeout: 30000 }),
 
-  // Get sensitivity analysis matrix
-  getSensitivity: (symbol) =>
-    api.get(`/dcf/${symbol}/sensitivity`, { timeout: 60000 }),
+  // Get sensitivity analysis matrix with custom intervals
+  getSensitivity: (symbol, options = {}) => {
+    const params = new URLSearchParams();
+    if (options.rowVariable) params.append('rowVariable', options.rowVariable);
+    if (options.colVariable) params.append('colVariable', options.colVariable);
+    if (options.rowMin !== undefined) params.append('rowMin', options.rowMin);
+    if (options.rowMax !== undefined) params.append('rowMax', options.rowMax);
+    if (options.rowStep !== undefined) params.append('rowStep', options.rowStep);
+    if (options.colMin !== undefined) params.append('colMin', options.colMin);
+    if (options.colMax !== undefined) params.append('colMax', options.colMax);
+    if (options.colStep !== undefined) params.append('colStep', options.colStep);
+    return api.get(`/dcf/${symbol}/sensitivity?${params.toString()}`, { timeout: 120000 });
+  },
+
+  // Reverse DCF - get implied growth and WACC from current price
+  getReverse: (symbol, targetPrice) => {
+    const params = new URLSearchParams();
+    if (targetPrice) params.append('targetPrice', targetPrice);
+    return api.get(`/dcf/${symbol}/reverse?${params.toString()}`, { timeout: 60000 });
+  },
+
+  // Tornado chart - sensitivity ranking of all variables
+  getTornado: (symbol, variation = 20) =>
+    api.get(`/dcf/${symbol}/tornado?variation=${variation}`, { timeout: 60000 }),
+
+  // Break-even analysis
+  getBreakeven: (symbol) =>
+    api.get(`/dcf/${symbol}/breakeven`, { timeout: 60000 }),
 
   // Get historical DCF valuations
   getHistory: (symbol, limit = 10) =>
@@ -766,29 +804,54 @@ export const dcfAPI = {
 // ETF and Model Portfolio API
 // ============================================
 export const etfsAPI = {
-  // Get all ETFs
+  // Get all ETFs with filters
   getAll: (options = {}) => {
     const params = new URLSearchParams();
     if (options.category) params.append('category', options.category);
     if (options.assetClass) params.append('assetClass', options.assetClass);
     if (options.issuer) params.append('issuer', options.issuer);
+    if (options.tier) params.append('tier', options.tier);
+    if (options.essential) params.append('essential', options.essential);
+    if (options.search) params.append('search', options.search);
+    if (options.sortBy) params.append('sortBy', options.sortBy);
+    if (options.sortOrder) params.append('sortOrder', options.sortOrder);
     if (options.limit) params.append('limit', options.limit);
+    if (options.offset) params.append('offset', options.offset);
     return api.get(`/etfs?${params.toString()}`);
   },
+
+  // Search ETFs by symbol or name
+  search: (query, limit = 20) => api.get(`/etfs/search?q=${encodeURIComponent(query)}&limit=${limit}`),
+
+  // Get essential (must-have) ETFs
+  getEssential: () => api.get('/etfs/essential'),
+
+  // Get ETF issuers
+  getIssuers: () => api.get('/etfs/issuers'),
+
+  // Get lazy portfolios (pre-built strategies)
+  getLazyPortfolios: (featured = false) => api.get(`/etfs/lazy-portfolios${featured ? '?featured=true' : ''}`),
+
+  // Get single lazy portfolio details
+  getLazyPortfolio: (slug) => api.get(`/etfs/lazy-portfolios/${slug}`),
 
   // Get ETF by symbol
   get: (symbol) => api.get(`/etfs/${symbol}`),
 
-  // Get ETF categories
-  getCategories: () => api.get('/etfs/categories'),
+  // Get ETF categories with counts
+  getCategories: (withCounts = false) => api.get(`/etfs/categories${withCounts ? '?counts=true' : ''}`),
 
-  // Get ETF holdings
+  // Get ETF holdings (fetches from Yahoo Finance if not cached)
   getHoldings: (symbol, options = {}) => {
     const params = new URLSearchParams();
     if (options.minWeight) params.append('minWeight', options.minWeight);
     if (options.limit) params.append('limit', options.limit);
+    if (options.refresh) params.append('refresh', 'true');
     return api.get(`/etfs/${symbol}/holdings?${params.toString()}`);
   },
+
+  // Force refresh holdings from Yahoo Finance
+  refreshHoldings: (symbol) => api.post(`/etfs/${symbol}/holdings/refresh`),
 
   // Compare ETFs
   compare: (symbols) => api.get(`/etfs/compare?symbols=${symbols.join(',')}`),
@@ -809,7 +872,13 @@ export const etfsAPI = {
 
   // Calculate rebalance trades
   rebalance: (currentHoldings, targetModel, portfolioValue) =>
-    api.post('/etfs/rebalance', { currentHoldings, targetModel, portfolioValue })
+    api.post('/etfs/rebalance', { currentHoldings, targetModel, portfolioValue }),
+
+  // Get ETF holdings status (for Updates Dashboard)
+  getHoldingsStatus: () => api.get('/etfs/holdings/status'),
+
+  // Trigger ETF holdings refresh (static data)
+  refreshAllHoldings: () => api.post('/etfs/holdings/refresh')
 };
 
 export const dividendsAPI = {
@@ -894,6 +963,9 @@ export const investorsAPI = {
   // Get recent investor activity (new buys, sells)
   getActivity: (limit = 50) => api.get(`/investors/activity?limit=${limit}`),
 
+  // Get quick status for 13F holdings (for Updates Dashboard)
+  getStatus: () => api.get('/investors/status'),
+
   // Prepare portfolio clone from investor
   clone: (id, options = {}) => api.post(`/investors/${id}/clone`, options),
 
@@ -944,6 +1016,10 @@ export const portfoliosAPI = {
 
   // Get portfolio holdings
   getHoldings: (id) => api.get(`/portfolios/${id}/holdings`),
+
+  // Get underlying holdings breakdown for ETF positions
+  getUnderlyingHoldings: (id, { refresh = false } = {}) =>
+    api.get(`/portfolios/${id}/underlying${refresh ? '?refresh=true' : ''}`),
 
   // Execute trade
   trade: (id, tradeData) => api.post(`/portfolios/${id}/trade`, tradeData),
@@ -1168,25 +1244,37 @@ export const simulateAPI = {
     api.post('/simulate/optimal-positions', config),
 
   // Advanced Kelly Criterion
+  getKellyOptions: () => api.get('/simulate/kelly/options'),
+
   getKellyBacktest: (portfolioId, params = {}) => {
-    const { period = '3y', rebalanceFrequency = 'monthly', initialCapital = 100000 } = params;
-    return api.get(`/simulate/portfolios/${portfolioId}/kelly/backtest?period=${period}&rebalanceFrequency=${rebalanceFrequency}&initialCapital=${initialCapital}`, { timeout: 60000 });
+    const { period = '3y', rebalanceFrequency = 'monthly', initialCapital = 100000, riskFreeRate = 0.05 } = params;
+    return api.get(`/simulate/portfolios/${portfolioId}/kelly/backtest?period=${period}&rebalanceFrequency=${rebalanceFrequency}&initialCapital=${initialCapital}&riskFreeRate=${riskFreeRate}`, { timeout: 60000 });
   },
   getKellyOptimize: (portfolioId, params = {}) => {
-    const { period = '3y', maxWeight = 0.40, minWeight = 0.02, leverageAllowed = false } = params;
-    return api.get(`/simulate/portfolios/${portfolioId}/kelly/optimize?period=${period}&maxWeight=${maxWeight}&minWeight=${minWeight}&leverageAllowed=${leverageAllowed}`, { timeout: 60000 });
+    const { period = '3y', maxWeight = 0.40, minWeight = 0.02, leverageAllowed = false, riskFreeRate = 0.05 } = params;
+    return api.get(`/simulate/portfolios/${portfolioId}/kelly/optimize?period=${period}&maxWeight=${maxWeight}&minWeight=${minWeight}&leverageAllowed=${leverageAllowed}&riskFreeRate=${riskFreeRate}`, { timeout: 60000 });
   },
   getKellyRegime: (portfolioId, params = {}) => {
-    const { period = '5y', regimeWindow = 60 } = params;
-    return api.get(`/simulate/portfolios/${portfolioId}/kelly/regime?period=${period}&regimeWindow=${regimeWindow}`, { timeout: 60000 });
+    const { period = '5y', regimeWindow = 60, riskFreeRate = 0.05 } = params;
+    return api.get(`/simulate/portfolios/${portfolioId}/kelly/regime?period=${period}&regimeWindow=${regimeWindow}&riskFreeRate=${riskFreeRate}`, { timeout: 60000 });
   },
   getKellyDrawdown: (portfolioId, params = {}) => {
-    const { period = '5y', initialCapital = 100000 } = params;
-    return api.get(`/simulate/portfolios/${portfolioId}/kelly/drawdown?period=${period}&initialCapital=${initialCapital}`, { timeout: 60000 });
+    const { period = '5y', initialCapital = 100000, riskFreeRate = 0.05 } = params;
+    return api.get(`/simulate/portfolios/${portfolioId}/kelly/drawdown?period=${period}&initialCapital=${initialCapital}&riskFreeRate=${riskFreeRate}`, { timeout: 60000 });
   },
   getKellyCompare: (portfolioId, params = {}) => {
-    const { period = '5y', initialCapital = 100000, rebalanceFrequency = 'monthly' } = params;
-    return api.get(`/simulate/portfolios/${portfolioId}/kelly/compare?period=${period}&initialCapital=${initialCapital}&rebalanceFrequency=${rebalanceFrequency}`, { timeout: 60000 });
+    const { period = '5y', initialCapital = 100000, rebalanceFrequency = 'monthly', riskFreeRate = 0.05 } = params;
+    return api.get(`/simulate/portfolios/${portfolioId}/kelly/compare?period=${period}&initialCapital=${initialCapital}&rebalanceFrequency=${rebalanceFrequency}&riskFreeRate=${riskFreeRate}`, { timeout: 60000 });
+  },
+  getKellyTalebRisk: (portfolioId, params = {}) => {
+    const { period = '5y', initialCapital = 100000 } = params;
+    return api.get(`/simulate/portfolios/${portfolioId}/kelly/taleb-risk?period=${period}&initialCapital=${initialCapital}`, { timeout: 60000 });
+  },
+  analyzeSingleHolding: (symbol, params = {}) => {
+    const { portfolioId, period = '3y', riskFreeRate = 0.05, benchmarkSymbol = 'SPY' } = params;
+    let url = `/simulate/kelly/analyze/${symbol}?period=${period}&riskFreeRate=${riskFreeRate}&benchmarkSymbol=${benchmarkSymbol}`;
+    if (portfolioId) url += `&portfolioId=${portfolioId}`;
+    return api.get(url, { timeout: 60000 });
   },
 
   // Alpha Analytics
@@ -1225,7 +1313,7 @@ export const knowledgeAPI = {
 
   // Trigger knowledge base refresh
   refresh: (mode = 'incremental') =>
-    api.post('/knowledge/update/refresh', { mode }, { timeout: 300000 }),
+    apiLong.post('/knowledge/update/refresh', { mode }),
 
   // Search knowledge base
   search: (query, { topK = 5, topics = null, minSimilarity = 0.3 } = {}) => {
@@ -1383,7 +1471,7 @@ export const secRefreshAPI = {
 
   // Run SEC direct refresh
   run: (mode = 'watchlist', symbols = []) =>
-    api.post('/sec-refresh/run', { mode, symbols }),
+    apiLong.post('/sec-refresh/run', { mode, symbols }),
 
   // Get watchlist symbols
   getWatchlist: () => api.get('/sec-refresh/watchlist')
@@ -1447,6 +1535,9 @@ export const notesAPI = {
   // Notes by company
   getByCompany: (symbol) => api.get(`/notes/company/${symbol}`),
 
+  // Notes by portfolio
+  getByPortfolio: (portfolioId) => api.get(`/notes/portfolio/${portfolioId}`),
+
   // Search
   search: (query, limit = 50) => api.get(`/notes/search?q=${encodeURIComponent(query)}&limit=${limit}`),
 
@@ -1470,7 +1561,10 @@ export const notesAPI = {
   getSnapshots: (noteId) => api.get(`/notes/${noteId}/snapshots`),
   captureSnapshot: (noteId, data) => api.post(`/notes/${noteId}/snapshots`, data),
   compareSnapshot: (snapshotId) => api.get(`/notes/snapshots/${snapshotId}/compare`),
-  deleteSnapshot: (snapshotId) => api.delete(`/notes/snapshots/${snapshotId}`)
+  deleteSnapshot: (snapshotId) => api.delete(`/notes/snapshots/${snapshotId}`),
+  getSnapshotsBySymbol: (symbol) => api.get(`/notes/company/${symbol}`).then(res => ({
+    data: { snapshots: res.data.snapshots || [] }
+  }))
 };
 
 // ============================================
@@ -1640,7 +1734,293 @@ export const historicalAPI = {
 
   // Refresh outcomes
   refreshOutcomes: (daysOld = 30, limit = 500) =>
-    api.post('/historical/refresh-outcomes', { daysOld, limit })
+    api.post('/historical/refresh-outcomes', { daysOld, limit }),
+
+  // Get factor timeseries for charts
+  getFactorTimeseries: (factor = 'value', groupBy = 'quarter') =>
+    api.get(`/historical/factor-timeseries?factor=${factor}&groupBy=${groupBy}`),
+
+  // Get decision heatmap data
+  getDecisionHeatmap: (decisionType = null) => {
+    const params = decisionType ? `?decisionType=${decisionType}` : '';
+    return api.get(`/historical/decision-heatmap${params}`);
+  },
+
+  // Get investor styles with performance
+  getInvestorStyles: () => api.get('/historical/investor-styles'),
+
+  // Classify a single investor
+  classifyInvestorStyle: (investorId) =>
+    api.post('/historical/classify-investor-style', { investorId }),
+
+  // Batch classify all investors
+  classifyAllInvestors: (minDecisions = 20) =>
+    api.post('/historical/classify-all-investors', { minDecisions })
+};
+
+// =============================================================================
+// Agent 3: Attribution & Analytics API
+// =============================================================================
+
+export const attributionAPI = {
+  // Market Regime
+  getRegime: () => api.get('/attribution/regime'),
+  getRegimeHistory: (days = 30) => api.get(`/attribution/regime/history?days=${days}`),
+  getRegimeDefinitions: () => api.get('/attribution/regime/definitions'),
+
+  // Trade Attribution
+  analyzeTrade: (transactionId) => api.get(`/attribution/trade/${transactionId}`),
+  getTradeAttribution: (transactionId) => api.get(`/attribution/trade/${transactionId}`),
+
+  // Signal Strength
+  getSignalStrength: (symbol) => api.get(`/attribution/signals/${symbol}`),
+  getPortfolioSignals: (portfolioId) => api.get(`/attribution/portfolios/${portfolioId}/signals`),
+
+  // Portfolio Attribution
+  getPortfolioSummary: (portfolioId, period = '90d') =>
+    api.get(`/attribution/portfolios/${portfolioId}/summary?period=${period}`),
+  getFactorPerformance: (portfolioId, period = '90d') =>
+    api.get(`/attribution/portfolios/${portfolioId}/factors?period=${period}`),
+  getRegimePerformance: (portfolioId, period = '90d') =>
+    api.get(`/attribution/portfolios/${portfolioId}/regime?period=${period}`),
+  getSectorPerformance: (portfolioId, period = '90d') =>
+    api.get(`/attribution/portfolios/${portfolioId}/sector?period=${period}`),
+  analyzePortfolio: (portfolioId, period = '90d') =>
+    api.post(`/attribution/portfolios/${portfolioId}/analyze`, { period }),
+
+  // Risk Limits
+  getRiskLimits: (portfolioId) =>
+    api.get(`/attribution/portfolios/${portfolioId}/risk-limits`),
+  updateRiskLimits: (portfolioId, limits) =>
+    api.put(`/attribution/portfolios/${portfolioId}/risk-limits`, limits),
+
+  // Recommendations
+  getRecommendations: (params = {}) => {
+    const searchParams = new URLSearchParams();
+    if (params.portfolioId) searchParams.append('portfolioId', params.portfolioId);
+    if (params.limit) searchParams.append('limit', params.limit);
+    if (params.executed !== undefined) searchParams.append('executed', params.executed);
+    return api.get(`/attribution/recommendations?${searchParams.toString()}`);
+  },
+  getRecommendation: (portfolioId) => api.get(`/attribution/portfolios/${portfolioId}/recommendation`),
+  getRecommendationById: (id) => api.get(`/attribution/recommendations/${id}`),
+
+  // Opportunities
+  getOpportunities: (params = {}) => {
+    const searchParams = new URLSearchParams();
+    if (params.limit) searchParams.append('limit', params.limit);
+    if (params.triggerType) searchParams.append('triggerType', params.triggerType);
+    if (params.minScore) searchParams.append('minScore', params.minScore);
+    return api.get(`/attribution/opportunities?${searchParams.toString()}`);
+  }
+};
+
+export const orchestratorAPI = {
+  // Run daily analysis
+  run: (portfolioId) => apiLong.post(`/orchestrator/run/${portfolioId}`),
+
+  // Get latest analysis
+  getLatest: (portfolioId) => api.get(`/orchestrator/latest/${portfolioId}`),
+
+  // Get opportunities
+  getOpportunities: () => api.get('/orchestrator/opportunities'),
+
+  // Get analysis history
+  getHistory: (portfolioId, limit = 10) =>
+    api.get(`/orchestrator/history/${portfolioId}?limit=${limit}`)
+};
+
+export const agentAPI = {
+  // Get recommendation for a symbol
+  getRecommendation: (symbol, portfolioId = null) => {
+    const params = portfolioId ? `?portfolioId=${portfolioId}` : '';
+    return api.get(`/agent/recommendation/${symbol}${params}`);
+  },
+
+  // Get recommendations for portfolio
+  getPortfolioRecommendations: (portfolioId) =>
+    api.get(`/agent/portfolio/${portfolioId}/recommendations`),
+
+  // Execute a recommendation
+  executeRecommendation: (recommendationId) =>
+    api.post(`/agent/recommendations/${recommendationId}/execute`)
+};
+
+// ============================================
+// Trading API (Agent 2 - Liquidity & Signals)
+// ============================================
+export const tradingAPI = {
+  // Health check
+  getHealth: () => api.get('/trading/health'),
+
+  // Market Regime
+  getRegime: () => api.get('/trading/regime/current'),
+  getRegimeHistory: (days = 30) => api.get(`/trading/regime/history?days=${days}`),
+  getRegimeDefinitions: () => api.get('/trading/regime/definitions'),
+
+  // Technical Signals
+  getTechnical: (symbol) => api.get(`/trading/technical/${symbol}`),
+  getTechnicalBatch: (symbols) => api.post('/trading/technical/batch', { symbols }),
+
+  // Aggregated Signals
+  getSignals: (symbol) => api.get(`/trading/signals/${symbol}`),
+  getSignalsBatch: (symbols) => api.post('/trading/signals/batch', { symbols }),
+  getTopBullish: (limit = 20) => api.get(`/trading/signals/top/bullish?limit=${limit}`),
+
+  // Signal Summary
+  getSummary: (symbol) => api.get(`/trading/summary/${symbol}`),
+
+  // Liquidity Metrics (Agent 2)
+  getLiquidityStatus: () => api.get('/trading/liquidity/status'),
+  refreshLiquidity: () => apiLong.post('/trading/liquidity/refresh'),
+  getTopLiquid: (limit = 50) => api.get(`/trading/liquidity/top?limit=${limit}`),
+  getMostVolatile: (limit = 50) => api.get(`/trading/liquidity/volatile?limit=${limit}`),
+  getLiquidity: (symbol) => api.get(`/trading/liquidity/${symbol}`),
+  getLiquidityStats: () => api.get('/trading/liquidity/stats/summary')
+};
+
+// ============================================
+// Snapshots API (Portfolio Snapshots)
+// ============================================
+export const snapshotsAPI = {
+  // Create snapshot for all portfolios
+  createAll: () => apiLong.post('/portfolios/snapshot-all'),
+
+  // Get snapshots for a portfolio
+  get: (portfolioId, { limit = 30, startDate, endDate } = {}) => {
+    const params = new URLSearchParams();
+    if (limit) params.append('limit', limit);
+    if (startDate) params.append('startDate', startDate);
+    if (endDate) params.append('endDate', endDate);
+    return api.get(`/portfolios/${portfolioId}/snapshots?${params.toString()}`);
+  },
+
+  // Create snapshot for specific portfolio
+  create: (portfolioId) => api.post(`/portfolios/${portfolioId}/snapshots`)
+};
+
+// ============================================
+// Signals API (Enhanced Signals: 13F, Earnings, Insider)
+// ============================================
+export const signalsAPI = {
+  // 13F Activity
+  get13F: (symbol) => api.get(`/signals/13f/${symbol}`),
+  getTop13FNewPositions: (limit = 30) => api.get(`/signals/13f/top/new-positions?limit=${limit}`),
+  getTop13FIncreases: (limit = 30) => api.get(`/signals/13f/top/increases?limit=${limit}`),
+  getTop13FExits: (limit = 30) => api.get(`/signals/13f/top/exits?limit=${limit}`),
+
+  // Insider Open Market Buys
+  getInsider: (symbol) => api.get(`/signals/insiders/${symbol}`),
+  getTopOpenMarketBuys: (limit = 30) => api.get(`/signals/insiders/top/open-market-buys?limit=${limit}`),
+
+  // Earnings Momentum
+  getEarnings: (symbol) => api.get(`/signals/earnings/${symbol}`),
+  getTopEarningsMomentum: (limit = 30, minBeats = 2) =>
+    api.get(`/signals/earnings/top/momentum?limit=${limit}&minBeats=${minBeats}`),
+
+  // Combined signals for a symbol
+  getCombined: (symbol) => api.get(`/signals/combined/${symbol}`),
+
+  // Summary statistics
+  getSummary: () => api.get('/signals/summary')
+};
+
+// ============================================
+// Recommendations API (IC Tracking & Performance)
+// ============================================
+export const recommendationsAPI = {
+  // List recommendations with filters
+  list: (params = {}) => {
+    const searchParams = new URLSearchParams();
+    if (params.portfolioId) searchParams.append('portfolioId', params.portfolioId);
+    if (params.limit) searchParams.append('limit', params.limit);
+    if (params.offset) searchParams.append('offset', params.offset);
+    if (params.outcome) searchParams.append('outcome', params.outcome);
+    return api.get(`/recommendations?${searchParams.toString()}`);
+  },
+
+  // Get single recommendation with outcome
+  get: (id) => api.get(`/recommendations/${id}`),
+
+  // Get performance summary
+  getPerformance: (period = '90d') => api.get(`/recommendations/performance/summary?period=${period}`),
+
+  // Get performance by signal type (IC data)
+  getBySignal: (period = '90d') => api.get(`/recommendations/performance/by-signal?period=${period}`),
+
+  // Get performance by market regime
+  getByRegime: (period = '90d') => api.get(`/recommendations/performance/by-regime?period=${period}`),
+
+  // Get optimized signal weights
+  getOptimalWeights: () => api.get('/recommendations/performance/optimal-weights'),
+
+  // Get weight comparison (base vs optimized)
+  getWeightComparison: (regime = 'ALL') => api.get(`/recommendations/performance/weight-comparison?regime=${regime}`),
+
+  // Mark recommendation as executed
+  markExecuted: (id, executedPrice) => api.post(`/recommendations/${id}/execute`, { executedPrice }),
+
+  // Trigger outcome update (admin)
+  updateOutcomes: () => apiLong.post('/recommendations/update-outcomes')
+};
+
+// ============================================
+// Execution API (Auto-Execution & Pending Trades)
+// ============================================
+export const executionAPI = {
+  // Get execution settings for a portfolio
+  getSettings: (portfolioId) => api.get(`/execution/portfolios/${portfolioId}/settings`),
+
+  // Update execution settings
+  updateSettings: (portfolioId, settings) => api.put(`/execution/portfolios/${portfolioId}/settings`, settings),
+
+  // Get pending executions (all or by portfolio)
+  getPending: (portfolioId = null) => {
+    const params = portfolioId ? `?portfolioId=${portfolioId}` : '';
+    return api.get(`/execution/pending${params}`);
+  },
+
+  // Get pending executions for specific portfolio
+  getPortfolioPending: (portfolioId) => api.get(`/execution/portfolios/${portfolioId}/pending`),
+
+  // Approve a pending execution
+  approve: (id, approvedBy = 'user') => api.post(`/execution/${id}/approve`, { approvedBy }),
+
+  // Reject a pending execution
+  reject: (id, reason = '', rejectedBy = 'user') => api.post(`/execution/${id}/reject`, { reason, rejectedBy }),
+
+  // Execute an approved trade
+  execute: (id, actualPrice = null, actualShares = null) =>
+    api.post(`/execution/${id}/execute`, { actualPrice, actualShares }),
+
+  // Approve all pending for a portfolio
+  approveAll: (portfolioId, approvedBy = 'user') =>
+    api.post(`/execution/portfolios/${portfolioId}/approve-all`, { approvedBy }),
+
+  // Reject all pending for a portfolio
+  rejectAll: (portfolioId, reason = 'Batch rejection', rejectedBy = 'user') =>
+    api.post(`/execution/portfolios/${portfolioId}/reject-all`, { reason, rejectedBy }),
+
+  // Get execution history for a portfolio
+  getHistory: (portfolioId, limit = 50) => api.get(`/execution/portfolios/${portfolioId}/history?limit=${limit}`),
+
+  // Get execution statistics for a portfolio
+  getStats: (portfolioId) => api.get(`/execution/portfolios/${portfolioId}/stats`),
+
+  // Expire old pending executions (admin)
+  expireOld: () => api.post('/execution/expire-old')
+};
+
+// ============================================
+// Hedge Suggestions API
+// ============================================
+export const hedgeAPI = {
+  // Get hedge suggestions for a portfolio
+  getSuggestions: (portfolioId) => api.get(`/portfolios/${portfolioId}/hedge-suggestions`),
+
+  // Update hedge suggestion status
+  updateStatus: (portfolioId, suggestionId, status) =>
+    api.post(`/portfolios/${portfolioId}/hedge-suggestions/${suggestionId}/status`, { status })
 };
 
 export default api;

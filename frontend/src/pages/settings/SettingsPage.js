@@ -8,6 +8,7 @@ import {
   Settings,
   LifeBuoy
 } from 'lucide-react';
+import { PageHeader } from '../../components/ui';
 import UpdateDashboard from '../../components/settings/UpdateDashboard';
 import DataHealthReport from '../../components/settings/DataHealthReport';
 import IntegrationsPanel from '../../components/settings/IntegrationsPanel';
@@ -49,10 +50,10 @@ function SettingsPage() {
 
   return (
     <div className="settings-page">
-      <div className="settings-header">
-        <h1>Settings</h1>
-        <p className="settings-subtitle">System configuration and monitoring</p>
-      </div>
+      <PageHeader
+        title="Settings"
+        subtitle="System configuration and monitoring"
+      />
 
       <div className="settings-layout">
         <nav className="settings-tabs">

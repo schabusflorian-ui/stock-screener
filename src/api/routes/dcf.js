@@ -107,22 +107,50 @@ router.post('/:symbol', async (req, res) => {
 
 /**
  * GET /api/dcf/:symbol/sensitivity
- * Get sensitivity analysis matrix (WACC vs Growth)
+ * Get sensitivity analysis matrix with custom intervals
+ *
+ * Query params:
+ * - rowVariable: Variable for rows (wacc, growthStage1, etc.)
+ * - colVariable: Variable for columns
+ * - rowMin, rowMax, rowStep: Custom row interval (decimal, e.g., 0.06 for 6%)
+ * - colMin, colMax, colStep: Custom column interval
  */
 router.get('/:symbol/sensitivity', async (req, res) => {
   try {
     const { symbol } = req.params;
+    const {
+      rowVariable, colVariable,
+      rowMin, rowMax, rowStep,
+      colMin, colMax, colStep
+    } = req.query;
 
     const company = database.prepare(`
-      SELECT id FROM companies WHERE symbol = ?
+      SELECT id, market_cap FROM companies WHERE symbol = ?
     `).get(symbol.toUpperCase());
 
     if (!company) {
       return res.status(404).json({ success: false, error: 'Company not found' });
     }
 
-    // First get base case
-    const baseCase = await calculator.calculateDCF(company.id);
+    // Get current price and market cap from price_metrics
+    // NOTE: Use market_cap/price for shares (consistent with main endpoint)
+    const priceData = database.prepare(`
+      SELECT last_price, market_cap FROM price_metrics WHERE company_id = ?
+    `).get(company.id);
+
+    const baseOverrides = {};
+    if (priceData?.last_price) {
+      baseOverrides.currentPrice = priceData.last_price;
+    }
+    // Calculate shares from market_cap / price (consistent with main endpoint)
+    if (priceData?.market_cap && priceData?.last_price) {
+      baseOverrides.sharesOutstanding = priceData.market_cap / priceData.last_price;
+    } else if (company.market_cap && priceData?.last_price) {
+      baseOverrides.sharesOutstanding = company.market_cap / priceData.last_price;
+    }
+
+    // First get base case with price/shares
+    const baseCase = await calculator.calculateDCF(company.id, baseOverrides);
 
     if (!baseCase.success) {
       return res.json({ success: false, error: 'Cannot calculate base case', errors: baseCase.errors });
@@ -131,8 +159,21 @@ router.get('/:symbol/sensitivity', async (req, res) => {
     const baseWACC = baseCase.assumptions.wacc;
     const baseGrowth = baseCase.assumptions.growth.stage1;
 
+    // Build options for custom intervals - include baseInputs with shares/price
+    const options = {
+      baseInputs: baseOverrides
+    };
+    if (rowVariable) options.rowVariable = rowVariable;
+    if (colVariable) options.colVariable = colVariable;
+    if (rowMin !== undefined) options.rowMin = parseFloat(rowMin);
+    if (rowMax !== undefined) options.rowMax = parseFloat(rowMax);
+    if (rowStep !== undefined) options.rowStep = parseFloat(rowStep);
+    if (colMin !== undefined) options.colMin = parseFloat(colMin);
+    if (colMax !== undefined) options.colMax = parseFloat(colMax);
+    if (colStep !== undefined) options.colStep = parseFloat(colStep);
+
     // Generate sensitivity matrix
-    const sensitivity = await calculator.calculateSensitivity(company.id, baseWACC, baseGrowth);
+    const sensitivity = await calculator.calculateSensitivity(company.id, baseWACC, baseGrowth, options);
 
     res.json({
       success: true,
@@ -145,6 +186,199 @@ router.get('/:symbol/sensitivity', async (req, res) => {
     });
   } catch (error) {
     console.error('Sensitivity analysis error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/dcf/:symbol/reverse
+ * Reverse DCF - calculate implied growth and WACC from current price
+ *
+ * Query params:
+ * - targetPrice: Price to solve for (defaults to current price)
+ */
+router.get('/:symbol/reverse', async (req, res) => {
+  try {
+    const { symbol } = req.params;
+    const { targetPrice } = req.query;
+
+    const company = database.prepare(`
+      SELECT id, market_cap FROM companies WHERE symbol = ?
+    `).get(symbol.toUpperCase());
+
+    if (!company) {
+      return res.status(404).json({ success: false, error: 'Company not found' });
+    }
+
+    // Get current price and market cap from price_metrics
+    // NOTE: Use market_cap/price for shares (consistent with main endpoint)
+    const priceData = database.prepare(`
+      SELECT last_price, market_cap FROM price_metrics WHERE company_id = ?
+    `).get(company.id);
+
+    // Build base overrides with price and shares
+    const baseOverrides = {};
+    if (priceData?.last_price) {
+      baseOverrides.currentPrice = priceData.last_price;
+    }
+    // Calculate shares from market_cap / price (consistent with main endpoint)
+    if (priceData?.market_cap && priceData?.last_price) {
+      baseOverrides.sharesOutstanding = priceData.market_cap / priceData.last_price;
+    } else if (company.market_cap && priceData?.last_price) {
+      baseOverrides.sharesOutstanding = company.market_cap / priceData.last_price;
+    }
+
+    // Use targetPrice if specified, otherwise use current price
+    let price = targetPrice ? parseFloat(targetPrice) : priceData?.last_price;
+
+    if (!price || price <= 0) {
+      return res.status(400).json({ success: false, error: 'No valid target price available' });
+    }
+
+    // Calculate implied growth and WACC in parallel - pass baseOverrides to ensure correct shares
+    const [impliedGrowth, impliedWACC] = await Promise.all([
+      calculator.calculateImpliedGrowth(company.id, price, { baseInputs: baseOverrides }),
+      calculator.calculateImpliedWACC(company.id, price, { baseInputs: baseOverrides })
+    ]);
+
+    // Get base case for comparison - with proper price/shares
+    const baseCase = await calculator.calculateDCF(company.id, baseOverrides);
+
+    res.json({
+      success: true,
+      symbol: symbol.toUpperCase(),
+      targetPrice: price,
+      baseIntrinsicValue: baseCase.success ? baseCase.intrinsicValue : null,
+      upside: baseCase.success ? ((baseCase.intrinsicValue / price) - 1) * 100 : null,
+      impliedGrowth: impliedGrowth.success ? {
+        value: impliedGrowth.impliedGrowth,
+        valuePct: impliedGrowth.impliedGrowthPct,
+        baseValue: impliedGrowth.baseGrowth,
+        baseValuePct: impliedGrowth.baseGrowthPct,
+        gap: impliedGrowth.growthGap,
+        gapPct: impliedGrowth.growthGapPct,
+        interpretation: impliedGrowth.interpretation
+      } : null,
+      impliedWACC: impliedWACC.success ? {
+        value: impliedWACC.impliedWACC,
+        valuePct: impliedWACC.impliedWACCPct,
+        baseValue: impliedWACC.baseWACC,
+        baseValuePct: impliedWACC.baseWACCPct,
+        gap: impliedWACC.waccGap,
+        gapPct: impliedWACC.waccGapPct,
+        interpretation: impliedWACC.interpretation
+      } : null
+    });
+  } catch (error) {
+    console.error('Reverse DCF error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/dcf/:symbol/tornado
+ * Tornado chart data - sensitivity ranking of all variables
+ *
+ * Query params:
+ * - variation: Variation percentage (default 20 for ±20%)
+ */
+router.get('/:symbol/tornado', async (req, res) => {
+  try {
+    const { symbol } = req.params;
+    const { variation } = req.query;
+
+    const company = database.prepare(`
+      SELECT id, market_cap FROM companies WHERE symbol = ?
+    `).get(symbol.toUpperCase());
+
+    if (!company) {
+      return res.status(404).json({ success: false, error: 'Company not found' });
+    }
+
+    // Get current price and market cap from price_metrics
+    // NOTE: Use market_cap/price for shares (consistent with main endpoint)
+    const priceData = database.prepare(`
+      SELECT last_price, market_cap FROM price_metrics WHERE company_id = ?
+    `).get(company.id);
+
+    // Build base overrides with price and shares
+    const baseOverrides = {};
+    if (priceData?.last_price) {
+      baseOverrides.currentPrice = priceData.last_price;
+    }
+    // Calculate shares from market_cap / price (consistent with main endpoint)
+    if (priceData?.market_cap && priceData?.last_price) {
+      baseOverrides.sharesOutstanding = priceData.market_cap / priceData.last_price;
+    } else if (company.market_cap && priceData?.last_price) {
+      baseOverrides.sharesOutstanding = company.market_cap / priceData.last_price;
+    }
+
+    const options = {
+      baseInputs: baseOverrides
+    };
+    if (variation) {
+      options.variationPct = parseFloat(variation) / 100;
+    }
+
+    const tornado = await calculator.calculateTornadoChart(company.id, options);
+
+    res.json({
+      success: tornado.success,
+      symbol: symbol.toUpperCase(),
+      ...tornado
+    });
+  } catch (error) {
+    console.error('Tornado chart error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/dcf/:symbol/breakeven
+ * Break-even analysis - find values where intrinsic = current price
+ */
+router.get('/:symbol/breakeven', async (req, res) => {
+  try {
+    const { symbol } = req.params;
+
+    const company = database.prepare(`
+      SELECT id, market_cap FROM companies WHERE symbol = ?
+    `).get(symbol.toUpperCase());
+
+    if (!company) {
+      return res.status(404).json({ success: false, error: 'Company not found' });
+    }
+
+    // Get current price and market cap from price_metrics
+    // NOTE: Use market_cap/price for shares (consistent with main endpoint)
+    const priceData = database.prepare(`
+      SELECT last_price, market_cap FROM price_metrics WHERE company_id = ?
+    `).get(company.id);
+
+    const currentPrice = priceData?.last_price;
+    if (!currentPrice || currentPrice <= 0) {
+      return res.status(400).json({ success: false, error: 'No valid current price available' });
+    }
+
+    // Build base overrides with price and shares
+    const baseOverrides = {};
+    baseOverrides.currentPrice = currentPrice;
+    // Calculate shares from market_cap / price (consistent with main endpoint)
+    if (priceData?.market_cap && currentPrice) {
+      baseOverrides.sharesOutstanding = priceData.market_cap / currentPrice;
+    } else if (company.market_cap && currentPrice) {
+      baseOverrides.sharesOutstanding = company.market_cap / currentPrice;
+    }
+
+    const breakeven = await calculator.calculateBreakeven(company.id, currentPrice, { baseInputs: baseOverrides });
+
+    res.json({
+      success: true,
+      symbol: symbol.toUpperCase(),
+      ...breakeven
+    });
+  } catch (error) {
+    console.error('Break-even analysis error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
