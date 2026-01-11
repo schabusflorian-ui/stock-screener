@@ -404,6 +404,119 @@ class TestRetrievalQuality:
         assert len(results) <= 3
 
 
+class TestThoughtLeaderRetrieval:
+    """Tests for thought leader-specific retrieval methods."""
+
+    def test_retrieve_from_thought_leader(self, sample_vector_embedding):
+        """Test retrieval from a specific thought leader."""
+        from src.services.ai.knowledge_retriever import KnowledgeRetriever
+        from unittest.mock import MagicMock
+
+        retriever = KnowledgeRetriever.__new__(KnowledgeRetriever)
+        retriever.store = MagicMock()
+        retriever.embedder = MagicMock()
+
+        def mock_search(embedding, top_k=5, min_similarity=0.2, filter_topics=None, filter_sources=None):
+            return [
+                {'id': '1', 'content': 'Fed liquidity drives markets', 'metadata': {'author': 'Stanley Druckenmiller'}, 'similarity': 0.9},
+                {'id': '2', 'content': 'Macro timing is key', 'metadata': {'author': 'Stanley Druckenmiller'}, 'similarity': 0.85},
+            ]
+
+        retriever.store.search = mock_search
+        retriever.embedder.embed_text = lambda x: sample_vector_embedding
+
+        result = retriever.retrieve_from_thought_leader('druckenmiller', context='fed policy')
+
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_retrieve_macro_context(self, sample_vector_embedding):
+        """Test macro context retrieval (Druckenmiller/Gundlach style)."""
+        from src.services.ai.knowledge_retriever import KnowledgeRetriever
+        from unittest.mock import MagicMock
+
+        retriever = KnowledgeRetriever.__new__(KnowledgeRetriever)
+        retriever.store = MagicMock()
+        retriever.embedder = MagicMock()
+
+        def mock_search(embedding, top_k=5, min_similarity=0.2, filter_topics=None, filter_sources=None):
+            return [
+                {'id': '1', 'content': 'Fed policy drives liquidity', 'metadata': {'author': 'Druckenmiller'}, 'similarity': 0.9},
+                {'id': '2', 'content': 'Yield curve signals recession', 'metadata': {'author': 'Gundlach'}, 'similarity': 0.85},
+            ]
+
+        retriever.store.search = mock_search
+        retriever.embedder.embed_text = lambda x: sample_vector_embedding
+
+        result = retriever.retrieve_macro_context(market_conditions={'fed_stance': 'hawkish'})
+
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_retrieve_vc_tech_context(self, sample_vector_embedding):
+        """Test VC/tech context retrieval (Thiel/Andreessen style)."""
+        from src.services.ai.knowledge_retriever import KnowledgeRetriever
+        from unittest.mock import MagicMock
+
+        retriever = KnowledgeRetriever.__new__(KnowledgeRetriever)
+        retriever.store = MagicMock()
+        retriever.embedder = MagicMock()
+
+        def mock_search(embedding, top_k=5, min_similarity=0.2, filter_topics=None, filter_sources=None):
+            return [
+                {'id': '1', 'content': 'Network effects create monopolies', 'metadata': {'author': 'Peter Thiel'}, 'similarity': 0.9},
+                {'id': '2', 'content': 'Software is eating the world', 'metadata': {'author': 'Marc Andreessen'}, 'similarity': 0.85},
+            ]
+
+        retriever.store.search = mock_search
+        retriever.embedder.embed_text = lambda x: sample_vector_embedding
+
+        result = retriever.retrieve_vc_tech_context(company_type='platform')
+
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_query_expansion_for_thought_leaders(self, sample_vector_embedding):
+        """Test that query expansion works for thought leader names."""
+        from src.services.ai.knowledge_retriever import KnowledgeRetriever, QUERY_EXPANSIONS
+        from unittest.mock import MagicMock
+
+        # Verify thought leaders are in QUERY_EXPANSIONS
+        assert 'druckenmiller' in QUERY_EXPANSIONS
+        assert 'thiel' in QUERY_EXPANSIONS
+        assert 'gundlach' in QUERY_EXPANSIONS
+        assert 'andreessen' in QUERY_EXPANSIONS
+        assert 'klarman' in QUERY_EXPANSIONS
+
+        retriever = KnowledgeRetriever.__new__(KnowledgeRetriever)
+
+        # Test query expansion for druckenmiller
+        expanded = retriever._expand_query('What does druckenmiller say about macro?')
+        assert len(expanded) >= 1  # Original + expanded version
+
+    def test_new_analysis_types(self, sample_vector_embedding):
+        """Test new 'tech' and 'macro' analysis types."""
+        from src.services.ai.knowledge_retriever import KnowledgeRetriever
+        from unittest.mock import MagicMock
+
+        retriever = KnowledgeRetriever.__new__(KnowledgeRetriever)
+        retriever.store = MagicMock()
+        retriever.embedder = MagicMock()
+
+        def mock_search(embedding, top_k=5, min_similarity=0.2, filter_topics=None, filter_sources=None):
+            return [{'id': '1', 'content': 'Wisdom content', 'metadata': {}, 'similarity': 0.8}]
+
+        retriever.store.search = mock_search
+        retriever.embedder.embed_text = lambda x: sample_vector_embedding
+
+        company = {'pe_ratio': 30, 'sector': 'Technology'}
+
+        # Test new analysis types
+        for analysis_type in ['tech', 'macro']:
+            result = retriever.retrieve_for_company_analysis(company, analysis_type=analysis_type)
+            assert isinstance(result, str)
+
+
 # Run tests if executed directly
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

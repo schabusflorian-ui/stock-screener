@@ -1,0 +1,197 @@
+Title: The Sequoia Arc - Product-Market Fit Framework
+Author: Sequoia Capital
+Source: Sequoia Arc program materials and public content
+Type: framework
+Category: vc_investing
+
+---
+
+## The Sequoia Philosophy
+
+"We help the daring build legendary companies, from idea to IPO and beyond."
+
+### What Sequoia Looks For
+
+1. **Clarity of purpose:** Can you explain it simply?
+2. **Large market:** Is the opportunity big enough?
+3. **Unique insight:** What do you know that others don't?
+4. **Team:** Can you attract world-class talent?
+5. **Timing:** Why is now the right moment?
+
+---
+
+## Product-Market Fit
+
+"The number one cause of startup failure is making something nobody wants."
+
+### Signs of Product-Market Fit
+
+**Strong signals:**
+- Organic growth without marketing spend
+- Users actively recommending to others
+- Usage increasing over time per user
+- High retention rates
+- Customers willing to pay more
+
+**Weak signals (don't be fooled):**
+- Growth from paid acquisition only
+- Users trying once and leaving
+- Heavy discounting required
+- Lots of feature requests but low usage
+- Growth that depends on founder effort
+
+### The PMF Pyramid
+
+**Level 1: Problem-Solution Fit**
+- You've identified a real problem
+- People acknowledge the pain point
+- They're actively seeking solutions
+
+**Level 2: Product-Market Fit**
+- Your solution works for the problem
+- Users are adopting and staying
+- Word-of-mouth is happening
+
+**Level 3: Channel-Market Fit**
+- You've found scalable distribution
+- Unit economics work at scale
+- Growth is predictable
+
+---
+
+## Building a Legendary Company
+
+### The Company Building Framework
+
+**1. People**
+"A company is simply a group of people organized to achieve something together."
+- Hire people smarter than yourself
+- Culture is what people do when you're not watching
+- A-players attract A-players; B-players hire C-players
+
+**2. Market**
+"Big markets make big companies."
+- Better to be in a rising tide
+- Can you expand the market?
+- Is the timing right?
+
+**3. Product**
+"Make something people want."
+- Start with the customer problem
+- Build the minimum to learn
+- Iterate based on usage data
+
+**4. Business Model**
+"How do you capture value?"
+- Unit economics must work
+- Path to profitability clear
+- Sustainable competitive advantage
+
+---
+
+## Founder Qualities
+
+### What Separates the Best
+
+**1. Clarity of Vision**
+"The best founders can describe their company in one sentence, and that sentence is compelling."
+- Not just what they're building
+- Why it matters
+- How it changes the world
+
+**2. Intensity of Execution**
+"Ideas are cheap. Execution is everything."
+- Speed as a competitive advantage
+- High standards without perfectionism
+- Relentless focus on what matters
+
+**3. Ability to Recruit**
+"Your ability to recruit is the best predictor of success."
+- Can you sell the vision?
+- Do people want to work with you?
+- Can you attract people better than yourself?
+
+**4. Resilience**
+"Startups are a marathon of sprints."
+- Setbacks are inevitable
+- How you respond matters more
+- Persistence without stubbornness
+
+---
+
+## Growth Framework
+
+### Sustainable vs. Unsustainable Growth
+
+**Sustainable growth comes from:**
+- Product excellence driving word-of-mouth
+- Efficient paid acquisition (CAC < LTV)
+- Network effects compounding
+- Expansion revenue from existing customers
+
+**Unsustainable growth comes from:**
+- Buying growth at any cost
+- Discounting to drive volume
+- Paying for retention
+- Press/hype without substance
+
+### The Growth Equation
+
+Sustainable Growth = Acquisition × Retention × Expansion
+
+- **Acquisition:** How many new customers?
+- **Retention:** How many stay?
+- **Expansion:** Do they buy more over time?
+
+All three must be healthy for sustainable growth.
+
+---
+
+## Capital Efficiency
+
+"Great companies are built by capital efficiency, not capital abundance."
+
+### Principles
+
+1. **Extend runway:** More time = more chances to iterate
+2. **Focus resources:** Do fewer things better
+3. **Earn the right to scale:** Prove it works before scaling
+4. **Build real value:** Revenue > funding as validation
+
+### Warning Signs of Capital Inefficiency
+
+- Hiring ahead of need
+- Marketing spend without unit economics
+- Building features nobody uses
+- Over-investing in infrastructure
+- Spending to hit vanity metrics
+
+---
+
+## Long-Term Orientation
+
+"We measure success in decades, not quarters."
+
+### Building for Durability
+
+1. **Customer obsession:** They determine your success
+2. **Mission over money:** Purpose attracts talent and customers
+3. **Culture as moat:** Hard to replicate
+4. **Continuous improvement:** Never stop getting better
+5. **Long-term thinking:** Invest in the future
+
+### The Sequoia Test
+
+"If this company went away, would customers notice? Would they care? Would they fight to bring it back?"
+
+Great companies answer yes to all three.
+
+---
+
+## Key Takeaways
+
+"The best founders combine vision with pragmatism, ambition with humility, and speed with thoughtfulness."
+
+"Your competitive advantage comes from doing ordinary things extraordinarily well, consistently, over a long period of time."
+
+"The most important metric isn't growth rate or valuation - it's whether you're building something that matters."

@@ -1,0 +1,169 @@
+Title: Margin of Safety - Core Principles
+Author: Seth Klarman
+Source: Margin of Safety (book) and Baupost Letters
+Type: essay
+Category: value
+
+---
+
+## The Essence of Margin of Safety
+
+"The concept of a margin of safety - buying at a significant discount to underlying value - provides a bridge over the gap between the arrogance implicit in making forecasts and the reality of human fallibility."
+
+### Why Margin of Safety Matters
+
+1. **Protects against errors:** Even the best analysis contains mistakes
+2. **Buffers against bad luck:** Unforeseen events happen
+3. **Improves risk/reward:** Skews outcomes in your favor
+4. **Enables patience:** You can wait without anxiety
+
+"The margin of safety is always dependent on the price paid. It will be large at one price, small at some higher price, nonexistent at some still higher price."
+
+---
+
+## Value Investing Defined
+
+"Value investing is at its core the marriage of a contrarian streak and a calculator."
+
+### Three Pillars of Value Investing
+
+**1. Stocks are fractional ownership of businesses**
+- Don't think of stocks as ticker symbols
+- Think of what you'd pay for the entire company
+- Focus on business fundamentals, not market movements
+
+**2. Markets fluctuate between fear and greed**
+- Mr. Market is there to serve you, not guide you
+- Market prices reflect sentiment, not value
+- Volatility creates opportunity
+
+**3. Margin of safety protects against the unknown**
+- Always leave room for error
+- The bigger the uncertainty, the bigger the margin required
+- Price discipline is essential
+
+---
+
+## Avoiding Value Traps
+
+"Sometimes something looks cheap for a reason. Value traps are stocks that appear cheap but are actually fair value or expensive because the business is permanently impaired."
+
+### Red Flags for Value Traps
+
+1. **Secular decline:** Industry facing permanent structural headwinds
+2. **Competitive destruction:** Moat being eroded by new entrants
+3. **Management destruction:** Poor capital allocation destroying value
+4. **Financial deterioration:** Balance sheet getting progressively worse
+5. **Governance issues:** Minority shareholder interests ignored
+
+### The Catalyst Test
+
+"A stock can remain cheap indefinitely without a catalyst. The question is not just 'is this cheap?' but 'what will make the market recognize the value?'"
+
+Look for:
+- Management changes
+- Activist involvement
+- M&A activity
+- Asset sales
+- Industry consolidation
+- Capital returns to shareholders
+
+---
+
+## On Patience
+
+"The ability to do nothing is a vastly underrated investment skill."
+
+### The Challenge of Patience
+
+- Markets reward activity with commissions and fees
+- Career risk punishes sitting in cash
+- FOMO (fear of missing out) creates pressure to act
+- Media creates constant noise suggesting action needed
+
+### The Value of Cash
+
+"Cash is not a residual but a legitimate asset class that has option value."
+
+When opportunities are scarce:
+- Hold cash rather than reach for return
+- Cash preserves optionality
+- Better to miss some upside than suffer downside
+- Opportunities always return for patient investors
+
+"We would rather give up some opportunity, some upside, to make sure that our investment is based on a sufficiently large margin of safety."
+
+---
+
+## Risk Management
+
+"First and foremost, we seek to protect principal. We attempt to avoid permanent loss and do not put all our eggs in one basket."
+
+### Defining Risk
+
+"Risk is not the same as volatility. Risk is the probability of permanent loss of capital."
+
+Volatility ≠ Risk because:
+- Volatility creates opportunity for long-term investors
+- Temporary mark-to-market losses aren't real losses
+- Real risk is paying too much or buying a failing business
+
+### Sources of Real Risk
+
+1. **Overpaying:** No margin of safety
+2. **Leverage:** Forced selling at wrong times
+3. **Illiquidity:** Can't exit when needed
+4. **Concentration:** Single points of failure
+5. **Permanent impairment:** Business fundamentally broken
+
+---
+
+## On Market Timing
+
+"We don't try to time the market in any meaningful way. We buy when things are cheap and sell when they become dear."
+
+This is different from market timing because:
+- Based on valuation, not prediction
+- Gradual, not binary
+- Focused on individual opportunities
+- Patient deployment over time
+
+"We are quite content to hold cash and wait for the right opportunity rather than feel compelled to be invested at all times."
+
+---
+
+## The Baupost Approach
+
+### Investment Criteria
+
+1. **Compelling valuation:** 30-50%+ discount to intrinsic value
+2. **Identifiable catalyst:** Something to close the value gap
+3. **Manageable risk:** Worst case is acceptable
+4. **Sufficient liquidity:** Can exit when needed
+5. **Alignment of interests:** Management incentives match shareholders
+
+### Position Sizing
+
+"We size positions based on conviction, which is a function of both upside potential and downside protection."
+
+- Higher conviction = larger position
+- But maintain diversification
+- Never bet the farm on any single idea
+
+### When to Sell
+
+1. Thesis is invalidated
+2. Price reaches fair value
+3. Better opportunity emerges
+4. Risk/reward has deteriorated
+5. Original catalyst has played out
+
+---
+
+## Wisdom for Long-Term Success
+
+"Successful investors tend to be unemotional, allowing the greed and fear of others to play into their hands. By having confidence in their own analysis and judgment, they respond to market forces not with blind emotion but with calculated reason."
+
+"Value investing is simple to understand but difficult to implement. The principles are straightforward but the psychological discipline required is enormous."
+
+"At the end of the day, value investing is not about technique or tricks. It's about having the temperament to act rationally in the face of market irrationality."

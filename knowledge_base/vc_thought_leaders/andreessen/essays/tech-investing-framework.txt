@@ -1,0 +1,233 @@
+Title: a16z Tech Investing Framework
+Author: Marc Andreessen / a16z
+Source: Blog posts, podcasts, and public commentary
+Type: framework
+Category: technology
+
+---
+
+## The a16z Investment Philosophy
+
+"We want to invest in the future. We're not interested in incremental improvements - we want companies that are building something fundamentally new."
+
+### Core Principles
+
+1. **Software is eating the world** - Every industry will be transformed
+2. **Bet on people** - Great founders can pivot and adapt
+3. **Network effects matter** - They create sustainable moats
+4. **Timing is everything** - Right idea, wrong time = failure
+5. **Full-stack approach** - Help companies with more than just capital
+
+---
+
+## Evaluating Technology Companies
+
+### The Product Question
+
+"Is this 10x better than existing solutions, or just 10% better?"
+
+**10x improvements win:**
+- Users will switch for dramatic improvements
+- Word-of-mouth drives organic growth
+- Pricing power emerges naturally
+
+**10% improvements struggle:**
+- Switching costs exceed benefits
+- Requires outspending incumbents on marketing
+- Easily replicated by competition
+
+### The Market Question
+
+"Is this a large market, or can it become one?"
+
+**Market size considerations:**
+- Current market size (bottom-up TAM)
+- Market expansion potential (new use cases)
+- Market creation possibility (new behavior)
+- Adjacent market opportunities
+
+"We'd rather invest in a small team addressing a huge market than a large team addressing a small market."
+
+### The Team Question
+
+"Would I work for this founder?"
+
+**What we look for:**
+- Technical excellence and domain expertise
+- Missionary vs. mercenary motivation
+- Ability to recruit A+ talent
+- Coachability combined with conviction
+- Communication skills (for fundraising, hiring, selling)
+
+### The Timing Question
+
+"Why now? What has changed to make this possible today that wasn't possible before?"
+
+**Valid "why now" answers:**
+- Technology breakthrough (AI, mobile, cloud)
+- Regulatory change
+- Behavior shift (pandemic accelerated digital)
+- Cost curve crossing threshold
+- Infrastructure maturity
+
+---
+
+## Business Model Patterns
+
+### SaaS (Software as a Service)
+
+**Attractive characteristics:**
+- Recurring revenue
+- High gross margins (70-80%+)
+- Negative churn possible (expansion > contraction)
+- Predictable growth
+
+**Key metrics:**
+- ARR growth rate
+- Net revenue retention
+- CAC payback period
+- Gross margin
+
+### Marketplace
+
+**Attractive characteristics:**
+- Network effects between supply and demand
+- High take rates possible once established
+- Winner-take-all dynamics
+
+**Key metrics:**
+- GMV growth
+- Take rate trends
+- Supply/demand liquidity
+- Repeat purchase rates
+
+### Consumer
+
+**Attractive characteristics:**
+- Viral growth potential
+- Global scale possible rapidly
+- Strong brand value
+
+**Key metrics:**
+- DAU/MAU ratio
+- Viral coefficient
+- Retention curves
+- Engagement depth
+
+---
+
+## Network Effects Deep Dive
+
+"Network effects are the closest thing to a sustainable competitive advantage in technology."
+
+### Types of Network Effects
+
+**1. Direct Network Effects**
+- More users → more valuable for each user
+- Example: Social networks, messaging
+
+**2. Indirect Network Effects**
+- More of one side → attracts more of other side
+- Example: Marketplaces, platforms
+
+**3. Data Network Effects**
+- More users → more data → better product
+- Example: AI/ML companies, search
+
+**4. Ecosystem Network Effects**
+- More developers/partners → more value
+- Example: App stores, cloud platforms
+
+### Measuring Network Effect Strength
+
+- Organic growth percentage
+- CAC trends over time
+- Retention improvement with usage
+- Pricing power indicators
+- Competitive switching rates
+
+---
+
+## The Platform Playbook
+
+"The most valuable companies are platforms, not products."
+
+### Platform Characteristics
+
+1. **Multi-sided:** Connects different user types
+2. **Extensible:** Others can build on top
+3. **Defensible:** Gets stronger over time
+4. **Scalable:** Technology enables massive scale
+
+### Platform Evolution
+
+**Stage 1:** Single killer app (attract users)
+**Stage 2:** Open APIs (attract developers)
+**Stage 3:** Ecosystem (third parties create value)
+**Stage 4:** Platform lock-in (switching costs high)
+
+---
+
+## Red Flags
+
+### Business Red Flags
+
+- Depending on paid acquisition for all growth
+- Declining unit economics at scale
+- No clear path to profitability
+- Over-reliance on single customer/channel
+- Technology that's easily replicable
+
+### Team Red Flags
+
+- Founders not getting along
+- Key person dependencies
+- Inability to recruit top talent
+- Mercenary motivation
+- Unwillingness to adapt
+
+### Market Red Flags
+
+- Timing too early (infrastructure not ready)
+- Timing too late (incumbents have adapted)
+- Regulatory uncertainty that's fundamental
+- Customer willingness to pay unclear
+- No clear "why now"
+
+---
+
+## The a16z Value-Add Model
+
+"We want to be the help that founders wish they had."
+
+### Beyond Capital
+
+**1. Recruiting**
+- Executive recruiting support
+- Engineering talent networks
+- Board member placement
+
+**2. Go-to-Market**
+- Sales expertise
+- Marketing playbooks
+- Customer introductions
+
+**3. Operational Excellence**
+- Finance and HR support
+- Legal and policy guidance
+- Technical infrastructure
+
+**4. Network**
+- Founder community
+- Corporate partnerships
+- Media relationships
+
+---
+
+## Key Takeaways
+
+"The best investments combine: exceptional founder, huge market, right timing, and defensible business model. When you find all four, bet big."
+
+"Most successful companies look crazy at the start. If the idea is obvious, it's probably too late or too small."
+
+"The future is already here - it's just not evenly distributed. Our job is to find the future before it's obvious."

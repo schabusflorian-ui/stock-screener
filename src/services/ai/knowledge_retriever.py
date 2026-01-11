@@ -4,8 +4,58 @@ from typing import List, Dict, Optional
 from .vector_store import VectorStore
 from .embeddings import EmbeddingGenerator
 import logging
+import re
 
 logger = logging.getLogger(__name__)
+
+
+# Query expansions to enhance retrieval for specific topics
+# When a query matches a key, the associated terms are added to improve recall
+QUERY_EXPANSIONS = {
+    # Macro investing concepts (Druckenmiller, Gundlach)
+    'macro': ['fed policy', 'liquidity', 'regime change', 'druckenmiller', 'monetary policy'],
+    'fed': ['federal reserve', 'interest rates', 'liquidity', 'monetary policy', 'druckenmiller'],
+    'rates': ['gundlach', 'duration', 'credit spreads', 'yield curve', 'fixed income', 'bonds'],
+    'bonds': ['gundlach', 'duration', 'credit', 'yield', 'fixed income', 'doubleline'],
+    'liquidity': ['money supply', 'fed', 'balance sheet', 'druckenmiller', 'regime'],
+    'regime': ['regime change', 'paradigm shift', 'sea change', 'marks', 'druckenmiller'],
+
+    # VC/Growth investing concepts (Thiel, Andreessen, Sequoia)
+    'vc_investing': ['power law', 'network effects', 'thiel', 'andreessen', 'sequoia'],
+    'venture': ['power law', 'asymmetric returns', 'thiel', 'founders fund', 'sequoia'],
+    'startup': ['venture', 'network effects', 'andreessen', 'sequoia', 'power law'],
+    'network effects': ['winner take all', 'platform', 'thiel', 'monopoly', 'moat'],
+    'monopoly': ['competition is for losers', 'thiel', 'zero to one', 'pricing power'],
+    'technology': ['software eating world', 'andreessen', 'disruption', 'network effects'],
+    'disruption': ['christensen', 'innovator dilemma', 'andreessen', 'technology shift'],
+
+    # Contrarian/Value concepts (Klarman, Marks)
+    'contrarian': ['consensus', 'crowded trade', 'second level thinking', 'marks', 'klarman'],
+    'consensus': ['contrarian', 'crowded', 'second level thinking', 'what others believe'],
+    'margin of safety': ['klarman', 'downside protection', 'intrinsic value', 'buffett'],
+    'value trap': ['cheap for a reason', 'catalyst', 'klarman', 'avoid', 'permanent loss'],
+    'catalyst': ['unlock value', 'event driven', 'klarman', 'special situations'],
+    'risk': ['permanent loss', 'downside', 'tail risk', 'marks', 'klarman'],
+
+    # Quality/Moat concepts (Buffett, Munger)
+    'moat': ['competitive advantage', 'buffett', 'durable', 'pricing power', 'munger'],
+    'quality': ['return on capital', 'roic', 'roe', 'durable', 'buffett', 'munger'],
+    'compounding': ['long term', 'patience', 'munger', 'buffett', 'reinvestment'],
+
+    # Psychology concepts (Marks, Munger)
+    'psychology': ['behavioral', 'biases', 'munger', 'marks', 'emotional'],
+    'cycle': ['marks', 'pendulum', 'extreme', 'mean reversion', 'sentiment'],
+    'sentiment': ['fear', 'greed', 'extreme', 'contrarian', 'crowd'],
+
+    # Author-specific expansions
+    'druckenmiller': ['macro', 'fed', 'liquidity', 'home runs', 'preservation', 'duquesne'],
+    'gundlach': ['bonds', 'rates', 'duration', 'credit', 'doubleline', 'fixed income'],
+    'thiel': ['zero to one', 'monopoly', 'contrarian truth', 'founders fund', 'secrets'],
+    'andreessen': ['software eating world', 'tech optimism', 'a16z', 'pmarca', 'venture'],
+    'klarman': ['margin of safety', 'baupost', 'patience', 'value trap', 'catalyst'],
+    'chamath': ['social capital', 'spac', 'tech investing', 'all-in'],
+    'sequoia': ['founders', 'arc', 'growth framework', 'long term', 'enduring companies'],
+}
 
 
 class KnowledgeRetriever:
@@ -50,12 +100,57 @@ class KnowledgeRetriever:
 
         logger.info("KnowledgeRetriever initialized")
 
+    def _expand_query(self, query: str, max_expansions: int = 3) -> List[str]:
+        """
+        Expand a query with related terms from QUERY_EXPANSIONS.
+
+        This improves recall by adding synonyms and related concepts
+        that might be used in the knowledge base.
+
+        Args:
+            query: Original query string
+            max_expansions: Maximum number of expansion terms to add
+
+        Returns:
+            List of expanded query strings (original + variations)
+        """
+        expanded_queries = [query]
+        query_lower = query.lower()
+
+        # Find matching expansion keys in the query
+        matched_expansions = []
+        for key, expansions in QUERY_EXPANSIONS.items():
+            # Check if the key appears in the query
+            if re.search(r'\b' + re.escape(key) + r'\b', query_lower):
+                matched_expansions.extend(expansions[:max_expansions])
+
+        # If we found expansions, create additional queries
+        if matched_expansions:
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_expansions = []
+            for exp in matched_expansions:
+                if exp.lower() not in seen and exp.lower() not in query_lower:
+                    seen.add(exp.lower())
+                    unique_expansions.append(exp)
+
+            # Add expansion terms to create new query variations
+            if unique_expansions:
+                # Create an expanded version of the original query
+                expansion_terms = ' '.join(unique_expansions[:max_expansions])
+                expanded_queries.append(f"{query} {expansion_terms}")
+
+                logger.debug(f"Query expanded: '{query}' -> added terms: {unique_expansions[:max_expansions]}")
+
+        return expanded_queries
+
     def retrieve(self,
                  query: str,
                  top_k: int = 5,
                  topics: List[str] = None,
                  sources: List[str] = None,
-                 min_similarity: float = 0.3) -> List[Dict]:
+                 min_similarity: float = 0.3,
+                 expand_query: bool = False) -> List[Dict]:
         """
         Retrieve relevant knowledge for a query.
 
@@ -65,12 +160,25 @@ class KnowledgeRetriever:
             topics: Filter by topics (optional)
             sources: Filter by sources (optional)
             min_similarity: Minimum similarity threshold (0-1)
+            expand_query: If True, use query expansion to improve recall
 
         Returns:
             List of relevant chunks with metadata and similarity scores
         """
         if not query.strip():
             return []
+
+        # Use query expansion if enabled
+        if expand_query:
+            expanded_queries = self._expand_query(query)
+            if len(expanded_queries) > 1:
+                # Use multi-query retrieval with expanded queries
+                return self.retrieve_multi_query(
+                    expanded_queries,
+                    top_k_per_query=max(2, top_k // 2),
+                    final_top_k=top_k,
+                    min_similarity=min_similarity
+                )
 
         # Generate query embedding
         try:
@@ -156,29 +264,44 @@ class KnowledgeRetriever:
         # Base queries for analysis type
         type_queries = {
             'value': [
-                "margin of safety intrinsic value valuation",
-                "competitive advantage moat durable business",
-                "management capital allocation shareholder returns"
+                "margin of safety intrinsic value valuation klarman",
+                "competitive advantage moat durable business buffett",
+                "management capital allocation shareholder returns",
+                "druckenmiller macro preservation capital"
             ],
             'growth': [
                 "growth investing sustainable competitive advantage",
                 "total addressable market TAM expansion runway",
-                "paying up for quality growth reinvestment"
+                "paying up for quality growth reinvestment",
+                "network effects winner take all thiel andreessen"
             ],
             'contrarian': [
-                "contrarian investing sentiment extreme",
-                "buying fear selling greed panic",
-                "value trap vs opportunity turnaround"
+                "contrarian investing sentiment extreme klarman",
+                "buying fear selling greed panic marks",
+                "value trap vs opportunity turnaround catalyst",
+                "second level thinking consensus wrong"
             ],
             'quant': [
                 "factor investing value momentum quality",
                 "quantitative screening metrics ratios",
                 "risk adjusted returns sharpe ratio"
             ],
+            'tech': [
+                "software eating world andreessen disruption",
+                "network effects monopoly platform thiel",
+                "venture power law asymmetric returns sequoia",
+                "zero to one contrarian truth innovation"
+            ],
+            'macro': [
+                "fed policy liquidity regime druckenmiller",
+                "rates duration credit spreads gundlach",
+                "macro timing preservation capital home runs",
+                "reflexivity feedback loop positioning"
+            ],
             'general': [
                 "investment analysis framework checklist",
-                "competitive advantage sustainable moat",
-                "risk assessment downside protection"
+                "competitive advantage sustainable moat buffett",
+                "risk assessment downside protection marks"
             ]
         }
 
@@ -258,6 +381,139 @@ class KnowledgeRetriever:
         # Direct topic query
         query = f"{topic} investing principles framework"
         results = self.retrieve(query, top_k=top_k, topics=[topic])
+
+        return self._format_context(results)
+
+    def retrieve_from_thought_leader(self,
+                                      thought_leader: str,
+                                      context: str = None,
+                                      top_k: int = 5) -> str:
+        """
+        Retrieve insights from a specific thought leader.
+
+        Useful for getting perspective from a particular investor or thinker.
+
+        Args:
+            thought_leader: Name of thought leader (e.g., 'druckenmiller', 'thiel', 'klarman')
+            context: Optional context to focus the retrieval (e.g., 'tech stocks', 'macro')
+            top_k: Number of results
+
+        Returns:
+            Formatted context string with thought leader's insights
+        """
+        # Build query with thought leader name and optional context
+        leader_lower = thought_leader.lower()
+
+        # Get expansion terms for this thought leader
+        expansion_terms = QUERY_EXPANSIONS.get(leader_lower, [])
+
+        if context:
+            query = f"{thought_leader} {context} {' '.join(expansion_terms[:2])}"
+        else:
+            query = f"{thought_leader} investing philosophy {' '.join(expansion_terms[:3])}"
+
+        results = self.retrieve(
+            query,
+            top_k=top_k,
+            min_similarity=0.2
+        )
+
+        # Filter to prioritize results from this thought leader
+        leader_results = []
+        other_results = []
+
+        for r in results:
+            author = r.get('metadata', {}).get('author', '').lower()
+            if leader_lower in author or any(term in author for term in expansion_terms[:2]):
+                leader_results.append(r)
+            else:
+                other_results.append(r)
+
+        # Combine: prioritize leader's own content, then related content
+        combined = leader_results + other_results[:max(0, top_k - len(leader_results))]
+
+        return self._format_context(combined[:top_k])
+
+    def retrieve_macro_context(self, market_conditions: Dict = None, top_k: int = 6) -> str:
+        """
+        Retrieve macro-focused wisdom (Druckenmiller, Gundlach style).
+
+        Useful for understanding macro regime and Fed policy implications.
+
+        Args:
+            market_conditions: Optional dict with keys like:
+                - fed_stance: 'hawkish', 'dovish', 'neutral'
+                - yield_curve: 'inverted', 'steep', 'flat'
+                - liquidity: 'tightening', 'easing'
+                - volatility: 'high', 'low', 'normal'
+            top_k: Number of results
+
+        Returns:
+            Formatted macro context string
+        """
+        queries = [
+            "macro investing fed policy liquidity druckenmiller",
+            "regime change paradigm shift market cycles marks",
+            "rates bonds credit duration gundlach"
+        ]
+
+        # Add condition-specific queries
+        if market_conditions:
+            if market_conditions.get('fed_stance') == 'hawkish':
+                queries.append("fed tightening rising rates impact equities")
+            elif market_conditions.get('fed_stance') == 'dovish':
+                queries.append("fed easing liquidity injection risk assets")
+
+            if market_conditions.get('yield_curve') == 'inverted':
+                queries.append("inverted yield curve recession signal")
+
+            if market_conditions.get('volatility') == 'high':
+                queries.append("high volatility fear opportunity contrarian")
+
+        results = self.retrieve_multi_query(
+            queries,
+            top_k_per_query=2,
+            final_top_k=top_k,
+            min_similarity=0.2
+        )
+
+        return self._format_context(results)
+
+    def retrieve_vc_tech_context(self, company_type: str = None, top_k: int = 6) -> str:
+        """
+        Retrieve VC/tech-focused wisdom (Thiel, Andreessen, Sequoia style).
+
+        Useful for analyzing technology companies and growth investments.
+
+        Args:
+            company_type: Optional type hint like 'platform', 'saas', 'marketplace', 'ai'
+            top_k: Number of results
+
+        Returns:
+            Formatted tech/VC context string
+        """
+        queries = [
+            "network effects monopoly platform thiel zero to one",
+            "software eating world disruption andreessen tech optimism",
+            "venture returns power law asymmetric sequoia"
+        ]
+
+        # Add type-specific queries
+        if company_type:
+            type_lower = company_type.lower()
+            if 'platform' in type_lower or 'marketplace' in type_lower:
+                queries.append("platform network effects winner take all liquidity")
+            elif 'saas' in type_lower or 'software' in type_lower:
+                queries.append("recurring revenue retention net dollar expansion")
+            elif 'ai' in type_lower:
+                queries.append("artificial intelligence moat data network effects")
+
+        results = self.retrieve_multi_query(
+            queries,
+            top_k_per_query=2,
+            final_top_k=top_k,
+            min_similarity=0.2
+        )
 
         return self._format_context(results)
 

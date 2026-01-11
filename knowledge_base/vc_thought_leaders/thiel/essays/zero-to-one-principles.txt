@@ -1,0 +1,149 @@
+Title: Zero to One - Core Investment Principles
+Author: Peter Thiel
+Source: Zero to One (book) and public lectures
+Type: essay
+Category: vc_investing
+
+---
+
+## The Contrarian Question
+
+"What important truth do very few people agree with you on?"
+
+This question separates conventional thinking from breakthrough insight. Great businesses are built on secrets - things that are true but that most people don't believe or understand.
+
+### Vertical vs. Horizontal Progress
+
+**Horizontal (1 to n):** Copying things that work, globalization, incremental improvement
+**Vertical (0 to 1):** Creating something new, technology, breakthrough innovation
+
+"The next Bill Gates will not build an operating system. The next Larry Page will not build a search engine. The next Mark Zuckerberg will not build a social network. If you are copying these people, you are not learning from them."
+
+---
+
+## Competition is for Losers
+
+"All happy companies are different: each one earns a monopoly by solving a unique problem. All failed companies are the same: they failed to escape competition."
+
+### Why Monopolies Matter
+
+- Monopolies can think long-term (no daily fight for survival)
+- Monopolies can invest in R&D and innovation
+- Monopolies can afford to care about employees, community, broader impact
+- Monopolies generate the profits that fund future innovation
+
+### The Monopoly Myth
+
+Companies disguise their monopoly status by defining their market broadly.
+Companies disguise their lack of moat by defining their market narrowly.
+
+**Google's framing:** "We're just a small player in global advertising"
+**Reality:** 90%+ of search market
+
+**Restaurant's framing:** "We're the only British restaurant in Palo Alto"
+**Reality:** Competing with thousands of dining options
+
+### Building Monopoly Power
+
+1. **Proprietary Technology:** 10x better than alternatives
+2. **Network Effects:** Product gets better as more people use it
+3. **Economies of Scale:** Fixed costs spread over larger user base
+4. **Branding:** Reputation that can't be easily replicated
+
+The strongest monopolies combine all four.
+
+---
+
+## The Power Law
+
+"The biggest secret in venture capital is that the best investment in a successful fund equals or outperforms the entire rest of the fund combined."
+
+### Power Law Implications
+
+- A small handful of companies vastly outperform everything else
+- The difference between #1 and #2 is greater than #2 and #20
+- Diversification is the enemy of power law returns
+- You should focus obsessively on finding the outlier
+
+### Application to Personal Decisions
+
+"You are not a lottery ticket. You are not a rounding error."
+
+- Your career follows the power law too
+- One decision or opportunity can define your trajectory
+- Focus on finding the right thing, not hedging across many things
+
+---
+
+## Secrets
+
+"Every great company is built around a secret that's hidden from the outside."
+
+### Why Secrets Exist
+
+Most people believe one of two things:
+1. There are no more secrets (everything important has been discovered)
+2. Secrets are too hard to find (leave it to the experts)
+
+Both are wrong. The middle ground is where opportunities live.
+
+### Where to Look for Secrets
+
+- **Natural secrets:** Discovered by studying the physical world
+- **Secrets about people:** Things people don't know about themselves or won't say
+
+"What valuable company is nobody building?"
+
+This is the question that leads to secrets. If you can answer it, you've found your opportunity.
+
+### The Successful Entrepreneur's Edge
+
+"What secret is your company built on? Every great company is built around a secret that's hidden from the outside."
+
+The best secrets are hiding in plain sight - things that are true but that most people overlook or dismiss.
+
+---
+
+## Definite vs. Indefinite Thinking
+
+### Indefinite Pessimism (Europe)
+"The future will be worse, but we don't know how, so let's enjoy today."
+
+### Indefinite Optimism (USA 1982-present)
+"The future will be better, but we don't know how, so we won't make specific plans."
+
+### Definite Pessimism (China)
+"The future can be known and it will be bad, so we must prepare."
+
+### Definite Optimism (USA 1950s-1960s)
+"The future can be known and we can make it better through specific plans."
+
+**Thiel's View:** Definite optimism produces the best outcomes. We need to return to specific plans and visions, not just "lean startup" iteration.
+
+---
+
+## Investment Framework
+
+### Questions Before Investing
+
+1. **The Engineering Question:** Can you create breakthrough technology rather than incremental improvements?
+2. **The Timing Question:** Is now the right time to start this particular business?
+3. **The Monopoly Question:** Are you starting with a big share of a small market?
+4. **The People Question:** Do you have the right team?
+5. **The Distribution Question:** Do you have a way to not just create but deliver your product?
+6. **The Durability Question:** Will your market position be defensible 10 and 20 years into the future?
+7. **The Secret Question:** Have you identified a unique opportunity that others don't see?
+
+"Great companies have secrets: specific reasons for success that other people don't see."
+
+---
+
+## On the Future
+
+"We wanted flying cars, instead we got 140 characters."
+
+The future requires bold bets on specific technologies and visions, not incremental improvements and financial engineering.
+
+"Indefinite optimism about the future combined with concrete plans for nothing leads to accumulating options rather than making hard choices."
+
+The best founders and investors have definite views about the future and the courage to act on them.

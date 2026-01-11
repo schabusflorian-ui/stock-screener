@@ -36,6 +36,10 @@ class KnowledgeBaseRefresh {
 
   /**
    * Source categories for different refresh strategies
+   *
+   * Note: These refer to scraper sources. The knowledge base also includes
+   * manually curated content in knowledge_base/ that gets processed during
+   * embedding rebuilds (--skip-scrape mode processes all .txt files).
    */
   static SOURCES = {
     // Static sources - update weekly (new letters/memos are rare)
@@ -44,9 +48,13 @@ class KnowledgeBaseRefresh {
     // Dynamic sources - update daily (regular blog posts, market commentary)
     dynamic: ['a16z', 'evans', 'ark', 'ai'],
 
-    // All sources
+    // All scraper sources
     all: ['buffett', 'marks', 'farnam', 'damodaran', 'housel',
-          'taleb', 'spitznagel', 'a16z', 'evans', 'ark', 'ai']
+          'taleb', 'spitznagel', 'a16z', 'evans', 'ark', 'ai'],
+
+    // Manually curated thought leaders (no scrapers, content added via files)
+    // These are included automatically during embedding rebuilds
+    curated: ['druckenmiller', 'gundlach', 'thiel', 'andreessen', 'klarman', 'chamath', 'sequoia']
   };
 
   /**
@@ -150,9 +158,12 @@ class KnowledgeBaseRefresh {
 
   /**
    * Run full refresh of all sources
+   * This scrapes new content AND rebuilds all embeddings (including curated thought leaders)
    */
   runFullRefresh() {
-    console.log('Running FULL knowledge base refresh (all sources)...');
+    console.log('Running FULL knowledge base refresh (all sources + curated content)...');
+    console.log('  Scraping: ' + KnowledgeBaseRefresh.SOURCES.all.join(', '));
+    console.log('  Curated (auto-included): ' + KnowledgeBaseRefresh.SOURCES.curated.join(', '));
     return this.runBuild({
       sources: KnowledgeBaseRefresh.SOURCES.all
     });
@@ -170,9 +181,11 @@ class KnowledgeBaseRefresh {
 
   /**
    * Rebuild embeddings without re-scraping
+   * This processes ALL content in knowledge_base/, including curated thought leaders
    */
   rebuildEmbeddings() {
-    console.log('Rebuilding embeddings from existing content...');
+    console.log('Rebuilding embeddings from ALL existing content...');
+    console.log('  Includes curated thought leaders: ' + KnowledgeBaseRefresh.SOURCES.curated.join(', '));
     return this.runBuild({
       skipScrape: true
     });
@@ -405,12 +418,15 @@ Options:
   --schedule, -d    Start scheduler daemon
   --help, -h        Show this help message
 
-Sources:
+Sources (with scrapers):
   Static (weekly):  buffett, marks, damodaran, taleb, spitznagel, farnam, housel
   Dynamic (daily):  a16z, evans, ark, ai
 
+Curated thought leaders (no scrapers, included in rebuilds):
+  druckenmiller, gundlach, thiel, andreessen, klarman, chamath, sequoia
+
 Schedule (when using --schedule):
-  - Sunday 3:00 AM ET: Full refresh (all sources)
+  - Sunday 3:00 AM ET: Full refresh (all sources + rebuild embeddings)
   - Mon-Sat 6:00 AM ET: Incremental refresh (dynamic sources only)
 `);
 

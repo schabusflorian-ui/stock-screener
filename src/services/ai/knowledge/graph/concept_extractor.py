@@ -155,6 +155,72 @@ class ConceptExtractor:
         ],
         'time_preference': [
             r'time preference', r'patience premium', r'delay gratification'
+        ],
+
+        # Macro concepts (Druckenmiller, Gundlach)
+        'macro_timing': [
+            r'fed pivot', r'fed.*cut', r'fed.*hike', r'monetary policy',
+            r'liquidity.*cycle', r'central bank', r'macro.*timing'
+        ],
+        'reflexivity': [
+            r'reflexivity', r'feedback loop', r'self-fulfilling',
+            r'prices.*influence.*fundamentals'
+        ],
+        'regime_change': [
+            r'regime change', r'paradigm shift', r'sea change',
+            r'new era', r'structural.*change'
+        ],
+        'positioning': [
+            r'crowded trade', r'consensus.*wrong', r'positioning',
+            r'over(weight|whelm)', r'under(weight|owned)'
+        ],
+        'liquidity': [
+            r'liquidity', r'money supply', r'm2', r'balance sheet',
+            r'quantitative', r'tightening', r'easing'
+        ],
+
+        # VC/Growth concepts (Thiel, Andreessen)
+        'power_law': [
+            r'power law', r'venture returns', r'asymmetric.*returns',
+            r'home run', r'winner.*all'
+        ],
+        'zero_to_one': [
+            r'zero to one', r'0 to 1', r'create.*new',
+            r'vertical progress', r'definite.*future'
+        ],
+        'monopoly': [
+            r'monopoly', r'competition is for losers',
+            r'market.*dominat', r'last mover'
+        ],
+        'definite_optimism': [
+            r'definite optimism', r'indefinite', r'concrete.*plan',
+            r'build.*future'
+        ],
+        'secrets': [
+            r'contrarian truth', r'important truth.*few.*agree',
+            r'secret', r'unconventional'
+        ],
+        'software_eating': [
+            r'software.*eating', r'software.*world',
+            r'digital transformation', r'tech.*disruption'
+        ],
+        'platform_dynamics': [
+            r'platform', r'two-sided.*market', r'marketplace',
+            r'aggregator', r'winner take'
+        ],
+
+        # Value trap detection (Klarman)
+        'value_trap': [
+            r'value trap', r'cheap for.*reason', r'falling knife',
+            r'permanent.*impairment'
+        ],
+        'catalyst': [
+            r'catalyst', r'unlock.*value', r'event driven',
+            r'inflection', r'trigger'
+        ],
+        'special_situations': [
+            r'special situation', r'spin-off', r'spinoff',
+            r'restructuring', r'bankruptcy.*emerge'
         ]
     }
 
@@ -177,6 +243,18 @@ class ConceptExtractor:
         'burry': [r'michael burry', r'burry', r'scion'],
         'housel': [r'morgan housel', r'housel', r'psychology of money'],
         'parrish': [r'shane parrish', r'farnam street'],
+        # New thought leaders
+        'druckenmiller': [r'druckenmiller', r'stanley', r'duquesne', r'macro.*legend'],
+        'gundlach': [r'gundlach', r'jeffrey', r'doubleline', r'bond king'],
+        'thiel': [r'peter thiel', r'thiel', r'founders fund', r'zero to one'],
+        'andreessen': [r'andreessen', r'marc andreessen', r'a16z', r'pmarca'],
+        'chamath': [r'chamath', r'palihapitiya', r'social capital', r'all-in'],
+        'sequoia': [r'sequoia', r'sequoia capital', r'don valentine', r'roelof botha'],
+        'benchmark': [r'benchmark', r'bill gurley', r'benchmark capital'],
+        'dreman': [r'david dreman', r'dreman', r'contrarian'],
+        'icahn': [r'carl icahn', r'icahn'],
+        'ackman': [r'bill ackman', r'ackman', r'pershing square'],
+        'cathie_wood': [r'cathie wood', r'ark invest', r'ark.*innovation'],
     }
 
     def __init__(self, min_relevance: float = 0.5):

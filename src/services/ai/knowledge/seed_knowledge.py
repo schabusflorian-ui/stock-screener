@@ -409,6 +409,180 @@ INVESTMENT_WISDOM = [
             "primary_topic": "contrarian"
         }
     },
+
+    # === Macro Investing (Druckenmiller) ===
+    {
+        "content": "The way to build long-term returns is through preservation of capital and home runs. Never lose money. When you have a strong conviction backed by fundamentals and technicals, go for the jugular - size matters when you're right.",
+        "metadata": {
+            "source": "Macro Investing",
+            "author": "Stanley Druckenmiller",
+            "topics": ["macro", "position_sizing", "conviction"],
+            "primary_topic": "macro"
+        }
+    },
+    {
+        "content": "Earnings don't move the overall market; it's the Fed. Focus on central bank liquidity and interest rates. When the Fed is adding liquidity, be aggressive. When they're tightening, be defensive. Liquidity is the lifeblood of markets.",
+        "metadata": {
+            "source": "Macro Investing",
+            "author": "Stanley Druckenmiller",
+            "topics": ["macro", "fed", "liquidity", "monetary_policy"],
+            "primary_topic": "macro"
+        }
+    },
+    {
+        "content": "I learned from George Soros that it's not about being right or wrong - it's about how much money you make when you're right and how much you lose when you're wrong. Cut losses quickly, and press winners aggressively.",
+        "metadata": {
+            "source": "Risk Management",
+            "author": "Stanley Druckenmiller",
+            "topics": ["macro", "risk", "position_sizing"],
+            "primary_topic": "risk"
+        }
+    },
+    {
+        "content": "Never, ever invest in the present. It doesn't matter what a company's earning or what they've earned. You're always investing for the future. What matters is how the fundamentals will look in 12-18 months.",
+        "metadata": {
+            "source": "Macro Investing",
+            "author": "Stanley Druckenmiller",
+            "topics": ["macro", "forward_looking", "analysis"],
+            "primary_topic": "macro"
+        }
+    },
+
+    # === VC/Technology Investing (Thiel) ===
+    {
+        "content": "Competition is for losers. If you want to create and capture lasting value, build a monopoly. Perfect competition means no profits for anybody. The goal is to escape competition by being unique.",
+        "metadata": {
+            "source": "Zero to One",
+            "author": "Peter Thiel",
+            "topics": ["vc_investing", "monopoly", "competition"],
+            "primary_topic": "vc_investing"
+        }
+    },
+    {
+        "content": "What important truth do very few people agree with you on? Great investments come from contrarian thinking that turns out to be correct. Consensus means competition; contrarian and correct means monopoly profits.",
+        "metadata": {
+            "source": "Zero to One",
+            "author": "Peter Thiel",
+            "topics": ["contrarian", "secrets", "vc_investing"],
+            "primary_topic": "contrarian"
+        }
+    },
+    {
+        "content": "The power law distribution governs venture returns. A small number of investments return exponentially more than all others combined. Portfolio strategy should focus on backing potential outliers, not diversifying away from them.",
+        "metadata": {
+            "source": "Venture Capital",
+            "author": "Peter Thiel",
+            "topics": ["vc_investing", "power_law", "returns"],
+            "primary_topic": "vc_investing"
+        }
+    },
+    {
+        "content": "Definite optimism requires a concrete plan for the future. Indefinite optimism - hoping things will work out without a plan - leads to diversification and financial engineering rather than building real value. Back founders with definite plans.",
+        "metadata": {
+            "source": "Zero to One",
+            "author": "Peter Thiel",
+            "topics": ["vc_investing", "optimism", "vision"],
+            "primary_topic": "vc_investing"
+        }
+    },
+
+    # === Software/Tech (Andreessen) ===
+    {
+        "content": "Software is eating the world. In the future, every company will be a software company. Technology is moving from nice-to-have to mission-critical across all industries. Invest in software at its point of impact.",
+        "metadata": {
+            "source": "a16z Essays",
+            "author": "Marc Andreessen",
+            "topics": ["technology", "software", "disruption"],
+            "primary_topic": "technology"
+        }
+    },
+    {
+        "content": "Strong tech tends to eat weak tech. Better software eventually wins. When analyzing tech companies, ask: Is their software fundamentally better? Can it improve faster than alternatives? Software advantage compounds over time.",
+        "metadata": {
+            "source": "a16z Essays",
+            "author": "Marc Andreessen",
+            "topics": ["technology", "software", "moats"],
+            "primary_topic": "technology"
+        }
+    },
+
+    # === Fixed Income/Rates (Gundlach) ===
+    {
+        "content": "The bond market is the smart money. When stocks and bonds disagree, listen to bonds. Credit spreads and yield curves contain predictive information about economic conditions that equity investors often ignore.",
+        "metadata": {
+            "source": "DoubleLine Insights",
+            "author": "Jeffrey Gundlach",
+            "topics": ["macro", "bonds", "rates", "credit"],
+            "primary_topic": "macro"
+        }
+    },
+    {
+        "content": "Rising rates hurt duration but create opportunity in short-term bonds. As rates rise, reinvestment rates improve. Total return investing in bonds requires balancing duration risk with reinvestment opportunity.",
+        "metadata": {
+            "source": "DoubleLine Insights",
+            "author": "Jeffrey Gundlach",
+            "topics": ["bonds", "rates", "duration"],
+            "primary_topic": "bonds"
+        }
+    },
+    {
+        "content": "Watch the dollar. Currency moves amplify or diminish returns for global investors. A strong dollar is deflationary and hurts emerging markets. Dollar weakness supports commodity prices and risk assets.",
+        "metadata": {
+            "source": "DoubleLine Insights",
+            "author": "Jeffrey Gundlach",
+            "topics": ["macro", "currency", "dollar"],
+            "primary_topic": "macro"
+        }
+    },
+
+    # === Value Investing (Klarman Expansion) ===
+    {
+        "content": "Value investing is at its core the marriage of a contrarian streak and a calculator. Being contrarian for its own sake is foolish. Being contrarian and right is where the money is made.",
+        "metadata": {
+            "source": "Baupost Letters",
+            "author": "Seth Klarman",
+            "topics": ["value", "contrarian", "margin_of_safety"],
+            "primary_topic": "value"
+        }
+    },
+    {
+        "content": "Most investors are obsessed with return, not risk. Value investors should focus on return relative to risk. A high return with high risk is not skill; a moderate return with low risk is excellence.",
+        "metadata": {
+            "source": "Baupost Letters",
+            "author": "Seth Klarman",
+            "topics": ["value", "risk", "philosophy"],
+            "primary_topic": "risk"
+        }
+    },
+    {
+        "content": "The market is a pendulum that forever swings between unsustainable optimism and unjustified pessimism. The intelligent investor is realistic, selling to optimists and buying from pessimists.",
+        "metadata": {
+            "source": "Margin of Safety",
+            "author": "Seth Klarman",
+            "topics": ["value", "cycles", "market_psychology"],
+            "primary_topic": "psychology"
+        }
+    },
+
+    # === Growth/Disruption (Chamath) ===
+    {
+        "content": "The best technology investments solve real problems that huge numbers of people have. Total addressable market analysis should start with the problem, not the current market size. Disruption expands markets.",
+        "metadata": {
+            "source": "Social Capital",
+            "author": "Chamath Palihapitiya",
+            "topics": ["vc_investing", "disruption", "tam"],
+            "primary_topic": "vc_investing"
+        }
+    },
+    {
+        "content": "Focus on companies with strong unit economics even if they're currently losing money. Customer acquisition cost, lifetime value, and payback period matter more than current profitability for growth companies.",
+        "metadata": {
+            "source": "Social Capital",
+            "author": "Chamath Palihapitiya",
+            "topics": ["vc_investing", "unit_economics", "growth"],
+            "primary_topic": "vc_investing"
+        }
+    },
 ]
 
 
