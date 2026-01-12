@@ -38,7 +38,7 @@ class PortfolioService {
 
   _prepareStatements() {
     this.stmts = {
-      // Portfolio CRUD
+      // Portfolio CRUD - with user filtering support
       getAllPortfolios: this.db.prepare(`
         SELECT p.*,
           p.current_value as total_value,
@@ -55,6 +55,23 @@ class PortfolioService {
         ORDER BY p.created_at DESC
       `),
 
+      // User-filtered portfolio list
+      getPortfoliosByUser: this.db.prepare(`
+        SELECT p.*,
+          p.current_value as total_value,
+          p.current_cash as cash_balance,
+          (p.current_value - p.total_deposited + p.total_withdrawn) as total_gain,
+          CASE
+            WHEN p.total_deposited > 0
+            THEN ((p.current_value - p.total_deposited + p.total_withdrawn) / p.total_deposited) * 100
+            ELSE 0
+          END as total_gain_pct,
+          (SELECT COUNT(*) FROM portfolio_positions WHERE portfolio_id = p.id) as positions_count
+        FROM portfolios p
+        WHERE p.is_archived = 0 AND p.user_id = ?
+        ORDER BY p.created_at DESC
+      `),
+
       getPortfolio: this.db.prepare(`
         SELECT * FROM portfolios WHERE id = ?
       `),
@@ -67,12 +84,17 @@ class PortfolioService {
         WHERE p.id = ?
       `),
 
+      // Check portfolio ownership
+      getPortfolioOwner: this.db.prepare(`
+        SELECT user_id FROM portfolios WHERE id = ?
+      `),
+
       createPortfolio: this.db.prepare(`
         INSERT INTO portfolios
         (name, description, portfolio_type, benchmark_index_id, currency,
          initial_cash, initial_date, current_cash, current_value,
-         total_deposited, clone_investor_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         total_deposited, clone_investor_id, user_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `),
 
       updatePortfolio: this.db.prepare(`
@@ -124,12 +146,43 @@ class PortfolioService {
   // Portfolio CRUD
   // ============================================
 
-  getAllPortfolios() {
+  /**
+   * Get all portfolios (for admin) or user-specific portfolios
+   * @param {string|null} userId - User ID to filter by, or null for all (admin)
+   */
+  getAllPortfolios(userId = null) {
+    if (userId) {
+      return this.stmts.getPortfoliosByUser.all(userId);
+    }
     return this.stmts.getAllPortfolios.all();
   }
 
   getPortfolio(portfolioId) {
     return this.stmts.getPortfolioWithDetails.get(portfolioId);
+  }
+
+  /**
+   * Check if a user owns a portfolio
+   * @param {number} portfolioId
+   * @param {string} userId
+   * @returns {boolean}
+   */
+  isPortfolioOwner(portfolioId, userId) {
+    const result = this.stmts.getPortfolioOwner.get(portfolioId);
+    if (!result) return false;
+    // If portfolio has no user_id (legacy), allow access
+    if (!result.user_id) return true;
+    return result.user_id === userId;
+  }
+
+  /**
+   * Get portfolio owner
+   * @param {number} portfolioId
+   * @returns {string|null}
+   */
+  getPortfolioOwner(portfolioId) {
+    const result = this.stmts.getPortfolioOwner.get(portfolioId);
+    return result?.user_id || null;
   }
 
   createPortfolio({
@@ -140,7 +193,8 @@ class PortfolioService {
     currency = 'USD',
     initialCash = 0,
     initialDate = null,
-    cloneInvestorId = null
+    cloneInvestorId = null,
+    userId = null
   }) {
     const date = initialDate || new Date().toISOString().split('T')[0];
 
@@ -155,7 +209,8 @@ class PortfolioService {
       initialCash, // current_cash = initial_cash
       initialCash, // current_value = initial_cash (no positions yet)
       initialCash, // total_deposited = initial_cash
-      cloneInvestorId
+      cloneInvestorId,
+      userId
     );
 
     return {
@@ -163,7 +218,8 @@ class PortfolioService {
       portfolioId: result.lastInsertRowid,
       name,
       initialCash,
-      initialDate: date
+      initialDate: date,
+      userId
     };
   }
 
@@ -552,8 +608,8 @@ class PortfolioService {
   }
 
   // Get portfolio summaries for dashboard widget
-  getPortfolioSummaries() {
-    const portfolios = this.getAllPortfolios();
+  getPortfolioSummaries(userId = null) {
+    const portfolios = this.getAllPortfolios(userId);
 
     return portfolios.map(p => {
       try {

@@ -18,6 +18,7 @@ import time
 import logging
 import argparse
 import os
+import sys
 
 # Configuration
 BATCH_SIZE = 100              # Tickers per yfinance call
@@ -31,6 +32,32 @@ TIER_CONFIG = {
     2: {'name': 'Active', 'frequency': 'every_2_days', 'stale_days': 4},
     3: {'name': 'Tracked', 'frequency': 'every_3_days', 'stale_days': 5},
     4: {'name': 'Archive', 'frequency': 'weekly', 'stale_days': 10}
+}
+
+# Yahoo Finance symbol suffixes by country
+COUNTRY_YAHOO_SUFFIX = {
+    'US': '',
+    'GB': '.L',      # London Stock Exchange
+    'DE': '.DE',     # XETRA
+    'FR': '.PA',     # Euronext Paris
+    'NL': '.AS',     # Euronext Amsterdam
+    'BE': '.BR',     # Euronext Brussels
+    'ES': '.MC',     # Bolsa de Madrid
+    'IT': '.MI',     # Borsa Italiana
+    'CH': '.SW',     # SIX Swiss Exchange
+    'SE': '.ST',     # Nasdaq Stockholm
+    'DK': '.CO',     # Nasdaq Copenhagen
+    'NO': '.OL',     # Oslo Bors
+    'FI': '.HE',     # Nasdaq Helsinki
+    'AT': '.VI',     # Vienna Stock Exchange
+    'PT': '.LS',     # Euronext Lisbon
+    'IE': '.IR',     # Euronext Dublin
+    'PL': '.WA',     # Warsaw Stock Exchange
+    'GR': '.AT',     # Athens Stock Exchange
+    'CA': '.TO',     # Toronto Stock Exchange
+    'AU': '.AX',     # Australian Securities Exchange
+    'JP': '.T',      # Tokyo Stock Exchange
+    'HK': '.HK',     # Hong Kong Stock Exchange
 }
 
 # Setup logging
@@ -52,6 +79,51 @@ class PriceUpdater:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
+
+    def get_yahoo_symbol(self, symbol: str, country: str) -> str:
+        """
+        Convert database symbol to Yahoo Finance symbol with appropriate suffix.
+
+        Args:
+            symbol: Raw ticker symbol from database
+            country: ISO 2-letter country code
+
+        Returns:
+            Yahoo Finance formatted symbol (e.g., 'BP' + 'GB' -> 'BP.L')
+        """
+        if not symbol:
+            return None
+
+        symbol = symbol.upper().strip()
+        country = (country or 'US').upper()
+
+        # If symbol already has a suffix (contains .), return as-is
+        if '.' in symbol:
+            return symbol
+
+        # Handle UK-specific symbol formats
+        if country == 'GB':
+            # Remove trailing slash (e.g., 'NG/' -> 'NG')
+            if symbol.endswith('/'):
+                symbol = symbol[:-1]
+            # Convert class shares: 'BT/A' -> 'BT-A', but only if / is in middle
+            elif '/' in symbol:
+                symbol = symbol.replace('/', '-')
+            # Skip invalid symbols (numeric prefixes, special chars)
+            if symbol and (symbol[0].isdigit() or '=' in symbol):
+                return None
+            # Handle GBX suffix - these are pence-denominated, often need removal
+            if symbol.endswith('GBX'):
+                # Try base symbol without GBX
+                symbol = symbol[:-3]
+            # Handle EUR/USD denominated UK shares
+            if symbol.endswith('EUR') or symbol.endswith('USD'):
+                return None  # Skip these, need special handling
+
+        # Get suffix for country
+        suffix = COUNTRY_YAHOO_SUFFIX.get(country, '')
+
+        return f"{symbol}{suffix}"
 
     def _verify_schema(self):
         """Verify required columns exist."""
@@ -97,6 +169,7 @@ class PriceUpdater:
                 id,
                 symbol,
                 name,
+                country,
                 update_tier,
                 last_price_update,
                 update_priority_score
@@ -104,7 +177,9 @@ class PriceUpdater:
             WHERE symbol IS NOT NULL
               AND symbol != ''
               AND symbol NOT LIKE 'CIK_%'
-              AND LENGTH(symbol) <= 6
+              AND LENGTH(symbol) <= 10
+              AND symbol NOT LIKE '%/%'
+              AND LENGTH(symbol) >= 1
               AND (
                 -- Tier 1: Daily
                 (update_tier = 1)
@@ -347,24 +422,39 @@ class PriceUpdater:
             return {'status': 'skipped', 'reason': 'no companies'}
 
         if dry_run:
+            # Show country breakdown in dry run
+            country_counts = {}
+            for c in companies:
+                country = c.get('country', 'US') or 'US'
+                country_counts[country] = country_counts.get(country, 0) + 1
             logger.info(f"Would update {len(companies)} companies")
-            return {'status': 'dry_run', 'would_update': len(companies)}
+            for country, count in sorted(country_counts.items(), key=lambda x: -x[1]):
+                logger.info(f"  {country}: {count}")
+            return {'status': 'dry_run', 'would_update': len(companies), 'by_country': country_counts}
 
-        symbol_to_company = {c['symbol'].upper(): c for c in companies}
-        symbols = list(symbol_to_company.keys())
+        # Build mapping from Yahoo symbol back to company (for result lookup)
+        # Key: Yahoo symbol (e.g., 'BP.L'), Value: company dict
+        yahoo_to_company = {}
+        for c in companies:
+            yahoo_sym = self.get_yahoo_symbol(c['symbol'], c.get('country'))
+            if yahoo_sym:
+                yahoo_to_company[yahoo_sym] = c
+
+        yahoo_symbols = list(yahoo_to_company.keys())
 
         stats = {
             'successful': 0,
             'failed': 0,
             'new_records': 0,
             'updated_records': 0,
-            'errors': []
+            'errors': [],
+            'by_country': {}
         }
 
-        total_batches = (len(symbols) + BATCH_SIZE - 1) // BATCH_SIZE
+        total_batches = (len(yahoo_symbols) + BATCH_SIZE - 1) // BATCH_SIZE
 
-        for batch_idx, i in enumerate(range(0, len(symbols), BATCH_SIZE)):
-            batch_symbols = symbols[i:i+BATCH_SIZE]
+        for batch_idx, i in enumerate(range(0, len(yahoo_symbols), BATCH_SIZE)):
+            batch_symbols = yahoo_symbols[i:i+BATCH_SIZE]
 
             try:
                 batch_data = self.fetch_recent_prices(batch_symbols)
@@ -372,17 +462,19 @@ class PriceUpdater:
                 # Fetch fundamentals (shares outstanding, market cap) for all companies
                 fundamentals = self.fetch_fundamentals(batch_symbols)
 
-                for symbol in batch_symbols:
-                    company = symbol_to_company[symbol]
+                for yahoo_symbol in batch_symbols:
+                    company = yahoo_to_company[yahoo_symbol]
+                    country = company.get('country', 'US') or 'US'
 
-                    if symbol in batch_data and not batch_data[symbol].empty:
+                    if yahoo_symbol in batch_data and not batch_data[yahoo_symbol].empty:
                         new, updated = self.upsert_prices(
-                            company['id'], symbol, batch_data[symbol],
-                            fundamentals=fundamentals.get(symbol)
+                            company['id'], company['symbol'], batch_data[yahoo_symbol],
+                            fundamentals=fundamentals.get(yahoo_symbol)
                         )
                         stats['successful'] += 1
                         stats['new_records'] += new
                         stats['updated_records'] += updated
+                        stats['by_country'][country] = stats['by_country'].get(country, 0) + 1
                     else:
                         stats['failed'] += 1
 
@@ -669,8 +761,11 @@ class BackfillService:
 def main():
     parser = argparse.ArgumentParser(description='Stock Price Update Service')
     parser.add_argument('--db', default='./data/stocks.db', help='Database path')
-    parser.add_argument('command', choices=['update', 'backfill', 'recalculate-tiers', 'stats', 'dry-run', 'backfill-marketcaps'],
+    parser.add_argument('--country', '-c', help='Filter by country code (e.g., GB, DE)')
+    parser.add_argument('--limit', '-l', type=int, default=100, help='Limit number of companies (for test-country)')
+    parser.add_argument('command', choices=['update', 'backfill', 'recalculate-tiers', 'stats', 'dry-run', 'backfill-marketcaps', 'test-country', 'historical-country'],
                        help='Command to execute')
+    parser.add_argument('--period', '-p', default='5y', help='Historical period (1y, 2y, 5y, max) for historical-country')
 
     args = parser.parse_args()
 
@@ -777,6 +872,222 @@ def main():
                 time.sleep(2)
 
             print(f"Updated fundamentals for {updated} companies")
+
+    elif args.command == 'test-country':
+        # Test price fetching for a specific country (bypasses weekend check)
+        if not args.country:
+            print("Error: --country/-c is required for test-country command")
+            print("Example: python price_updater.py test-country -c GB -l 10")
+            sys.exit(1)
+
+        country = args.country.upper()
+        limit = args.limit
+
+        updater = PriceUpdater(db_path)
+        conn = updater.get_connection()
+        cursor = conn.cursor()
+
+        # Get companies for this country
+        cursor.execute("""
+            SELECT id, symbol, name, country
+            FROM companies
+            WHERE country = ?
+              AND symbol IS NOT NULL
+              AND symbol != ''
+              AND symbol NOT LIKE 'CIK_%'
+              AND LENGTH(symbol) <= 10
+              AND LENGTH(symbol) >= 1
+              AND symbol NOT LIKE '%/%'
+              AND symbol NOT GLOB '*[0-9][0-9][0-9][0-9][0-9][0-9]*'
+            ORDER BY RANDOM()
+            LIMIT ?
+        """, (country, limit))
+
+        companies = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        if not companies:
+            print(f"No companies found for country: {country}")
+            sys.exit(1)
+
+        print(f"\n=== Testing Price Fetch for {country} ===")
+        print(f"Found {len(companies)} companies to test\n")
+
+        # Convert to Yahoo symbols
+        yahoo_to_company = {}
+        skipped = 0
+        for c in companies:
+            yahoo_sym = updater.get_yahoo_symbol(c['symbol'], c['country'])
+            if yahoo_sym:
+                yahoo_to_company[yahoo_sym] = c
+                print(f"  {c['symbol']:10} -> {yahoo_sym:15} ({c['name'][:40]})")
+            else:
+                print(f"  {c['symbol']:10} -> SKIPPED        (invalid symbol format)")
+                skipped += 1
+
+        if skipped:
+            print(f"\nSkipped {skipped} invalid symbols")
+
+        print(f"\nFetching prices for {len(yahoo_to_company)} symbols...")
+
+        yahoo_symbols = list(yahoo_to_company.keys())
+        batch_data = updater.fetch_recent_prices(yahoo_symbols)
+
+        successful = 0
+        failed = 0
+
+        print("\nResults:")
+        for yahoo_symbol, company in yahoo_to_company.items():
+            if yahoo_symbol in batch_data and not batch_data[yahoo_symbol].empty:
+                df = batch_data[yahoo_symbol]
+                latest = df.iloc[-1]
+                print(f"  ✓ {yahoo_symbol:15} - ${latest['close']:.2f} ({len(df)} days)")
+
+                # Actually save the data
+                new, updated = updater.upsert_prices(company['id'], company['symbol'], df)
+                successful += 1
+            else:
+                print(f"  ✗ {yahoo_symbol:15} - No data")
+                failed += 1
+
+        print(f"\n=== Summary ===")
+        print(f"Successful: {successful}")
+        print(f"Failed: {failed}")
+        print(f"Success rate: {successful/(successful+failed)*100:.1f}%")
+
+    elif args.command == 'historical-country':
+        # Fetch full historical data for a specific country
+        if not args.country:
+            print("Error: --country/-c is required for historical-country command")
+            print("Example: python price_updater.py historical-country -c GB -p 5y")
+            sys.exit(1)
+
+        country = args.country.upper()
+        period = args.period
+        limit = args.limit if args.limit != 100 else None  # None means no limit
+
+        updater = PriceUpdater(db_path)
+        conn = updater.get_connection()
+        cursor = conn.cursor()
+
+        # Get all companies for this country with valid tickers
+        query = """
+            SELECT id, symbol, name, country
+            FROM companies
+            WHERE country = ?
+              AND symbol IS NOT NULL
+              AND symbol != ''
+              AND symbol NOT LIKE 'CIK_%'
+              AND LENGTH(symbol) <= 10
+              AND LENGTH(symbol) >= 1
+              AND symbol NOT GLOB '*[0-9][0-9][0-9][0-9][0-9][0-9]*'
+            ORDER BY id
+        """
+        if limit:
+            query += f" LIMIT {limit}"
+
+        cursor.execute(query, (country,))
+        companies = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        if not companies:
+            print(f"No companies found for country: {country}")
+            sys.exit(1)
+
+        print(f"\n=== Historical Price Fetch for {country} ({period}) ===")
+        print(f"Found {len(companies)} companies\n")
+
+        # Build Yahoo symbol mapping
+        yahoo_to_company = {}
+        for c in companies:
+            yahoo_sym = updater.get_yahoo_symbol(c['symbol'], c['country'])
+            if yahoo_sym:
+                yahoo_to_company[yahoo_sym] = c
+
+        print(f"Valid symbols: {len(yahoo_to_company)}")
+
+        # Process in batches
+        yahoo_symbols = list(yahoo_to_company.keys())
+        batch_size = 50  # Smaller batches for historical data
+        total_batches = (len(yahoo_symbols) + batch_size - 1) // batch_size
+
+        total_new = 0
+        total_updated = 0
+        successful = 0
+        failed = 0
+
+        for batch_idx in range(total_batches):
+            start = batch_idx * batch_size
+            end = min(start + batch_size, len(yahoo_symbols))
+            batch_symbols = yahoo_symbols[start:end]
+
+            print(f"\nBatch {batch_idx + 1}/{total_batches} ({len(batch_symbols)} symbols)...")
+
+            try:
+                # Fetch historical data
+                data = yf.download(batch_symbols, period=period, progress=False, group_by='ticker')
+
+                batch_new = 0
+                batch_updated = 0
+                batch_success = 0
+                batch_fail = 0
+
+                for yahoo_symbol in batch_symbols:
+                    company = yahoo_to_company[yahoo_symbol]
+
+                    try:
+                        # Handle single vs multiple ticker response format
+                        if len(batch_symbols) == 1:
+                            df = data.copy()
+                        else:
+                            if yahoo_symbol not in data.columns.get_level_values(0):
+                                batch_fail += 1
+                                continue
+                            df = data[yahoo_symbol].copy()
+
+                        if df.empty or df['Close'].isna().all():
+                            batch_fail += 1
+                            continue
+
+                        # Format dataframe
+                        df = df.reset_index()
+                        df.columns = [col.lower() if isinstance(col, str) else col[0].lower() for col in df.columns]
+                        df = df.rename(columns={'date': 'date', 'adj close': 'adj_close'})
+                        df['date'] = pd.to_datetime(df['date']).dt.date
+                        df = df.dropna(subset=['close'])
+
+                        if not df.empty:
+                            new, updated = updater.upsert_prices(company['id'], company['symbol'], df)
+                            batch_new += new
+                            batch_updated += updated
+                            batch_success += 1
+                        else:
+                            batch_fail += 1
+
+                    except Exception as e:
+                        batch_fail += 1
+
+                total_new += batch_new
+                total_updated += batch_updated
+                successful += batch_success
+                failed += batch_fail
+
+                print(f"  Success: {batch_success}, Failed: {batch_fail}, New records: {batch_new}, Updated: {batch_updated}")
+
+                # Rate limiting
+                if batch_idx < total_batches - 1:
+                    time.sleep(3)
+
+            except Exception as e:
+                print(f"  Batch error: {e}")
+                failed += len(batch_symbols)
+
+        print(f"\n=== Final Summary ===")
+        print(f"Companies successful: {successful}")
+        print(f"Companies failed: {failed}")
+        print(f"Success rate: {successful/(successful+failed)*100:.1f}%" if (successful+failed) > 0 else "N/A")
+        print(f"Total new records: {total_new}")
+        print(f"Total updated records: {total_updated}")
 
 
 if __name__ == '__main__':

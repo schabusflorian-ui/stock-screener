@@ -26,6 +26,7 @@ function ExecutionSettingsPanel({ portfolioId }) {
 
   useEffect(() => {
     loadSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [portfolioId]);
 
   const loadSettings = async () => {

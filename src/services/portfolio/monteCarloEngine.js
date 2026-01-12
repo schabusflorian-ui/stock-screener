@@ -1,14 +1,17 @@
 // src/services/portfolio/monteCarloEngine.js
 // Monte Carlo Simulation Engine (Agent 2)
+// Enhanced with Parametric Distribution Support
 
 const db = require('../../database');
+const { ParametricDistributions } = require('../statistics');
 
 const TRADING_DAYS_PER_YEAR = 252;
 
 class MonteCarloEngine {
   constructor() {
     this.db = db.getDatabase();
-    console.log('🎲 Monte Carlo Engine initialized');
+    this.parametricDist = new ParametricDistributions();
+    console.log('🎲 Monte Carlo Engine initialized with parametric distribution support');
   }
 
   // ============================================
@@ -24,6 +27,7 @@ class MonteCarloEngine {
       simulationCount = 10000,
       timeHorizonYears = 30,
       returnModel = 'historical', // 'historical', 'parametric', 'forecasted'
+      returnDistribution = 'normal', // NEW: 'normal', 'studentT', 'skewedT', 'auto'
       initialValue = 500000,
       annualContribution = 0,
       annualWithdrawal = 0,
@@ -48,6 +52,39 @@ class MonteCarloEngine {
       portfolioAllocations,
       lookbackYears
     );
+
+    // Fit parametric distribution to returns (for enhanced modeling)
+    let fittedDistribution = null;
+    let distributionMoments = null;
+    if (returns.length >= 30 && returnModel === 'parametric') {
+      try {
+        // Calculate annualized returns for fitting (convert daily to annual)
+        const annualizedReturns = returns.map(r => r * Math.sqrt(TRADING_DAYS_PER_YEAR));
+
+        if (returnDistribution === 'auto') {
+          fittedDistribution = this.parametricDist.findBestFit(annualizedReturns);
+        } else if (returnDistribution !== 'normal') {
+          fittedDistribution = this.parametricDist.fitDistribution(annualizedReturns, returnDistribution);
+        } else {
+          // Normal distribution - just calculate moments
+          fittedDistribution = {
+            type: 'normal',
+            params: { mean: meanReturn, std: stdReturn },
+            moments: this.parametricDist.calculateMoments(annualizedReturns),
+            goodnessOfFit: this.parametricDist.ksTest(annualizedReturns, { mean: meanReturn, std: stdReturn }, 'normal')
+          };
+        }
+
+        distributionMoments = fittedDistribution.moments || this.parametricDist.calculateMoments(annualizedReturns);
+      } catch (e) {
+        console.warn('Failed to fit distribution:', e.message);
+        // Fall back to normal
+        fittedDistribution = {
+          type: 'normal',
+          params: { mean: meanReturn, std: stdReturn }
+        };
+      }
+    }
 
     // Determine simulation parameters
     let simMean, simStd;
@@ -84,7 +121,9 @@ class MonteCarloEngine {
         meanReturn: simMean,
         stdReturn: simStd,
         historicalReturns: returns,
-        returnModel
+        returnModel,
+        fittedDistribution,
+        returnDistribution
       });
 
       simulations.push(path);
@@ -160,6 +199,18 @@ class MonteCarloEngine {
     const insertResult = insertStmt.run(result);
     result.id = insertResult.lastInsertRowid;
 
+    // Calculate Cornish-Fisher VaR comparison if we have distribution moments
+    let varComparison = null;
+    if (distributionMoments) {
+      varComparison = this.parametricDist.cornishFisherVaR(
+        simMean,
+        simStd,
+        distributionMoments.skewness,
+        distributionMoments.kurtosis,
+        0.95
+      );
+    }
+
     // Return parsed data for API response
     return {
       ...result,
@@ -170,6 +221,117 @@ class MonteCarloEngine {
         stdReturn: simStd * 100,
         inflationAdjustedWithdrawal: annualWithdrawal > 0,
         dataYears: returns.length / TRADING_DAYS_PER_YEAR
+      },
+      // NEW: Distribution fit information
+      distributionFit: fittedDistribution ? {
+        type: fittedDistribution.type,
+        typeName: this._getDistributionName(fittedDistribution.type),
+        params: fittedDistribution.params,
+        goodnessOfFit: fittedDistribution.goodnessOfFit,
+        moments: distributionMoments ? {
+          skewness: distributionMoments.skewness,
+          kurtosis: distributionMoments.kurtosis,
+          excessKurtosis: distributionMoments.excessKurtosis
+        } : null,
+        fatTails: distributionMoments ? distributionMoments.kurtosis > 4 : false,
+        varComparison: varComparison ? {
+          normalVaR95: (varComparison.normalVaR * 100).toFixed(2) + '%',
+          adjustedVaR95: (varComparison.adjustedVaR * 100).toFixed(2) + '%',
+          riskUnderestimation: Math.abs(varComparison.adjustmentPercent).toFixed(1) + '%'
+        } : null
+      } : null
+    };
+  }
+
+  /**
+   * Get human-readable distribution name
+   */
+  _getDistributionName(type) {
+    const names = {
+      normal: 'Normal (Gaussian)',
+      studentT: "Student's t (Fat Tails)",
+      skewedT: "Skewed t (Asymmetric)",
+      johnsonSU: 'Johnson SU'
+    };
+    return names[type] || type;
+  }
+
+  // ============================================
+  // Analyze Portfolio Return Distribution
+  // ============================================
+  async analyzeDistribution(config) {
+    const {
+      portfolioId = null,
+      allocations = null,
+      lookbackYears = 5,
+      distributionType = 'auto'
+    } = config;
+
+    // Get portfolio allocations
+    let portfolioAllocations;
+    if (portfolioId) {
+      portfolioAllocations = this._getPortfolioAllocations(portfolioId);
+    } else if (allocations) {
+      portfolioAllocations = allocations;
+    } else {
+      throw new Error('Either portfolioId or allocations must be provided');
+    }
+
+    // Calculate historical returns
+    const { returns, meanReturn, stdReturn } = await this._calculateHistoricalReturns(
+      portfolioAllocations,
+      lookbackYears
+    );
+
+    if (returns.length < 30) {
+      throw new Error('Insufficient data for distribution analysis (need at least 30 returns)');
+    }
+
+    // Annualize returns for analysis
+    const annualizedReturns = returns.map(r => r * Math.sqrt(TRADING_DAYS_PER_YEAR));
+
+    // Fit distribution
+    let fittedDistribution;
+    if (distributionType === 'auto') {
+      fittedDistribution = this.parametricDist.findBestFit(annualizedReturns);
+    } else {
+      fittedDistribution = this.parametricDist.fitDistribution(annualizedReturns, distributionType);
+    }
+
+    // Get comprehensive summary
+    const summary = this.parametricDist.getSummary(fittedDistribution);
+
+    // Generate comparison data for visualization
+    const comparisonData = this.parametricDist.generateComparisonData(annualizedReturns, fittedDistribution);
+
+    // Generate PDF curves for charting
+    const pdfCurve = this.parametricDist.generatePdfCurve(fittedDistribution.params, fittedDistribution.type);
+    const normalPdfCurve = this.parametricDist.generatePdfCurve(
+      { mean: meanReturn, std: stdReturn },
+      'normal'
+    );
+
+    return {
+      portfolioId,
+      dataPoints: returns.length,
+      lookbackYears,
+      summary: {
+        ...summary,
+        annualizedMean: (meanReturn * 100).toFixed(2) + '%',
+        annualizedStd: (stdReturn * 100).toFixed(2) + '%'
+      },
+      histogram: comparisonData.histogram,
+      pdfCurves: {
+        fitted: pdfCurve,
+        normal: normalPdfCurve
+      },
+      riskMetrics: {
+        var95Normal: summary.varComparison?.normalVaR,
+        var95Adjusted: summary.varComparison?.adjustedVaR,
+        riskUnderestimation: summary.varComparison?.adjustmentPercent,
+        fatTailWarning: summary.riskCharacteristics.fatTails
+          ? 'Portfolio has fat tails - normal distribution underestimates risk'
+          : null
       }
     };
   }
@@ -354,7 +516,9 @@ class MonteCarloEngine {
       meanReturn,
       stdReturn,
       historicalReturns,
-      returnModel
+      returnModel,
+      fittedDistribution,
+      returnDistribution
     } = params;
 
     const path = [{ year: 0, value: initialValue }];
@@ -379,8 +543,12 @@ class MonteCarloEngine {
           compoundReturn *= (1 + historicalReturns[idx]);
         }
         yearReturn = compoundReturn - 1;
+      } else if (returnModel === 'parametric' && fittedDistribution && returnDistribution !== 'normal') {
+        // NEW: Use fitted parametric distribution (Student's t, Skewed t, etc.)
+        // This captures fat tails and skewness in the simulation
+        yearReturn = this.parametricDist.sample(1, fittedDistribution.params, fittedDistribution.type)[0];
       } else {
-        // Parametric: generate from normal distribution
+        // Parametric with normal distribution
         yearReturn = this._normalRandom(meanReturn, stdReturn);
       }
 

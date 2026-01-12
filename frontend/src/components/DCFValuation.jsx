@@ -34,8 +34,18 @@ export function DCFValuation({ symbol, currentPrice, sharesOutstanding }) {
   const [tornadoData, setTornadoData] = useState(null);
   const [tornadoLoading, setTornadoLoading] = useState(false);
 
+  // NEW: Parametric (Monte Carlo) valuation state
+  const [parametricData, setParametricData] = useState(null);
+  const [parametricLoading, setParametricLoading] = useState(false);
+
   // NEW: Projections table state
   const [showProjections, setShowProjections] = useState(false);
+
+  // NEW: Input mode toggle (quick vs advanced)
+  const [inputMode, setInputMode] = useState('advanced');
+
+  // NEW: Copy state for clipboard feedback
+  const [copyFeedback, setCopyFeedback] = useState(null);
 
   // Base financials (actuals - revenue is the primary driver)
   const [baseFinancials, setBaseFinancials] = useState({
@@ -209,6 +219,53 @@ export function DCFValuation({ symbol, currentPrice, sharesOutstanding }) {
     }
   }, [symbol]);
 
+  // NEW: Fetch parametric (Monte Carlo) valuation
+  const fetchParametricData = useCallback(async () => {
+    setParametricLoading(true);
+    try {
+      const response = await dcfAPI.getParametric(symbol, {
+        simulations: 5000,
+        distributionType: 'studentT'
+      });
+      if (response.data.success) {
+        setParametricData(response.data);
+      }
+    } catch (err) {
+      console.error('Parametric valuation error:', err);
+    } finally {
+      setParametricLoading(false);
+    }
+  }, [symbol]);
+
+  // NEW: Copy sensitivity matrix to clipboard
+  const copyMatrixToClipboard = useCallback(() => {
+    if (!sensitivityData) return;
+
+    // Build TSV (tab-separated values for Excel paste)
+    const header = ['', ...sensitivityData.colValues.map(v =>
+      sensitivityData.colVariable === 'exitMultiple' ? `${v.toFixed(1)}x` : `${(v * 100).toFixed(1)}%`
+    )].join('\t');
+
+    const rows = sensitivityData.matrix.map((row, i) => {
+      const rowLabel = sensitivityData.rowVariable === 'exitMultiple'
+        ? `${sensitivityData.rowValues[i].toFixed(1)}x`
+        : `${(sensitivityData.rowValues[i] * 100).toFixed(1)}%`;
+      const values = row.map(v => v ? `$${v.toFixed(0)}` : '-').join('\t');
+      return `${rowLabel}\t${values}`;
+    });
+
+    const tsv = [header, ...rows].join('\n');
+
+    navigator.clipboard.writeText(tsv).then(() => {
+      setCopyFeedback('Copied!');
+      setTimeout(() => setCopyFeedback(null), 2000);
+    }).catch(err => {
+      console.error('Copy failed:', err);
+      setCopyFeedback('Copy failed');
+      setTimeout(() => setCopyFeedback(null), 2000);
+    });
+  }, [sensitivityData]);
+
   const handleBaseFinancialChange = (key, value) => {
     setBaseFinancials(prev => ({ ...prev, [key]: value }));
     setIsCustom(true);
@@ -283,6 +340,41 @@ export function DCFValuation({ symbol, currentPrice, sharesOutstanding }) {
     fetchDCF();
   };
 
+  // Input validation rules with warning/error thresholds
+  const validationRules = {
+    revenue: { min: 0, max: Infinity, warn: { min: 1e8 }, message: 'Revenue must be > 0' },
+    wacc: { min: 0.03, max: 0.30, warn: { min: 0.06, max: 0.15 }, message: 'Typical: 6-15%' },
+    growthStage1: { min: -0.30, max: 0.50, warn: { min: -0.05, max: 0.30 }, message: 'Typical: -5% to 30%' },
+    growthStage2: { min: -0.20, max: 0.40, warn: { min: -0.03, max: 0.20 }, message: 'Typical: -3% to 20%' },
+    growthStage3: { min: -0.10, max: 0.30, warn: { min: 0, max: 0.15 }, message: 'Typical: 0% to 15%' },
+    terminalGrowth: { min: 0, max: 0.04, warn: { min: 0.01, max: 0.03 }, message: 'Typical: 1-3%' },
+    exitMultiple: { min: 3, max: 40, warn: { min: 6, max: 20 }, message: 'Typical: 6-20x' },
+    taxRate: { min: 0, max: 0.50, warn: { min: 0.15, max: 0.30 }, message: 'Typical: 15-30%' },
+    ebitdaMargin: { min: -0.20, max: 0.70, warn: { min: 0.05, max: 0.45 }, message: 'Typical: 5-45%' },
+    targetEbitdaMargin: { min: 0, max: 0.70, warn: { min: 0.10, max: 0.50 }, message: 'Typical: 10-50%' },
+    capexPctRevenue: { min: 0, max: 0.30, warn: { min: 0.02, max: 0.15 }, message: 'Typical: 2-15%' },
+    daPctRevenue: { min: 0, max: 0.25, warn: { min: 0.02, max: 0.12 }, message: 'Typical: 2-12%' },
+    nwcPctRevenueChange: { min: -0.30, max: 0.50, warn: { min: 0, max: 0.20 }, message: 'Typical: 0-20%' },
+  };
+
+  // Get validation status for an input (normal, warning, error)
+  const getInputStatus = (name, value) => {
+    const rule = validationRules[name];
+    if (!rule) return 'normal';
+    if (value === null || value === undefined || isNaN(value)) return 'normal';
+    if (value < rule.min || value > rule.max) return 'error';
+    if ((rule.warn.min !== undefined && value < rule.warn.min) ||
+        (rule.warn.max !== undefined && value > rule.warn.max)) return 'warning';
+    return 'normal';
+  };
+
+  // Get validation message for an input
+  const getValidationMessage = (name, status) => {
+    if (status === 'normal') return null;
+    const rule = validationRules[name];
+    return rule?.message || null;
+  };
+
   // Get value for sensitivity analysis variable
   const getSensitivityValue = (varName) => {
     switch (varName) {
@@ -351,6 +443,9 @@ export function DCFValuation({ symbol, currentPrice, sharesOutstanding }) {
               ebitdaMargin: marginAssumptions.ebitdaMargin,
               targetEbitdaMargin: marginAssumptions.targetEbitdaMargin,
               revenue: baseFinancials.revenue,
+              // Include price and shares to ensure consistent intrinsic value per share
+              currentPrice: currentPrice || data.currentPrice,
+              sharesOutstanding: sharesOutstanding || data.assumptions?.sharesOutstanding,
               [rowVariable]: baseRowValue + rowDelta,
               [colVariable]: baseColValue + colDelta
             };
@@ -513,251 +608,383 @@ export function DCFValuation({ symbol, currentPrice, sharesOutstanding }) {
       <div className="assumptions-panel">
         <div className="assumptions-header">
           <h3>Model Inputs</h3>
-          <span className={`health-badge ${sanityChecks.overallHealth}`}>
-            {sanityChecks.overallHealth === 'good' ? '✓ Reliable' :
-             sanityChecks.overallHealth === 'caution' ? '⚠ Caution' : '⚠ Review'}
-          </span>
-        </div>
-
-        <div className="assumptions-grid-top">
-          {/* Base Financials - Revenue is the driver */}
-          <div className="assumption-card">
-            <h4>Base Year <span className="unit-hint">(in $B)</span></h4>
-            <div className="assumption-item editable">
-              <label>LTM Revenue</label>
-              <div className="input-group compact">
-                <input
-                  type="number"
-                  step="1"
-                  value={formatBillions(baseFinancials.revenue)}
-                  onChange={(e) => handleBaseFinancialChange('revenue', parseBillions(e.target.value))}
-                />
-                <span className="unit">B</span>
-              </div>
+          <div className="assumptions-header-right">
+            <div className="input-mode-toggle">
+              <button
+                className={inputMode === 'quick' ? 'active' : ''}
+                onClick={() => setInputMode('quick')}
+              >
+                Quick
+              </button>
+              <button
+                className={inputMode === 'advanced' ? 'active' : ''}
+                onClick={() => setInputMode('advanced')}
+              >
+                Advanced
+              </button>
             </div>
-            <div className="assumption-item editable">
-              <label>Net Debt</label>
-              <div className="input-group compact">
-                <input
-                  type="number"
-                  step="0.1"
-                  value={formatBillions(baseFinancials.netDebt)}
-                  onChange={(e) => handleBaseFinancialChange('netDebt', parseBillions(e.target.value))}
-                />
-                <span className="unit">B</span>
-              </div>
-            </div>
-            <div className="assumption-item">
-              <label>Hist. Growth (3Y)</label>
-              <span className="value-sm">{formatPercent(data.assumptions.historicalGrowth?.threeYearCAGR)}</span>
-            </div>
-          </div>
-
-          {/* Revenue Growth Rates */}
-          <div className="assumption-card">
-            <h4>Revenue Growth</h4>
-            <div className="assumption-item editable">
-              <label>Stage 1 (Yr 1-3)</label>
-              <div className="input-group compact">
-                <input
-                  type="number"
-                  step="0.5"
-                  value={(growthAssumptions.stage1 * 100).toFixed(1)}
-                  onChange={(e) => handleGrowthChange('stage1', parseFloat(e.target.value) / 100)}
-                />
-                <span className="unit">%</span>
-              </div>
-            </div>
-            <div className="assumption-item editable">
-              <label>Stage 2 (Yr 4-7)</label>
-              <div className="input-group compact">
-                <input
-                  type="number"
-                  step="0.5"
-                  value={(growthAssumptions.stage2 * 100).toFixed(1)}
-                  onChange={(e) => handleGrowthChange('stage2', parseFloat(e.target.value) / 100)}
-                />
-                <span className="unit">%</span>
-              </div>
-            </div>
-            <div className="assumption-item editable">
-              <label>Stage 3 (Yr 8-10)</label>
-              <div className="input-group compact">
-                <input
-                  type="number"
-                  step="0.5"
-                  value={(growthAssumptions.stage3 * 100).toFixed(1)}
-                  onChange={(e) => handleGrowthChange('stage3', parseFloat(e.target.value) / 100)}
-                />
-                <span className="unit">%</span>
-              </div>
-            </div>
-            <div className="assumption-item editable">
-              <label>Terminal</label>
-              <div className="input-group compact">
-                <input
-                  type="number"
-                  step="0.25"
-                  max="3"
-                  value={(growthAssumptions.terminal * 100).toFixed(2)}
-                  onChange={(e) => handleGrowthChange('terminal', Math.min(parseFloat(e.target.value) / 100, 0.03))}
-                />
-                <span className="unit">%</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Margin Assumptions - Excel-style */}
-          <div className="assumption-card">
-            <h4>Margins & CapEx</h4>
-            <div className="assumption-item editable">
-              <label>EBITDA Margin</label>
-              <div className="input-group compact">
-                <input
-                  type="number"
-                  step="0.5"
-                  value={(marginAssumptions.ebitdaMargin * 100).toFixed(1)}
-                  onChange={(e) => handleMarginChange('ebitdaMargin', parseFloat(e.target.value) / 100)}
-                />
-                <span className="unit">%</span>
-              </div>
-            </div>
-            <div className="assumption-item editable">
-              <label>Target Margin</label>
-              <div className="input-group compact">
-                <input
-                  type="number"
-                  step="0.5"
-                  value={(marginAssumptions.targetEbitdaMargin * 100).toFixed(1)}
-                  onChange={(e) => handleMarginChange('targetEbitdaMargin', parseFloat(e.target.value) / 100)}
-                />
-                <span className="unit">%</span>
-              </div>
-            </div>
-            <div className="assumption-item editable">
-              <label>CapEx % Rev</label>
-              <div className="input-group compact">
-                <input
-                  type="number"
-                  step="0.5"
-                  value={(marginAssumptions.capexPctRevenue * 100).toFixed(1)}
-                  onChange={(e) => handleMarginChange('capexPctRevenue', parseFloat(e.target.value) / 100)}
-                />
-                <span className="unit">%</span>
-              </div>
-            </div>
-            <div className="assumption-item editable">
-              <label>D&A % Rev</label>
-              <div className="input-group compact">
-                <input
-                  type="number"
-                  step="0.5"
-                  value={(marginAssumptions.daPctRevenue * 100).toFixed(1)}
-                  onChange={(e) => handleMarginChange('daPctRevenue', parseFloat(e.target.value) / 100)}
-                />
-                <span className="unit">%</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Discount Rate & Terminal */}
-          <div className="assumption-card">
-            <h4>Discount & Terminal</h4>
-            <div className="assumption-item editable">
-              <label>WACC</label>
-              <div className="input-group compact">
-                <input
-                  type="number"
-                  step="0.25"
-                  value={(discountAssumptions.wacc * 100).toFixed(1)}
-                  onChange={(e) => handleDiscountChange('wacc', parseFloat(e.target.value) / 100)}
-                />
-                <span className="unit">%</span>
-              </div>
-            </div>
-            <div className="assumption-item editable">
-              <label>Exit EV/EBITDA</label>
-              <div className="input-group compact">
-                <input
-                  type="number"
-                  step="0.5"
-                  value={discountAssumptions.exitMultiple.toFixed(1)}
-                  onChange={(e) => handleDiscountChange('exitMultiple', parseFloat(e.target.value))}
-                />
-                <span className="unit">x</span>
-              </div>
-            </div>
-            <div className="assumption-item editable">
-              <label>Tax Rate</label>
-              <div className="input-group compact">
-                <input
-                  type="number"
-                  step="1"
-                  value={(marginAssumptions.taxRate * 100).toFixed(0)}
-                  onChange={(e) => handleMarginChange('taxRate', parseFloat(e.target.value) / 100)}
-                />
-                <span className="unit">%</span>
-              </div>
-            </div>
-            <div className="assumption-item">
-              <label>Industry EV/EBITDA</label>
-              <span className="value-sm">{sanityChecks.checks.industryMultiples?.evEbitda?.toFixed(1) || '—'}x</span>
-            </div>
-          </div>
-
-          {/* Scenario Probabilities */}
-          <div className="assumption-card">
-            <h4>Scenario Weights</h4>
-            <div className="assumption-item editable">
-              <label>Bull Case</label>
-              <div className="input-group compact">
-                <input
-                  type="number"
-                  step="5"
-                  min="0"
-                  max="100"
-                  value={scenarioWeights.bull}
-                  onChange={(e) => handleWeightChange('bull', parseInt(e.target.value) || 0)}
-                />
-                <span className="unit">%</span>
-              </div>
-            </div>
-            <div className="assumption-item editable">
-              <label>Base Case</label>
-              <div className="input-group compact">
-                <input
-                  type="number"
-                  step="5"
-                  min="0"
-                  max="100"
-                  value={scenarioWeights.base}
-                  onChange={(e) => handleWeightChange('base', parseInt(e.target.value) || 0)}
-                />
-                <span className="unit">%</span>
-              </div>
-            </div>
-            <div className="assumption-item editable">
-              <label>Bear Case</label>
-              <div className="input-group compact">
-                <input
-                  type="number"
-                  step="5"
-                  min="0"
-                  max="100"
-                  value={scenarioWeights.bear}
-                  onChange={(e) => handleWeightChange('bear', parseInt(e.target.value) || 0)}
-                />
-                <span className="unit">%</span>
-              </div>
-            </div>
-            <div className="assumption-item">
-              <label>Total</label>
-              <span className={`value-sm ${scenarioWeights.bull + scenarioWeights.base + scenarioWeights.bear !== 100 ? 'warning' : ''}`}>
-                {scenarioWeights.bull + scenarioWeights.base + scenarioWeights.bear}%
-              </span>
-            </div>
+            <span className={`health-badge ${sanityChecks.overallHealth}`}>
+              {sanityChecks.overallHealth === 'good' ? '✓ Reliable' :
+               sanityChecks.overallHealth === 'caution' ? '⚠ Caution' : '⚠ Review'}
+            </span>
           </div>
         </div>
+
+        {/* Quick Mode: 2 cards with 4 essential inputs */}
+        {inputMode === 'quick' && (
+          <div className="assumptions-grid-quick">
+            {/* Revenue & Growth - Primary drivers */}
+            <div className="assumption-card quick-card">
+              <h4>Revenue & Growth</h4>
+              <div className="assumption-item editable">
+                <label>LTM Revenue</label>
+                <div className="input-group compact">
+                  <input
+                    type="number"
+                    step="1"
+                    className={getInputStatus('revenue', baseFinancials.revenue)}
+                    value={formatBillions(baseFinancials.revenue)}
+                    onChange={(e) => handleBaseFinancialChange('revenue', parseBillions(e.target.value))}
+                  />
+                  <span className="unit">B</span>
+                </div>
+              </div>
+              <div className="assumption-item editable">
+                <label>Growth (Yr 1-3)</label>
+                <div className="input-group compact">
+                  <input
+                    type="number"
+                    step="0.5"
+                    className={getInputStatus('growthStage1', growthAssumptions.stage1)}
+                    value={(growthAssumptions.stage1 * 100).toFixed(1)}
+                    onChange={(e) => handleGrowthChange('stage1', parseFloat(e.target.value) / 100)}
+                  />
+                  <span className="unit">%</span>
+                </div>
+                {getInputStatus('growthStage1', growthAssumptions.stage1) !== 'normal' && (
+                  <span className={`input-validation-msg ${getInputStatus('growthStage1', growthAssumptions.stage1)}`}>
+                    {getValidationMessage('growthStage1', getInputStatus('growthStage1', growthAssumptions.stage1))}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Valuation - Discount rate & exit */}
+            <div className="assumption-card quick-card">
+              <h4>Valuation</h4>
+              <div className="assumption-item editable">
+                <label>WACC</label>
+                <div className="input-group compact">
+                  <input
+                    type="number"
+                    step="0.25"
+                    className={getInputStatus('wacc', discountAssumptions.wacc)}
+                    value={(discountAssumptions.wacc * 100).toFixed(1)}
+                    onChange={(e) => handleDiscountChange('wacc', parseFloat(e.target.value) / 100)}
+                  />
+                  <span className="unit">%</span>
+                </div>
+                {getInputStatus('wacc', discountAssumptions.wacc) !== 'normal' && (
+                  <span className={`input-validation-msg ${getInputStatus('wacc', discountAssumptions.wacc)}`}>
+                    {getValidationMessage('wacc', getInputStatus('wacc', discountAssumptions.wacc))}
+                  </span>
+                )}
+              </div>
+              <div className="assumption-item editable">
+                <label>Exit EV/EBITDA</label>
+                <div className="input-group compact">
+                  <input
+                    type="number"
+                    step="0.5"
+                    className={getInputStatus('exitMultiple', discountAssumptions.exitMultiple)}
+                    value={discountAssumptions.exitMultiple.toFixed(1)}
+                    onChange={(e) => handleDiscountChange('exitMultiple', parseFloat(e.target.value))}
+                  />
+                  <span className="unit">x</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Advanced Mode: 4 cards with full control */}
+        {inputMode === 'advanced' && (
+          <div className="assumptions-grid-advanced">
+            {/* Card 1: Revenue & Growth */}
+            <div className="assumption-card">
+              <h4>Revenue & Growth</h4>
+              <div className="assumption-item editable">
+                <label>LTM Revenue</label>
+                <div className="input-group compact">
+                  <input
+                    type="number"
+                    step="1"
+                    className={getInputStatus('revenue', baseFinancials.revenue)}
+                    value={formatBillions(baseFinancials.revenue)}
+                    onChange={(e) => handleBaseFinancialChange('revenue', parseBillions(e.target.value))}
+                  />
+                  <span className="unit">B</span>
+                </div>
+              </div>
+              <div className="assumption-item editable">
+                <label>Net Debt</label>
+                <div className="input-group compact">
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={formatBillions(baseFinancials.netDebt)}
+                    onChange={(e) => handleBaseFinancialChange('netDebt', parseBillions(e.target.value))}
+                  />
+                  <span className="unit">B</span>
+                </div>
+              </div>
+              <div className="assumption-item">
+                <label>Hist. Growth (3Y)</label>
+                <span className="value-sm">{formatPercent(data.assumptions.historicalGrowth?.threeYearCAGR)}</span>
+              </div>
+              <div className="card-divider"></div>
+              <div className="assumption-item editable">
+                <label>Stage 1 (Yr 1-3)</label>
+                <div className="input-group compact">
+                  <input
+                    type="number"
+                    step="0.5"
+                    className={getInputStatus('growthStage1', growthAssumptions.stage1)}
+                    value={(growthAssumptions.stage1 * 100).toFixed(1)}
+                    onChange={(e) => handleGrowthChange('stage1', parseFloat(e.target.value) / 100)}
+                  />
+                  <span className="unit">%</span>
+                </div>
+              </div>
+              <div className="assumption-item editable">
+                <label>Stage 2 (Yr 4-7)</label>
+                <div className="input-group compact">
+                  <input
+                    type="number"
+                    step="0.5"
+                    className={getInputStatus('growthStage2', growthAssumptions.stage2)}
+                    value={(growthAssumptions.stage2 * 100).toFixed(1)}
+                    onChange={(e) => handleGrowthChange('stage2', parseFloat(e.target.value) / 100)}
+                  />
+                  <span className="unit">%</span>
+                </div>
+              </div>
+              <div className="assumption-item editable">
+                <label>Stage 3 (Yr 8-10)</label>
+                <div className="input-group compact">
+                  <input
+                    type="number"
+                    step="0.5"
+                    className={getInputStatus('growthStage3', growthAssumptions.stage3)}
+                    value={(growthAssumptions.stage3 * 100).toFixed(1)}
+                    onChange={(e) => handleGrowthChange('stage3', parseFloat(e.target.value) / 100)}
+                  />
+                  <span className="unit">%</span>
+                </div>
+              </div>
+              <div className="assumption-item editable">
+                <label>Terminal</label>
+                <div className="input-group compact">
+                  <input
+                    type="number"
+                    step="0.25"
+                    max="3"
+                    className={getInputStatus('terminalGrowth', growthAssumptions.terminal)}
+                    value={(growthAssumptions.terminal * 100).toFixed(2)}
+                    onChange={(e) => handleGrowthChange('terminal', Math.min(parseFloat(e.target.value) / 100, 0.03))}
+                  />
+                  <span className="unit">%</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 2: Margins & Operations */}
+            <div className="assumption-card">
+              <h4>Margins & Operations</h4>
+              <div className="assumption-item editable">
+                <label>EBITDA Margin</label>
+                <div className="input-group compact">
+                  <input
+                    type="number"
+                    step="0.5"
+                    className={getInputStatus('ebitdaMargin', marginAssumptions.ebitdaMargin)}
+                    value={(marginAssumptions.ebitdaMargin * 100).toFixed(1)}
+                    onChange={(e) => handleMarginChange('ebitdaMargin', parseFloat(e.target.value) / 100)}
+                  />
+                  <span className="unit">%</span>
+                </div>
+              </div>
+              <div className="assumption-item editable">
+                <label>Target Margin</label>
+                <div className="input-group compact">
+                  <input
+                    type="number"
+                    step="0.5"
+                    className={getInputStatus('targetEbitdaMargin', marginAssumptions.targetEbitdaMargin)}
+                    value={(marginAssumptions.targetEbitdaMargin * 100).toFixed(1)}
+                    onChange={(e) => handleMarginChange('targetEbitdaMargin', parseFloat(e.target.value) / 100)}
+                  />
+                  <span className="unit">%</span>
+                </div>
+              </div>
+              <div className="assumption-item editable">
+                <label>Margin Years</label>
+                <div className="input-group compact">
+                  <input
+                    type="number"
+                    step="1"
+                    min="1"
+                    max="10"
+                    value={marginAssumptions.marginImprovementYears}
+                    onChange={(e) => handleMarginChange('marginImprovementYears', parseInt(e.target.value) || 5)}
+                  />
+                  <span className="unit">yr</span>
+                </div>
+              </div>
+              <div className="assumption-item editable">
+                <label>Tax Rate</label>
+                <div className="input-group compact">
+                  <input
+                    type="number"
+                    step="1"
+                    className={getInputStatus('taxRate', marginAssumptions.taxRate)}
+                    value={(marginAssumptions.taxRate * 100).toFixed(0)}
+                    onChange={(e) => handleMarginChange('taxRate', parseFloat(e.target.value) / 100)}
+                  />
+                  <span className="unit">%</span>
+                </div>
+              </div>
+              <div className="card-divider"></div>
+              <div className="assumption-item editable">
+                <label>CapEx % Rev</label>
+                <div className="input-group compact">
+                  <input
+                    type="number"
+                    step="0.5"
+                    className={getInputStatus('capexPctRevenue', marginAssumptions.capexPctRevenue)}
+                    value={(marginAssumptions.capexPctRevenue * 100).toFixed(1)}
+                    onChange={(e) => handleMarginChange('capexPctRevenue', parseFloat(e.target.value) / 100)}
+                  />
+                  <span className="unit">%</span>
+                </div>
+              </div>
+              <div className="assumption-item editable">
+                <label>D&A % Rev</label>
+                <div className="input-group compact">
+                  <input
+                    type="number"
+                    step="0.5"
+                    className={getInputStatus('daPctRevenue', marginAssumptions.daPctRevenue)}
+                    value={(marginAssumptions.daPctRevenue * 100).toFixed(1)}
+                    onChange={(e) => handleMarginChange('daPctRevenue', parseFloat(e.target.value) / 100)}
+                  />
+                  <span className="unit">%</span>
+                </div>
+              </div>
+              <div className="assumption-item editable">
+                <label>NWC % ΔRev</label>
+                <div className="input-group compact">
+                  <input
+                    type="number"
+                    step="1"
+                    className={getInputStatus('nwcPctRevenueChange', marginAssumptions.nwcPctRevenueChange)}
+                    value={(marginAssumptions.nwcPctRevenueChange * 100).toFixed(0)}
+                    onChange={(e) => handleMarginChange('nwcPctRevenueChange', parseFloat(e.target.value) / 100)}
+                  />
+                  <span className="unit">%</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 3: Discount Rate */}
+            <div className="assumption-card">
+              <h4>Discount Rate</h4>
+              <div className="assumption-item editable">
+                <label>WACC</label>
+                <div className="input-group compact">
+                  <input
+                    type="number"
+                    step="0.25"
+                    className={getInputStatus('wacc', discountAssumptions.wacc)}
+                    value={(discountAssumptions.wacc * 100).toFixed(1)}
+                    onChange={(e) => handleDiscountChange('wacc', parseFloat(e.target.value) / 100)}
+                  />
+                  <span className="unit">%</span>
+                </div>
+              </div>
+              <div className="assumption-item editable">
+                <label>Exit EV/EBITDA</label>
+                <div className="input-group compact">
+                  <input
+                    type="number"
+                    step="0.5"
+                    className={getInputStatus('exitMultiple', discountAssumptions.exitMultiple)}
+                    value={discountAssumptions.exitMultiple.toFixed(1)}
+                    onChange={(e) => handleDiscountChange('exitMultiple', parseFloat(e.target.value))}
+                  />
+                  <span className="unit">x</span>
+                </div>
+              </div>
+              <div className="assumption-item">
+                <label>Industry EV/EBITDA</label>
+                <span className="value-sm">{sanityChecks.checks.industryMultiples?.evEbitda?.toFixed(1) || '—'}x</span>
+              </div>
+            </div>
+
+            {/* Card 4: Scenario Weights */}
+            <div className="assumption-card">
+              <h4>Scenario Weights</h4>
+              <div className="assumption-item editable">
+                <label>Bull Case</label>
+                <div className="input-group compact">
+                  <input
+                    type="number"
+                    step="5"
+                    min="0"
+                    max="100"
+                    value={scenarioWeights.bull}
+                    onChange={(e) => handleWeightChange('bull', parseInt(e.target.value) || 0)}
+                  />
+                  <span className="unit">%</span>
+                </div>
+              </div>
+              <div className="assumption-item editable">
+                <label>Base Case</label>
+                <div className="input-group compact">
+                  <input
+                    type="number"
+                    step="5"
+                    min="0"
+                    max="100"
+                    value={scenarioWeights.base}
+                    onChange={(e) => handleWeightChange('base', parseInt(e.target.value) || 0)}
+                  />
+                  <span className="unit">%</span>
+                </div>
+              </div>
+              <div className="assumption-item editable">
+                <label>Bear Case</label>
+                <div className="input-group compact">
+                  <input
+                    type="number"
+                    step="5"
+                    min="0"
+                    max="100"
+                    value={scenarioWeights.bear}
+                    onChange={(e) => handleWeightChange('bear', parseInt(e.target.value) || 0)}
+                  />
+                  <span className="unit">%</span>
+                </div>
+              </div>
+              <div className="assumption-item">
+                <label>Total</label>
+                <span className={`value-sm ${scenarioWeights.bull + scenarioWeights.base + scenarioWeights.bear !== 100 ? 'warning' : ''}`}>
+                  {scenarioWeights.bull + scenarioWeights.base + scenarioWeights.bear}%
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="assumptions-actions">
           <button className="btn-recalculate" onClick={recalculate} disabled={loading}>
@@ -898,6 +1125,128 @@ export function DCFValuation({ symbol, currentPrice, sharesOutstanding }) {
               Weighted Value: <strong>${scenarios.weighted.value.toFixed(2)}</strong>
               <span className="weighted-note">({scenarioWeights.bear}% × ${scenarios.bear.intrinsicValuePerShare.toFixed(0)} + {scenarioWeights.base}% × ${scenarios.base.intrinsicValuePerShare.toFixed(0)} + {scenarioWeights.bull}% × ${scenarios.bull.intrinsicValuePerShare.toFixed(0)})</span>
             </div>
+          </div>
+
+          {/* EV-to-Equity Bridge - Horizontal Flow */}
+          <div className="ev-bridge-section">
+            <h3>EV-to-Equity Bridge</h3>
+            {(() => {
+              const baseScenario = scenarios.base;
+              const pvFcf = baseScenario.pvOfFCFs;
+              const tvPv = baseScenario.terminalPV;
+              const ev = baseScenario.enterpriseValue;
+              const netDebt = data.assumptions?.netDebt || 0;
+              const equity = baseScenario.equityValue;
+              const shares = data.assumptions?.sharesOutstanding || 1;
+              const perShare = baseScenario.intrinsicValuePerShare;
+
+              return (
+                <div className="ev-bridge-flow">
+                  <div className="bridge-step">
+                    <div className="bridge-value positive">{formatCurrency(pvFcf)}</div>
+                    <div className="bridge-label">PV of FCFs</div>
+                  </div>
+                  <div className="bridge-operator">+</div>
+                  <div className="bridge-step">
+                    <div className="bridge-value positive">{formatCurrency(tvPv)}</div>
+                    <div className="bridge-label">Terminal Value (PV)</div>
+                  </div>
+                  <div className="bridge-operator">=</div>
+                  <div className="bridge-step highlight">
+                    <div className="bridge-value">{formatCurrency(ev)}</div>
+                    <div className="bridge-label">Enterprise Value</div>
+                  </div>
+                  <div className="bridge-operator">{netDebt > 0 ? '−' : '+'}</div>
+                  <div className="bridge-step">
+                    <div className={`bridge-value ${netDebt > 0 ? 'negative' : 'positive'}`}>
+                      {formatCurrency(Math.abs(netDebt))}
+                    </div>
+                    <div className="bridge-label">{netDebt > 0 ? 'Net Debt' : 'Net Cash'}</div>
+                  </div>
+                  <div className="bridge-operator">=</div>
+                  <div className="bridge-step highlight">
+                    <div className="bridge-value">{formatCurrency(equity)}</div>
+                    <div className="bridge-label">Equity Value</div>
+                  </div>
+                  <div className="bridge-operator">÷</div>
+                  <div className="bridge-step">
+                    <div className="bridge-value">{(shares / 1e9).toFixed(2)}B</div>
+                    <div className="bridge-label">Shares</div>
+                  </div>
+                  <div className="bridge-operator">=</div>
+                  <div className="bridge-step result">
+                    <div className="bridge-value">${perShare.toFixed(2)}</div>
+                    <div className="bridge-label">Intrinsic Value</div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Year-by-Year Projections Table */}
+          <div className="projections-section">
+            <button
+              className="toggle-projections"
+              onClick={() => setShowProjections(!showProjections)}
+            >
+              {showProjections ? '▼' : '▶'} Year-by-Year Projections (10-Year Model)
+            </button>
+            {showProjections && scenarios.base.projections && (
+              <div className="projections-table-container">
+                <table className="projections-table">
+                  <thead>
+                    <tr>
+                      <th>Year</th>
+                      <th>Revenue</th>
+                      <th>Growth</th>
+                      <th>EBITDA</th>
+                      <th>NOPAT</th>
+                      <th>+ D&A</th>
+                      <th>− CapEx</th>
+                      <th>− ΔNWC</th>
+                      <th>= FCF</th>
+                      <th>PV</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {scenarios.base.projections.map((p) => (
+                      <tr key={p.year}>
+                        <td className="year-col">Y{p.year}</td>
+                        <td>{formatCurrency(p.revenue)}</td>
+                        <td>{formatPercent(p.revenueGrowth)}</td>
+                        <td>{formatCurrency(p.ebitda)}</td>
+                        <td>{formatCurrency(p.nopat)}</td>
+                        <td className="add-col">{formatCurrency(p.depreciation || p.da || 0)}</td>
+                        <td className="subtract-col">{formatCurrency(p.capex)}</td>
+                        <td className="subtract-col">{formatCurrency(p.nwcChange || p.workingCapitalChange || 0)}</td>
+                        <td className="fcf-col">{formatCurrency(p.fcf)}</td>
+                        <td className="pv-col">{formatCurrency(p.presentValue)}</td>
+                      </tr>
+                    ))}
+                    <tr className="totals-row">
+                      <td>Total</td>
+                      <td colSpan="7"></td>
+                      <td className="fcf-col">
+                        {formatCurrency(scenarios.base.projections.reduce((sum, p) => sum + p.fcf, 0))}
+                      </td>
+                      <td className="pv-col">
+                        {formatCurrency(scenarios.base.pvOfFCFs)}
+                      </td>
+                    </tr>
+                    <tr className="terminal-row">
+                      <td>Terminal</td>
+                      <td colSpan="7"></td>
+                      <td></td>
+                      <td className="pv-col">{formatCurrency(scenarios.base.terminalPV)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div className="fcf-formula">
+                  <span className="formula-label">FCF Formula:</span>
+                  <span className="formula">NOPAT + D&A − CapEx − ΔNWC = Free Cash Flow</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Buy Targets */}
@@ -1144,6 +1493,130 @@ export function DCFValuation({ symbol, currentPrice, sharesOutstanding }) {
               </div>
             </div>
           )}
+
+          {/* Monte Carlo Probabilistic Valuation */}
+          <div className="parametric-section">
+            <div className="parametric-header">
+              <h3>Monte Carlo Valuation</h3>
+              <p className="parametric-subtitle">Probabilistic value distribution using 5,000 simulations with fat-tailed uncertainty</p>
+            </div>
+
+            {!parametricData && !parametricLoading && (
+              <div className="parametric-empty">
+                <p>Run Monte Carlo simulation to see probability-weighted valuation ranges</p>
+                <button className="btn-run-simulation" onClick={fetchParametricData}>
+                  Run Simulation
+                </button>
+              </div>
+            )}
+
+            {parametricLoading && (
+              <div className="parametric-loading">
+                <div className="loading-spinner"></div>
+                <span>Running 5,000 Monte Carlo simulations...</span>
+              </div>
+            )}
+
+            {parametricData?.probabilisticValuation && !parametricLoading && (
+              <>
+                <div className="parametric-summary">
+                  <div className="parametric-expected">
+                    <span className="expected-label">Expected Value</span>
+                    <span className="expected-value">${parametricData.probabilisticValuation.percentiles?.p50?.toFixed(2)}</span>
+                    <span className="expected-note">Median of {parametricData.probabilisticValuation.simulations?.toLocaleString()} simulations</span>
+                  </div>
+                  <div className="parametric-range">
+                    <span className="range-label">80% Confidence Range</span>
+                    <span className="range-value">
+                      ${parametricData.probabilisticValuation.percentiles?.p10?.toFixed(2)} – ${parametricData.probabilisticValuation.percentiles?.p90?.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="percentile-distribution">
+                  <div className="percentile-bar">
+                    <div className="percentile-segment p5" style={{ left: '0%', width: '5%' }}>
+                      <span className="segment-label">P5</span>
+                    </div>
+                    <div className="percentile-segment p10" style={{ left: '5%', width: '5%' }}>
+                      <span className="segment-label">P10</span>
+                    </div>
+                    <div className="percentile-segment p25" style={{ left: '10%', width: '15%' }}>
+                      <span className="segment-label">P25</span>
+                    </div>
+                    <div className="percentile-segment p50" style={{ left: '25%', width: '25%' }}>
+                      <span className="segment-label">P50</span>
+                    </div>
+                    <div className="percentile-segment p75" style={{ left: '50%', width: '25%' }}>
+                      <span className="segment-label">P75</span>
+                    </div>
+                    <div className="percentile-segment p90" style={{ left: '75%', width: '15%' }}>
+                      <span className="segment-label">P90</span>
+                    </div>
+                    <div className="percentile-segment p95" style={{ left: '90%', width: '10%' }}>
+                      <span className="segment-label">P95</span>
+                    </div>
+                    {data?.currentPrice && parametricData.probabilisticValuation.percentiles && (
+                      <div
+                        className="current-price-marker"
+                        style={{
+                          left: `${Math.min(100, Math.max(0,
+                            ((data.currentPrice - parametricData.probabilisticValuation.percentiles.p5) /
+                            (parametricData.probabilisticValuation.percentiles.p95 - parametricData.probabilisticValuation.percentiles.p5)) * 100
+                          ))}%`
+                        }}
+                        title={`Current: $${data.currentPrice?.toFixed(2)}`}
+                      >
+                        <span className="marker-line"></span>
+                        <span className="marker-label">Current</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="percentile-values">
+                    <span className="pct-value">${parametricData.probabilisticValuation.percentiles?.p5?.toFixed(0)}</span>
+                    <span className="pct-value">${parametricData.probabilisticValuation.percentiles?.p25?.toFixed(0)}</span>
+                    <span className="pct-value">${parametricData.probabilisticValuation.percentiles?.p50?.toFixed(0)}</span>
+                    <span className="pct-value">${parametricData.probabilisticValuation.percentiles?.p75?.toFixed(0)}</span>
+                    <span className="pct-value">${parametricData.probabilisticValuation.percentiles?.p95?.toFixed(0)}</span>
+                  </div>
+                </div>
+
+                <div className="probability-metrics">
+                  <h4>Probability Analysis vs Current Price</h4>
+                  <div className="probability-grid">
+                    <div className="prob-item bullish">
+                      <span className="prob-value">{parametricData.probabilisticValuation.probabilities?.undervalued10pct?.toFixed(0)}%</span>
+                      <span className="prob-label">Chance of 10%+ upside</span>
+                    </div>
+                    <div className="prob-item bullish">
+                      <span className="prob-value">{parametricData.probabilisticValuation.probabilities?.undervalued20pct?.toFixed(0)}%</span>
+                      <span className="prob-label">Chance of 20%+ upside</span>
+                    </div>
+                    <div className="prob-item bullish">
+                      <span className="prob-value">{parametricData.probabilisticValuation.probabilities?.undervalued50pct?.toFixed(0)}%</span>
+                      <span className="prob-label">Chance of 50%+ upside</span>
+                    </div>
+                    <div className="prob-item bearish">
+                      <span className="prob-value">{parametricData.probabilisticValuation.probabilities?.overvalued?.toFixed(0)}%</span>
+                      <span className="prob-label">Chance overvalued</span>
+                    </div>
+                  </div>
+                </div>
+
+                {parametricData.interpretation && parametricData.interpretation.length > 0 && (
+                  <div className="parametric-interpretation">
+                    {parametricData.interpretation.map((line, idx) => (
+                      <p key={idx} className={idx === 0 ? 'interpretation-summary' : 'interpretation-detail'}>{line}</p>
+                    ))}
+                  </div>
+                )}
+
+                <button className="btn-refresh" onClick={fetchParametricData}>
+                  Re-run Simulation
+                </button>
+              </>
+            )}
+          </div>
         </div>
       )}
 
@@ -1299,7 +1772,12 @@ export function DCFValuation({ symbol, currentPrice, sharesOutstanding }) {
                 <span className="matrix-title">
                   Intrinsic Value: {variableLabels[sensitivityData.rowVariable]} vs {variableLabels[sensitivityData.colVariable]}
                 </span>
-                <span className="current-price-note">Current: ${data.currentPrice?.toFixed(2)}</span>
+                <div className="matrix-actions">
+                  <button className="btn-copy-matrix" onClick={copyMatrixToClipboard}>
+                    {copyFeedback || 'Copy to Clipboard'}
+                  </button>
+                  <span className="current-price-note">Current: ${data.currentPrice?.toFixed(2)}</span>
+                </div>
               </div>
               <div className="matrix-table-container">
                 <table className="matrix-table">

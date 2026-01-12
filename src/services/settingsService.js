@@ -731,15 +731,9 @@ class SettingsService {
         numberFormat: row.number_format || 'compact',
         defaultBenchmark: row.default_benchmark || 'SPY',
         defaultTimeHorizon: row.default_time_horizon || 10,
-        defaultSimulationRuns: row.default_simulation_runs || 1000,
-        emailAlerts: row.email_alerts === 1,
-        alertOnUpdateFailure: row.alert_on_update_failure === 1,
-        alertOnStaleData: row.alert_on_stale_data === 1,
-        // New preference fields
         showPercentages: row.show_percentages === 1,
         compactNumbers: row.compact_numbers === 1,
         autoRefreshInterval: row.auto_refresh_interval || 0,
-        notificationsEnabled: row.notifications_enabled === 1,
       };
     } catch (error) {
       console.error('Error fetching user preferences:', error);
@@ -752,14 +746,9 @@ class SettingsService {
         numberFormat: 'compact',
         defaultBenchmark: 'SPY',
         defaultTimeHorizon: 10,
-        defaultSimulationRuns: 1000,
-        emailAlerts: false,
-        alertOnUpdateFailure: true,
-        alertOnStaleData: true,
         showPercentages: true,
         compactNumbers: true,
         autoRefreshInterval: 0,
-        notificationsEnabled: false,
       };
     }
   }
@@ -799,15 +788,9 @@ class SettingsService {
       numberFormat: 'number_format',
       defaultBenchmark: 'default_benchmark',
       defaultTimeHorizon: 'default_time_horizon',
-      defaultSimulationRuns: 'default_simulation_runs',
-      emailAlerts: 'email_alerts',
-      alertOnUpdateFailure: 'alert_on_update_failure',
-      alertOnStaleData: 'alert_on_stale_data',
-      // New preference fields
       showPercentages: 'show_percentages',
       compactNumbers: 'compact_numbers',
       autoRefreshInterval: 'auto_refresh_interval',
-      notificationsEnabled: 'notifications_enabled',
     };
 
     const updates = [];

@@ -783,4 +783,383 @@ router.get('/tracker/signal-summary', (req, res) => {
   }
 });
 
+// ============================================
+// AGENT CONTROL DASHBOARD ENDPOINTS
+// ============================================
+
+// In-memory state for agent status per portfolio
+const agentState = new Map();
+
+function getAgentState(portfolioId) {
+  if (!agentState.has(portfolioId)) {
+    agentState.set(portfolioId, {
+      running: false,
+      mode: 'paper',
+      lastScan: null,
+      nextScan: null,
+      activities: []
+    });
+  }
+  return agentState.get(portfolioId);
+}
+
+function logActivity(portfolioId, type, message, details = null) {
+  const state = getAgentState(portfolioId);
+  const activity = {
+    id: Date.now(),
+    timestamp: new Date().toISOString(),
+    type,
+    message,
+    details
+  };
+  state.activities.unshift(activity);
+  if (state.activities.length > 100) {
+    state.activities = state.activities.slice(0, 100);
+  }
+  return activity;
+}
+
+/**
+ * GET /api/agent/portfolios/:portfolioId/status
+ * Get agent status
+ */
+router.get('/portfolios/:portfolioId/status', (req, res) => {
+  try {
+    const { portfolioId } = req.params;
+    const state = getAgentState(parseInt(portfolioId, 10));
+    res.json({
+      running: state.running,
+      mode: state.mode,
+      lastScan: state.lastScan,
+      nextScan: state.nextScan
+    });
+  } catch (error) {
+    console.error('Error getting agent status:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/agent/portfolios/:portfolioId/start
+ * Start the agent
+ */
+router.post('/portfolios/:portfolioId/start', (req, res) => {
+  try {
+    const { portfolioId } = req.params;
+    const id = parseInt(portfolioId, 10);
+    const state = getAgentState(id);
+
+    state.running = true;
+    if (state.mode === 'paused') state.mode = 'paper';
+
+    const nextScan = new Date();
+    nextScan.setMinutes(nextScan.getMinutes() + 30);
+    state.nextScan = nextScan.toISOString();
+
+    logActivity(id, 'started', 'Agent started');
+
+    res.json({ success: true, running: state.running, mode: state.mode, nextScan: state.nextScan });
+  } catch (error) {
+    console.error('Error starting agent:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/agent/portfolios/:portfolioId/pause
+ * Pause the agent
+ */
+router.post('/portfolios/:portfolioId/pause', (req, res) => {
+  try {
+    const { portfolioId } = req.params;
+    const id = parseInt(portfolioId, 10);
+    const state = getAgentState(id);
+
+    state.running = false;
+    state.mode = 'paused';
+    state.nextScan = null;
+
+    logActivity(id, 'paused', 'Agent paused');
+
+    res.json({ success: true, running: state.running, mode: state.mode });
+  } catch (error) {
+    console.error('Error pausing agent:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/agent/portfolios/:portfolioId/scan
+ * Run immediate scan
+ */
+router.post('/portfolios/:portfolioId/scan', (req, res) => {
+  try {
+    const { portfolioId } = req.params;
+    const id = parseInt(portfolioId, 10);
+    const state = getAgentState(id);
+    const database = db.getDatabase();
+
+    logActivity(id, 'scan', 'Starting manual scan...');
+
+    const positions = database.prepare(`
+      SELECT DISTINCT symbol FROM portfolio_positions
+      WHERE portfolio_id = ? AND quantity > 0
+    `).all(id);
+
+    const scannedCount = positions.length || 0;
+    state.lastScan = new Date().toISOString();
+
+    if (state.running) {
+      const nextScan = new Date();
+      nextScan.setMinutes(nextScan.getMinutes() + 30);
+      state.nextScan = nextScan.toISOString();
+    }
+
+    logActivity(id, 'scan', `Scanned ${scannedCount} positions`, { count: scannedCount });
+
+    res.json({ success: true, scanned: scannedCount, lastScan: state.lastScan, nextScan: state.nextScan });
+  } catch (error) {
+    console.error('Error running scan:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/agent/portfolios/:portfolioId/activity
+ * Get agent activity log
+ */
+router.get('/portfolios/:portfolioId/activity', (req, res) => {
+  try {
+    const { portfolioId } = req.params;
+    const { limit = 50 } = req.query;
+    const id = parseInt(portfolioId, 10);
+    const state = getAgentState(id);
+    const database = db.getDatabase();
+
+    const recentExecutions = database.prepare(`
+      SELECT id, symbol, action, status, approved_at, executed_at, rejected_at, target_value
+      FROM pending_executions
+      WHERE portfolio_id = ?
+      ORDER BY created_at DESC
+      LIMIT ?
+    `).all(id, parseInt(limit, 10));
+
+    const executionActivities = recentExecutions.map(exec => {
+      let type, message;
+      if (exec.status === 'executed') {
+        type = 'executed';
+        message = `Executed ${exec.action.toUpperCase()} ${exec.symbol} - $${exec.target_value?.toLocaleString() || 0}`;
+      } else if (exec.status === 'rejected') {
+        type = 'rejected';
+        message = `Rejected ${exec.action.toUpperCase()} ${exec.symbol}`;
+      } else if (exec.status === 'pending') {
+        type = 'pending';
+        message = `Queued ${exec.action.toUpperCase()} ${exec.symbol} - awaiting approval`;
+      } else {
+        type = 'scan';
+        message = `${exec.action.toUpperCase()} ${exec.symbol} - ${exec.status}`;
+      }
+      return {
+        id: exec.id,
+        timestamp: exec.executed_at || exec.approved_at || exec.rejected_at,
+        type,
+        message,
+        details: { symbol: exec.symbol, action: exec.action }
+      };
+    }).filter(a => a.timestamp);
+
+    const allActivities = [...state.activities, ...executionActivities]
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+      .slice(0, parseInt(limit, 10));
+
+    res.json(allActivities);
+  } catch (error) {
+    console.error('Error getting activity:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/agent/portfolios/:portfolioId/context
+ * Get market context
+ */
+router.get('/portfolios/:portfolioId/context', (req, res) => {
+  try {
+    const database = db.getDatabase();
+
+    let regime = 'NEUTRAL', regimeConfidence = 0.5, vix = null, vixLevel = null;
+
+    try {
+      const regimeData = database.prepare(`
+        SELECT regime, confidence, vix_value, vix_level
+        FROM market_regime_history
+        ORDER BY date DESC LIMIT 1
+      `).get();
+
+      if (regimeData) {
+        regime = regimeData.regime || 'NEUTRAL';
+        regimeConfidence = regimeData.confidence || 0.5;
+        vix = regimeData.vix_value;
+        vixLevel = regimeData.vix_level;
+      }
+    } catch (e) { /* Table may not exist */ }
+
+    let signalStrength = { positive: 0, negative: 0, neutral: 0 };
+    try {
+      const signals = database.prepare(`
+        SELECT signal_type, score FROM agent_signals
+        WHERE date(created_at) = date('now')
+      `).all();
+
+      signals.forEach(s => {
+        if (s.score > 0.2) signalStrength.positive++;
+        else if (s.score < -0.2) signalStrength.negative++;
+        else signalStrength.neutral++;
+      });
+    } catch (e) { /* Table may not exist */ }
+
+    let positionAdjustment = 'Normal';
+    if (regime === 'HIGH_VOL' || regime === 'CRISIS') positionAdjustment = 'Reduced';
+
+    res.json({
+      regime,
+      regimeConfidence,
+      vix,
+      vixLevel,
+      breadth: null,
+      breadthLevel: null,
+      signalStrength,
+      positionAdjustment
+    });
+  } catch (error) {
+    console.error('Error getting market context:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/agent/portfolios/:portfolioId/stats/today
+ * Get today's stats
+ */
+router.get('/portfolios/:portfolioId/stats/today', (req, res) => {
+  try {
+    const { portfolioId } = req.params;
+    const database = db.getDatabase();
+
+    const stats = database.prepare(`
+      SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN status = 'executed' THEN 1 ELSE 0 END) as executed,
+        SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending
+      FROM pending_executions
+      WHERE portfolio_id = ? AND date(created_at) = date('now')
+    `).get(parseInt(portfolioId, 10));
+
+    const winRate = stats.executed > 0 ? Math.round((stats.executed / (stats.executed + stats.rejected || 1)) * 100) : 0;
+
+    let signalsGenerated = 0;
+    try {
+      const signalCount = database.prepare(`
+        SELECT COUNT(*) as count FROM agent_signals WHERE date(created_at) = date('now')
+      `).get();
+      signalsGenerated = signalCount?.count || 0;
+    } catch (e) { /* Table may not exist */ }
+
+    const total = (stats.executed || 0) + (stats.rejected || 0);
+    const approvalRate = total > 0 ? Math.round(((stats.executed || 0) / total) * 100) : 0;
+
+    res.json({
+      executed: stats.executed || 0,
+      winRate,
+      pnl: 0,
+      signalsGenerated,
+      approvalRate
+    });
+  } catch (error) {
+    console.error('Error getting today stats:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/agent/portfolios/:portfolioId/settings
+ * Get agent settings
+ */
+router.get('/portfolios/:portfolioId/settings', (req, res) => {
+  try {
+    const { portfolioId } = req.params;
+    const database = db.getDatabase();
+
+    let settings = null;
+    try {
+      settings = database.prepare(`SELECT * FROM execution_settings WHERE portfolio_id = ?`)
+        .get(parseInt(portfolioId, 10));
+    } catch (e) { /* Table may not exist */ }
+
+    let riskLimits = null;
+    try {
+      riskLimits = database.prepare(`SELECT * FROM risk_limits WHERE portfolio_id = ?`)
+        .get(parseInt(portfolioId, 10));
+    } catch (e) { /* Table may not exist */ }
+
+    res.json({
+      execution: settings || {
+        autoExecute: false,
+        minConfidence: 0.6,
+        maxTradesPerDay: 5,
+        requireConfirmation: true
+      },
+      riskLimits: riskLimits || {
+        maxPositionSize: 0.05,
+        maxSectorExposure: 0.30,
+        minCashReserve: 0.05
+      }
+    });
+  } catch (error) {
+    console.error('Error getting settings:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUT /api/agent/portfolios/:portfolioId/settings
+ * Update agent settings
+ */
+router.put('/portfolios/:portfolioId/settings', (req, res) => {
+  try {
+    const { portfolioId } = req.params;
+    const { execution, mode } = req.body;
+    const id = parseInt(portfolioId, 10);
+    const database = db.getDatabase();
+
+    if (mode) {
+      const state = getAgentState(id);
+      state.mode = mode;
+      logActivity(id, 'configured', `Mode changed to ${mode}`);
+    }
+
+    if (execution) {
+      database.prepare(`
+        INSERT OR REPLACE INTO execution_settings (
+          portfolio_id, auto_execute, min_confidence, max_trades_per_day, require_confirmation
+        ) VALUES (?, ?, ?, ?, ?)
+      `).run(
+        id,
+        execution.autoExecute ? 1 : 0,
+        execution.minConfidence || 0.6,
+        execution.maxTradesPerDay || 5,
+        execution.requireConfirmation ? 1 : 0
+      );
+    }
+
+    logActivity(id, 'configured', 'Settings updated');
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error updating settings:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;

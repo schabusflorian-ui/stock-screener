@@ -646,10 +646,14 @@ router.get('/:symbol/metrics', (req, res) => {
                   'July', 'August', 'September', 'October', 'November', 'December'][fiscalConfig.fiscal_year_end_month - 1]
     } : null;
 
+    // Determine data source from metrics (sec = US quarterly, xbrl = EU annual)
+    const dataSource = enrichedMetrics[0]?.data_source || 'sec';
+
     res.json({
       symbol: symbol.toUpperCase(),
       count: enrichedMetrics.length,
       period_type,
+      data_source: dataSource,
       fiscal_year_end: fiscalYearEndInfo,
       available_periods: periodTypes,
       metrics: enrichedMetrics,

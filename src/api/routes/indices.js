@@ -262,33 +262,38 @@ router.get('/alpha/timeseries/:symbol', (req, res) => {
       ORDER BY date ASC
     `).all(company.id, startDateStr);
 
-    // Get SPY prices for the same period (from index_prices table)
+    // Get SPY prices for the same period from daily_prices table (current data)
+    // SPY is tracked as a company in the companies table with current prices
     let benchmarkPrices = [];
-    try {
+    const spyCompany = db.prepare(`
+      SELECT id FROM companies WHERE symbol = 'SPY' COLLATE NOCASE
+    `).get();
+
+    if (spyCompany) {
       benchmarkPrices = db.prepare(`
-        SELECT date, close
-        FROM index_daily_prices
-        WHERE symbol = 'SPY'
+        SELECT date, adjusted_close as close
+        FROM daily_prices
+        WHERE company_id = ?
           AND date >= ?
-          AND close IS NOT NULL
+          AND adjusted_close IS NOT NULL
         ORDER BY date ASC
-      `).all(startDateStr);
-    } catch (e) {
-      // Table might not exist
+      `).all(spyCompany.id, startDateStr);
     }
 
-    // If index_daily_prices doesn't exist or is empty, try market_index_prices
-    // Use S&P 500 (^GSPC) as the benchmark
+    // Fallback to index_daily_prices table if SPY not in companies
     if (!benchmarkPrices || benchmarkPrices.length === 0) {
-      benchmarkPrices = db.prepare(`
-        SELECT mip.date, mip.close
-        FROM market_index_prices mip
-        JOIN market_indices mi ON mip.index_id = mi.id
-        WHERE mi.symbol = '^GSPC'
-          AND mip.date >= ?
-          AND mip.close IS NOT NULL
-        ORDER BY mip.date ASC
-      `).all(startDateStr);
+      try {
+        benchmarkPrices = db.prepare(`
+          SELECT date, close
+          FROM index_daily_prices
+          WHERE symbol = 'SPY'
+            AND date >= ?
+            AND close IS NOT NULL
+          ORDER BY date ASC
+        `).all(startDateStr);
+      } catch (e) {
+        // Table might not exist
+      }
     }
 
     // Build date-indexed maps for alignment
@@ -464,15 +469,27 @@ router.get('/alpha/:symbol', (req, res) => {
 /**
  * POST /api/indices/etfs/update
  * Trigger ETF index price update (admin)
+ * Returns immediately and runs processing in background
  */
-router.post('/etfs/update', async (req, res) => {
+router.post('/etfs/update', (req, res) => {
   try {
     const db = req.app.get('db');
-    const indexPriceService = new IndexPriceService(db);
-    const result = await indexPriceService.fullUpdate();
+
+    // Return immediately
     res.json({
       success: true,
-      data: result
+      message: 'ETF index price update started in background'
+    });
+
+    // Run in background
+    setImmediate(async () => {
+      try {
+        const indexPriceService = new IndexPriceService(db);
+        const result = await indexPriceService.fullUpdate();
+        console.log('[Index Update] Completed:', result);
+      } catch (error) {
+        console.error('[Index Update] Error:', error.message);
+      }
     });
   } catch (error) {
     console.error('Error updating ETF indices:', error);

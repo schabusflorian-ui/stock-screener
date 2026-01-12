@@ -9,6 +9,10 @@ const express = require('express');
 const router = express.Router();
 const { spawn } = require('child_process');
 const path = require('path');
+const { v4: uuidv4 } = require('uuid');
+const db = require('../../database');
+
+const database = db.getDatabase();
 
 // Python service for NL processing
 let pythonProcess = null;
@@ -18,9 +22,14 @@ let requestIdCounter = 0;
 /**
  * Start the Python NL service
  */
+let pythonReady = false;
+let pythonReadyResolve = null;
+
 function startPythonService() {
   const pythonPath = process.env.PYTHON_PATH || 'python3';
   const scriptPath = path.join(__dirname, '../../services/nl/server.py');
+
+  pythonReady = false;
 
   pythonProcess = spawn(pythonPath, [scriptPath], {
     cwd: path.join(__dirname, '../../..'),
@@ -40,6 +49,18 @@ function startPythonService() {
       if (line.trim()) {
         try {
           const response = JSON.parse(line);
+
+          // Handle ready signal
+          if (response.status === 'ready') {
+            console.log('NL Python service ready');
+            pythonReady = true;
+            if (pythonReadyResolve) {
+              pythonReadyResolve();
+              pythonReadyResolve = null;
+            }
+            continue;
+          }
+
           const resolver = requestQueue.get(response.request_id);
           if (resolver) {
             resolver(response);
@@ -59,6 +80,7 @@ function startPythonService() {
   pythonProcess.on('close', (code) => {
     console.log(`NL Python service exited with code ${code}`);
     pythonProcess = null;
+    pythonReady = false;
     // Reject any pending requests
     for (const [id, resolver] of requestQueue.entries()) {
       resolver({ success: false, error: 'Service crashed' });
@@ -76,8 +98,27 @@ async function sendToPython(action, data, timeout = 30000) {
   // Start service if not running
   if (!pythonProcess) {
     startPythonService();
-    // Wait for startup
-    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+
+  // Wait for Python service to be ready (LLM router initialization can take 10+ seconds)
+  if (!pythonReady) {
+    await new Promise((resolve, reject) => {
+      const readyTimeout = setTimeout(() => {
+        pythonReadyResolve = null;
+        reject(new Error('Python service startup timeout'));
+      }, 20000); // 20 second startup timeout
+
+      pythonReadyResolve = () => {
+        clearTimeout(readyTimeout);
+        resolve();
+      };
+
+      // If already ready by the time we check
+      if (pythonReady) {
+        clearTimeout(readyTimeout);
+        resolve();
+      }
+    });
   }
 
   const requestId = `req_${++requestIdCounter}`;
@@ -188,10 +229,14 @@ function getMockResponse(query) {
   let intent = 'unknown';
   let confidence = 0.3;
 
-  // More comprehensive intent patterns
-  if (/show me|find|screen|filter|list|give me|get me|looking for|i want|search for/.test(preprocessed)) {
-    intent = 'screen';
-    confidence = 0.7;
+  // More comprehensive intent patterns - ordered by specificity
+  // INVESTOR intent - check first (most specific)
+  if (/buffett|burry|dalio|ackman|icahn|soros|druckenmiller|tepper|cohen|einhorn|loeb|klarman|marks|berkshire|bridgewater|pershing|scion|13f filing|holdings of|portfolio of/.test(preprocessed)) {
+    intent = 'investor';
+    confidence = 0.85;
+  } else if (/my portfolio|portfolio analysis|portfolio performance|analyze portfolio|portfolio holdings/.test(preprocessed)) {
+    intent = 'portfolio';
+    confidence = 0.85;
   } else if (/compare|vs\b|versus|head to head|side by side|difference between/.test(preprocessed)) {
     intent = 'compare';
     confidence = 0.8;
@@ -207,17 +252,35 @@ function getMockResponse(query) {
   } else if (/top \d+|best|worst|highest|lowest|ranking/.test(preprocessed)) {
     intent = 'ranking';
     confidence = 0.8;
+  } else if (/show me|find|screen|filter|list|give me|get me|looking for|i want|search for/.test(preprocessed) &&
+             /stocks?|companies|securities/.test(preprocessed)) {
+    // Only match SCREEN if there's a mention of stocks/companies
+    intent = 'screen';
+    confidence = 0.7;
   } else if (/what's|what is|tell me about|info|details|show me \w+ data/.test(preprocessed)) {
     intent = 'lookup';
     confidence = 0.6;
   }
+  // If no pattern matched confidently, stay with 'unknown' (default)
 
   // Extract symbols - uppercase words that look like tickers
   const symbolMatch = query.match(/\b([A-Z]{1,5})\b/g);
-  const commonWords = new Set(['I', 'A', 'TO', 'THE', 'AND', 'OR', 'FOR', 'IN', 'ON', 'AT', 'IS',
-    'IT', 'BE', 'AS', 'BY', 'ARE', 'WAS', 'BUT', 'NOT', 'YOU', 'ALL', 'TOP', 'VS']);
+  // Exclude common words AND financial metrics
+  const excludeWords = new Set([
+    // Common English words
+    'I', 'A', 'TO', 'THE', 'AND', 'OR', 'FOR', 'IN', 'ON', 'AT', 'IS',
+    'IT', 'BE', 'AS', 'BY', 'ARE', 'WAS', 'BUT', 'NOT', 'YOU', 'ALL', 'TOP', 'VS',
+    'GET', 'SHOW', 'FIND', 'MY', 'NO', 'UP', 'DO', 'GO', 'ME', 'WE', 'AN', 'AM',
+    // Financial metrics (NOT stock symbols)
+    'PE', 'PB', 'PS', 'EPS', 'ROE', 'ROA', 'ROI', 'ROIC', 'FCF', 'DCF',
+    'NOPAT', 'EBIT', 'EBITDA', 'EV', 'WACC', 'CAGR', 'NPV', 'IRR',
+    'YOY', 'QOQ', 'TTM', 'FY', 'MRQ', 'LTM', 'NTM', 'FWD',
+    // Business acronyms
+    'ETF', 'IPO', 'CEO', 'CFO', 'COO', 'CTO', 'USA', 'USD', 'EUR', 'GBP', 'CAD',
+    'SEC', 'GDP', 'CPI', 'FED', 'API'
+  ]);
   const potentialSymbols = symbolMatch ?
-    symbolMatch.filter(s => s.length >= 2 && !commonWords.has(s)) : [];
+    symbolMatch.filter(s => s.length >= 2 && !excludeWords.has(s)) : [];
 
   // Add company name resolutions
   for (const { ticker } of companyResolutions) {
@@ -399,11 +462,11 @@ function buildFollowUpSuggestions(intent, symbols) {
 
 /**
  * POST /api/nl/query
- * Process a natural language query
+ * Process a natural language query with conversation memory
  */
 router.post('/query', async (req, res) => {
   try {
-    const { query, context } = req.body;
+    const { query, context, conversation_id, session_id } = req.body;
 
     if (!query || typeof query !== 'string') {
       return res.status(400).json({
@@ -412,14 +475,105 @@ router.post('/query', async (req, res) => {
       });
     }
 
-    // Try Python service first
+    // Get or create conversation for memory
+    let conversation = null;
+    let conversationContext = null;
+    let resolvedQuery = query;
+    let contextResolved = false;
+
     try {
-      const response = await sendToPython('query', { query, context });
-      return res.json(response);
+      conversation = getOrCreateConversation(conversation_id, session_id);
+
+      // Get context from previous messages
+      if (conversation.message_count > 0) {
+        conversationContext = getConversationContext(conversation.id);
+
+        // Resolve pronouns and references using conversation history
+        const resolution = resolveContextualReferences(query, conversationContext);
+        if (resolution.resolved) {
+          resolvedQuery = resolution.query;
+          contextResolved = true;
+          console.log(`Resolved query: "${query}" -> "${resolvedQuery}"`);
+        }
+      }
+    } catch (convError) {
+      console.warn('Conversation tracking error (non-fatal):', convError.message);
+    }
+
+    // Merge conversation context with provided context
+    const enrichedContext = {
+      ...context,
+      conversation_id: conversation?.id,
+      last_symbol: conversationContext?.last_symbol,
+      recent_symbols: conversationContext?.recent_symbols,
+    };
+
+    // Try Python service first
+    let response;
+    try {
+      response = await sendToPython('query', {
+        query: resolvedQuery,
+        context: enrichedContext,
+        conversation_history: conversation?.id ? getConversationHistory(conversation.id, 3) : []
+      });
     } catch (e) {
       console.warn('Python service unavailable, using mock:', e.message);
-      return res.json(getMockResponse(query));
+      response = getMockResponse(resolvedQuery);
     }
+
+    // Store the message in conversation history
+    try {
+      if (conversation) {
+        // Store user query - extract symbols from various possible locations
+        let symbols = response.result?.symbols || response.result?.detected_symbols || [];
+        // Also check for single symbol in result
+        if (symbols.length === 0 && response.result?.symbol) {
+          symbols = [response.result.symbol];
+        }
+        // Check query_interpretation for symbols
+        if (symbols.length === 0 && response.query_interpretation) {
+          const match = response.query_interpretation.match(/Symbols:\s*([A-Z, ]+)/);
+          if (match) {
+            symbols = match[1].split(',').map(s => s.trim()).filter(s => s.length > 0 && s.length <= 5);
+          }
+        }
+        storeMessage(
+          conversation.id,
+          'user',
+          query, // Store original query, not resolved
+          response.intent,
+          symbols,
+          response.result?.entities
+        );
+
+        // Store assistant response summary
+        const responseSummary = response.result?.summary ||
+          response.confirmation ||
+          `${response.intent} response`;
+        storeMessage(
+          conversation.id,
+          'assistant',
+          responseSummary,
+          response.intent,
+          symbols,
+          null
+        );
+      }
+    } catch (storeError) {
+      console.warn('Failed to store message (non-fatal):', storeError.message);
+    }
+
+    // Add conversation info to response
+    response.conversation_id = conversation?.id;
+    if (contextResolved) {
+      response.context_resolved = {
+        original_query: query,
+        resolved_query: resolvedQuery,
+        using_symbol: conversationContext?.last_symbol
+      };
+    }
+
+    return res.json(response);
   } catch (error) {
     console.error('NL query error:', error);
     res.status(500).json({
@@ -614,6 +768,173 @@ function shuffleArray(arr) {
   return result;
 }
 
+// =============================================================================
+// Conversation Memory Functions
+// =============================================================================
+
+/**
+ * Get or create a conversation
+ */
+function getOrCreateConversation(conversationId, sessionId) {
+  if (conversationId) {
+    // Check if conversation exists
+    const existing = database.prepare(
+      'SELECT * FROM nl_conversations WHERE id = ?'
+    ).get(conversationId);
+
+    if (existing) {
+      return existing;
+    }
+  }
+
+  // Create new conversation
+  const newId = conversationId || uuidv4();
+  database.prepare(`
+    INSERT INTO nl_conversations (id, session_id, created_at, updated_at)
+    VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+  `).run(newId, sessionId || 'anonymous');
+
+  return { id: newId, session_id: sessionId, message_count: 0 };
+}
+
+/**
+ * Get conversation history (last N messages)
+ */
+function getConversationHistory(conversationId, limit = 5) {
+  return database.prepare(`
+    SELECT role, content, intent, symbols, entities, timestamp
+    FROM nl_messages
+    WHERE conversation_id = ?
+    ORDER BY timestamp DESC
+    LIMIT ?
+  `).all(conversationId, limit).reverse(); // Reverse to get chronological order
+}
+
+/**
+ * Store a message in conversation history
+ */
+function storeMessage(conversationId, role, content, intent, symbols, entities) {
+  database.prepare(`
+    INSERT INTO nl_messages (conversation_id, role, content, intent, symbols, entities)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    conversationId,
+    role,
+    content,
+    intent,
+    JSON.stringify(symbols || []),
+    JSON.stringify(entities || {})
+  );
+
+  // Update conversation metadata
+  const lastSymbol = symbols && symbols.length > 0 ? symbols[0] : null;
+  database.prepare(`
+    UPDATE nl_conversations
+    SET updated_at = CURRENT_TIMESTAMP,
+        last_symbol = COALESCE(?, last_symbol),
+        last_intent = COALESCE(?, last_intent),
+        message_count = message_count + 1
+    WHERE id = ?
+  `).run(lastSymbol, intent, conversationId);
+}
+
+/**
+ * Get context from previous messages for follow-up queries
+ */
+function getConversationContext(conversationId) {
+  const conversation = database.prepare(
+    'SELECT last_symbol, last_intent FROM nl_conversations WHERE id = ?'
+  ).get(conversationId);
+
+  if (!conversation) return null;
+
+  // Get recent symbols from messages
+  const recentMessages = database.prepare(`
+    SELECT symbols, intent
+    FROM nl_messages
+    WHERE conversation_id = ? AND role = 'user'
+    ORDER BY timestamp DESC
+    LIMIT 3
+  `).all(conversationId);
+
+  const recentSymbols = [];
+  for (const msg of recentMessages) {
+    try {
+      const symbols = JSON.parse(msg.symbols || '[]');
+      for (const s of symbols) {
+        if (!recentSymbols.includes(s)) {
+          recentSymbols.push(s);
+        }
+      }
+    } catch (e) { /* ignore parse errors */ }
+  }
+
+  return {
+    last_symbol: conversation.last_symbol,
+    last_intent: conversation.last_intent,
+    recent_symbols: recentSymbols.slice(0, 5),
+  };
+}
+
+/**
+ * Resolve pronouns and references using conversation context
+ */
+function resolveContextualReferences(query, conversationContext) {
+  if (!conversationContext || !conversationContext.last_symbol) {
+    return { query, resolved: false };
+  }
+
+  const lastSymbol = conversationContext.last_symbol;
+  let modifiedQuery = query;
+  let resolved = false;
+
+  // Patterns that reference previous context
+  const pronounPatterns = [
+    /\b(it|its|it's)\b/gi,
+    /\b(the stock|this stock|that stock)\b/gi,
+    /\b(the company|this company|that company)\b/gi,
+    /\b(them|they|their)\b/gi,
+  ];
+
+  // Check if query has pronouns but no explicit stock symbol
+  // Exclude common non-symbol uppercase words like PE, EPS, ROE, RSI, etc.
+  const commonTerms = ['PE', 'EPS', 'ROE', 'ROA', 'ROIC', 'RSI', 'ATR', 'MACD', 'SMA', 'EMA', 'EBITDA', 'CEO', 'CFO', 'IPO', 'ETF', 'GDP', 'CPI', 'VIX', 'YTD', 'QTD', 'TTM', 'YOY', 'MOM', 'USA', 'USD', 'EUR', 'GBP', 'JPY', 'AI', 'ML', 'API', 'CEO'];
+  const hasExplicitSymbol = (() => {
+    const matches = query.match(/\b[A-Z]{1,5}\b/g) || [];
+    // Filter out common non-symbol terms
+    const potentialSymbols = matches.filter(m => !commonTerms.includes(m));
+    return potentialSymbols.length > 0;
+  })();
+
+  if (!hasExplicitSymbol) {
+    for (const pattern of pronounPatterns) {
+      if (pattern.test(query)) {
+        modifiedQuery = query.replace(pattern, lastSymbol);
+        resolved = true;
+        break;
+      }
+    }
+
+    // Also handle queries that start with comparison/follow-up words
+    const followUpPatterns = [
+      /^(and|also|what about|how about|now show|now compare)/i,
+      /^(compare it|compare them)/i,
+      /^(how does it|how do they)/i,
+    ];
+
+    for (const pattern of followUpPatterns) {
+      if (pattern.test(query) && !hasExplicitSymbol) {
+        // Append the last symbol context
+        modifiedQuery = `${query} for ${lastSymbol}`;
+        resolved = true;
+        break;
+      }
+    }
+  }
+
+  return { query: modifiedQuery, resolved, original: query };
+}
+
 /**
  * GET /api/nl/health
  * Check NL service health
@@ -623,6 +944,92 @@ router.get('/health', (req, res) => {
     status: pythonProcess ? 'running' : 'stopped',
     pendingRequests: requestQueue.size
   });
+});
+
+/**
+ * GET /api/nl/conversation/:id
+ * Get conversation history
+ */
+router.get('/conversation/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { limit = 20 } = req.query;
+
+    const conversation = database.prepare(
+      'SELECT * FROM nl_conversations WHERE id = ?'
+    ).get(id);
+
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    const messages = getConversationHistory(id, parseInt(limit));
+
+    res.json({
+      conversation,
+      messages,
+      message_count: messages.length
+    });
+  } catch (error) {
+    console.error('Get conversation error:', error);
+    res.status(500).json({ error: 'Failed to get conversation' });
+  }
+});
+
+/**
+ * DELETE /api/nl/conversation/:id
+ * Clear/delete a conversation
+ */
+router.delete('/conversation/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Delete messages first (foreign key)
+    database.prepare('DELETE FROM nl_messages WHERE conversation_id = ?').run(id);
+
+    // Delete conversation
+    const result = database.prepare('DELETE FROM nl_conversations WHERE id = ?').run(id);
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    res.json({ success: true, message: 'Conversation deleted' });
+  } catch (error) {
+    console.error('Delete conversation error:', error);
+    res.status(500).json({ error: 'Failed to delete conversation' });
+  }
+});
+
+/**
+ * POST /api/nl/conversation/new
+ * Start a new conversation (optionally clearing an old one)
+ */
+router.post('/conversation/new', (req, res) => {
+  try {
+    const { session_id, clear_previous } = req.body;
+
+    // Optionally clear previous conversations for this session
+    if (clear_previous && session_id) {
+      database.prepare(`
+        DELETE FROM nl_messages WHERE conversation_id IN (
+          SELECT id FROM nl_conversations WHERE session_id = ?
+        )
+      `).run(session_id);
+      database.prepare('DELETE FROM nl_conversations WHERE session_id = ?').run(session_id);
+    }
+
+    // Create new conversation
+    const conversation = getOrCreateConversation(null, session_id);
+
+    res.json({
+      conversation_id: conversation.id,
+      message: 'New conversation started'
+    });
+  } catch (error) {
+    console.error('New conversation error:', error);
+    res.status(500).json({ error: 'Failed to create conversation' });
+  }
 });
 
 module.exports = router;

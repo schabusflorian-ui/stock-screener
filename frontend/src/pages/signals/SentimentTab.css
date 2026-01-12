@@ -1,0 +1,286 @@
+/* frontend/src/pages/signals/SentimentTab.css */
+/* Professional sentiment dashboard styling - aligned with design system */
+
+.sentiment-dashboard {
+  padding: 0;
+}
+
+/* Dashboard Header */
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) 0;
+  margin-bottom: var(--space-6);
+  border-bottom: 1px solid var(--border-primary);
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.period-selector {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.period-label {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  font-weight: var(--font-medium);
+}
+
+.period-btn {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.period-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.period-btn.active {
+  background: var(--brand-primary);
+  color: white;
+  border-color: var(--brand-primary);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.refresh-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.refresh-btn:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.last-updated {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+/* Error Banner */
+.sentiment-dashboard .error-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--negative-muted);
+  border: 1px solid var(--negative);
+  color: var(--negative);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-6);
+  font-size: var(--text-sm);
+}
+
+/* Sections */
+.sentiment-section {
+  margin-bottom: var(--space-8);
+}
+
+.sentiment-section:last-child {
+  margin-bottom: 0;
+}
+
+.sentiment-section > .section-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  color: var(--text-primary);
+}
+
+.sentiment-section > .section-header h2 {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  margin: 0;
+  line-height: var(--leading-tight);
+}
+
+.sentiment-section > .section-header svg {
+  color: var(--brand-primary);
+}
+
+/* Region indicator in section header */
+.region-indicator {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+}
+
+.region-indicator.eu {
+  background: rgba(99, 102, 241, 0.1);
+  color: #6366f1;
+}
+
+.region-indicator.uk {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+/* Stats Grid */
+.sentiment-dashboard .stats-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--space-4);
+}
+
+.sentiment-dashboard .stat-card {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  border-radius: var(--radius-xl);
+  padding: var(--space-5);
+  text-align: center;
+  transition: all var(--transition-fast);
+}
+
+.sentiment-dashboard .stat-card:hover {
+  background: var(--glass-bg-hover);
+  box-shadow: var(--glass-shadow-hover);
+  transform: translateY(-2px);
+}
+
+.sentiment-dashboard .stat-value {
+  display: block;
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  line-height: var(--leading-tight);
+  margin-bottom: var(--space-1);
+}
+
+.sentiment-dashboard .stat-value.positive {
+  color: var(--positive);
+}
+
+.sentiment-dashboard .stat-value.negative {
+  color: var(--negative);
+}
+
+.sentiment-dashboard .stat-label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: var(--font-medium);
+}
+
+/* Signals Grid (Smart Money + Analyst) */
+.signals-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-6);
+}
+
+@media (max-width: 1200px) {
+  .signals-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Loading State */
+.sentiment-dashboard .loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-16) var(--space-8);
+  color: var(--text-secondary);
+  min-height: 300px;
+}
+
+/* Spinning Animation */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .sentiment-dashboard .stats-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .header-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .sentiment-dashboard .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .sentiment-dashboard .stat-card {
+    padding: var(--space-4);
+  }
+
+  .sentiment-dashboard .stat-value {
+    font-size: var(--text-xl);
+  }
+}
+
+@media (max-width: 480px) {
+  .sentiment-dashboard .stats-grid {
+    grid-template-columns: 1fr;
+  }
+}

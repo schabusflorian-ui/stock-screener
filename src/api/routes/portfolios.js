@@ -4,6 +4,13 @@
 const express = require('express');
 const router = express.Router();
 const { getPortfolioService } = require('../../services/portfolio');
+const {
+  requireAuth,
+  optionalAuth,
+  requirePortfolioOwnership,
+  checkAdmin,
+  attachUserId
+} = require('../../middleware/auth');
 
 // Middleware to get portfolio service
 const getService = (req) => {
@@ -11,15 +18,23 @@ const getService = (req) => {
   return getPortfolioService(db);
 };
 
+// Apply auth middleware to all routes
+router.use(optionalAuth);
+router.use(attachUserId);
+router.use(checkAdmin);
+
 // ============================================
 // Portfolio CRUD Routes
 // ============================================
 
-// GET /api/portfolios - List all portfolios
+// GET /api/portfolios - List user's portfolios (or all if admin)
 router.get('/', (req, res) => {
   try {
     const service = getService(req);
     const { refresh = 'true' } = req.query;
+
+    // Determine user filter - admins can see all, regular users see only their own
+    const userId = req.isAdmin ? null : req.userId;
 
     // Refresh portfolio values by default to ensure accurate totals
     if (refresh !== 'false') {
@@ -30,19 +45,20 @@ router.get('/', (req, res) => {
       }
     }
 
-    const portfolios = service.getAllPortfolios();
+    const portfolios = service.getAllPortfolios(userId);
     res.json({
       success: true,
       count: portfolios.length,
-      portfolios
+      portfolios,
+      filtered: !req.isAdmin && req.userId ? true : false
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// POST /api/portfolios - Create a new portfolio
-router.post('/', (req, res) => {
+// POST /api/portfolios - Create a new portfolio (requires auth)
+router.post('/', requireAuth, (req, res) => {
   try {
     const service = getService(req);
     const {
@@ -69,7 +85,8 @@ router.post('/', (req, res) => {
       currency,
       initialCash: parseFloat(initialCash) || 0,
       initialDate,
-      cloneInvestorId
+      cloneInvestorId,
+      userId: req.userId // Set the owner
     });
 
     // Return a portfolio object with full structure for frontend compatibility
@@ -85,6 +102,7 @@ router.post('/', (req, res) => {
         total_gain: 0,
         total_gain_pct: 0,
         positions_count: 0,
+        user_id: req.userId,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }
@@ -133,8 +151,8 @@ router.get('/summaries', (req, res) => {
   }
 });
 
-// GET /api/portfolios/:id - Get portfolio with full summary
-router.get('/:id', (req, res) => {
+// GET /api/portfolios/:id - Get portfolio with full summary (requires ownership)
+router.get('/:id', requireAuth, requirePortfolioOwnership, (req, res) => {
   try {
     const service = getService(req);
     const portfolioId = parseInt(req.params.id);
@@ -148,8 +166,8 @@ router.get('/:id', (req, res) => {
   }
 });
 
-// PUT /api/portfolios/:id - Update portfolio
-router.put('/:id', (req, res) => {
+// PUT /api/portfolios/:id - Update portfolio (requires ownership)
+router.put('/:id', requireAuth, requirePortfolioOwnership, (req, res) => {
   try {
     const service = getService(req);
     const portfolioId = parseInt(req.params.id);
@@ -167,8 +185,8 @@ router.put('/:id', (req, res) => {
   }
 });
 
-// DELETE /api/portfolios/:id - Delete portfolio
-router.delete('/:id', (req, res) => {
+// DELETE /api/portfolios/:id - Delete portfolio (requires ownership)
+router.delete('/:id', requireAuth, requirePortfolioOwnership, (req, res) => {
   try {
     const service = getService(req);
     const portfolioId = parseInt(req.params.id);
@@ -188,11 +206,11 @@ router.delete('/:id', (req, res) => {
 });
 
 // ============================================
-// Position Routes
+// Position Routes (all require ownership)
 // ============================================
 
 // GET /api/portfolios/:id/holdings - Get all holdings (alias for positions)
-router.get('/:id/holdings', (req, res) => {
+router.get('/:id/holdings', requireAuth, requirePortfolioOwnership, (req, res) => {
   try {
     const service = getService(req);
     const portfolioId = parseInt(req.params.id);
@@ -213,7 +231,7 @@ router.get('/:id/holdings', (req, res) => {
 });
 
 // GET /api/portfolios/:id/positions - Get all positions
-router.get('/:id/positions', (req, res) => {
+router.get('/:id/positions', requireAuth, requirePortfolioOwnership, (req, res) => {
   try {
     const service = getService(req);
     const portfolioId = parseInt(req.params.id);
@@ -355,11 +373,11 @@ router.get('/:id/underlying', async (req, res) => {
 });
 
 // ============================================
-// Trading Routes
+// Trading Routes (all require ownership)
 // ============================================
 
 // POST /api/portfolios/:id/trade - Execute buy or sell
-router.post('/:id/trade', async (req, res) => {
+router.post('/:id/trade', requireAuth, requirePortfolioOwnership, async (req, res) => {
   try {
     const service = getService(req);
     const db = require('../../database').getDatabase();
@@ -484,11 +502,11 @@ router.post('/:id/trade', async (req, res) => {
 });
 
 // ============================================
-// Cash Management Routes
+// Cash Management Routes (all require ownership)
 // ============================================
 
 // POST /api/portfolios/:id/deposit - Deposit cash
-router.post('/:id/deposit', (req, res) => {
+router.post('/:id/deposit', requireAuth, requirePortfolioOwnership, (req, res) => {
   try {
     const service = getService(req);
     const portfolioId = parseInt(req.params.id);
@@ -506,7 +524,7 @@ router.post('/:id/deposit', (req, res) => {
 });
 
 // POST /api/portfolios/:id/withdraw - Withdraw cash
-router.post('/:id/withdraw', (req, res) => {
+router.post('/:id/withdraw', requireAuth, requirePortfolioOwnership, (req, res) => {
   try {
     const service = getService(req);
     const portfolioId = parseInt(req.params.id);

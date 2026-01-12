@@ -58,6 +58,7 @@ function TradeAttributionDetail({ transactionId, onClose, className = '' }) {
     if (transactionId) {
       fetchAttribution();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactionId]);
 
   const fetchAttribution = async () => {

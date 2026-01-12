@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Columns, X } from 'lucide-react';
-import { sectorsAPI, classificationsAPI, indicesAPI } from '../services/api';
+import { sectorsAPI, classificationsAPI, indicesAPI, pricesAPI } from '../services/api';
 import { PageHeader } from '../components/ui';
 import {
   PeriodToggle,
@@ -264,19 +264,23 @@ function SectorAnalysisPage() {
     }
   }, []);
 
-  // Load market indices
+  // Load market indices - use ETF-based indices (current data) instead of Yahoo indices (stale)
   const loadMarketIndices = useCallback(async () => {
     try {
-      const res = await indicesAPI.getAll();
-      const indices = res.data?.data || [];
+      const res = await indicesAPI.getMarket();
+      // ETF response is an array directly
+      const indices = res.data?.data || res.data || [];
       setMarketIndices(indices);
 
-      // Load price history for sparklines
+      // Load price history for sparklines using pricesAPI (current data)
       if (indices.length > 0) {
         const priceHistoryPromises = indices.slice(0, 4).map(async (idx) => {
           try {
-            const priceRes = await indicesAPI.getPrices(idx.symbol, '1y');
-            return { symbol: idx.symbol, data: priceRes.data?.data || [] };
+            // Use pricesAPI.get() which fetches from daily_prices table (current data)
+            const priceRes = await pricesAPI.get(idx.symbol, { period: '1y' });
+            // Response structure: { success: true, data: { prices: [...] } }
+            const prices = priceRes.data?.data?.prices || [];
+            return { symbol: idx.symbol, data: prices };
           } catch (e) {
             return { symbol: idx.symbol, data: [] };
           }
@@ -284,11 +288,13 @@ function SectorAnalysisPage() {
         const results = await Promise.all(priceHistoryPromises);
         const historyMap = {};
         results.forEach(({ symbol, data }) => {
-          historyMap[symbol] = data.map(d => ({ time: d.date, value: d.close })).reverse();
+          // Sort ascending (oldest first) for sparkline
+          const sortedData = [...data].sort((a, b) => new Date(a.date) - new Date(b.date));
+          historyMap[symbol] = sortedData.map(d => ({ time: d.date, value: d.close }));
         });
         setIndexPriceHistory(historyMap);
 
-        // Auto-select first index (S&P 500)
+        // Auto-select first index (SPY)
         setSelectedIndex(prev => prev || indices[0]);
       }
     } catch (error) {
@@ -327,15 +333,19 @@ function SectorAnalysisPage() {
     setLoadingConstituents(false);
   }, []);
 
-  // Load chart data for selected index with specific period
+  // Load chart data for selected index with specific period - use pricesAPI (current data)
   const loadIndexChartData = useCallback(async (symbol, period) => {
     if (!symbol) return;
     try {
-      const priceRes = await indicesAPI.getPrices(symbol, period);
-      const data = priceRes.data?.data || [];
+      // Use pricesAPI.get() which fetches from daily_prices table (current data)
+      const priceRes = await pricesAPI.get(symbol, { period });
+      // Response structure: { success: true, data: { prices: [...] } }
+      const prices = priceRes.data?.data?.prices || [];
+      // Sort ascending (oldest first) for chart
+      const sortedData = [...prices].sort((a, b) => new Date(a.date) - new Date(b.date));
       setIndexPriceHistory(prev => ({
         ...prev,
-        [symbol]: data.map(d => ({ time: d.date, value: d.close })).reverse()
+        [symbol]: sortedData.map(d => ({ time: d.date, value: d.close }))
       }));
     } catch (error) {
       console.error('Error loading index chart data:', error);

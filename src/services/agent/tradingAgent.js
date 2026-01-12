@@ -14,6 +14,24 @@ const { getRegimeHMM } = require('../ml');
 const { FactorExposureAnalyzer } = require('../factors/factorExposure');
 const { getSignalCombiner } = require('../ml');
 
+// NEW: Parametric distributions for confidence intervals
+let ParametricDistributions = null;
+try {
+  const statsModule = require('../statistics');
+  ParametricDistributions = statsModule.ParametricDistributions;
+} catch (e) {
+  // Gracefully degrade if not available
+  console.warn('Parametric distributions not available:', e.message);
+}
+
+// NEW: DCF Calculator for probabilistic valuation
+let DCFCalculator = null;
+try {
+  DCFCalculator = require('../dcfCalculator');
+} catch (e) {
+  console.warn('DCF Calculator not available:', e.message);
+}
+
 const ACTIONS = {
   STRONG_BUY: 'strong_buy',
   BUY: 'buy',
@@ -25,6 +43,9 @@ const ACTIONS = {
 class TradingAgent {
   constructor(db, options = {}) {
     this.db = db;
+
+    // Region for sentiment data (US, EU, UK, or 'all' for combined)
+    this.region = options.region || 'US';
 
     // Configurable weights for signal aggregation
     // 9 signal types for comprehensive analysis
@@ -66,8 +87,18 @@ class TradingAgent {
     this._factorAnalyzer = null; // Lazy loaded
     this._mlCombiner = null; // Lazy loaded
 
+    // NEW: Parametric confidence intervals
+    this.includeConfidenceIntervals = options.includeConfidenceIntervals !== false; // Default to true
+    this._parametricDist = null; // Lazy loaded
+
+    // NEW: Probabilistic DCF for enhanced valuation signals
+    this.useProbabilisticDCF = options.useProbabilisticDCF !== false; // Default to true
+    this._dcfCalculator = null; // Lazy loaded
+    this._probabilisticDCFCache = new Map(); // Cache results (expensive to compute)
+    this._probabilisticDCFCacheMaxAge = 24 * 60 * 60 * 1000; // 24 hours
+
     this._prepareStatements();
-    console.log('🤖 Trading Agent initialized (9 signals + IC-optimized weights + HMM regime + factors)');
+    console.log(`🤖 Trading Agent initialized (region: ${this.region}, 9 signals + IC-optimized weights + HMM regime + factors + probabilistic DCF)`);
   }
 
   // Lazy loaders for ML components (avoid circular deps and slow startup)
@@ -107,6 +138,71 @@ class TradingAgent {
     return this._mlCombiner;
   }
 
+  _getParametricDist() {
+    if (!this._parametricDist && ParametricDistributions) {
+      try {
+        this._parametricDist = new ParametricDistributions();
+      } catch (error) {
+        console.warn('Failed to initialize Parametric Distributions:', error.message);
+        this._parametricDist = null;
+      }
+    }
+    return this._parametricDist;
+  }
+
+  _getDCFCalculator() {
+    if (!this._dcfCalculator && DCFCalculator) {
+      try {
+        this._dcfCalculator = new DCFCalculator(this.db);
+      } catch (error) {
+        console.warn('Failed to initialize DCF Calculator:', error.message);
+        this._dcfCalculator = null;
+      }
+    }
+    return this._dcfCalculator;
+  }
+
+  /**
+   * Get probabilistic DCF valuation with caching
+   * Uses Monte Carlo simulation with fat-tailed distributions
+   * @param {number} companyId - Company ID
+   * @returns {object|null} Probabilistic valuation result or null
+   */
+  async _getProbabilisticDCF(companyId) {
+    if (!this.useProbabilisticDCF) return null;
+
+    // Check cache first
+    const cached = this._probabilisticDCFCache.get(companyId);
+    if (cached && (Date.now() - cached.timestamp) < this._probabilisticDCFCacheMaxAge) {
+      return cached.data;
+    }
+
+    const dcfCalc = this._getDCFCalculator();
+    if (!dcfCalc) return null;
+
+    try {
+      // Run Monte Carlo with Student's t distribution (fat tails)
+      // Use fewer simulations for speed in signal generation
+      const result = await dcfCalc.calculateParametricValuation(companyId, {
+        simulations: 2000, // Faster than default 10k
+        distributionType: 'studentT'
+      });
+
+      if (result.success) {
+        // Cache the result
+        this._probabilisticDCFCache.set(companyId, {
+          timestamp: Date.now(),
+          data: result
+        });
+        return result;
+      }
+    } catch (error) {
+      console.warn(`Probabilistic DCF failed for company ${companyId}:`, error.message);
+    }
+
+    return null;
+  }
+
   _prepareStatements() {
     this.stmts = {
       getCompany: this.db.prepare(`
@@ -142,6 +238,30 @@ class TradingAgent {
         WHERE company_id = ?
         ORDER BY calculated_at DESC
         LIMIT 1
+      `),
+
+      getSentimentByRegion: this.db.prepare(`
+        SELECT * FROM combined_sentiment
+        WHERE company_id = ? AND (region = ? OR region IS NULL)
+        ORDER BY calculated_at DESC
+        LIMIT 1
+      `),
+
+      getSentimentAllRegions: this.db.prepare(`
+        SELECT
+          company_id,
+          AVG(combined_score) as combined_score,
+          MAX(combined_signal) as combined_signal,
+          AVG(confidence) as confidence,
+          AVG(reddit_sentiment) as reddit_sentiment,
+          AVG(news_sentiment) as news_sentiment,
+          SUM(sources_used) as sources_used,
+          AVG(agreement_score) as agreement_score,
+          MAX(calculated_at) as calculated_at
+        FROM combined_sentiment
+        WHERE company_id = ?
+          AND calculated_at >= datetime('now', '-24 hours')
+        GROUP BY company_id
       `),
 
       getInsiderActivity: this.db.prepare(`
@@ -324,8 +444,8 @@ class TradingAgent {
     // 6. Convert to action
     const action = this._scoreToAction(adjustedScore);
 
-    // 7. Calculate position size
-    const positionSize = this._calculatePositionSize(adjustedScore, portfolioContext, marketRegime);
+    // 7. Calculate position size (now with valuation uncertainty adjustment)
+    const positionSize = this._calculatePositionSize(adjustedScore, portfolioContext, marketRegime, signals);
 
     // 8. Calculate suggested shares/value
     let suggestedShares = 0;
@@ -526,8 +646,18 @@ class TradingAgent {
       signals.technical = this._buildTechnicalSignal(priceMetrics);
     }
 
-    // Sentiment signal
-    const sentiment = this.stmts.getSentiment.get(companyId);
+    // Sentiment signal (region-aware)
+    let sentiment;
+    if (this.region === 'all') {
+      // Aggregate sentiment from all regions
+      sentiment = this.stmts.getSentimentAllRegions.get(companyId);
+    } else if (this.region && this.region !== 'US') {
+      // Get region-specific sentiment (EU, UK)
+      sentiment = this.stmts.getSentimentByRegion.get(companyId, this.region);
+    } else {
+      // Default to US or legacy data
+      sentiment = this.stmts.getSentimentByRegion.get(companyId, 'US');
+    }
     if (sentiment) {
       signals.sentiment = this._buildSentimentSignal(sentiment);
     }
@@ -550,8 +680,10 @@ class TradingAgent {
     signals.alternativeData = this._buildAlternativeDataSignal(altData, congressTrades, shortInterest);
 
     // NEW: Valuation signal (margin of safety from intrinsic value)
+    // Enhanced with probabilistic DCF for probability-based conviction
     const intrinsicValue = this.stmts.getIntrinsicValue.get(companyId);
-    signals.valuation = this._buildValuationSignal(intrinsicValue, priceMetrics);
+    const probabilisticDCF = await this._getProbabilisticDCF(companyId);
+    signals.valuation = this._buildValuationSignal(intrinsicValue, priceMetrics, probabilisticDCF);
 
     // NEW: 13F delta signal (super-investor position changes)
     const thirteenFSignal = this.signalEnhancements.get13FSignal(companyId);
@@ -907,8 +1039,13 @@ class TradingAgent {
   /**
    * Build valuation signal from intrinsic value / margin of safety
    * Core value investing signal - Buffett/Graham style
+   * Enhanced with probabilistic DCF for probability-based conviction
+   *
+   * @param {object} intrinsicValue - Deterministic intrinsic value estimate
+   * @param {object} priceMetrics - Current price data
+   * @param {object} probabilisticDCF - Monte Carlo DCF result (optional)
    */
-  _buildValuationSignal(intrinsicValue, priceMetrics) {
+  _buildValuationSignal(intrinsicValue, priceMetrics, probabilisticDCF = null) {
     let score = 0;
     let confidence = 0.3;
     const details = {};
@@ -927,7 +1064,7 @@ class TradingAgent {
     const ivPerShare = intrinsicValue.intrinsic_value_per_share;
 
     if (ivPerShare && ivPerShare > 0) {
-      // Calculate margin of safety
+      // Calculate margin of safety (deterministic)
       const marginOfSafety = (ivPerShare - currentPrice) / ivPerShare;
       details.intrinsicValue = ivPerShare;
       details.currentPrice = currentPrice;
@@ -965,6 +1102,87 @@ class TradingAgent {
       // Adjust confidence based on methodology confidence
       if (intrinsicValue.confidence_score) {
         confidence *= intrinsicValue.confidence_score;
+      }
+
+      // ENHANCED: Incorporate probabilistic DCF insights
+      if (probabilisticDCF && probabilisticDCF.probabilisticValuation) {
+        const probVal = probabilisticDCF.probabilisticValuation;
+        const probs = probVal.probabilities || {};
+
+        // Store probabilistic details
+        details.probabilistic = {
+          expectedValue: probVal.expectedValue,
+          medianValue: probVal.percentiles?.p50,
+          p5Value: probVal.percentiles?.p5,
+          p95Value: probVal.percentiles?.p95,
+          pUndervalued20: probs.undervalued20pct,
+          pOvervalued: probs.overvalued,
+          coefficientOfVariation: probVal.coefficientOfVariation,
+          skewness: probVal.moments?.skewness,
+          kurtosis: probVal.moments?.kurtosis
+        };
+
+        // Probability-based score adjustment
+        // P(undervalued 20%+) > 70% → Strong conviction boost
+        // P(overvalued) > 60% → Reduce score
+        // High CV > 50% → Reduce confidence (high uncertainty)
+        const pUndervalued20 = probs.undervalued20pct || 0;
+        const pOvervalued = probs.overvalued || 0;
+        const cv = probVal.coefficientOfVariation || 0;
+
+        // Adjust score based on probability of undervaluation
+        if (pUndervalued20 > 70) {
+          // High probability of 20%+ upside → boost score
+          score = Math.min(1.0, score + 0.2);
+          details.probabilisticSignal = 'STRONG_PROBABILITY_UNDERVALUED';
+          details.probabilityBoost = true;
+        } else if (pUndervalued20 > 50) {
+          // Moderate probability → small boost
+          score = Math.min(1.0, score + 0.1);
+          details.probabilisticSignal = 'MODERATE_PROBABILITY_UNDERVALUED';
+        } else if (pOvervalued > 60) {
+          // High probability of overvaluation → reduce score
+          score = Math.max(-1.0, score - 0.2);
+          details.probabilisticSignal = 'HIGH_PROBABILITY_OVERVALUED';
+          details.probabilityPenalty = true;
+        } else if (pOvervalued > 40 && pUndervalued20 < 30) {
+          // Likely overvalued → small penalty
+          score = Math.max(-1.0, score - 0.1);
+          details.probabilisticSignal = 'MODERATE_PROBABILITY_OVERVALUED';
+        }
+
+        // Uncertainty adjustment to confidence
+        // High CV (>50%) means wide valuation range → reduce confidence
+        if (cv > 50) {
+          confidence *= 0.7;  // High uncertainty
+          details.highUncertainty = true;
+          details.uncertaintyReason = 'Wide valuation range (CV > 50%)';
+        } else if (cv > 30) {
+          confidence *= 0.85; // Moderate uncertainty
+        }
+
+        // Fat tail adjustment
+        // High kurtosis means extreme outcomes more likely
+        const kurtosis = probVal.moments?.kurtosis || 3;
+        if (kurtosis > 6) {
+          confidence *= 0.85; // Extreme fat tails - less predictable
+          details.fatTailWarning = 'EXTREME';
+        } else if (kurtosis > 4) {
+          confidence *= 0.9;  // Fat tails present
+          details.fatTailWarning = 'MODERATE';
+        }
+
+        // Skewness insight
+        const skewness = probVal.moments?.skewness || 0;
+        if (skewness > 0.5) {
+          details.skewnessInsight = 'Positively skewed - more upside scenarios';
+        } else if (skewness < -0.5) {
+          details.skewnessInsight = 'Negatively skewed - more downside scenarios';
+          // Negative skew is concerning for long positions
+          if (score > 0) {
+            confidence *= 0.95;
+          }
+        }
       }
     }
 
@@ -1707,9 +1925,14 @@ class TradingAgent {
 
   /**
    * Calculate position size based on conviction and context
-   * Enhanced with capacity constraints from backtesting analysis
+   * Enhanced with capacity constraints and valuation uncertainty adjustment
+   *
+   * @param {number} score - Conviction score (-1 to 1)
+   * @param {object} portfolioContext - Portfolio context
+   * @param {object} regime - Market regime
+   * @param {object} signals - All gathered signals (optional, for uncertainty adjustment)
    */
-  _calculatePositionSize(score, portfolioContext, regime) {
+  _calculatePositionSize(score, portfolioContext, regime, signals = null) {
     // Base size on conviction (score strength)
     let baseSize = Math.abs(score) * 0.05; // Max 5% for max conviction
 
@@ -1722,6 +1945,37 @@ class TradingAgent {
       'CRISIS': 0.3,
     };
     baseSize *= regimeMultipliers[regime.regime] || 1.0;
+
+    // NEW: Valuation uncertainty adjustment from probabilistic DCF
+    // Reduce position size when valuation has high uncertainty (wide CV)
+    // or fat tails (extreme outcomes more likely)
+    if (signals?.valuation?.details?.probabilistic) {
+      const prob = signals.valuation.details.probabilistic;
+      const cv = prob.coefficientOfVariation || 0;
+      const kurtosis = prob.kurtosis || 3;
+
+      // High uncertainty (CV > 50%) - reduce position size
+      if (cv > 50) {
+        baseSize *= 0.7;  // 30% reduction for high uncertainty
+      } else if (cv > 30) {
+        baseSize *= 0.85; // 15% reduction for moderate uncertainty
+      }
+
+      // Fat tails (kurtosis > 4) - extreme outcomes more likely
+      // Reduce size to limit tail risk
+      if (kurtosis > 6) {
+        baseSize *= 0.8;  // 20% reduction for extreme fat tails
+      } else if (kurtosis > 4) {
+        baseSize *= 0.9;  // 10% reduction for fat tails
+      }
+
+      // BOOST: High conviction from probability + low uncertainty
+      // If P(undervalued 20%+) > 70% AND CV < 30%, allow larger position
+      const pUndervalued20 = prob.pUndervalued20 || 0;
+      if (pUndervalued20 > 70 && cv < 30 && kurtosis < 4) {
+        baseSize *= 1.15; // 15% boost for high confidence opportunities
+      }
+    }
 
     if (!portfolioContext) {
       return Math.max(0.01, Math.min(0.05, baseSize));
@@ -1740,7 +1994,7 @@ class TradingAgent {
       baseSize *= 0.75;
     }
 
-    // NEW: Apply capacity constraints from backtesting analysis
+    // Apply capacity constraints from backtesting analysis
     if (portfolioContext.portfolioId) {
       const capacityAdjustment = this._getCapacityAdjustment(portfolioContext.portfolioId);
       if (capacityAdjustment < 1.0) {
@@ -1985,6 +2239,266 @@ class TradingAgent {
       regime: marketRegime,
       timestamp: new Date().toISOString(),
     };
+  }
+
+  /**
+   * Calculate confidence intervals for a trading signal using parametric distributions
+   *
+   * This method uses historical signal prediction errors to estimate a distribution,
+   * then calculates confidence intervals around the signal score.
+   *
+   * @param {string} symbol - Stock symbol
+   * @param {Object} signals - Current signals from _gatherSignals
+   * @param {number} score - Combined signal score
+   * @param {Object} options - Configuration options
+   * @returns {Object} Confidence interval information
+   */
+  calculateConfidenceInterval(symbol, signals, score, options = {}) {
+    const {
+      confidenceLevels = [0.80, 0.90, 0.95],
+      distributionType = 'studentT',
+      lookbackDays = 180
+    } = options;
+
+    const pd = this._getParametricDist();
+    if (!pd) {
+      return {
+        available: false,
+        reason: 'Parametric distributions not available'
+      };
+    }
+
+    try {
+      // Get historical recommendations for this symbol to estimate prediction error distribution
+      const history = this.stmts.getRecommendationHistory.all(symbol, lookbackDays);
+
+      if (history.length < 10) {
+        // Insufficient history - use default uncertainty based on signal confidence
+        const avgConfidence = this._getAverageSignalConfidence(signals);
+        const defaultUncertainty = 0.15 * (1 - avgConfidence); // Higher confidence = lower uncertainty
+
+        return {
+          available: true,
+          method: 'default_uncertainty',
+          score,
+          intervals: confidenceLevels.map(level => {
+            const z = pd.inverseCdf((1 + level) / 2, { mean: 0, std: 1 }, 'normal');
+            const halfWidth = z * defaultUncertainty;
+            return {
+              level: level * 100,
+              low: Math.max(-1, score - halfWidth),
+              high: Math.min(1, score + halfWidth),
+              width: halfWidth * 2
+            };
+          }),
+          uncertainty: {
+            type: 'default',
+            std: defaultUncertainty,
+            avgSignalConfidence: avgConfidence
+          },
+          interpretation: this._interpretConfidenceInterval(score, defaultUncertainty)
+        };
+      }
+
+      // Calculate historical prediction errors
+      // Compare historical scores to actual price movements
+      const predictionErrors = [];
+
+      for (let i = 0; i < history.length - 1; i++) {
+        const rec = history[i];
+        const nextRec = history[i + 1];
+
+        // Simple error proxy: how much did the score change?
+        // In a more sophisticated version, compare to actual forward returns
+        const scoreDelta = Math.abs(rec.score - nextRec.score);
+        predictionErrors.push(scoreDelta);
+      }
+
+      // Fit distribution to prediction errors
+      const fitResult = pd.fitDistribution(predictionErrors, distributionType === 'auto' ? 'auto' : distributionType);
+
+      // Calculate VaR-style confidence intervals
+      const intervals = confidenceLevels.map(level => {
+        const lowerQuantile = (1 - level) / 2;
+        const upperQuantile = (1 + level) / 2;
+
+        let lowError, highError;
+
+        if (fitResult.type === 'studentT') {
+          lowError = pd.inverseCdf(lowerQuantile, fitResult.params, 'studentT');
+          highError = pd.inverseCdf(upperQuantile, fitResult.params, 'studentT');
+        } else {
+          lowError = pd.inverseCdf(lowerQuantile, fitResult.params, 'normal');
+          highError = pd.inverseCdf(upperQuantile, fitResult.params, 'normal');
+        }
+
+        return {
+          level: level * 100,
+          low: Math.max(-1, score - highError),
+          high: Math.min(1, score + highError),
+          width: highError - lowError
+        };
+      });
+
+      // Check for fat tails
+      const hasFatTails = fitResult.moments?.kurtosis > 4;
+      const isNegativelySkewed = fitResult.moments?.skewness < -0.5;
+
+      return {
+        available: true,
+        method: 'historical_fitted',
+        score,
+        intervals,
+        distribution: {
+          type: fitResult.type,
+          name: this._getDistributionName(fitResult.type),
+          params: fitResult.params,
+          moments: fitResult.moments
+        },
+        uncertainty: {
+          type: 'fitted',
+          std: fitResult.moments?.std || 0,
+          kurtosis: fitResult.moments?.kurtosis,
+          hasFatTails,
+          isNegativelySkewed
+        },
+        riskWarnings: this._getRiskWarnings(fitResult.moments),
+        interpretation: this._interpretConfidenceInterval(score, fitResult.moments?.std || 0.1, hasFatTails)
+      };
+    } catch (error) {
+      console.warn('Error calculating confidence interval:', error.message);
+      return {
+        available: false,
+        reason: error.message
+      };
+    }
+  }
+
+  /**
+   * Get average confidence across all signals
+   */
+  _getAverageSignalConfidence(signals) {
+    const confidences = [];
+    for (const [key, signal] of Object.entries(signals)) {
+      if (signal && signal.confidence > 0) {
+        confidences.push(signal.confidence);
+      }
+    }
+    if (confidences.length === 0) return 0.5;
+    return confidences.reduce((a, b) => a + b, 0) / confidences.length;
+  }
+
+  /**
+   * Get distribution name for display
+   */
+  _getDistributionName(type) {
+    const names = {
+      'normal': 'Normal (Gaussian)',
+      'studentT': "Student's t (Fat Tails)",
+      'skewedT': 'Skewed t (Asymmetric)',
+      'johnsonSU': 'Johnson SU'
+    };
+    return names[type] || type;
+  }
+
+  /**
+   * Generate risk warnings based on distribution moments
+   */
+  _getRiskWarnings(moments) {
+    const warnings = [];
+
+    if (!moments) return warnings;
+
+    if (moments.kurtosis > 6) {
+      warnings.push({
+        severity: 'high',
+        message: 'EXTREME fat tails detected - signal may have large unexpected moves'
+      });
+    } else if (moments.kurtosis > 4) {
+      warnings.push({
+        severity: 'medium',
+        message: 'Fat tails present - confidence intervals may underestimate tail risk'
+      });
+    }
+
+    if (moments.skewness < -0.5) {
+      warnings.push({
+        severity: 'medium',
+        message: 'Negative skew - larger downside moves more likely than upside'
+      });
+    } else if (moments.skewness > 0.5) {
+      warnings.push({
+        severity: 'low',
+        message: 'Positive skew - larger upside moves more likely than downside'
+      });
+    }
+
+    return warnings;
+  }
+
+  /**
+   * Interpret confidence interval for display
+   */
+  _interpretConfidenceInterval(score, std, hasFatTails = false) {
+    const interpretations = [];
+
+    // Signal strength interpretation
+    if (Math.abs(score) >= 0.5) {
+      interpretations.push(`Strong ${score > 0 ? 'bullish' : 'bearish'} signal`);
+    } else if (Math.abs(score) >= 0.25) {
+      interpretations.push(`Moderate ${score > 0 ? 'bullish' : 'bearish'} signal`);
+    } else {
+      interpretations.push('Neutral signal - no strong directional bias');
+    }
+
+    // Uncertainty interpretation
+    if (std < 0.1) {
+      interpretations.push('Low uncertainty - signal is relatively stable');
+    } else if (std < 0.2) {
+      interpretations.push('Moderate uncertainty - some signal variability expected');
+    } else {
+      interpretations.push('High uncertainty - treat signal with caution');
+    }
+
+    // Fat tails warning
+    if (hasFatTails) {
+      interpretations.push('Fat tails detected - extreme moves more likely than normal');
+    }
+
+    return interpretations;
+  }
+
+  /**
+   * Get recommendation with confidence intervals
+   *
+   * Enhanced version of getRecommendation that includes parametric confidence intervals
+   */
+  async getRecommendationWithCI(symbol, portfolioContext = null, regime = null) {
+    // Get base recommendation
+    const recommendation = await this.getRecommendation(symbol, portfolioContext, regime);
+
+    if (recommendation.action === 'hold' && recommendation.reasoning[0]?.factor === 'Earnings Blackout') {
+      // Skip confidence intervals for blackout period
+      return recommendation;
+    }
+
+    // Calculate confidence intervals
+    if (this.includeConfidenceIntervals) {
+      try {
+        const ci = this.calculateConfidenceInterval(
+          symbol,
+          recommendation.signals,
+          recommendation.score
+        );
+
+        recommendation.confidenceInterval = ci;
+      } catch (error) {
+        console.warn('Failed to calculate confidence interval:', error.message);
+        recommendation.confidenceInterval = { available: false, reason: error.message };
+      }
+    }
+
+    return recommendation;
   }
 }
 

@@ -275,6 +275,96 @@ router.get('/status', (req, res) => {
 // ========================================
 
 /**
+ * GET /api/macro/market-indicators/history
+ * Get historical time series for market valuation indicators
+ * IMPORTANT: This route must come BEFORE /market-indicators to avoid route conflict
+ * Query params:
+ *   - startQuarter: e.g., '2015-Q1' (default: '2015-Q1')
+ *   - indicator: specific indicator or 'all' (default: 'all')
+ */
+router.get('/market-indicators/history', (req, res) => {
+  try {
+    const { HistoricalMarketIndicatorsService } = require('../../services/historicalMarketIndicators');
+    const service = new HistoricalMarketIndicatorsService();
+
+    const startQuarter = req.query.startQuarter || '2015-Q1';
+    const indicator = req.query.indicator || 'all';
+
+    if (indicator === 'all') {
+      const data = service.getAllHistoricalData({ startQuarter });
+      res.json({
+        success: true,
+        ...data,
+      });
+    } else {
+      const chartData = service.getChartData(indicator, { startDate: startQuarter });
+      res.json({
+        success: true,
+        indicator,
+        data: chartData,
+      });
+    }
+  } catch (error) {
+    console.error('Historical market indicators error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get historical market indicators',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/macro/market-indicators
+ * Get comprehensive market valuation indicators
+ */
+router.get('/market-indicators', async (req, res) => {
+  try {
+    const { MarketIndicatorsService } = require('../../services/marketIndicatorsService');
+    const service = new MarketIndicatorsService();
+    const indicators = await service.getAllIndicators();
+    res.json(indicators);
+  } catch (error) {
+    console.error('Market indicators error:', error);
+    res.status(500).json({ error: 'Failed to get market indicators', message: error.message });
+  }
+});
+
+/**
+ * GET /api/macro/safe-havens
+ * Get safe haven stocks
+ */
+router.get('/safe-havens', (req, res) => {
+  try {
+    const { MarketIndicatorsService } = require('../../services/marketIndicatorsService');
+    const service = new MarketIndicatorsService();
+    const limit = parseInt(req.query.limit) || 10;
+    const safeHavens = service.getSafeHavens(limit);
+    res.json(safeHavens);
+  } catch (error) {
+    console.error('Safe havens error:', error);
+    res.status(500).json({ error: 'Failed to get safe havens', message: error.message });
+  }
+});
+
+/**
+ * GET /api/macro/opportunities
+ * Get undervalued quality stocks
+ */
+router.get('/opportunities', (req, res) => {
+  try {
+    const { MarketIndicatorsService } = require('../../services/marketIndicatorsService');
+    const service = new MarketIndicatorsService();
+    const limit = parseInt(req.query.limit) || 10;
+    const opportunities = service.getUndervaluedQuality(limit);
+    res.json(opportunities);
+  } catch (error) {
+    console.error('Opportunities error:', error);
+    res.status(500).json({ error: 'Failed to get opportunities', message: error.message });
+  }
+});
+
+/**
  * GET /api/macro/key-metrics
  * Get key macro metrics summary
  */

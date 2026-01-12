@@ -5,6 +5,18 @@ const API_BASE_URL = process.env.REACT_APP_API_URL
   ? `${process.env.REACT_APP_API_URL}/api`
   : 'http://localhost:3000/api';
 
+// Check if using local admin bypass (matches AuthContext logic)
+const hasLocalAdminBypass = () => {
+  const adminAccess = localStorage.getItem('adminAccess');
+  const adminAccessTime = localStorage.getItem('adminAccessTime');
+  if (adminAccess === 'true' && adminAccessTime) {
+    const elapsed = Date.now() - parseInt(adminAccessTime, 10);
+    const ADMIN_ACCESS_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
+    return elapsed < ADMIN_ACCESS_EXPIRY;
+  }
+  return false;
+};
+
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 30000, // 30 seconds for most requests
@@ -18,13 +30,30 @@ const apiLong = axios.create({
   withCredentials: true
 });
 
+// Request interceptor to add admin bypass header if using local admin mode
+api.interceptors.request.use((config) => {
+  if (hasLocalAdminBypass()) {
+    config.headers['X-Admin-Bypass'] = 'true';
+  }
+  return config;
+});
+
+apiLong.interceptors.request.use((config) => {
+  if (hasLocalAdminBypass()) {
+    config.headers['X-Admin-Bypass'] = 'true';
+  }
+  return config;
+});
+
 // Response interceptor to handle 401 errors
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Redirect to login on auth failure
-      window.location.href = '/login';
+      // Don't redirect if using local admin bypass (just failed for other reason)
+      if (!hasLocalAdminBypass()) {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
@@ -331,8 +360,8 @@ export const sentimentAPI = {
     api.get(`/sentiment/${symbol}/history?days=${days}`),
 
   // Get trending tickers (longer timeout for refresh which scans Reddit)
-  getTrending: (period = '24h', limit = 20, refresh = false) =>
-    api.get(`/sentiment/trending?period=${period}&limit=${limit}&refresh=${refresh}`, {
+  getTrending: (period = '24h', limit = 20, refresh = false, region = 'US') =>
+    api.get(`/sentiment/trending?period=${period}&limit=${limit}&refresh=${refresh}&region=${region}`, {
       timeout: refresh ? 180000 : 30000 // 3 min for refresh, 30s for cached
     }),
 
@@ -341,8 +370,8 @@ export const sentimentAPI = {
     api.get(`/sentiment/batch/signals?symbols=${symbols.join(',')}`),
 
   // Get news sentiment for a stock
-  getNews: (symbol, { limit = 20, refresh = false } = {}) =>
-    api.get(`/sentiment/${symbol}/news?limit=${limit}&refresh=${refresh}`),
+  getNews: (symbol, { limit = 20, refresh = false, region = 'US' } = {}) =>
+    api.get(`/sentiment/${symbol}/news?limit=${limit}&refresh=${refresh}&region=${region}`),
 
   // Refresh news from API
   refreshNews: (symbol) =>
@@ -361,8 +390,8 @@ export const sentimentAPI = {
     api.get(`/sentiment/market/history?indicator=${indicator}&days=${days}`),
 
   // Get combined sentiment from all sources for a stock
-  getCombined: (symbol, refresh = false) =>
-    api.get(`/sentiment/${symbol}/combined?refresh=${refresh}`, {
+  getCombined: (symbol, refresh = false, region = 'US') =>
+    api.get(`/sentiment/${symbol}/combined?refresh=${refresh}&region=${region}`, {
       timeout: refresh ? 60000 : 30000
     }),
 
@@ -398,7 +427,40 @@ export const sentimentAPI = {
 
   // Get analyst estimates history for a stock (historical tracking)
   getAnalystHistory: (symbol, limit = 50) =>
-    api.get(`/sentiment/${symbol}/analyst/history?limit=${limit}`)
+    api.get(`/sentiment/${symbol}/analyst/history?limit=${limit}`),
+
+  // === Enhanced Sentiment Intelligence (Phase 2.5) ===
+
+  // Get sources overview (aggregated sentiment by source with divergences)
+  getSourcesOverview: (period = '24h') =>
+    api.get(`/sentiment/sources-overview?period=${period}`),
+
+  // Get analyst activity (recent rating changes, upgrades/downgrades)
+  getAnalystActivity: (limit = 20) =>
+    api.get(`/sentiment/analyst-activity?limit=${limit}`),
+
+  // === Enhanced Sentiment Intelligence (Phase 3) ===
+
+  // Get insider trading activity across all stocks
+  getInsiderActivity: (days = 30, limit = 50) =>
+    api.get(`/sentiment/insider-activity?days=${days}&limit=${limit}`),
+
+  // Get enhanced trending with multi-source breakdown
+  getTrendingEnhanced: (period = '24h', limit = 30, region = 'US') =>
+    api.get(`/sentiment/trending-enhanced?period=${period}&limit=${limit}&region=${region}`),
+
+  // Convenience aliases for SentimentTab
+  getPostsForTicker: (symbol, period = '7d', limit = 20) =>
+    api.get(`/sentiment/${symbol}/posts?limit=${limit}`),
+
+  getNewsForTicker: (symbol, limit = 20) =>
+    api.get(`/sentiment/${symbol}/news?limit=${limit}`),
+
+  getStockTwitsForTicker: (symbol, limit = 20) =>
+    api.get(`/sentiment/${symbol}/stocktwits?limit=${limit}`),
+
+  getSentimentHistory: (days = 7) =>
+    api.get(`/sentiment/market/history?days=${days}`)
 };
 
 export const statsAPI = {
@@ -797,7 +859,19 @@ export const dcfAPI = {
 
   // Get all industry benchmarks
   getAllBenchmarks: () =>
-    api.get('/dcf/benchmarks')
+    api.get('/dcf/benchmarks'),
+
+  // Parametric (Monte Carlo) valuation with probability distributions
+  getParametric: (symbol, options = {}) => {
+    const params = new URLSearchParams();
+    if (options.simulations) params.append('simulations', options.simulations);
+    if (options.distributionType) params.append('distributionType', options.distributionType);
+    return api.get(`/dcf/${symbol}/parametric?${params.toString()}`, { timeout: 120000 });
+  },
+
+  // Parametric valuation with custom uncertainty parameters
+  calculateParametric: (symbol, options = {}) =>
+    api.post(`/dcf/${symbol}/parametric`, options, { timeout: 120000 })
 };
 
 // ============================================
@@ -1186,6 +1260,14 @@ export const simulateAPI = {
   // Get Monte Carlo results
   getMonteCarlo: (id) => api.get(`/simulate/monte-carlo/${id}`),
 
+  // Analyze return distribution
+  analyzeDistribution: (config) =>
+    api.post('/simulate/distribution/analyze', config, { timeout: 30000 }),
+
+  // Get portfolio distribution fit
+  getPortfolioDistribution: (portfolioId, type = 'auto') =>
+    api.get(`/simulate/portfolios/${portfolioId}/distribution?type=${type}`),
+
   // Calculate position size
   calculatePositionSize: (config) =>
     api.post('/simulate/position-size', config),
@@ -1271,9 +1353,10 @@ export const simulateAPI = {
     return api.get(`/simulate/portfolios/${portfolioId}/kelly/taleb-risk?period=${period}&initialCapital=${initialCapital}`, { timeout: 60000 });
   },
   analyzeSingleHolding: (symbol, params = {}) => {
-    const { portfolioId, period = '3y', riskFreeRate = 0.05, benchmarkSymbol = 'SPY' } = params;
+    const { portfolioId, period = '3y', riskFreeRate = 0.05, benchmarkSymbol = 'SPY', kellyFractions } = params;
     let url = `/simulate/kelly/analyze/${symbol}?period=${period}&riskFreeRate=${riskFreeRate}&benchmarkSymbol=${benchmarkSymbol}`;
     if (portfolioId) url += `&portfolioId=${portfolioId}`;
+    if (kellyFractions) url += `&kellyFractions=${encodeURIComponent(JSON.stringify(kellyFractions))}`;
     return api.get(url, { timeout: 60000 });
   },
 
@@ -1843,7 +1926,51 @@ export const agentAPI = {
 
   // Execute a recommendation
   executeRecommendation: (recommendationId) =>
-    api.post(`/agent/recommendations/${recommendationId}/execute`)
+    api.post(`/agent/recommendations/${recommendationId}/execute`),
+
+  // === Agent Dashboard API ===
+
+  // Get agent status (running, mode, scan times)
+  getStatus: (portfolioId) => api.get(`/agent/portfolios/${portfolioId}/status`),
+
+  // Start the agent
+  resume: (portfolioId) => api.post(`/agent/portfolios/${portfolioId}/start`),
+
+  // Pause the agent
+  pause: (portfolioId) => api.post(`/agent/portfolios/${portfolioId}/pause`),
+
+  // Run immediate scan
+  runNow: (portfolioId) => api.post(`/agent/portfolios/${portfolioId}/scan`),
+
+  // Get pending trades (uses executionAPI under the hood)
+  getPendingTrades: (portfolioId) => api.get(`/execution/portfolios/${portfolioId}/pending`),
+
+  // Approve a trade
+  approveTrade: (portfolioId, tradeId) => api.post(`/execution/${tradeId}/approve`, { approvedBy: 'user' }),
+
+  // Reject a trade
+  rejectTrade: (portfolioId, tradeId) => api.post(`/execution/${tradeId}/reject`, { rejectedBy: 'user' }),
+
+  // Approve all pending trades
+  approveAllTrades: (portfolioId) => api.post(`/execution/portfolios/${portfolioId}/approve-all`, { approvedBy: 'user' }),
+
+  // Reject all pending trades
+  rejectAllTrades: (portfolioId) => api.post(`/execution/portfolios/${portfolioId}/reject-all`, { rejectedBy: 'user' }),
+
+  // Get agent activity log
+  getActivity: (portfolioId, limit = 50) => api.get(`/agent/portfolios/${portfolioId}/activity?limit=${limit}`),
+
+  // Get market context (regime, signals)
+  getMarketContext: (portfolioId) => api.get(`/agent/portfolios/${portfolioId}/context`),
+
+  // Get today's stats
+  getTodayStats: (portfolioId) => api.get(`/agent/portfolios/${portfolioId}/stats/today`),
+
+  // Get agent settings
+  getSettings: (portfolioId) => api.get(`/agent/portfolios/${portfolioId}/settings`),
+
+  // Update agent settings
+  updateSettings: (portfolioId, settings) => api.put(`/agent/portfolios/${portfolioId}/settings`, settings)
 };
 
 // ============================================
@@ -2021,6 +2148,382 @@ export const hedgeAPI = {
   // Update hedge suggestion status
   updateStatus: (portfolioId, suggestionId, status) =>
     api.post(`/portfolios/${portfolioId}/hedge-suggestions/${suggestionId}/status`, { status })
+};
+
+// ============================================
+// Trading Agents API (First-Class Entities)
+// ============================================
+export const agentsAPI = {
+  // Get all trading agents
+  getAll: () => api.get('/agents'),
+
+  // Get single agent with details
+  get: (id) => api.get(`/agents/${id}`),
+
+  // Create new agent
+  create: (config) => api.post('/agents', config),
+
+  // Update agent configuration
+  update: (id, config) => api.put(`/agents/${id}`, config),
+
+  // Delete agent (soft delete)
+  delete: (id) => api.delete(`/agents/${id}`),
+
+  // === Lifecycle ===
+
+  // Start the agent
+  start: (id) => api.post(`/agents/${id}/start`),
+
+  // Pause the agent
+  pause: (id) => api.post(`/agents/${id}/pause`),
+
+  // Run immediate scan
+  runScan: (id) => api.post(`/agents/${id}/scan`),
+
+  // Get agent status
+  getStatus: (id) => api.get(`/agents/${id}/status`),
+
+  // === Signals ===
+
+  // Get signals for an agent
+  getSignals: (id, { limit = 50, status = null, action = null } = {}) => {
+    const params = new URLSearchParams({ limit });
+    if (status) params.append('status', status);
+    if (action) params.append('action', action);
+    return api.get(`/agents/${id}/signals?${params.toString()}`);
+  },
+
+  // Get single signal detail
+  getSignal: (id, signalId) => api.get(`/agents/${id}/signals/${signalId}`),
+
+  // Approve a signal
+  approveSignal: (id, signalId) => api.post(`/agents/${id}/signals/${signalId}/approve`),
+
+  // Reject a signal
+  rejectSignal: (id, signalId, reason = '') =>
+    api.post(`/agents/${id}/signals/${signalId}/reject`, { reason }),
+
+  // Approve all pending signals
+  approveAllSignals: (id) => api.post(`/agents/${id}/signals/approve-all`),
+
+  // Execute an approved signal
+  executeSignal: (id, signalId) => api.post(`/agents/${id}/signals/${signalId}/execute`),
+
+  // Execute all approved signals
+  executeAllSignals: (id) => api.post(`/agents/${id}/signals/execute-all`),
+
+  // === Portfolios ===
+
+  // Get portfolios managed by agent
+  getPortfolios: (id) => api.get(`/agents/${id}/portfolios`),
+
+  // Create new portfolio for agent
+  createPortfolio: (id, config) => api.post(`/agents/${id}/portfolios`, config),
+
+  // Attach existing portfolio to agent
+  attachPortfolio: (id, portfolioId, config = {}) =>
+    api.post(`/agents/${id}/portfolios/attach`, { portfolioId, ...config }),
+
+  // Detach portfolio from agent
+  detachPortfolio: (id, portfolioId) =>
+    api.delete(`/agents/${id}/portfolios/${portfolioId}`),
+
+  // === Performance & Activity ===
+
+  // Get agent performance metrics
+  getPerformance: (id) => api.get(`/agents/${id}/performance`),
+
+  // Get agent activity log
+  getActivity: (id, limit = 50) => api.get(`/agents/${id}/activity?limit=${limit}`),
+
+  // === Presets ===
+
+  // Get strategy presets
+  getPresets: () => api.get('/agents/presets'),
+
+  // === Executions ===
+
+  // Get all executions for an agent (pending, approved, executed)
+  getExecutions: (id) => api.get(`/agents/${id}/executions`),
+
+  // Approve an execution
+  approveExecution: (id, executionId) => api.post(`/agents/${id}/executions/${executionId}/approve`),
+
+  // Reject an execution
+  rejectExecution: (id, executionId, reason = null) =>
+    api.post(`/agents/${id}/executions/${executionId}/reject`, { reason }),
+
+  // Execute an approved trade
+  executeExecution: (id, executionId) => api.post(`/agents/${id}/executions/${executionId}/execute`),
+
+  // Approve all pending executions
+  approveAllExecutions: (id) => api.post(`/agents/${id}/executions/approve-all`),
+
+  // Execute all approved trades
+  executeAllApproved: (id) => api.post(`/agents/${id}/executions/execute-all`),
+
+  // === Settings ===
+
+  // Update agent settings
+  updateSettings: (id, settings) => api.put(`/agents/${id}/settings`, settings),
+
+  // Get lightweight live status for polling
+  getLiveStatus: (id) => api.get(`/agents/${id}/live-status`)
+};
+
+// ============================================
+// Paper Trading API
+// ============================================
+export const paperTradingAPI = {
+  // === Accounts ===
+
+  // Get all paper trading accounts
+  getAccounts: () => api.get('/paper-trading/accounts'),
+
+  // Create new paper trading account
+  createAccount: (name, initialCapital = 100000) =>
+    api.post('/paper-trading/accounts', { name, initialCapital }),
+
+  // Get account details with positions and summary
+  getAccount: (accountId) => api.get(`/paper-trading/accounts/${accountId}`),
+
+  // Delete an account
+  deleteAccount: (accountId) => api.delete(`/paper-trading/accounts/${accountId}`),
+
+  // Reset an account to initial state
+  resetAccount: (accountId, newCapital = null) =>
+    api.post(`/paper-trading/accounts/${accountId}/reset`, { newCapital }),
+
+  // === Orders ===
+
+  // Submit a new order
+  submitOrder: (accountId, { symbol, side, quantity, orderType = 'MARKET', limitPrice, stopPrice, notes }) =>
+    api.post(`/paper-trading/accounts/${accountId}/orders`, {
+      symbol, side, quantity, orderType, limitPrice, stopPrice, notes
+    }),
+
+  // Get order history
+  getOrders: (accountId, limit = 50) =>
+    api.get(`/paper-trading/accounts/${accountId}/orders?limit=${limit}`),
+
+  // Get pending orders
+  getPendingOrders: (accountId) =>
+    api.get(`/paper-trading/accounts/${accountId}/orders/pending`),
+
+  // === Quick Trade Helpers ===
+
+  // Market buy
+  buy: (accountId, symbol, quantity, notes = '') =>
+    api.post(`/paper-trading/accounts/${accountId}/buy`, { symbol, quantity, notes }),
+
+  // Market sell
+  sell: (accountId, symbol, quantity, notes = '') =>
+    api.post(`/paper-trading/accounts/${accountId}/sell`, { symbol, quantity, notes }),
+
+  // === Positions ===
+
+  // Get current positions
+  getPositions: (accountId) => api.get(`/paper-trading/accounts/${accountId}/positions`),
+
+  // === Trades ===
+
+  // Get trade history
+  getTrades: (accountId, limit = 50) =>
+    api.get(`/paper-trading/accounts/${accountId}/trades?limit=${limit}`),
+
+  // === Performance ===
+
+  // Get performance metrics
+  getPerformance: (accountId, days = 30) =>
+    api.get(`/paper-trading/accounts/${accountId}/performance?days=${days}`),
+
+  // Take daily snapshot
+  takeSnapshot: (accountId) =>
+    api.post(`/paper-trading/accounts/${accountId}/snapshot`),
+
+  // Get historical snapshots
+  getSnapshots: (accountId, limit = 90) =>
+    api.get(`/paper-trading/accounts/${accountId}/snapshots?limit=${limit}`),
+
+  // === Agent Integration ===
+
+  // Execute a trading signal
+  executeSignal: ({ accountId, signalId, symbol, action, quantity, positionValue, confidence, notes }) =>
+    api.post('/paper-trading/execute-signal', {
+      accountId, signalId, symbol, action, quantity, positionValue, confidence, notes
+    }),
+
+  // Link a portfolio to paper trading
+  linkPortfolio: (portfolioId, agentId = null, initialCapital = null) =>
+    api.post('/paper-trading/link-portfolio', { portfolioId, agentId, initialCapital })
+};
+
+// ============================================
+// ML SIGNAL COMBINER API
+// ============================================
+export const mlCombinerAPI = {
+  // Get ML model status
+  getStatus: () => api.get('/validation/ml/status'),
+
+  // Train the ML signal combiner
+  train: (lookbackDays = 730) =>
+    apiLong.post('/validation/ml/train', { lookbackDays }),
+
+  // Combine signals using ML model
+  combine: (signals, context = {}, horizon = 21) =>
+    api.post('/validation/ml/combine', { signals, context, horizon }),
+
+  // Get feature importance
+  getImportance: (horizon = 21) =>
+    api.get(`/validation/ml/importance?horizon=${horizon}`)
+};
+
+// ============================================
+// SIGNAL PERFORMANCE API
+// ============================================
+export const signalPerformanceAPI = {
+  // Get comprehensive signal health report
+  getHealth: (lookback = 180) =>
+    api.get(`/validation/signals/health?lookback=${lookback}`),
+
+  // Get IC decay analysis
+  getICDecay: (lookback = 180) =>
+    api.get(`/validation/signals/ic-decay?lookback=${lookback}`),
+
+  // Get hit rates by period
+  getHitRates: (lookback = 180) =>
+    api.get(`/validation/signals/hit-rates?lookback=${lookback}`),
+
+  // Get regime stability analysis
+  getRegimeStability: (lookback = 365) =>
+    api.get(`/validation/signals/regime-stability?lookback=${lookback}`),
+
+  // Get rolling IC trend for a signal
+  getRollingIC: (signalType, window = 60, step = 7, lookback = 365) =>
+    api.get(`/validation/signals/rolling-ic/${signalType}?window=${window}&step=${step}&lookback=${lookback}`),
+
+  // Trigger recalculation
+  recalculate: () => api.post('/validation/signals/recalculate'),
+
+  // Get historical trends
+  getHistory: (days = 90) =>
+    api.get(`/validation/signals/history?days=${days}`)
+};
+
+// ============================================
+// ALTERNATIVE DATA API (Congressional, Short Interest, Contracts)
+// ============================================
+export const altDataAPI = {
+  // === Congressional Trading ===
+
+  // Get congressional trading activity for a symbol
+  getCongressTrades: (symbol, lookback = '-90 days') =>
+    api.get(`/alt-data/congress/${symbol}?lookback=${lookback}`),
+
+  // Get top congressional stock purchases
+  getTopCongressBuys: (lookback = '-30 days', limit = 20) =>
+    api.get(`/alt-data/congress/top-buys?lookback=${lookback}&limit=${limit}`),
+
+  // Fetch fresh congressional data for a symbol
+  fetchCongressData: (symbol) =>
+    api.post(`/alt-data/congress/fetch/${symbol}`),
+
+  // === Short Interest ===
+
+  // Get short interest data for a symbol
+  getShortInterest: (symbol) =>
+    api.get(`/alt-data/short-interest/${symbol}`),
+
+  // Get short interest history for a symbol
+  getShortInterestHistory: (symbol, lookback = '-365 days') =>
+    api.get(`/alt-data/short-interest/${symbol}/history?lookback=${lookback}`),
+
+  // Get potential short squeeze candidates
+  getSqueezeCandidates: (limit = 20) =>
+    api.get(`/alt-data/squeeze-candidates?limit=${limit}`),
+
+  // Get most shorted stocks
+  getMostShorted: (limit = 20) =>
+    api.get(`/alt-data/most-shorted?limit=${limit}`),
+
+  // === Government Contracts ===
+
+  // Get government contract activity for a symbol
+  getContracts: (symbol, lookback = '-365 days') =>
+    api.get(`/alt-data/contracts/${symbol}?lookback=${lookback}`),
+
+  // Fetch fresh contract data for a symbol
+  fetchContractData: (symbol) =>
+    api.post(`/alt-data/contracts/fetch/${symbol}`),
+
+  // === Aggregated Signals ===
+
+  // Get all alternative data signals for a symbol
+  getSignals: (symbol) =>
+    api.get(`/alt-data/signals/${symbol}`),
+
+  // Get top bullish/bearish alternative data signals
+  getTopSignals: (direction = 'bullish', limit = 20) =>
+    api.get(`/alt-data/top-signals?direction=${direction}&limit=${limit}`),
+
+  // Get summary of all alternative data signals
+  getSummary: () =>
+    api.get('/alt-data/summary')
+};
+
+// === EU/UK XBRL Data API ===
+export const xbrlAPI = {
+  // Get backfill status
+  getBackfillStatus: () => api.get('/xbrl/backfill/status'),
+
+  // Get available countries for import
+  getCountries: () => api.get('/xbrl/backfill/countries'),
+
+  // Start backfill import for selected countries
+  startBackfill: (countries, startYear = 2021) =>
+    apiLong.post('/xbrl/backfill/start', { countries, startYear }),
+
+  // Pause ongoing backfill
+  pauseBackfill: () => api.post('/xbrl/backfill/pause'),
+
+  // Resume a paused import
+  resumeBackfill: (syncLogId) => api.post(`/xbrl/backfill/resume/${syncLogId}`),
+
+  // Import single country
+  importCountry: (countryCode, startYear = 2021) =>
+    apiLong.post(`/xbrl/backfill/country/${countryCode}`, { startYear }),
+
+  // Sync XBRL metrics to calculated_metrics table
+  syncMetrics: () => apiLong.post('/xbrl/sync-metrics'),
+
+  // Get XBRL metrics for a company
+  getMetrics: (companyId) => api.get(`/xbrl/metrics/${companyId}`)
+};
+
+// === European Data API (Price/Index/Valuation) ===
+export const europeanAPI = {
+  // Get EU/UK data status
+  getStatus: () => api.get('/data/european/status'),
+
+  // Trigger price update for a country
+  updatePrices: (country) =>
+    apiLong.post('/data/european/prices', { country }),
+
+  // Update European index constituents (FTSE, DAX, CAC)
+  updateIndices: () => apiLong.post('/data/european/indices'),
+
+  // Run valuation calculation for EU/UK companies
+  calculateValuations: () => apiLong.post('/data/european/valuations'),
+
+  // Run sector enrichment for EU/UK companies
+  enrichSectors: () => apiLong.post('/data/european/enrich'),
+
+  // Get European index membership stats
+  getIndexStats: () => api.get('/data/european/index-stats'),
+
+  // Get companies by country
+  getCompaniesByCountry: (country, limit = 100) =>
+    api.get(`/data/european/companies?country=${country}&limit=${limit}`)
 };
 
 export default api;

@@ -122,7 +122,7 @@ function CommandPalette({ open, onOpenChange }) {
   // Handle NL Query submission
   const handleAskAI = useCallback(async (queryOverride = null) => {
     const queryText = queryOverride || search;
-    if (!queryText.trim() || nlLoading) return;
+    if (!queryText || typeof queryText !== 'string' || !queryText.trim() || nlLoading) return;
 
     setNlLoading(true);
     setNlResponse(null);

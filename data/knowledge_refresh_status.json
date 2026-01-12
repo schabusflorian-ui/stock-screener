@@ -1,8 +1,39 @@
 {
-  "lastRun": "2026-01-07T19:04:46.110Z",
+  "lastRun": "2026-01-11T20:20:25.667Z",
   "lastSuccess": true,
   "isRunning": false,
   "history": [
+    {
+      "timestamp": "2026-01-11T20:20:25.667Z",
+      "success": true,
+      "duration": "3.2 minutes",
+      "sources": [
+        "buffett",
+        "marks",
+        "farnam",
+        "damodaran",
+        "housel",
+        "taleb",
+        "spitznagel",
+        "a16z",
+        "evans",
+        "ark",
+        "ai"
+      ],
+      "incremental": false
+    },
+    {
+      "timestamp": "2026-01-07T19:21:44.433Z",
+      "success": true,
+      "duration": "9.0 minutes",
+      "sources": [
+        "a16z",
+        "evans",
+        "ark",
+        "ai"
+      ],
+      "incremental": true
+    },
     {
       "timestamp": "2026-01-07T19:04:46.110Z",
       "success": true,

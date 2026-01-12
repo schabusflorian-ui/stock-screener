@@ -52,6 +52,7 @@ function RegimeHistory({ className = '' }) {
 
   useEffect(() => {
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [days]);
 
   const fetchData = async () => {

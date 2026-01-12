@@ -48,11 +48,6 @@ function ETFDetailModal({ symbol, onClose }) {
     }
   };
 
-  const formatPercent = (value) => {
-    if (value === null || value === undefined) return '-';
-    return `${(value * 100).toFixed(2)}%`;
-  };
-
   const formatExpenseRatio = (value) => {
     if (value === null || value === undefined) return '-';
     return `${(value * 100).toFixed(3)}%`;

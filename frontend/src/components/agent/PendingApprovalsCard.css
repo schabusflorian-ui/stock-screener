@@ -1,0 +1,211 @@
+/* frontend/src/components/agent/PendingApprovalsCard.css */
+/* Prominent pending trade approvals card */
+
+.pending-approvals {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.pending-approvals--has-pending {
+  border-color: var(--color-warning);
+  box-shadow: 0 0 0 1px rgba(var(--warning-rgb), 0.1);
+}
+
+/* Header */
+.pending-approvals__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-md);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.pending-approvals--has-pending .pending-approvals__header {
+  background: rgba(var(--warning-rgb), 0.05);
+}
+
+.pending-approvals__title-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.pending-approvals__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: rgba(var(--warning-rgb), 0.15);
+  color: var(--color-warning);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.pending-approvals__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--text-tertiary);
+}
+
+.pending-approvals__refresh {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: transparent;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pending-approvals__refresh:hover:not(:disabled) {
+  background: var(--bg-primary);
+  border-color: var(--border-secondary);
+  color: var(--text-primary);
+}
+
+.pending-approvals__refresh:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* List */
+.pending-approvals__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.pending-approvals__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xl);
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+/* Bulk actions */
+.pending-approvals__bulk-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  border-top: 1px solid var(--border-primary);
+  background: var(--bg-tertiary);
+}
+
+.pending-approvals__bulk-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pending-approvals__bulk-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pending-approvals__bulk-btn--approve {
+  background: var(--color-success);
+  color: white;
+}
+
+.pending-approvals__bulk-btn--approve:hover:not(:disabled) {
+  background: var(--color-success-dark);
+  transform: translateY(-1px);
+}
+
+.pending-approvals__bulk-btn--reject {
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-primary);
+}
+
+.pending-approvals__bulk-btn--reject:hover:not(:disabled) {
+  background: rgba(var(--danger-rgb), 0.1);
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
+/* Empty state */
+.pending-approvals--empty {
+  background: var(--bg-secondary);
+  border: 1px dashed var(--border-primary);
+}
+
+.pending-approvals__empty-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xl);
+  text-align: center;
+}
+
+.pending-approvals__empty-icon {
+  color: var(--color-success);
+  margin-bottom: var(--spacing-md);
+}
+
+.pending-approvals__empty-title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 var(--spacing-xs);
+}
+
+.pending-approvals__empty-text {
+  font-size: var(--font-size-sm);
+  color: var(--text-tertiary);
+  margin: 0;
+  max-width: 280px;
+}
+
+/* Spinning animation */
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .pending-approvals__header {
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    align-items: flex-start;
+  }
+
+  .pending-approvals__refresh {
+    align-self: flex-end;
+  }
+
+  .pending-approvals__bulk-actions {
+    flex-direction: column;
+  }
+}

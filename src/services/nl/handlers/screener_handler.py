@@ -357,19 +357,10 @@ class ScreenerHandler:
                 m.net_margin,
                 m.gross_margin,
                 m.revenue_growth_yoy,
-                m.debt_to_equity,
-                p.close as price,
-                p.change_percent
+                m.debt_to_equity
             FROM companies c
             LEFT JOIN calculated_metrics m ON c.id = m.company_id
-            LEFT JOIN (
-                SELECT company_id, close, change_percent
-                FROM daily_prices
-                WHERE (company_id, date) IN (
-                    SELECT company_id, MAX(date) FROM daily_prices GROUP BY company_id
-                )
-            ) p ON c.id = p.company_id
-            WHERE c.active = 1
+            WHERE c.is_active = 1
             AND {where_sql}
             ORDER BY m.{screener_query.sort_by} {screener_query.sort_order}
             LIMIT {screener_query.limit}
@@ -380,7 +371,7 @@ class ScreenerHandler:
             columns = ['symbol', 'name', 'sector', 'industry', 'market_cap',
                       'pe_ratio', 'pb_ratio', 'ps_ratio', 'dividend_yield',
                       'roe', 'roic', 'net_margin', 'gross_margin',
-                      'revenue_growth_yoy', 'debt_to_equity', 'price', 'change_percent']
+                      'revenue_growth_yoy', 'debt_to_equity']
             return [dict(zip(columns, row)) for row in results]
         except Exception as e:
             logger.error(f"Screen execution failed: {e}")

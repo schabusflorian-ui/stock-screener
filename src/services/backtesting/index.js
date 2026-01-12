@@ -11,6 +11,10 @@ const regimeAnalysis = require('./regimeAnalysis');
 const executionSimulator = require('./executionSimulator');
 const capacityAnalysis = require('./capacityAnalysis');
 
+// Historical Agent Backtesting
+const { HistoricalDataProvider } = require('./historicalDataProvider');
+const { HistoricalAgentBacktester } = require('./historicalAgentBacktester');
+
 module.exports = {
   // Walk-Forward Optimization
   walkForward: {
@@ -95,5 +99,15 @@ module.exports = {
     liquidityAdjustedReturns: capacityAnalysis.calculateLiquidityAdjustedReturns,
     calculateSlippage: capacityAnalysis.calculateSlippageAtAUM,
     getHistory: capacityAnalysis.getCapacityHistory
+  },
+
+  // Historical Agent Backtesting (NEW)
+  historicalAgent: {
+    DataProvider: HistoricalDataProvider,
+    Backtester: HistoricalAgentBacktester,
+    run: (db, config) => {
+      const backtester = new HistoricalAgentBacktester(db, config);
+      return backtester.runBacktest();
+    }
   }
 };

@@ -1,0 +1,354 @@
+/* frontend/src/components/sentiment/InsiderActivityPanel.css */
+
+.insider-activity-panel {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.insider-activity-panel .panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.insider-activity-panel .panel-header h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.insider-activity-panel .period-badge {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  color: var(--text-secondary);
+}
+
+/* Overview Stats */
+.insider-overview {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.overview-stat {
+  text-align: center;
+}
+
+.overview-stat .stat-value {
+  display: block;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.overview-stat .stat-value.positive {
+  color: var(--positive);
+}
+
+.overview-stat .stat-value.negative {
+  color: var(--negative);
+}
+
+.overview-stat .stat-label {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Section Headers */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.section-header.clickable {
+  cursor: pointer;
+  padding: 0.5rem;
+  margin: -0.5rem;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.section-header.clickable:hover {
+  background: var(--bg-tertiary);
+}
+
+.section-header h4 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* Net Flow Section */
+.net-flow-section {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.net-flow-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.flow-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.column-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 0.25rem;
+}
+
+.column-label.positive {
+  color: var(--positive);
+}
+
+.column-label.negative {
+  color: var(--negative);
+}
+
+/* Net Flow Cards */
+.net-flow-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  padding: 0.6rem;
+  transition: transform 0.2s, border-color 0.2s;
+}
+
+.net-flow-card:hover {
+  transform: translateY(-1px);
+}
+
+.net-flow-card.bullish {
+  border-left: 3px solid var(--positive);
+}
+
+.net-flow-card.bearish {
+  border-left: 3px solid var(--negative);
+}
+
+.flow-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.25rem;
+}
+
+.flow-symbol {
+  font-weight: 600;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.flow-symbol:hover {
+  color: var(--accent);
+}
+
+.net-flow-card.bullish .flow-header svg {
+  color: var(--positive);
+}
+
+.net-flow-card.bearish .flow-header svg {
+  color: var(--negative);
+}
+
+.flow-value {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.net-flow-card.bullish .flow-value {
+  color: var(--positive);
+}
+
+.net-flow-card.bearish .flow-value {
+  color: var(--negative);
+}
+
+.flow-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+}
+
+.flow-insiders {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Transactions Section */
+.transactions-section {
+  margin-bottom: 0.5rem;
+}
+
+.transactions-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.transactions-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.transactions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+/* Insider Rows */
+.insider-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem;
+  background: var(--bg-primary);
+  border-radius: 4px;
+  border-left: 2px solid transparent;
+}
+
+.insider-row.buy {
+  border-left-color: var(--positive);
+}
+
+.insider-row.sell {
+  border-left-color: var(--negative);
+}
+
+.insider-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.insider-symbol {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.insider-symbol:hover {
+  color: var(--accent);
+}
+
+.insider-name {
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100px;
+}
+
+.insider-details {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
+}
+
+.insider-value {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.insider-value.positive {
+  color: var(--positive);
+}
+
+.insider-value.negative {
+  color: var(--negative);
+}
+
+.insider-date {
+  font-size: 0.65rem;
+  color: var(--text-tertiary);
+}
+
+/* Loading and Error States */
+.insider-activity-panel.loading,
+.insider-activity-panel.error {
+  min-height: 200px;
+}
+
+.loading-state,
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 2rem;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.loading-state .spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.no-data {
+  padding: 1rem;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 0.8rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .insider-overview {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .net-flow-grid,
+  .transactions-grid {
+    grid-template-columns: 1fr;
+  }
+}

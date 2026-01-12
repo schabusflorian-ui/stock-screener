@@ -180,6 +180,8 @@ function CompanyPage() {
   // New state for period and metric selection
   const [periodType, setPeriodType] = useState('annual');
   const [availablePeriods, setAvailablePeriods] = useState([]);
+  const [dataSource, setDataSource] = useState('sec'); // 'sec' (US) or 'xbrl' (EU/UK)
+  const [periodAutoSelected, setPeriodAutoSelected] = useState(false);
   const [chartMetrics, setChartMetrics] = useState(DEFAULT_CHART_METRICS);
   const [tableMetrics, setTableMetrics] = useState(DEFAULT_TABLE_METRICS);
   const [financialTab, setFinancialTab] = useState('income');
@@ -198,10 +200,27 @@ function CompanyPage() {
       });
       setMetrics(metricsRes.data.metrics);
       setAvailablePeriods(metricsRes.data.available_periods || []);
+      setDataSource(metricsRes.data.data_source || 'sec');
+
+      // Auto-select best available period type on first load
+      if (!periodAutoSelected && metricsRes.data.available_periods) {
+        const periods = metricsRes.data.available_periods;
+        const quarterlyCount = periods.find(p => p.period_type === 'quarterly')?.count || 0;
+        const annualCount = periods.find(p => p.period_type === 'annual')?.count || 0;
+
+        // If quarterly data exists, prefer it (US companies)
+        // If only annual data exists, use annual (EU/UK companies)
+        if (quarterlyCount > 0) {
+          setPeriodType('quarterly');
+        } else if (annualCount > 0) {
+          setPeriodType('annual');
+        }
+        setPeriodAutoSelected(true);
+      }
     } catch (error) {
       console.error('Error loading metrics:', error);
     }
-  }, [symbol, periodType]);
+  }, [symbol, periodType, periodAutoSelected]);
 
   useEffect(() => {
     const loadCompanyData = async () => {
@@ -285,6 +304,12 @@ function CompanyPage() {
     };
 
     loadCompanyData();
+  }, [symbol]);
+
+  // Reset auto-selection flag when symbol changes
+  useEffect(() => {
+    setPeriodAutoSelected(false);
+    setDataSource('sec');
   }, [symbol]);
 
   useEffect(() => {
@@ -746,6 +771,7 @@ function CompanyPage() {
           value={periodType}
           onChange={setPeriodType}
           availablePeriods={availablePeriods}
+          dataSource={dataSource}
         />
       </div>
 

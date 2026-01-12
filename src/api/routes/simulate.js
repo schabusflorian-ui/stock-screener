@@ -394,6 +394,80 @@ router.delete('/monte-carlo/:id', (req, res) => {
 });
 
 // ============================================
+// Return Distribution Analysis Routes
+// ============================================
+
+/**
+ * GET /api/simulate/portfolios/:id/distribution
+ * Analyze portfolio return distribution with parametric fitting
+ * Returns fitted distribution, histogram, PDF curves, and risk metrics
+ */
+router.get('/portfolios/:id/distribution', async (req, res) => {
+  try {
+    const portfolioId = parseInt(req.params.id);
+    const {
+      lookbackYears = 5,
+      distributionType = 'auto'  // 'auto', 'normal', 'studentT', 'skewedT'
+    } = req.query;
+
+    const result = await monteCarloEngine.analyzeDistribution({
+      portfolioId,
+      lookbackYears: parseFloat(lookbackYears),
+      distributionType
+    });
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error analyzing distribution:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/simulate/distribution/analyze
+ * Analyze distribution for custom allocations (without existing portfolio)
+ */
+router.post('/distribution/analyze', async (req, res) => {
+  try {
+    const {
+      allocations,
+      lookbackYears = 5,
+      distributionType = 'auto'
+    } = req.body;
+
+    if (!allocations || !Array.isArray(allocations) || allocations.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'allocations array is required'
+      });
+    }
+
+    const result = await monteCarloEngine.analyzeDistribution({
+      allocations,
+      lookbackYears: parseFloat(lookbackYears),
+      distributionType
+    });
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error analyzing distribution:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// ============================================
 // Position Sizing Routes
 // ============================================
 
@@ -601,6 +675,7 @@ router.get('/methods', (req, res) => {
           'simulationCount (default: 10000)',
           'timeHorizonYears (default: 30)',
           'returnModel (historical/parametric/forecasted)',
+          'returnDistribution (normal/studentT/skewedT/auto) - NEW!',
           'initialValue (default: 500000)',
           'annualContribution',
           'annualWithdrawal',
@@ -608,6 +683,30 @@ router.get('/methods', (req, res) => {
           'expectedReturn (for forecasted model)',
           'expectedVolatility (for forecasted model)',
           'lookbackYears (default: 10)'
+        ],
+        returnDistributions: {
+          normal: 'Standard Gaussian - assumes symmetric returns, may underestimate tail risk',
+          studentT: "Student's t - captures fat tails (excess kurtosis), better for crash scenarios",
+          skewedT: "Hansen's Skewed t - captures both fat tails and asymmetry",
+          auto: 'Automatically selects best fitting distribution based on data'
+        }
+      },
+      distributionAnalysis: {
+        description: 'Analyze return distribution characteristics of a portfolio',
+        endpoints: [
+          'GET /api/simulate/portfolios/:id/distribution',
+          'POST /api/simulate/distribution/analyze'
+        ],
+        optionalParams: [
+          'lookbackYears (default: 5)',
+          'distributionType (auto/normal/studentT/skewedT)'
+        ],
+        returns: [
+          'fitted distribution type and parameters',
+          'histogram with empirical vs fitted PDF',
+          'PDF curves for charting',
+          'VaR comparison (normal vs Cornish-Fisher adjusted)',
+          'fat tail warning if kurtosis > 4'
         ]
       },
       performanceMetrics: {

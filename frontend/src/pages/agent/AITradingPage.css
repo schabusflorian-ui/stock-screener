@@ -191,6 +191,114 @@
   color: var(--text-primary);
 }
 
+/* Portfolio Selector */
+.ai-trading-page__selector {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 48px 24px;
+}
+
+.ai-trading-page__selector-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.ai-trading-page__selector-header svg {
+  color: var(--color-primary);
+  margin-bottom: 16px;
+}
+
+.ai-trading-page__selector-header h1 {
+  margin: 0 0 8px;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.ai-trading-page__selector-header p {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text-secondary);
+}
+
+.ai-trading-page__selector-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ai-trading-page__selector-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 48px;
+  text-align: center;
+}
+
+.ai-trading-page__selector-empty svg {
+  color: var(--text-tertiary);
+}
+
+.ai-trading-page__selector-empty p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.ai-trading-page__selector-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ai-trading-page__portfolio-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 20px 24px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ai-trading-page__portfolio-card:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--color-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.ai-trading-page__portfolio-card svg {
+  color: var(--text-tertiary);
+  transition: transform 0.2s ease;
+}
+
+.ai-trading-page__portfolio-card:hover svg {
+  color: var(--color-primary);
+  transform: translateX(4px);
+}
+
+.ai-trading-page__portfolio-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.ai-trading-page__portfolio-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ai-trading-page__portfolio-value {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .ai-trading-page {
@@ -210,5 +318,9 @@
     margin: 0 -16px 24px;
     padding: 4px 16px;
     border-radius: 0;
+  }
+
+  .ai-trading-page__selector {
+    padding: 24px 16px;
   }
 }

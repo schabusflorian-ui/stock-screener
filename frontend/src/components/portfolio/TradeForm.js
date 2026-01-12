@@ -1,7 +1,7 @@
 // frontend/src/components/portfolio/TradeForm.js
 import { useState, useEffect, useCallback } from 'react';
-import { X, TrendingUp, TrendingDown, Loader, Search, AlertCircle, Shield, AlertTriangle, CheckCircle } from 'lucide-react';
-import { portfoliosAPI, companyAPI } from '../../services/api';
+import { X, TrendingUp, TrendingDown, Loader, Search, AlertCircle, Shield, AlertTriangle, CheckCircle, Target, ChevronDown, ChevronUp } from 'lucide-react';
+import { portfoliosAPI, companyAPI, simulateAPI } from '../../services/api';
 import './TradeForm.css';
 
 function TradeForm({ portfolioId, holdings, cashBalance, onClose, onComplete }) {
@@ -25,6 +25,11 @@ function TradeForm({ portfolioId, holdings, cashBalance, onClose, onComplete }) 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [showResults, setShowResults] = useState(false);
+
+  // Kelly position sizing state
+  const [kellyData, setKellyData] = useState(null);
+  const [kellyLoading, setKellyLoading] = useState(false);
+  const [showKellyDetails, setShowKellyDetails] = useState(false);
 
   const existingHolding = holdings?.find(h => h.symbol?.toUpperCase() === symbol.toUpperCase());
 
@@ -65,6 +70,39 @@ function TradeForm({ portfolioId, holdings, cashBalance, onClose, onComplete }) 
 
     return () => clearTimeout(timer);
   }, [validateTrade, tradeType]);
+
+  // Load Kelly recommendation when symbol is selected
+  const loadKellyRecommendation = useCallback(async () => {
+    if (!symbol || tradeType !== 'buy') {
+      setKellyData(null);
+      return;
+    }
+
+    setKellyLoading(true);
+    try {
+      const res = await simulateAPI.analyzeSingleHolding(symbol, {
+        portfolioId,
+        period: '3y',
+        riskFreeRate: 0.05
+      });
+      const data = res.data.data || res.data;
+      if (!data?.error) {
+        setKellyData(data);
+      }
+    } catch (err) {
+      console.log('Kelly data not available:', err.message);
+      setKellyData(null);
+    } finally {
+      setKellyLoading(false);
+    }
+  }, [symbol, portfolioId, tradeType]);
+
+  // Load Kelly data when symbol changes
+  useEffect(() => {
+    if (symbol && tradeType === 'buy') {
+      loadKellyRecommendation();
+    }
+  }, [symbol, tradeType, loadKellyRecommendation]);
 
   // Debounced search
   useEffect(() => {
@@ -166,6 +204,98 @@ function TradeForm({ portfolioId, holdings, cashBalance, onClose, onComplete }) 
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // Render Kelly position sizing recommendation
+  const renderKellyRecommendation = () => {
+    if (tradeType !== 'buy' || !symbol) return null;
+
+    // Calculate suggested shares based on Kelly
+    const suggestedShares = kellyData?.portfolioContext?.suggestedShares ||
+      (kellyData?.kelly?.recommended?.fraction && price && cashBalance
+        ? Math.floor((cashBalance * kellyData.kelly.recommended.fraction) / parseFloat(price))
+        : null);
+
+    return (
+      <div className="kelly-recommendation-section">
+        <button
+          type="button"
+          className="kelly-toggle"
+          onClick={() => setShowKellyDetails(!showKellyDetails)}
+        >
+          <Target size={14} />
+          <span>Position Sizing</span>
+          {showKellyDetails ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+
+        {showKellyDetails && (
+          <div className="kelly-content">
+            {kellyLoading ? (
+              <div className="kelly-loading">
+                <Loader className="spinning" size={14} />
+                <span>Analyzing...</span>
+              </div>
+            ) : kellyData ? (
+              <>
+                <div className="kelly-recommendation">
+                  <div className="kelly-header">
+                    <span className="kelly-label">Recommended Size</span>
+                    <span className="kelly-value">
+                      {(kellyData.kelly?.recommended?.fraction * 100 || 0).toFixed(0)}%
+                    </span>
+                    <span className="kelly-name">{kellyData.kelly?.recommended?.label || 'Kelly'}</span>
+                  </div>
+                  {kellyData.kelly?.recommended?.reason && (
+                    <p className="kelly-reason">{kellyData.kelly.recommended.reason}</p>
+                  )}
+                </div>
+
+                <div className="kelly-stats">
+                  <div className="kelly-stat">
+                    <span className="stat-label">Win Rate</span>
+                    <span className="stat-value">{kellyData.statistics?.winRate || 'N/A'}%</span>
+                  </div>
+                  <div className="kelly-stat">
+                    <span className="stat-label">Sharpe</span>
+                    <span className="stat-value">{kellyData.statistics?.sharpeRatio || 'N/A'}</span>
+                  </div>
+                  <div className="kelly-stat">
+                    <span className="stat-label">Volatility</span>
+                    <span className="stat-value">{kellyData.statistics?.annualVolatility || 'N/A'}%</span>
+                  </div>
+                </div>
+
+                {kellyData.tailRisk?.warning && (
+                  <div className="kelly-warning">
+                    <AlertTriangle size={12} />
+                    <span>{kellyData.tailRisk.warning}</span>
+                  </div>
+                )}
+
+                {suggestedShares && price && (
+                  <div className="kelly-suggestion">
+                    <span>Suggested: </span>
+                    <strong>{suggestedShares} shares</strong>
+                    <span className="kelly-cost">(${(suggestedShares * parseFloat(price)).toLocaleString(undefined, { maximumFractionDigits: 0 })})</span>
+                    <button
+                      type="button"
+                      className="apply-btn"
+                      onClick={() => setShares(String(suggestedShares))}
+                    >
+                      Apply
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="kelly-unavailable">
+                <span>Insufficient historical data for analysis</span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
   };
 
   // Render risk assessment panel
@@ -471,6 +601,9 @@ function TradeForm({ portfolioId, holdings, cashBalance, onClose, onComplete }) 
                 </div>
               )}
             </div>
+
+            {/* Position Sizing Recommendation */}
+            {renderKellyRecommendation()}
 
             {/* Risk Assessment Panel */}
             {renderRiskAssessment()}

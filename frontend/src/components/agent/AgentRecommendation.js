@@ -34,6 +34,7 @@ function AgentRecommendation({ symbol, portfolioId, className = '' }) {
     if (symbol) {
       fetchRecommendation();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol, portfolioId]);
 
   const fetchRecommendation = async () => {

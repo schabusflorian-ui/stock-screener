@@ -9,11 +9,8 @@ import {
   Activity,
   RefreshCw,
   Check,
-  X,
   Info,
-  DollarSign,
-  Percent,
-  Clock
+  DollarSign
 } from 'lucide-react';
 import { hedgeAPI } from '../../services/api';
 import './HedgeSuggestionsPanel.css';
@@ -34,6 +31,7 @@ function HedgeSuggestionsPanel({ portfolioId }) {
 
   useEffect(() => {
     loadSuggestions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [portfolioId]);
 
   const loadSuggestions = async () => {

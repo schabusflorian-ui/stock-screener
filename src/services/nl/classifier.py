@@ -31,6 +31,10 @@ class QueryIntent(Enum):
     RANKING = "ranking"            # "Top 10 dividend stocks"
     EXPLANATION = "explanation"    # "Why is AAPL's P/E so high?"
     CALCULATION = "calculation"    # "What would AAPL be worth at 15x earnings?"
+    PORTFOLIO = "portfolio"        # "Analyze my portfolio", "Show portfolio performance"
+    INVESTOR = "investor"          # "Show Buffett's holdings", "What does Burry own?"
+    SENTIMENT = "sentiment"        # "What's the sentiment on AAPL?", "Any news about Tesla?"
+    TECHNICAL = "technical"        # "Is AAPL oversold?", "What's the RSI for NVDA?"
     UNKNOWN = "unknown"
 
 
@@ -172,19 +176,24 @@ class QueryClassifier:
             r'^top \d+',  # Fallback, less specific
         ],
         QueryIntent.LOOKUP: [
-            r"what(?:'s| is) (?:\w+(?:'s)? )?(?:price|pe|p/e|ratio|margin|revenue|market cap|eps|roe|roa)",
-            r"what(?:'s| is) the (?:current )?(?:price|pe|p/e|ratio|margin|revenue|market cap|eps)",
+            # Generic "what is X" patterns - catch broad metric queries
+            r"what(?:'s| is) (?:the )?\w+(?:'s)? (?:price|pe|p/e|ratio|margin|revenue|market cap|eps|roe|roa|roic|ebit|ebitda|nopat|fcf|debt|assets|beta|yield|growth)",
+            r"what(?:'s| is) the (?:current )?(?:price|pe|p/e|ratio|margin|revenue|market cap|eps|nopat|ebit|ebitda|roic|fcf)",
+            r"what(?:'s| is) the \w+ of \w+",  # "what is the NOPAT of Apple"
+            r"what(?:'s| is) \w+(?:'s)? \w+",  # "what is Apple's NOPAT"
             r'tell me about \w+$',
             r'info(?:rmation)? (?:on|about|for)',
             r'details (?:for|about|on)',
-            r'get (?:me )?(?:the )?.* for',
-            r'show (?:me )?\w+ data',
-            r"(?:\w+)'s (?:pe|p/e|margin|revenue|price|market cap|eps|dividend)",
-            r'\w+ (?:pe|p/e|margin|revenue|price|market cap|eps|dividend)',
+            r'get (?:me )?(?:the )?.* (?:for|of)',
+            r'show (?:me )?\w+ (?:data|info|details)',
+            r"(?:\w+)'s (?:pe|p/e|margin|revenue|price|market cap|eps|dividend|nopat|ebit|ebitda|roic|fcf|debt|beta)",
+            r'\w+ (?:pe|p/e|margin|revenue|price|market cap|eps|dividend|nopat|ebit|ebitda|roic|fcf|debt|beta)',
             r'how (?:much|big) is',
             r'current (?:price|valuation|metrics) (?:of|for)',
             r'summary (?:of|for)',
             r'profile (?:of|for)',
+            # Catch any "what is" + company/metric query
+            r"what(?:'s| is) (?:the )?(?:current )?(?:\w+ )+(?:of|for) (?:the )?\w+",
         ],
         QueryIntent.CALCULATION: [
             r'\bcalculate\b',
@@ -206,6 +215,137 @@ class QueryClassifier:
             r'help me understand',
             r'what does .* mean',
             r'interpret .* for me',
+        ],
+        QueryIntent.PORTFOLIO: [
+            r'\bmy portfolio\b',
+            r'\bportfolio (?:analysis|performance|risk|allocation|diversification)\b',
+            r'\banalyze (?:my |the )?portfolio\b',
+            r'\bshow (?:my |the )?portfolio\b',
+            r'\bportfolio (?:holdings|positions|stocks)\b',
+            r'\bwhat(?:\'?s| is) in my portfolio\b',
+            r'\bhow (?:is|did) my portfolio\b',
+            r'\bportfolio (?:value|return|gain|loss)\b',
+            r'\bportfolio (?:vs|versus|compared to)\b',
+            r'\brebalance (?:my |the )?portfolio\b',
+            r'\boptimize (?:my |the )?portfolio\b',
+            r'\bportfolio (?:concentration|exposure|weight)\b',
+            r'\bsector (?:allocation|exposure) (?:of|in) (?:my |the )?portfolio\b',
+            r'\bportfolio\'s\b',
+        ],
+        QueryIntent.INVESTOR: [
+            r'\bbuffett(?:\'s)?\b',
+            r'\bwarren buffett\b',
+            r'\bberkshire\b',
+            r'\bburry(?:\'s)?\b',
+            r'\bmichael burry\b',
+            r'\bscion\b',
+            r'\bdalio(?:\'s)?\b',
+            r'\bray dalio\b',
+            r'\bbridgewater\b',
+            r'\backman(?:\'s)?\b',
+            r'\bbill ackman\b',
+            r'\bpershing square\b',
+            r'\bicahn(?:\'s)?\b',
+            r'\bcarl icahn\b',
+            r'\bsoros(?:\'s)?\b',
+            r'\bgeorge soros\b',
+            r'\bdruckenmiller\b',
+            r'\btepper\b',
+            r'\bcohen(?:\'s)?\b',
+            r'\bsteve cohen\b',
+            r'\bpoint72\b',
+            r'\beinhorn\b',
+            r'\bgreenlight\b',
+            r'\bloeb\b',
+            r'\bthird point\b',
+            r'\bfamous investor(?:s|\'s)?\b',
+            r'\b13f filing(?:s)?\b',
+            r'\b(?:what|which) (?:does|did) .+ (?:own|hold|buy|sell)\b',
+            r'\b(?:show|get) .+(?:\'s)? (?:holdings|positions|portfolio)\b',
+            r'\bwhat stocks (?:does|did) .+ (?:own|hold|have)\b',
+            r'\bfollowing .+(?:\'s)? (?:trades|moves|portfolio)\b',
+            r'\bclone .+(?:\'s)? portfolio\b',
+            r'\bcompare (?:my portfolio )?to .+(?:\'s)?\b',
+        ],
+        QueryIntent.SENTIMENT: [
+            # Sentiment queries
+            r'\bsentiment\b',
+            r'\bfeeling\b.*(?:about|on|for)',
+            r'\bmood\b.*(?:about|on|for)',
+            r'\bbullish\b',
+            r'\bbearish\b',
+            r'\bsocial media\b',
+            r'\breddit\b',
+            r'\bstocktwits\b',
+            r'\btwitter\b',
+            r'\bx\.com\b',
+            # News queries
+            r'\bnews\b.*(?:about|on|for)',
+            r'(?:any|latest|recent)\s+news\b',
+            r'\bheadlines?\b',
+            r'\barticles?\b.*(?:about|on)',
+            r'\bpress\b.*(?:about|on)',
+            r'\bwhat(?:\'s| is) (?:the )?buzz\b',
+            r'\bwhat are (?:people|investors) saying\b',
+            # Trending queries
+            r'\btrending\b(?! stocks)',
+            r'\bpopular\b.*(?:on|in)',
+            r'\bhot\b.*(?:stocks?|topic)',
+            r'\bbuzzing\b',
+            r'\bviral\b',
+            # Analyst sentiment
+            r'\banalyst(?:s)?\b.*(?:rating|opinion|view|target)',
+            r'\bupgrade(?:d|s)?\b',
+            r'\bdowngrade(?:d|s)?\b',
+            r'\bprice target\b',
+            r'\bconsensus\b',
+            # Insider activity
+            r'\binsider\b.*(?:trading|buying|selling|activity)',
+            r'\bform 4\b',
+            r'\binsiders?\b.*(?:bought|sold|buy|sell)',
+            # Fear & Greed
+            r'\bfear (?:and|&) greed\b',
+            r'\bmarket sentiment\b',
+            r'\bmarket mood\b',
+        ],
+        QueryIntent.TECHNICAL: [
+            # Technical indicators
+            r'\brsi\b',
+            r'\bmacd\b',
+            r'\bmoving average\b',
+            r'\bsma\b',
+            r'\bema\b',
+            r'\bbolling(?:er)?\b',
+            r'\batr\b',
+            r'\bstochastic\b',
+            r'\bvwap\b',
+            r'\bobv\b',
+            # Overbought/Oversold
+            r'\boversold\b',
+            r'\boverbought\b',
+            r'\boverextended\b',
+            # Patterns and signals
+            r'\bgolden cross\b',
+            r'\bdeath cross\b',
+            r'\bcrossover\b',
+            r'\bbreakout\b',
+            r'\bbreakdown\b',
+            r'\bsupport\b(?! team| staff)',
+            r'\bresistance\b',
+            r'\btrend\s*line\b',
+            r'\bconsolidation\b',
+            r'\bchannel\b.*(?:up|down|trading)',
+            # Technical analysis queries
+            r'\btechnical(?:ly|s)?\b.*(?:analysis|signal|indicator|chart)',
+            r'\bchart(?:s|ing)?\b.*(?:pattern|signal|analysis)',
+            r'\bprice action\b',
+            r'\bmomentum\b(?! stock)',
+            r'\bvolume\b.*(?:analysis|signal|spike|pattern)',
+            # Buy/Sell signals
+            r'\b(?:buy|sell)\s+signal\b',
+            r'\bentry\s+point\b',
+            r'\bexit\s+point\b',
+            r'\b(?:is|should)\s+\w+\s+a\s+(?:buy|sell)\b',
         ],
     }
 
@@ -231,6 +371,27 @@ class QueryClassifier:
         'revenue_growth': ['revenue growth', 'sales growth', 'top line growth', 'growing revenue'],
         'earnings_growth': ['earnings growth', 'eps growth', 'profit growth', 'growing earnings'],
         'price': ['price', 'stock price', 'share price', 'trading at'],
+        # Additional financial metrics
+        'nopat': ['nopat', 'net operating profit after tax', 'net operating profit'],
+        'ebit': ['ebit', 'operating income', 'operating profit', 'operating earnings'],
+        'ebitda': ['ebitda', 'earnings before interest'],
+        'eps': ['eps', 'earnings per share'],
+        'book_value': ['book value', 'book value per share', 'bvps'],
+        'tangible_book': ['tangible book', 'tangible book value', 'tbv'],
+        'working_capital': ['working capital', 'net working capital'],
+        'invested_capital': ['invested capital', 'capital invested', 'ic'],
+        'enterprise_value': ['enterprise value', 'ev', 'total enterprise value'],
+        'total_debt': ['total debt', 'debt', 'borrowings', 'liabilities'],
+        'cash': ['cash', 'cash position', 'cash and equivalents', 'cash on hand'],
+        'assets': ['assets', 'total assets'],
+        'equity': ['equity', 'shareholders equity', 'shareholder equity', 'book equity'],
+        'capex': ['capex', 'capital expenditure', 'capital expenditures', 'capital spending'],
+        'depreciation': ['depreciation', 'depreciation and amortization', 'd&a'],
+        'interest_expense': ['interest expense', 'interest cost', 'interest payments'],
+        'tax_rate': ['tax rate', 'effective tax rate', 'tax'],
+        'shares_outstanding': ['shares outstanding', 'share count', 'diluted shares'],
+        'beta': ['beta', 'stock beta', 'market beta'],
+        'volatility': ['volatility', 'vol', 'standard deviation'],
     }
 
     # Sector keywords
@@ -259,14 +420,23 @@ class QueryClassifier:
     }
 
     # Common words to exclude from symbol detection
+    # Includes common English words, financial metrics, and acronyms that aren't tickers
     COMMON_WORDS = {
+        # Common English words
         'A', 'I', 'TO', 'THE', 'AND', 'OR', 'FOR', 'IN', 'ON', 'AT', 'IS', 'IT',
         'BE', 'AS', 'BY', 'ARE', 'WAS', 'BUT', 'NOT', 'YOU', 'ALL', 'CAN', 'HER',
         'HAS', 'HIS', 'HOW', 'ITS', 'MAY', 'NEW', 'NOW', 'OLD', 'OUT', 'OUR',
-        'OWN', 'SAY', 'SHE', 'TOO', 'USE', 'TOP', 'VS', 'PE', 'PB', 'PS', 'OF',
-        'SO', 'IF', 'MY', 'NO', 'UP', 'DO', 'GO', 'ME', 'WE', 'AN', 'AM', 'EPS',
-        'ROE', 'ROA', 'FCF', 'YOY', 'TTM', 'FY', 'MRQ', 'ETF', 'IPO', 'CEO',
-        'CFO', 'COO', 'CTO', 'USA', 'USD', 'EUR', 'GBP', 'CAD', 'TAM', 'P/E'
+        'OWN', 'SAY', 'SHE', 'TOO', 'USE', 'TOP', 'VS', 'OF', 'SO', 'IF', 'MY',
+        'NO', 'UP', 'DO', 'GO', 'ME', 'WE', 'AN', 'AM', 'GET', 'SHOW', 'FIND',
+        # Financial metrics (these are NOT stock symbols)
+        'PE', 'PB', 'PS', 'EPS', 'ROE', 'ROA', 'ROI', 'ROIC', 'FCF', 'DCF',
+        'NOPAT', 'EBIT', 'EBITDA', 'EV', 'WACC', 'CAGR', 'NPV', 'IRR',
+        'YOY', 'QOQ', 'TTM', 'FY', 'MRQ', 'LTM', 'NTM', 'FWD',
+        'P/E', 'P/B', 'P/S', 'EV/EBITDA', 'D/E',
+        # Business/Finance acronyms (not tickers)
+        'ETF', 'IPO', 'CEO', 'CFO', 'COO', 'CTO', 'USA', 'USD', 'EUR', 'GBP',
+        'CAD', 'TAM', 'SAM', 'SOM', 'MOAT', 'M&A', 'LBO', 'SPAC', 'ICO',
+        'SEC', 'GAAP', 'IFRS', 'GDP', 'CPI', 'PPI', 'FED', 'ECB', 'BOJ',
     }
 
     # Synonym expansion for natural language understanding
@@ -432,6 +602,88 @@ class QueryClassifier:
         'exxon': 'XOM',
         'exxonmobil': 'XOM',
         'conocophillips': 'COP',
+    }
+
+    # Famous investor name mappings (name variants -> canonical name)
+    INVESTOR_NAMES = {
+        # Warren Buffett / Berkshire Hathaway
+        'buffett': 'warren_buffett',
+        "buffett's": 'warren_buffett',
+        'warren buffett': 'warren_buffett',
+        'berkshire': 'warren_buffett',
+        'berkshire hathaway': 'warren_buffett',
+
+        # Michael Burry / Scion
+        'burry': 'michael_burry',
+        "burry's": 'michael_burry',
+        'michael burry': 'michael_burry',
+        'scion': 'michael_burry',
+        'scion asset': 'michael_burry',
+
+        # Ray Dalio / Bridgewater
+        'dalio': 'ray_dalio',
+        "dalio's": 'ray_dalio',
+        'ray dalio': 'ray_dalio',
+        'bridgewater': 'ray_dalio',
+
+        # Bill Ackman / Pershing Square
+        'ackman': 'bill_ackman',
+        "ackman's": 'bill_ackman',
+        'bill ackman': 'bill_ackman',
+        'pershing square': 'bill_ackman',
+        'pershing': 'bill_ackman',
+
+        # Carl Icahn
+        'icahn': 'carl_icahn',
+        "icahn's": 'carl_icahn',
+        'carl icahn': 'carl_icahn',
+
+        # George Soros
+        'soros': 'george_soros',
+        "soros's": 'george_soros',
+        'george soros': 'george_soros',
+
+        # Stanley Druckenmiller
+        'druckenmiller': 'stanley_druckenmiller',
+        'stanley druckenmiller': 'stanley_druckenmiller',
+        'duquesne': 'stanley_druckenmiller',
+
+        # David Tepper
+        'tepper': 'david_tepper',
+        "tepper's": 'david_tepper',
+        'david tepper': 'david_tepper',
+        'appaloosa': 'david_tepper',
+
+        # Steve Cohen / Point72
+        'cohen': 'steve_cohen',
+        "cohen's": 'steve_cohen',
+        'steve cohen': 'steve_cohen',
+        'point72': 'steve_cohen',
+        'point 72': 'steve_cohen',
+
+        # David Einhorn / Greenlight
+        'einhorn': 'david_einhorn',
+        "einhorn's": 'david_einhorn',
+        'david einhorn': 'david_einhorn',
+        'greenlight': 'david_einhorn',
+
+        # Dan Loeb / Third Point
+        'loeb': 'dan_loeb',
+        "loeb's": 'dan_loeb',
+        'dan loeb': 'dan_loeb',
+        'third point': 'dan_loeb',
+
+        # Seth Klarman / Baupost
+        'klarman': 'seth_klarman',
+        "klarman's": 'seth_klarman',
+        'seth klarman': 'seth_klarman',
+        'baupost': 'seth_klarman',
+
+        # Howard Marks / Oaktree
+        'marks': 'howard_marks',
+        "marks's": 'howard_marks',
+        'howard marks': 'howard_marks',
+        'oaktree': 'howard_marks',
     }
 
     # Fuzzy match threshold
@@ -664,6 +916,10 @@ class QueryClassifier:
         # Priority order: more specific intents checked first
         # This helps when multiple intents match
         PRIORITY_ORDER = [
+            QueryIntent.INVESTOR,     # Famous investors - very specific (must be before SCREEN)
+            QueryIntent.PORTFOLIO,    # Portfolio analysis - specific (must be before SCREEN)
+            QueryIntent.SENTIMENT,    # Sentiment/news queries - specific
+            QueryIntent.TECHNICAL,    # Technical analysis - specific
             QueryIntent.RANKING,      # "top 10", "best" - very specific
             QueryIntent.COMPARE,      # "vs", "compare" - specific
             QueryIntent.SIMILARITY,   # "like", "similar" - specific
@@ -704,6 +960,12 @@ class QueryClassifier:
         # Get top scoring intents
         sorted_intents = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
+        # Minimum confidence threshold - if best score is too low, return UNKNOWN
+        # This prevents nonsensical queries like "asdfghjkl" from matching SCREEN
+        MIN_CONFIDENCE_THRESHOLD = 0.15
+        if sorted_intents[0][1] < MIN_CONFIDENCE_THRESHOLD:
+            return QueryIntent.UNKNOWN, sorted_intents[0][1]
+
         # If top two are close, prefer higher priority intent
         if len(sorted_intents) >= 2:
             top_intent, top_score = sorted_intents[0]
@@ -728,6 +990,10 @@ class QueryClassifier:
             prompt = f"""Classify this investment query into ONE of these intents and extract key entities.
 
 INTENTS:
+- INVESTOR: Look up famous investor holdings (e.g., "show Warren Buffett holdings", "what does Burry own", "Berkshire portfolio")
+- PORTFOLIO: Analyze user's personal portfolio (e.g., "analyze my portfolio", "portfolio performance")
+- SENTIMENT: Get sentiment, news, or social media buzz (e.g., "what's the sentiment on AAPL", "any news about Tesla", "is NVDA bullish or bearish")
+- TECHNICAL: Technical analysis indicators (e.g., "is AAPL oversold", "what's the RSI for NVDA", "MACD signal", "support and resistance")
 - SCREEN: Find stocks matching criteria (e.g., "show me undervalued tech stocks", "cheap tech companies")
 - COMPARE: Compare two or more stocks (e.g., "compare AAPL to MSFT", "Apple vs Microsoft")
 - HISTORICAL: Query about changes over time (e.g., "how has margin changed over 5 years", "trend since 2020")
@@ -742,7 +1008,7 @@ QUERY: "{query}"
 
 Respond with JSON only:
 {{
-  "intent": "SCREEN|COMPARE|HISTORICAL|SIMILARITY|DRIVER|RANKING|LOOKUP|EXPLANATION|CALCULATION",
+  "intent": "INVESTOR|PORTFOLIO|SENTIMENT|TECHNICAL|SCREEN|COMPARE|HISTORICAL|SIMILARITY|DRIVER|RANKING|LOOKUP|EXPLANATION|CALCULATION",
   "confidence": 0.0-1.0,
   "symbols": ["AAPL"],  // extracted stock tickers
   "companies": ["Apple"],  // company names mentioned
@@ -802,7 +1068,19 @@ JSON:"""
             'qualifiers': [],
             'numbers': [],
             'time_periods': [],
+            'investors': [],
+            'portfolio_id': None,
         }
+
+        # Extract famous investor names
+        for investor_name, canonical_id in self.INVESTOR_NAMES.items():
+            if investor_name in query_lower:
+                if canonical_id not in entities['investors']:
+                    entities['investors'].append(canonical_id)
+
+        # Check for "my portfolio" references
+        if 'my portfolio' in query_lower or 'portfolio' in query_lower:
+            entities['portfolio_id'] = 'current'  # Placeholder for user's default portfolio
 
         # Extract stock symbols (uppercase 1-5 letter words)
         symbol_pattern = r'\b[A-Z]{1,5}\b'
@@ -1055,6 +1333,12 @@ JSON:"""
         if entities.get('symbols'):
             needs.add('company_data')
 
+        if entities.get('investors'):
+            needs.add('investor_holdings')
+
+        if entities.get('portfolio_id'):
+            needs.add('portfolio_data')
+
         intent_needs = {
             QueryIntent.SCREEN: {'screener', 'metrics'},
             QueryIntent.COMPARE: {'company_data', 'metrics'},
@@ -1064,6 +1348,10 @@ JSON:"""
             QueryIntent.RANKING: {'screener', 'metrics'},
             QueryIntent.LOOKUP: {'company_data', 'metrics'},
             QueryIntent.EXPLANATION: {'company_data', 'metrics', 'historical_data'},
+            QueryIntent.PORTFOLIO: {'portfolio_data', 'portfolio_performance', 'portfolio_holdings'},
+            QueryIntent.INVESTOR: {'investor_holdings', 'investor_performance', '13f_filings'},
+            QueryIntent.SENTIMENT: {'sentiment_data', 'news_data', 'social_data', 'analyst_data'},
+            QueryIntent.TECHNICAL: {'technical_data', 'price_data', 'volume_data'},
         }
 
         needs.update(intent_needs.get(intent, set()))

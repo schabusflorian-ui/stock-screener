@@ -45,6 +45,7 @@ function FactorPerformance({ portfolioId, className = '' }) {
     if (portfolioId) {
       fetchFactorPerformance();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [portfolioId, period]);
 
   const fetchFactorPerformance = async () => {

@@ -75,9 +75,34 @@ class ScreeningService {
       LIMIT 50
     `).all();
 
+    // Get available countries with company counts
+    const countryCounts = this.db.prepare(`
+      SELECT
+        c.country,
+        COUNT(DISTINCT c.id) as company_count
+      FROM companies c
+      JOIN calculated_metrics cm ON c.id = cm.company_id
+      WHERE c.country IS NOT NULL AND c.is_active = 1
+      GROUP BY c.country
+      HAVING company_count >= 1
+      ORDER BY company_count DESC
+    `).all();
+
+    // Available regions for convenience filtering
+    const availableRegions = [
+      { code: 'US', name: 'United States', countries: ['US', 'USA'] },
+      { code: 'UK', name: 'United Kingdom', countries: ['GB', 'UK'] },
+      { code: 'EU', name: 'European Union', countries: ['DE', 'FR', 'NL', 'ES', 'IT', 'BE', 'AT', 'PT', 'IE', 'GR', 'LU', 'FI'] },
+      { code: 'NORDIC', name: 'Nordic Countries', countries: ['SE', 'DK', 'NO', 'FI'] },
+      { code: 'DACH', name: 'DACH Region', countries: ['DE', 'AT', 'CH'] },
+      { code: 'APAC', name: 'Asia Pacific', countries: ['JP', 'CN', 'HK', 'SG', 'AU', 'KR', 'TW', 'IN'] }
+    ];
+
     return {
       sectors,
       industriesBySector,
+      countries: countryCounts,
+      regions: availableRegions,
       periodRange: {
         min: periodRanges?.min_date,
         max: periodRanges?.max_date
@@ -141,6 +166,11 @@ class ScreeningService {
       // Sector/Industry filters
       sectors = [],
       industries = [],
+
+      // Country/Region filters
+      countries = [],        // ISO country codes: ['US', 'GB', 'DE', ...]
+      excludeCountries = [], // Exclude specific countries
+      regions = [],          // Region shortcuts: 'US', 'UK', 'EU', 'NORDIC', 'APAC'
 
       // Market cap filters (in billions)
       minMarketCap,
@@ -296,6 +326,40 @@ class ScreeningService {
     if (industries.length > 0) {
       where.push(`c.industry IN (${industries.map(() => '?').join(',')})`);
       params.push(...industries);
+    }
+
+    // Country/Region filter
+    // Define region mappings
+    const REGION_COUNTRIES = {
+      'US': ['US', 'USA'],
+      'UK': ['GB', 'UK'],
+      'EU': ['DE', 'FR', 'NL', 'ES', 'IT', 'BE', 'AT', 'PT', 'IE', 'GR', 'LU', 'FI'],
+      'NORDIC': ['SE', 'DK', 'NO', 'FI'],
+      'DACH': ['DE', 'AT', 'CH'],
+      'APAC': ['JP', 'CN', 'HK', 'SG', 'AU', 'KR', 'TW', 'IN'],
+      'LATAM': ['BR', 'MX', 'AR', 'CL', 'CO', 'PE']
+    };
+
+    // Build list of countries to include
+    let countryList = [...countries];
+    for (const region of regions) {
+      const regionCountries = REGION_COUNTRIES[region.toUpperCase()];
+      if (regionCountries) {
+        countryList.push(...regionCountries);
+      }
+    }
+    // Remove duplicates
+    countryList = [...new Set(countryList)];
+
+    if (countryList.length > 0) {
+      where.push(`c.country IN (${countryList.map(() => '?').join(',')})`);
+      params.push(...countryList);
+    }
+
+    // Exclude specific countries
+    if (excludeCountries.length > 0) {
+      where.push(`c.country NOT IN (${excludeCountries.map(() => '?').join(',')})`);
+      params.push(...excludeCountries);
     }
 
     // Market cap filter (convert from billions to actual value) - use price_metrics table

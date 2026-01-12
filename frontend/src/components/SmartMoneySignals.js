@@ -12,12 +12,8 @@ import {
   Award,
   RefreshCw,
   AlertCircle,
-  ExternalLink,
   ChevronDown,
-  ChevronUp,
-  DollarSign,
-  Percent,
-  Calendar
+  ChevronUp
 } from 'lucide-react';
 import { signalsAPI } from '../services/api';
 import './SmartMoneySignals.css';

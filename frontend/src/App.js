@@ -18,12 +18,10 @@ import CompanyPage from './pages/CompanyPage';
 const ScreeningPage = lazy(() => import('./pages/ScreeningPage'));
 const WatchlistPage = lazy(() => import('./pages/WatchlistPage'));
 const SectorAnalysisPage = lazy(() => import('./pages/SectorAnalysisPage'));
-const AdvancedChartsPage = lazy(() => import('./pages/AdvancedChartsPage'));
+// AdvancedChartsPage - MERGED into Research Lab Compare tab (redirect below)
 const IPOPipelinePage = lazy(() => import('./pages/IPOPipelinePage'));
 const IPODetailPage = lazy(() => import('./pages/IPODetailPage'));
-const InsiderTradingPage = lazy(() => import('./pages/InsiderTradingPage'));
 const CapitalAllocationPage = lazy(() => import('./pages/CapitalAllocationPage'));
-const TrendingTickersPage = lazy(() => import('./pages/TrendingTickersPage'));
 const AlertsPage = lazy(() => import('./pages/AlertsPage'));
 
 // Lazy load investor and portfolio pages
@@ -35,14 +33,21 @@ const PortfolioDetailPage = lazy(() => import('./pages/portfolios/PortfolioDetai
 // Lazy load AI analyst page
 const AnalystPage = lazy(() => import('./pages/analyst/AnalystPage'));
 
-// Lazy load AI Trading page
+// Lazy load AI Trading page (legacy)
 const AITradingPage = lazy(() => import('./pages/agent/AITradingPage'));
 
-// Lazy load historical analytics page
-const HistoricalAnalyticsPage = lazy(() => import('./pages/HistoricalAnalyticsPage'));
+// Lazy load new Agent Dashboard (legacy, portfolio-centric)
+const AgentDashboard = lazy(() => import('./pages/agent/AgentDashboard'));
 
-// Lazy load value investing page
-const ValueInvestingPage = lazy(() => import('./pages/ValueInvestingPage'));
+// Lazy load new first-class Trading Agents pages
+const AgentListPage = lazy(() => import('./pages/agents/AgentListPage'));
+const CreateAgentPage = lazy(() => import('./pages/agents/CreateAgentPage'));
+const AgentDetailPageNew = lazy(() => import('./pages/agents/AgentDetailPage'));
+const AgentSettingsPage = lazy(() => import('./pages/agents/AgentSettingsPage'));
+
+// HistoricalAnalyticsPage - MERGED into Research Lab (redirect below)
+
+// ValueInvestingPage - MERGED into HomePage (redirect below)
 
 // Lazy load notes and theses pages
 const NotesPage = lazy(() => import('./pages/notes/NotesPage'));
@@ -56,8 +61,11 @@ const SettingsPage = lazy(() => import('./pages/settings/SettingsPage'));
 // Lazy load backtesting dashboard
 const BacktestDashboard = lazy(() => import('./pages/backtesting/BacktestDashboard'));
 
-// Lazy load validation dashboard
-const ValidationDashboard = lazy(() => import('./pages/validation/ValidationDashboard'));
+// Lazy load unified Market Signals page
+const MarketSignalsPage = lazy(() => import('./pages/MarketSignalsPage'));
+
+// Lazy load Research Lab page
+const ResearchLabPage = lazy(() => import('./pages/ResearchLabPage'));
 
 // Lazy load login page
 const LoginPage = lazy(() => import('./pages/LoginPage'));
@@ -96,23 +104,32 @@ function App() {
                           <Route path="/sectors" element={<SectorAnalysisPage />} />
                           <Route path="/ipo" element={<IPOPipelinePage />} />
                           <Route path="/ipo/:id" element={<IPODetailPage />} />
-                          <Route path="/compare" element={<Navigate to="/charts" replace />} />
-                          <Route path="/charts" element={<AdvancedChartsPage />} />
+                          <Route path="/compare" element={<Navigate to="/research#analytics/compare" replace />} />
+                          <Route path="/charts" element={<Navigate to="/research#analytics/compare" replace />} />
                           <Route path="/watchlist" element={<WatchlistPage />} />
                           <Route path="/updates" element={<Navigate to="/settings" replace />} />
-                          <Route path="/insiders" element={<InsiderTradingPage />} />
+                          <Route path="/signals" element={<MarketSignalsPage />} />
+                          <Route path="/insiders" element={<Navigate to="/signals#insiders" replace />} />
                           <Route path="/capital" element={<CapitalAllocationPage />} />
-                          <Route path="/trending" element={<TrendingTickersPage />} />
+                          <Route path="/trending" element={<Navigate to="/signals#sentiment" replace />} />
                           <Route path="/alerts" element={<AlertsPage />} />
                           <Route path="/investors" element={<InvestorListPage />} />
                           <Route path="/investors/:id" element={<InvestorDetailPage />} />
                           <Route path="/portfolios" element={<PortfolioListPage />} />
                           <Route path="/portfolios/:id" element={<PortfolioDetailPage />} />
                           <Route path="/analyst" element={<AnalystPage />} />
+                          <Route path="/agents" element={<AgentListPage />} />
+                          <Route path="/agents/new" element={<CreateAgentPage />} />
+                          <Route path="/agents/:id" element={<AgentDetailPageNew />} />
+                          <Route path="/agents/:id/settings" element={<AgentSettingsPage />} />
                           <Route path="/ai-trading" element={<AITradingPage />} />
                           <Route path="/ai-trading/:portfolioId" element={<AITradingPage />} />
-                          <Route path="/analytics" element={<HistoricalAnalyticsPage />} />
-                          <Route path="/value-investing" element={<ValueInvestingPage />} />
+                          <Route path="/agent/:portfolioId" element={<AgentDashboard />} />
+                          <Route path="/analytics" element={<Navigate to="/research#analytics/historical" replace />} />
+                          <Route path="/historical" element={<Navigate to="/research#analytics/historical" replace />} />
+                          <Route path="/factors" element={<Navigate to="/research#backtest/factors" replace />} />
+                          <Route path="/montecarlo" element={<Navigate to="/research#backtest/montecarlo" replace />} />
+                          <Route path="/value-investing" element={<Navigate to="/" replace />} />
                           <Route path="/notes" element={<NotesPage />} />
                           <Route path="/notes/new" element={<NoteEditorPage />} />
                           <Route path="/notes/:noteId" element={<NoteEditorPage />} />
@@ -121,10 +138,11 @@ function App() {
                           <Route path="/theses/new" element={<ThesisEditorPage />} />
                           <Route path="/theses/:thesisId" element={<ThesisEditorPage />} />
                           <Route path="/theses/:thesisId/edit" element={<ThesisEditorPage />} />
-                          <Route path="/research" element={<NotesPage />} />
+                          <Route path="/lab" element={<ResearchLabPage />} />
+                          <Route path="/research" element={<ResearchLabPage />} />
                           <Route path="/backtesting" element={<BacktestDashboard />} />
                           <Route path="/backtesting/:portfolioId" element={<BacktestDashboard />} />
-                          <Route path="/validation" element={<ValidationDashboard />} />
+                          <Route path="/validation" element={<Navigate to="/signals#validation" replace />} />
                           <Route path="/settings" element={<SettingsPage />} />
                         </Routes>
                       </Layout>

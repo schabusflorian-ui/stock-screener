@@ -1,8 +1,10 @@
 // src/services/portfolio/advancedKelly.js
 // Advanced Kelly Criterion Analytics with Historical Data
 // Enhanced with Taleb/Spitznagel safety: Kelly caps, ruin awareness, convexity
+// Integrated with parametric return distributions for fat-tail awareness
 
 const db = require('../../database');
+const ParametricDistributions = require('../statistics/parametricDistributions');
 
 // TALEB/SPITZNAGEL SAFETY CONSTANTS
 // "The Kelly formula assumes ergodicity, which doesn't hold in real markets" - Taleb
@@ -1266,11 +1268,54 @@ class AdvancedKelly {
     // Convexity analysis
     const convexityAnalysis = this._analyzePortfolioConvexity(portfolioReturns);
 
+    // Parametric distribution analysis for portfolio returns
+    let distributionAnalysis = null;
+    let cornishFisherVaR = null;
+    try {
+      const distFit = ParametricDistributions.findBestFit(portfolioReturns);
+      const moments = ParametricDistributions.calculateMoments(portfolioReturns);
+
+      // Cornish-Fisher VaR adjustment
+      const cfVaR95 = ParametricDistributions.cornishFisherVaR(
+        moments.mean, moments.std, moments.skewness, moments.kurtosis, 0.95
+      );
+      const cfVaR99 = ParametricDistributions.cornishFisherVaR(
+        moments.mean, moments.std, moments.skewness, moments.kurtosis, 0.99
+      );
+
+      cornishFisherVaR = {
+        var95: {
+          normal: Math.round(cfVaR95.normalVaR * 10000) / 100,
+          adjusted: Math.round(cfVaR95.adjustedVaR * 10000) / 100,
+          adjustmentPct: Math.round(cfVaR95.adjustmentPercent * 100) / 100
+        },
+        var99: {
+          normal: Math.round(cfVaR99.normalVaR * 10000) / 100,
+          adjusted: Math.round(cfVaR99.adjustedVaR * 10000) / 100,
+          adjustmentPct: Math.round(cfVaR99.adjustmentPercent * 100) / 100
+        }
+      };
+
+      distributionAnalysis = {
+        bestFit: distFit.type,
+        moments: {
+          skewness: Math.round(moments.skewness * 100) / 100,
+          kurtosis: Math.round(moments.kurtosis * 100) / 100,
+          excessKurtosis: Math.round((moments.kurtosis - 3) * 100) / 100
+        },
+        interpretation: this._interpretDistribution(distFit.type, moments.skewness, moments.kurtosis)
+      };
+    } catch (err) {
+      // Parametric analysis failed, continue with EVT results
+    }
+
     return {
       portfolioId,
       period,
       tradingDays: dates.length,
       extremeValueAnalysis: evtAnalysis,
+      distributionAnalysis,
+      cornishFisherVaR,
       pathDependencyRisk,
       safeKellyFraction: safeKelly,
       convexityAnalysis,
@@ -1643,17 +1688,67 @@ class AdvancedKelly {
     // Sharpe ratio
     const sharpe = annualVol > 0 ? (annualReturn - riskFreeRate) / annualVol : 0;
 
-    // Tail analysis for this holding
+    // Tail analysis for this holding - now with parametric distribution fitting
     const sortedReturns = [...returns].sort((a, b) => a - b);
     const var95 = sortedReturns[Math.floor(returns.length * 0.05)];
     const var99 = sortedReturns[Math.floor(returns.length * 0.01)];
     const maxLoss = Math.min(...returns);
 
-    // Kurtosis for fat tail detection
+    // Parametric distribution analysis - fits best distribution to return data
+    let distributionAnalysis = null;
+    let cornishFisherVaR = null;
     const stdDev = Math.sqrt(variance);
-    const kurtosis = stdDev > 0
-      ? returns.reduce((s, r) => s + Math.pow((r - meanReturn) / stdDev, 4), 0) / returns.length
-      : 3;
+    let kurtosis = 3;
+    let skewness = 0;
+
+    try {
+      // Fit parametric distribution to returns
+      const distFit = ParametricDistributions.findBestFit(returns);
+      const moments = ParametricDistributions.calculateMoments(returns);
+
+      kurtosis = moments.kurtosis || 3;
+      skewness = moments.skewness || 0;
+
+      // Cornish-Fisher VaR adjustment for non-normal returns
+      const cfVaR95 = ParametricDistributions.cornishFisherVaR(
+        meanReturn, stdDev, skewness, kurtosis, 0.95
+      );
+      const cfVaR99 = ParametricDistributions.cornishFisherVaR(
+        meanReturn, stdDev, skewness, kurtosis, 0.99
+      );
+
+      cornishFisherVaR = {
+        var95: {
+          normal: Math.round(cfVaR95.normalVaR * 10000) / 100,
+          adjusted: Math.round(cfVaR95.adjustedVaR * 10000) / 100,
+          adjustmentPct: Math.round(cfVaR95.adjustmentPercent * 100) / 100
+        },
+        var99: {
+          normal: Math.round(cfVaR99.normalVaR * 10000) / 100,
+          adjusted: Math.round(cfVaR99.adjustedVaR * 10000) / 100,
+          adjustmentPct: Math.round(cfVaR99.adjustmentPercent * 100) / 100
+        }
+      };
+
+      distributionAnalysis = {
+        bestFit: distFit.type,
+        params: distFit.params,
+        goodnessOfFit: distFit.goodnessOfFit,
+        moments: {
+          mean: Math.round(moments.mean * 10000) / 100,
+          std: Math.round(moments.std * 10000) / 100,
+          skewness: Math.round(skewness * 100) / 100,
+          kurtosis: Math.round(kurtosis * 100) / 100,
+          excessKurtosis: Math.round((kurtosis - 3) * 100) / 100
+        },
+        interpretation: this._interpretDistribution(distFit.type, skewness, kurtosis)
+      };
+    } catch (err) {
+      // Fallback to simple kurtosis calculation if distribution fitting fails
+      kurtosis = stdDev > 0
+        ? returns.reduce((s, r) => s + Math.pow((r - meanReturn) / stdDev, 4), 0) / returns.length
+        : 3;
+    }
 
     // Kelly fraction analysis
     const fractionAnalysis = kellyFractions.map(fraction => {
@@ -1740,8 +1835,8 @@ class AdvancedKelly {
       }
     }
 
-    // Safe Kelly recommendation (Taleb-adjusted)
-    const safeKelly = this._calculateSafeKellyForHolding(classicKelly, continuousKelly, sharpe, annualVol, kurtosis);
+    // Safe Kelly recommendation (Taleb-adjusted) - now includes skewness
+    const safeKelly = this._calculateSafeKellyForHolding(classicKelly, continuousKelly, sharpe, annualVol, kurtosis, skewness);
 
     return {
       symbol: company.symbol,
@@ -1758,7 +1853,8 @@ class AdvancedKelly {
         winRate: Math.round(winRate * 10000) / 100,
         avgWin: Math.round(avgWin * 10000) / 100,
         avgLoss: Math.round(avgLoss * 10000) / 100,
-        winLossRatio: avgLoss > 0 ? Math.round((avgWin / avgLoss) * 100) / 100 : 0
+        winLossRatio: avgLoss > 0 ? Math.round((avgWin / avgLoss) * 100) / 100 : 0,
+        skewness: Math.round(skewness * 100) / 100
       },
       tailRisk: {
         var95: Math.round(var95 * 10000) / 100,
@@ -1766,8 +1862,13 @@ class AdvancedKelly {
         maxObservedLoss: Math.round(maxLoss * 10000) / 100,
         kurtosis: Math.round(kurtosis * 100) / 100,
         isFatTailed: kurtosis > 4,
-        warning: kurtosis > 6 ? 'DANGER: Extreme fat tails' : kurtosis > 4 ? 'CAUTION: Fat tails detected' : null
+        isNegativelySkewed: skewness < -0.5,
+        warning: this._getTailRiskWarning(kurtosis, skewness)
       },
+      // NEW: Parametric distribution analysis
+      distributionAnalysis,
+      // NEW: Cornish-Fisher adjusted VaR (accounts for skewness & kurtosis)
+      cornishFisherVaR,
       kelly: {
         classic: Math.round(Math.max(0, Math.min(1, classicKelly)) * 10000) / 100,
         continuous: Math.round(Math.max(0, Math.min(2, continuousKelly)) * 10000) / 100,
@@ -1784,11 +1885,18 @@ class AdvancedKelly {
     };
   }
 
-  _calculateSafeKellyForHolding(classicKelly, continuousKelly, sharpe, volatility, kurtosis) {
+  _calculateSafeKellyForHolding(classicKelly, continuousKelly, sharpe, volatility, kurtosis, skewness = 0) {
     const baseKelly = Math.min(classicKelly, continuousKelly);
 
-    // Kurtosis adjustment
+    // Kurtosis adjustment - fat tails mean underestimated risk
     const kurtosisAdj = kurtosis > 3 ? 3 / kurtosis : 1;
+
+    // Skewness adjustment - negative skew means larger downside risk
+    // Reduce Kelly for negatively skewed returns (crash risk)
+    let skewAdj = 1;
+    if (skewness < -1) skewAdj = 0.5;        // Severe negative skew
+    else if (skewness < -0.5) skewAdj = 0.7; // Moderate negative skew
+    else if (skewness > 0.5) skewAdj = 1.1;  // Positive skew is favorable (capped at 1.1)
 
     // Volatility adjustment
     let volAdj = 1;
@@ -1800,27 +1908,93 @@ class AdvancedKelly {
     if (sharpe < 0.5) sharpeAdj = 0.5;
     else if (sharpe < 1.0) sharpeAdj = 0.75;
 
-    const adjustedKelly = baseKelly * kurtosisAdj * volAdj * sharpeAdj;
+    const adjustedKelly = baseKelly * kurtosisAdj * skewAdj * volAdj * sharpeAdj;
     const finalKelly = Math.max(0.05, Math.min(MAX_SAFE_KELLY, adjustedKelly));
 
     let recommendation;
+    let reason;
     if (sharpe < 0) {
       recommendation = { fraction: 0, label: 'Avoid', reason: 'Negative risk-adjusted returns' };
     } else if (finalKelly >= 0.20) {
-      recommendation = { fraction: 0.25, label: 'Quarter Kelly', reason: 'Favorable metrics - use conservative sizing' };
+      reason = 'Favorable metrics';
+      if (skewness > 0.3) reason += ' with positive skew';
+      recommendation = { fraction: 0.25, label: 'Quarter Kelly', reason };
     } else if (finalKelly >= 0.10) {
-      recommendation = { fraction: 0.10, label: 'Tenth Kelly', reason: 'Moderate opportunity with higher risk' };
+      reason = 'Moderate opportunity';
+      if (skewness < -0.5) reason += ' - reduced for negative skew';
+      else if (kurtosis > 4) reason += ' - reduced for fat tails';
+      recommendation = { fraction: 0.10, label: 'Tenth Kelly', reason };
     } else {
-      recommendation = { fraction: 0.05, label: 'Minimal', reason: 'High volatility or poor risk-adjusted returns' };
+      reason = 'Conservative sizing recommended';
+      if (skewness < -0.5 && kurtosis > 4) reason = 'Fat tails + negative skew = high tail risk';
+      else if (skewness < -0.5) reason = 'Negative skew increases downside risk';
+      else if (kurtosis > 5) reason = 'Extreme fat tails detected';
+      recommendation = { fraction: 0.05, label: 'Minimal', reason };
     }
 
     recommendation.adjustments = {
       kurtosis: Math.round(kurtosisAdj * 100) / 100,
+      skewness: Math.round(skewAdj * 100) / 100,
       volatility: Math.round(volAdj * 100) / 100,
       sharpe: Math.round(sharpeAdj * 100) / 100
     };
 
     return recommendation;
+  }
+
+  // Helper: Interpret distribution type for investors
+  _interpretDistribution(type, skewness, kurtosis) {
+    const interpretations = [];
+
+    // Distribution type interpretation
+    switch (type) {
+      case 'normal':
+        interpretations.push('Returns follow a normal distribution - standard risk models apply');
+        break;
+      case 'studentT':
+        interpretations.push('Returns show fat tails (Student\'s t) - extreme moves more likely than normal');
+        break;
+      case 'skewedT':
+        interpretations.push('Returns show both fat tails and asymmetry - complex risk profile');
+        break;
+      case 'johnsonSU':
+        interpretations.push('Returns require Johnson SU fit - highly non-normal behavior');
+        break;
+      default:
+        interpretations.push('Distribution type not determined');
+    }
+
+    // Skewness interpretation
+    if (skewness < -0.5) {
+      interpretations.push('Negative skew: Losses tend to be larger than gains (crash risk)');
+    } else if (skewness > 0.5) {
+      interpretations.push('Positive skew: Gains tend to be larger than losses (favorable)');
+    }
+
+    // Kurtosis interpretation
+    if (kurtosis > 6) {
+      interpretations.push('Very high kurtosis: Extreme events much more frequent than normal');
+    } else if (kurtosis > 4) {
+      interpretations.push('High kurtosis: Fat tails present - VaR may underestimate risk');
+    }
+
+    return interpretations;
+  }
+
+  // Helper: Generate tail risk warning
+  _getTailRiskWarning(kurtosis, skewness) {
+    if (kurtosis > 6 && skewness < -0.5) {
+      return 'DANGER: Extreme fat tails + negative skew = high crash risk';
+    } else if (kurtosis > 6) {
+      return 'DANGER: Extreme fat tails - standard VaR unreliable';
+    } else if (kurtosis > 4 && skewness < -0.5) {
+      return 'CAUTION: Fat tails with negative skew - elevated crash risk';
+    } else if (kurtosis > 4) {
+      return 'CAUTION: Fat tails detected - consider Cornish-Fisher VaR';
+    } else if (skewness < -0.5) {
+      return 'NOTE: Negative skew - losses tend to exceed gains';
+    }
+    return null;
   }
 }
 

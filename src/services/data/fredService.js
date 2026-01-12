@@ -55,6 +55,7 @@ const PRIORITY_SERIES = {
   quarterly: [
     'GDP', 'GDPC1',              // GDP
     'A191RL1Q225SBEA',          // Real GDP Growth
+    'WILL5000IND',              // Wilshire 5000 (for Buffett Indicator)
   ],
 };
 

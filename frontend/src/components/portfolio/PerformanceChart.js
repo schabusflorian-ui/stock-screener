@@ -13,7 +13,7 @@ import {
   ResponsiveContainer,
   ReferenceLine
 } from 'recharts';
-import { indicesAPI } from '../../services/api';
+import { pricesAPI } from '../../services/api';
 import './PerformanceChart.css';
 
 const PERIOD_OPTIONS = [
@@ -26,11 +26,11 @@ const PERIOD_OPTIONS = [
   { value: 'all', label: 'ALL' }
 ];
 
-// Overlay toggle options for index comparison
+// Overlay toggle options for index comparison - use ETF symbols which have current price data
 const OVERLAY_OPTIONS = [
-  { key: 'spy', label: 'S&P 500', color: '#94a3b8', type: 'index', symbol: '^GSPC' },
-  { key: 'qqq', label: 'NASDAQ', color: '#06b6d4', type: 'index', symbol: '^IXIC' },
-  { key: 'dia', label: 'Dow Jones', color: '#f97316', type: 'index', symbol: '^DJI' },
+  { key: 'spy', label: 'S&P 500 (SPY)', color: '#94a3b8', type: 'index', symbol: 'SPY' },
+  { key: 'qqq', label: 'NASDAQ (QQQ)', color: '#06b6d4', type: 'index', symbol: 'QQQ' },
+  { key: 'dia', label: 'Dow Jones (DIA)', color: '#f97316', type: 'index', symbol: 'DIA' },
   { key: 'alpha', label: 'Alpha', color: '#8b5cf6', type: 'alpha' }
 ];
 
@@ -54,26 +54,32 @@ function PerformanceChart({
     alpha: initialShowAlpha
   });
 
-  // Fetch index data when period changes
+  // Fetch index data when period changes - use pricesAPI.get() for ETF symbols (current data)
   useEffect(() => {
     async function fetchIndexData() {
       if (!data || data.length === 0) return;
 
       const indexSymbols = [
-        { key: 'spy', symbol: '^GSPC' },
-        { key: 'qqq', symbol: '^IXIC' },
-        { key: 'dia', symbol: '^DJI' }
+        { key: 'spy', symbol: 'SPY', label: 'S&P 500' },
+        { key: 'qqq', symbol: 'QQQ', label: 'NASDAQ' },
+        { key: 'dia', symbol: 'DIA', label: 'Dow Jones' }
       ];
 
       const indexPromises = indexSymbols.map(async (idx) => {
         try {
-          const res = await indicesAPI.getPrices(idx.symbol, period);
-          if (res.data.success && res.data.data && res.data.data.length > 0) {
-            const sortedData = [...res.data.data].reverse();
+          // Use pricesAPI.get() which fetches from daily_prices table (current data)
+          const res = await pricesAPI.get(idx.symbol, { period });
+          // Response structure: { success: true, data: { prices: [...] } }
+          const prices = res.data?.data?.prices;
+          if (res.data.success && prices && prices.length > 0) {
+            // Sort ascending (oldest first) for chart
+            const sortedData = [...prices].sort((a, b) =>
+              new Date(a.date) - new Date(b.date)
+            );
             return { key: idx.key, data: sortedData };
           }
         } catch (e) {
-          console.log(`No ${idx.key} data available`);
+          console.log(`No ${idx.label} data available`);
         }
         return { key: idx.key, data: null };
       });

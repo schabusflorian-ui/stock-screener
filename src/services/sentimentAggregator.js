@@ -53,9 +53,9 @@ class SentimentAggregator {
    * Fetch and aggregate all sentiment sources for a symbol
    */
   async aggregateSentiment(symbol, companyId, options = {}) {
-    const { skipCache = false, maxAge = 60 * 60 * 1000 } = options; // 1 hour default cache
+    const { skipCache = false, maxAge = 60 * 60 * 1000, region = 'US' } = options; // 1 hour default cache
 
-    console.log(`Aggregating sentiment for ${symbol}...`);
+    console.log(`Aggregating sentiment for ${symbol} (region: ${region})...`);
 
     // Check cache first
     if (!skipCache) {
@@ -66,20 +66,21 @@ class SentimentAggregator {
       }
     }
 
-    // Fetch from all sources in parallel
-    const results = await this.fetchAllSources(symbol, companyId);
+    // Fetch from all sources in parallel with region
+    const results = await this.fetchAllSources(symbol, companyId, { region });
 
     // Calculate combined sentiment
     const combined = this.calculateCombinedSentiment(results);
 
-    // Store in database
-    await this.storeCombinedSentiment(companyId, combined, results);
+    // Store in database with region
+    await this.storeCombinedSentiment(companyId, combined, results, region);
 
     return {
       symbol,
       companyId,
       combined,
       sources: results,
+      region,
       timestamp: new Date().toISOString(),
     };
   }
@@ -87,7 +88,9 @@ class SentimentAggregator {
   /**
    * Fetch sentiment from all available sources
    */
-  async fetchAllSources(symbol, companyId) {
+  async fetchAllSources(symbol, companyId, options = {}) {
+    const { region = 'US' } = options;
+
     const results = {
       reddit: null,
       stocktwits: null,
@@ -98,10 +101,10 @@ class SentimentAggregator {
 
     const promises = [];
 
-    // Reddit sentiment
+    // Reddit sentiment (with region support)
     if (this.redditFetcher) {
       promises.push(
-        this.fetchRedditSentiment(symbol, companyId)
+        this.fetchRedditSentiment(symbol, companyId, { region })
           .then((data) => {
             results.reddit = data;
           })
@@ -112,8 +115,8 @@ class SentimentAggregator {
       );
     }
 
-    // StockTwits sentiment
-    if (this.stocktwitsFetcher) {
+    // StockTwits sentiment (US only - skip for EU companies)
+    if (this.stocktwitsFetcher && region === 'US') {
       promises.push(
         this.stocktwitsFetcher
           .fetchSymbolSentiment(symbol, companyId)
@@ -127,11 +130,11 @@ class SentimentAggregator {
       );
     }
 
-    // News sentiment
+    // News sentiment (with region support)
     if (this.newsFetcher) {
       promises.push(
         this.newsFetcher
-          .fetchAllNews(symbol, companyId)
+          .fetchAllNews(symbol, companyId, { region })
           .then((data) => {
             results.news = data?.sentiment || null;
           })
@@ -224,7 +227,18 @@ class SentimentAggregator {
   /**
    * Fetch Reddit sentiment (from existing data or fresh)
    */
-  async fetchRedditSentiment(symbol, companyId) {
+  async fetchRedditSentiment(symbol, companyId, options = {}) {
+    const { region = 'US' } = options;
+
+    // If we have a reddit fetcher and need fresh data for EU, fetch it
+    if (this.redditFetcher && (region === 'EU' || region === 'UK')) {
+      try {
+        await this.redditFetcher.fetchTickerSentiment(symbol, companyId, { region });
+      } catch (e) {
+        console.warn(`Failed to fetch fresh Reddit data for ${symbol}:`, e.message);
+      }
+    }
+
     // Try to get from database first (recent posts)
     const recent = this.db
       .prepare(
@@ -418,8 +432,12 @@ class SentimentAggregator {
 
   /**
    * Store combined sentiment in database
+   * @param {number} companyId - Company ID
+   * @param {object} combined - Combined sentiment data
+   * @param {object} sources - Source-specific sentiment data
+   * @param {string} region - Region code (US, EU, UK)
    */
-  async storeCombinedSentiment(companyId, combined, sources) {
+  async storeCombinedSentiment(companyId, combined, sources, region = 'US') {
     try {
       const stmt = this.db.prepare(`
         INSERT INTO combined_sentiment (
@@ -428,8 +446,8 @@ class SentimentAggregator {
           stocktwits_sentiment, stocktwits_signal, stocktwits_confidence,
           news_sentiment, news_signal, news_confidence,
           market_sentiment, market_signal, market_confidence,
-          sources_used, agreement_score, calculated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+          sources_used, agreement_score, region, calculated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
       `);
 
       stmt.run(
@@ -450,7 +468,8 @@ class SentimentAggregator {
         sources.market?.label || null,
         sources.market?.confidence || null,
         combined.sourcesUsed,
-        combined.agreement?.score || null
+        combined.agreement?.score || null,
+        region
       );
 
       // Update company's combined sentiment
@@ -620,12 +639,14 @@ class SentimentAggregator {
         market_confidence REAL,
         sources_used INTEGER,
         agreement_score REAL,
+        region TEXT DEFAULT 'US',
         calculated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (company_id) REFERENCES companies(id)
       );
 
       CREATE INDEX IF NOT EXISTS idx_combined_sentiment_company ON combined_sentiment(company_id);
       CREATE INDEX IF NOT EXISTS idx_combined_sentiment_date ON combined_sentiment(calculated_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_combined_sentiment_region ON combined_sentiment(region);
     `);
 
     // Ensure companies table has sentiment columns
@@ -646,6 +667,12 @@ class SentimentAggregator {
     }
     try {
       this.db.exec(`ALTER TABLE companies ADD COLUMN sentiment_updated_at DATETIME`);
+    } catch (e) {
+      /* exists */
+    }
+    // Add region column to combined_sentiment for existing tables
+    try {
+      this.db.exec(`ALTER TABLE combined_sentiment ADD COLUMN region TEXT DEFAULT 'US'`);
     } catch (e) {
       /* exists */
     }

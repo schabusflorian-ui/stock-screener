@@ -1,7 +1,7 @@
 // frontend/src/context/PreferencesContext.js
 // Global preferences context - provides user settings to all components
 
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { settingsAPI } from '../services/api';
 
 const PreferencesContext = createContext(null);
@@ -78,7 +78,6 @@ const DEFAULT_PREFERENCES = {
   showPercentages: true,
   compactNumbers: true,
   autoRefreshInterval: 0,
-  notificationsEnabled: false,
   defaultBenchmark: 'SPY',
   defaultTimeHorizon: 10,
 };
@@ -204,6 +203,55 @@ export function usePreferences() {
     throw new Error('usePreferences must be used within a PreferencesProvider');
   }
   return context;
+}
+
+/**
+ * Hook for auto-refreshing data based on user preference
+ * @param {Function} refreshFn - The function to call for refreshing data
+ * @param {Object} options - Options for auto-refresh
+ * @param {boolean} options.enabled - Whether auto-refresh is enabled (default: true)
+ * @param {number} options.minInterval - Minimum interval in seconds (default: 30)
+ */
+export function useAutoRefresh(refreshFn, options = {}) {
+  const { enabled = true, minInterval = 30 } = options;
+  const { preferences } = usePreferences();
+  const intervalRef = useRef(null);
+  const refreshFnRef = useRef(refreshFn);
+
+  // Keep refreshFn ref updated
+  useEffect(() => {
+    refreshFnRef.current = refreshFn;
+  }, [refreshFn]);
+
+  useEffect(() => {
+    // Clear any existing interval
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
+    // Only set up interval if enabled and user has set a refresh interval
+    const intervalSeconds = preferences.autoRefreshInterval || 0;
+    if (!enabled || intervalSeconds === 0) {
+      return;
+    }
+
+    // Ensure minimum interval is respected
+    const effectiveInterval = Math.max(intervalSeconds, minInterval) * 1000;
+
+    intervalRef.current = setInterval(() => {
+      refreshFnRef.current();
+    }, effectiveInterval);
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, [preferences.autoRefreshInterval, enabled, minInterval]);
+
+  // Return the interval in seconds (for display purposes)
+  return preferences.autoRefreshInterval || 0;
 }
 
 export default PreferencesContext;

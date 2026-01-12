@@ -26,9 +26,11 @@ import {
   Grid3X3,
   Award,
   Brain,
+  Zap,
   FileText
 } from 'lucide-react';
-import { portfoliosAPI, simulateAPI, indicesAPI, attributionAPI } from '../../services/api';
+import { portfoliosAPI, simulateAPI, attributionAPI, pricesAPI } from '../../services/api';
+import { usePreferences, useAutoRefresh } from '../../context/PreferencesContext';
 import HoldingsTable from '../../components/portfolio/HoldingsTable';
 import TradeForm from '../../components/portfolio/TradeForm';
 import OrderForm from '../../components/portfolio/OrderForm';
@@ -36,6 +38,7 @@ import TransactionList from '../../components/portfolio/TransactionList';
 import AllocationChart from '../../components/portfolio/AllocationChart';
 import PortfolioAlerts from '../../components/portfolio/PortfolioAlerts';
 import MonteCarloPanel from '../../components/portfolio/MonteCarloPanel';
+import DistributionPanel from '../../components/portfolio/DistributionPanel';
 import BacktestPanel from '../../components/portfolio/BacktestPanel';
 import PositionSizingPanel from '../../components/portfolio/PositionSizingPanel';
 import PerformanceChart from '../../components/portfolio/PerformanceChart';
@@ -48,7 +51,6 @@ import {
   AgentRecommendation,
   RecommendationHistory,
   FactorPerformance,
-  AttributionSummary,
   RiskLimitsSettings,
   RecommendationPerformance,
   ExecutionSettingsPanel,
@@ -230,6 +232,7 @@ function SimulateSection({ portfolioId, holdings, initialValue }) {
 
   const SIMULATE_TABS = [
     { id: 'montecarlo', label: 'Monte Carlo', icon: Activity },
+    { id: 'distribution', label: 'Distribution', icon: BarChart3 },
     { id: 'backtest', label: 'Backtest', icon: Clock },
     { id: 'position', label: 'Position Sizing', icon: Target },
     { id: 'correlation', label: 'Correlation', icon: Grid3X3 },
@@ -256,6 +259,12 @@ function SimulateSection({ portfolioId, holdings, initialValue }) {
           <MonteCarloPanel
             portfolioId={portfolioId}
             initialValue={initialValue}
+          />
+        )}
+
+        {activeSimTab === 'distribution' && (
+          <DistributionPanel
+            portfolioId={portfolioId}
           />
         )}
 
@@ -391,9 +400,21 @@ const TABS = [
   { id: 'export', label: 'Export', icon: Download }
 ];
 
+// Benchmark label mapping
+const BENCHMARK_LABELS = {
+  SPY: 'S&P 500',
+  QQQ: 'Nasdaq 100',
+  DIA: 'Dow Jones',
+  IWM: 'Russell 2000',
+  VTI: 'Total Market',
+  EFA: 'Intl Developed',
+  EEM: 'Emerging Markets'
+};
+
 function PortfolioDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { preferences } = usePreferences();
   const [portfolio, setPortfolio] = useState(null);
   const [holdings, setHoldings] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -434,6 +455,11 @@ function PortfolioDetailPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chartPeriod, portfolio]);
+
+  // Auto-refresh portfolio data based on user preference
+  useAutoRefresh(() => {
+    loadPortfolio();
+  });
 
   const loadPortfolio = async () => {
     try {
@@ -491,13 +517,16 @@ function PortfolioDetailPage() {
 
   const loadChartData = async (period) => {
     try {
+      const benchmarkSymbol = preferences.defaultBenchmark || 'SPY';
       const [historyRes, benchmarkRes] = await Promise.all([
         portfoliosAPI.getValueHistory(id, period).catch(() => ({ data: { history: [] } })),
-        indicesAPI.getBenchmark().catch(() => ({ data: { prices: [] } }))
+        pricesAPI.get(benchmarkSymbol, { period }).catch(() => ({ data: { data: { prices: [] } } }))
       ]);
 
       setValueHistory(historyRes.data.history || []);
-      setBenchmarkHistory(benchmarkRes.data.prices || []);
+      // pricesAPI returns { data: { prices: [...] } }
+      const prices = benchmarkRes.data?.data?.prices || [];
+      setBenchmarkHistory(prices);
     } catch (err) {
       console.log('Chart data not available:', err.message);
     }
@@ -977,7 +1006,7 @@ function PortfolioDetailPage() {
               showBenchmark={true}
               height={400}
               portfolioName={portfolio.name}
-              benchmarkName="S&P 500"
+              benchmarkName={BENCHMARK_LABELS[preferences.defaultBenchmark] || 'S&P 500'}
             />
           </div>
         )}

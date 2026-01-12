@@ -27,6 +27,24 @@ const DEFAULT_SUBREDDITS = [
   'biotech',
 ];
 
+// European investment subreddits
+const EU_SUBREDDITS = [
+  // UK-focused
+  'UKInvesting',
+  'UKPersonalFinance',
+  'FIREUK',
+  // Europe-wide
+  'eupersonalfinance',
+  'EuropeFIRE',
+  'eurostocks',
+  // Germany
+  'Finanzen',
+  'mauerstrassenwetten',  // German WSB equivalent
+  // Other European
+  'beleggen',  // Dutch investing
+  'vosfinances',  // French personal finance
+];
+
 // Post quality thresholds - filter low-quality content
 const QUALITY_FILTERS = {
   minScore: 3,              // Minimum upvotes
@@ -65,30 +83,44 @@ class RedditFetcher {
   /**
    * Get active subreddits from database (with caching)
    */
-  getActiveSubreddits() {
+  getActiveSubreddits(region = 'US') {
+    const cacheKey = `subreddits_${region}`;
+
     // Cache for 5 minutes
-    if (this._subredditsCache && Date.now() - this._subredditsCacheTime < 300000) {
-      return this._subredditsCache;
+    if (this._subredditsCache?.[cacheKey] && Date.now() - this._subredditsCacheTime < 300000) {
+      return this._subredditsCache[cacheKey];
     }
 
     try {
       const rows = this.db.prepare(`
         SELECT name FROM tracked_subreddits
-        WHERE is_active = 1
+        WHERE is_active = 1 AND (region = ? OR region = 'global')
         ORDER BY priority DESC, quality_score DESC
         LIMIT 20
-      `).all();
+      `).all(region);
 
       if (rows.length > 0) {
-        this._subredditsCache = rows.map(r => r.name);
+        if (!this._subredditsCache) this._subredditsCache = {};
+        this._subredditsCache[cacheKey] = rows.map(r => r.name);
         this._subredditsCacheTime = Date.now();
-        return this._subredditsCache;
+        return this._subredditsCache[cacheKey];
       }
     } catch (e) {
-      // Table might not exist yet
+      // Table might not exist yet or doesn't have region column
     }
 
+    // Fall back to default lists based on region
+    if (region === 'EU' || region === 'UK' || region === 'DE' || region === 'FR') {
+      return EU_SUBREDDITS;
+    }
     return DEFAULT_SUBREDDITS;
+  }
+
+  /**
+   * Get European subreddits
+   */
+  getEuropeanSubreddits() {
+    return EU_SUBREDDITS;
   }
 
   /**
@@ -535,11 +567,12 @@ class RedditFetcher {
   /**
    * Fetch and analyze posts for a specific ticker
    */
-  async fetchTickerSentiment(symbol, companyId) {
-    console.log(`Fetching Reddit sentiment for ${symbol}...`);
+  async fetchTickerSentiment(symbol, companyId, options = {}) {
+    const { region = 'US' } = options;
+    console.log(`Fetching Reddit sentiment for ${symbol} (region: ${region})...`);
 
-    // Search across top subreddits from database
-    const subreddits = this.getActiveSubreddits().slice(0, 5);
+    // Search across top subreddits based on region
+    const subreddits = this.getActiveSubreddits(region).slice(0, 5);
     const allPosts = [];
 
     for (const subreddit of subreddits) {
@@ -558,6 +591,17 @@ class RedditFetcher {
       limit: 50,
     });
     allPosts.push(...globalPosts);
+
+    // For EU stocks, also search with common European ticker formats
+    if (region === 'EU' || region === 'UK') {
+      // Try searching with .L suffix for UK stocks
+      const ukPosts = await this.searchTicker(`${symbol}.L`, {
+        subreddit: 'all',
+        timeFilter: 'week',
+        limit: 25,
+      });
+      allPosts.push(...ukPosts);
+    }
 
     // Deduplicate by post ID
     const uniquePosts = Array.from(
@@ -578,9 +622,10 @@ class RedditFetcher {
   /**
    * Scan all financial subreddits for trending tickers
    */
-  async scanTrendingTickers() {
-    const subreddits = this.getActiveSubreddits();
-    console.log(`Scanning ${subreddits.length} subreddits for trending tickers...`);
+  async scanTrendingTickers(options = {}) {
+    const { region = 'US' } = options;
+    const subreddits = this.getActiveSubreddits(region);
+    console.log(`Scanning ${subreddits.length} ${region} subreddits for trending tickers...`);
 
     const tickerCounts = {};
     let totalPostsScanned = 0;
@@ -639,10 +684,18 @@ class RedditFetcher {
       .sort((a, b) => b.mentionCount - a.mentionCount)
       .slice(0, 50);
 
-    // Store trending
-    this.storeTrending(trending, '24h');
+    // Store trending with region
+    const periodKey = region === 'US' ? '24h' : `24h_${region}`;
+    this.storeTrending(trending, periodKey);
 
-    return trending;
+    return { trending, region };
+  }
+
+  /**
+   * Scan European subreddits specifically
+   */
+  async scanEuropeanTrending() {
+    return this.scanTrendingTickers({ region: 'EU' });
   }
 
   /**

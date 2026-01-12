@@ -4,9 +4,11 @@ Main Natural Language Query Engine.
 Orchestrates query classification and handler routing.
 
 Now with LLM-powered response enhancement for natural language insights.
+Enhanced with response caching for repeated queries.
 """
 
 import logging
+import hashlib
 from typing import Dict, Optional
 from dataclasses import dataclass
 
@@ -17,9 +19,21 @@ from .handlers import (
     HistoricalHandler,
     ComparisonHandler,
     DriverHandler,
-    LookupHandler
+    LookupHandler,
+    PortfolioHandler,
+    InvestorHandler,
+    SentimentHandler,
+    TechnicalHandler,
 )
 from .response_enhancer import ResponseEnhancer
+
+# Import caching
+try:
+    from ..ai.cache import get_nl_query_cache, ResponseCache
+    CACHE_AVAILABLE = True
+except ImportError:
+    CACHE_AVAILABLE = False
+    ResponseCache = None
 
 logger = logging.getLogger(__name__)
 
@@ -45,46 +59,81 @@ class QueryEngine:
     formats results for the frontend.
     """
 
-    def __init__(self, db=None, router=None):
+    def __init__(self, db=None, router=None, enable_cache: bool = True):
         """
         Initialize the query engine.
 
         Args:
             db: Database connection
             router: LLM router for complex classification and response enhancement
+            enable_cache: Whether to enable response caching
         """
         self.db = db
         self.router = router
 
+        # Initialize caching
+        self.cache = None
+        if enable_cache and CACHE_AVAILABLE:
+            self.cache = get_nl_query_cache()
+            logger.info("NL query caching enabled")
+
         # Initialize components
-        self.classifier = QueryClassifier(router=router)
+        self.classifier = QueryClassifier(router=router, db=db)
         self.enhancer = ResponseEnhancer(router=router)
 
         # Initialize handlers
         self.handlers = {
             QueryIntent.SCREEN: ScreenerHandler(db=db, router=router),
-            QueryIntent.LOOKUP: LookupHandler(db=db),
+            QueryIntent.LOOKUP: LookupHandler(db=db, router=router),
             QueryIntent.COMPARE: ComparisonHandler(db=db),
             QueryIntent.HISTORICAL: HistoricalHandler(db=db),
             QueryIntent.SIMILARITY: SimilarityHandler(db=db),
             QueryIntent.DRIVER: DriverHandler(db=db, router=router),
             QueryIntent.RANKING: ScreenerHandler(db=db, router=router),  # Reuse screener
+            QueryIntent.PORTFOLIO: PortfolioHandler(db=db),
+            QueryIntent.INVESTOR: InvestorHandler(db=db),
+            QueryIntent.SENTIMENT: SentimentHandler(db=db, router=router),
+            QueryIntent.TECHNICAL: TechnicalHandler(db=db, router=router),
             # These would need LLM support for full implementation
             QueryIntent.EXPLANATION: None,
             QueryIntent.CALCULATION: None,
         }
 
-    async def query(self, query_text: str, context: Optional[Dict] = None) -> QueryResult:
+    def _make_cache_key(self, query_text: str, context: Optional[Dict]) -> str:
+        """Create a cache key from query and context."""
+        key_parts = [query_text.lower().strip()]
+        if context:
+            # Include relevant context in key
+            if context.get('current_symbol'):
+                key_parts.append(f"sym:{context['current_symbol']}")
+            if context.get('page_type'):
+                key_parts.append(f"page:{context['page_type']}")
+        key_string = "|".join(key_parts)
+        return f"nl_query_{hashlib.md5(key_string.encode()).hexdigest()}"
+
+    async def query(self, query_text: str, context: Optional[Dict] = None, use_cache: bool = True) -> QueryResult:
         """
         Process a natural language query.
 
         Args:
             query_text: The user's natural language query
             context: Optional context (e.g., current company being viewed)
+            use_cache: Whether to use cached results if available
 
         Returns:
             QueryResult with the query results
         """
+        # Check cache first
+        cache_key = None
+        if use_cache and self.cache:
+            cache_key = self._make_cache_key(query_text, context)
+            cached_result = self.cache.get(cache_key)
+            if cached_result is not None:
+                logger.debug(f"Cache hit for query: {query_text[:30]}...")
+                # Add cache indicator to result
+                cached_result.result['from_cache'] = True
+                return cached_result
+
         try:
             # Classify the query (classifier is synchronous)
             classified = self.classifier.classify(query_text)
@@ -98,7 +147,26 @@ class QueryEngine:
             # Route to appropriate handler
             result = await self._route_query(classified)
 
-            # Enhance result with LLM insights if available
+            # Generate natural language summary (with 3s timeout + fallback)
+            # This runs in parallel-ish: we get data first, then try to enhance
+            if result.get('type') != 'error':
+                try:
+                    summary = await self.enhancer.generate_summary(
+                        result,
+                        classified.intent.value,
+                        query_text
+                    )
+                    if summary:
+                        result['summary'] = summary
+                except Exception as e:
+                    logger.warning(f"Summary generation failed: {e}")
+                    # Use fallback summary
+                    result['summary'] = self.enhancer._generate_fallback_summary(
+                        result,
+                        classified.intent.value
+                    )
+
+            # Enhance result with deeper LLM insights if available (optional, can be slower)
             if self.router and result.get('type') != 'error':
                 result = await self.enhancer.enhance(
                     result,
@@ -112,7 +180,7 @@ class QueryEngine:
             # Assess confidence
             confidence, confidence_reason = self._assess_confidence(classified, result)
 
-            return QueryResult(
+            query_result = QueryResult(
                 success=True,
                 intent=classified.intent.value,
                 result=result,
@@ -122,6 +190,15 @@ class QueryEngine:
                 confidence=confidence,
                 confidence_reason=confidence_reason
             )
+
+            # Cache successful results (except for time-sensitive lookups)
+            if cache_key and self.cache and classified.intent not in [QueryIntent.LOOKUP]:
+                # Use shorter TTL for screen/ranking queries (data changes more frequently)
+                ttl = 900 if classified.intent in [QueryIntent.SCREEN, QueryIntent.RANKING] else 1800
+                self.cache.set(cache_key, query_result, ttl)
+                logger.debug(f"Cached query result: {query_text[:30]}... (TTL: {ttl}s)")
+
+            return query_result
 
         except Exception as e:
             logger.error(f"Query processing failed: {e}")
@@ -143,7 +220,7 @@ class QueryEngine:
             elif classified.intent == QueryIntent.CALCULATION:
                 return await self._handle_calculation(classified)
             elif classified.intent == QueryIntent.UNKNOWN:
-                return self._handle_unknown(classified)
+                return await self._handle_unknown(classified)
             else:
                 return {
                     'type': 'error',
@@ -555,8 +632,33 @@ class QueryEngine:
             'data_available': {k: v for k, v in (data or {}).items() if v is not None}
         }
 
-    def _handle_unknown(self, classified: ClassifiedQuery) -> Dict:
-        """Handle unknown intents"""
+    async def _handle_unknown(self, classified: ClassifiedQuery) -> Dict:
+        """
+        Handle unknown intents with LLM fallback.
+
+        This is the systemic solution: when we can't classify a query,
+        we ask the LLM to help interpret and respond appropriately.
+        """
+        symbols = classified.entities.get('symbols', [])
+        metrics = classified.entities.get('metrics', [])
+
+        # Try to get any available data for context
+        context_data = None
+        if symbols:
+            lookup = LookupHandler(db=self.db)
+            try:
+                context_data = await lookup._get_company_data(symbols[0])
+            except Exception as e:
+                logger.warning(f"Failed to get context data: {e}")
+
+        # If we have an LLM router, use it for intelligent response
+        if self.router:
+            try:
+                return await self._llm_handle_query(classified, context_data)
+            except Exception as e:
+                logger.warning(f"LLM handling failed: {e}")
+
+        # Fallback to static response
         return {
             'type': 'unknown',
             'message': "I'm not sure how to interpret that query.",
@@ -568,6 +670,145 @@ class QueryEngine:
                 "Find similar stocks: 'Find stocks like COST'",
             ]
         }
+
+    async def _llm_handle_query(self, classified: ClassifiedQuery, context_data: Optional[Dict]) -> Dict:
+        """
+        Use LLM to intelligently handle queries we couldn't classify.
+
+        This provides the 'systemic solution' for handling any investment question.
+        """
+        from ..ai.llm.base import TaskType
+
+        symbols = classified.entities.get('symbols', [])
+        query = classified.original_query
+
+        # Build context-rich prompt
+        prompt = f"""You are an investment analyst assistant. Answer this question:
+
+Question: {query}
+
+"""
+        if context_data:
+            symbol = context_data.get('symbol', symbols[0] if symbols else 'Unknown')
+            prompt += f"""
+Available data for {symbol}:
+- Name: {context_data.get('name', 'N/A')}
+- Sector: {context_data.get('sector', 'N/A')}
+- Price: ${context_data.get('price', 'N/A')}
+- Market Cap: ${self._format_large_number(context_data.get('market_cap'))}
+- P/E Ratio: {context_data.get('pe_ratio', 'N/A')}
+- Revenue: ${self._format_large_number(context_data.get('total_revenue'))}
+- Net Income: ${self._format_large_number(context_data.get('net_income'))}
+- Operating Income: ${self._format_large_number(context_data.get('operating_income'))}
+- NOPAT (calculated): ${self._format_large_number(context_data.get('nopat'))}
+- EBIT: ${self._format_large_number(context_data.get('ebit'))}
+- EBITDA: ${self._format_large_number(context_data.get('ebitda'))}
+- Free Cash Flow: ${self._format_large_number(context_data.get('free_cash_flow'))}
+- ROE: {self._format_percent(context_data.get('roe'))}
+- ROIC: {self._format_percent(context_data.get('roic'))}
+- Net Margin: {self._format_percent(context_data.get('net_margin'))}
+- Debt to Equity: {context_data.get('debt_to_equity', 'N/A')}
+"""
+        else:
+            prompt += "\nNo specific company data available.\n"
+
+        prompt += """
+Instructions:
+1. If asked about a specific metric, provide its value from the data above (if available)
+2. If the metric isn't available, explain what it means and suggest alternatives
+3. If asked a general question, provide a helpful investment-focused answer
+4. Be concise but informative (2-4 sentences)
+5. If you calculate something, show your work briefly
+
+Response:"""
+
+        try:
+            response = self.router.route(
+                TaskType.ANALYSIS,
+                prompt=prompt,
+                temperature=0.3,
+                max_tokens=500
+            )
+
+            return {
+                'type': 'llm_response',
+                'query': query,
+                'symbols': symbols,
+                'answer': response.content.strip(),
+                'data_used': context_data,
+                'source': 'llm',
+                'suggestions': self._get_follow_up_suggestions_from_query(query, symbols)
+            }
+
+        except Exception as e:
+            logger.error(f"LLM query handling failed: {e}")
+            raise
+
+    def _format_large_number(self, value) -> str:
+        """Format large numbers for display"""
+        if value is None:
+            return 'N/A'
+        try:
+            value = float(value)
+            if value >= 1_000_000_000_000:
+                return f"{value / 1_000_000_000_000:.2f}T"
+            elif value >= 1_000_000_000:
+                return f"{value / 1_000_000_000:.2f}B"
+            elif value >= 1_000_000:
+                return f"{value / 1_000_000:.2f}M"
+            else:
+                return f"{value:,.0f}"
+        except:
+            return 'N/A'
+
+    def _format_percent(self, value) -> str:
+        """Format percentage values"""
+        if value is None:
+            return 'N/A'
+        try:
+            return f"{float(value) * 100:.1f}%"
+        except:
+            return 'N/A'
+
+    def _get_follow_up_suggestions_from_query(self, query: str, symbols: list) -> list:
+        """Generate follow-up suggestions based on the query"""
+        suggestions = []
+        query_lower = query.lower()
+
+        if symbols:
+            symbol = symbols[0]
+            if 'nopat' in query_lower or 'roic' in query_lower:
+                suggestions = [
+                    f"What is {symbol}'s ROIC compared to peers?",
+                    f"Show {symbol}'s profitability metrics",
+                    f"How has {symbol}'s capital efficiency changed?",
+                ]
+            elif 'revenue' in query_lower or 'sales' in query_lower:
+                suggestions = [
+                    f"What's driving {symbol}'s revenue growth?",
+                    f"Compare {symbol}'s revenue to competitors",
+                    f"Show {symbol}'s revenue trend over 5 years",
+                ]
+            elif 'margin' in query_lower or 'profit' in query_lower:
+                suggestions = [
+                    f"Why are {symbol}'s margins at this level?",
+                    f"Compare {symbol}'s margins to industry average",
+                    f"How have {symbol}'s margins changed over time?",
+                ]
+            else:
+                suggestions = [
+                    f"What's {symbol}'s valuation?",
+                    f"Show all metrics for {symbol}",
+                    f"Find stocks similar to {symbol}",
+                ]
+        else:
+            suggestions = [
+                "Try asking about a specific stock",
+                "Screen for stocks with certain criteria",
+                "Compare two or more stocks",
+            ]
+
+        return suggestions[:3]
 
     def _build_interpretation(self, classified: ClassifiedQuery) -> str:
         """Build human-readable interpretation of the query"""
@@ -758,6 +999,18 @@ class QueryEngine:
             metric = metrics[0] if metrics else 'overall score'
             return f"Ranking stocks by {metric}..."
 
+        elif intent == QueryIntent.PORTFOLIO:
+            return "Analyzing your portfolio..."
+
+        elif intent == QueryIntent.INVESTOR:
+            investors = classified.entities.get('investors', [])
+            if investors:
+                # Get display name for the investor
+                from .handlers.investor_handler import INVESTOR_DISPLAY_NAMES
+                investor_name = INVESTOR_DISPLAY_NAMES.get(investors[0], investors[0])
+                return f"Looking up {investor_name}'s holdings..."
+            return "Searching investor information..."
+
         return "Processing your question..."
 
     def _assess_confidence(self, classified: ClassifiedQuery, result: Dict) -> tuple:
@@ -867,4 +1120,34 @@ class QueryEngine:
                 "Explain AAPL's profitability",
                 "Why is TSLA's margin declining?",
             ],
+            'portfolio': [
+                "Analyze my portfolio",
+                "Show portfolio performance",
+                "What's my portfolio risk?",
+            ],
+            'investor': [
+                "Show Warren Buffett's holdings",
+                "What stocks does Buffett own?",
+                "Compare my portfolio to Buffett's",
+            ],
         }
+
+    def get_cache_stats(self) -> Optional[Dict]:
+        """Get cache statistics."""
+        if self.cache:
+            return self.cache.get_stats()
+        return None
+
+    def clear_cache(self):
+        """Clear the query cache."""
+        if self.cache:
+            self.cache.clear()
+            logger.info("NL query cache cleared")
+
+    def invalidate_cache(self, pattern: str = None):
+        """Invalidate cache entries, optionally by pattern."""
+        if self.cache:
+            if pattern:
+                self.cache.invalidate_pattern(pattern)
+            else:
+                self.cache.clear()

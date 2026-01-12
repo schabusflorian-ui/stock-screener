@@ -1,0 +1,210 @@
+/* frontend/src/pages/research/FactorAnalysisTab.css */
+
+.factor-analysis-tab {
+  animation: fadeIn 0.2s ease;
+}
+
+/* Controls Row */
+.factor-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.factor-toggles {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.factor-toggle {
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-secondary);
+  border: 2px solid transparent;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.factor-toggle:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.factor-toggle.active {
+  background: var(--bg-tertiary);
+  font-weight: var(--font-semibold);
+}
+
+.period-selector {
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+}
+
+.period-btn {
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.period-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.period-btn.active {
+  background: var(--brand-primary);
+  color: white;
+}
+
+/* Interpretation Banner */
+.factor-interpretation {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--info-muted);
+  border: 1px solid var(--info);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.factor-interpretation svg {
+  color: var(--info);
+  flex-shrink: 0;
+}
+
+/* Section Cards */
+.factor-section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.factor-section h3 {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin: 0 0 var(--space-1) 0;
+}
+
+.section-description {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  margin: 0 0 var(--space-4) 0;
+}
+
+/* Stats Table */
+.factor-stats-table {
+  overflow-x: auto;
+}
+
+.factor-stats-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.factor-stats-table th,
+.factor-stats-table td {
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.factor-stats-table th {
+  font-weight: var(--font-semibold);
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+}
+
+.factor-stats-table tbody tr:hover {
+  background: var(--bg-tertiary);
+}
+
+.factor-stats-table .quintile-cell {
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
+}
+
+.factor-stats-table td.positive {
+  color: var(--positive);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.factor-stats-table td.negative {
+  color: var(--negative);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Empty State */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-8);
+  text-align: center;
+  color: var(--text-tertiary);
+}
+
+.empty-state svg {
+  opacity: 0.5;
+}
+
+.empty-state span {
+  font-size: var(--text-lg);
+  font-weight: var(--font-medium);
+}
+
+.empty-state p {
+  font-size: var(--text-sm);
+  max-width: 400px;
+  margin: 0;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .factor-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .factor-toggles {
+    justify-content: center;
+  }
+
+  .period-selector {
+    justify-content: center;
+  }
+
+  .factor-stats-table th,
+  .factor-stats-table td {
+    padding: var(--space-2);
+  }
+}

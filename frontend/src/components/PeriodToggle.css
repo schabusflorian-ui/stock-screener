@@ -1,5 +1,11 @@
 /* PeriodToggle.css - Liquid Glass Theme */
 
+.period-toggle-container {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 .period-toggle {
   display: flex;
   gap: 0.25rem;
@@ -7,6 +13,10 @@
   border: 1px solid rgba(0, 0, 0, 0.06);
   padding: 0.25rem;
   border-radius: 0.5rem;
+}
+
+.period-btn-wrapper {
+  position: relative;
 }
 
 .period-btn {
@@ -41,4 +51,46 @@
   margin-left: 0.25rem;
   font-size: 0.75rem;
   opacity: 0.7;
+}
+
+/* Tooltip for disabled quarterly button */
+.period-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1f2937;
+  color: white;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.period-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: #1f2937;
+}
+
+/* Data source badge */
+.data-source-badge {
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+}
+
+.data-source-badge.xbrl {
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+  border: 1px solid rgba(59, 130, 246, 0.2);
 }

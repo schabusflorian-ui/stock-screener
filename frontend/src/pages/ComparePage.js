@@ -16,8 +16,7 @@ import './ComparePage.css';
 import {
   getComparePageCategories,
   DEFAULT_COMPARE_METRICS,
-  RADAR_METRICS,
-  formatMetricValue
+  RADAR_METRICS
 } from '../config/metrics';
 
 // Get metrics from unified config
@@ -56,7 +55,6 @@ function ComparePage() {
   const [selectedCompanies, setSelectedCompanies] = useState([]);
   const [companyData, setCompanyData] = useState({});
   const [breakdownData, setBreakdownData] = useState({});
-  const [priceData, setPriceData] = useState({});
   const [periodType, setPeriodType] = useState('annual');
   const [selectedMetric, setSelectedMetric] = useState('roic');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -81,12 +79,27 @@ function ComparePage() {
     loadCompanies();
   }, []);
 
-  // Load market indices
+  // Load market indices (use ETF-based indices with current price data)
   useEffect(() => {
     const loadIndices = async () => {
       try {
-        const response = await indicesAPI.getAll();
-        setMarketIndices(response.data?.data || []);
+        // Use getMarket() instead of getAll() - returns ETF-based indices (SPY, QQQ, DIA)
+        // with current prices from daily_prices table instead of stale market_index_prices
+        const response = await indicesAPI.getMarket();
+        const indices = response.data?.data || response.data || [];
+        // Map ETF symbols to display format expected by component
+        const formatted = indices.map(idx => ({
+          short_name: idx.symbol,
+          name: idx.name,
+          symbol: idx.symbol,
+          last_price: idx.last_price,
+          change_1d: idx.change_1d,
+          change_1w: idx.change_1w,
+          change_1m: idx.change_1m,
+          change_ytd: idx.change_ytd,
+          change_1y: idx.change_1y
+        }));
+        setMarketIndices(formatted);
       } catch (error) {
         console.error('Error loading market indices:', error);
       }
@@ -238,10 +251,12 @@ function ComparePage() {
         return;
       }
       setSelectedIndices(prev => [...prev, index]);
-      // Load price data for this index
+      // Load price data for this index using pricesAPI.get() which fetches from
+      // daily_prices table (current data) instead of stale market_index_prices
       try {
-        const priceRes = await indicesAPI.getPrices(symbol, '1y');
-        const prices = priceRes.data?.data || [];
+        const priceRes = await pricesAPI.get(symbol, { period: '1y' });
+        // Response structure: { success: true, data: { prices: [...] } }
+        const prices = priceRes.data?.data?.prices || priceRes.data?.prices || [];
         setIndexPriceData(prev => ({
           ...prev,
           [symbol]: prices.map(p => ({ date: p.date, close: p.close }))

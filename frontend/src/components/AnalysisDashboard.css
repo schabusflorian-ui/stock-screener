@@ -1383,3 +1383,293 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* ============ POSITION SIZING SECTION ============ */
+
+.position-sizing-section {
+  padding: 0;
+}
+
+.position-sizing-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.5rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.position-sizing-section h3 svg {
+  color: var(--brand-primary);
+}
+
+.position-sizing-section .section-description {
+  margin: 0 0 1.5rem;
+  color: var(--text-tertiary);
+  font-size: 0.875rem;
+}
+
+.position-sizing-section .loading-state,
+.position-sizing-section .error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 3rem;
+  color: var(--text-secondary);
+}
+
+.position-sizing-section .error-state {
+  color: #ef4444;
+}
+
+.position-sizing-section .spinning {
+  animation: spin 1s linear infinite;
+}
+
+/* Sizing Recommendation Card */
+.sizing-recommendation-card {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.sizing-recommendation-card .recommendation-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.sizing-recommendation-card .recommendation-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.sizing-recommendation-card .rec-label {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sizing-recommendation-card .rec-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--brand-primary);
+}
+
+.sizing-recommendation-card .rec-name {
+  font-size: 0.875rem;
+  color: var(--brand-primary);
+  background: rgba(99, 102, 241, 0.15);
+  padding: 0.25rem 0.75rem;
+  border-radius: var(--radius-full);
+  display: inline-block;
+  width: fit-content;
+}
+
+.sizing-recommendation-card .recommendation-reason {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+/* Stats Grid */
+.sizing-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.sizing-stat-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+}
+
+.sizing-stat-card .stat-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
+.sizing-stat-card .stat-header svg {
+  color: var(--text-tertiary);
+}
+
+.sizing-stat-card .stat-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sizing-stat-card .stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8125rem;
+}
+
+.sizing-stat-card .stat-row span:first-child {
+  color: var(--text-tertiary);
+}
+
+.sizing-stat-card .stat-row span:last-child {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.sizing-stat-card .stat-row .positive {
+  color: #22c55e;
+}
+
+.sizing-stat-card .stat-row .negative {
+  color: #ef4444;
+}
+
+/* Sizing Warning */
+.sizing-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: var(--radius-md);
+  margin-bottom: 1.5rem;
+}
+
+.sizing-warning svg {
+  color: #ef4444;
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+}
+
+.sizing-warning span {
+  color: #ef4444;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+/* Fraction Analysis Section */
+.fraction-analysis-section {
+  margin-bottom: 1.5rem;
+}
+
+.fraction-analysis-section h4 {
+  margin: 0 0 1rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.fraction-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.fraction-table th {
+  text-align: left;
+  padding: 0.75rem 0.5rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 2px solid var(--border-color);
+}
+
+.fraction-table td {
+  padding: 0.75rem 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.fraction-table tr.highlighted {
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.fraction-table tr.highlighted td:first-child {
+  font-weight: 600;
+  color: var(--brand-primary);
+}
+
+.fraction-table .positive {
+  color: #22c55e;
+}
+
+.fraction-table .negative {
+  color: #ef4444;
+}
+
+.fraction-table .risk-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.fraction-table .risk-badge.low {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+
+.fraction-table .risk-badge.medium {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.fraction-table .risk-badge.high {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+/* Sizing Note */
+.sizing-note {
+  padding: 1rem;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+}
+
+.sizing-note p {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .sizing-stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sizing-recommendation-card .recommendation-header {
+    flex-direction: column;
+  }
+
+  .fraction-table {
+    font-size: 0.75rem;
+  }
+
+  .fraction-table th,
+  .fraction-table td {
+    padding: 0.5rem 0.25rem;
+  }
+}

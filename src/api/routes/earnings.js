@@ -5,16 +5,24 @@ const express = require('express');
 const router = express.Router();
 const db = require('../../database');
 const EarningsCalendarService = require('../../services/earningsCalendar');
+const { EUEarningsCalendarService } = require('../../services/euEarningsCalendar');
 
 const database = db.getDatabase();
 let earningsService;
+let euEarningsService;
 
-// Initialize service
+// Initialize services
 try {
   earningsService = new EarningsCalendarService(database);
   earningsService.createTable();
 } catch (error) {
   console.error('Failed to initialize earnings service:', error.message);
+}
+
+try {
+  euEarningsService = new EUEarningsCalendarService(database);
+} catch (error) {
+  console.error('Failed to initialize EU earnings service:', error.message);
 }
 
 /**
@@ -587,6 +595,130 @@ router.get('/coverage', async (req, res) => {
       success: false,
       error: error.message
     });
+  }
+});
+
+// ============================================
+// EU/UK EARNINGS ROUTES (XBRL-based)
+// ============================================
+
+/**
+ * GET /api/earnings/eu/upcoming
+ * Get upcoming EU/UK earnings (estimated from XBRL filing patterns)
+ */
+router.get('/eu/upcoming', (req, res) => {
+  try {
+    if (!euEarningsService) {
+      return res.status(503).json({ success: false, error: 'EU earnings service not initialized' });
+    }
+
+    const { days = 60, country } = req.query;
+    const upcoming = euEarningsService.getUpcomingEarnings(parseInt(days), country || null);
+
+    res.json({
+      success: true,
+      count: upcoming.length,
+      daysAhead: parseInt(days),
+      country: country || 'all',
+      note: 'Dates are estimates based on historical filing patterns',
+      data: upcoming
+    });
+  } catch (error) {
+    console.error('Error fetching EU upcoming earnings:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/earnings/eu/recent
+ * Get recent EU/UK earnings announcements (actual XBRL filings)
+ */
+router.get('/eu/recent', (req, res) => {
+  try {
+    if (!euEarningsService) {
+      return res.status(503).json({ success: false, error: 'EU earnings service not initialized' });
+    }
+
+    const { days = 30, country } = req.query;
+    const recent = euEarningsService.getRecentEarnings(parseInt(days), country || null);
+
+    res.json({
+      success: true,
+      count: recent.length,
+      daysBack: parseInt(days),
+      country: country || 'all',
+      data: recent
+    });
+  } catch (error) {
+    console.error('Error fetching EU recent earnings:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/earnings/eu/company/:identifierId
+ * Get earnings data for a specific EU/UK company by identifier ID
+ */
+router.get('/eu/company/:identifierId', (req, res) => {
+  try {
+    if (!euEarningsService) {
+      return res.status(503).json({ success: false, error: 'EU earnings service not initialized' });
+    }
+
+    const { identifierId } = req.params;
+    const data = euEarningsService.getEarningsDataByIdentifierId(parseInt(identifierId));
+
+    if (!data) {
+      return res.status(404).json({ success: false, error: 'Company not found or no filings available' });
+    }
+
+    res.json({
+      success: true,
+      data
+    });
+  } catch (error) {
+    console.error('Error fetching EU company earnings:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/earnings/eu/stats
+ * Get EU/UK earnings coverage statistics
+ */
+router.get('/eu/stats', (req, res) => {
+  try {
+    const stats = database.prepare(`
+      SELECT
+        COUNT(DISTINCT i.id) as companies_with_filings,
+        COUNT(f.id) as total_filings,
+        COUNT(CASE WHEN f.parsed = 1 THEN 1 END) as parsed_filings,
+        COUNT(DISTINCT i.country) as countries_covered
+      FROM company_identifiers i
+      LEFT JOIN xbrl_filings f ON f.identifier_id = i.id
+    `).get();
+
+    const byCountry = database.prepare(`
+      SELECT
+        i.country,
+        COUNT(DISTINCT i.id) as companies,
+        COUNT(f.id) as filings
+      FROM company_identifiers i
+      LEFT JOIN xbrl_filings f ON f.identifier_id = i.id
+      GROUP BY i.country
+      ORDER BY companies DESC
+    `).all();
+
+    res.json({
+      success: true,
+      data: {
+        overall: stats,
+        byCountry
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching EU earnings stats:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

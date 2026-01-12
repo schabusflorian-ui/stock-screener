@@ -45,6 +45,7 @@ function RecommendationHistory({ portfolioId, className = '' }) {
     if (portfolioId) {
       fetchRecommendations();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [portfolioId, filter]);
 
   const fetchRecommendations = async () => {

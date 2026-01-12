@@ -1,7 +1,7 @@
 // frontend/src/components/portfolio/AddToPortfolioButton.js
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { Plus, X, Briefcase, Check, Loader, DollarSign, TrendingUp } from 'lucide-react';
-import { portfoliosAPI } from '../../services/api';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { Plus, X, Briefcase, Check, Loader, DollarSign, TrendingUp, Target, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
+import { portfoliosAPI, simulateAPI } from '../../services/api';
 import './AddToPortfolioButton.css';
 
 function AddToPortfolioButton({ symbol, companyId, companyName, currentPrice }) {
@@ -13,6 +13,9 @@ function AddToPortfolioButton({ symbol, companyId, companyName, currentPrice }) 
   const [selectedPortfolio, setSelectedPortfolio] = useState(null);
   const [success, setSuccess] = useState(null);
   const [error, setError] = useState(null);
+  const [kellyData, setKellyData] = useState(null);
+  const [kellyLoading, setKellyLoading] = useState(false);
+  const [showKellyDetails, setShowKellyDetails] = useState(false);
   const dropdownRef = useRef(null);
 
   // Calculate total cost
@@ -21,12 +24,33 @@ function AddToPortfolioButton({ symbol, companyId, companyName, currentPrice }) 
     return currentPrice ? shareCount * currentPrice : 0;
   }, [shares, currentPrice]);
 
+  // Load Kelly recommendation for symbol
+  const loadKellyRecommendation = useCallback(async (portfolioId = null) => {
+    setKellyLoading(true);
+    try {
+      const res = await simulateAPI.analyzeSingleHolding(symbol, {
+        portfolioId,
+        period: '3y',
+        riskFreeRate: 0.05
+      });
+      const data = res.data.data || res.data;
+      if (!data?.error) {
+        setKellyData(data);
+      }
+    } catch (err) {
+      console.log('Kelly data not available:', err.message);
+    } finally {
+      setKellyLoading(false);
+    }
+  }, [symbol]);
+
   // Load portfolios when popup opens
   useEffect(() => {
     if (isOpen) {
       loadPortfolios();
+      loadKellyRecommendation();
     }
-  }, [isOpen]);
+  }, [isOpen, loadKellyRecommendation]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -59,6 +83,8 @@ function AddToPortfolioButton({ symbol, companyId, companyName, currentPrice }) 
   const handleSelectPortfolio = (portfolio) => {
     setSelectedPortfolio(portfolio);
     setError(null);
+    // Reload Kelly data with portfolio context for correlation info
+    loadKellyRecommendation(portfolio.id);
   };
 
   const handleConfirmAdd = async () => {
@@ -161,6 +187,81 @@ function AddToPortfolioButton({ symbol, companyId, companyName, currentPrice }) 
               <div className="cost-preview">
                 <DollarSign size={14} />
                 <span>Total Cost: <strong>${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
+              </div>
+            )}
+          </div>
+
+          {/* Kelly Sizing Recommendation */}
+          <div className="kelly-recommendation-section">
+            <button
+              className="kelly-toggle"
+              onClick={() => setShowKellyDetails(!showKellyDetails)}
+            >
+              <Target size={14} />
+              <span>Position Sizing Recommendation</span>
+              {showKellyDetails ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+
+            {showKellyDetails && (
+              <div className="kelly-content">
+                {kellyLoading ? (
+                  <div className="kelly-loading">
+                    <Loader className="spin" size={14} />
+                    <span>Analyzing...</span>
+                  </div>
+                ) : kellyData ? (
+                  <>
+                    <div className="kelly-recommendation">
+                      <div className="kelly-header">
+                        <span className="kelly-label">Recommended Size</span>
+                        <span className="kelly-value">
+                          {(kellyData.kelly?.recommended?.fraction * 100 || 0).toFixed(0)}%
+                        </span>
+                        <span className="kelly-name">{kellyData.kelly?.recommended?.label || 'Kelly'}</span>
+                      </div>
+                      <p className="kelly-reason">{kellyData.kelly?.recommended?.reason}</p>
+                    </div>
+
+                    <div className="kelly-stats">
+                      <div className="kelly-stat">
+                        <span className="stat-label">Win Rate</span>
+                        <span className="stat-value">{kellyData.statistics?.winRate}%</span>
+                      </div>
+                      <div className="kelly-stat">
+                        <span className="stat-label">Sharpe</span>
+                        <span className="stat-value">{kellyData.statistics?.sharpeRatio}</span>
+                      </div>
+                      <div className="kelly-stat">
+                        <span className="stat-label">Volatility</span>
+                        <span className="stat-value">{kellyData.statistics?.annualVolatility}%</span>
+                      </div>
+                    </div>
+
+                    {kellyData.tailRisk?.warning && (
+                      <div className="kelly-warning">
+                        <AlertTriangle size={12} />
+                        <span>{kellyData.tailRisk.warning}</span>
+                      </div>
+                    )}
+
+                    {selectedPortfolio && kellyData.portfolioContext?.suggestedShares && currentPrice && (
+                      <div className="kelly-suggestion">
+                        <span>Suggested for this portfolio: </span>
+                        <strong>{kellyData.portfolioContext.suggestedShares} shares</strong>
+                        <button
+                          className="apply-btn"
+                          onClick={() => setShares(String(kellyData.portfolioContext.suggestedShares))}
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="kelly-unavailable">
+                    <span>Insufficient historical data for analysis</span>
+                  </div>
+                )}
               </div>
             )}
           </div>

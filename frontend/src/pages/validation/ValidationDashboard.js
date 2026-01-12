@@ -11,7 +11,6 @@ import {
   XCircle,
   Info,
   RefreshCw,
-  BarChart3,
   Target,
   Layers,
   Clock,
@@ -142,7 +141,7 @@ function ValidationDashboard() {
   // Fetch health report
   const fetchHealthReport = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/validation/signals/health?lookbackDays=${lookbackDays}`);
+      const response = await fetch(`${API_BASE}/validation/signals/health?lookback=${lookbackDays}`);
       const data = await response.json();
       if (data.success) {
         setHealthReport(data.data);
@@ -155,7 +154,7 @@ function ValidationDashboard() {
   // Fetch IC decay
   const fetchICDecay = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/validation/signals/ic-decay?lookbackDays=${lookbackDays}`);
+      const response = await fetch(`${API_BASE}/validation/signals/ic-decay?lookback=${lookbackDays}`);
       const data = await response.json();
       if (data.success) {
         setICDecay(data.data);
@@ -168,7 +167,7 @@ function ValidationDashboard() {
   // Fetch hit rates
   const fetchHitRates = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/validation/signals/hit-rates?lookbackDays=${lookbackDays}`);
+      const response = await fetch(`${API_BASE}/validation/signals/hit-rates?lookback=${lookbackDays}`);
       const data = await response.json();
       if (data.success) {
         setHitRates(data.data);
@@ -181,7 +180,7 @@ function ValidationDashboard() {
   // Fetch regime stability
   const fetchRegimeStability = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/validation/signals/regime-stability?lookbackDays=${lookbackDays}`);
+      const response = await fetch(`${API_BASE}/validation/signals/regime-stability?lookback=${lookbackDays}`);
       const data = await response.json();
       if (data.success) {
         setRegimeStability(data.data);
@@ -195,7 +194,7 @@ function ValidationDashboard() {
   const fetchRollingIC = useCallback(async (signalType) => {
     try {
       const response = await fetch(
-        `${API_BASE}/validation/signals/rolling-ic/${signalType}?lookbackDays=${lookbackDays}`
+        `${API_BASE}/validation/signals/rolling-ic/${signalType}?lookback=${lookbackDays}`
       );
       const data = await response.json();
       if (data.success) {

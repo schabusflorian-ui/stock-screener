@@ -31,6 +31,7 @@ function OpportunityList({ limit = 10, onSelect, className = '' }) {
 
   useEffect(() => {
     fetchOpportunities();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [limit]);
 
   const fetchOpportunities = async () => {

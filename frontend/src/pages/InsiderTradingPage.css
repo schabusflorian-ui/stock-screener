@@ -694,3 +694,65 @@
     padding: 0.5rem;
   }
 }
+
+/* Congressional Trading Styles */
+.congressional-content {
+  animation: fadeIn 0.2s ease;
+}
+
+.info-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.info-banner svg {
+  color: var(--brand-primary);
+  flex-shrink: 0;
+}
+
+/* Party Badges */
+.party-badge {
+  display: inline-block;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+}
+
+.party-badge.democrat,
+.party-badge.d {
+  background: var(--info-muted);
+  color: var(--info);
+}
+
+.party-badge.republican,
+.party-badge.r {
+  background: var(--negative-muted);
+  color: var(--negative);
+}
+
+.party-badge.independent,
+.party-badge.i {
+  background: rgba(107, 114, 128, 0.08);
+  color: var(--text-tertiary);
+}
+
+/* View tabs with icon */
+.view-tabs button {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.view-tabs button svg {
+  flex-shrink: 0;
+}

@@ -489,4 +489,130 @@ router.get('/benchmarks', (req, res) => {
   }
 });
 
+/**
+ * POST /api/dcf/:symbol/parametric
+ * Calculate probabilistic valuation using Monte Carlo with parametric distributions
+ *
+ * This runs thousands of DCF simulations, sampling inputs from parametric
+ * distributions (with optional fat tails) to produce a valuation distribution.
+ *
+ * Body params:
+ * - simulations: Number of Monte Carlo simulations (default: 10000)
+ * - distributionType: 'normal', 'studentT', or 'skewedT' (default: 'studentT')
+ * - growthUncertainty: Std dev of growth rate assumption (default: 0.03)
+ * - marginUncertainty: Std dev of margin assumption (default: 0.02)
+ * - waccUncertainty: Std dev of WACC assumption (default: 0.01)
+ * - multipleUncertainty: Std dev of exit multiple (default: 2)
+ * - baseInputs: Optional DCF input overrides
+ */
+router.post('/:symbol/parametric', async (req, res) => {
+  try {
+    const { symbol } = req.params;
+    const {
+      simulations = 10000,
+      distributionType = 'studentT',
+      growthUncertainty = 0.03,
+      marginUncertainty = 0.02,
+      waccUncertainty = 0.01,
+      multipleUncertainty = 2,
+      baseInputs = {}
+    } = req.body;
+
+    // Get company ID
+    const company = database.prepare(`
+      SELECT id, symbol, name FROM companies WHERE symbol = ?
+    `).get(symbol.toUpperCase());
+
+    if (!company) {
+      return res.status(404).json({ success: false, error: 'Company not found' });
+    }
+
+    // Get current price from price_metrics
+    const priceData = database.prepare(`
+      SELECT last_price, market_cap FROM price_metrics WHERE company_id = ?
+    `).get(company.id);
+
+    // Merge price data into base inputs if not provided
+    const mergedInputs = { ...baseInputs };
+    if (!mergedInputs.currentPrice && priceData?.last_price) {
+      mergedInputs.currentPrice = priceData.last_price;
+    }
+    if (!mergedInputs.sharesOutstanding && priceData?.market_cap && mergedInputs.currentPrice) {
+      mergedInputs.sharesOutstanding = priceData.market_cap / mergedInputs.currentPrice;
+    }
+
+    const results = await calculator.calculateParametricValuation(company.id, {
+      simulations: Math.min(simulations, 50000), // Cap at 50k for performance
+      distributionType,
+      growthUncertainty,
+      marginUncertainty,
+      waccUncertainty,
+      multipleUncertainty,
+      baseInputs: mergedInputs
+    });
+
+    res.json({
+      success: results.success,
+      symbol: symbol.toUpperCase(),
+      company: company.name,
+      ...results
+    });
+  } catch (error) {
+    console.error('Parametric valuation error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/dcf/:symbol/parametric
+ * Get parametric valuation with default settings
+ */
+router.get('/:symbol/parametric', async (req, res) => {
+  try {
+    const { symbol } = req.params;
+    const {
+      simulations = '5000',
+      distributionType = 'studentT'
+    } = req.query;
+
+    // Get company ID
+    const company = database.prepare(`
+      SELECT id, symbol, name FROM companies WHERE symbol = ?
+    `).get(symbol.toUpperCase());
+
+    if (!company) {
+      return res.status(404).json({ success: false, error: 'Company not found' });
+    }
+
+    // Get current price from price_metrics
+    const priceData = database.prepare(`
+      SELECT last_price, market_cap FROM price_metrics WHERE company_id = ?
+    `).get(company.id);
+
+    const baseInputs = {};
+    if (priceData?.last_price) {
+      baseInputs.currentPrice = priceData.last_price;
+    }
+    if (priceData?.market_cap && baseInputs.currentPrice) {
+      baseInputs.sharesOutstanding = priceData.market_cap / baseInputs.currentPrice;
+    }
+
+    const results = await calculator.calculateParametricValuation(company.id, {
+      simulations: Math.min(parseInt(simulations), 20000),
+      distributionType,
+      baseInputs
+    });
+
+    res.json({
+      success: results.success,
+      symbol: symbol.toUpperCase(),
+      company: company.name,
+      ...results
+    });
+  } catch (error) {
+    console.error('Parametric valuation error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 module.exports = router;

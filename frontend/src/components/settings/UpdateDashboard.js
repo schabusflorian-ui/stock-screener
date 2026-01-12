@@ -2,7 +2,7 @@
 // Clean, professional data update management with table view and toggles
 
 import { useState, useEffect, useCallback } from 'react';
-import { settingsAPI, insidersAPI, capitalAPI, sentimentAPI, priceUpdatesAPI, indicesAPI, secRefreshAPI, knowledgeAPI, tradingAPI, snapshotsAPI, investorsAPI, etfsAPI } from '../../services/api';
+import { settingsAPI, insidersAPI, capitalAPI, sentimentAPI, priceUpdatesAPI, indicesAPI, secRefreshAPI, knowledgeAPI, tradingAPI, snapshotsAPI, investorsAPI, etfsAPI, xbrlAPI, europeanAPI } from '../../services/api';
 import { Play, RefreshCw, CheckCircle, XCircle, Clock, AlertTriangle, Loader2 } from 'lucide-react';
 import './SettingsComponents.css';
 
@@ -134,10 +134,10 @@ const UPDATE_TYPES = [
   {
     id: 'index_prices',
     name: 'Market Indices',
-    description: 'S&P 500, Nasdaq, Dow Jones prices',
+    description: 'SPY, QQQ, DIA, sector ETFs prices & alpha calculation',
     frequency: 'Daily',
     category: 'market',
-    getStatus: () => indicesAPI.getAll(), // Returns indices with last update info
+    getStatus: () => indicesAPI.getETFs(), // Returns ETF-based indices with last update info
     runUpdate: () => indicesAPI.update(),
     statusKey: 'lastUpdate',
   },
@@ -185,7 +185,64 @@ const UPDATE_TYPES = [
     runUpdate: () => tradingAPI.getRegime(), // Recalculates on fetch
     statusKey: 'timestamp',
   },
+  // === EU/UK Data Updates ===
+  {
+    id: 'xbrl_import',
+    name: 'EU/UK XBRL Import',
+    description: 'Import EU/UK company filings from XBRL registry',
+    frequency: 'Weekly',
+    category: 'international',
+    getStatus: () => xbrlAPI.getBackfillStatus(),
+    runUpdate: () => xbrlAPI.startBackfill(['GB', 'DE', 'FR'], 2021),
+    statusKey: 'stats',
+  },
+  {
+    id: 'european_prices',
+    name: 'EU/UK Prices',
+    description: 'Stock prices for European companies (LSE, XETRA, Euronext)',
+    frequency: 'Daily (12 PM ET)',
+    category: 'international',
+    getStatus: () => europeanAPI.getStatus(),
+    runUpdate: () => europeanAPI.updatePrices('GB'),
+    statusKey: 'prices',
+  },
+  {
+    id: 'european_indices',
+    name: 'European Indices',
+    description: 'FTSE 100, DAX 40, CAC 40 constituents',
+    frequency: 'Weekly',
+    category: 'international',
+    getStatus: () => europeanAPI.getIndexStats(),
+    runUpdate: () => europeanAPI.updateIndices(),
+    statusKey: 'indices',
+  },
+  {
+    id: 'european_valuations',
+    name: 'EU/UK Valuations',
+    description: 'PE, PB, PS ratios for European companies',
+    frequency: 'Daily (12:30 PM ET)',
+    category: 'international',
+    getStatus: () => europeanAPI.getStatus(),
+    runUpdate: () => europeanAPI.calculateValuations(),
+    statusKey: 'valuations',
+  },
 ];
+
+// Toast notification component
+function Toast({ message, type, onClose }) {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 5000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  return (
+    <div className={`update-toast ${type}`}>
+      {type === 'success' ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
+      <span>{message}</span>
+      <button onClick={onClose} className="toast-close">&times;</button>
+    </div>
+  );
+}
 
 function UpdateDashboard() {
   const [schedules, setSchedules] = useState([]);
@@ -196,6 +253,18 @@ function UpdateDashboard() {
   const [updateRuntime, setUpdateRuntime] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [toasts, setToasts] = useState([]);
+
+  // Add toast notification
+  const addToast = useCallback((message, type = 'success') => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message, type }]);
+  }, []);
+
+  // Remove toast
+  const removeToast = useCallback((id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
 
   // Fetch schedules from backend
   const fetchSchedules = useCallback(async () => {
@@ -259,29 +328,72 @@ function UpdateDashboard() {
   };
 
   // Run manual update with error/runtime tracking
+  // Background updates return immediately but continue processing - poll for status updates
   const handleRunUpdate = async (updateType) => {
     if (runningUpdates[updateType.id]) return;
 
     const startTime = Date.now();
     setRunningUpdates(prev => ({ ...prev, [updateType.id]: true }));
     setUpdateErrors(prev => ({ ...prev, [updateType.id]: null }));
-    setUpdateRuntime(prev => ({ ...prev, [updateType.id]: null }));
+    setUpdateRuntime(prev => ({ ...prev, [updateType.id]: 'Starting...' }));
 
     try {
+      // Trigger the update (returns immediately for background jobs)
       await updateType.runUpdate();
-      // Calculate runtime
-      const runtime = ((Date.now() - startTime) / 1000).toFixed(1);
-      setUpdateRuntime(prev => ({ ...prev, [updateType.id]: `${runtime}s` }));
-      // Refresh status after update
-      setTimeout(() => {
-        fetchStatuses();
-        setRunningUpdates(prev => ({ ...prev, [updateType.id]: false }));
-      }, 1000);
+
+      // For background updates, poll status for up to 2 minutes to show progress
+      // This gives user visibility that the update is actually running
+      setUpdateRuntime(prev => ({ ...prev, [updateType.id]: 'Processing...' }));
+
+      let pollCount = 0;
+      const maxPolls = 24; // Poll for up to 2 minutes (5s * 24 = 120s)
+      const pollInterval = 5000;
+
+      const pollStatus = async () => {
+        pollCount++;
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+
+        // Update the runtime display to show elapsed time
+        setUpdateRuntime(prev => ({
+          ...prev,
+          [updateType.id]: `${elapsed}s elapsed`
+        }));
+
+        // Refresh statuses to get latest data
+        try {
+          const response = await updateType.getStatus();
+          setUpdateStatuses(prev => ({
+            ...prev,
+            [updateType.id]: response.data || response
+          }));
+        } catch {
+          // Status fetch failed, ignore
+        }
+
+        // Continue polling if still within time limit
+        if (pollCount < maxPolls) {
+          setTimeout(pollStatus, pollInterval);
+        } else {
+          // Done polling - show final status
+          const totalTime = Math.round((Date.now() - startTime) / 1000);
+          setUpdateRuntime(prev => ({
+            ...prev,
+            [updateType.id]: `~${totalTime}s`
+          }));
+          setRunningUpdates(prev => ({ ...prev, [updateType.id]: false }));
+          addToast(`${updateType.name} update completed (~${totalTime}s)`, 'success');
+        }
+      };
+
+      // Start polling after initial delay
+      setTimeout(pollStatus, pollInterval);
+
     } catch (err) {
       console.error(`Failed to run ${updateType.name}:`, err);
       const errorMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Update failed';
       setUpdateErrors(prev => ({ ...prev, [updateType.id]: errorMsg }));
       setRunningUpdates(prev => ({ ...prev, [updateType.id]: false }));
+      setUpdateRuntime(prev => ({ ...prev, [updateType.id]: null }));
     }
   };
 
@@ -295,20 +407,54 @@ function UpdateDashboard() {
     const schedule = getScheduleForType(typeId);
     if (schedule?.lastRunAt) return schedule.lastRunAt;
 
-    const status = updateStatuses[typeId];
+    let status = updateStatuses[typeId];
     if (!status) return null;
 
-    const type = UPDATE_TYPES.find(t => t.id === typeId);
-    if (type?.statusKey && status[type.statusKey]) {
-      if (typeof status[type.statusKey] === 'string') {
-        return status[type.statusKey];
-      }
-      if (status[type.statusKey].modified) {
-        return status[type.statusKey].modified;
-      }
+    // Handle nested data structure: {success: true, data: {...}}
+    // Some endpoints wrap response in data property
+    if (status.data && typeof status.data === 'object') {
+      status = status.data;
     }
 
-    return status.lastUpdate || status.lastRun || status.lastImport || status.lastScan || null;
+    // Price updates: recentRuns[0].created_at
+    if (status.recentRuns && status.recentRuns.length > 0) {
+      return status.recentRuns[0].created_at;
+    }
+
+    // SEC refresh: lastUpdate (when data was actually written to DB)
+    if (status.lastUpdate) return status.lastUpdate;
+
+    // Indices/ETFs: check if it's an array (list of indices with dates)
+    if (Array.isArray(status) && status.length > 0) {
+      // ETFs have updated_at (when we last fetched data)
+      if (status[0].updated_at) return status[0].updated_at;
+      // Use last_price_date for indices (market date)
+      if (status[0].last_price_date) return status[0].last_price_date;
+      if (status[0].last_update) return status[0].last_update;
+    }
+
+    // Knowledge base: database.modified
+    if (status.database?.modified) return status.database.modified;
+
+    // Trading/liquidity: lastRun
+    if (status.lastRun) return status.lastRun;
+
+    // Market regime: timestamp
+    if (status.timestamp) return status.timestamp;
+
+    // Sentiment: lastScan
+    if (status.lastScan) return status.lastScan;
+
+    // ETF holdings: lastUpdate
+    if (status.lastUpdate) return status.lastUpdate;
+
+    // Insider trading: lastImport
+    if (status.lastImport) return status.lastImport;
+
+    // Investors: lastFetch or filingDate from recent holdings
+    if (status.lastFetch) return status.lastFetch;
+
+    return null;
   };
 
   // Get status for update type
@@ -328,6 +474,20 @@ function UpdateDashboard() {
 
   return (
     <div className="update-dashboard">
+      {/* Toast Notifications */}
+      {toasts.length > 0 && (
+        <div className="toast-container">
+          {toasts.map(toast => (
+            <Toast
+              key={toast.id}
+              message={toast.message}
+              type={toast.type}
+              onClose={() => removeToast(toast.id)}
+            />
+          ))}
+        </div>
+      )}
+
       {error && (
         <div className="settings-error">
           <AlertTriangle size={16} />
@@ -396,10 +556,7 @@ function UpdateDashboard() {
                     {isLoadingStatus ? (
                       <span className="loading-text">...</span>
                     ) : (
-                      <div className="last-run-info">
-                        <span>{formatRelativeTime(lastRun)}</span>
-                        {runtime && <span className="runtime-badge">{runtime}</span>}
-                      </div>
+                      <span>{formatRelativeTime(lastRun)}</span>
                     )}
                   </td>
                   <td>
@@ -418,19 +575,26 @@ function UpdateDashboard() {
                     />
                   </td>
                   <td>
-                    <button
-                      className="run-btn"
-                      onClick={() => handleRunUpdate(type)}
-                      disabled={isRunning}
-                      title={isRunning ? 'Update in progress' : 'Run now'}
-                    >
-                      {isRunning ? (
-                        <Loader2 size={14} className="spinning" />
-                      ) : (
-                        <Play size={14} />
+                    <div className="action-cell">
+                      <button
+                        className="run-btn"
+                        onClick={() => handleRunUpdate(type)}
+                        disabled={isRunning}
+                        title={isRunning ? 'Update in progress' : 'Run now'}
+                      >
+                        {isRunning ? (
+                          <Loader2 size={14} className="spinning" />
+                        ) : (
+                          <Play size={14} />
+                        )}
+                        <span>{isRunning ? 'Running...' : 'Run'}</span>
+                      </button>
+                      {runtime && (
+                        <span className={`runtime-badge ${isRunning ? 'processing' : 'completed'}`}>
+                          {runtime}
+                        </span>
                       )}
-                      <span>{isRunning ? 'Running...' : 'Run'}</span>
-                    </button>
+                    </div>
                   </td>
                 </tr>
               );

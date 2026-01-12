@@ -5,7 +5,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   TrendingUp,
-  Activity,
   AlertTriangle,
   BarChart3,
   Layers,

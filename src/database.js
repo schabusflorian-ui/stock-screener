@@ -618,6 +618,39 @@ try {
   db.exec(`ALTER TABLE companies ADD COLUMN sentiment_updated_at DATETIME`);
 } catch (e) { /* Column may already exist */ }
 
+// ============================================
+// TABLE: NL Conversations (Chatbot Memory)
+// ============================================
+db.exec(`
+  CREATE TABLE IF NOT EXISTS nl_conversations (
+    id TEXT PRIMARY KEY,
+    session_id TEXT,              -- Browser session or user ID
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_symbol TEXT,             -- Most recent symbol discussed
+    last_intent TEXT,             -- Most recent intent
+    message_count INTEGER DEFAULT 0
+  );
+  CREATE INDEX IF NOT EXISTS idx_nl_conv_session ON nl_conversations(session_id);
+  CREATE INDEX IF NOT EXISTS idx_nl_conv_updated ON nl_conversations(updated_at);
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS nl_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id TEXT NOT NULL,
+    role TEXT NOT NULL,           -- 'user' or 'assistant'
+    content TEXT,                 -- Query or response summary
+    intent TEXT,                  -- Classified intent
+    symbols TEXT,                 -- JSON array of symbols mentioned
+    entities TEXT,                -- JSON of extracted entities
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (conversation_id) REFERENCES nl_conversations(id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_nl_msg_conv ON nl_messages(conversation_id);
+  CREATE INDEX IF NOT EXISTS idx_nl_msg_time ON nl_messages(timestamp);
+`);
+
 console.log('✅ Database schema created successfully!');
 console.log(`📁 Database location: ${dbPath}`);
 console.log('');

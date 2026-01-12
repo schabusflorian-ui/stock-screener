@@ -42,6 +42,7 @@ function RiskLimitsSettings({ portfolioId, onSave, className = '' }) {
     if (portfolioId) {
       fetchLimits();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [portfolioId]);
 
   useEffect(() => {

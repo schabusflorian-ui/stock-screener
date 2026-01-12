@@ -242,11 +242,11 @@ class PaperTradingEngine {
 
     // Get current price
     this.stmtGetPrice = this.db.prepare(`
-      SELECT p.close as price, p.price_date
+      SELECT p.close as price, p.date as price_date
       FROM daily_prices p
       JOIN companies c ON c.id = p.company_id
       WHERE c.symbol = ?
-      ORDER BY p.price_date DESC
+      ORDER BY p.date DESC
       LIMIT 1
     `);
   }

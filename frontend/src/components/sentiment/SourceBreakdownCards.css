@@ -1,0 +1,215 @@
+/* frontend/src/components/sentiment/SourceBreakdownCards.css */
+
+.source-breakdown-cards {
+  margin-bottom: var(--space-4);
+}
+
+.source-breakdown-cards .section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-3);
+}
+
+.source-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-3);
+}
+
+.source-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+  transition: all 0.2s ease;
+}
+
+.source-card:hover {
+  border-color: var(--border-secondary);
+  box-shadow: var(--shadow-sm);
+}
+
+.source-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.source-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+}
+
+.source-name {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
+}
+
+.source-score {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.source-score .score-value {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  color: var(--text-primary);
+}
+
+.source-score .score-value.positive {
+  color: var(--positive);
+}
+
+.source-score .score-value.negative {
+  color: var(--negative);
+}
+
+.source-score .score-label {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* Sentiment Gauge */
+.sentiment-gauge {
+  margin-bottom: var(--space-2);
+}
+
+.sentiment-gauge .gauge-track {
+  position: relative;
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.sentiment-gauge .gauge-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.sentiment-gauge .gauge-marker {
+  position: absolute;
+  top: -2px;
+  width: 2px;
+  height: 10px;
+  background: var(--text-tertiary);
+  transform: translateX(-50%);
+}
+
+.sentiment-gauge .gauge-value {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  margin-top: var(--space-1);
+}
+
+.sentiment-gauge.small .gauge-track {
+  height: 4px;
+}
+
+/* Source Stats */
+.source-stats {
+  display: flex;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.source-stats .stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.source-stats .stat-value {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.source-stats .stat-label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+/* Distribution Bar */
+.distribution-bar {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+  margin-bottom: var(--space-2);
+}
+
+.distribution-bar .dist-segment {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.distribution-bar .dist-segment.bullish {
+  background: var(--positive);
+}
+
+.distribution-bar .dist-segment.neutral {
+  background: var(--text-tertiary);
+}
+
+.distribution-bar .dist-segment.bearish {
+  background: var(--negative);
+}
+
+/* Source Tags */
+.source-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.source-tags .tag {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+}
+
+/* Loading State */
+.source-cards-loading {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-3);
+}
+
+.loading-card {
+  height: 180px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .source-cards-grid {
+    grid-template-columns: 1fr;
+  }
+}

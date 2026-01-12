@@ -1,6 +1,8 @@
 // src/services/ml/signalCombiner.js
 // XGBoost-style Signal Combiner using Gradient Boosting
 
+const { TrainingDataAssembler } = require('./trainingDataAssembler');
+
 /**
  * MLSignalCombiner - Combines trading signals using gradient boosting
  *
@@ -9,6 +11,9 @@
  *
  * Uses a JavaScript implementation of gradient boosting regression trees
  * since we want to avoid Python dependencies for the core trading logic.
+ *
+ * Training data comes from existing stock_factor_scores table (80K+ records)
+ * joined with forward returns calculated from daily_prices (13.6M records).
  */
 
 class DecisionTreeNode {
@@ -405,32 +410,33 @@ class MLSignalCombiner {
 
   _initStatements() {
     // Get historical recommendations with outcomes
+    // Note: recommendation_outcomes table uses recommended_at and return_* columns
     this.stmtGetTrainingData = this.db.prepare(`
       SELECT
         ro.company_id,
-        ro.recommendation_date,
-        ro.signal_technical,
-        ro.signal_sentiment,
-        ro.signal_insider,
-        ro.signal_fundamental,
-        ro.signal_alternative_data,
-        ro.signal_valuation,
-        ro.signal_thirteen_f,
-        ro.signal_earnings_momentum,
-        ro.signal_value_quality,
+        ro.recommended_at as recommendation_date,
+        json_extract(ro.signal_breakdown, '$.technical') as signal_technical,
+        json_extract(ro.signal_breakdown, '$.sentiment') as signal_sentiment,
+        json_extract(ro.signal_breakdown, '$.insider') as signal_insider,
+        json_extract(ro.signal_breakdown, '$.fundamental') as signal_fundamental,
+        json_extract(ro.signal_breakdown, '$.alternative') as signal_alternative_data,
+        json_extract(ro.signal_breakdown, '$.valuation') as signal_valuation,
+        json_extract(ro.signal_breakdown, '$.thirteenF') as signal_thirteen_f,
+        json_extract(ro.signal_breakdown, '$.earnings') as signal_earnings_momentum,
+        json_extract(ro.signal_breakdown, '$.valueQuality') as signal_value_quality,
         ro.regime,
         c.sector,
         c.market_cap,
-        ro.forward_return_1d,
-        ro.forward_return_5d,
-        ro.forward_return_21d,
-        ro.forward_return_63d,
-        ro.forward_return_126d
+        ro.return_1d as forward_return_1d,
+        ro.return_5d as forward_return_5d,
+        ro.return_21d as forward_return_21d,
+        ro.return_63d as forward_return_63d,
+        ro.return_63d as forward_return_126d
       FROM recommendation_outcomes ro
       JOIN companies c ON c.id = ro.company_id
-      WHERE ro.recommendation_date >= date('now', '-' || ? || ' days')
-        AND ro.forward_return_21d IS NOT NULL
-      ORDER BY ro.recommendation_date DESC
+      WHERE ro.recommended_at >= date('now', '-' || ? || ' days')
+        AND ro.return_21d IS NOT NULL
+      ORDER BY ro.recommended_at DESC
     `);
 
     // Store model to database
@@ -468,52 +474,105 @@ class MLSignalCombiner {
   }
 
   /**
-   * Train models on historical data
+   * Train models on historical data using existing factor scores
    * @param {Object} options Training options
    * @returns {Object} Training results
    */
   train(options = {}) {
     const lookbackDays = options.lookbackDays || this.config.lookbackDays;
 
-    // Get training data
-    const rawData = this.stmtGetTrainingData.all(lookbackDays);
+    // Use TrainingDataAssembler to get data from stock_factor_scores + daily_prices
+    const assembler = new TrainingDataAssembler(this.db);
 
-    if (rawData.length < this.config.minSamples) {
+    // Check data availability
+    const status = assembler.getStatus();
+    console.log(`📊 Factor data available: ${status.factorRecords} records, ${status.factorCompanies} companies`);
+    console.log(`📊 Factor data range: ${status.factorDateRange?.min} to ${status.factorDateRange?.max}`);
+
+    if (!status.readyForTraining) {
       return {
         success: false,
-        error: `Insufficient training data. Need ${this.config.minSamples}, have ${rawData.length}`,
-        samplesAvailable: rawData.length
+        error: `Insufficient factor data. Need at least 100 records with returns, have ${status.trainableRecords || 0}`,
+        factorRecordsAvailable: status.factorRecords
       };
     }
 
-    console.log(`📊 Training on ${rawData.length} samples`);
+    // Calculate appropriate date range based on lookbackDays
+    // Factor scores are quarterly, so we need to map lookback appropriately
+    // 365 days = ~1 year = ~4 quarters
+    // 730 days = ~2 years = ~8 quarters
+    // Use the factor data range directly if lookback covers it
+    const factorMinDate = status.factorDateRange?.min || '2021-01-01';
+    const startDate = lookbackDays >= 1825 ? factorMinDate : this._getDateDaysAgo(lookbackDays);
 
-    // Encode categorical features
-    const sectorEncoder = this._createCategoryEncoder(rawData.map(d => d.sector));
-    const regimeEncoder = this._createCategoryEncoder(rawData.map(d => d.regime));
+    // End date needs to leave room for forward returns (max horizon + buffer)
+    const maxHorizon = Math.max(...this.config.targetHorizons);
+    const endDate = this._getDateDaysAgo(maxHorizon + 30); // Extra buffer for finding price dates
 
-    // Prepare feature matrix
-    const X = rawData.map(d => this._extractFeatures(d, sectorEncoder, regimeEncoder));
+    console.log(`📊 Training date range: ${startDate} to ${endDate}`);
+
+    // Get training matrices from existing factor data
+    const trainingData = assembler.getTrainingMatrices({
+      startDate,
+      endDate,
+      targetHorizon: 21, // Primary horizon
+      normalizeFeatures: true,
+      maxRecords: 50000,  // Limit for memory
+      sampleRate: 1.0  // Use all available data
+    });
+
+    const { features, targets, featureNames, metadata, rawData } = trainingData;
+
+    if (features.length < this.config.minSamples) {
+      return {
+        success: false,
+        error: `Insufficient training data. Need ${this.config.minSamples}, have ${features.length}`,
+        samplesAvailable: features.length,
+        dateRange: metadata.dateRange
+      };
+    }
+
+    console.log(`📊 Training on ${features.length} samples (${metadata.uniqueCompanies} companies, ${metadata.dateRange.min} to ${metadata.dateRange.max})`);
+
+    // Update feature names for this data source
+    this.featureNames = featureNames;
 
     // Train model for each target horizon
     const results = {};
 
     for (const horizon of this.config.targetHorizons) {
-      const targetKey = `forward_return_${horizon}d`;
-      const y = rawData.map(d => d[targetKey]).filter(v => v !== null);
-      const XFiltered = X.filter((_, i) => rawData[i][targetKey] !== null);
+      // Calculate end date for this horizon (needs room for forward returns)
+      const horizonEndDate = this._getDateDaysAgo(horizon + 30);
 
-      if (y.length < this.config.minSamples) {
-        results[horizon] = { error: 'Insufficient samples with target' };
+      // Get data for this specific horizon
+      const horizonData = assembler.getTrainingMatrices({
+        startDate,
+        endDate: horizonEndDate,
+        targetHorizon: horizon,
+        normalizeFeatures: true,
+        maxRecords: 50000,
+        sampleRate: 1.0
+      });
+
+      const X = horizonData.features;
+      const y = horizonData.targets;
+
+      if (X.length < this.config.minSamples) {
+        results[horizon] = {
+          error: `Insufficient samples for ${horizon}d horizon`,
+          samplesAvailable: X.length
+        };
         continue;
       }
 
-      // Train/validation split (80/20, time-ordered)
-      const splitIdx = Math.floor(XFiltered.length * 0.8);
-      const XTrain = XFiltered.slice(0, splitIdx);
+      // Train/validation split (80/20, time-ordered for proper walk-forward)
+      const splitIdx = Math.floor(X.length * 0.8);
+      const XTrain = X.slice(0, splitIdx);
       const yTrain = y.slice(0, splitIdx);
-      const XVal = XFiltered.slice(splitIdx);
+      const XVal = X.slice(splitIdx);
       const yVal = y.slice(splitIdx);
+
+      console.log(`  Training ${horizon}d model: ${XTrain.length} train, ${XVal.length} validation samples`);
 
       // Train model
       const model = new GradientBoostingRegressor({
@@ -532,13 +591,20 @@ class MLSignalCombiner {
       // Store model
       this.models[horizon] = model;
 
+      // Get feature importance with correct names
+      const importances = model.getFeatureImportances();
+      const featureImportanceMap = {};
+      featureNames.forEach((name, idx) => {
+        featureImportanceMap[name] = importances[idx] || 0;
+      });
+
       // Save to database
       const modelName = `signal_combiner_${horizon}d`;
       this.stmtSaveModel.run(
         modelName,
         horizon,
         JSON.stringify(model.toJSON()),
-        JSON.stringify(this._getFeatureImportanceMap(model)),
+        JSON.stringify(featureImportanceMap),
         XTrain.length,
         JSON.stringify(metrics)
       );
@@ -547,24 +613,45 @@ class MLSignalCombiner {
         trainingSamples: XTrain.length,
         validationSamples: XVal.length,
         metrics,
-        featureImportance: this._getFeatureImportanceMap(model)
+        featureImportance: featureImportanceMap
       };
+
+      console.log(`  ✅ ${horizon}d model: R²=${metrics.r2.toFixed(3)}, IC=${metrics.informationCoefficient.toFixed(3)}, Direction=${(metrics.directionAccuracy * 100).toFixed(1)}%`);
     }
 
     this.lastTrainDate = new Date().toISOString();
     this.trainingStats = {
-      totalSamples: rawData.length,
-      sectorEncoder,
-      regimeEncoder,
+      totalSamples: features.length,
+      uniqueCompanies: metadata.uniqueCompanies,
+      dateRange: metadata.dateRange,
+      targetStats: metadata.targetStats,
       results
     };
 
     return {
       success: true,
       trainedAt: this.lastTrainDate,
-      totalSamples: rawData.length,
+      totalSamples: features.length,
+      trainingSetSize: Math.floor(features.length * 0.8),
+      validationSetSize: Math.floor(features.length * 0.2),
+      uniqueCompanies: metadata.uniqueCompanies,
+      dateRange: metadata.dateRange,
+      metrics: Object.fromEntries(
+        Object.entries(results)
+          .filter(([, v]) => v.metrics)
+          .map(([k, v]) => [k, { r2: v.metrics.r2, mae: v.metrics.rmse, ic: v.metrics.informationCoefficient }])
+      ),
       results
     };
+  }
+
+  /**
+   * Get date N days ago in YYYY-MM-DD format
+   */
+  _getDateDaysAgo(days) {
+    const date = new Date();
+    date.setDate(date.getDate() - days);
+    return date.toISOString().split('T')[0];
   }
 
   /**
@@ -845,14 +932,64 @@ class MLSignalCombiner {
   }
 
   /**
+   * Check if any model is trained
+   */
+  isModelTrained() {
+    return Object.keys(this.models).length > 0;
+  }
+
+  /**
    * Get model status and training info
    */
   getStatus() {
+    // Get factor data status
+    const assembler = new TrainingDataAssembler(this.db);
+    const factorStatus = assembler.getStatus();
+
+    // Get saved model info from database
+    let savedModels = [];
+    try {
+      savedModels = this.db.prepare(`
+        SELECT model_name, horizon_days, training_samples, updated_at,
+               json_extract(validation_metrics, '$.r2') as r2,
+               json_extract(validation_metrics, '$.informationCoefficient') as ic
+        FROM ml_models
+        WHERE model_type = 'signal_combiner'
+        ORDER BY horizon_days
+      `).all();
+    } catch (e) {
+      // Table may not exist yet
+    }
+
     return {
-      modelsLoaded: Object.keys(this.models).length,
+      modelsLoaded: Object.keys(this.models).length > 0,
       horizons: Object.keys(this.models).map(h => parseInt(h)),
-      lastTrainDate: this.lastTrainDate,
-      trainingStats: this.trainingStats
+      lastTrainedAt: this.lastTrainDate || (savedModels[0]?.updated_at),
+      trainingSamples: this.trainingStats?.totalSamples || (savedModels[0]?.training_samples),
+      trainingStats: this.trainingStats,
+      // Top-level factor data fields for UI (No Model State)
+      factorDataAvailable: factorStatus.readyForTraining,
+      factorRecords: factorStatus.factorRecords,
+      factorCompanies: factorStatus.factorCompanies,
+      factorDateRange: factorStatus.factorDateRange,
+      // Detailed factorData for Train tab
+      factorData: {
+        recordsAvailable: factorStatus.factorRecords,
+        companiesAvailable: factorStatus.factorCompanies,
+        dateRange: factorStatus.factorDateRange,
+        trainableRecords: factorStatus.trainableRecords,
+        readyForTraining: factorStatus.readyForTraining
+      },
+      savedModels: savedModels.map(m => ({
+        horizon: m.horizon_days,
+        trainingSamples: m.training_samples,
+        r2: m.r2,
+        ic: m.ic,
+        updatedAt: m.updated_at
+      })),
+      performance: savedModels.length > 0 ? Object.fromEntries(
+        savedModels.map(m => [m.horizon_days, { r2: m.r2, ic: m.ic }])
+      ) : null
     };
   }
 }

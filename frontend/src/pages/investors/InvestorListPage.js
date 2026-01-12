@@ -80,9 +80,11 @@ function InvestorListPage() {
   const loadData = async () => {
     try {
       setLoading(true);
+      // Use getMarket() instead of getAll() - returns ETF-based indices (SPY, QQQ, DIA)
+      // with current prices from daily_prices table instead of stale market_index_prices
       const [investorsRes, indicesRes] = await Promise.all([
         investorsAPI.getAll(),
-        indicesAPI.getAll().catch(() => ({ data: { indices: [] } }))
+        indicesAPI.getMarket().catch(() => ({ data: [] }))
       ]);
 
       setInvestors(investorsRes.data.investors || []);
@@ -94,11 +96,14 @@ function InvestorListPage() {
         ? investorsRes.data.investors.reduce((sum, inv) => sum + (inv.latest_positions_count || 0), 0) / investorsRes.data.investors.length
         : 0;
 
+      // Handle response structure for getMarket() - returns array directly or { data: [...] }
+      const indices = indicesRes.data?.data || indicesRes.data || [];
+
       setBenchmarkData({
         totalAUM: totalPortfolioValue,
         avgPositions: avgPositions,
         totalInvestors: investorsRes.data.investors.length,
-        indices: (indicesRes.data.indices || []).slice(0, 4) // Get top 4 indices for comparison
+        indices: indices.slice(0, 4) // Get top 4 indices for comparison
       });
     } catch (err) {
       console.error('Error loading investors:', err);

@@ -43,38 +43,38 @@ class LookupHandler:
 
         # Size
         'market_cap': {'display': 'Market Cap', 'format': 'currency_large', 'category': 'size'},
-        'enterprise_value': {'display': 'Enterprise Value', 'format': 'currency_large', 'category': 'size'},
 
-        # Profitability
-        'gross_margin': {'display': 'Gross Margin', 'format': 'percent', 'category': 'profitability'},
-        'operating_margin': {'display': 'Operating Margin', 'format': 'percent', 'category': 'profitability'},
-        'net_margin': {'display': 'Net Margin', 'format': 'percent', 'category': 'profitability'},
-        'roe': {'display': 'Return on Equity', 'format': 'percent', 'category': 'profitability'},
-        'roa': {'display': 'Return on Assets', 'format': 'percent', 'category': 'profitability'},
-        'roic': {'display': 'Return on Invested Capital', 'format': 'percent', 'category': 'profitability'},
+        # Profitability (stored as percentages: 46.9 = 46.9%)
+        'gross_margin': {'display': 'Gross Margin', 'format': 'percent_raw', 'category': 'profitability'},
+        'operating_margin': {'display': 'Operating Margin', 'format': 'percent_raw', 'category': 'profitability'},
+        'net_margin': {'display': 'Net Margin', 'format': 'percent_raw', 'category': 'profitability'},
+        'roe': {'display': 'Return on Equity', 'format': 'percent_raw', 'category': 'profitability'},
+        'roa': {'display': 'Return on Assets', 'format': 'percent_raw', 'category': 'profitability'},
+        'roic': {'display': 'Return on Invested Capital', 'format': 'percent_raw', 'category': 'profitability'},
 
-        # Growth
-        'revenue_growth_yoy': {'display': 'Revenue Growth (YoY)', 'format': 'percent', 'category': 'growth'},
-        'eps_growth_yoy': {'display': 'EPS Growth (YoY)', 'format': 'percent', 'category': 'growth'},
+        # Growth (stored as percentages: 3.95 = 3.95%)
+        'revenue_growth_yoy': {'display': 'Revenue Growth (YoY)', 'format': 'percent_raw', 'category': 'growth'},
+        'eps_growth_yoy': {'display': 'EPS Growth (YoY)', 'format': 'percent_raw', 'category': 'growth'},
 
         # Financial Health
         'debt_to_equity': {'display': 'Debt/Equity', 'format': 'ratio', 'category': 'financial_health'},
         'current_ratio': {'display': 'Current Ratio', 'format': 'ratio', 'category': 'financial_health'},
         'interest_coverage': {'display': 'Interest Coverage', 'format': 'ratio', 'category': 'financial_health'},
 
-        # Dividend
+        # Dividend (stored as decimal: 0.38 = 38%)
         'dividend_yield': {'display': 'Dividend Yield', 'format': 'percent', 'category': 'dividend'},
-        'payout_ratio': {'display': 'Payout Ratio', 'format': 'percent', 'category': 'dividend'},
 
         # Price
         'price': {'display': 'Stock Price', 'format': 'currency', 'category': 'price'},
-        'change_percent': {'display': 'Daily Change', 'format': 'percent', 'category': 'price'},
 
         # Financials (from statements)
         'total_revenue': {'display': 'Revenue', 'format': 'currency_large', 'category': 'financials'},
         'net_income': {'display': 'Net Income', 'format': 'currency_large', 'category': 'financials'},
         'operating_income': {'display': 'Operating Income', 'format': 'currency_large', 'category': 'financials'},
-        'eps_diluted': {'display': 'EPS (Diluted)', 'format': 'currency', 'category': 'financials'},
+        'nopat': {'display': 'NOPAT', 'format': 'currency_large', 'category': 'financials'},
+        'ebit': {'display': 'EBIT', 'format': 'currency_large', 'category': 'financials'},
+        'ebitda': {'display': 'EBITDA', 'format': 'currency_large', 'category': 'financials'},
+        'free_cash_flow': {'display': 'Free Cash Flow', 'format': 'currency_large', 'category': 'financials'},
         'total_assets': {'display': 'Total Assets', 'format': 'currency_large', 'category': 'financials'},
         'total_debt': {'display': 'Total Debt', 'format': 'currency_large', 'category': 'financials'},
         'cash_and_equivalents': {'display': 'Cash & Equivalents', 'format': 'currency_large', 'category': 'financials'},
@@ -118,62 +118,413 @@ class LookupHandler:
         'eps': 'eps_diluted',
         'cash': 'cash_and_equivalents',
         'assets': 'total_assets',
+        # New aliases for additional metrics
+        'nopat': 'nopat',
+        'net operating profit': 'nopat',
+        'net operating profit after tax': 'nopat',
+        'ebit': 'ebit',
+        'operating profit': 'ebit',
+        'earnings before interest and tax': 'ebit',
+        'ebitda': 'ebitda',
+        'earnings before interest tax depreciation': 'ebitda',
+        'fcf': 'free_cash_flow',
+        'free cash flow': 'free_cash_flow',
+        'cash flow': 'free_cash_flow',
+        'beta': 'beta',
+        'volatility': 'volatility',
+        'vol': 'volatility',
+        'roic': 'roic',
+        'return on invested capital': 'roic',
+        'total debt': 'total_debt',
     }
 
-    def __init__(self, db=None):
+    def __init__(self, db=None, router=None):
         """
         Args:
             db: Database connection
+            router: LLM router for fallback when metrics not found
         """
         self.db = db
+        self.router = router
 
     async def handle(self, classified_query) -> Dict:
         """
-        Handle a lookup query.
+        Handle a lookup query using data-first approach for speed.
+
+        Returns database data immediately for fast responses.
+        LLM enhancement is optional and done asynchronously if time permits.
 
         Args:
             classified_query: ClassifiedQuery with intent LOOKUP
 
         Returns:
-            Dict with metric values
+            Dict with data response
         """
-        # Get symbol
+        logger.info(f"LookupHandler.handle called for query: {classified_query.original_query[:50]}...")
         symbols = classified_query.entities.get('symbols', [])
+        original_query = classified_query.original_query
+
         if not symbols:
+            logger.info("No symbols found, returning helpful message")
             return {
-                'type': 'error',
-                'message': 'Please specify a stock symbol.'
+                'type': 'info',
+                'message': 'Please specify a stock symbol or company name in your question.',
+                'suggestions': [
+                    'Try: "What is Apple\'s P/E ratio?"',
+                    'Or: "Show me MSFT market cap"'
+                ]
             }
 
         symbol = symbols[0].upper()
+        logger.info(f"Processing lookup for symbol: {symbol}")
 
-        # Get requested metrics
-        requested_metrics = classified_query.entities.get('metrics', [])
+        # Get database data - this is the primary response for speed
+        company_data = await self._get_company_data(symbol)
+        logger.info(f"Got company data: {bool(company_data)}")
 
-        # Resolve metric aliases
-        metric_keys = []
-        for m in requested_metrics:
-            m_lower = m.lower()
-            if m_lower in self.METRIC_ALIASES:
-                metric_keys.append(self.METRIC_ALIASES[m_lower])
-            elif m_lower in self.METRICS:
-                metric_keys.append(m_lower)
+        if company_data:
+            # Return formatted data response immediately
+            result = self._format_simple_response(symbol, company_data, original_query)
+            logger.info(f"Returning data response for {symbol}")
+            return result
+        else:
+            # No data found
+            return {
+                'type': 'not_found',
+                'symbol': symbol,
+                'message': f'No data found for {symbol}. The stock may not be in our database.',
+                'suggestions': [
+                    'Check if the symbol is correct',
+                    'Try searching for the company by name'
+                ]
+            }
 
-        # If no specific metrics requested, return a summary
-        if not metric_keys:
-            return await self._get_company_summary(symbol)
+    async def _llm_answer_query(self, symbol: Optional[str], query: str, data: Optional[Dict] = None) -> Dict:
+        """
+        Use LLM as primary answering mechanism for investment questions.
 
-        # Get specific metrics
-        return await self._get_specific_metrics(symbol, metric_keys)
+        This is the LLM-first approach: we always use the LLM to formulate
+        intelligent responses. Database data enriches the response when
+        available but doesn't gate it.
 
-    async def _get_company_summary(self, symbol: str) -> Dict:
+        Args:
+            symbol: Stock symbol (can be None)
+            query: The user's original query
+            data: Database data for context (can be None)
+
+        Returns:
+            Dict with intelligent LLM response
+        """
+        # If no LLM available, fall back to simple data display
+        if not self.router:
+            if data:
+                return self._format_simple_response(symbol, data, query)
+            return {
+                'type': 'error',
+                'message': 'No AI assistant available. Please configure ANTHROPIC_API_KEY or OLLAMA_URL.',
+                'suggestions': [
+                    'Check your environment configuration',
+                    'Ensure the AI service is running'
+                ]
+            }
+
+        try:
+            from ...ai.llm.base import TaskType
+
+            # Build prompt with available context
+            prompt = f"""You are an expert investment analyst assistant. Answer this question:
+
+Question: {query}
+"""
+            if symbol:
+                prompt += f"\nCompany: {symbol}"
+                if data:
+                    company_name = data.get('name', symbol)
+                    sector = data.get('sector')
+                    industry = data.get('industry')
+                    if company_name != symbol:
+                        prompt += f" ({company_name})"
+                    if sector:
+                        prompt += f"\nSector: {sector}"
+                    if industry:
+                        prompt += f"\nIndustry: {industry}"
+
+            if data:
+                prompt += "\n\nAvailable financial data:\n"
+                for key, value in data.items():
+                    if value is not None and key not in ['description', 'name', 'symbol', 'sector', 'industry']:
+                        formatted = self._format_for_prompt(key, value)
+                        if formatted:
+                            prompt += f"- {formatted}\n"
+
+            prompt += """
+Instructions:
+1. Answer the question directly and intelligently
+2. Use the available data when relevant, citing specific numbers
+3. If asked about a metric not in the data, explain what it means and how it's calculated
+4. Be helpful and informative even if exact data isn't available
+5. Keep your response concise (2-4 sentences for simple questions, more for complex ones)
+6. If the question is about something you can derive from the data, do the calculation
+
+Response:"""
+
+            response = self.router.route(
+                TaskType.ANALYSIS,
+                prompt=prompt,
+                temperature=0.3,
+                max_tokens=500
+            )
+
+            result = {
+                'type': 'llm_response',
+                'symbol': symbol,
+                'query': query,
+                'answer': response.content.strip(),
+                'source': 'llm' if not data else 'database+llm'
+            }
+
+            # Include structured data if available (for UI display)
+            if data:
+                result['data'] = {
+                    'name': data.get('name'),
+                    'sector': data.get('sector'),
+                    'industry': data.get('industry'),
+                    'price': data.get('price'),
+                    'market_cap': data.get('market_cap')
+                }
+
+            return result
+
+        except Exception as e:
+            logger.error(f"LLM answer query failed: {e}")
+            # Fall back to data-only response if available
+            if data:
+                return self._format_simple_response(symbol, data, query)
+            return {
+                'type': 'error',
+                'message': f'Unable to process query: {str(e)}',
+                'suggestions': [
+                    'Try rephrasing your question',
+                    'Check the stock symbol is correct'
+                ]
+            }
+
+    def _format_for_prompt(self, key: str, value: any) -> Optional[str]:
+        """Format a data value for inclusion in LLM prompt"""
+        if value is None:
+            return None
+
+        # Get display name and format from METRICS if available
+        if key in self.METRICS:
+            metric_info = self.METRICS[key]
+            display_name = metric_info['display']
+            formatted = self._format_value(value, metric_info['format'])
+            return f"{display_name}: {formatted}"
+
+        # Handle known non-metric fields
+        if key in ['price']:
+            return f"Stock Price: ${value:.2f}"
+        if key in ['market_cap'] and value:
+            if value >= 1_000_000_000_000:
+                return f"Market Cap: ${value / 1_000_000_000_000:.2f}T"
+            elif value >= 1_000_000_000:
+                return f"Market Cap: ${value / 1_000_000_000:.2f}B"
+            else:
+                return f"Market Cap: ${value / 1_000_000:.2f}M"
+
+        # Format large numbers
+        if isinstance(value, (int, float)):
+            if abs(value) >= 1_000_000_000:
+                return f"{key}: ${value / 1_000_000_000:.2f}B"
+            elif abs(value) >= 1_000_000:
+                return f"{key}: ${value / 1_000_000:.2f}M"
+            elif isinstance(value, float) and abs(value) < 1:
+                return f"{key}: {value * 100:.1f}%"
+            else:
+                return f"{key}: {value}"
+
+        return None
+
+    def _format_simple_response(self, symbol: str, data: Dict, query: str) -> Dict:
+        """Format a simple data-only response when LLM is not available"""
+        metrics_by_category = {}
+        for metric_name, metric_info in self.METRICS.items():
+            value = data.get(metric_name)
+            if value is not None:
+                category = metric_info['category']
+                if category not in metrics_by_category:
+                    metrics_by_category[category] = []
+                metrics_by_category[category].append({
+                    'name': metric_info['display'],
+                    'value': self._format_value(value, metric_info['format'])
+                })
+
+        return {
+            'type': 'data_response',
+            'symbol': symbol,
+            'name': data.get('name', symbol),
+            'query': query,
+            'metrics_by_category': metrics_by_category,
+            'source': 'database',
+            'note': 'AI assistant unavailable - showing raw data'
+        }
+
+    def _has_missing_values(self, result: Dict) -> bool:
+        """Check if any requested metrics have N/A values"""
+        metrics = result.get('metrics', [])
+        for m in metrics:
+            if m.get('value') is None or m.get('formatted_value') == 'N/A':
+                return True
+        return False
+
+    async def _enhance_with_llm(
+        self,
+        result: Dict,
+        symbol: str,
+        unresolved_metrics: list,
+        original_query: str
+    ) -> Dict:
+        """Use LLM to help when metrics can't be found in database"""
+        if not self.router:
+            # No LLM available - add helpful message
+            if unresolved_metrics:
+                result['note'] = f"Could not find data for: {', '.join(unresolved_metrics)}"
+            return result
+
+        try:
+            from ...ai.llm.base import TaskType
+
+            # Get company data for context
+            company_data = await self._get_company_data(symbol)
+
+            # Build prompt for LLM
+            prompt = f"""Answer this investment data question:
+
+Question: {original_query}
+
+Available data for {symbol}:
+"""
+            if company_data:
+                for key, value in company_data.items():
+                    if value is not None and key not in ['description']:
+                        if isinstance(value, float) and value > 1000000:
+                            formatted = f"${value/1e9:.2f}B" if value > 1e9 else f"${value/1e6:.2f}M"
+                        elif isinstance(value, float) and value < 1:
+                            formatted = f"{value*100:.1f}%"
+                        else:
+                            formatted = str(value)
+                        prompt += f"- {key}: {formatted}\n"
+
+            if unresolved_metrics:
+                prompt += f"\nMetrics requested but not in database: {', '.join(unresolved_metrics)}\n"
+
+            prompt += """
+Instructions:
+1. Answer the specific question using the available data
+2. If asked about a metric not in the data, explain what it means and provide the calculation if possible
+3. Be concise (2-3 sentences)
+
+Response:"""
+
+            response = self.router.route(
+                TaskType.ANALYSIS,
+                prompt=prompt,
+                temperature=0.3,
+                max_tokens=300
+            )
+
+            # Add LLM explanation to result
+            result['llm_explanation'] = response.content.strip()
+            result['source'] = 'database+llm'
+
+            if unresolved_metrics:
+                result['unresolved_metrics'] = unresolved_metrics
+
+        except Exception as e:
+            logger.warning(f"LLM enhancement failed: {e}")
+            if unresolved_metrics:
+                result['note'] = f"Could not find data for: {', '.join(unresolved_metrics)}"
+
+        return result
+
+    async def _llm_fallback_response(self, symbol: str, query: str, reason: str) -> Dict:
+        """
+        Use LLM to provide an intelligent response when database lookup fails.
+        This is the systemic solution - LLM steps in immediately when data unavailable.
+        """
+        if not self.router:
+            return {
+                'type': 'error',
+                'message': f'Could not find data for {symbol}. {reason}',
+                'suggestions': [
+                    f"Check if {symbol} is a valid stock ticker",
+                    "Try using the full company name",
+                    "The stock may not be in our database yet"
+                ]
+            }
+
+        try:
+            from ...ai.llm.base import TaskType
+
+            prompt = f"""You are an investment analyst assistant. The user asked:
+
+Question: {query}
+
+Context: {reason}
+
+Please provide a helpful response. If the user is asking about a specific company or metric:
+1. Explain what the metric means (if applicable)
+2. Provide general context about the company if you know it
+3. Suggest how they might find this information
+4. If "{symbol}" might be a company name rather than a ticker, suggest the correct ticker
+
+Keep your response concise (3-5 sentences) and helpful.
+
+Response:"""
+
+            response = self.router.route(
+                TaskType.ANALYSIS,
+                prompt=prompt,
+                temperature=0.3,
+                max_tokens=400
+            )
+
+            return {
+                'type': 'llm_response',
+                'symbol': symbol,
+                'query': query,
+                'answer': response.content.strip(),
+                'source': 'llm',
+                'note': reason,
+                'suggestions': [
+                    f"Try searching for {symbol} with its ticker symbol",
+                    "Check the company spelling",
+                    "The data may need to be updated"
+                ]
+            }
+
+        except Exception as e:
+            logger.error(f"LLM fallback failed: {e}")
+            return {
+                'type': 'error',
+                'message': f'Could not find data for {symbol}. {reason}',
+                'suggestions': [
+                    f"Verify {symbol} is a valid ticker",
+                    "Try the full company name",
+                    "Data may not be available for this stock"
+                ]
+            }
+
+    async def _get_company_summary(self, symbol: str, original_query: str = None) -> Dict:
         """Get a comprehensive company summary"""
         company_data = await self._get_company_data(symbol)
         if not company_data:
-            return {
-                'type': 'error',
-                'message': f'Could not find data for {symbol}.'
-            }
+            # Try LLM fallback when no data found
+            return await self._llm_fallback_response(
+                symbol,
+                original_query or f"Tell me about {symbol}",
+                "No data found in database for this company."
+            )
 
         # Format key metrics by category
         metrics_by_category = {}
@@ -205,14 +556,17 @@ class LookupHandler:
             }
         }
 
-    async def _get_specific_metrics(self, symbol: str, metric_keys: List[str]) -> Dict:
+    async def _get_specific_metrics(self, symbol: str, metric_keys: List[str], original_query: str = None) -> Dict:
         """Get specific requested metrics"""
         company_data = await self._get_company_data(symbol)
         if not company_data:
-            return {
-                'type': 'error',
-                'message': f'Could not find data for {symbol}.'
-            }
+            # Try LLM fallback when no data found
+            metrics_str = ', '.join(metric_keys) if metric_keys else 'company data'
+            return await self._llm_fallback_response(
+                symbol,
+                original_query or f"What is the {metrics_str} of {symbol}?",
+                "No data found in database for this company."
+            )
 
         metrics = []
         for metric_name in metric_keys:
@@ -238,44 +592,27 @@ class LookupHandler:
         }
 
     async def _get_company_data(self, symbol: str) -> Optional[Dict]:
-        """Get all company data"""
+        """Get company data with optimized queries for speed"""
         if not self.db:
             return None
 
+        # Fast query - get company and metrics only (avoiding slow JOINs)
         sql = """
             SELECT
                 c.symbol, c.name, c.sector, c.industry, c.description,
-                m.market_cap, m.enterprise_value,
+                c.market_cap,
                 m.pe_ratio, m.pb_ratio, m.ps_ratio, m.ev_ebitda,
                 m.gross_margin, m.operating_margin, m.net_margin,
                 m.roe, m.roa, m.roic,
-                m.revenue_growth_yoy, m.eps_growth_yoy,
+                m.revenue_growth_yoy, m.earnings_growth_yoy as eps_growth_yoy,
                 m.debt_to_equity, m.current_ratio, m.interest_coverage,
-                m.dividend_yield, m.payout_ratio,
-                p.close as price, p.change_percent,
-                f.total_revenue, f.net_income, f.operating_income,
-                f.eps_diluted, f.total_assets, f.total_debt, f.cash_and_equivalents
+                m.dividend_yield,
+                m.fcf as free_cash_flow
             FROM companies c
             LEFT JOIN calculated_metrics m ON c.id = m.company_id
-            LEFT JOIN (
-                SELECT company_id, close, change_percent
-                FROM daily_prices
-                WHERE (company_id, date) IN (
-                    SELECT company_id, MAX(date) FROM daily_prices GROUP BY company_id
-                )
-            ) p ON c.id = p.company_id
-            LEFT JOIN (
-                SELECT company_id, total_revenue, net_income, operating_income,
-                       eps_diluted, total_assets, total_debt, cash_and_equivalents
-                FROM financial_data
-                WHERE (company_id, fiscal_date_ending) IN (
-                    SELECT company_id, MAX(fiscal_date_ending)
-                    FROM financial_data
-                    WHERE statement_type = 'income_statement'
-                    GROUP BY company_id
-                )
-            ) f ON c.id = f.company_id
-            WHERE c.symbol = ? AND c.active = 1
+            WHERE c.symbol = ? AND c.is_active = 1
+            ORDER BY m.fiscal_period DESC
+            LIMIT 1
         """
 
         try:
@@ -285,22 +622,54 @@ class LookupHandler:
 
             columns = [
                 'symbol', 'name', 'sector', 'industry', 'description',
-                'market_cap', 'enterprise_value',
+                'market_cap',
                 'pe_ratio', 'pb_ratio', 'ps_ratio', 'ev_ebitda',
                 'gross_margin', 'operating_margin', 'net_margin',
                 'roe', 'roa', 'roic',
                 'revenue_growth_yoy', 'eps_growth_yoy',
                 'debt_to_equity', 'current_ratio', 'interest_coverage',
-                'dividend_yield', 'payout_ratio',
-                'price', 'change_percent',
-                'total_revenue', 'net_income', 'operating_income',
-                'eps_diluted', 'total_assets', 'total_debt', 'cash_and_equivalents'
+                'dividend_yield',
+                'free_cash_flow'
             ]
-            return dict(zip(columns, result))
+            data = dict(zip(columns, result))
+            return data
 
         except Exception as e:
             logger.error(f"Failed to get company data for {symbol}: {e}")
             return None
+
+    def _compute_derived_metrics(self, data: Dict) -> Dict:
+        """Compute NOPAT, EBIT, EBITDA from raw financial data"""
+        try:
+            operating_income = data.get('operating_income')
+            net_income = data.get('net_income')
+            depreciation = data.get('depreciation_amortization') or 0
+
+            # EBIT = Operating Income (earnings before interest and tax)
+            if operating_income is not None:
+                data['ebit'] = operating_income
+
+            # EBITDA = EBIT + Depreciation & Amortization
+            if operating_income is not None:
+                data['ebitda'] = operating_income + depreciation
+
+            # NOPAT = Operating Income * (1 - Tax Rate)
+            # Estimate tax rate from net income / pre-tax income if available
+            if operating_income is not None and net_income is not None:
+                # Approximate tax rate (assume ~21% if we can't calculate)
+                # More accurate would be to get income_tax_expense from financials
+                tax_rate = 0.21  # Default US corporate tax rate
+                data['nopat'] = operating_income * (1 - tax_rate)
+
+            # Beta - try to get from calculated_metrics or estimate
+            if data.get('beta') is None:
+                # Default market beta of 1.0 if not available
+                data['beta'] = None  # Will show N/A if not in DB
+
+        except Exception as e:
+            logger.warning(f"Error computing derived metrics: {e}")
+
+        return data
 
     def _format_value(self, value: any, format_type: str) -> str:
         """Format a value for display"""
@@ -310,7 +679,11 @@ class LookupHandler:
         if format_type == 'ratio':
             return f"{value:.2f}x"
         elif format_type == 'percent':
+            # Value is stored as decimal (0.38 = 38%)
             return f"{value * 100:.2f}%"
+        elif format_type == 'percent_raw':
+            # Value is already stored as percentage (46.9 = 46.9%)
+            return f"{value:.2f}%"
         elif format_type == 'currency':
             return f"${value:.2f}"
         elif format_type == 'currency_large':

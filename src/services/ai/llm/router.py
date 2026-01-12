@@ -182,7 +182,8 @@ class ModelRouter:
               prompt: str = None,
               messages: List[Message] = None,
               system: str = None,
-              temperature: float = 0.7) -> LLMResponse:
+              temperature: float = 0.7,
+              max_tokens: int = None) -> LLMResponse:
         """
         Route a request to the best model.
 
@@ -192,13 +193,14 @@ class ModelRouter:
             messages: For chat tasks
             system: System prompt
             temperature: Generation temperature
+            max_tokens: Override default max tokens for this request
 
         Returns:
             LLMResponse from the selected model
         """
         input_length = len(prompt) if prompt else sum(len(m.content) for m in (messages or []))
         config = self.TASK_ROUTING.get(task, self.TASK_ROUTING[TaskType.CHAT])
-        max_tokens = config.get('max_tokens', 1000)
+        max_tokens = max_tokens or config.get('max_tokens', 1000)
 
         model = self.get_model(task, input_length)
         logger.info(f"Routing {task.value} to {model.name}")

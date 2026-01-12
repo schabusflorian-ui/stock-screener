@@ -8,6 +8,7 @@ export { default as FinancialChart } from './FinancialChart';
 export { default as ComparisonChart } from './ComparisonChart';
 export { default as MultiMetricChart } from './MultiMetricChart';
 export { default as Sparkline } from './Sparkline';
+export { default as MiniChart } from './MiniChart';
 export { default as ClassificationEditor } from './ClassificationEditor';
 export { default as SortableTable } from './SortableTable';
 export { default as MetricsBarChart } from './MetricsBarChart';

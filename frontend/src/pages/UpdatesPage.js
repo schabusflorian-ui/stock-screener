@@ -381,15 +381,18 @@ function UpdatesPage({ embedded = false }) {
     }
   }, []);
 
-  // Load index status
+  // Load index status (use ETF-based indices with current price data)
   const loadIndexStatus = useCallback(async () => {
     try {
-      const res = await indicesAPI.getAll();
-      if (res.data?.data) {
+      // Use getMarket() instead of getAll() - returns ETF-based indices (SPY, QQQ, DIA)
+      // with current prices from daily_prices table instead of stale market_index_prices
+      const res = await indicesAPI.getMarket();
+      const indices = res.data?.data || res.data || [];
+      if (indices.length > 0) {
         setIndexStatus({
-          indices: res.data.data,
-          count: res.data.data.length,
-          lastUpdate: res.data.data[0]?.last_price_date
+          indices: indices,
+          count: indices.length,
+          lastUpdate: indices[0]?.last_price_date || indices[0]?.updated_at
         });
       }
     } catch (err) {

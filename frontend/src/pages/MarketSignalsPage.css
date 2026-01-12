@@ -1,0 +1,91 @@
+/* frontend/src/pages/MarketSignalsPage.css */
+/* Unified Market Signals page styles */
+
+.signals-page {
+  padding: var(--space-4);
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+/* Tab Navigation */
+.signals-tabs {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  padding: var(--space-1);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-primary);
+}
+
+.signals-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex: 1;
+  justify-content: center;
+}
+
+.signals-tab:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.signals-tab.active {
+  background: var(--brand-primary);
+  color: white;
+}
+
+.signals-tab .tab-label {
+  white-space: nowrap;
+}
+
+/* Tab Content */
+.signals-content {
+  min-height: 400px;
+}
+
+/* Override child page styles to remove duplicate headers */
+.signals-content .page-header {
+  display: none;
+}
+
+.signals-content .trending-page,
+.signals-content .insider-page,
+.signals-content .validation-dashboard {
+  padding: 0;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .signals-page {
+    padding: var(--space-3);
+  }
+
+  .signals-tabs {
+    flex-wrap: wrap;
+  }
+
+  .signals-tab {
+    flex: 1 1 auto;
+    min-width: 100px;
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .signals-tab .tab-label {
+    display: none;
+  }
+
+  .signals-tab.active .tab-label {
+    display: inline;
+  }
+}

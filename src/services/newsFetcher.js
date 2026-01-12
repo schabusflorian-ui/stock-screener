@@ -25,10 +25,11 @@ const rssParser = new Parser({
   },
 });
 
-// RSS Feed configurations
+// RSS Feed configurations - US sources
 const RSS_SOURCES = {
   googleNews: {
     name: 'Google News',
+    region: 'US',
     buildUrl: (symbol) =>
       `https://news.google.com/rss/search?q=${encodeURIComponent(symbol + ' stock')}&hl=en-US&gl=US&ceid=US:en`,
     parseItem: (item) => ({
@@ -42,6 +43,7 @@ const RSS_SOURCES = {
   },
   yahooFinance: {
     name: 'Yahoo Finance',
+    region: 'US',
     buildUrl: (symbol) =>
       `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${symbol.toUpperCase()}&region=US&lang=en-US`,
     parseItem: (item) => ({
@@ -51,6 +53,95 @@ const RSS_SOURCES = {
       url: item.link,
       publishedAt: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
       imageUrl: item.media?.['$']?.url || null,
+    }),
+  },
+};
+
+// European RSS Feed configurations
+const EU_RSS_SOURCES = {
+  googleNewsUK: {
+    name: 'Google News UK',
+    region: 'UK',
+    buildUrl: (symbol) =>
+      `https://news.google.com/rss/search?q=${encodeURIComponent(symbol + ' stock OR shares')}&hl=en-GB&gl=GB&ceid=GB:en`,
+    parseItem: (item) => ({
+      title: item.title?.replace(/ - [^-]+$/, '') || '',
+      description: stripHtml(item.contentSnippet || item.content || ''),
+      source: extractSourceFromTitle(item.title) || 'Google News UK',
+      url: item.link,
+      publishedAt: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
+      imageUrl: item.media?.['$']?.url || item.thumbnail?.['$']?.url || null,
+    }),
+  },
+  googleNewsDE: {
+    name: 'Google News Germany',
+    region: 'DE',
+    buildUrl: (symbol) =>
+      `https://news.google.com/rss/search?q=${encodeURIComponent(symbol + ' aktie OR börse')}&hl=de&gl=DE&ceid=DE:de`,
+    parseItem: (item) => ({
+      title: item.title?.replace(/ - [^-]+$/, '') || '',
+      description: stripHtml(item.contentSnippet || item.content || ''),
+      source: extractSourceFromTitle(item.title) || 'Google News DE',
+      url: item.link,
+      publishedAt: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
+      imageUrl: item.media?.['$']?.url || item.thumbnail?.['$']?.url || null,
+    }),
+  },
+  googleNewsFR: {
+    name: 'Google News France',
+    region: 'FR',
+    buildUrl: (symbol) =>
+      `https://news.google.com/rss/search?q=${encodeURIComponent(symbol + ' action OR bourse')}&hl=fr&gl=FR&ceid=FR:fr`,
+    parseItem: (item) => ({
+      title: item.title?.replace(/ - [^-]+$/, '') || '',
+      description: stripHtml(item.contentSnippet || item.content || ''),
+      source: extractSourceFromTitle(item.title) || 'Google News FR',
+      url: item.link,
+      publishedAt: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
+      imageUrl: item.media?.['$']?.url || item.thumbnail?.['$']?.url || null,
+    }),
+  },
+  yahooFinanceUK: {
+    name: 'Yahoo Finance UK',
+    region: 'UK',
+    buildUrl: (symbol) => {
+      // For UK stocks, try with .L suffix for London Stock Exchange
+      const ukSymbol = symbol.includes('.') ? symbol : symbol;
+      return `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${ukSymbol.toUpperCase()}&region=UK&lang=en-GB`;
+    },
+    parseItem: (item) => ({
+      title: item.title || '',
+      description: stripHtml(item.contentSnippet || item.content || ''),
+      source: 'Yahoo Finance UK',
+      url: item.link,
+      publishedAt: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
+      imageUrl: item.media?.['$']?.url || null,
+    }),
+  },
+  investingComUK: {
+    name: 'Investing.com UK',
+    region: 'UK',
+    buildUrl: () => 'https://www.investing.com/rss/news_301.rss', // UK Market news
+    parseItem: (item) => ({
+      title: item.title || '',
+      description: stripHtml(item.contentSnippet || item.content || ''),
+      source: 'Investing.com',
+      url: item.link,
+      publishedAt: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
+      imageUrl: null,
+    }),
+  },
+  investingComEU: {
+    name: 'Investing.com Europe',
+    region: 'EU',
+    buildUrl: () => 'https://www.investing.com/rss/news_314.rss', // European Market news
+    parseItem: (item) => ({
+      title: item.title || '',
+      description: stripHtml(item.contentSnippet || item.content || ''),
+      source: 'Investing.com EU',
+      url: item.link,
+      publishedAt: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
+      imageUrl: null,
     }),
   },
 };
@@ -122,8 +213,8 @@ class NewsFetcher {
   /**
    * Fetch news from RSS feed
    */
-  async fetchRSS(symbol, sourceKey) {
-    const source = RSS_SOURCES[sourceKey];
+  async fetchRSS(symbol, sourceKey, sources = RSS_SOURCES) {
+    const source = sources[sourceKey];
     if (!source) {
       throw new Error(`Unknown RSS source: ${sourceKey}`);
     }
@@ -243,20 +334,77 @@ class NewsFetcher {
   }
 
   /**
+   * Fetch European news from RSS feeds
+   */
+  async fetchEuropeanNews(symbol, region = 'EU') {
+    console.log(`Fetching European news for ${symbol} (region: ${region})...`);
+
+    const articles = [];
+    const sourcesToFetch = [];
+
+    // Determine which sources to use based on region
+    if (region === 'UK' || region === 'EU') {
+      sourcesToFetch.push('googleNewsUK', 'yahooFinanceUK', 'investingComUK');
+    }
+    if (region === 'DE' || region === 'EU') {
+      sourcesToFetch.push('googleNewsDE');
+    }
+    if (region === 'FR' || region === 'EU') {
+      sourcesToFetch.push('googleNewsFR');
+    }
+    if (region === 'EU') {
+      sourcesToFetch.push('investingComEU');
+    }
+
+    // Fetch from each source
+    for (const sourceKey of sourcesToFetch) {
+      try {
+        const sourceArticles = await this.fetchRSS(symbol, sourceKey, EU_RSS_SOURCES);
+        articles.push(...sourceArticles);
+      } catch (error) {
+        console.warn(`Failed to fetch from ${sourceKey}:`, error.message);
+      }
+    }
+
+    return articles;
+  }
+
+  /**
    * Fetch all news sources for a symbol
    */
-  async fetchAllNews(symbol, companyId) {
-    console.log(`Fetching all news sources for ${symbol}...`);
+  async fetchAllNews(symbol, companyId, options = {}) {
+    const { region = 'US' } = options;
+    console.log(`Fetching all news sources for ${symbol} (region: ${region})...`);
 
-    // Fetch from all sources in parallel
-    const [googleNews, yahooNews, apiNews] = await Promise.all([
-      this.fetchGoogleNews(symbol),
-      this.fetchYahooFinance(symbol),
-      this.fetchFromAPI(symbol),
-    ]);
+    let allArticles = [];
 
-    // Combine and deduplicate by URL
-    const allArticles = [...googleNews, ...yahooNews, ...apiNews];
+    if (region === 'US') {
+      // Fetch from US sources in parallel
+      const [googleNews, yahooNews, apiNews] = await Promise.all([
+        this.fetchGoogleNews(symbol),
+        this.fetchYahooFinance(symbol),
+        this.fetchFromAPI(symbol),
+      ]);
+      allArticles = [...googleNews, ...yahooNews, ...apiNews];
+    } else if (region === 'UK' || region === 'EU' || region === 'DE' || region === 'FR') {
+      // Fetch from European sources
+      const [euNews, apiNews] = await Promise.all([
+        this.fetchEuropeanNews(symbol, region),
+        this.fetchFromAPI(symbol), // API sources may have EU coverage
+      ]);
+      allArticles = [...euNews, ...apiNews];
+    } else {
+      // Global: fetch from both US and EU sources
+      const [googleNews, yahooNews, euNews, apiNews] = await Promise.all([
+        this.fetchGoogleNews(symbol),
+        this.fetchYahooFinance(symbol),
+        this.fetchEuropeanNews(symbol, 'EU'),
+        this.fetchFromAPI(symbol),
+      ]);
+      allArticles = [...googleNews, ...yahooNews, ...euNews, ...apiNews];
+    }
+
+    // Deduplicate by URL
     const uniqueArticles = this.deduplicateArticles(allArticles);
 
     if (uniqueArticles.length === 0) {
@@ -278,6 +426,7 @@ class NewsFetcher {
     return {
       articles: analyzed,
       sentiment: summary,
+      region,
     };
   }
 

@@ -1,0 +1,79 @@
+/* frontend/src/components/MiniChart.css */
+/* Enhanced mini chart with axes */
+
+.mini-chart-container {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.mini-chart-canvas {
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.mini-chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+/* Y-axis range labels - positioned to avoid overlapping time axis */
+.mini-chart-range {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 16px; /* Leave space for time axis */
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 2px 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.mini-chart-max,
+.mini-chart-min {
+  font-size: 8px;
+  font-weight: var(--font-medium);
+  color: var(--text-tertiary);
+  background: rgba(var(--bg-tertiary-rgb, 30, 30, 36), 0.9);
+  padding: 1px 3px;
+  border-radius: 2px;
+  white-space: nowrap;
+  max-width: 50px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Compact version for smaller cards */
+.mini-chart-container.compact .mini-chart-max,
+.mini-chart-container.compact .mini-chart-min {
+  font-size: 7px;
+  padding: 0 2px;
+}
+
+/* Time axis labels - ensure no overlap with Y-axis */
+.mini-chart-time-axis {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 2px 0;
+  margin-top: 2px;
+}
+
+.mini-chart-time-label {
+  font-size: 8px;
+  font-weight: var(--font-medium);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* Ensure last time label doesn't overlap with Y-axis labels */
+.mini-chart-time-label:last-child {
+  text-align: right;
+  padding-right: 2px;
+}

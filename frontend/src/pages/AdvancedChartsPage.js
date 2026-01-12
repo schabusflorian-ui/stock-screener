@@ -657,12 +657,24 @@ function AdvancedChartsPage() {
     loadCompanies();
   }, []);
 
-  // Load market indices
+  // Load market indices (use ETF-based indices with current price data)
   useEffect(() => {
     const loadIndices = async () => {
       try {
-        const response = await indicesAPI.getAll();
-        setMarketIndices(response.data?.data || []);
+        // Use getMarket() instead of getAll() - returns ETF-based indices (SPY, QQQ, DIA)
+        // with current prices from daily_prices table instead of stale market_index_prices
+        const response = await indicesAPI.getMarket();
+        const indices = response.data?.data || response.data || [];
+        // Map ETF symbols to display format expected by component
+        const formatted = indices.map(idx => ({
+          short_name: idx.symbol,
+          name: idx.name,
+          symbol: idx.symbol,
+          last_price: idx.last_price,
+          change_1d: idx.change_1d,
+          change_ytd: idx.change_ytd
+        }));
+        setMarketIndices(formatted);
       } catch (error) {
         console.error('Error loading market indices:', error);
       }
@@ -804,10 +816,12 @@ function AdvancedChartsPage() {
         return;
       }
       setSelectedIndices(prev => [...prev, index]);
-      // Load price data for this index - use 'max' to get all available data
+      // Load price data for this index using pricesAPI.get() which fetches from
+      // daily_prices table (current data) instead of stale market_index_prices
       try {
-        const priceRes = await indicesAPI.getPrices(symbol, 'max');
-        const prices = priceRes.data?.data || [];
+        const priceRes = await pricesAPI.get(symbol, { period: '5y' });
+        // Response structure: { success: true, data: { prices: [...] } }
+        const prices = priceRes.data?.data?.prices || priceRes.data?.prices || [];
         setIndexPriceData(prev => ({
           ...prev,
           [symbol]: prices.map(p => ({ date: p.date, close: p.close }))

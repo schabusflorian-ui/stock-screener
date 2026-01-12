@@ -1,0 +1,116 @@
+/* frontend/src/pages/research/MonteCarloTab.css */
+
+.monte-carlo-tab {
+  animation: fadeIn 0.2s ease;
+}
+
+/* Header with title and info button */
+.tab-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: var(--space-4);
+}
+
+.header-content h2 {
+  font-size: var(--text-xl);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin: 0 0 var(--space-1) 0;
+}
+
+.header-content .subtitle {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  margin: 0;
+}
+
+.info-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.info-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--border-secondary);
+}
+
+/* Info Panel */
+.info-panel {
+  background: var(--info-muted);
+  border: 1px solid var(--info);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  animation: fadeIn 0.2s ease;
+}
+
+.info-panel h4 {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin: 0 0 var(--space-2) 0;
+}
+
+.info-panel p {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-3) 0;
+  line-height: 1.6;
+}
+
+.info-panel ul {
+  margin: 0;
+  padding-left: var(--space-5);
+}
+
+.info-panel li {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-1);
+}
+
+.info-panel li strong {
+  color: var(--text-primary);
+}
+
+/* Notice Banner */
+.monte-carlo-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--warning-muted);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.monte-carlo-notice svg {
+  color: var(--warning);
+  flex-shrink: 0;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .tab-header {
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .info-btn {
+    align-self: flex-end;
+  }
+}

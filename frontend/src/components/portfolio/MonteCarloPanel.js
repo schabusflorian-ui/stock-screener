@@ -2,13 +2,16 @@
 import { useState, useMemo } from 'react';
 import { Loader, AlertTriangle, CheckCircle, Play, Target, Info, ChevronDown, ChevronUp } from 'lucide-react';
 import { simulateAPI } from '../../services/api';
+import { usePreferences } from '../../context/PreferencesContext';
 import './SimulationPanels.css';
 
 function MonteCarloPanel({ portfolioId, initialValue }) {
+  const { preferences } = usePreferences();
   const [config, setConfig] = useState({
     simulationCount: 1000,
-    timeHorizonYears: 30,
+    timeHorizonYears: preferences.defaultTimeHorizon || 10,
     returnModel: 'historical',
+    returnDistribution: 'normal', // NEW: 'normal', 'studentT', 'skewedT', 'auto'
     initialValue: initialValue || 100000,
     annualContribution: 0,
     annualWithdrawal: 0,
@@ -33,6 +36,7 @@ function MonteCarloPanel({ portfolioId, initialValue }) {
         simulationCount: config.simulationCount,
         timeHorizonYears: config.timeHorizonYears,
         returnModel: config.returnModel,
+        returnDistribution: config.returnDistribution,
         initialValue: config.initialValue,
         annualContribution: config.annualContribution,
         annualWithdrawal: config.annualWithdrawal,
@@ -149,6 +153,27 @@ function MonteCarloPanel({ portfolioId, initialValue }) {
                 <option value="forecasted">Forecasted Returns</option>
               </select>
             </div>
+
+            {config.returnModel === 'parametric' && (
+              <div className="form-group">
+                <label>Return Distribution</label>
+                <select
+                  value={config.returnDistribution}
+                  onChange={e => setConfig({ ...config, returnDistribution: e.target.value })}
+                >
+                  <option value="normal">Normal (Gaussian)</option>
+                  <option value="studentT">Student's t (Fat Tails)</option>
+                  <option value="skewedT">Skewed t (Asymmetric)</option>
+                  <option value="auto">Auto-fit Best</option>
+                </select>
+                <span className="form-hint">
+                  {config.returnDistribution === 'normal' && 'Standard bell curve - may underestimate tail risk'}
+                  {config.returnDistribution === 'studentT' && 'Captures fat tails - more realistic for market returns'}
+                  {config.returnDistribution === 'skewedT' && 'Captures both fat tails and asymmetry'}
+                  {config.returnDistribution === 'auto' && 'Automatically selects best-fitting distribution'}
+                </span>
+              </div>
+            )}
 
             <div className="form-row">
               <div className="form-group">
@@ -351,6 +376,69 @@ function MonteCarloPanel({ portfolioId, initialValue }) {
               )}
             </div>
 
+            {/* Distribution Fit Info - shows when using parametric returns */}
+            {results.distributionFit && (
+              <div className="distribution-fit-section">
+                <h5>Fitted Return Distribution</h5>
+                <div className="distribution-fit-grid">
+                  <div className="dist-fit-card">
+                    <span className="dist-label">Distribution Type</span>
+                    <span className="dist-value">{results.distributionFit.name || results.distributionFit.type}</span>
+                  </div>
+                  {results.distributionFit.moments && (
+                    <>
+                      <div className="dist-fit-card">
+                        <span className="dist-label">Skewness</span>
+                        <span className="dist-value">{results.distributionFit.moments.skewness?.toFixed(3)}</span>
+                        <span className="dist-hint">
+                          {results.distributionFit.moments.skewness < -0.5 ? 'Left-skewed (more downside)' :
+                           results.distributionFit.moments.skewness > 0.5 ? 'Right-skewed (more upside)' : 'Approximately symmetric'}
+                        </span>
+                      </div>
+                      <div className="dist-fit-card">
+                        <span className="dist-label">Kurtosis</span>
+                        <span className="dist-value">{results.distributionFit.moments.kurtosis?.toFixed(3)}</span>
+                        <span className="dist-hint">
+                          {results.distributionFit.moments.kurtosis > 4 ? 'Fat tails detected' :
+                           results.distributionFit.moments.kurtosis > 3.5 ? 'Slightly fat tails' : 'Near-normal tails'}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  {results.distributionFit.params?.df && (
+                    <div className="dist-fit-card">
+                      <span className="dist-label">Degrees of Freedom</span>
+                      <span className="dist-value">{results.distributionFit.params.df.toFixed(1)}</span>
+                      <span className="dist-hint">Lower = fatter tails (normal = infinite)</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* VaR Comparison */}
+                {results.distributionFit.varComparison && (
+                  <div className="var-comparison">
+                    <h6>Risk Model Comparison (95% VaR)</h6>
+                    <div className="var-comparison-grid">
+                      <div className="var-card">
+                        <span className="var-label">Normal VaR</span>
+                        <span className="var-value">{(results.distributionFit.varComparison.normalVaR * 100).toFixed(2)}%</span>
+                      </div>
+                      <div className="var-card">
+                        <span className="var-label">Adjusted VaR</span>
+                        <span className="var-value">{(results.distributionFit.varComparison.adjustedVaR * 100).toFixed(2)}%</span>
+                      </div>
+                      <div className="var-card highlight">
+                        <span className="var-label">Normal Underestimates By</span>
+                        <span className="var-value" style={{ color: results.distributionFit.varComparison.underestimationPct > 10 ? 'var(--danger-color)' : 'var(--warning-color)' }}>
+                          {results.distributionFit.varComparison.underestimationPct?.toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Fan Chart Visualization */}
             <div className="fan-chart-section">
               <h5>Wealth Trajectory Projection</h5>
@@ -510,8 +598,14 @@ function MonteCarloPanel({ portfolioId, initialValue }) {
               <Info size={16} />
               <div>
                 <strong>How to interpret:</strong> This simulation ran {results.simulationCount?.toLocaleString()} scenarios
-                using {config.returnModel === 'historical' ? 'historical' : config.returnModel === 'parametric' ? 'statistical' : 'forecasted'} returns.
-                The survival rate shows the percentage of simulations where your portfolio lasted the full {config.timeHorizonYears} years.
+                using {config.returnModel === 'historical' ? 'historical bootstrap' :
+                       config.returnModel === 'parametric' ?
+                         `${results.distributionFit?.name || config.returnDistribution} distribution` :
+                         'forecasted'} returns.
+                {results.distributionFit?.moments?.kurtosis > 4 && (
+                  <> Fat tails were detected in returns, meaning extreme events are more likely than normal models predict.</>
+                )}
+                {' '}The survival rate shows the percentage of simulations where your portfolio lasted the full {config.timeHorizonYears} years.
                 A rate above 90% is generally considered safe for retirement planning.
               </div>
             </div>

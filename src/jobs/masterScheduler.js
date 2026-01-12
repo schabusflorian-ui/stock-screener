@@ -27,6 +27,9 @@ const fs = require('fs');
 const PriceUpdateScheduler = require('./priceUpdateScheduler');
 const KnowledgeBaseRefresh = require('./knowledgeBaseRefresh');
 const { getETFUpdateScheduler } = require('./etfUpdateScheduler');
+const Investor13FRefresh = require('./investor13FRefresh');
+const { refreshEarnings } = require('./earningsRefresh');
+const { XBRLBulkImporter } = require('../services/xbrl/xbrlBulkImporter');
 
 class MasterScheduler {
   constructor() {
@@ -43,6 +46,7 @@ class MasterScheduler {
     this.priceUpdater = new PriceUpdateScheduler();
     this.knowledgeRefresher = new KnowledgeBaseRefresh();
     this.etfUpdater = getETFUpdateScheduler();
+    this.investor13FRefresher = new Investor13FRefresh();
 
     // Track running jobs
     this.runningJobs = new Set();
@@ -247,6 +251,193 @@ class MasterScheduler {
   }
 
   /**
+   * Run EU/UK price update
+   * Updates prices for European companies with valid tickers
+   */
+  async runEuropeanPriceUpdate(countries = ['GB']) {
+    return new Promise((resolve, reject) => {
+      const script = path.join(this.projectRoot, 'python-services', 'price_updater.py');
+      // Use test-country to bypass weekend check and update all EU/UK
+      const child = spawn('python3', [script, 'test-country', '-c', countries[0], '-l', '1000'], {
+        cwd: this.projectRoot,
+        stdio: 'pipe'
+      });
+
+      let output = '';
+      child.stdout.on('data', (data) => {
+        output += data.toString();
+        // Log progress
+        const lines = data.toString().split('\n').filter(l => l.trim());
+        lines.forEach(line => {
+          if (line.includes('Batch') || line.includes('Summary')) {
+            this.log(`EU/UK Prices: ${line}`);
+          }
+        });
+      });
+      child.stderr.on('data', (data) => { output += data.toString(); });
+
+      child.on('close', (code) => {
+        if (code === 0) {
+          // Parse results from output
+          const successMatch = output.match(/Successful: (\d+)/);
+          const failedMatch = output.match(/Failed: (\d+)/);
+          resolve({
+            successful: successMatch ? parseInt(successMatch[1]) : 0,
+            failed: failedMatch ? parseInt(failedMatch[1]) : 0,
+            output
+          });
+        } else {
+          reject(new Error(`EU/UK price update failed with code ${code}: ${output}`));
+        }
+      });
+
+      child.on('error', reject);
+    });
+  }
+
+  /**
+   * Run European index constituents update
+   * Fetches FTSE 100, DAX 40, CAC 40 constituents and marks companies
+   */
+  async runEuropeanIndexUpdate() {
+    return new Promise((resolve, reject) => {
+      const script = path.join(this.projectRoot, 'python-services', 'european_index_fetcher.py');
+      const child = spawn('python3', [script, 'all'], {
+        cwd: this.projectRoot,
+        stdio: 'pipe'
+      });
+
+      let output = '';
+      child.stdout.on('data', (data) => { output += data.toString(); });
+      child.stderr.on('data', (data) => { output += data.toString(); });
+
+      child.on('close', (code) => {
+        if (code === 0) {
+          this.log('European index constituents updated');
+          resolve(output);
+        } else {
+          reject(new Error(`European index update failed with code ${code}: ${output}`));
+        }
+      });
+
+      child.on('error', reject);
+    });
+  }
+
+  /**
+   * Run valuation calculation for EU/UK companies
+   * Calculates PE, PB, PS ratios using price data and XBRL fundamentals
+   */
+  async runEuropeanValuationUpdate() {
+    const { getDatabase } = require('../database');
+    const { ValuationService } = require('../services/xbrl');
+
+    const database = getDatabase();
+    const valuationService = new ValuationService(database);
+
+    this.log('Starting EU/UK valuation calculation...');
+    const result = valuationService.updateAllValuations();
+    this.log(`Valuation update complete: ${result.updated} companies updated, ${result.errors} errors`);
+
+    return result;
+  }
+
+  /**
+   * Run sector/industry enrichment for EU/UK companies
+   * Fetches missing sector/industry data from Yahoo Finance
+   */
+  async runEuropeanEnrichment() {
+    const { getDatabase } = require('../database');
+    const { EnrichmentService } = require('../services/xbrl');
+
+    const database = getDatabase();
+    const enrichmentService = new EnrichmentService(database);
+
+    this.log('Starting EU/UK sector enrichment...');
+    const result = await enrichmentService.enrichAllWithoutSector({ limit: 100 });
+    this.log(`Enrichment complete: ${result.enriched} companies enriched, ${result.failed} failed`);
+
+    return result;
+  }
+
+  /**
+   * Run XBRL EU/UK bulk import
+   * Imports XBRL filings from filings.xbrl.org for EU/UK companies
+   */
+  async runXBRLImport(options = {}) {
+    const { getDatabase } = require('../database');
+    const database = getDatabase();
+
+    const importer = new XBRLBulkImporter(database, {
+      startYear: options.startYear || 2021,
+      batchSize: options.batchSize || 100
+    });
+
+    const countries = options.countries || ['GB', 'DE', 'FR', 'NL', 'SE'];
+
+    this.log(`Starting EU/UK XBRL import for countries: ${countries.join(', ')}`);
+
+    const results = await importer.importAllEuropeUK({
+      countries,
+      startYear: options.startYear || 2021,
+      progressCallback: (progress) => {
+        if (progress.stats.processed % 100 === 0) {
+          this.log(`XBRL Progress: ${progress.currentCountry} - ${progress.stats.processed} processed, ${progress.stats.parsed} parsed`);
+        }
+      }
+    });
+
+    this.log(`XBRL Import complete: ${results.totals.processed} filings, ${results.totals.parsed} parsed, ${results.totals.errors} errors`);
+    return results;
+  }
+
+  /**
+   * Run insider transactions refresh
+   * Fetches recent Form 4 filings for tracked companies
+   */
+  async runInsiderRefresh() {
+    const InsiderTracker = require('../services/insiderTracker');
+    const SECFilingFetcher = require('../services/secFilingFetcher');
+    const db = require('../database');
+
+    const database = db.getDatabase();
+    const secFetcher = new SECFilingFetcher();
+    const insiderTracker = new InsiderTracker(secFetcher);
+
+    // Get top companies by market cap to check for insider activity
+    const companies = database.prepare(`
+      SELECT id, symbol, cik
+      FROM companies
+      WHERE cik IS NOT NULL AND market_cap > 1000000000
+      ORDER BY market_cap DESC
+      LIMIT 100
+    `).all();
+
+    this.log(`Checking insider transactions for ${companies.length} companies...`);
+
+    let processed = 0;
+    let updated = 0;
+
+    for (const company of companies) {
+      try {
+        const result = await insiderTracker.fetchRecentFilings(company.id, company.cik, 7);
+        if (result && result.length > 0) {
+          updated += result.length;
+        }
+        processed++;
+
+        // Rate limiting for SEC
+        await new Promise(resolve => setTimeout(resolve, 200));
+      } catch (error) {
+        this.log(`Error fetching insider data for ${company.symbol}: ${error.message}`, 'WARN');
+      }
+    }
+
+    this.log(`Insider refresh complete: ${processed} companies checked, ${updated} new transactions`);
+    return { processed, updated };
+  }
+
+  /**
    * Get status of all jobs
    */
   getStatus() {
@@ -265,7 +456,17 @@ class MasterScheduler {
         { name: 'Portfolio Dividend Processing', schedule: 'Weekdays 6:30 PM ET' },
         { name: 'ETF Update (Tier 1)', schedule: 'Weekdays 6:30 AM ET' },
         { name: 'ETF Update (Tier 2)', schedule: 'Saturday 8:00 AM ET' },
-        { name: 'ETF Tier 3 Promotion', schedule: 'Sunday 7:00 AM ET' }
+        { name: 'ETF Tier 3 Promotion', schedule: 'Sunday 7:00 AM ET' },
+        { name: '13F Holdings Update', schedule: '15th of Feb/May/Aug/Nov 9 AM ET' },
+        { name: '13F Holdings Check', schedule: 'Sunday 8 AM ET' },
+        { name: 'Insider Transactions', schedule: 'Weekdays 7:30 PM ET' },
+        { name: 'Earnings Calendar', schedule: 'Daily 5 AM ET' },
+        { name: 'EU/UK XBRL Import', schedule: 'Sunday 2:00 AM ET' },
+        { name: 'EU/UK Price Update (GB)', schedule: 'Weekdays 12:00 PM ET (5 PM GMT)' },
+        { name: 'EU/UK Price Update (EU)', schedule: 'Weekdays 11:30 AM ET (5:30 PM CET)' },
+        { name: 'EU/UK Valuation Update', schedule: 'Weekdays 12:30 PM ET' },
+        { name: 'European Index Update', schedule: 'Sunday 5:00 AM ET' },
+        { name: 'EU/UK Sector Enrichment', schedule: 'Sunday 6:00 AM ET' }
       ]
     };
   }
@@ -407,6 +608,140 @@ class MasterScheduler {
     this.log('Scheduled: ETF Tier 3 Promotion (Sunday 7:00 AM ET)');
 
     // ============================================
+    // 13F INSTITUTIONAL HOLDINGS
+    // ============================================
+
+    // 15th of Feb, May, Aug, Nov at 9 AM ET - Primary 13F filing deadline
+    // These are 45 days after quarter end when 13F filings are due
+    cron.schedule('0 9 15 2,5,8,11 *', async () => {
+      await this.runJob('13F Holdings Update', async () => {
+        await this.investor13FRefresher.fetchAll();
+      });
+    }, { timezone: 'America/New_York' });
+
+    // Weekly fallback check on Sundays at 8 AM ET for any missed filings
+    cron.schedule('0 8 * * 0', async () => {
+      await this.runJob('13F Holdings Check', async () => {
+        await this.investor13FRefresher.fetchAll();
+      });
+    }, { timezone: 'America/New_York' });
+
+    this.log('Scheduled: 13F Holdings Update (15th of Feb/May/Aug/Nov 9 AM ET)');
+    this.log('Scheduled: 13F Holdings Check (Sunday 8 AM ET)');
+
+    // ============================================
+    // INSIDER TRANSACTIONS
+    // ============================================
+
+    // Weekdays at 7:30 PM ET - After market close, check for new Form 4 filings
+    cron.schedule('30 19 * * 1-5', async () => {
+      await this.runJob('Insider Transactions', async () => {
+        await this.runInsiderRefresh();
+      });
+    }, { timezone: 'America/New_York' });
+
+    this.log('Scheduled: Insider Transactions (Weekdays 7:30 PM ET)');
+
+    // ============================================
+    // EARNINGS CALENDAR
+    // ============================================
+
+    // Daily at 5 AM ET - Refresh earnings calendar and momentum data
+    cron.schedule('0 5 * * *', async () => {
+      await this.runJob('Earnings Calendar', async () => {
+        await refreshEarnings({ maxCompanies: 200, staleHours: 12 });
+      });
+    }, { timezone: 'America/New_York' });
+
+    this.log('Scheduled: Earnings Calendar (Daily 5 AM ET)');
+
+    // ============================================
+    // XBRL EU/UK DATA IMPORT
+    // ============================================
+
+    // Sunday at 2 AM ET - EU/UK XBRL bulk import (low-traffic period)
+    cron.schedule('0 2 * * 0', async () => {
+      await this.runJob('EU/UK XBRL Import', async () => {
+        await this.runXBRLImport({
+          countries: ['GB', 'DE', 'FR', 'NL', 'SE', 'CH', 'ES', 'IT', 'BE', 'DK'],
+          startYear: 2021
+        });
+      });
+    }, { timezone: 'America/New_York' });
+
+    this.log('Scheduled: EU/UK XBRL Import (Sunday 2 AM ET)');
+
+    // ============================================
+    // EU/UK PRICE UPDATES
+    // ============================================
+
+    // Weekdays at 5:00 PM GMT (12:00 PM ET) - UK market close
+    // Updates GB companies after LSE closes
+    cron.schedule('0 12 * * 1-5', async () => {
+      await this.runJob('EU/UK Price Update (GB)', async () => {
+        await this.runEuropeanPriceUpdate(['GB']);
+      });
+    }, { timezone: 'America/New_York' });
+
+    this.log('Scheduled: EU/UK Price Update GB (Weekdays 12:00 PM ET / 5:00 PM GMT)');
+
+    // Weekdays at 5:30 PM CET (11:30 AM ET) - European market close
+    // Updates DE, FR, NL, etc. companies after XETRA/Euronext closes
+    cron.schedule('30 11 * * 1-5', async () => {
+      await this.runJob('EU/UK Price Update (EU)', async () => {
+        // Run for each major EU country
+        for (const country of ['DE', 'FR', 'NL', 'CH', 'ES', 'IT']) {
+          try {
+            await this.runEuropeanPriceUpdate([country]);
+          } catch (e) {
+            this.log(`Price update failed for ${country}: ${e.message}`, 'WARN');
+          }
+        }
+      });
+    }, { timezone: 'America/New_York' });
+
+    this.log('Scheduled: EU/UK Price Update EU (Weekdays 11:30 AM ET / 5:30 PM CET)');
+
+    // ============================================
+    // EU/UK VALUATION CALCULATION
+    // ============================================
+
+    // Weekdays at 12:30 PM ET - After EU/UK price updates
+    cron.schedule('30 12 * * 1-5', async () => {
+      await this.runJob('EU/UK Valuation Update', async () => {
+        await this.runEuropeanValuationUpdate();
+      });
+    }, { timezone: 'America/New_York' });
+
+    this.log('Scheduled: EU/UK Valuation Update (Weekdays 12:30 PM ET)');
+
+    // ============================================
+    // EUROPEAN INDEX CONSTITUENTS
+    // ============================================
+
+    // Sunday at 5:00 AM ET - Update FTSE/DAX/CAC constituents weekly
+    cron.schedule('0 5 * * 0', async () => {
+      await this.runJob('European Index Update', async () => {
+        await this.runEuropeanIndexUpdate();
+      });
+    }, { timezone: 'America/New_York' });
+
+    this.log('Scheduled: European Index Update (Sunday 5:00 AM ET)');
+
+    // ============================================
+    // EU/UK SECTOR ENRICHMENT
+    // ============================================
+
+    // Sunday at 6:00 AM ET - Enrich missing sector/industry data
+    cron.schedule('0 6 * * 0', async () => {
+      await this.runJob('EU/UK Sector Enrichment', async () => {
+        await this.runEuropeanEnrichment();
+      });
+    }, { timezone: 'America/New_York' });
+
+    this.log('Scheduled: EU/UK Sector Enrichment (Sunday 6:00 AM ET)');
+
+    // ============================================
     // HEALTH CHECK
     // ============================================
 
@@ -454,6 +789,18 @@ class MasterScheduler {
 
     await this.runJob('SEC Filing Check', async () => {
       await this.runSecRefresh();
+    });
+
+    await this.runJob('13F Holdings Update', async () => {
+      await this.investor13FRefresher.fetchAll();
+    });
+
+    await this.runJob('Insider Transactions', async () => {
+      await this.runInsiderRefresh();
+    });
+
+    await this.runJob('Earnings Calendar', async () => {
+      await refreshEarnings({ maxCompanies: 200, staleHours: 12 });
     });
 
     this.log('All jobs completed.');

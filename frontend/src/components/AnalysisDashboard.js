@@ -1,9 +1,11 @@
 // frontend/src/components/AnalysisDashboard.js
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from 'recharts';
-import { companyAPI } from '../services/api';
+import { Target, AlertTriangle, TrendingUp, TrendingDown, Loader } from 'lucide-react';
+import { companyAPI, simulateAPI } from '../services/api';
 import { DCFValuation } from './DCFValuation';
+import AddToPortfolioButton from './portfolio/AddToPortfolioButton';
 import './AnalysisDashboard.css';
 
 // Format helpers
@@ -992,9 +994,246 @@ function DCFCalculator({ latestMetrics, companyName }) {
   );
 }
 
+// Position Sizing Section for Equity Analysis (reserved for future use)
+// eslint-disable-next-line no-unused-vars
+function PositionSizingSection({ symbol, companyName, currentPrice }) {
+  const [kellyData, setKellyData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const loadKellyData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await simulateAPI.analyzeSingleHolding(symbol, {
+        period: '3y',
+        riskFreeRate: 0.05
+      });
+      const data = res.data.data || res.data;
+      if (data?.error) {
+        setError(data.error);
+      } else {
+        setKellyData(data);
+      }
+    } catch (err) {
+      console.error('Failed to load Kelly data:', err);
+      setError(err.response?.data?.error || err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [symbol]);
+
+  useEffect(() => {
+    loadKellyData();
+  }, [loadKellyData]);
+
+  if (loading) {
+    return (
+      <div className="position-sizing-section">
+        <div className="loading-state">
+          <Loader className="spinning" size={24} />
+          <span>Analyzing position sizing...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="position-sizing-section">
+        <div className="error-state">
+          <AlertTriangle size={24} />
+          <p>{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!kellyData) {
+    return (
+      <div className="position-sizing-section">
+        <div className="no-data">Insufficient historical data for position sizing analysis</div>
+      </div>
+    );
+  }
+
+  const recommended = kellyData.kelly?.recommended;
+  const stats = kellyData.statistics;
+  const tailRisk = kellyData.tailRisk;
+  const benchmark = kellyData.benchmarkComparison;
+
+  return (
+    <div className="position-sizing-section">
+      <h3><Target size={18} /> Position Sizing Analysis</h3>
+      <p className="section-description">
+        Kelly Criterion-based sizing recommendation using {kellyData.period || '3 years'} of historical data
+      </p>
+
+      {/* Main Recommendation Card */}
+      <div className="sizing-recommendation-card">
+        <div className="recommendation-header">
+          <div className="recommendation-main">
+            <span className="rec-label">Recommended Position Size</span>
+            <span className="rec-value">{((recommended?.fraction || 0) * 100).toFixed(0)}%</span>
+            <span className="rec-name">{recommended?.label || 'Kelly'}</span>
+          </div>
+          <div className="recommendation-action">
+            <AddToPortfolioButton
+              symbol={symbol}
+              companyName={companyName}
+              currentPrice={currentPrice}
+            />
+          </div>
+        </div>
+        <p className="recommendation-reason">{recommended?.reason}</p>
+      </div>
+
+      {/* Stats Grid */}
+      <div className="sizing-stats-grid">
+        <div className="sizing-stat-card">
+          <div className="stat-header">
+            <TrendingUp size={16} />
+            <span>Performance</span>
+          </div>
+          <div className="stat-rows">
+            <div className="stat-row">
+              <span>Annual Return</span>
+              <span className={stats?.annualReturn >= 0 ? 'positive' : 'negative'}>
+                {stats?.annualReturn >= 0 ? '+' : ''}{stats?.annualReturn}%
+              </span>
+            </div>
+            <div className="stat-row">
+              <span>Win Rate</span>
+              <span>{stats?.winRate}%</span>
+            </div>
+            <div className="stat-row">
+              <span>Sharpe Ratio</span>
+              <span className={stats?.sharpeRatio >= 1 ? 'positive' : ''}>{stats?.sharpeRatio}</span>
+            </div>
+            <div className="stat-row">
+              <span>Volatility</span>
+              <span>{stats?.annualVolatility}%</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="sizing-stat-card">
+          <div className="stat-header">
+            <AlertTriangle size={16} />
+            <span>Tail Risk</span>
+          </div>
+          <div className="stat-rows">
+            <div className="stat-row">
+              <span>VaR 95%</span>
+              <span className="negative">{tailRisk?.var95}%</span>
+            </div>
+            <div className="stat-row">
+              <span>VaR 99%</span>
+              <span className="negative">{tailRisk?.var99}%</span>
+            </div>
+            <div className="stat-row">
+              <span>Max Daily Loss</span>
+              <span className="negative">{tailRisk?.maxObservedLoss}%</span>
+            </div>
+            <div className="stat-row">
+              <span>Fat Tails</span>
+              <span className={tailRisk?.isFatTailed ? 'negative' : 'positive'}>
+                {tailRisk?.isFatTailed ? 'Yes' : 'No'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {benchmark && (
+          <div className="sizing-stat-card">
+            <div className="stat-header">
+              <TrendingDown size={16} />
+              <span>vs {benchmark.benchmark}</span>
+            </div>
+            <div className="stat-rows">
+              <div className="stat-row">
+                <span>Beta</span>
+                <span>{benchmark.beta}</span>
+              </div>
+              <div className="stat-row">
+                <span>Alpha</span>
+                <span className={benchmark.alpha > 0 ? 'positive' : 'negative'}>
+                  {benchmark.alpha > 0 ? '+' : ''}{benchmark.alpha}%
+                </span>
+              </div>
+              <div className="stat-row">
+                <span>Correlation</span>
+                <span>{benchmark.correlation}</span>
+              </div>
+              <div className="stat-row">
+                <span>Excess Return</span>
+                <span className={benchmark.excessReturn > 0 ? 'positive' : 'negative'}>
+                  {benchmark.excessReturn > 0 ? '+' : ''}{benchmark.excessReturn}%
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Risk Warning */}
+      {tailRisk?.warning && (
+        <div className="sizing-warning">
+          <AlertTriangle size={16} />
+          <span>{tailRisk.warning}</span>
+        </div>
+      )}
+
+      {/* Position Size Analysis Table */}
+      {kellyData.fractionAnalysis && (
+        <div className="fraction-analysis-section">
+          <h4>Position Size Scenarios</h4>
+          <table className="fraction-table">
+            <thead>
+              <tr>
+                <th>Size</th>
+                <th>Expected Return</th>
+                <th>Volatility</th>
+                <th>Max DD Est.</th>
+                <th>Risk Level</th>
+              </tr>
+            </thead>
+            <tbody>
+              {kellyData.fractionAnalysis.map(f => (
+                <tr
+                  key={f.fraction}
+                  className={f.fraction === recommended?.fraction ? 'highlighted' : ''}
+                >
+                  <td>{(f.fraction * 100).toFixed(0)}% Kelly</td>
+                  <td className={f.expectedReturn >= 0 ? 'positive' : 'negative'}>
+                    {f.expectedReturn >= 0 ? '+' : ''}{f.expectedReturn?.toFixed(1)}%
+                  </td>
+                  <td>{f.expectedVolatility?.toFixed(1)}%</td>
+                  <td className="negative">-{f.expectedMaxDrawdown?.toFixed(1)}%</td>
+                  <td>
+                    <span className={`risk-badge ${f.riskOf50pctDrawdown > 20 ? 'high' : f.riskOf50pctDrawdown > 10 ? 'medium' : 'low'}`}>
+                      {f.riskOf50pctDrawdown > 20 ? 'High' : f.riskOf50pctDrawdown > 10 ? 'Medium' : 'Low'}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="sizing-note">
+        <p>Position sizing recommendations are based on historical data and the Kelly Criterion.
+        Past performance doesn't guarantee future results. Consider your personal risk tolerance
+        and portfolio diversification when making investment decisions.</p>
+      </div>
+    </div>
+  );
+}
+
 // ============ MAIN COMPONENT ============
 
-function AnalysisDashboard({ symbol, periodType = 'annual', initialSection = 'quality' }) {
+function AnalysisDashboard({ symbol, periodType = 'annual', initialSection = 'quality', companyName, currentPrice }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

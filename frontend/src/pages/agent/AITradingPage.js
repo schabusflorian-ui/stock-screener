@@ -1,8 +1,9 @@
 // frontend/src/pages/agent/AITradingPage.js
 // Agent 3: Main AI Trading Dashboard Page
+// Now serves as a landing page that redirects to the new AgentDashboard
 
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   Brain,
   BarChart3,
@@ -10,7 +11,9 @@ import {
   History,
   Activity,
   ArrowLeft,
-  RefreshCw
+  RefreshCw,
+  Wallet,
+  ChevronRight
 } from 'lucide-react';
 import { portfoliosAPI } from '../../services/api';
 import Card from '../../components/ui/Card';
@@ -37,6 +40,80 @@ const TABS = [
 ];
 
 /**
+ * Portfolio selector shown when no portfolio ID is provided
+ */
+function PortfolioSelector() {
+  const navigate = useNavigate();
+  const [portfolios, setPortfolios] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchPortfolios = async () => {
+      try {
+        const response = await portfoliosAPI.getAll();
+        setPortfolios(response.data || []);
+      } catch (err) {
+        console.error('Failed to fetch portfolios:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchPortfolios();
+  }, []);
+
+  const handleSelectPortfolio = (portfolioId) => {
+    // Navigate to the new Agent Dashboard
+    navigate(`/agent/${portfolioId}`);
+  };
+
+  return (
+    <div className="ai-trading-page">
+      <div className="ai-trading-page__selector">
+        <div className="ai-trading-page__selector-header">
+          <Brain size={32} />
+          <h1>AI Trading Agent</h1>
+          <p>Select a portfolio to start using the AI trading agent</p>
+        </div>
+
+        {loading ? (
+          <div className="ai-trading-page__selector-loading">
+            <Skeleton style={{ height: 80, marginBottom: 12 }} />
+            <Skeleton style={{ height: 80, marginBottom: 12 }} />
+            <Skeleton style={{ height: 80 }} />
+          </div>
+        ) : portfolios.length === 0 ? (
+          <Card variant="base" className="ai-trading-page__selector-empty">
+            <Wallet size={32} />
+            <p>No portfolios found. Create a portfolio first to use AI trading.</p>
+            <Link to="/portfolios">
+              <Button variant="primary">Create Portfolio</Button>
+            </Link>
+          </Card>
+        ) : (
+          <div className="ai-trading-page__selector-list">
+            {portfolios.map(portfolio => (
+              <button
+                key={portfolio.id}
+                className="ai-trading-page__portfolio-card"
+                onClick={() => handleSelectPortfolio(portfolio.id)}
+              >
+                <div className="ai-trading-page__portfolio-info">
+                  <span className="ai-trading-page__portfolio-name">{portfolio.name}</span>
+                  <span className="ai-trading-page__portfolio-value">
+                    ${(portfolio.current_value || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <ChevronRight size={20} />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
  * AITradingPage
  *
  * Main page for AI-assisted trading features.
@@ -56,6 +133,7 @@ function AITradingPage() {
     if (parsedPortfolioId) {
       fetchPortfolio();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [parsedPortfolioId]);
 
   const fetchPortfolio = async () => {
@@ -73,17 +151,9 @@ function AITradingPage() {
     }
   };
 
+  // Portfolio selector when no portfolio ID provided
   if (!parsedPortfolioId) {
-    return (
-      <div className="ai-trading-page">
-        <Card variant="base" className="ai-trading-page__error">
-          <p>Please select a portfolio to use AI Trading features.</p>
-          <Link to="/portfolios" className="ai-trading-page__link">
-            <ArrowLeft size={16} /> Go to Portfolios
-          </Link>
-        </Card>
-      </div>
-    );
+    return <PortfolioSelector />;
   }
 
   if (loading) {

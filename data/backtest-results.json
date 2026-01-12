@@ -1,0 +1,61 @@
+{
+  "timestamp": "2026-01-10T11:48:46.321Z",
+  "config": {
+    "startDate": "2024-01-01",
+    "endDate": "2024-12-31",
+    "initialCapital": 100000,
+    "stepFrequency": "daily",
+    "universe": "top100",
+    "minMarketCap": 1000000000,
+    "minConfidence": 0.55,
+    "minScore": 0.15,
+    "maxPositions": 20,
+    "maxPositionSize": 0.08,
+    "commissionBps": 5,
+    "slippageBps": 5,
+    "benchmark": "SPY",
+    "verbose": true
+  },
+  "summary": {
+    "performance": {
+      "finalValue": 127802.82125611942,
+      "totalReturn": "27.80",
+      "annualizedReturn": "5.19",
+      "volatility": "21.05",
+      "sharpeRatio": "0.15",
+      "sortinoRatio": "0.22",
+      "maxDrawdown": "15.69",
+      "winRate": "33.3",
+      "profitFactor": "1.86"
+    },
+    "benchmark": {
+      "ticker": "SPY",
+      "benchmarkReturn": "24.00",
+      "alpha": "3.80",
+      "beta": "1.48"
+    },
+    "trades": {
+      "total": 206,
+      "buys": 113,
+      "sells": 93,
+      "winningTrades": 31,
+      "losingTrades": 62,
+      "avgWin": 1741.6371986015931,
+      "avgLoss": -467.009896233667,
+      "avgHoldingPeriod": 58
+    },
+    "signals": {
+      "total": 22463,
+      "buySignals": 22174,
+      "sellSignals": 289,
+      "avgConfidence": 0.6162480761286874
+    }
+  },
+  "equityCurveSummary": {
+    "startValue": 100000,
+    "endValue": 127802.82125611942,
+    "maxValue": 134791.08328038166,
+    "minValue": 98324.70360931521,
+    "dataPoints": 252
+  }
+}

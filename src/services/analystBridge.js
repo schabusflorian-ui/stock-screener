@@ -239,6 +239,105 @@ except Exception as e:
 }
 
 /**
+ * Execute Python command using cli_runner.py for more robust handling
+ */
+async function executePythonCli(command, args = {}) {
+  return new Promise((resolve, reject) => {
+    const cliRunnerPath = path.join(__dirname, 'ai', 'cli_runner.py');
+    const python = spawn('python3', [cliRunnerPath, command, JSON.stringify(args)]);
+
+    let stdout = '';
+    let stderr = '';
+
+    python.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    python.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    python.on('close', (code) => {
+      if (code !== 0) {
+        console.error('Python CLI error:', stderr);
+        reject(new Error(`Python CLI exited with code ${code}: ${stderr}`));
+        return;
+      }
+
+      try {
+        const result = JSON.parse(stdout.trim());
+        if (result.error) {
+          reject(new Error(result.error));
+        } else {
+          resolve(result);
+        }
+      } catch (e) {
+        reject(new Error(`Failed to parse Python CLI output: ${stdout}`));
+      }
+    });
+  });
+}
+
+/**
+ * Stream tokens from Python chat_stream command
+ * Yields objects with { type: 'token'|'done', content: string }
+ */
+async function* streamFromPython(conversationId, message, companyContext) {
+  const cliRunnerPath = path.join(__dirname, 'ai', 'cli_runner.py');
+  const args = JSON.stringify({
+    conversation_id: conversationId,
+    message: message,
+    company_context: companyContext
+  });
+
+  const python = spawn('python3', [cliRunnerPath, 'analyst:chat_stream', args]);
+
+  let buffer = '';
+
+  // Handle streaming output line by line
+  for await (const chunk of python.stdout) {
+    buffer += chunk.toString();
+
+    // Process complete lines (newline-delimited JSON)
+    const lines = buffer.split('\n');
+    buffer = lines.pop(); // Keep incomplete line in buffer
+
+    for (const line of lines) {
+      if (line.trim()) {
+        try {
+          const data = JSON.parse(line);
+          yield data;
+        } catch (e) {
+          console.error('Failed to parse streaming line:', line);
+        }
+      }
+    }
+  }
+
+  // Process any remaining data in buffer
+  if (buffer.trim()) {
+    try {
+      const data = JSON.parse(buffer);
+      yield data;
+    } catch (e) {
+      console.error('Failed to parse final buffer:', buffer);
+    }
+  }
+
+  // Wait for process to complete
+  await new Promise((resolve, reject) => {
+    python.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`Python streaming exited with code ${code}`));
+      } else {
+        resolve();
+      }
+    });
+    python.on('error', reject);
+  });
+}
+
+/**
  * Analyst Service - bridges Node.js API with Python service.
  */
 class AnalystService {
@@ -427,14 +526,47 @@ class AnalystService {
 
     let fullContent = '';
 
-    // Generate mock response and stream it word by word
+    // Try Python streaming if LLM is configured
+    if (this.usePython) {
+      try {
+        // Use Python streaming
+        for await (const data of streamFromPython(conversationId, message, enrichedContext)) {
+          if (data.type === 'token') {
+            fullContent += data.content;
+            yield { type: 'token', content: data.content };
+          } else if (data.type === 'done') {
+            // Python has completed and saved the message
+            fullContent = data.full_content || fullContent;
+          }
+        }
+
+        // Create final message with real model info
+        const assistantMsg = {
+          id: responseId,
+          role: 'assistant',
+          content: fullContent,
+          timestamp: new Date().toISOString(),
+          metadata: { model: 'claude', streamed: true }
+        };
+
+        conversationStore.addMessage(conversationId, assistantMsg);
+        yield { type: 'complete', message: assistantMsg };
+        return;
+
+      } catch (e) {
+        console.warn('Python streaming failed, falling back to mock:', e.message);
+        // Fall through to mock response
+      }
+    }
+
+    // Fallback: Generate mock response and stream it word by word
     const mockResponse = await this._generateMockResponse(analyst, message, enrichedContext, conv);
     const words = mockResponse.content.split(/(\s+)/); // Keep whitespace
 
     for (const word of words) {
       fullContent += word;
       yield { type: 'token', content: word };
-      // Small delay to simulate streaming (remove in production with real LLM)
+      // Small delay to simulate streaming
       await new Promise(resolve => setTimeout(resolve, 20));
     }
 

@@ -1,18 +1,18 @@
-// frontend/src/pages/InsiderTradingPage.js
+// frontend/src/pages/signals/InsidersTab.js
+// Insider Trading tab - wrapper around existing functionality
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   Legend
 } from 'recharts';
-import { insidersAPI, pricesAPI } from '../services/api';
-import { WatchlistButton } from '../components';
-import { PageHeader } from '../components/ui';
-import { SkeletonInsiderTrading } from '../components/Skeleton';
-import { Clock } from 'lucide-react';
-import { useFormatters } from '../hooks/useFormatters';
-import { SectionErrorBoundary } from '../components/ErrorBoundary';
-import './InsiderTradingPage.css';
+import { insidersAPI, pricesAPI, altDataAPI } from '../../services/api';
+import { WatchlistButton } from '../../components';
+import { SkeletonInsiderTrading } from '../../components/Skeleton';
+import { Clock, Landmark } from 'lucide-react';
+import { useFormatters } from '../../hooks/useFormatters';
+import { SectionErrorBoundary } from '../../components/ErrorBoundary';
+import '../InsiderTradingPage.css';
 
 // Sortable table header component
 const SortableHeader = ({ label, sortKey, currentSort, onSort }) => {
@@ -56,10 +56,9 @@ const TransactionBadge = ({ type }) => {
   );
 };
 
-function InsiderTradingPage() {
+function InsidersTab() {
   const fmt = useFormatters();
 
-  // Format functions using preferences
   const formatCurrency = (value) => {
     if (!value || isNaN(value)) return '-';
     return fmt.currency(value, { compact: true });
@@ -76,7 +75,7 @@ function InsiderTradingPage() {
   };
 
   // View mode
-  const [viewMode, setViewMode] = useState('overview'); // 'overview', 'signals', 'recent', 'cluster'
+  const [viewMode, setViewMode] = useState('overview');
   const [period, setPeriod] = useState('3m');
 
   // Data states
@@ -84,6 +83,7 @@ function InsiderTradingPage() {
   const [signals, setSignals] = useState({ bullish: [], bearish: [], neutral: [] });
   const [recentTransactions, setRecentTransactions] = useState([]);
   const [clusterBuying, setClusterBuying] = useState([]);
+  const [congressionalTrades, setCongressionalTrades] = useState([]);
   const [stats, setStats] = useState(null);
   const [monthlyTrend, setMonthlyTrend] = useState([]);
   const [updateStatus, setUpdateStatus] = useState(null);
@@ -93,10 +93,12 @@ function InsiderTradingPage() {
   const [minInsiders, setMinInsiders] = useState(2);
   const [clusterDays, setClusterDays] = useState(30);
 
-  // Sorting state for each table
+  // Sorting state
   const [overviewSort, setOverviewSort] = useState({ key: 'buy_value', dir: 'desc' });
   const [recentSort, setRecentSort] = useState({ key: 'transaction_date', dir: 'desc' });
   const [clusterSort, setClusterSort] = useState({ key: 'unique_buyers', dir: 'desc' });
+  const [congressSort, setCongressSort] = useState({ key: 'total_value', dir: 'desc' });
+  const [congressPeriod, setCongressPeriod] = useState('-30 days');
 
   // Loading state
   const [loading, setLoading] = useState(true);
@@ -141,6 +143,14 @@ function InsiderTradingPage() {
     });
   }, [clusterBuying, clusterSort]);
 
+  const sortedCongressionalTrades = useMemo(() => {
+    return [...congressionalTrades].sort((a, b) => {
+      const aVal = a[congressSort.key] ?? -Infinity;
+      const bVal = b[congressSort.key] ?? -Infinity;
+      return congressSort.dir === 'asc' ? aVal - bVal : bVal - aVal;
+    });
+  }, [congressionalTrades, congressSort]);
+
   // Load initial data
   useEffect(() => {
     loadData();
@@ -163,7 +173,7 @@ function InsiderTradingPage() {
       setMonthlyTrend(statsRes.data.monthlyTrend || []);
       setUpdateStatus(updateStatusRes.data || null);
 
-      // Load prices for top buying companies
+      // Load prices
       const newPrices = { ...priceData };
       await Promise.all(
         companies.filter(c => !newPrices[c.symbol]).slice(0, 20).map(async (company) => {
@@ -173,7 +183,7 @@ function InsiderTradingPage() {
               newPrices[company.symbol] = res.data.data;
             }
           } catch (e) {
-            // Ignore individual price fetch errors
+            // Ignore
           }
         })
       );
@@ -228,6 +238,21 @@ function InsiderTradingPage() {
     }
   }, [minInsiders, clusterDays]);
 
+  // Load congressional trading data
+  const loadCongressional = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await altDataAPI.getTopCongressBuys(congressPeriod, 30);
+      setCongressionalTrades(res.data.results || []);
+    } catch (err) {
+      console.error('Error loading congressional data:', err);
+      // Don't set error - congressional data may not be available
+      setCongressionalTrades([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [congressPeriod]);
+
   // Effect for view mode changes
   useEffect(() => {
     if (viewMode === 'signals') {
@@ -236,13 +261,14 @@ function InsiderTradingPage() {
       loadRecent();
     } else if (viewMode === 'cluster') {
       loadClusterBuying();
+    } else if (viewMode === 'congressional') {
+      loadCongressional();
     }
-  }, [viewMode, loadSignals, loadRecent, loadClusterBuying]);
+  }, [viewMode, loadSignals, loadRecent, loadClusterBuying, loadCongressional]);
 
   // Overview view
   const renderOverview = () => (
     <div className="overview-content">
-      {/* Stats cards */}
       {stats && (
         <div className="stats-grid">
           <div className="stat-card">
@@ -272,7 +298,6 @@ function InsiderTradingPage() {
         </div>
       )}
 
-      {/* Monthly trend chart */}
       {monthlyTrend.length > 0 && (
         <div className="card chart-card">
           <h3>Monthly Insider Activity (TTM)</h3>
@@ -295,7 +320,6 @@ function InsiderTradingPage() {
         </div>
       )}
 
-      {/* Top buying table */}
       <div className="card">
         <div className="card-header">
           <h3>Top Insider Buying</h3>
@@ -333,31 +357,31 @@ function InsiderTradingPage() {
                 sortedTopBuying.map((company) => {
                   const price = priceData[company.symbol];
                   return (
-                  <tr key={company.company_id || company.symbol}>
-                    <td>
-                      <Link to={`/company/${company.symbol}`} className="symbol-link">
-                        {company.symbol}
-                      </Link>
-                    </td>
-                    <td className="company-name">{company.company_name}</td>
-                    <td className="price-cell">
-                      {price?.last_price ? `$${price.last_price.toFixed(2)}` : '-'}
-                    </td>
-                    <td className={`change-cell ${price?.change_1m > 0 ? 'positive' : price?.change_1m < 0 ? 'negative' : ''}`}>
-                      {price?.change_1m != null ? `${price.change_1m > 0 ? '+' : ''}${price.change_1m.toFixed(1)}%` : '-'}
-                    </td>
-                    <td>
-                      <SignalBadge signal={company.insider_signal} score={company.signal_score} />
-                    </td>
-                    <td className="positive">{formatCurrency(company.buy_value)}</td>
-                    <td>{company.unique_buyers || 0}</td>
-                    <td className={company.net_value >= 0 ? 'positive' : 'negative'}>
-                      {formatCurrency(company.net_value)}
-                    </td>
-                    <td>
-                      <WatchlistButton symbol={company.symbol} compact />
-                    </td>
-                  </tr>
+                    <tr key={company.company_id || company.symbol}>
+                      <td>
+                        <Link to={`/company/${company.symbol}`} className="symbol-link">
+                          {company.symbol}
+                        </Link>
+                      </td>
+                      <td className="company-name">{company.company_name}</td>
+                      <td className="price-cell">
+                        {price?.last_price ? `$${price.last_price.toFixed(2)}` : '-'}
+                      </td>
+                      <td className={`change-cell ${price?.change_1m > 0 ? 'positive' : price?.change_1m < 0 ? 'negative' : ''}`}>
+                        {price?.change_1m != null ? `${price.change_1m > 0 ? '+' : ''}${price.change_1m.toFixed(1)}%` : '-'}
+                      </td>
+                      <td>
+                        <SignalBadge signal={company.insider_signal} score={company.signal_score} />
+                      </td>
+                      <td className="positive">{formatCurrency(company.buy_value)}</td>
+                      <td>{company.unique_buyers || 0}</td>
+                      <td className={company.net_value >= 0 ? 'positive' : 'negative'}>
+                        {formatCurrency(company.net_value)}
+                      </td>
+                      <td>
+                        <WatchlistButton symbol={company.symbol} compact />
+                      </td>
+                    </tr>
                   );
                 })
               )}
@@ -387,7 +411,6 @@ function InsiderTradingPage() {
       </div>
 
       <div className="signals-grid">
-        {/* Bullish signals */}
         <div className="signal-column">
           <h3 className="column-title bullish-title">Bullish Signals</h3>
           {signals.bullish?.slice(0, 15).map((item) => (
@@ -404,7 +427,6 @@ function InsiderTradingPage() {
           )}
         </div>
 
-        {/* Neutral signals */}
         <div className="signal-column">
           <h3 className="column-title neutral-title">Neutral Signals</h3>
           {signals.neutral?.slice(0, 15).map((item) => (
@@ -421,7 +443,6 @@ function InsiderTradingPage() {
           )}
         </div>
 
-        {/* Bearish signals */}
         <div className="signal-column">
           <h3 className="column-title bearish-title">Bearish Signals</h3>
           {signals.bearish?.slice(0, 15).map((item) => (
@@ -571,6 +592,79 @@ function InsiderTradingPage() {
     </div>
   );
 
+  // Congressional trading view
+  const renderCongressional = () => (
+    <div className="congressional-content">
+      <div className="filter-bar">
+        <label>Lookback Period:</label>
+        <select value={congressPeriod} onChange={(e) => setCongressPeriod(e.target.value)}>
+          <option value="-7 days">7 Days</option>
+          <option value="-30 days">30 Days</option>
+          <option value="-90 days">90 Days</option>
+          <option value="-180 days">180 Days</option>
+          <option value="-365 days">1 Year</option>
+        </select>
+        <button onClick={loadCongressional} className="btn-refresh">Refresh</button>
+      </div>
+
+      <div className="info-banner">
+        <Landmark size={16} />
+        <span>Congressional stock trades from publicly disclosed financial reports (STOCK Act filings)</span>
+      </div>
+
+      <div className="table-container">
+        <table className="data-table sortable-table">
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Company</th>
+              <th>Representative</th>
+              <th>Party</th>
+              <th>Type</th>
+              <SortableHeader label="Value" sortKey="total_value" currentSort={congressSort} onSort={handleSort(setCongressSort)} />
+              <SortableHeader label="Trades" sortKey="trade_count" currentSort={congressSort} onSort={handleSort(setCongressSort)} />
+              <th>Last Trade</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedCongressionalTrades.length === 0 ? (
+              <tr><td colSpan="9" className="no-data">No congressional trading data available</td></tr>
+            ) : (
+              sortedCongressionalTrades.map((trade, idx) => (
+                <tr key={`${trade.symbol}-${idx}`}>
+                  <td>
+                    <Link to={`/company/${trade.symbol}`} className="symbol-link">
+                      {trade.symbol}
+                    </Link>
+                  </td>
+                  <td className="company-name">{trade.company_name || trade.symbol}</td>
+                  <td>{trade.representative || trade.politician || '-'}</td>
+                  <td>
+                    <span className={`party-badge ${(trade.party || '').toLowerCase()}`}>
+                      {trade.party || '-'}
+                    </span>
+                  </td>
+                  <td>
+                    <TransactionBadge type={trade.transaction_type || trade.type} />
+                  </td>
+                  <td className={trade.transaction_type === 'buy' || trade.type === 'buy' ? 'positive' : 'negative'}>
+                    {formatCurrency(trade.total_value || trade.amount)}
+                  </td>
+                  <td>{trade.trade_count || 1}</td>
+                  <td>{formatDate(trade.last_trade_date || trade.transaction_date)}</td>
+                  <td>
+                    <WatchlistButton symbol={trade.symbol} compact />
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
   if (error) {
     return (
       <div className="insider-page error-state">
@@ -582,14 +676,9 @@ function InsiderTradingPage() {
     );
   }
 
-  // Show skeleton on initial load
   if (loading && !stats) {
     return (
       <div className="insider-page">
-        <PageHeader
-          title="Insider Trading"
-          subtitle="Track insider buying and selling activity"
-        />
         <SkeletonInsiderTrading />
       </div>
     );
@@ -597,19 +686,11 @@ function InsiderTradingPage() {
 
   return (
     <div className="insider-page">
-      <PageHeader
-        title="Insider Trading"
-        subtitle={
-          <>
-            Track insider buying and selling activity
-            {updateStatus?.lastImport && (
-              <span className="last-refreshed">
-                <Clock size={12} /> Updated {formatDate(updateStatus.lastImport)}
-              </span>
-            )}
-          </>
-        }
-      />
+      {updateStatus?.lastImport && (
+        <div className="last-refreshed-bar">
+          <Clock size={12} /> Updated {formatDate(updateStatus.lastImport)}
+        </div>
+      )}
 
       {/* View mode tabs */}
       <div className="view-tabs">
@@ -637,9 +718,14 @@ function InsiderTradingPage() {
         >
           Cluster Buying
         </button>
+        <button
+          className={viewMode === 'congressional' ? 'active' : ''}
+          onClick={() => setViewMode('congressional')}
+        >
+          <Landmark size={14} /> Congressional
+        </button>
       </div>
 
-      {/* Loading state */}
       {loading && (
         <div className="loading-overlay">
           <div className="spinner"></div>
@@ -647,15 +733,15 @@ function InsiderTradingPage() {
         </div>
       )}
 
-      {/* Content based on view mode */}
       <div className="page-content">
         {viewMode === 'overview' && renderOverview()}
         {viewMode === 'signals' && renderSignals()}
         {viewMode === 'recent' && renderRecent()}
         {viewMode === 'cluster' && renderCluster()}
+        {viewMode === 'congressional' && renderCongressional()}
       </div>
     </div>
   );
 }
 
-export default InsiderTradingPage;
+export default InsidersTab;

@@ -86,6 +86,25 @@ def handle_analyst_command(action: str, args: dict) -> dict:
             }
         }
 
+    elif action == 'chat_stream':
+        # Streaming mode: output tokens line by line for Node.js to consume
+        # Each line is a JSON object with type and content
+        conversation_id = args.get('conversation_id')
+        message = args.get('message')
+        company_context = args.get('company_context')
+
+        # We need to handle streaming specially - print each token as JSON line
+        import sys
+        full_content = ""
+        for token in service.chat_stream(conversation_id, message, company_context):
+            full_content += token
+            # Output each token as a JSON line (newline-delimited JSON)
+            print(json.dumps({'type': 'token', 'content': token}), flush=True)
+
+        # Output completion marker
+        print(json.dumps({'type': 'done', 'full_content': full_content}), flush=True)
+        return None  # Already printed output
+
     elif action == 'analyze':
         response = service.quick_analyze(
             args.get('analyst_id'),
@@ -373,6 +392,9 @@ def main():
         elif command.startswith('analyst:'):
             action = command.split(':', 1)[1]
             result = handle_analyst_command(action, args)
+            # Streaming commands handle their own output
+            if result is None:
+                sys.exit(0)
 
         elif command.startswith('briefing:'):
             action = command.split(':', 1)[1]

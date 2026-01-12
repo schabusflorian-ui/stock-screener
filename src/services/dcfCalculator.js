@@ -1271,7 +1271,7 @@ class DCFCalculator {
     const baseValue = baseCase.intrinsicValue;
     const currentPrice = baseCase.currentPrice;
 
-    // Variables to test
+    // Variables to test (removed targetEbitdaMargin as it's similar to ebitdaMargin)
     const variables = [
       { key: 'wacc', label: 'WACC', base: baseCase.assumptions.wacc, isInverse: true },
       { key: 'growthStage1', label: 'Growth (Yr 1-3)', base: baseCase.assumptions.growth.stage1 },
@@ -1279,8 +1279,7 @@ class DCFCalculator {
       { key: 'growthStage3', label: 'Growth (Yr 8-10)', base: baseCase.assumptions.growth.stage3 },
       { key: 'terminalGrowth', label: 'Terminal Growth', base: baseCase.assumptions.growth.terminal },
       { key: 'exitMultiple', label: 'Exit Multiple', base: baseCase.assumptions.exitMultiple },
-      { key: 'ebitdaMargin', label: 'EBITDA Margin', base: baseCase.assumptions.margins?.ebitdaMargin || 0.20 },
-      { key: 'targetEbitdaMargin', label: 'Target Margin', base: baseCase.assumptions.margins?.targetEbitdaMargin || 0.25 }
+      { key: 'ebitdaMargin', label: 'EBITDA Margin', base: baseCase.assumptions.margins?.ebitdaMargin || 0.20 }
     ];
 
     const results = [];
@@ -1450,6 +1449,283 @@ class DCFCalculator {
     if (coverage > 2) return 'BB+';
     if (coverage > 1.5) return 'BB';
     return 'B';
+  }
+
+  /**
+   * Calculate probabilistic valuation using Monte Carlo with parametric distributions
+   *
+   * This method runs Monte Carlo simulations on DCF inputs, sampling from
+   * parametric distributions (with fat tails if detected) rather than
+   * simple point estimates.
+   *
+   * @param {number} companyId - Company ID
+   * @param {object} options - Simulation options
+   * @returns {object} Probabilistic valuation results with percentiles
+   */
+  async calculateParametricValuation(companyId, options = {}) {
+    const {
+      simulations = 10000,
+      baseInputs = {},
+      growthUncertainty = 0.03,    // Std dev of growth rate
+      marginUncertainty = 0.02,    // Std dev of margin
+      waccUncertainty = 0.01,      // Std dev of WACC
+      multipleUncertainty = 2,     // Std dev of exit multiple
+      distributionType = 'studentT' // 'normal', 'studentT', 'skewedT'
+    } = options;
+
+    // Import parametric distributions
+    const { ParametricDistributions } = require('./statistics');
+    const distLib = new ParametricDistributions();
+
+    // Get base DCF to establish central estimates
+    const baseCase = await this.calculateDCF(companyId, baseInputs);
+    if (!baseCase.success) {
+      return { success: false, error: 'Cannot calculate base case DCF' };
+    }
+
+    // Define input distributions
+    const baseGrowth1 = baseCase.assumptions.growth.stage1;
+    const baseGrowth2 = baseCase.assumptions.growth.stage2;
+    const baseGrowth3 = baseCase.assumptions.growth.stage3;
+    const baseMargin = baseCase.assumptions.margins?.targetEbitdaMargin || 0.20;
+    const baseWACC = baseCase.assumptions.wacc;
+    const baseMultiple = baseCase.assumptions.exitMultiple;
+
+    // Degrees of freedom for Student's t (lower = fatter tails)
+    const df = distributionType === 'studentT' ? 5 : 1000;
+
+    // Run simulations
+    const valuations = [];
+    const simulationDetails = [];
+
+    for (let i = 0; i < simulations; i++) {
+      // Sample inputs from distributions
+      let growth1, growth2, growth3, margin, wacc, exitMultiple;
+
+      if (distributionType === 'normal') {
+        growth1 = distLib.sample(1, { mean: baseGrowth1, std: growthUncertainty }, 'normal')[0];
+        growth2 = distLib.sample(1, { mean: baseGrowth2, std: growthUncertainty * 0.8 }, 'normal')[0];
+        growth3 = distLib.sample(1, { mean: baseGrowth3, std: growthUncertainty * 0.6 }, 'normal')[0];
+        margin = distLib.sample(1, { mean: baseMargin, std: marginUncertainty }, 'normal')[0];
+        wacc = distLib.sample(1, { mean: baseWACC, std: waccUncertainty }, 'normal')[0];
+        exitMultiple = distLib.sample(1, { mean: baseMultiple, std: multipleUncertainty }, 'normal')[0];
+      } else {
+        // Student's t for fat tails (uses mean, scale, df params)
+        growth1 = distLib.sample(1, { mean: baseGrowth1, scale: growthUncertainty, df }, 'studentT')[0];
+        growth2 = distLib.sample(1, { mean: baseGrowth2, scale: growthUncertainty * 0.8, df }, 'studentT')[0];
+        growth3 = distLib.sample(1, { mean: baseGrowth3, scale: growthUncertainty * 0.6, df }, 'studentT')[0];
+        margin = distLib.sample(1, { mean: baseMargin, scale: marginUncertainty, df }, 'studentT')[0];
+        wacc = distLib.sample(1, { mean: baseWACC, scale: waccUncertainty, df }, 'studentT')[0];
+        exitMultiple = distLib.sample(1, { mean: baseMultiple, scale: multipleUncertainty, df }, 'studentT')[0];
+      }
+
+      // Apply bounds to prevent unrealistic values
+      growth1 = Math.max(-0.20, Math.min(0.50, growth1));
+      growth2 = Math.max(-0.10, Math.min(0.40, growth2));
+      growth3 = Math.max(-0.05, Math.min(0.30, growth3));
+      margin = Math.max(0.01, Math.min(0.60, margin));
+      wacc = Math.max(0.04, Math.min(0.25, wacc));
+      exitMultiple = Math.max(3, Math.min(30, exitMultiple));
+
+      // Ensure terminal growth < wacc
+      const terminalGrowth = Math.min(baseCase.assumptions.growth.terminal, wacc - 0.02);
+
+      // Run DCF with sampled inputs (simplified calculation for speed)
+      const simValue = this._quickDCF({
+        fcf: baseCase.assumptions.fcf,
+        revenue: baseCase.assumptions.revenue,
+        ebitdaMargin: margin,
+        growth: [growth1, growth2, growth3],
+        terminalGrowth,
+        wacc,
+        exitMultiple,
+        netDebt: baseCase.assumptions.netDebt || 0,
+        sharesOutstanding: baseCase.assumptions.sharesOutstanding
+      });
+
+      if (simValue > 0 && isFinite(simValue)) {
+        valuations.push(simValue);
+        if (i < 100) {
+          // Store first 100 for debugging
+          simulationDetails.push({ growth1, growth2, growth3, margin, wacc, exitMultiple, value: simValue });
+        }
+      }
+    }
+
+    if (valuations.length < simulations * 0.5) {
+      return {
+        success: false,
+        error: 'Too many invalid simulations - check input distributions'
+      };
+    }
+
+    // Sort valuations for percentile calculation
+    valuations.sort((a, b) => a - b);
+    const n = valuations.length;
+
+    // Calculate percentiles
+    const percentile = (p) => {
+      const idx = Math.floor(n * p);
+      return valuations[Math.min(idx, n - 1)];
+    };
+
+    const currentPrice = baseCase.currentPrice;
+    const expectedValue = valuations.reduce((a, b) => a + b, 0) / n;
+    const variance = valuations.reduce((s, v) => s + Math.pow(v - expectedValue, 2), 0) / n;
+    const stdDev = Math.sqrt(variance);
+
+    // Calculate probability metrics
+    const pUndervalued10 = valuations.filter(v => v > currentPrice * 1.10).length / n;
+    const pUndervalued20 = valuations.filter(v => v > currentPrice * 1.20).length / n;
+    const pUndervalued50 = valuations.filter(v => v > currentPrice * 1.50).length / n;
+    const pOvervalued = currentPrice > 0 ? valuations.filter(v => v < currentPrice).length / n : 0;
+
+    // Calculate moments of the distribution
+    const moments = distLib.calculateMoments(valuations);
+
+    return {
+      success: true,
+      baseIntrinsicValue: baseCase.intrinsicValue,
+      currentPrice,
+      probabilisticValuation: {
+        simulations: n,
+        distributionType,
+        expectedValue,
+        standardDeviation: stdDev,
+        coefficientOfVariation: (stdDev / expectedValue) * 100, // CV as %
+        percentiles: {
+          p1: percentile(0.01),
+          p5: percentile(0.05),
+          p10: percentile(0.10),
+          p25: percentile(0.25),
+          p50: percentile(0.50), // Median
+          p75: percentile(0.75),
+          p90: percentile(0.90),
+          p95: percentile(0.95),
+          p99: percentile(0.99)
+        },
+        interquartileRange: percentile(0.75) - percentile(0.25),
+        range90: percentile(0.95) - percentile(0.05),
+        moments: {
+          mean: moments.mean,
+          skewness: moments.skewness,
+          kurtosis: moments.kurtosis
+        },
+        probabilities: {
+          undervalued10pct: pUndervalued10 * 100,  // P(IV > price * 1.10)
+          undervalued20pct: pUndervalued20 * 100,  // P(IV > price * 1.20)
+          undervalued50pct: pUndervalued50 * 100,  // P(IV > price * 1.50)
+          overvalued: pOvervalued * 100            // P(IV < price)
+        }
+      },
+      inputDistributions: {
+        growth: {
+          stage1: { mean: baseGrowth1, std: growthUncertainty },
+          stage2: { mean: baseGrowth2, std: growthUncertainty * 0.8 },
+          stage3: { mean: baseGrowth3, std: growthUncertainty * 0.6 }
+        },
+        margin: { mean: baseMargin, std: marginUncertainty },
+        wacc: { mean: baseWACC, std: waccUncertainty },
+        exitMultiple: { mean: baseMultiple, std: multipleUncertainty }
+      },
+      interpretation: this._interpretProbabilisticValuation({
+        expectedValue,
+        currentPrice,
+        pUndervalued20,
+        pOvervalued,
+        skewness: moments.skewness,
+        cv: (stdDev / expectedValue) * 100
+      }),
+      sampleSimulations: simulationDetails.slice(0, 10)
+    };
+  }
+
+  /**
+   * Quick DCF calculation for Monte Carlo (simplified for performance)
+   */
+  _quickDCF(inputs) {
+    const { fcf, revenue, ebitdaMargin, growth, terminalGrowth, wacc, exitMultiple, netDebt, sharesOutstanding } = inputs;
+
+    // Project FCF over 10 years
+    let projectedRevenue = revenue;
+    let totalPV = 0;
+
+    for (let year = 1; year <= 10; year++) {
+      // Determine growth rate
+      let growthRate;
+      if (year <= 3) growthRate = growth[0];
+      else if (year <= 7) growthRate = growth[1];
+      else growthRate = growth[2];
+
+      projectedRevenue *= (1 + growthRate);
+
+      // FCF = Revenue * EBITDA Margin * FCF Conversion (assume 60%)
+      const projectedFCF = projectedRevenue * ebitdaMargin * 0.6;
+      const discountFactor = Math.pow(1 + wacc, year);
+      totalPV += projectedFCF / discountFactor;
+    }
+
+    // Terminal value (average of Gordon Growth and Exit Multiple)
+    const year10FCF = projectedRevenue * ebitdaMargin * 0.6;
+    const year10EBITDA = projectedRevenue * ebitdaMargin;
+
+    const tvGordon = (year10FCF * (1 + terminalGrowth)) / (wacc - terminalGrowth);
+    const tvMultiple = year10EBITDA * exitMultiple;
+    const terminalValue = (tvGordon + tvMultiple) / 2;
+    const terminalPV = terminalValue / Math.pow(1 + wacc, 10);
+
+    // Enterprise to equity value
+    const enterpriseValue = totalPV + terminalPV;
+    const equityValue = enterpriseValue - netDebt;
+
+    // Per share
+    return sharesOutstanding > 0 ? equityValue / sharesOutstanding : equityValue / 1e9;
+  }
+
+  /**
+   * Interpret probabilistic valuation results
+   */
+  _interpretProbabilisticValuation({ expectedValue, currentPrice, pUndervalued20, pOvervalued, skewness, cv }) {
+    const interpretations = [];
+
+    // Valuation stance
+    if (pUndervalued20 > 0.7) {
+      interpretations.push('STRONG BUY: 70%+ probability of 20%+ upside');
+    } else if (pUndervalued20 > 0.5) {
+      interpretations.push('BUY: More than 50% chance of 20%+ upside');
+    } else if (pOvervalued > 0.6) {
+      interpretations.push('CAUTION: 60%+ probability stock is overvalued');
+    } else if (pOvervalued > 0.4 && pUndervalued20 < 0.3) {
+      interpretations.push('HOLD: Balanced risk/reward at current price');
+    }
+
+    // Uncertainty assessment
+    if (cv > 50) {
+      interpretations.push('HIGH UNCERTAINTY: Wide valuation range (CV > 50%)');
+    } else if (cv > 30) {
+      interpretations.push('MODERATE UNCERTAINTY: Significant valuation spread');
+    } else {
+      interpretations.push('LOW UNCERTAINTY: Relatively tight valuation range');
+    }
+
+    // Distribution shape
+    if (skewness > 0.5) {
+      interpretations.push('Positively skewed: More upside scenarios than downside');
+    } else if (skewness < -0.5) {
+      interpretations.push('Negatively skewed: More downside scenarios than upside');
+    }
+
+    // Price vs expected value
+    if (currentPrice > 0) {
+      const discount = ((expectedValue / currentPrice) - 1) * 100;
+      if (discount > 30) {
+        interpretations.push(`Expected value ${discount.toFixed(0)}% above current price`);
+      } else if (discount < -20) {
+        interpretations.push(`Expected value ${Math.abs(discount).toFixed(0)}% below current price`);
+      }
+    }
+
+    return interpretations;
   }
 }
 

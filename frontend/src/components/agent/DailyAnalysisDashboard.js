@@ -30,6 +30,7 @@ function DailyAnalysisDashboard({ portfolioId, className = '' }) {
     if (portfolioId) {
       fetchData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [portfolioId]);
 
   const fetchData = async () => {

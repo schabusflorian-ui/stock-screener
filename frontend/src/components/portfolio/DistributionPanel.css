@@ -1,0 +1,411 @@
+/* frontend/src/components/portfolio/DistributionPanel.css */
+/* Distribution Panel - Return distribution analysis component */
+
+.distribution-panel {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+}
+
+.distribution-panel .panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.distribution-panel .header-content {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.distribution-panel .header-icon {
+  color: var(--accent-primary);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.distribution-panel .header-content h3 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.distribution-panel .panel-description {
+  margin: var(--space-1) 0 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+
+.distribution-panel .header-controls {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.dist-type-select {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.refresh-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.refresh-btn .spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.distribution-panel .panel-content {
+  padding: var(--space-5);
+}
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-8);
+  color: var(--text-tertiary);
+}
+
+/* Stats Grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+
+.stat-label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat-value {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Shape Metrics (Skewness & Kurtosis) */
+.shape-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.shape-card {
+  padding: var(--space-4);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+
+.shape-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: var(--space-2);
+}
+
+.shape-label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.shape-value {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.kurtosis-warning {
+  margin-left: var(--space-1);
+  font-size: var(--text-sm);
+}
+
+.shape-interpretation {
+  margin-bottom: var(--space-3);
+}
+
+.interp-label {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.interp-desc {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+/* Skewness Visual */
+.skew-visual {
+  position: relative;
+  height: 32px;
+  margin-top: var(--space-2);
+}
+
+.skew-track {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--bg-primary);
+  border-radius: 2px;
+  transform: translateY(-50%);
+}
+
+.skew-indicator {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.skew-label {
+  position: absolute;
+  bottom: 0;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.skew-label.left { left: 0; }
+.skew-label.center { left: 50%; transform: translateX(-50%); }
+.skew-label.right { right: 0; }
+
+/* Kurtosis Bar */
+.kurtosis-bar {
+  position: relative;
+  height: 8px;
+  background: var(--bg-primary);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: var(--space-2);
+}
+
+.kurtosis-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.kurtosis-normal-marker {
+  position: absolute;
+  top: -4px;
+  width: 2px;
+  height: 16px;
+  background: var(--text-secondary);
+}
+
+/* Chart Sections */
+.chart-section {
+  margin-bottom: var(--space-5);
+}
+
+.chart-section h5 {
+  margin: 0 0 var(--space-2) 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.chart-description {
+  margin: 0 0 var(--space-3) 0;
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+
+.histogram-container,
+.qq-container {
+  background: var(--bg-primary);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  border: 1px solid var(--border-color);
+}
+
+.histogram-svg,
+.qq-svg {
+  width: 100%;
+  height: auto;
+}
+
+/* VaR Section */
+.var-section {
+  margin-bottom: var(--space-5);
+}
+
+.var-section h5 {
+  margin: 0 0 var(--space-3) 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.var-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+}
+
+.var-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  text-align: center;
+}
+
+.var-item.highlight {
+  background: rgba(var(--warning-color-rgb, 245, 158, 11), 0.1);
+  border-color: var(--warning-color);
+}
+
+.var-label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.var-value {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Parameters Section */
+.params-section {
+  margin-bottom: var(--space-5);
+}
+
+.params-section h5 {
+  margin: 0 0 var(--space-3) 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.params-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.param-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  min-width: 100px;
+}
+
+.param-name {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-transform: capitalize;
+}
+
+.param-value {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--accent-primary);
+  font-family: var(--font-mono);
+}
+
+/* Info Box */
+.distribution-panel .info-box {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: rgba(var(--accent-primary-rgb, 99, 102, 241), 0.08);
+  border: 1px solid rgba(var(--accent-primary-rgb, 99, 102, 241), 0.2);
+  border-radius: var(--radius-md);
+}
+
+.distribution-panel .info-box svg {
+  flex-shrink: 0;
+  color: var(--accent-primary);
+}
+
+.distribution-panel .info-box div {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.distribution-panel .info-box strong {
+  color: var(--text-primary);
+}
+
+.distribution-panel .info-box em {
+  color: var(--accent-primary);
+  font-style: normal;
+  font-weight: 500;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .distribution-panel .panel-header {
+    flex-direction: column;
+  }
+
+  .distribution-panel .header-controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .shape-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .var-grid {
+    grid-template-columns: 1fr;
+  }
+}

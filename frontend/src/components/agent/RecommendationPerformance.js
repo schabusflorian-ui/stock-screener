@@ -4,8 +4,6 @@
 import { useState, useEffect } from 'react';
 import {
   BarChart3,
-  TrendingUp,
-  TrendingDown,
   Activity,
   RefreshCw,
   Info,
@@ -56,6 +54,7 @@ function RecommendationPerformance() {
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period]);
 
   const loadData = async () => {

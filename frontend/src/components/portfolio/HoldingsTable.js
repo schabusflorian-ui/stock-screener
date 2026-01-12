@@ -13,6 +13,7 @@ import {
   PieChart
 } from 'lucide-react';
 import { pricesAPI, analystAPI, companyAPI } from '../../services/api';
+import { usePreferences } from '../../context/PreferencesContext';
 import ETFDetailModal from './ETFDetailModal';
 import './HoldingsTable.css';
 
@@ -79,6 +80,7 @@ function AIRatingBadge({ rating, loading, onClick }) {
 }
 
 function HoldingsTable({ holdings, portfolioId, onRefresh, benchmarkReturn = null, showAlpha = true }) {
+  const { preferences } = usePreferences();
   const [sortBy, setSortBy] = useState('current_value');
   const [sortOrder, setSortOrder] = useState('desc');
   const [searchTerm, setSearchTerm] = useState('');
@@ -244,6 +246,10 @@ function HoldingsTable({ holdings, portfolioId, onRefresh, benchmarkReturn = nul
   const formatPercent = (value) => {
     if (value === null || value === undefined) return '-';
     const sign = value >= 0 ? '+' : '';
+    // Check user preference for showing percentages
+    if (preferences.showPercentages === false) {
+      return `${sign}${value.toFixed(2)}`;
+    }
     return `${sign}${value.toFixed(2)}%`;
   };
 

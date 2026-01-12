@@ -14,7 +14,7 @@ import {
   ReferenceLine
 } from 'recharts';
 import { TrendingUp, TrendingDown, Activity, Calendar } from 'lucide-react';
-import { pricesAPI, indicesAPI } from '../services/api';
+import { pricesAPI } from '../services/api';
 import './PriceChart.css';
 
 const PERIODS = [
@@ -26,13 +26,13 @@ const PERIODS = [
   { key: 'max', label: 'MAX' }
 ];
 
-// Available overlay options - use actual market index symbols for historical data
+// Available overlay options - use ETF symbols which have current price data
 const OVERLAY_OPTIONS = [
   { key: 'sma50', label: 'SMA 50', color: '#6366f1', type: 'indicator' },
   { key: 'sma200', label: 'SMA 200', color: '#f59e0b', type: 'indicator' },
-  { key: 'spy', label: 'S&P 500', color: '#8b5cf6', type: 'index', symbol: '^GSPC' },
-  { key: 'qqq', label: 'NASDAQ', color: '#06b6d4', type: 'index', symbol: '^IXIC' },
-  { key: 'dia', label: 'Dow Jones', color: '#f97316', type: 'index', symbol: '^DJI' },
+  { key: 'spy', label: 'S&P 500 (SPY)', color: '#8b5cf6', type: 'index', symbol: 'SPY' },
+  { key: 'qqq', label: 'NASDAQ (QQQ)', color: '#06b6d4', type: 'index', symbol: 'QQQ' },
+  { key: 'dia', label: 'Dow Jones (DIA)', color: '#f97316', type: 'index', symbol: 'DIA' },
   { key: 'alpha', label: 'Alpha vs SPY', color: '#8b5cf6', type: 'alpha' }
 ];
 
@@ -146,19 +146,24 @@ export function PriceChart({ symbol }) {
           setMetrics(metricsRes.data.data);
         }
 
-        // Fetch index data for overlays using actual market index symbols
+        // Fetch ETF data for overlays (SPY, QQQ, DIA have current price data)
         const indexSymbols = [
-          { key: 'spy', symbol: '^GSPC', label: 'S&P 500' },
-          { key: 'qqq', symbol: '^IXIC', label: 'NASDAQ' },
-          { key: 'dia', symbol: '^DJI', label: 'Dow Jones' }
+          { key: 'spy', symbol: 'SPY', label: 'S&P 500' },
+          { key: 'qqq', symbol: 'QQQ', label: 'NASDAQ' },
+          { key: 'dia', symbol: 'DIA', label: 'Dow Jones' }
         ];
 
         const indexPromises = indexSymbols.map(async (idx) => {
           try {
-            const res = await indicesAPI.getPrices(idx.symbol, period);
-            if (res.data.success && res.data.data && res.data.data.length > 0) {
-              // Index data comes in descending order (newest first), reverse to match stock data (ascending)
-              const sortedData = [...res.data.data].reverse();
+            // Use pricesAPI.get() which fetches from daily_prices table (current data)
+            const res = await pricesAPI.get(idx.symbol, { period });
+            // Response structure: { success: true, data: { prices: [...] } }
+            const prices = res.data?.data?.prices;
+            if (res.data.success && prices && prices.length > 0) {
+              // Price data may come in descending order, ensure it's ascending (oldest first)
+              const sortedData = [...prices].sort((a, b) =>
+                new Date(a.date) - new Date(b.date)
+              );
               return { key: idx.key, data: sortedData };
             }
           } catch (e) {

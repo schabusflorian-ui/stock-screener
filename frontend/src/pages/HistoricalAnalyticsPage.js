@@ -139,8 +139,8 @@ export default function HistoricalAnalyticsPage() {
     const fetchInvestors = async () => {
       try {
         setLoading(true);
-        const response = await investorsAPI.list();
-        setInvestors(response.data?.investors || []);
+        const response = await investorsAPI.getAll();
+        setInvestors(response.data?.investors || response.data || []);
         setError(null);
       } catch (err) {
         setError('Failed to load investors');

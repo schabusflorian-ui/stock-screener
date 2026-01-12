@@ -345,6 +345,103 @@ class AnalystService:
             conv.messages.append(error_msg)
             return error_msg
 
+    def chat_stream(
+        self,
+        conversation_id: str,
+        user_message: str,
+        company_context: Dict = None
+    ):
+        """
+        Stream a chat response token by token.
+
+        Args:
+            conversation_id: The conversation ID
+            user_message: User's message
+            company_context: Optional company data override
+
+        Yields:
+            Tokens as they are generated
+        """
+        from .llm.base import TaskType
+
+        self._ensure_router()
+
+        conv = self.get_conversation(conversation_id)
+        if not conv:
+            raise ValueError(f"Conversation not found: {conversation_id}")
+
+        if not self.router:
+            raise RuntimeError("No LLM models available. Please configure Claude or Ollama.")
+
+        analyst = get_analyst(conv.analyst_id)
+
+        # 1. Build data context
+        data_context = self._build_context(conv, company_context)
+
+        # 2. Get relevant wisdom
+        wisdom = self._get_wisdom(user_message, analyst.id, company_context)
+
+        # 3. Build message history
+        history = [
+            Message(role=m.role, content=m.content)
+            for m in conv.messages[-10:]
+        ]
+
+        # 4. Add user message to conversation
+        user_msg = ChatMessage(
+            id=str(uuid.uuid4()),
+            role='user',
+            content=user_message,
+            timestamp=datetime.now().isoformat()
+        )
+        conv.messages.append(user_msg)
+
+        # 5. Combine context
+        full_context = data_context
+        if wisdom:
+            full_context = f"{data_context}\n\n{wisdom}"
+
+        # 6. Build the full query
+        full_query = f"""## CURRENT DATA
+{full_context}
+
+## USER QUESTION
+{user_message}
+
+Analyze the data above and provide your investment perspective."""
+
+        history.append(Message(role='user', content=full_query))
+
+        # 7. Get the model and stream
+        model = self.router.get_model(TaskType.CHAT)
+        full_content = ""
+
+        try:
+            for token in model.stream_chat(
+                messages=history,
+                max_tokens=1500,
+                temperature=0.7,
+                system=analyst.system_prompt
+            ):
+                full_content += token
+                yield token
+
+            # 8. After streaming completes, save the full message
+            assistant_msg = ChatMessage(
+                id=str(uuid.uuid4()),
+                role='assistant',
+                content=full_content,
+                timestamp=datetime.now().isoformat(),
+                metadata={'model': model.name, 'streamed': True}
+            )
+            conv.messages.append(assistant_msg)
+
+            logger.info(f"Stream chat completed: conv={conversation_id}, model={model.name}")
+
+        except Exception as e:
+            logger.error(f"Stream chat failed: {e}")
+            raise
+
     def _build_context(
         self,
         conv: Conversation,
@@ -399,6 +496,24 @@ class AnalystService:
             if override.get('news'):
                 parts.append(
                     self.formatter.format_news_items(override['news'])
+                )
+
+            # Portfolio context
+            if override.get('portfolio') and override.get('positions'):
+                parts.append(
+                    self.formatter.format_portfolio_data(
+                        override['portfolio'],
+                        override['positions']
+                    )
+                )
+
+            # Investor holdings context
+            if override.get('investor') and override.get('investor_holdings'):
+                parts.append(
+                    self.formatter.format_investor_holdings(
+                        override['investor'],
+                        override['investor_holdings']
+                    )
                 )
 
             return "\n\n".join(parts) if parts else "No company data provided."

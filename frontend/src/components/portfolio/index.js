@@ -20,4 +20,5 @@ export { default as FactorExposurePanel } from './FactorExposurePanel';
 export { default as CorrelationPanel } from './CorrelationPanel';
 export { default as AdvancedKellyPanel } from './AdvancedKellyPanel';
 export { default as AlphaAnalyticsPanel } from './AlphaAnalyticsPanel';
+export { default as DistributionPanel } from './DistributionPanel';
 export { default as ExportPanel } from './ExportPanel';

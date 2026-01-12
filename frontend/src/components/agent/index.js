@@ -18,3 +18,10 @@ export { default as RecommendationPerformance } from './RecommendationPerformanc
 export { default as ExecutionSettingsPanel } from './ExecutionSettingsPanel';
 export { default as PendingExecutionsPanel } from './PendingExecutionsPanel';
 export { default as HedgeSuggestionsPanel } from './HedgeSuggestionsPanel';
+
+// Agent Control Dashboard Components
+export { default as AgentStatusBar } from './AgentStatusBar';
+export { default as PendingApprovalsCard } from './PendingApprovalsCard';
+export { default as TradeCard } from './TradeCard';
+export { default as AgentActivityLog } from './AgentActivityLog';
+export { default as MarketContextCard } from './MarketContextCard';

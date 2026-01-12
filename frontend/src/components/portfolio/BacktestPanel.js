@@ -2,11 +2,25 @@
 import { useState, useMemo } from 'react';
 import { Loader, TrendingUp, TrendingDown, Play, Calendar, AlertTriangle, BarChart3, Activity, ChevronDown, ChevronUp } from 'lucide-react';
 import { simulateAPI } from '../../services/api';
+import { usePreferences } from '../../context/PreferencesContext';
 import './SimulationPanels.css';
 
+function getDefaultStartDate(yearsBack = 5) {
+  const date = new Date();
+  date.setFullYear(date.getFullYear() - yearsBack);
+  return date.toISOString().split('T')[0];
+}
+
+function getDefaultEndDate() {
+  return new Date().toISOString().split('T')[0];
+}
+
 function BacktestPanel({ portfolioId, holdings }) {
+  const { preferences } = usePreferences();
+  const defaultYears = preferences.defaultTimeHorizon || 5;
+
   const [config, setConfig] = useState({
-    startDate: getDefaultStartDate(),
+    startDate: getDefaultStartDate(defaultYears),
     endDate: getDefaultEndDate(),
     initialValue: 100000,
     rebalanceFrequency: 'quarterly',
@@ -18,16 +32,6 @@ function BacktestPanel({ portfolioId, holdings }) {
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('equity');
   const [showMonthlyReturns, setShowMonthlyReturns] = useState(false);
-
-  function getDefaultStartDate() {
-    const date = new Date();
-    date.setFullYear(date.getFullYear() - 5);
-    return date.toISOString().split('T')[0];
-  }
-
-  function getDefaultEndDate() {
-    return new Date().toISOString().split('T')[0];
-  }
 
   const runBacktest = async () => {
     if (!holdings || holdings.length === 0) {

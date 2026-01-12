@@ -50,11 +50,25 @@ router.get('/status', (req, res) => {
       SELECT COUNT(*) as count FROM financial_data
     `).get();
 
-    // Skip the slow recentUpdates query - just return basic status
+    // Get the last time data was actually updated (created_at from financial_data)
+    const lastUpdate = database.prepare(`
+      SELECT MAX(created_at) as last_update FROM financial_data
+    `).get();
+
+    // Get the most recent filing date (handles mixed formats)
+    // String format YYYY-MM-DD sorts correctly for recent dates
+    const recentFiling = database.prepare(`
+      SELECT MAX(filed_date) as latest_filed
+      FROM financial_data
+      WHERE filed_date LIKE '202%-%'
+    `).get();
+
     const statusData = {
       watchlistCount: watchlistCount.count,
       activeCompanies: activeCompaniesCount.count,
       totalFilings: filingsCount.count,
+      lastUpdate: lastUpdate?.last_update || null,
+      latestFiling: recentFiling?.latest_filed || null,
       lastCheck: new Date().toISOString()
     };
 

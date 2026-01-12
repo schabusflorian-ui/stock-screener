@@ -135,11 +135,14 @@ router.get('/trending', async (req, res) => {
       return res.status(503).json({ error: 'Sentiment service unavailable' });
     }
 
-    const { period = '24h', limit = 20, refresh = 'false' } = req.query;
+    const { period = '24h', limit = 20, refresh = 'false', region = 'US' } = req.query;
 
     if (refresh === 'true') {
-      await redditFetcher.scanTrendingTickers();
+      await redditFetcher.scanTrendingTickers({ region });
     }
+
+    // Use region-specific period key for EU
+    const periodKey = region === 'US' ? period : `${period}_${region}`;
 
     const trending = database.prepare(`
       SELECT
@@ -150,7 +153,7 @@ router.get('/trending', async (req, res) => {
       WHERE t.period = ?
       ORDER BY t.rank_by_mentions
       LIMIT ?
-    `).all(period, parseInt(limit));
+    `).all(periodKey, parseInt(limit));
 
     // Transform snake_case to camelCase for frontend
     const transformed = trending.map((t) => ({
@@ -272,6 +275,672 @@ router.get('/batch/signals', async (req, res) => {
   }
 });
 
+// ========================================
+// IMPORTANT: Static routes must be defined before :symbol routes
+// ========================================
+
+/**
+ * GET /api/sentiment/sources-overview
+ * Get aggregated sentiment breakdown by source (Reddit, StockTwits, News)
+ */
+router.get('/sources-overview', async (req, res) => {
+  try {
+    const { period = '24h' } = req.query;
+
+    // Reddit sentiment summary
+    const redditStats = database.prepare(`
+      SELECT
+        COUNT(*) as post_count,
+        AVG(sentiment_score) as avg_sentiment,
+        SUM(CASE WHEN sentiment_score > 0.05 THEN 1 ELSE 0 END) as bullish_count,
+        SUM(CASE WHEN sentiment_score < -0.05 THEN 1 ELSE 0 END) as bearish_count,
+        SUM(CASE WHEN sentiment_score BETWEEN -0.05 AND 0.05 THEN 1 ELSE 0 END) as neutral_count
+      FROM reddit_posts
+      WHERE posted_at >= datetime('now', '-${period === '24h' ? '1 day' : period === '7d' ? '7 days' : '30 days'}')
+    `).get();
+
+    // Top subreddits
+    const topSubreddits = database.prepare(`
+      SELECT subreddit, COUNT(*) as count
+      FROM reddit_posts
+      WHERE posted_at >= datetime('now', '-${period === '24h' ? '1 day' : period === '7d' ? '7 days' : '30 days'}')
+      GROUP BY subreddit
+      ORDER BY count DESC
+      LIMIT 5
+    `).all();
+
+    // StockTwits sentiment summary
+    let stocktwitsStats = { message_count: 0, avg_sentiment: 0, bullish_count: 0, bearish_count: 0, neutral_count: 0 };
+    try {
+      stocktwitsStats = database.prepare(`
+        SELECT
+          COUNT(*) as message_count,
+          AVG(nlp_sentiment_score) as avg_sentiment,
+          SUM(CASE WHEN user_sentiment = 'Bullish' OR nlp_sentiment_score > 0.05 THEN 1 ELSE 0 END) as bullish_count,
+          SUM(CASE WHEN user_sentiment = 'Bearish' OR nlp_sentiment_score < -0.05 THEN 1 ELSE 0 END) as bearish_count,
+          SUM(CASE WHEN user_sentiment IS NULL AND nlp_sentiment_score BETWEEN -0.05 AND 0.05 THEN 1 ELSE 0 END) as neutral_count
+        FROM stocktwits_messages
+        WHERE posted_at >= datetime('now', '-${period === '24h' ? '1 day' : period === '7d' ? '7 days' : '30 days'}')
+      `).get() || stocktwitsStats;
+    } catch (e) {
+      // Table may not exist
+    }
+
+    // News sentiment summary
+    let newsStats = { article_count: 0, avg_sentiment: 0, bullish_count: 0, bearish_count: 0, neutral_count: 0 };
+    try {
+      newsStats = database.prepare(`
+        SELECT
+          COUNT(*) as article_count,
+          AVG(sentiment_score) as avg_sentiment,
+          SUM(CASE WHEN sentiment_score > 0.05 THEN 1 ELSE 0 END) as bullish_count,
+          SUM(CASE WHEN sentiment_score < -0.05 THEN 1 ELSE 0 END) as bearish_count,
+          SUM(CASE WHEN sentiment_score BETWEEN -0.05 AND 0.05 THEN 1 ELSE 0 END) as neutral_count
+        FROM news_articles
+        WHERE published_at >= datetime('now', '-${period === '24h' ? '1 day' : period === '7d' ? '7 days' : '30 days'}')
+      `).get() || newsStats;
+    } catch (e) {
+      // Table may not exist
+    }
+
+    // Top news sources
+    let topNewsSources = [];
+    try {
+      topNewsSources = database.prepare(`
+        SELECT source, COUNT(*) as count
+        FROM news_articles
+        WHERE published_at >= datetime('now', '-${period === '24h' ? '1 day' : period === '7d' ? '7 days' : '30 days'}')
+        GROUP BY source
+        ORDER BY count DESC
+        LIMIT 5
+      `).all();
+    } catch (e) {
+      // Table may not exist
+    }
+
+    // Calculate divergences - find stocks where sources disagree significantly
+    const divergences = [];
+    try {
+      // Get tickers with both Reddit and News data that diverge
+      const tickersWithMultipleSources = database.prepare(`
+        SELECT
+          t.symbol,
+          t.avg_sentiment as reddit_sentiment,
+          c.id as company_id
+        FROM trending_tickers t
+        JOIN companies c ON t.symbol = c.symbol
+        WHERE t.period = ?
+          AND t.avg_sentiment IS NOT NULL
+        ORDER BY t.mention_count DESC
+        LIMIT 50
+      `).all(period);
+
+      for (const ticker of tickersWithMultipleSources) {
+        // Get news sentiment for this ticker
+        const newsSentiment = database.prepare(`
+          SELECT AVG(sentiment_score) as avg_sentiment
+          FROM news_articles
+          WHERE company_id = ?
+            AND published_at >= datetime('now', '-${period === '24h' ? '1 day' : period === '7d' ? '7 days' : '30 days'}')
+        `).get(ticker.company_id);
+
+        if (newsSentiment?.avg_sentiment !== null && ticker.reddit_sentiment !== null) {
+          const diff = Math.abs(ticker.reddit_sentiment - newsSentiment.avg_sentiment);
+          // Significant divergence if > 0.15 difference
+          if (diff > 0.15) {
+            divergences.push({
+              symbol: ticker.symbol,
+              reddit: ticker.reddit_sentiment,
+              news: newsSentiment.avg_sentiment,
+              difference: diff,
+              severity: diff > 0.3 ? 'high' : 'medium',
+              description: ticker.reddit_sentiment > newsSentiment.avg_sentiment
+                ? `Reddit bullish (${(ticker.reddit_sentiment * 100).toFixed(0)}) vs News bearish (${(newsSentiment.avg_sentiment * 100).toFixed(0)})`
+                : `Reddit bearish (${(ticker.reddit_sentiment * 100).toFixed(0)}) vs News bullish (${(newsSentiment.avg_sentiment * 100).toFixed(0)})`,
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Error calculating divergences:', e);
+    }
+
+    // Sort divergences by severity
+    divergences.sort((a, b) => b.difference - a.difference);
+
+    const totalReddit = (redditStats?.bullish_count || 0) + (redditStats?.bearish_count || 0) + (redditStats?.neutral_count || 0);
+    const totalStocktwits = (stocktwitsStats?.bullish_count || 0) + (stocktwitsStats?.bearish_count || 0) + (stocktwitsStats?.neutral_count || 0);
+    const totalNews = (newsStats?.bullish_count || 0) + (newsStats?.bearish_count || 0) + (newsStats?.neutral_count || 0);
+
+    res.json({
+      period,
+      reddit: {
+        avgSentiment: redditStats?.avg_sentiment || 0,
+        postCount: redditStats?.post_count || 0,
+        topSubreddits: topSubreddits.map(s => s.subreddit),
+        bullishPct: totalReddit > 0 ? Math.round((redditStats?.bullish_count / totalReddit) * 100) : 0,
+        bearishPct: totalReddit > 0 ? Math.round((redditStats?.bearish_count / totalReddit) * 100) : 0,
+        neutralPct: totalReddit > 0 ? Math.round((redditStats?.neutral_count / totalReddit) * 100) : 0,
+      },
+      stocktwits: {
+        avgSentiment: stocktwitsStats?.avg_sentiment || 0,
+        messageCount: stocktwitsStats?.message_count || 0,
+        bullishPct: totalStocktwits > 0 ? Math.round((stocktwitsStats?.bullish_count / totalStocktwits) * 100) : 0,
+        bearishPct: totalStocktwits > 0 ? Math.round((stocktwitsStats?.bearish_count / totalStocktwits) * 100) : 0,
+        neutralPct: totalStocktwits > 0 ? Math.round((stocktwitsStats?.neutral_count / totalStocktwits) * 100) : 0,
+      },
+      news: {
+        avgSentiment: newsStats?.avg_sentiment || 0,
+        articleCount: newsStats?.article_count || 0,
+        topSources: topNewsSources.map(s => s.source),
+        bullishPct: totalNews > 0 ? Math.round((newsStats?.bullish_count / totalNews) * 100) : 0,
+        bearishPct: totalNews > 0 ? Math.round((newsStats?.bearish_count / totalNews) * 100) : 0,
+        neutralPct: totalNews > 0 ? Math.round((newsStats?.neutral_count / totalNews) * 100) : 0,
+      },
+      divergences: divergences.slice(0, 10),
+    });
+  } catch (error) {
+    console.error('Sources overview error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/sentiment/analyst-activity
+ * Get recent analyst rating changes and activity
+ */
+router.get('/analyst-activity', async (req, res) => {
+  try {
+    const { limit = 20 } = req.query;
+
+    // Get stocks with recent analyst estimate changes
+    const recentChanges = [];
+
+    // Check for price target changes by comparing current vs history
+    const stocksWithHistory = database.prepare(`
+      SELECT DISTINCT ae.company_id, c.symbol, c.name
+      FROM analyst_estimates ae
+      JOIN companies c ON ae.company_id = c.id
+      WHERE EXISTS (
+        SELECT 1 FROM analyst_estimates_history aeh
+        WHERE aeh.company_id = ae.company_id
+      )
+      LIMIT 100
+    `).all();
+
+    for (const stock of stocksWithHistory) {
+      const current = database.prepare(`
+        SELECT
+          target_mean, target_median, recommendation_key, recommendation_mean,
+          buy_percent, number_of_analysts, fetched_at
+        FROM analyst_estimates
+        WHERE company_id = ?
+      `).get(stock.company_id);
+
+      const previous = database.prepare(`
+        SELECT
+          target_mean, target_median, recommendation_key, recommendation_mean,
+          buy_percent, number_of_analysts, archived_at
+        FROM analyst_estimates_history
+        WHERE company_id = ?
+        ORDER BY archived_at DESC
+        LIMIT 1
+      `).get(stock.company_id);
+
+      if (current && previous) {
+        // Check for rating change
+        if (current.recommendation_key !== previous.recommendation_key) {
+          const isUpgrade = current.recommendation_mean < previous.recommendation_mean;
+          recentChanges.push({
+            symbol: stock.symbol,
+            name: stock.name,
+            action: isUpgrade ? 'upgrade' : 'downgrade',
+            from: previous.recommendation_key,
+            to: current.recommendation_key,
+            priceTarget: current.target_mean,
+            date: current.fetched_at,
+            type: 'rating_change',
+          });
+        }
+
+        // Check for significant price target change (> 5%)
+        if (current.target_mean && previous.target_mean) {
+          const ptChange = ((current.target_mean - previous.target_mean) / previous.target_mean) * 100;
+          if (Math.abs(ptChange) > 5) {
+            recentChanges.push({
+              symbol: stock.symbol,
+              name: stock.name,
+              action: ptChange > 0 ? 'pt_raise' : 'pt_lower',
+              oldTarget: previous.target_mean,
+              newTarget: current.target_mean,
+              changePercent: ptChange,
+              date: current.fetched_at,
+              type: 'price_target',
+            });
+          }
+        }
+
+        // Check for significant consensus shift (> 10%)
+        if (current.buy_percent && previous.buy_percent) {
+          const consensusChange = current.buy_percent - previous.buy_percent;
+          if (Math.abs(consensusChange) > 10) {
+            recentChanges.push({
+              symbol: stock.symbol,
+              name: stock.name,
+              action: consensusChange > 0 ? 'consensus_improve' : 'consensus_decline',
+              oldBuyPercent: previous.buy_percent,
+              newBuyPercent: current.buy_percent,
+              change: consensusChange,
+              date: current.fetched_at,
+              type: 'consensus_shift',
+            });
+          }
+        }
+      }
+    }
+
+    // Sort by date, most recent first
+    recentChanges.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    // Get strong buy stocks (>80% buy consensus)
+    const strongBuys = database.prepare(`
+      SELECT
+        c.symbol, c.name, c.sector,
+        ae.buy_percent, ae.target_mean, ae.current_price,
+        ae.upside_potential, ae.number_of_analysts
+      FROM analyst_estimates ae
+      JOIN companies c ON ae.company_id = c.id
+      WHERE ae.buy_percent >= 80
+        AND ae.number_of_analysts >= 5
+      ORDER BY ae.buy_percent DESC, ae.upside_potential DESC
+      LIMIT 10
+    `).all();
+
+    // Get top upside stocks
+    const topUpside = database.prepare(`
+      SELECT
+        c.symbol, c.name, c.sector,
+        ae.upside_potential, ae.target_mean, ae.current_price,
+        ae.buy_percent, ae.number_of_analysts
+      FROM analyst_estimates ae
+      JOIN companies c ON ae.company_id = c.id
+      WHERE ae.upside_potential > 0
+        AND ae.number_of_analysts >= 5
+      ORDER BY ae.upside_potential DESC
+      LIMIT 10
+    `).all();
+
+    res.json({
+      recentChanges: recentChanges.slice(0, parseInt(limit)),
+      strongBuys,
+      topUpside,
+      totalChanges: recentChanges.length,
+    });
+  } catch (error) {
+    console.error('Analyst activity error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/sentiment/insider-activity
+ * Get recent insider trading activity across all tracked stocks
+ */
+router.get('/insider-activity', async (req, res) => {
+  try {
+    const { days = 30, limit = 50 } = req.query;
+
+    // Get significant insider buys (bullish signal)
+    const significantBuys = database.prepare(`
+      SELECT
+        c.symbol,
+        c.name as company_name,
+        i.name as insider_name,
+        i.title as insider_title,
+        it.transaction_type,
+        it.transaction_date,
+        it.shares_transacted,
+        it.price_per_share,
+        it.total_value,
+        it.shares_owned_after
+      FROM insider_transactions it
+      JOIN companies c ON it.company_id = c.id
+      JOIN insiders i ON it.insider_id = i.id
+      WHERE it.transaction_type IN ('buy', 'purchase')
+        AND it.transaction_date >= date('now', '-' || ? || ' days')
+        AND it.total_value >= 50000
+      ORDER BY it.total_value DESC
+      LIMIT ?
+    `).all(parseInt(days), parseInt(limit));
+
+    // Get significant insider sells (bearish signal)
+    const significantSells = database.prepare(`
+      SELECT
+        c.symbol,
+        c.name as company_name,
+        i.name as insider_name,
+        i.title as insider_title,
+        it.transaction_type,
+        it.transaction_date,
+        it.shares_transacted,
+        it.price_per_share,
+        it.total_value,
+        it.shares_owned_after
+      FROM insider_transactions it
+      JOIN companies c ON it.company_id = c.id
+      JOIN insiders i ON it.insider_id = i.id
+      WHERE it.transaction_type IN ('sell', 'sale')
+        AND it.transaction_date >= date('now', '-' || ? || ' days')
+        AND it.total_value >= 100000
+      ORDER BY it.total_value DESC
+      LIMIT ?
+    `).all(parseInt(days), parseInt(limit));
+
+    // Get insider activity summary by stock
+    const activityByStock = database.prepare(`
+      SELECT
+        c.symbol,
+        c.name as company_name,
+        COUNT(CASE WHEN it.transaction_type IN ('buy', 'purchase') THEN 1 END) as buy_count,
+        COUNT(CASE WHEN it.transaction_type IN ('sell', 'sale') THEN 1 END) as sell_count,
+        SUM(CASE WHEN it.transaction_type IN ('buy', 'purchase') THEN it.total_value ELSE 0 END) as total_bought,
+        SUM(CASE WHEN it.transaction_type IN ('sell', 'sale') THEN it.total_value ELSE 0 END) as total_sold,
+        COUNT(DISTINCT it.insider_id) as unique_insiders,
+        MAX(it.transaction_date) as last_activity
+      FROM insider_transactions it
+      JOIN companies c ON it.company_id = c.id
+      WHERE it.transaction_date >= date('now', '-' || ? || ' days')
+      GROUP BY c.symbol, c.name
+      HAVING (buy_count > 0 OR sell_count > 0)
+      ORDER BY (total_bought - total_sold) DESC
+      LIMIT 20
+    `).all(parseInt(days));
+
+    // Calculate net insider sentiment
+    const netBuying = activityByStock.filter(s => s.total_bought > s.total_sold);
+    const netSelling = activityByStock.filter(s => s.total_sold > s.total_bought);
+
+    // Get overall statistics
+    const overallStats = database.prepare(`
+      SELECT
+        COUNT(CASE WHEN transaction_type IN ('buy', 'purchase') THEN 1 END) as total_buys,
+        COUNT(CASE WHEN transaction_type IN ('sell', 'sale') THEN 1 END) as total_sells,
+        SUM(CASE WHEN transaction_type IN ('buy', 'purchase') THEN total_value ELSE 0 END) as total_buy_value,
+        SUM(CASE WHEN transaction_type IN ('sell', 'sale') THEN total_value ELSE 0 END) as total_sell_value,
+        COUNT(DISTINCT company_id) as companies_with_activity
+      FROM insider_transactions
+      WHERE transaction_date >= date('now', '-' || ? || ' days')
+    `).get(parseInt(days));
+
+    res.json({
+      period: `${days} days`,
+      overview: {
+        totalBuys: overallStats?.total_buys || 0,
+        totalSells: overallStats?.total_sells || 0,
+        totalBuyValue: overallStats?.total_buy_value || 0,
+        totalSellValue: overallStats?.total_sell_value || 0,
+        companiesWithActivity: overallStats?.companies_with_activity || 0,
+        buyToSellRatio: overallStats?.total_sells > 0
+          ? (overallStats?.total_buys / overallStats?.total_sells).toFixed(2)
+          : 'N/A',
+      },
+      significantBuys: significantBuys.map(tx => ({
+        symbol: tx.symbol,
+        companyName: tx.company_name,
+        insiderName: tx.insider_name,
+        insiderTitle: tx.insider_title,
+        type: 'buy',
+        date: tx.transaction_date,
+        shares: tx.shares_transacted,
+        pricePerShare: tx.price_per_share,
+        totalValue: tx.total_value,
+        sharesOwnedAfter: tx.shares_owned_after,
+      })),
+      significantSells: significantSells.map(tx => ({
+        symbol: tx.symbol,
+        companyName: tx.company_name,
+        insiderName: tx.insider_name,
+        insiderTitle: tx.insider_title,
+        type: 'sell',
+        date: tx.transaction_date,
+        shares: tx.shares_transacted,
+        pricePerShare: tx.price_per_share,
+        totalValue: tx.total_value,
+        sharesOwnedAfter: tx.shares_owned_after,
+      })),
+      netBuying: netBuying.slice(0, 10).map(s => ({
+        symbol: s.symbol,
+        companyName: s.company_name,
+        buyCount: s.buy_count,
+        sellCount: s.sell_count,
+        netFlow: s.total_bought - s.total_sold,
+        uniqueInsiders: s.unique_insiders,
+        lastActivity: s.last_activity,
+      })),
+      netSelling: netSelling.slice(0, 10).map(s => ({
+        symbol: s.symbol,
+        companyName: s.company_name,
+        buyCount: s.buy_count,
+        sellCount: s.sell_count,
+        netFlow: s.total_sold - s.total_bought,
+        uniqueInsiders: s.unique_insiders,
+        lastActivity: s.last_activity,
+      })),
+    });
+  } catch (error) {
+    console.error('Insider activity error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/sentiment/trending-enhanced
+ * Get enhanced trending tickers with multi-source breakdown
+ */
+router.get('/trending-enhanced', async (req, res) => {
+  try {
+    const { period = '24h', limit = 30, region = 'US' } = req.query;
+    const periodDays = period === '24h' ? '1 day' : period === '7d' ? '7 days' : '30 days';
+    // Use region-specific period key for EU
+    const periodKey = region === 'US' ? period : `${period}_${region}`;
+
+    // Get base trending data
+    const trending = database.prepare(`
+      SELECT
+        t.*,
+        c.name as company_name,
+        c.sector,
+        c.id as company_id
+      FROM trending_tickers t
+      LEFT JOIN companies c ON t.symbol = c.symbol
+      WHERE t.period = ?
+      ORDER BY t.rank_by_mentions
+      LIMIT ?
+    `).all(periodKey, parseInt(limit));
+
+    // Enhance each ticker with multi-source data
+    const enhanced = [];
+
+    for (const ticker of trending) {
+      // Get Reddit breakdown
+      const redditData = database.prepare(`
+        SELECT
+          COUNT(*) as post_count,
+          AVG(sentiment_score) as avg_sentiment,
+          SUM(score) as total_score
+        FROM reddit_posts
+        WHERE (company_id = ? OR tickers_mentioned LIKE ?)
+          AND posted_at >= datetime('now', '-${periodDays}')
+      `).get(ticker.company_id || -1, `%"${ticker.symbol}"%`);
+
+      // Get StockTwits breakdown
+      let stocktwitsData = { message_count: 0, avg_sentiment: 0 };
+      try {
+        stocktwitsData = database.prepare(`
+          SELECT
+            COUNT(*) as message_count,
+            AVG(nlp_sentiment_score) as avg_sentiment
+          FROM stocktwits_messages
+          WHERE company_id = ?
+            AND posted_at >= datetime('now', '-${periodDays}')
+        `).get(ticker.company_id || -1) || stocktwitsData;
+      } catch (e) { /* table may not exist */ }
+
+      // Get News breakdown
+      let newsData = { article_count: 0, avg_sentiment: 0 };
+      try {
+        newsData = database.prepare(`
+          SELECT
+            COUNT(*) as article_count,
+            AVG(sentiment_score) as avg_sentiment
+          FROM news_articles
+          WHERE company_id = ?
+            AND published_at >= datetime('now', '-${periodDays}')
+        `).get(ticker.company_id || -1) || newsData;
+      } catch (e) { /* table may not exist */ }
+
+      // Get insider activity
+      let insiderData = { buy_count: 0, sell_count: 0, net_value: 0 };
+      try {
+        insiderData = database.prepare(`
+          SELECT
+            COUNT(CASE WHEN transaction_type IN ('buy', 'purchase') THEN 1 END) as buy_count,
+            COUNT(CASE WHEN transaction_type IN ('sell', 'sale') THEN 1 END) as sell_count,
+            COALESCE(SUM(CASE WHEN transaction_type IN ('buy', 'purchase') THEN total_value ELSE 0 END), 0) -
+            COALESCE(SUM(CASE WHEN transaction_type IN ('sell', 'sale') THEN total_value ELSE 0 END), 0) as net_value
+          FROM insider_transactions
+          WHERE company_id = ?
+            AND transaction_date >= date('now', '-30 days')
+        `).get(ticker.company_id || -1) || insiderData;
+      } catch (e) { /* table may not exist */ }
+
+      // Get analyst data
+      let analystData = null;
+      try {
+        analystData = database.prepare(`
+          SELECT
+            target_mean,
+            current_price,
+            upside_potential,
+            buy_percent,
+            recommendation_key
+          FROM analyst_estimates
+          WHERE company_id = ?
+        `).get(ticker.company_id || -1);
+      } catch (e) { /* table may not exist */ }
+
+      // Calculate momentum (sentiment trend)
+      let momentum = 0;
+      try {
+        const recentSentiment = database.prepare(`
+          SELECT AVG(sentiment_score) as avg
+          FROM reddit_posts
+          WHERE (company_id = ? OR tickers_mentioned LIKE ?)
+            AND posted_at >= datetime('now', '-3 days')
+        `).get(ticker.company_id || -1, `%"${ticker.symbol}"%`);
+
+        const olderSentiment = database.prepare(`
+          SELECT AVG(sentiment_score) as avg
+          FROM reddit_posts
+          WHERE (company_id = ? OR tickers_mentioned LIKE ?)
+            AND posted_at >= datetime('now', '-7 days')
+            AND posted_at < datetime('now', '-3 days')
+        `).get(ticker.company_id || -1, `%"${ticker.symbol}"%`);
+
+        if (recentSentiment?.avg && olderSentiment?.avg) {
+          momentum = recentSentiment.avg - olderSentiment.avg;
+        }
+      } catch (e) { /* ignore */ }
+
+      // Calculate composite score (weighted average of sources)
+      const weights = { reddit: 0.35, stocktwits: 0.25, news: 0.25, analyst: 0.15 };
+      let compositeScore = 0;
+      let totalWeight = 0;
+
+      if (redditData?.avg_sentiment) {
+        compositeScore += redditData.avg_sentiment * weights.reddit;
+        totalWeight += weights.reddit;
+      }
+      if (stocktwitsData?.avg_sentiment) {
+        compositeScore += stocktwitsData.avg_sentiment * weights.stocktwits;
+        totalWeight += weights.stocktwits;
+      }
+      if (newsData?.avg_sentiment) {
+        compositeScore += newsData.avg_sentiment * weights.news;
+        totalWeight += weights.news;
+      }
+      if (analystData?.buy_percent) {
+        // Normalize analyst buy_percent to -1 to 1 scale
+        const analystSentiment = (analystData.buy_percent - 50) / 50;
+        compositeScore += analystSentiment * weights.analyst;
+        totalWeight += weights.analyst;
+      }
+
+      if (totalWeight > 0) {
+        compositeScore = compositeScore / totalWeight;
+      }
+
+      enhanced.push({
+        symbol: ticker.symbol,
+        companyName: ticker.company_name,
+        sector: ticker.sector,
+        mentionCount: ticker.mention_count,
+        uniquePosts: ticker.unique_posts,
+        avgSentiment: ticker.avg_sentiment,
+        compositeScore,
+        momentum,
+        sources: {
+          reddit: {
+            postCount: redditData?.post_count || 0,
+            sentiment: redditData?.avg_sentiment || 0,
+            score: redditData?.total_score || 0,
+          },
+          stocktwits: {
+            messageCount: stocktwitsData?.message_count || 0,
+            sentiment: stocktwitsData?.avg_sentiment || 0,
+          },
+          news: {
+            articleCount: newsData?.article_count || 0,
+            sentiment: newsData?.avg_sentiment || 0,
+          },
+        },
+        insider: {
+          buyCount: insiderData?.buy_count || 0,
+          sellCount: insiderData?.sell_count || 0,
+          netValue: insiderData?.net_value || 0,
+          signal: insiderData?.net_value > 100000 ? 'bullish' :
+                  insiderData?.net_value < -100000 ? 'bearish' : 'neutral',
+        },
+        analyst: analystData ? {
+          targetPrice: analystData.target_mean,
+          currentPrice: analystData.current_price,
+          upsidePotential: analystData.upside_potential,
+          buyPercent: analystData.buy_percent,
+          recommendation: analystData.recommendation_key,
+        } : null,
+        calculatedAt: ticker.calculated_at,
+      });
+    }
+
+    // Sort by composite score
+    enhanced.sort((a, b) => Math.abs(b.compositeScore) - Math.abs(a.compositeScore));
+
+    res.json({
+      period,
+      region,
+      count: enhanced.length,
+      trending: enhanced,
+    });
+  } catch (error) {
+    console.error('Enhanced trending error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========================================
+// Dynamic :symbol routes below
+// ========================================
+
 /**
  * GET /api/sentiment/:symbol
  * Get full sentiment analysis for a stock
@@ -337,7 +1006,7 @@ router.get('/:symbol/combined', async (req, res) => {
     }
 
     const { symbol } = req.params;
-    const { refresh = 'false' } = req.query;
+    const { refresh = 'false', region = 'US' } = req.query;
 
     const company = database.prepare(
       'SELECT id, symbol, name FROM companies WHERE symbol = ?'
@@ -350,12 +1019,13 @@ router.get('/:symbol/combined', async (req, res) => {
     const combined = await sentimentAggregator.aggregateSentiment(
       symbol.toUpperCase(),
       company.id,
-      { skipCache: refresh === 'true' }
+      { skipCache: refresh === 'true', region }
     );
 
     res.json({
       symbol: company.symbol,
       name: company.name,
+      region,
       ...combined,
     });
   } catch (error) {
@@ -434,6 +1104,7 @@ router.post('/:symbol/refresh', async (req, res) => {
     }
 
     const { symbol } = req.params;
+    const { region = 'US' } = req.query;
 
     const company = database.prepare(
       'SELECT id FROM companies WHERE symbol = ?'
@@ -446,7 +1117,8 @@ router.post('/:symbol/refresh', async (req, res) => {
     // Fetch fresh data
     const posts = await redditFetcher.fetchTickerSentiment(
       symbol.toUpperCase(),
-      company.id
+      company.id,
+      { region }
     );
 
     // Recalculate signal
@@ -454,6 +1126,7 @@ router.post('/:symbol/refresh', async (req, res) => {
 
     res.json({
       message: `Fetched ${posts.length} posts for ${symbol}`,
+      region,
       signal: signal.signal,
       confidence: signal.confidence,
       postCount: posts.length,
@@ -475,6 +1148,7 @@ router.post('/:symbol/refresh-all', async (req, res) => {
     }
 
     const { symbol } = req.params;
+    const { region = 'US' } = req.query;
 
     const company = database.prepare(
       'SELECT id, symbol, name FROM companies WHERE symbol = ?'
@@ -488,11 +1162,12 @@ router.post('/:symbol/refresh-all', async (req, res) => {
     const combined = await sentimentAggregator.aggregateSentiment(
       symbol.toUpperCase(),
       company.id,
-      { skipCache: true }
+      { skipCache: true, region }
     );
 
     res.json({
       message: `Refreshed all sentiment sources for ${symbol}`,
+      region,
       combined: combined.combined,
       sourcesUsed: combined.combined.sourcesUsed,
     });
@@ -634,7 +1309,7 @@ router.get('/:symbol/news', async (req, res) => {
     }
 
     const { symbol } = req.params;
-    const { refresh = 'false', limit = 20 } = req.query;
+    const { refresh = 'false', limit = 20, region = 'US' } = req.query;
 
     const company = database.prepare(
       'SELECT id FROM companies WHERE symbol = ?'
@@ -646,7 +1321,7 @@ router.get('/:symbol/news', async (req, res) => {
 
     // Optionally refresh from news sources
     if (refresh === 'true') {
-      await newsFetcher.fetchAllNews(symbol.toUpperCase(), company.id);
+      await newsFetcher.fetchAllNews(symbol.toUpperCase(), company.id, { region });
     }
 
     // Get recent news
@@ -657,6 +1332,7 @@ router.get('/:symbol/news', async (req, res) => {
 
     res.json({
       symbol: symbol.toUpperCase(),
+      region,
       articles,
       summary,
     });
@@ -695,6 +1371,309 @@ router.post('/:symbol/news/refresh', async (req, res) => {
     });
   } catch (error) {
     console.error('News refresh error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/sentiment/sources-overview
+ * Get aggregated sentiment breakdown by source (Reddit, StockTwits, News)
+ */
+router.get('/sources-overview', async (req, res) => {
+  try {
+    const { period = '24h' } = req.query;
+
+    // Reddit sentiment summary
+    const redditStats = database.prepare(`
+      SELECT
+        COUNT(*) as post_count,
+        AVG(sentiment_score) as avg_sentiment,
+        SUM(CASE WHEN sentiment_score > 0.05 THEN 1 ELSE 0 END) as bullish_count,
+        SUM(CASE WHEN sentiment_score < -0.05 THEN 1 ELSE 0 END) as bearish_count,
+        SUM(CASE WHEN sentiment_score BETWEEN -0.05 AND 0.05 THEN 1 ELSE 0 END) as neutral_count
+      FROM reddit_posts
+      WHERE posted_at >= datetime('now', '-${period === '24h' ? '1 day' : period === '7d' ? '7 days' : '30 days'}')
+    `).get();
+
+    // Top subreddits
+    const topSubreddits = database.prepare(`
+      SELECT subreddit, COUNT(*) as count
+      FROM reddit_posts
+      WHERE posted_at >= datetime('now', '-${period === '24h' ? '1 day' : period === '7d' ? '7 days' : '30 days'}')
+      GROUP BY subreddit
+      ORDER BY count DESC
+      LIMIT 5
+    `).all();
+
+    // StockTwits sentiment summary
+    let stocktwitsStats = { message_count: 0, avg_sentiment: 0, bullish_count: 0, bearish_count: 0, neutral_count: 0 };
+    try {
+      stocktwitsStats = database.prepare(`
+        SELECT
+          COUNT(*) as message_count,
+          AVG(nlp_sentiment_score) as avg_sentiment,
+          SUM(CASE WHEN user_sentiment = 'Bullish' OR nlp_sentiment_score > 0.05 THEN 1 ELSE 0 END) as bullish_count,
+          SUM(CASE WHEN user_sentiment = 'Bearish' OR nlp_sentiment_score < -0.05 THEN 1 ELSE 0 END) as bearish_count,
+          SUM(CASE WHEN user_sentiment IS NULL AND nlp_sentiment_score BETWEEN -0.05 AND 0.05 THEN 1 ELSE 0 END) as neutral_count
+        FROM stocktwits_messages
+        WHERE posted_at >= datetime('now', '-${period === '24h' ? '1 day' : period === '7d' ? '7 days' : '30 days'}')
+      `).get() || stocktwitsStats;
+    } catch (e) {
+      // Table may not exist
+    }
+
+    // News sentiment summary
+    let newsStats = { article_count: 0, avg_sentiment: 0, bullish_count: 0, bearish_count: 0, neutral_count: 0 };
+    try {
+      newsStats = database.prepare(`
+        SELECT
+          COUNT(*) as article_count,
+          AVG(sentiment_score) as avg_sentiment,
+          SUM(CASE WHEN sentiment_score > 0.05 THEN 1 ELSE 0 END) as bullish_count,
+          SUM(CASE WHEN sentiment_score < -0.05 THEN 1 ELSE 0 END) as bearish_count,
+          SUM(CASE WHEN sentiment_score BETWEEN -0.05 AND 0.05 THEN 1 ELSE 0 END) as neutral_count
+        FROM news_articles
+        WHERE published_at >= datetime('now', '-${period === '24h' ? '1 day' : period === '7d' ? '7 days' : '30 days'}')
+      `).get() || newsStats;
+    } catch (e) {
+      // Table may not exist
+    }
+
+    // Top news sources
+    let topNewsSources = [];
+    try {
+      topNewsSources = database.prepare(`
+        SELECT source, COUNT(*) as count
+        FROM news_articles
+        WHERE published_at >= datetime('now', '-${period === '24h' ? '1 day' : period === '7d' ? '7 days' : '30 days'}')
+        GROUP BY source
+        ORDER BY count DESC
+        LIMIT 5
+      `).all();
+    } catch (e) {
+      // Table may not exist
+    }
+
+    // Calculate divergences - find stocks where sources disagree significantly
+    const divergences = [];
+    try {
+      // Get tickers with both Reddit and News data that diverge
+      const tickersWithMultipleSources = database.prepare(`
+        SELECT
+          t.symbol,
+          t.avg_sentiment as reddit_sentiment,
+          c.id as company_id
+        FROM trending_tickers t
+        JOIN companies c ON t.symbol = c.symbol
+        WHERE t.period = ?
+          AND t.avg_sentiment IS NOT NULL
+        ORDER BY t.mention_count DESC
+        LIMIT 50
+      `).all(period);
+
+      for (const ticker of tickersWithMultipleSources) {
+        // Get news sentiment for this ticker
+        const newsSentiment = database.prepare(`
+          SELECT AVG(sentiment_score) as avg_sentiment
+          FROM news_articles
+          WHERE company_id = ?
+            AND published_at >= datetime('now', '-${period === '24h' ? '1 day' : period === '7d' ? '7 days' : '30 days'}')
+        `).get(ticker.company_id);
+
+        if (newsSentiment?.avg_sentiment !== null && ticker.reddit_sentiment !== null) {
+          const diff = Math.abs(ticker.reddit_sentiment - newsSentiment.avg_sentiment);
+          // Significant divergence if > 0.15 difference
+          if (diff > 0.15) {
+            divergences.push({
+              symbol: ticker.symbol,
+              reddit: ticker.reddit_sentiment,
+              news: newsSentiment.avg_sentiment,
+              difference: diff,
+              severity: diff > 0.3 ? 'high' : 'medium',
+              description: ticker.reddit_sentiment > newsSentiment.avg_sentiment
+                ? `Reddit bullish (${(ticker.reddit_sentiment * 100).toFixed(0)}) vs News bearish (${(newsSentiment.avg_sentiment * 100).toFixed(0)})`
+                : `Reddit bearish (${(ticker.reddit_sentiment * 100).toFixed(0)}) vs News bullish (${(newsSentiment.avg_sentiment * 100).toFixed(0)})`,
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Error calculating divergences:', e);
+    }
+
+    // Sort divergences by severity
+    divergences.sort((a, b) => b.difference - a.difference);
+
+    const totalReddit = (redditStats?.bullish_count || 0) + (redditStats?.bearish_count || 0) + (redditStats?.neutral_count || 0);
+    const totalStocktwits = (stocktwitsStats?.bullish_count || 0) + (stocktwitsStats?.bearish_count || 0) + (stocktwitsStats?.neutral_count || 0);
+    const totalNews = (newsStats?.bullish_count || 0) + (newsStats?.bearish_count || 0) + (newsStats?.neutral_count || 0);
+
+    res.json({
+      period,
+      reddit: {
+        avgSentiment: redditStats?.avg_sentiment || 0,
+        postCount: redditStats?.post_count || 0,
+        topSubreddits: topSubreddits.map(s => s.subreddit),
+        bullishPct: totalReddit > 0 ? Math.round((redditStats?.bullish_count / totalReddit) * 100) : 0,
+        bearishPct: totalReddit > 0 ? Math.round((redditStats?.bearish_count / totalReddit) * 100) : 0,
+        neutralPct: totalReddit > 0 ? Math.round((redditStats?.neutral_count / totalReddit) * 100) : 0,
+      },
+      stocktwits: {
+        avgSentiment: stocktwitsStats?.avg_sentiment || 0,
+        messageCount: stocktwitsStats?.message_count || 0,
+        bullishPct: totalStocktwits > 0 ? Math.round((stocktwitsStats?.bullish_count / totalStocktwits) * 100) : 0,
+        bearishPct: totalStocktwits > 0 ? Math.round((stocktwitsStats?.bearish_count / totalStocktwits) * 100) : 0,
+        neutralPct: totalStocktwits > 0 ? Math.round((stocktwitsStats?.neutral_count / totalStocktwits) * 100) : 0,
+      },
+      news: {
+        avgSentiment: newsStats?.avg_sentiment || 0,
+        articleCount: newsStats?.article_count || 0,
+        topSources: topNewsSources.map(s => s.source),
+        bullishPct: totalNews > 0 ? Math.round((newsStats?.bullish_count / totalNews) * 100) : 0,
+        bearishPct: totalNews > 0 ? Math.round((newsStats?.bearish_count / totalNews) * 100) : 0,
+        neutralPct: totalNews > 0 ? Math.round((newsStats?.neutral_count / totalNews) * 100) : 0,
+      },
+      divergences: divergences.slice(0, 10),
+    });
+  } catch (error) {
+    console.error('Sources overview error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/sentiment/analyst-activity
+ * Get recent analyst rating changes and activity
+ */
+router.get('/analyst-activity', async (req, res) => {
+  try {
+    const { limit = 20 } = req.query;
+
+    // Get stocks with recent analyst estimate changes
+    const recentChanges = [];
+
+    // Check for price target changes by comparing current vs history
+    const stocksWithHistory = database.prepare(`
+      SELECT DISTINCT ae.company_id, c.symbol, c.name
+      FROM analyst_estimates ae
+      JOIN companies c ON ae.company_id = c.id
+      WHERE EXISTS (
+        SELECT 1 FROM analyst_estimates_history aeh
+        WHERE aeh.company_id = ae.company_id
+      )
+      LIMIT 100
+    `).all();
+
+    for (const stock of stocksWithHistory) {
+      const current = database.prepare(`
+        SELECT
+          target_mean, target_median, recommendation_key, recommendation_mean,
+          buy_percent, number_of_analysts, fetched_at
+        FROM analyst_estimates
+        WHERE company_id = ?
+      `).get(stock.company_id);
+
+      const previous = database.prepare(`
+        SELECT
+          target_mean, target_median, recommendation_key, recommendation_mean,
+          buy_percent, number_of_analysts, archived_at
+        FROM analyst_estimates_history
+        WHERE company_id = ?
+        ORDER BY archived_at DESC
+        LIMIT 1
+      `).get(stock.company_id);
+
+      if (current && previous) {
+        // Check for rating change
+        if (current.recommendation_key !== previous.recommendation_key) {
+          const isUpgrade = current.recommendation_mean < previous.recommendation_mean;
+          recentChanges.push({
+            symbol: stock.symbol,
+            name: stock.name,
+            action: isUpgrade ? 'upgrade' : 'downgrade',
+            from: previous.recommendation_key,
+            to: current.recommendation_key,
+            priceTarget: current.target_mean,
+            date: current.fetched_at,
+            type: 'rating_change',
+          });
+        }
+
+        // Check for significant price target change (> 5%)
+        if (current.target_mean && previous.target_mean) {
+          const ptChange = ((current.target_mean - previous.target_mean) / previous.target_mean) * 100;
+          if (Math.abs(ptChange) > 5) {
+            recentChanges.push({
+              symbol: stock.symbol,
+              name: stock.name,
+              action: ptChange > 0 ? 'pt_raise' : 'pt_lower',
+              oldTarget: previous.target_mean,
+              newTarget: current.target_mean,
+              changePercent: ptChange,
+              date: current.fetched_at,
+              type: 'price_target',
+            });
+          }
+        }
+
+        // Check for significant consensus shift (> 10%)
+        if (current.buy_percent && previous.buy_percent) {
+          const consensusChange = current.buy_percent - previous.buy_percent;
+          if (Math.abs(consensusChange) > 10) {
+            recentChanges.push({
+              symbol: stock.symbol,
+              name: stock.name,
+              action: consensusChange > 0 ? 'consensus_improve' : 'consensus_decline',
+              oldBuyPercent: previous.buy_percent,
+              newBuyPercent: current.buy_percent,
+              change: consensusChange,
+              date: current.fetched_at,
+              type: 'consensus_shift',
+            });
+          }
+        }
+      }
+    }
+
+    // Sort by date, most recent first
+    recentChanges.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    // Get strong buy stocks (>80% buy consensus)
+    const strongBuys = database.prepare(`
+      SELECT
+        c.symbol, c.name, c.sector,
+        ae.buy_percent, ae.target_mean, ae.current_price,
+        ae.upside_potential, ae.number_of_analysts
+      FROM analyst_estimates ae
+      JOIN companies c ON ae.company_id = c.id
+      WHERE ae.buy_percent >= 80
+        AND ae.number_of_analysts >= 5
+      ORDER BY ae.buy_percent DESC, ae.upside_potential DESC
+      LIMIT 10
+    `).all();
+
+    // Get top upside stocks
+    const topUpside = database.prepare(`
+      SELECT
+        c.symbol, c.name, c.sector,
+        ae.upside_potential, ae.target_mean, ae.current_price,
+        ae.buy_percent, ae.number_of_analysts
+      FROM analyst_estimates ae
+      JOIN companies c ON ae.company_id = c.id
+      WHERE ae.upside_potential > 0
+        AND ae.number_of_analysts >= 5
+      ORDER BY ae.upside_potential DESC
+      LIMIT 10
+    `).all();
+
+    res.json({
+      recentChanges: recentChanges.slice(0, parseInt(limit)),
+      strongBuys,
+      topUpside,
+      totalChanges: recentChanges.length,
+    });
+  } catch (error) {
+    console.error('Analyst activity error:', error);
     res.status(500).json({ error: error.message });
   }
 });

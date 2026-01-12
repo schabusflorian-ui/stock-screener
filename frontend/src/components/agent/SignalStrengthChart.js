@@ -40,6 +40,7 @@ function SignalStrengthChart({ portfolioId, symbol, className = '' }) {
 
   useEffect(() => {
     fetchSignals();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [portfolioId, symbol]);
 
   const fetchSignals = async () => {

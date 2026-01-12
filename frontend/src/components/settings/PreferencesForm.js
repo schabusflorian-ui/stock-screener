@@ -14,7 +14,6 @@ function PreferencesForm() {
     showPercentages: true,
     compactNumbers: true,
     autoRefreshInterval: 0,
-    notificationsEnabled: false,
     defaultBenchmark: 'SPY',
     defaultTimeHorizon: 10,
   });
@@ -262,43 +261,6 @@ function PreferencesForm() {
           </div>
         </div>
 
-        {/* Notifications */}
-        <div className="preference-group">
-          <h3>Notifications</h3>
-
-          <div className="preference-item checkbox">
-            <label>
-              <input
-                type="checkbox"
-                checked={preferences.notificationsEnabled}
-                onChange={(e) => handleChange('notificationsEnabled', e.target.checked)}
-              />
-              Enable browser notifications
-            </label>
-          </div>
-
-          <div className="preference-item checkbox">
-            <label>
-              <input
-                type="checkbox"
-                checked={preferences.alertOnUpdateFailure}
-                onChange={(e) => handleChange('alertOnUpdateFailure', e.target.checked)}
-              />
-              Alert on data update failures
-            </label>
-          </div>
-
-          <div className="preference-item checkbox">
-            <label>
-              <input
-                type="checkbox"
-                checked={preferences.alertOnStaleData}
-                onChange={(e) => handleChange('alertOnStaleData', e.target.checked)}
-              />
-              Alert when data becomes stale
-            </label>
-          </div>
-        </div>
       </div>
 
       <div className="preferences-actions">

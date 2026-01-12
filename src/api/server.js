@@ -1,5 +1,13 @@
 // src/api/server.js
-require('dotenv').config();
+// Load .env and manually populate process.env (dotenv v17 has injection issues)
+const dotenvResult = require('dotenv').config();
+if (dotenvResult.parsed) {
+  for (const [key, value] of Object.entries(dotenvResult.parsed)) {
+    if (!process.env[key]) {
+      process.env[key] = value;
+    }
+  }
+}
 
 const express = require('express');
 const cors = require('cors');
@@ -113,6 +121,13 @@ const signalsRouter = require('./routes/signals');
 const recommendationsRouter = require('./routes/recommendations');
 const executionRouter = require('./routes/execution');
 const backtestingRouter = require('./routes/backtesting');
+const adminRouter = require('./routes/admin');
+const agentsRouter = require('./routes/agents');
+const paperTradingRouter = require('./routes/paperTrading');
+const xbrlRouter = require('./routes/xbrl');
+const dataRouter = require('./routes/data');
+const identifiersRouter = require('./routes/identifiers');
+const strategiesRouter = require('./routes/strategies');
 
 // Use routes
 app.use('/api/auth', authRouter);
@@ -166,6 +181,13 @@ app.use('/api/signals', signalsRouter);
 app.use('/api/recommendations', recommendationsRouter);
 app.use('/api/execution', executionRouter);
 app.use('/api/backtesting', backtestingRouter);
+app.use('/api/admin', adminRouter);
+app.use('/api/agents', agentsRouter);
+app.use('/api/paper-trading', paperTradingRouter);
+app.use('/api/xbrl', xbrlRouter);
+app.use('/api/data', dataRouter);
+app.use('/api/identifiers', identifiersRouter);
+app.use('/api/strategies', strategiesRouter(db.getDatabase()));
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -223,6 +245,8 @@ app.get('/', (req, res) => {
       recommendations: '/api/recommendations',
       execution: '/api/execution',
       backtesting: '/api/backtesting',
+      xbrl: '/api/xbrl',
+      data: '/api/data',
       health: '/api/health'
     }
   });

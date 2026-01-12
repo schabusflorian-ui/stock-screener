@@ -31,30 +31,9 @@ function initServices() {
 // ============================================
 
 /**
- * GET /api/alt-data/congress/:symbol
- * Get congressional trading activity for a symbol
- */
-router.get('/congress/:symbol', (req, res) => {
-  try {
-    initServices();
-    const { symbol } = req.params;
-    const { lookback = '-90 days' } = req.query;
-
-    const signal = quiver.getCongressSignal(symbol.toUpperCase(), lookback);
-
-    res.json({
-      symbol: symbol.toUpperCase(),
-      lookback,
-      ...signal
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-/**
  * GET /api/alt-data/congress/top-buys
  * Get top congressional stock purchases
+ * NOTE: This route must come BEFORE /congress/:symbol to avoid being matched as a symbol
  */
 router.get('/congress/top-buys', (req, res) => {
   try {
@@ -70,6 +49,28 @@ router.get('/congress/top-buys', (req, res) => {
       lookback,
       count: topBuys.length,
       results: topBuys
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/alt-data/congress/:symbol
+ * Get congressional trading activity for a symbol
+ */
+router.get('/congress/:symbol', (req, res) => {
+  try {
+    initServices();
+    const { symbol } = req.params;
+    const { lookback = '-90 days' } = req.query;
+
+    const signal = quiver.getCongressSignal(symbol.toUpperCase(), lookback);
+
+    res.json({
+      symbol: symbol.toUpperCase(),
+      lookback,
+      ...signal
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

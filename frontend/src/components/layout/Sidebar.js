@@ -11,7 +11,6 @@ import {
   ChevronLeft,
   ChevronRight,
   LineChart,
-  Users,
   DollarSign,
   MessageCircle,
   Bell,
@@ -20,41 +19,40 @@ import {
   Bot,
   Command,
   BookOpen,
-  BarChart3,
-  Scale,
-  Brain,
   FlaskConical,
-  Activity
+  Brain
 } from 'lucide-react';
 import './Sidebar.css';
 
+// DISCOVERY - Core navigation items
 const navItems = [
   { path: '/', icon: Home, label: 'Home', shortcut: 'G H' },
   { path: '/screening', icon: Search, label: 'Screen', shortcut: 'G S' },
   { path: '/charts', icon: LineChart, label: 'Comparison', shortcut: 'G C' },
-  { path: '/trending', icon: MessageCircle, label: 'Trending', shortcut: 'G T' },
-  { path: '/insiders', icon: Users, label: 'Insiders', shortcut: 'G N' },
   { path: '/capital', icon: DollarSign, label: 'Capital', shortcut: 'G D' },
   { path: '/ipo', icon: TrendingUp, label: 'IPOs', shortcut: 'G I' },
   { path: '/sectors', icon: PieChart, label: 'Sectors', shortcut: 'G E' },
 ];
 
+// PORTFOLIO - User portfolio management
 const portfolioItems = [
   { path: '/portfolios', icon: Wallet, label: 'Portfolios', shortcut: 'G P' },
   { path: '/investors', icon: Crown, label: 'Investors', shortcut: 'G R' },
 ];
 
+// RESEARCH - Signals and analytics
 const researchItems = [
-  { path: '/value-investing', icon: Scale, label: 'Value', shortcut: 'G V' },
-  { path: '/analytics', icon: BarChart3, label: 'Analytics', shortcut: 'G Y' },
+  // Market Signals: combines Trending + Insiders + Validation (unified page)
+  { path: '/signals', icon: MessageCircle, label: 'Signals', shortcut: 'G T' },
+  // Research Lab: combines Analytics + Backtesting
+  { path: '/research', icon: FlaskConical, label: 'Research Lab', shortcut: 'G Y' },
   { path: '/notes', icon: BookOpen, label: 'Notes', shortcut: 'G O' },
 ];
 
+// TOOLS - AI and alerts
 const secondaryItems = [
   { path: '/analyst', icon: Bot, label: 'AI Analyst', shortcut: 'G A' },
-  { path: '/ai-trading', icon: Brain, label: 'AI Trading', shortcut: 'G X' },
-  { path: '/backtesting', icon: FlaskConical, label: 'Backtest', shortcut: 'G B' },
-  { path: '/validation', icon: Activity, label: 'Signals', shortcut: 'G J' },
+  { path: '/agents', icon: Brain, label: 'Agents', shortcut: 'G X' },
   { path: '/alerts', icon: Bell, label: 'Alerts', shortcut: 'G L' },
   { path: '/watchlist', icon: Star, label: 'Watchlist', shortcut: 'G W' },
 ];

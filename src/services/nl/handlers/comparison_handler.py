@@ -182,27 +182,22 @@ class ComparisonHandler:
 
     async def _get_single_profile(self, symbol: str) -> Optional[CompanyProfile]:
         """Get a single company profile"""
+        # Optimized query - avoid slow subqueries
         sql = """
             SELECT
                 c.symbol, c.name, c.sector, c.industry,
-                m.market_cap, m.enterprise_value,
+                c.market_cap,
                 m.pe_ratio, m.pb_ratio, m.ps_ratio, m.ev_ebitda,
                 m.gross_margin, m.operating_margin, m.net_margin,
                 m.roe, m.roa, m.roic,
-                m.revenue_growth_yoy, m.eps_growth_yoy,
+                m.revenue_growth_yoy, m.earnings_growth_yoy as eps_growth_yoy,
                 m.debt_to_equity, m.current_ratio, m.interest_coverage,
-                m.dividend_yield, m.payout_ratio,
-                p.close as price, p.change_percent
+                m.dividend_yield
             FROM companies c
             LEFT JOIN calculated_metrics m ON c.id = m.company_id
-            LEFT JOIN (
-                SELECT company_id, close, change_percent
-                FROM daily_prices
-                WHERE (company_id, date) IN (
-                    SELECT company_id, MAX(date) FROM daily_prices GROUP BY company_id
-                )
-            ) p ON c.id = p.company_id
-            WHERE c.symbol = ? AND c.active = 1
+            WHERE c.symbol = ? AND c.is_active = 1
+            ORDER BY m.fiscal_period DESC
+            LIMIT 1
         """
 
         try:
@@ -212,14 +207,13 @@ class ComparisonHandler:
 
             columns = [
                 'symbol', 'name', 'sector', 'industry',
-                'market_cap', 'enterprise_value',
+                'market_cap',
                 'pe_ratio', 'pb_ratio', 'ps_ratio', 'ev_ebitda',
                 'gross_margin', 'operating_margin', 'net_margin',
                 'roe', 'roa', 'roic',
                 'revenue_growth_yoy', 'eps_growth_yoy',
                 'debt_to_equity', 'current_ratio', 'interest_coverage',
-                'dividend_yield', 'payout_ratio',
-                'price', 'change_percent'
+                'dividend_yield'
             ]
             data = dict(zip(columns, result))
 

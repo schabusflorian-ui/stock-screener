@@ -423,7 +423,7 @@ const FAMOUS_INVESTORS = {
     cik: '0002045724',
     investment_style: 'technology',
     display_order: 47,
-    description: 'AI/compute infrastructure fund (files Schedule 13D, not 13F)'
+    description: 'AI/compute infrastructure fund founded by ex-OpenAI researcher'
   }
 };
 

@@ -81,7 +81,7 @@ function RegimeBanner({ regime, macroContext }) {
 }
 
 function ResultsTable({ results, loading }) {
-  const { formatPercent, formatNumber } = useFormatters();
+  const { percent: formatPercent, number: formatNumber } = useFormatters();
 
   if (loading) {
     return <SkeletonTable rows={10} columns={8} />;
