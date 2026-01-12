@@ -16,17 +16,34 @@ const IPO_STAGES = {
   PRICED: { name: 'Priced', shortName: 'Priced', color: '#10b981', order: 5 }
 };
 
+// Region definitions
+const IPO_REGIONS = {
+  all: { name: 'All Regions', flag: '🌍' },
+  US: { name: 'United States', flag: '🇺🇸', regulator: 'SEC' },
+  EU: { name: 'European Union', flag: '🇪🇺', regulator: 'ESMA' },
+  UK: { name: 'United Kingdom', flag: '🇬🇧', regulator: 'FCA' }
+};
+
 // IPO Card Component
 function IPOCard({ ipo, formatCurrency, formatDate }) {
+  const region = IPO_REGIONS[ipo.region] || IPO_REGIONS.US;
+
   return (
     <Link to={`/ipo/${ipo.id}`} className="ipo-card">
       <div className="ipo-card-header">
         <div className="ipo-ticker">
           {ipo.ticker_proposed || ipo.ticker_final || '???'}
         </div>
-        {ipo.exchange_proposed && (
-          <span className="ipo-exchange">{ipo.exchange_proposed}</span>
-        )}
+        <div className="ipo-header-right">
+          {ipo.region && ipo.region !== 'US' && (
+            <span className="ipo-region-badge" title={region.name}>
+              {region.flag}
+            </span>
+          )}
+          {ipo.exchange_proposed && (
+            <span className="ipo-exchange">{ipo.exchange_proposed}</span>
+          )}
+        </div>
       </div>
 
       <div className="ipo-company-name">{ipo.company_name}</div>
@@ -55,7 +72,9 @@ function IPOCard({ ipo, formatCurrency, formatDate }) {
       )}
 
       <div className="ipo-card-footer">
-        <span className="ipo-date">Filed: {formatDate(ipo.initial_s1_date)}</span>
+        <span className="ipo-date">
+          {ipo.region === 'US' ? 'Filed' : 'Approved'}: {formatDate(ipo.initial_s1_date || ipo.approval_date)}
+        </span>
         {ipo.amendment_count > 0 && (
           <span className="ipo-amendments">{ipo.amendment_count} amendments</span>
         )}
@@ -108,6 +127,7 @@ function IPOPipelinePage() {
     return fmt.date(dateStr);
   };
   const [viewMode, setViewMode] = useState('kanban'); // 'kanban' or 'list'
+  const [selectedRegion, setSelectedRegion] = useState('all'); // 'all' | 'US' | 'EU' | 'UK'
   const [pipeline, setPipeline] = useState({});
   const [listData, setListData] = useState([]);
   const [statistics, setStatistics] = useState(null);
@@ -130,8 +150,8 @@ function IPOPipelinePage() {
     setLoading(true);
     try {
       const [pipelineRes, statsRes] = await Promise.all([
-        ipoAPI.getByStage(),
-        ipoAPI.getStatistics()
+        ipoAPI.getByStage(selectedRegion),
+        ipoAPI.getStatistics(selectedRegion)
       ]);
 
       setPipeline(pipelineRes.data);
@@ -141,13 +161,14 @@ function IPOPipelinePage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedRegion]);
 
   // Load list view data
   const loadListData = useCallback(async () => {
     setLoading(true);
     try {
       const res = await ipoAPI.getPipeline({
+        region: selectedRegion,
         sector: filters.sector || undefined,
         sortBy: filters.sortBy,
         sortOrder: filters.sortOrder
@@ -158,7 +179,7 @@ function IPOPipelinePage() {
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [selectedRegion, filters]);
 
   // Load watchlist data
   const loadWatchlist = useCallback(async () => {
@@ -198,7 +219,7 @@ function IPOPipelinePage() {
     } else {
       loadListData();
     }
-  }, [viewMode, filterType, loadData, loadListData, loadWatchlist, loadRecent]);
+  }, [viewMode, filterType, selectedRegion, loadData, loadListData, loadWatchlist, loadRecent]);
 
   // Check for new filings
   const checkForNewFilings = async () => {
@@ -262,6 +283,19 @@ function IPOPipelinePage() {
         subtitle="Track upcoming IPOs from S-1 filing to trading"
         actions={
           <>
+            <div className="region-selector">
+              {Object.entries(IPO_REGIONS).map(([key, region]) => (
+                <button
+                  key={key}
+                  className={`region-btn ${selectedRegion === key ? 'active' : ''}`}
+                  onClick={() => setSelectedRegion(key)}
+                  title={region.name}
+                >
+                  <span className="region-flag">{region.flag}</span>
+                  <span className="region-name">{key === 'all' ? 'All' : key}</span>
+                </button>
+              ))}
+            </div>
             <div className="view-toggle">
               <button
                 className={viewMode === 'kanban' ? 'active' : ''}
@@ -281,7 +315,7 @@ function IPOPipelinePage() {
               onClick={checkForNewFilings}
               disabled={checking}
             >
-              {checking ? 'Checking SEC...' : 'Check for New Filings'}
+              {checking ? 'Checking...' : 'Check for New Filings'}
             </Button>
           </>
         }
@@ -408,6 +442,7 @@ function IPOPipelinePage() {
               <table className="ipo-table">
                 <thead>
                   <tr>
+                    <th>Region</th>
                     <th>Company</th>
                     <th>Ticker</th>
                     <th>Status</th>
@@ -421,8 +456,12 @@ function IPOPipelinePage() {
                 <tbody>
                   {listData.map(ipo => {
                     const stage = IPO_STAGES[ipo.status];
+                    const region = IPO_REGIONS[ipo.region] || IPO_REGIONS.US;
                     return (
                       <tr key={ipo.id}>
+                        <td className="region-cell" title={region.name}>
+                          {region.flag}
+                        </td>
                         <td>
                           <Link to={`/ipo/${ipo.id}`} className="company-link">
                             {ipo.company_name}
@@ -442,7 +481,7 @@ function IPOPipelinePage() {
                             {stage?.shortName || ipo.status}
                           </span>
                         </td>
-                        <td>{ipo.exchange_proposed || '-'}</td>
+                        <td>{ipo.exchange_proposed || ipo.listing_venue || '-'}</td>
                         <td>
                           {ipo.final_price ? (
                             `$${ipo.final_price}`
@@ -453,7 +492,7 @@ function IPOPipelinePage() {
                           )}
                         </td>
                         <td>{formatCurrency(ipo.deal_size)}</td>
-                        <td>{formatDate(ipo.initial_s1_date)}</td>
+                        <td>{formatDate(ipo.initial_s1_date || ipo.approval_date)}</td>
                         <td>{ipo.amendment_count || 0}</td>
                       </tr>
                     );

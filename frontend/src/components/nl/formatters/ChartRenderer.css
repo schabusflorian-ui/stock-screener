@@ -1,0 +1,213 @@
+/* ChartRenderer.css - Styles for inline chat charts */
+
+.chart-renderer {
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  background: var(--bg-tertiary, #1a1a2e);
+  border-radius: 10px;
+  border: 1px solid var(--border-color, #2d2d44);
+}
+
+.chart-title {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted, #888);
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Area/Line Chart Container */
+.chart-area-container {
+  min-height: 80px;
+}
+
+/* Bar Chart Container */
+.chart-bar-container {
+  min-height: 100px;
+}
+
+/* Horizontal Bar Chart */
+.chart-hbar-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.hbar-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.hbar-label {
+  width: 50px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-primary, #fff);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hbar-bar-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 20px;
+}
+
+.hbar-bar {
+  height: 100%;
+  border-radius: 4px;
+  min-width: 4px;
+  transition: width 0.3s ease;
+}
+
+.hbar-value {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #aaa);
+  white-space: nowrap;
+}
+
+/* Pie/Donut Chart Container */
+.chart-pie-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pie-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.pie-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+}
+
+.pie-legend-color {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.pie-legend-label {
+  color: var(--text-secondary, #aaa);
+}
+
+.pie-legend-value {
+  color: var(--text-primary, #fff);
+  font-weight: 500;
+}
+
+/* Sentiment Chart */
+.chart-sentiment-container {
+  padding: 0.25rem 0;
+}
+
+.sentiment-bar {
+  display: flex;
+  height: 12px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-secondary, #252540);
+}
+
+.sentiment-segment {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.sentiment-segment.bullish {
+  background: #22c55e;
+}
+
+.sentiment-segment.neutral {
+  background: #f59e0b;
+}
+
+.sentiment-segment.bearish {
+  background: #ef4444;
+}
+
+.sentiment-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+  font-size: 0.7rem;
+}
+
+.sentiment-label {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--text-secondary, #aaa);
+}
+
+.sentiment-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* Tooltip */
+.chart-tooltip {
+  background: var(--bg-primary, #0f0f23);
+  border: 1px solid var(--border-color, #2d2d44);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.tooltip-label {
+  font-size: 0.75rem;
+  color: var(--text-muted, #888);
+  margin-bottom: 0.15rem;
+}
+
+.tooltip-value {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary, #fff);
+}
+
+/* Recharts overrides */
+.chart-renderer .recharts-cartesian-axis-tick-value {
+  fill: var(--text-muted, #888);
+}
+
+.chart-renderer .recharts-cartesian-axis-line {
+  stroke: var(--border-color, #2d2d44);
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .chart-renderer {
+    padding: 0.5rem;
+  }
+
+  .pie-legend {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+
+  .sentiment-labels {
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .hbar-label {
+    width: 40px;
+    font-size: 0.7rem;
+  }
+}

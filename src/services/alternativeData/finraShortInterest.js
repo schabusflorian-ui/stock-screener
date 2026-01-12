@@ -81,8 +81,7 @@ class FinraShortInterestService {
         c.symbol,
         pm.market_cap,
         pm.shares_outstanding,
-        pm.float_shares,
-        pm.avg_volume_10d,
+        pm.avg_volume_30d as avg_volume_10d,
         pm.last_price
       FROM companies c
       LEFT JOIN price_metrics pm ON pm.company_id = c.id
@@ -107,7 +106,7 @@ class FinraShortInterestService {
       WHERE si.settlement_date = (
         SELECT MAX(settlement_date) FROM short_interest WHERE symbol = si.symbol
       )
-        AND si.is_squeeze_candidate = 1
+        AND si.squeeze_score >= 0.4
       ORDER BY si.squeeze_score DESC
       LIMIT ?
     `);
@@ -257,7 +256,8 @@ class FinraShortInterestService {
 
       // Use Yahoo data or fall back to calculated values
       const shortInterest = siData.shortInterest;
-      const floatShares = siData.floatShares || company.float_shares;
+      // float_shares not in DB schema, estimate as 80% of shares outstanding or use Yahoo data
+      const floatShares = siData.floatShares || (company.shares_outstanding ? company.shares_outstanding * 0.8 : null);
       const sharesOutstanding = siData.sharesOutstanding || company.shares_outstanding;
       const avgVolume = company.avg_volume_10d || 1;
 
@@ -305,13 +305,8 @@ class FinraShortInterestService {
         'yahoo'
       );
 
-      // Update squeeze candidate flag
+      // Note: is_squeeze_candidate is derived from squeeze_score >= 0.4
       const isSqueezeCandidate = squeezeScore >= 0.4 ? 1 : 0;
-      this.db.prepare(`
-        UPDATE short_interest
-        SET is_squeeze_candidate = ?
-        WHERE symbol = ? AND settlement_date = ?
-      `).run(isSqueezeCandidate, symbol, settlementDate);
 
       console.log(`    Short: ${(shortPctFloat * 100).toFixed(1)}%, DTC: ${daysToCover.toFixed(1)}, ` +
                   `Squeeze: ${(squeezeScore * 100).toFixed(0)}%, Signal: ${signalScore?.toFixed(2) || 'N/A'}`);
@@ -356,7 +351,7 @@ class FinraShortInterestService {
       shortInterest: latest.short_interest,
       changePct: latest.change_pct,
       squeezeScore: latest.squeeze_score,
-      isSqueezeCandidate: latest.is_squeeze_candidate === 1,
+      isSqueezeCandidate: latest.squeeze_score >= 0.4,
       settlementDate: latest.settlement_date,
       confidence: latest.short_pct_float ? 0.8 : 0
     };

@@ -950,10 +950,7 @@ function CapitalAllocationPage() {
 
       {/* Loading state */}
       {loading && (
-        <div className="loading-overlay">
-          <div className="spinner"></div>
-          <span>Loading capital allocation data...</span>
-        </div>
+        <SkeletonCapitalAllocation />
       )}
 
       {/* Content based on view mode */}

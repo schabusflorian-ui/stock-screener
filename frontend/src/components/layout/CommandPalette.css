@@ -220,6 +220,8 @@
   cursor: pointer;
   transition: all var(--transition-fast);
   white-space: nowrap;
+  flex-shrink: 0;
+  z-index: 1;
 }
 
 .command-ask-btn:hover {
@@ -385,6 +387,33 @@
 .nl-action-btn.primary:hover {
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+}
+
+/* Tools Used Display */
+.nl-tools-used {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+}
+
+.nl-tools-label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.nl-tool-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  background: rgba(99, 102, 241, 0.1);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: var(--brand-primary);
+  text-transform: capitalize;
 }
 
 /* Company badge in NL response */

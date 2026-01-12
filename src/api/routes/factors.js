@@ -237,6 +237,55 @@ router.get('/regime/history', (req, res) => {
 });
 
 // ============================================
+// Fama-French Factor Analysis
+// ============================================
+
+// GET /api/factors/portfolio/:id/fama-french - Get Fama-French factor exposures for portfolio
+router.get('/portfolio/:id/fama-french', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { startDate, endDate } = req.query;
+
+    const fas = getFactorAnalysisService();
+    const exposures = await fas.getFamaFrenchExposures(parseInt(id), { startDate, endDate });
+
+    if (!exposures) {
+      return res.status(404).json({ error: 'Could not calculate Fama-French exposures for this portfolio' });
+    }
+
+    res.json({
+      success: true,
+      data: exposures
+    });
+  } catch (error) {
+    console.error('Error getting Fama-French exposures:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/factors/returns - Get historical factor returns
+router.get('/returns', (req, res) => {
+  try {
+    const { startDate, endDate, cumulative = 'true' } = req.query;
+
+    const fas = getFactorAnalysisService();
+    const returns = fas.getFactorReturns({
+      startDate,
+      endDate,
+      cumulative: cumulative === 'true'
+    });
+
+    res.json({
+      success: true,
+      data: returns
+    });
+  } catch (error) {
+    console.error('Error getting factor returns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
 // Calculation Endpoints
 // ============================================
 

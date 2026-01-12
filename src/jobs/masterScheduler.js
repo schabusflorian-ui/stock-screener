@@ -30,6 +30,7 @@ const { getETFUpdateScheduler } = require('./etfUpdateScheduler');
 const Investor13FRefresh = require('./investor13FRefresh');
 const { refreshEarnings } = require('./earningsRefresh');
 const { XBRLBulkImporter } = require('../services/xbrl/xbrlBulkImporter');
+const { XBRLSyncService } = require('../services/xbrl/xbrlSyncService');
 
 class MasterScheduler {
   constructor() {
@@ -361,6 +362,31 @@ class MasterScheduler {
   }
 
   /**
+   * Run ticker resolution for pending EU/UK companies
+   * Resolves tickers via GLEIF → ISIN → OpenFIGI pipeline for new IPOs and imports
+   */
+  async runTickerResolution(options = {}) {
+    const { getDatabase } = require('../database');
+    const database = getDatabase();
+
+    const syncService = new XBRLSyncService(database, { autoResolveTickers: true });
+
+    const limit = options.limit || 50;
+    const delayMs = options.delayMs || 500;
+
+    this.log(`Starting ticker resolution for up to ${limit} pending companies...`);
+    const result = await syncService.resolvePendingTickers(limit, delayMs);
+
+    if (result.skipped) {
+      this.log('Ticker resolution skipped - SymbolResolver not available');
+    } else {
+      this.log(`Ticker resolution complete: ${result.resolved} resolved, ${result.failed} failed out of ${result.processed} processed`);
+    }
+
+    return result;
+  }
+
+  /**
    * Run XBRL EU/UK bulk import
    * Imports XBRL filings from filings.xbrl.org for EU/UK companies
    */
@@ -389,6 +415,48 @@ class MasterScheduler {
 
     this.log(`XBRL Import complete: ${results.totals.processed} filings, ${results.totals.parsed} parsed, ${results.totals.errors} errors`);
     return results;
+  }
+
+  /**
+   * Run EU/UK IPO prospectus check
+   * Fetches prospectuses from ESMA (EU) and/or FCA NSM (UK)
+   * @param {string} source - 'esma', 'fca', or 'all'
+   */
+  async runEUIPOCheck(source = 'all') {
+    const { IPOTracker } = require('../services/ipoTracker');
+    const db = require('../database');
+
+    const database = db.getDatabase();
+    const ipoTracker = new IPOTracker(database);
+
+    const days = 7; // Check last 7 days of prospectuses
+
+    let result;
+
+    if (source === 'esma') {
+      this.log('Fetching ESMA (EU) prospectuses...');
+      result = await ipoTracker.checkForESMAFilings({ days, ipoOnly: true });
+      this.log(`ESMA check complete: fetched ${result.fetched}, created ${result.created}, skipped ${result.skipped}`);
+    } else if (source === 'fca') {
+      this.log('Fetching FCA NSM (UK) prospectuses...');
+      result = await ipoTracker.checkForFCAFilings({ days, ipoOnly: true });
+      this.log(`FCA check complete: fetched ${result.fetched}, created ${result.created}, skipped ${result.skipped}`);
+    } else {
+      this.log('Fetching EU/UK prospectuses from all sources...');
+      result = await ipoTracker.checkForEUFilings({ days });
+      this.log(`EU/UK check complete: ${result.newIPOs} new IPOs, ${result.updates} fetched, ${result.skipped} skipped`);
+    }
+
+    // Try to resolve tickers for any new EU/UK IPOs
+    if (result.created > 0 || result.newIPOs > 0) {
+      try {
+        await this.runTickerResolution({ limit: 20, delayMs: 500 });
+      } catch (e) {
+        this.log(`Ticker resolution after IPO check failed: ${e.message}`, 'WARN');
+      }
+    }
+
+    return result;
   }
 
   /**
@@ -452,6 +520,8 @@ class MasterScheduler {
         { name: 'Knowledge Base (Incremental)', schedule: 'Mon-Sat 6:00 AM ET' },
         { name: 'Knowledge Base (Full)', schedule: 'Sunday 3:00 AM ET' },
         { name: 'SEC Filing Check', schedule: 'Weekdays 7:00 PM ET' },
+        { name: 'EU IPO Prospectus Check (ESMA)', schedule: 'Daily 7:00 AM GMT (2:00 AM ET)' },
+        { name: 'UK IPO Prospectus Check (FCA)', schedule: 'Daily 7:30 AM GMT (2:30 AM ET)' },
         { name: 'Dividend Refresh', schedule: 'Sunday 4:00 AM ET' },
         { name: 'Portfolio Dividend Processing', schedule: 'Weekdays 6:30 PM ET' },
         { name: 'ETF Update (Tier 1)', schedule: 'Weekdays 6:30 AM ET' },
@@ -466,7 +536,8 @@ class MasterScheduler {
         { name: 'EU/UK Price Update (EU)', schedule: 'Weekdays 11:30 AM ET (5:30 PM CET)' },
         { name: 'EU/UK Valuation Update', schedule: 'Weekdays 12:30 PM ET' },
         { name: 'European Index Update', schedule: 'Sunday 5:00 AM ET' },
-        { name: 'EU/UK Sector Enrichment', schedule: 'Sunday 6:00 AM ET' }
+        { name: 'EU/UK Sector Enrichment', schedule: 'Sunday 6:00 AM ET' },
+        { name: 'EU/UK Ticker Resolution', schedule: 'Sunday 2:30 AM ET, Tuesday 3:00 AM ET' }
       ]
     };
   }
@@ -549,6 +620,29 @@ class MasterScheduler {
     }, { timezone: 'America/New_York' });
 
     this.log('Scheduled: SEC Filing Check (Weekdays 7:00 PM ET)');
+
+    // ============================================
+    // EU/UK IPO PROSPECTUS CHECKS
+    // ============================================
+
+    // Daily at 7:00 AM GMT (2:00 AM ET) - ESMA prospectus scan (EU)
+    // Runs before European market opens
+    cron.schedule('0 2 * * *', async () => {
+      await this.runJob('EU IPO Prospectus Check (ESMA)', async () => {
+        await this.runEUIPOCheck('esma');
+      });
+    }, { timezone: 'America/New_York' });
+
+    this.log('Scheduled: EU IPO Prospectus Check (Daily 7:00 AM GMT / 2:00 AM ET)');
+
+    // Daily at 7:30 AM GMT (2:30 AM ET) - FCA NSM prospectus scan (UK)
+    cron.schedule('30 2 * * *', async () => {
+      await this.runJob('UK IPO Prospectus Check (FCA)', async () => {
+        await this.runEUIPOCheck('fca');
+      });
+    }, { timezone: 'America/New_York' });
+
+    this.log('Scheduled: UK IPO Prospectus Check (Daily 7:30 AM GMT / 2:30 AM ET)');
 
     // ============================================
     // DIVIDEND DATA REFRESH
@@ -740,6 +834,27 @@ class MasterScheduler {
     }, { timezone: 'America/New_York' });
 
     this.log('Scheduled: EU/UK Sector Enrichment (Sunday 6:00 AM ET)');
+
+    // ============================================
+    // EU/UK TICKER RESOLUTION
+    // ============================================
+
+    // Sunday at 2:30 AM ET - After XBRL import, resolve tickers for new companies
+    // Handles new IPOs and newly imported companies without ticker mappings
+    cron.schedule('30 2 * * 0', async () => {
+      await this.runJob('EU/UK Ticker Resolution', async () => {
+        await this.runTickerResolution({ limit: 100, delayMs: 500 });
+      });
+    }, { timezone: 'America/New_York' });
+
+    // Also run Tuesday at 3 AM ET for any companies that may have been added mid-week
+    cron.schedule('0 3 * * 2', async () => {
+      await this.runJob('EU/UK Ticker Resolution (Mid-week)', async () => {
+        await this.runTickerResolution({ limit: 50, delayMs: 500 });
+      });
+    }, { timezone: 'America/New_York' });
+
+    this.log('Scheduled: EU/UK Ticker Resolution (Sunday 2:30 AM ET, Tuesday 3:00 AM ET)');
 
     // ============================================
     // HEALTH CHECK

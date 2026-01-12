@@ -355,6 +355,129 @@ function SkeletonCapitalAllocation() {
   );
 }
 
+// Investor list skeleton
+function SkeletonInvestorList() {
+  return (
+    <div className="skeleton-investor-list">
+      <div className="skeleton-page-header">
+        <Skeleton width={200} height={28} />
+        <div className="skeleton-header-actions">
+          <Skeleton width={200} height={36} />
+          <Skeleton width={100} height={36} />
+        </div>
+      </div>
+      <SkeletonStatsBar items={4} />
+      <div className="skeleton-grid">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <SkeletonCard key={i} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Investor detail skeleton
+function SkeletonInvestorDetail() {
+  return (
+    <div className="skeleton-investor-detail">
+      <div className="skeleton-breadcrumb">
+        <Skeleton width={150} height={14} />
+      </div>
+      <div className="skeleton-header">
+        <div className="skeleton-identity">
+          <Skeleton variant="circular" width={64} height={64} />
+          <div className="skeleton-title-area">
+            <Skeleton width={200} height={28} />
+            <Skeleton width={120} height={16} />
+          </div>
+        </div>
+        <div className="skeleton-actions">
+          <Skeleton width={120} height={36} />
+          <Skeleton width={100} height={36} />
+        </div>
+      </div>
+      <SkeletonStatsBar items={5} />
+      <div className="skeleton-tabs">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} width={80} height={40} />
+        ))}
+      </div>
+      <SkeletonTable rows={8} columns={6} />
+    </div>
+  );
+}
+
+// Sector analysis skeleton
+function SkeletonSectorAnalysis() {
+  return (
+    <div className="skeleton-sector-analysis">
+      <div className="skeleton-page-header">
+        <Skeleton width={220} height={28} />
+      </div>
+      <SkeletonStatsBar items={4} />
+      <div className="skeleton-two-column">
+        <div className="skeleton-column">
+          <SkeletonChart height={300} />
+        </div>
+        <div className="skeleton-column">
+          <SkeletonTable rows={10} columns={4} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Updates page skeleton
+function SkeletonUpdatesPage() {
+  return (
+    <div className="skeleton-updates-page">
+      <div className="skeleton-page-header">
+        <Skeleton width={200} height={28} />
+        <Skeleton width={120} height={36} />
+      </div>
+      <SkeletonStatsBar items={4} />
+      <div className="skeleton-grid">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="skeleton-update-card">
+            <div className="skeleton-card-header">
+              <Skeleton width={100} height={20} />
+              <Skeleton width={60} height={16} />
+            </div>
+            <Skeleton width="80%" height={14} />
+            <Skeleton width="60%" height={14} />
+            <div className="skeleton-card-footer">
+              <Skeleton width={80} height={24} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Dashboard/Home page skeleton
+function SkeletonDashboard() {
+  return (
+    <div className="skeleton-dashboard">
+      <div className="skeleton-page-header">
+        <Skeleton width={180} height={28} />
+      </div>
+      <SkeletonStatsBar items={4} />
+      <div className="skeleton-dashboard-grid">
+        <div className="skeleton-dashboard-main">
+          <SkeletonChart height={250} />
+          <SkeletonTable rows={5} columns={5} />
+        </div>
+        <div className="skeleton-dashboard-sidebar">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Generic page skeleton
 function SkeletonPage({ title = true, stats = true, tabs = 0, content = 'cards' }) {
   return (
@@ -412,6 +535,11 @@ export {
   SkeletonIPOPipeline,
   SkeletonInsiderTrading,
   SkeletonCapitalAllocation,
+  SkeletonInvestorList,
+  SkeletonInvestorDetail,
+  SkeletonSectorAnalysis,
+  SkeletonUpdatesPage,
+  SkeletonDashboard,
   SkeletonPage
 };
 

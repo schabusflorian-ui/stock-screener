@@ -1,0 +1,68 @@
+# .dockerignore
+# Files and directories to exclude from Docker build context
+
+# Git
+.git
+.gitignore
+
+# Node modules (will be installed fresh)
+node_modules
+frontend/node_modules
+
+# Development files
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+
+# Test files
+coverage/
+.nyc_output/
+tests/
+*.test.js
+*.spec.js
+jest.config.js
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Data files (will be mounted as volume)
+data/*.db
+data/*.db-*
+data/*.sqlite
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Build artifacts
+dist/
+build/
+*.tgz
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Docker files (avoid recursive copy)
+Dockerfile*
+docker-compose*.yml
+.dockerignore

@@ -634,6 +634,56 @@ class PaperTradingEngine {
   }
 
   /**
+   * Cancel an order
+   * @param {string} accountId - Account ID
+   * @param {string} orderId - Order ID to cancel
+   * @returns {Object} Cancel result
+   */
+  cancelOrder(accountId, orderId) {
+    // Get the order
+    const order = this.db.prepare(`
+      SELECT * FROM paper_orders
+      WHERE account_id = ? AND order_id = ?
+    `).get(accountId, orderId);
+
+    if (!order) {
+      return {
+        success: false,
+        message: `Order ${orderId} not found`
+      };
+    }
+
+    // Check if order can be cancelled (must be 'open' or 'pending')
+    if (order.status !== 'open' && order.status !== 'pending') {
+      return {
+        success: false,
+        message: `Cannot cancel order with status: ${order.status}`,
+        currentStatus: order.status
+      };
+    }
+
+    // Update order status to 'cancelled'
+    this.db.prepare(`
+      UPDATE paper_orders
+      SET status = 'cancelled', updated_at = datetime('now')
+      WHERE order_id = ?
+    `).run(orderId);
+
+    return {
+      success: true,
+      orderId,
+      message: `Order ${orderId} successfully cancelled`,
+      order: {
+        symbol: order.symbol,
+        side: order.side,
+        quantity: order.quantity,
+        orderType: order.order_type,
+        previousStatus: order.status
+      }
+    };
+  }
+
+  /**
    * Get positions
    */
   getPositions(accountId) {

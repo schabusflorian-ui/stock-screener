@@ -176,6 +176,18 @@ class ScreeningService {
       minMarketCap,
       maxMarketCap,
 
+      // Volume filters
+      minAvgVolume,
+      maxAvgVolume,
+
+      // Insider criteria
+      minInsiderOwnership,   // Minimum insider ownership percentage
+      requireInsiderBuying,  // Boolean: require recent insider buying
+
+      // 52-week range criteria
+      maxDistanceFrom52wHigh, // Maximum % distance from 52-week high (e.g., 10 = within 10% of high)
+      minDistanceFrom52wLow,  // Minimum % distance from 52-week low (e.g., 50 = at least 50% above low)
+
       // Period selection for historical screening
       periodType = 'annual',
       asOfDate = null, // Specific historical date
@@ -370,6 +382,60 @@ class ScreeningService {
     if (maxMarketCap !== undefined && maxMarketCap !== null && maxMarketCap !== '') {
       where.push('pm.market_cap <= ?');
       params.push(parseFloat(maxMarketCap) * 1e9);
+    }
+
+    // Volume filters
+    if (minAvgVolume !== undefined && minAvgVolume !== null && minAvgVolume !== '') {
+      where.push('pm.avg_volume_30d >= ?');
+      params.push(parseInt(minAvgVolume));
+    }
+    if (maxAvgVolume !== undefined && maxAvgVolume !== null && maxAvgVolume !== '') {
+      where.push('pm.avg_volume_30d <= ?');
+      params.push(parseInt(maxAvgVolume));
+    }
+
+    // 52-week range filters
+    if (maxDistanceFrom52wHigh !== undefined && maxDistanceFrom52wHigh !== null && maxDistanceFrom52wHigh !== '') {
+      // Calculate distance: ((high_52w - last_price) / high_52w) * 100 <= maxDistance
+      // Rearranged: last_price >= high_52w * (1 - maxDistance/100)
+      where.push('pm.last_price >= pm.high_52w * (1 - ? / 100.0)');
+      params.push(parseFloat(maxDistanceFrom52wHigh));
+    }
+    if (minDistanceFrom52wLow !== undefined && minDistanceFrom52wLow !== null && minDistanceFrom52wLow !== '') {
+      // Calculate distance: ((last_price - low_52w) / low_52w) * 100 >= minDistance
+      // Rearranged: last_price >= low_52w * (1 + minDistance/100)
+      where.push('pm.last_price >= pm.low_52w * (1 + ? / 100.0)');
+      params.push(parseFloat(minDistanceFrom52wLow));
+    }
+
+    // Insider ownership filter
+    if (minInsiderOwnership !== undefined && minInsiderOwnership !== null && minInsiderOwnership !== '') {
+      // Filter companies with at least one 10% owner OR significant insider activity
+      where.push(`(
+        EXISTS (
+          SELECT 1 FROM insiders i
+          WHERE i.company_id = c.id AND i.is_ten_percent_owner = 1
+        ) OR
+        (
+          SELECT COUNT(*) FROM insider_transactions it
+          WHERE it.company_id = c.id
+            AND it.transaction_date >= date('now', '-365 days')
+            AND it.transaction_type IN ('P', 'Purchase', 'BUY')
+        ) >= ?
+      )`);
+      // Require at least 5 purchases for non-10% owner companies
+      params.push(Math.max(5, parseFloat(minInsiderOwnership) / 2));
+    }
+
+    // Require recent insider buying
+    if (requireInsiderBuying) {
+      where.push(`EXISTS (
+        SELECT 1 FROM insider_transactions it
+        WHERE it.company_id = c.id
+          AND it.transaction_date >= date('now', '-90 days')
+          AND it.transaction_type IN ('P', 'Purchase', 'BUY')
+          AND it.shares > 0
+      )`);
     }
 
     // Recency filter - exclude companies with stale data
@@ -606,17 +672,19 @@ class ScreeningService {
 
   /**
    * Dividend value
-   * Note: Using FCF Margin instead of FCF Yield since market cap data is unavailable
+   * Companies with strong free cash flow yield and financial stability
    */
   dividendValue(limit) {
     console.log('\n🎯 DIVIDEND VALUE SCREEN');
-    console.log('   Criteria: FCF Margin > 10%, Low Debt, Positive Growth\n');
+    console.log('   Criteria: FCF Yield > 8%, Low Debt, Positive Growth\n');
 
     const result = this.screen({
-      minFCFMargin: 10,     // Use FCF Margin instead of FCF Yield
-      maxDebtToEquity: 1.0,
-      minRevenueGrowth: 0,
-      sortBy: 'fcf_margin',
+      minFCFYield: 8,        // Strong FCF yield (now available with market cap data)
+      minFCFMargin: 10,      // Also require good FCF margin
+      maxDebtToEquity: 1.0,  // Financial stability
+      minRevenueGrowth: 0,   // Growing business
+      minMarketCap: 0.5,     // Require meaningful market cap
+      sortBy: 'fcf_yield',
       maxDataAge: 2,
       excludeCIKOnly: true,
       ...(limit && { limit })
@@ -667,16 +735,17 @@ class ScreeningService {
 
   /**
    * Akre Compounders - High quality compounders with aligned management
-   * Note: Insider ownership data not yet available, using ROCE consistency as proxy
+   * Looks for high ROCE, low debt, and insider alignment
    */
   akreCompounders(limit) {
     console.log('\n🎯 AKRE COMPOUNDERS SCREEN');
-    console.log('   Criteria: ROCE > 20%, Debt/Equity < 0.5, Strong margins\n');
+    console.log('   Criteria: ROCE > 20%, Debt/Equity < 0.5, Strong margins, Insider ownership\n');
 
     const result = this.screen({
       minROIC: 20,            // High returns on capital (using ROIC as proxy for ROCE)
       maxDebtToEquity: 0.5,   // Conservative debt levels
       minNetMargin: 10,       // Quality earnings
+      minInsiderOwnership: 5, // Look for meaningful insider ownership/activity
       sortBy: 'roic',
       maxDataAge: 2,
       excludeCIKOnly: true,
@@ -774,18 +843,20 @@ class ScreeningService {
 
   /**
    * Pabrai Asymmetry - Low risk, high reward situations
-   * Cheap stocks with quality characteristics and beaten-down prices
-   * Note: Insider buying and 52-week high data not yet available
+   * Cheap stocks with quality characteristics, beaten-down prices, and insider conviction
    */
   pabraiAsymmetry(limit) {
     console.log('\n🎯 PABRAI ASYMMETRY SCREEN');
-    console.log('   Criteria: P/E < 10, ROIC > 12%, Low debt\n');
+    console.log('   Criteria: P/E < 10, ROIC > 12%, Low debt, Near 52w lows, Insider buying\n');
 
     const result = this.screen({
-      maxPERatio: 10,         // Very cheap
-      minROIC: 12,            // Quality business
-      maxDebtToEquity: 0.8,   // Not overleveraged
-      minNetMargin: 5,        // Profitable
+      maxPERatio: 10,             // Very cheap
+      minROIC: 12,                // Quality business
+      maxDebtToEquity: 0.8,       // Not overleveraged
+      minNetMargin: 5,            // Profitable
+      minDistanceFrom52wLow: 20,  // Near 52-week lows (within 20% recovery)
+      maxDistanceFrom52wHigh: 60, // Far from highs (at least 40% down)
+      requireInsiderBuying: true, // Insiders showing conviction
       sortBy: 'pe_ratio',
       sortOrder: 'ASC',
       maxDataAge: 2,

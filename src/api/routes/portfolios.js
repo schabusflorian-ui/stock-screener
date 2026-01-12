@@ -27,19 +27,42 @@ router.use(checkAdmin);
 // Portfolio CRUD Routes
 // ============================================
 
+// Cache for portfolio refresh timestamps - only refresh if stale (>15 min)
+const REFRESH_TTL_MS = 15 * 60 * 1000; // 15 minutes
+let lastPortfolioRefresh = 0;
+const portfolioRefreshCache = new Map(); // Per-portfolio refresh timestamps
+
+// Helper to check if a portfolio's values need refreshing
+function shouldRefreshPortfolio(portfolioId, forceRefresh = false) {
+  if (forceRefresh) return true;
+  const lastRefresh = portfolioRefreshCache.get(portfolioId) || 0;
+  return (Date.now() - lastRefresh) > REFRESH_TTL_MS;
+}
+
+function markPortfolioRefreshed(portfolioId) {
+  portfolioRefreshCache.set(portfolioId, Date.now());
+}
+
 // GET /api/portfolios - List user's portfolios (or all if admin)
 router.get('/', (req, res) => {
   try {
     const service = getService(req);
-    const { refresh = 'true' } = req.query;
+    const { refresh = 'auto' } = req.query;
 
     // Determine user filter - admins can see all, regular users see only their own
     const userId = req.isAdmin ? null : req.userId;
 
-    // Refresh portfolio values by default to ensure accurate totals
-    if (refresh !== 'false') {
+    // Only refresh if:
+    // 1. refresh=true (force refresh)
+    // 2. refresh=auto (default) AND data is stale (>15 min old)
+    const now = Date.now();
+    const isStale = (now - lastPortfolioRefresh) > REFRESH_TTL_MS;
+    const shouldRefresh = refresh === 'true' || (refresh === 'auto' && isStale);
+
+    if (shouldRefresh && refresh !== 'false') {
       try {
         service.refreshAllPortfolios();
+        lastPortfolioRefresh = now;
       } catch (refreshError) {
         console.warn('Failed to refresh portfolio values:', refreshError.message);
       }
@@ -50,7 +73,8 @@ router.get('/', (req, res) => {
       success: true,
       count: portfolios.length,
       portfolios,
-      filtered: !req.isAdmin && req.userId ? true : false
+      filtered: !req.isAdmin && req.userId ? true : false,
+      cached: !shouldRefresh
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -214,9 +238,13 @@ router.get('/:id/holdings', requireAuth, requirePortfolioOwnership, (req, res) =
   try {
     const service = getService(req);
     const portfolioId = parseInt(req.params.id);
+    const forceRefresh = req.query.refresh === 'true';
 
-    // Refresh values first
-    service.refreshValues(portfolioId);
+    // Only refresh if stale or forced
+    if (shouldRefreshPortfolio(portfolioId, forceRefresh)) {
+      service.refreshValues(portfolioId);
+      markPortfolioRefreshed(portfolioId);
+    }
 
     const positions = service.getPositions(portfolioId);
     res.json({
@@ -235,9 +263,13 @@ router.get('/:id/positions', requireAuth, requirePortfolioOwnership, (req, res) 
   try {
     const service = getService(req);
     const portfolioId = parseInt(req.params.id);
+    const forceRefresh = req.query.refresh === 'true';
 
-    // Refresh values first
-    service.refreshValues(portfolioId);
+    // Only refresh if stale or forced
+    if (shouldRefreshPortfolio(portfolioId, forceRefresh)) {
+      service.refreshValues(portfolioId);
+      markPortfolioRefreshed(portfolioId);
+    }
 
     const positions = service.getPositions(portfolioId);
     res.json({
@@ -280,9 +312,13 @@ router.get('/:id/underlying', async (req, res) => {
 
     const portfolioId = parseInt(req.params.id);
     const { refresh = 'false' } = req.query;
+    const forceRefresh = refresh === 'true';
 
-    // Refresh values first
-    service.refreshValues(portfolioId);
+    // Only refresh if stale or forced
+    if (shouldRefreshPortfolio(portfolioId, forceRefresh)) {
+      service.refreshValues(portfolioId);
+      markPortfolioRefreshed(portfolioId);
+    }
 
     // Get positions
     const positions = service.getPositions(portfolioId);

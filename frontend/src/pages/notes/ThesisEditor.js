@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { thesesAPI, companyAPI } from '../../services/api';
 import { Button, Card } from '../../components/ui';
+import { SkeletonPage } from '../../components/Skeleton';
 import './ThesisEditor.css';
 
 function ThesisEditor({ thesis: thesisProp, onSave: onSaveProp, onClose: onCloseProp }) {
@@ -257,10 +258,7 @@ function ThesisEditor({ thesis: thesisProp, onSave: onSaveProp, onClose: onClose
   if (loadingThesis) {
     return (
       <div className="thesis-editor">
-        <div className="thesis-loading">
-          <div className="loading-spinner" />
-          <span>Loading thesis...</span>
-        </div>
+        <SkeletonPage tabs={4} content="cards" />
       </div>
     );
   }

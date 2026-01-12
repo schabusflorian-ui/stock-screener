@@ -94,7 +94,10 @@ function FactorPerformance({ portfolioId, className = '' }) {
   return (
     <Card variant="glass" className={`factor-performance ${className}`}>
       <div className="factor-performance__header">
-        <h3 className="factor-performance__title">Factor Performance</h3>
+        <div className="factor-performance__title-group">
+          <h3 className="factor-performance__title">Trading Signal Performance</h3>
+          <p className="factor-performance__subtitle">Win rates by signal type</p>
+        </div>
         <select
           value={period}
           onChange={(e) => setPeriod(e.target.value)}

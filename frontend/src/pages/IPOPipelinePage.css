@@ -51,6 +51,52 @@
   align-items: center;
 }
 
+/* Region Selector */
+.region-selector {
+  display: flex;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: var(--radius-md);
+  padding: 0.25rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+}
+
+.region-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s;
+}
+
+.region-btn:hover {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.region-btn.active {
+  background: var(--brand-primary);
+  color: white;
+}
+
+.region-flag {
+  font-size: 1rem;
+}
+
+.region-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
 .view-toggle {
   display: flex;
   background: rgba(255, 255, 255, 0.7);
@@ -401,6 +447,17 @@
   color: var(--brand-primary);
 }
 
+.ipo-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.ipo-region-badge {
+  font-size: 0.875rem;
+  cursor: help;
+}
+
 .ipo-exchange {
   font-size: 0.625rem;
   font-weight: 600;
@@ -579,6 +636,12 @@
 .ticker-cell {
   font-weight: 600;
   color: var(--brand-primary);
+}
+
+.region-cell {
+  font-size: 1.125rem;
+  text-align: center;
+  cursor: help;
 }
 
 .status-badge {

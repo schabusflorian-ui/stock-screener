@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '../../services/api';
+import { SkeletonPage } from '../../components/Skeleton';
 import './StrategyBuilderPage.css';
 
 const StrategyBuilderPage = () => {
@@ -282,7 +283,7 @@ const StrategyBuilderPage = () => {
   };
 
   if (loading) {
-    return <div className="strategy-builder loading">Loading...</div>;
+    return <div className="strategy-builder"><SkeletonPage tabs={2} content="cards" /></div>;
   }
 
   return (

@@ -1,0 +1,439 @@
+/* Formatters.css - Shared styles for all response formatters */
+
+/* Header with Symbol */
+.fmt-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.fmt-symbol {
+  font-weight: 600;
+  color: var(--primary, #6366f1);
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.fmt-symbol:hover {
+  opacity: 0.8;
+  text-decoration: underline;
+}
+
+.fmt-symbol-link {
+  color: var(--primary, #6366f1);
+  cursor: pointer;
+}
+
+.fmt-symbol-link:hover {
+  text-decoration: underline;
+}
+
+.fmt-name {
+  color: var(--text-muted, #888);
+  font-size: 0.9rem;
+}
+
+/* Section Titles */
+.fmt-section-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary, #aaa);
+  margin: 0 0 0.5rem 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.fmt-category-title {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted, #888);
+  margin: 0.75rem 0 0.5rem 0;
+  text-transform: capitalize;
+}
+
+.fmt-category-title:first-child {
+  margin-top: 0;
+}
+
+/* Error Display */
+.fmt-error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  color: #ef4444;
+  font-size: 0.9rem;
+}
+
+/* Text Content */
+.fmt-text-content {
+  color: var(--text-primary, #fff);
+  line-height: 1.6;
+}
+
+.fmt-text-content p {
+  margin: 0 0 0.5rem 0;
+}
+
+.fmt-text-content p:last-child {
+  margin-bottom: 0;
+}
+
+/* LLM Response tools used */
+.fmt-llm-response {
+  padding: 0.25rem 0;
+}
+
+.fmt-tools-used {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-color, #333);
+}
+
+.fmt-tools-label {
+  font-size: 0.7rem;
+  color: var(--text-muted, #666);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.fmt-tool-badge {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.4rem;
+  background: var(--surface-secondary, #2a2a2a);
+  border-radius: 4px;
+  color: var(--text-secondary, #aaa);
+  text-transform: capitalize;
+}
+
+/* Metrics Grid */
+.fmt-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.5rem;
+}
+
+.fmt-metric-card {
+  background: var(--bg-tertiary, #252540);
+  padding: 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #2d2d44);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.fmt-metric-label {
+  font-size: 0.75rem;
+  color: var(--text-muted, #888);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.fmt-metric-value {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary, #fff);
+}
+
+/* Metrics Categories */
+.fmt-metrics-categories .fmt-metric-category {
+  margin-bottom: 1rem;
+}
+
+.fmt-metrics-categories .fmt-metric-category:last-child {
+  margin-bottom: 0;
+}
+
+/* Tables */
+.fmt-table-wrapper {
+  overflow-x: auto;
+  margin-top: 0.5rem;
+}
+
+.fmt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.fmt-table th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-tertiary, #252540);
+  color: var(--text-muted, #888);
+  font-weight: 500;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  border-bottom: 1px solid var(--border-color, #2d2d44);
+}
+
+.fmt-table td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border-color, #2d2d44);
+  color: var(--text-primary, #fff);
+}
+
+.fmt-table tbody tr:hover {
+  background: var(--bg-tertiary, #252540);
+}
+
+.fmt-table-more {
+  padding: 0.5rem;
+  text-align: center;
+  color: var(--text-muted, #888);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+/* Data Preview */
+.fmt-data-preview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  background: var(--bg-tertiary, #252540);
+  border-radius: 8px;
+}
+
+.fmt-preview-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.fmt-preview-label {
+  font-size: 0.7rem;
+  color: var(--text-muted, #888);
+  text-transform: uppercase;
+}
+
+.fmt-preview-value {
+  font-size: 0.9rem;
+  color: var(--text-primary, #fff);
+}
+
+/* Unknown Type JSON */
+.fmt-unknown-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  color: var(--text-muted, #888);
+}
+
+.fmt-type-badge {
+  background: var(--bg-tertiary, #252540);
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-family: monospace;
+}
+
+.fmt-json {
+  background: var(--bg-tertiary, #252540);
+  padding: 0.75rem;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-size: 0.8rem;
+  font-family: monospace;
+  color: var(--text-secondary, #aaa);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* Signal Badges */
+.fmt-signal {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.fmt-signal-bullish {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.fmt-signal-bearish {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.fmt-signal-neutral {
+  background: rgba(156, 163, 175, 0.15);
+  color: var(--text-muted, #888);
+}
+
+/* Sentiment Specific */
+.fmt-sentiment-score {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fmt-score-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-tertiary, #252540);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.fmt-score-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.fmt-score-fill.positive {
+  background: #10b981;
+}
+
+.fmt-score-fill.negative {
+  background: #ef4444;
+}
+
+.fmt-score-fill.neutral {
+  background: #f59e0b;
+}
+
+/* Technical Specific */
+.fmt-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border-color, #2d2d44);
+}
+
+.fmt-indicator:last-child {
+  border-bottom: none;
+}
+
+.fmt-indicator-name {
+  color: var(--text-secondary, #aaa);
+  font-size: 0.85rem;
+}
+
+.fmt-indicator-value {
+  font-weight: 600;
+  color: var(--text-primary, #fff);
+}
+
+.fmt-indicator-value.overbought {
+  color: #ef4444;
+}
+
+.fmt-indicator-value.oversold {
+  color: #10b981;
+}
+
+.fmt-indicator-value.neutral {
+  color: var(--text-muted, #888);
+}
+
+/* Investor/Portfolio Specific */
+.fmt-holdings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.fmt-holdings-meta {
+  font-size: 0.8rem;
+  color: var(--text-muted, #888);
+}
+
+.fmt-total-value {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary, #fff);
+}
+
+/* Interpretation Box */
+.fmt-interpretation {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.08));
+  border-left: 3px solid var(--primary, #6366f1);
+  padding: 0.75rem;
+  border-radius: 4px;
+  margin-top: 0.75rem;
+  color: var(--text-secondary, #aaa);
+  font-style: italic;
+  font-size: 0.9rem;
+}
+
+/* Pattern Detection */
+.fmt-pattern {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: var(--bg-tertiary, #252540);
+  border-radius: 8px;
+  margin-bottom: 0.75rem;
+}
+
+.fmt-pattern-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fmt-pattern-icon.detected {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.fmt-pattern-icon.not-detected {
+  background: rgba(156, 163, 175, 0.2);
+  color: var(--text-muted, #888);
+}
+
+.fmt-pattern-info {
+  flex: 1;
+}
+
+.fmt-pattern-name {
+  font-weight: 600;
+  color: var(--text-primary, #fff);
+  margin-bottom: 0.15rem;
+}
+
+.fmt-pattern-status {
+  font-size: 0.8rem;
+  color: var(--text-muted, #888);
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .fmt-metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .fmt-table {
+    font-size: 0.8rem;
+  }
+
+  .fmt-table th,
+  .fmt-table td {
+    padding: 0.4rem 0.5rem;
+  }
+}

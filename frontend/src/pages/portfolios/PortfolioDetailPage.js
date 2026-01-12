@@ -1,5 +1,5 @@
 // frontend/src/pages/portfolios/PortfolioDetailPage.js
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -391,13 +391,10 @@ const TABS = [
   { id: 'performance', label: 'Performance', icon: LineChartIcon },
   { id: 'holdings', label: 'Holdings', icon: List },
   { id: 'orders', label: 'Orders', icon: Target },
-  { id: 'transactions', label: 'Transactions', icon: Clock },
-  { id: 'allocation', label: 'Allocation', icon: PieChart },
   { id: 'notes', label: 'Notes', icon: FileText },
-  { id: 'ai', label: 'AI Trading', icon: Brain },
-  { id: 'simulate', label: 'Simulate', icon: Activity },
-  { id: 'alerts', label: 'Alerts', icon: AlertCircle },
-  { id: 'export', label: 'Export', icon: Download }
+  { id: 'backtest', label: 'Backtest', icon: Clock },
+  { id: 'risk', label: 'Risk Analysis', icon: Activity },
+  { id: 'alerts', label: 'Alerts', icon: AlertCircle }
 ];
 
 // Benchmark label mapping
@@ -437,6 +434,12 @@ function PortfolioDetailPage() {
   const [exporting, setExporting] = useState(false);
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [selectedETF, setSelectedETF] = useState(null);
+
+  // Memoize active orders filter - must be before any early returns
+  const activeOrders = useMemo(() =>
+    orders.filter(o => o.status === 'active'),
+    [orders]
+  );
 
   // Helper to check if a holding is an ETF
   const isETF = (holding) => {
@@ -950,7 +953,7 @@ function PortfolioDetailPage() {
               <div className="overview-card">
                 <h3>Active Orders</h3>
                 <div className="orders-list">
-                  {orders.filter(o => o.status === 'active').slice(0, 5).map((order, idx) => (
+                  {activeOrders.slice(0, 5).map((order, idx) => (
                     <div key={idx} className="order-item">
                       <span className={`order-type ${order.order_type}`}>
                         {order.order_type.replace('_', ' ')}
@@ -959,7 +962,7 @@ function PortfolioDetailPage() {
                       <span className="order-price">{formatValue(order.trigger_price)}</span>
                     </div>
                   ))}
-                  {orders.filter(o => o.status === 'active').length === 0 && (
+                  {activeOrders.length === 0 && (
                     <p className="no-data">No active orders</p>
                   )}
                 </div>

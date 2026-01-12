@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Star, Download, Trash2, Eye, X, TrendingUp, TrendingDown } from 'lucide-react';
 import { companyAPI, pricesAPI, indicesAPI } from '../services/api';
@@ -98,16 +98,17 @@ function WatchlistPage() {
     }
   }, [priceData, priceAlerts.length, checkAlerts]);
 
-  const handleSort = (column) => {
+  const handleSort = useCallback((column) => {
     if (sortBy === column) {
       setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
       setSortBy(column);
       setSortOrder('desc');
     }
-  };
+  }, [sortBy]);
 
-  const getSortedWatchlist = () => {
+  // Memoize sorted watchlist to avoid recalculating on every render
+  const sortedWatchlist = useMemo(() => {
     return [...watchlist].sort((a, b) => {
       let aVal, bVal;
 
@@ -136,9 +137,9 @@ function WatchlistPage() {
 
       return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
     });
-  };
+  }, [watchlist, sortBy, sortOrder, priceData, alphaData, metricsData]);
 
-  const exportToCSV = () => {
+  const exportToCSV = useCallback(() => {
     if (watchlist.length === 0) return;
 
     const headers = ['Symbol', 'Name', 'Sector', 'Price', '1D %', '1W %', '1M %', 'Alpha 1M', 'Alpha YTD', 'ROIC', 'ROE', 'Net Margin', 'FCF Yield', 'Debt/Equity', 'Added'];
@@ -172,15 +173,15 @@ function WatchlistPage() {
     a.href = url;
     a.download = `watchlist_${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
-  };
+  }, [watchlist, metricsData, priceData, alphaData, fmt]);
 
   const SortIcon = ({ column }) => {
     if (sortBy !== column) return <span className="sort-icon">↕</span>;
     return <span className="sort-icon active">{sortOrder === 'asc' ? '↑' : '↓'}</span>;
   };
 
-  // Calculate averages for summary
-  const getAverages = () => {
+  // Memoize averages calculation for summary
+  const averages = useMemo(() => {
     const values = Object.values(metricsData);
     const count = values.length || 1;
     return {
@@ -189,9 +190,7 @@ function WatchlistPage() {
       fcfYield: values.reduce((sum, m) => sum + (m?.fcf_yield || 0), 0) / count,
       debtToEquity: values.reduce((sum, m) => sum + (m?.debt_to_equity || 0), 0) / count,
     };
-  };
-
-  const averages = getAverages();
+  }, [metricsData]);
 
   return (
     <div className="watchlist-page">
@@ -286,7 +285,7 @@ function WatchlistPage() {
               </Table.Row>
             </Table.Header>
             <Table.Body>
-              {getSortedWatchlist().map(item => {
+              {sortedWatchlist.map(item => {
                 const metrics = metricsData[item.symbol] || {};
                 const prices = priceData[item.symbol] || {};
                 const alpha = alphaData[item.symbol] || {};

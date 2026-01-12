@@ -97,18 +97,33 @@ router.get('/yield-curve', (req, res) => {
 
 /**
  * GET /api/macro/yield-curve/history
- * Get yield curve history
+ * Get yield curve spread history from economic_indicators table
  */
 router.get('/yield-curve/history', (req, res) => {
   try {
     const days = parseInt(req.query.days) || 90;
 
-    const history = db.getDatabase().prepare(`
+    // First try yield_curve table
+    let history = db.getDatabase().prepare(`
       SELECT curve_date, y_2y, y_5y, y_10y, y_30y, spread_2s10s, is_inverted_2s10s
       FROM yield_curve
       WHERE curve_date >= date('now', '-' || ? || ' days')
       ORDER BY curve_date ASC
     `).all(days);
+
+    // If yield_curve table is empty or has few records, use economic_indicators
+    if (!history || history.length < 5) {
+      history = db.getDatabase().prepare(`
+        SELECT
+          observation_date as curve_date,
+          value as spread_2s10s,
+          CASE WHEN value < 0 THEN 1 ELSE 0 END as is_inverted_2s10s
+        FROM economic_indicators
+        WHERE series_id = 'T10Y2Y'
+          AND observation_date >= date('now', '-' || ? || ' days')
+        ORDER BY observation_date ASC
+      `).all(days);
+    }
 
     res.json(history);
   } catch (error) {

@@ -1251,34 +1251,29 @@ router.get('/:symbol/analysis', (req, res) => {
       return res.status(404).json({ error: 'Company not found' });
     }
 
-    // Get financial data for scores calculation
-    const balanceSheets = database.prepare(`
-      SELECT fiscal_date_ending, fiscal_year, data,
+    // Get all financial data in a single query (3 queries -> 1)
+    const allFinancials = database.prepare(`
+      SELECT statement_type, fiscal_date_ending, fiscal_year, data,
              total_assets, total_liabilities, shareholder_equity,
-             current_assets, current_liabilities, long_term_debt
-      FROM financial_data
-      WHERE company_id = ? AND statement_type = 'balance_sheet' AND period_type = ?
-      ORDER BY fiscal_date_ending DESC
-      LIMIT 5
-    `).all(company.id, period_type);
-
-    const incomeStatements = database.prepare(`
-      SELECT fiscal_date_ending, fiscal_year, data,
-             total_revenue, net_income, operating_income, gross_profit
-      FROM financial_data
-      WHERE company_id = ? AND statement_type = 'income_statement' AND period_type = ?
-      ORDER BY fiscal_date_ending DESC
-      LIMIT 5
-    `).all(company.id, period_type);
-
-    const cashFlows = database.prepare(`
-      SELECT fiscal_date_ending, fiscal_year, data,
+             current_assets, current_liabilities, long_term_debt,
+             total_revenue, net_income, operating_income, gross_profit,
              operating_cashflow, capital_expenditures
       FROM financial_data
-      WHERE company_id = ? AND statement_type = 'cash_flow' AND period_type = ?
+      WHERE company_id = ? AND period_type = ?
+        AND statement_type IN ('balance_sheet', 'income_statement', 'cash_flow')
       ORDER BY fiscal_date_ending DESC
-      LIMIT 5
     `).all(company.id, period_type);
+
+    // Split by statement type and limit to 5 each
+    const balanceSheets = allFinancials
+      .filter(f => f.statement_type === 'balance_sheet')
+      .slice(0, 5);
+    const incomeStatements = allFinancials
+      .filter(f => f.statement_type === 'income_statement')
+      .slice(0, 5);
+    const cashFlows = allFinancials
+      .filter(f => f.statement_type === 'cash_flow')
+      .slice(0, 5);
 
     // Get historical metrics for valuation history
     const metricsHistory = database.prepare(`
@@ -1294,41 +1289,49 @@ router.get('/:symbol/analysis', (req, res) => {
     // Calculate Altman Z-Score
     const altmanZScore = calculateAltmanZScore(balanceSheets, incomeStatements, company.market_cap);
 
-    // Get peer companies (same industry)
-    const peers = database.prepare(`
-      SELECT c.id, c.symbol, c.name, c.market_cap,
-             m.roic, m.roe, m.net_margin, m.debt_to_equity, m.fcf_yield,
-             m.pe_ratio, m.pb_ratio, m.revenue_growth_yoy
-      FROM companies c
-      JOIN calculated_metrics m ON c.id = m.company_id
-      WHERE c.industry = ? AND c.symbol != ? AND c.is_active = 1
-        AND m.period_type = ?
-        AND m.fiscal_period = (
-          SELECT MAX(fiscal_period) FROM calculated_metrics
-          WHERE company_id = c.id AND period_type = ?
-        )
-      ORDER BY c.market_cap DESC
-      LIMIT 10
-    `).all(company.industry, symbol.toUpperCase(), period_type, period_type);
-
-    // Get sector averages
-    const sectorAvg = database.prepare(`
+    // Get peer companies and sector averages in a single optimized query using CTE
+    // This avoids the N+1 correlated subquery pattern
+    const peerAndSectorData = database.prepare(`
+      WITH latest_metrics AS (
+        SELECT company_id, MAX(fiscal_period) as max_period
+        FROM calculated_metrics
+        WHERE period_type = ?
+        GROUP BY company_id
+      ),
+      company_latest AS (
+        SELECT c.id, c.symbol, c.name, c.sector, c.industry, c.market_cap,
+               m.roic, m.roe, m.net_margin, m.debt_to_equity, m.fcf_yield,
+               m.pe_ratio, m.pb_ratio, m.revenue_growth_yoy
+        FROM companies c
+        JOIN latest_metrics lm ON c.id = lm.company_id
+        JOIN calculated_metrics m ON c.id = m.company_id
+          AND m.fiscal_period = lm.max_period AND m.period_type = ?
+        WHERE c.is_active = 1
+      )
       SELECT
-        AVG(m.roic) as avg_roic,
-        AVG(m.roe) as avg_roe,
-        AVG(m.net_margin) as avg_net_margin,
-        AVG(m.debt_to_equity) as avg_debt_to_equity,
-        AVG(m.pe_ratio) as avg_pe,
-        AVG(m.pb_ratio) as avg_pb,
-        COUNT(DISTINCT c.id) as company_count
-      FROM companies c
-      JOIN calculated_metrics m ON c.id = m.company_id
-      WHERE c.sector = ? AND c.is_active = 1 AND m.period_type = ?
-        AND m.fiscal_period = (
-          SELECT MAX(fiscal_period) FROM calculated_metrics
-          WHERE company_id = c.id AND period_type = ?
-        )
-    `).get(company.sector, period_type, period_type);
+        cl.*,
+        CASE WHEN cl.industry = ? AND cl.symbol != ? THEN 1 ELSE 0 END as is_peer,
+        CASE WHEN cl.sector = ? THEN 1 ELSE 0 END as is_sector
+      FROM company_latest cl
+      WHERE cl.industry = ? OR cl.sector = ?
+    `).all(period_type, period_type, company.industry, symbol.toUpperCase(), company.sector, company.industry, company.sector);
+
+    // Split results into peers and calculate sector averages
+    const peers = peerAndSectorData
+      .filter(r => r.is_peer)
+      .sort((a, b) => (b.market_cap || 0) - (a.market_cap || 0))
+      .slice(0, 10);
+
+    const sectorCompanies = peerAndSectorData.filter(r => r.is_sector);
+    const sectorAvg = sectorCompanies.length > 0 ? {
+      avg_roic: sectorCompanies.reduce((sum, c) => sum + (c.roic || 0), 0) / sectorCompanies.length,
+      avg_roe: sectorCompanies.reduce((sum, c) => sum + (c.roe || 0), 0) / sectorCompanies.length,
+      avg_net_margin: sectorCompanies.reduce((sum, c) => sum + (c.net_margin || 0), 0) / sectorCompanies.length,
+      avg_debt_to_equity: sectorCompanies.reduce((sum, c) => sum + (c.debt_to_equity || 0), 0) / sectorCompanies.length,
+      avg_pe: sectorCompanies.reduce((sum, c) => sum + (c.pe_ratio || 0), 0) / sectorCompanies.length,
+      avg_pb: sectorCompanies.reduce((sum, c) => sum + (c.pb_ratio || 0), 0) / sectorCompanies.length,
+      company_count: sectorCompanies.length
+    } : null;
 
     // Calculate capital allocation from cash flow
     const capitalAllocation = calculateCapitalAllocation(cashFlows);

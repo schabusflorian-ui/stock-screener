@@ -47,21 +47,7 @@ class MetaAllocator {
   }
 
   _prepareStatements() {
-    this.stmtGetStrategyPerformance = this.db.prepare(`
-      SELECT * FROM strategy_performance
-      WHERE strategy_id = ?
-      ORDER BY date DESC
-      LIMIT ?
-    `);
-
-    this.stmtStoreAllocationDecision = this.db.prepare(`
-      INSERT INTO meta_allocation_decisions (
-        parent_strategy_id, decision_date, market_regime, risk_level,
-        allocations_json, reasoning, total_rebalance_pct
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    // Create decision history table if not exists
+    // Create decision history table if not exists (MUST happen BEFORE prepare statements)
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS meta_allocation_decisions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -78,6 +64,20 @@ class MetaAllocator {
 
       CREATE INDEX IF NOT EXISTS idx_meta_decisions_date
         ON meta_allocation_decisions(parent_strategy_id, decision_date);
+    `);
+
+    this.stmtGetStrategyPerformance = this.db.prepare(`
+      SELECT * FROM strategy_performance
+      WHERE strategy_id = ?
+      ORDER BY date DESC
+      LIMIT ?
+    `);
+
+    this.stmtStoreAllocationDecision = this.db.prepare(`
+      INSERT INTO meta_allocation_decisions (
+        parent_strategy_id, decision_date, market_regime, risk_level,
+        allocations_json, reasoning, total_rebalance_pct
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
   }
 

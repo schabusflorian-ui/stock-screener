@@ -362,10 +362,9 @@ class TradingAgent {
 
       // Get average daily volume for liquidity check
       getAverageDailyVolume: this.db.prepare(`
-        SELECT AVG(volume) as avg_volume
-        FROM daily_prices
+        SELECT avg_volume_30d as avg_volume
+        FROM price_metrics
         WHERE company_id = ?
-          AND date >= date('now', '-30 days')
       `),
     };
   }

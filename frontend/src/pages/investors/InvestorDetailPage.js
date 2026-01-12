@@ -22,6 +22,7 @@ import { investorsAPI } from '../../services/api';
 import CloneModal from '../../components/investors/CloneModal';
 import PortfolioPerformanceChart from '../../components/investors/PortfolioPerformanceChart';
 import PortfolioReturnsChart from '../../components/investors/PortfolioReturnsChart';
+import { SkeletonInvestorDetail } from '../../components/Skeleton';
 import './InvestorDetailPage.css';
 
 const STYLE_LABELS = {
@@ -185,10 +186,7 @@ function InvestorDetailPage() {
   if (loading) {
     return (
       <div className="investor-detail-page">
-        <div className="loading-container">
-          <RefreshCw className="loading-spinner" size={32} />
-          <p>Loading investor data...</p>
-        </div>
+        <SkeletonInvestorDetail />
       </div>
     );
   }

@@ -11,6 +11,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const db = require('../../database');
+const { routeQuery, shouldUseLLM } = require('../../services/nl/queryRouter');
 
 const database = db.getDatabase();
 
@@ -504,21 +505,47 @@ router.post('/query', async (req, res) => {
     const enrichedContext = {
       ...context,
       conversation_id: conversation?.id,
+      message_count: conversation?.message_count || 0,
       last_symbol: conversationContext?.last_symbol,
       recent_symbols: conversationContext?.recent_symbols,
+      history: conversation?.id ? getConversationHistory(conversation.id, 5) : []
     };
 
-    // Try Python service first
+    // Route query - decides between LLM path and fast handler path
     let response;
-    try {
-      response = await sendToPython('query', {
-        query: resolvedQuery,
-        context: enrichedContext,
-        conversation_history: conversation?.id ? getConversationHistory(conversation.id, 3) : []
-      });
-    } catch (e) {
-      console.warn('Python service unavailable, using mock:', e.message);
-      response = getMockResponse(resolvedQuery);
+    const routingResult = await routeQuery(resolvedQuery, enrichedContext);
+
+    if (routingResult.useFastHandler) {
+      // Use existing Python/mock handler path
+      try {
+        response = await sendToPython('query', {
+          query: resolvedQuery,
+          context: enrichedContext,
+          conversation_history: enrichedContext.history
+        });
+      } catch (e) {
+        console.warn('Python service unavailable, using mock:', e.message);
+        response = getMockResponse(resolvedQuery);
+      }
+      // Add routing info
+      response.routing = routingResult.routing;
+    } else if (routingResult.fallback_to_handler) {
+      // LLM failed, fall back to handler
+      console.log('LLM failed, falling back to handler');
+      try {
+        response = await sendToPython('query', {
+          query: resolvedQuery,
+          context: enrichedContext,
+          conversation_history: enrichedContext.history
+        });
+      } catch (e) {
+        response = getMockResponse(resolvedQuery);
+      }
+      response.routing = routingResult.routing;
+      response.llm_error = routingResult.error;
+    } else {
+      // LLM path succeeded
+      response = routingResult;
     }
 
     // Store the message in conversation history
@@ -944,6 +971,48 @@ router.get('/health', (req, res) => {
     status: pythonProcess ? 'running' : 'stopped',
     pendingRequests: requestQueue.size
   });
+});
+
+/**
+ * GET /api/nl/conversations
+ * List all conversations (most recent first)
+ */
+router.get('/conversations', (req, res) => {
+  try {
+    const { limit = 20, session_id } = req.query;
+
+    let query = `
+      SELECT
+        c.id,
+        c.session_id,
+        c.created_at,
+        c.updated_at,
+        c.last_symbol,
+        c.last_intent,
+        c.message_count,
+        (SELECT content FROM nl_messages WHERE conversation_id = c.id AND role = 'user' ORDER BY timestamp ASC LIMIT 1) as first_query
+      FROM nl_conversations c
+    `;
+
+    const params = [];
+    if (session_id) {
+      query += ' WHERE c.session_id = ?';
+      params.push(session_id);
+    }
+
+    query += ' ORDER BY c.updated_at DESC LIMIT ?';
+    params.push(parseInt(limit));
+
+    const conversations = database.prepare(query).all(...params);
+
+    res.json({
+      conversations,
+      count: conversations.length
+    });
+  } catch (error) {
+    console.error('List conversations error:', error);
+    res.status(500).json({ error: 'Failed to list conversations' });
+  }
 });
 
 /**

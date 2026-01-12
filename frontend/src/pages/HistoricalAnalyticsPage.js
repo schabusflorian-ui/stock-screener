@@ -1,7 +1,7 @@
 // frontend/src/pages/HistoricalAnalyticsPage.js
 // Historical Analytics Dashboard - Factor performance, investor patterns, decision analytics
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { Link } from 'react-router-dom';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -9,10 +9,15 @@ import {
 } from 'recharts';
 import { historicalAPI, investorsAPI } from '../services/api';
 import { PageHeader } from '../components/ui';
+import { SkeletonTable } from '../components/Skeleton';
 import './HistoricalAnalyticsPage.css';
+
+// Lazy load MacroDashboard
+const MacroDashboard = lazy(() => import('../components/research/MacroDashboard'));
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: '📊' },
+  { id: 'macro', label: 'Macro', icon: '🌐' },
   { id: 'factors', label: 'Factor Analysis', icon: '📈' },
   { id: 'styles', label: 'Investment Styles', icon: '🎨' },
   { id: 'decisions', label: 'Decisions', icon: '🎯' },
@@ -853,6 +858,13 @@ export default function HistoricalAnalyticsPage() {
 
       {/* Tab Content */}
       {activeTab === 'overview' && renderOverviewTab()}
+      {activeTab === 'macro' && (
+        <div className="tab-content macro-tab">
+          <Suspense fallback={<SkeletonTable rows={6} />}>
+            <MacroDashboard />
+          </Suspense>
+        </div>
+      )}
       {activeTab === 'factors' && renderFactorsTab()}
       {activeTab === 'styles' && renderStylesTab()}
       {activeTab === 'decisions' && renderDecisionsTab()}

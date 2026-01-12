@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { Activity, TrendingUp, TrendingDown, RefreshCw, AlertTriangle } from 'lucide-react';
 import { sentimentAPI } from '../services/api';
 import './MarketSentimentCard.css';
@@ -19,16 +19,12 @@ const VIX_LABELS = {
   complacency: { color: '#10B981', label: 'Low Volatility' },
 };
 
-export function MarketSentimentCard({ onRefresh, compact = false }) {
+function MarketSentimentCardComponent({ onRefresh, compact = false }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async (refresh = false) => {
+  const loadData = useCallback(async (refresh = false) => {
     setLoading(true);
     setError(null);
     try {
@@ -40,12 +36,16 @@ export function MarketSentimentCard({ onRefresh, compact = false }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const handleRefresh = async () => {
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const handleRefresh = useCallback(async () => {
     await loadData(true);
     if (onRefresh) onRefresh();
-  };
+  }, [loadData, onRefresh]);
 
   if (loading && !data) {
     return (
@@ -74,11 +74,22 @@ export function MarketSentimentCard({ onRefresh, compact = false }) {
   const vix = data?.vix || {};
   const overall = data?.overall || {};
 
-  const fearGreedConfig = FEAR_GREED_LABELS[cnn.label] || FEAR_GREED_LABELS.neutral;
-  const vixConfig = VIX_LABELS[vix.label] || VIX_LABELS.neutral;
+  // Memoize config lookups and calculations to avoid recalculating on every render
+  const fearGreedConfig = useMemo(
+    () => FEAR_GREED_LABELS[cnn.label] || FEAR_GREED_LABELS.neutral,
+    [cnn.label]
+  );
+
+  const vixConfig = useMemo(
+    () => VIX_LABELS[vix.label] || VIX_LABELS.neutral,
+    [vix.label]
+  );
 
   // Calculate gauge angle (0-100 maps to -90 to 90 degrees)
-  const gaugeAngle = cnn.value != null ? (cnn.value / 100) * 180 - 90 : 0;
+  const gaugeAngle = useMemo(
+    () => cnn.value != null ? (cnn.value / 100) * 180 - 90 : 0,
+    [cnn.value]
+  );
 
   if (compact) {
     return (
@@ -281,5 +292,8 @@ export function MarketSentimentCard({ onRefresh, compact = false }) {
     </div>
   );
 }
+
+// Wrap with memo for performance - prevents re-renders when parent changes
+export const MarketSentimentCard = memo(MarketSentimentCardComponent);
 
 export default MarketSentimentCard;

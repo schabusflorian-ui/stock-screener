@@ -1,5 +1,5 @@
 // frontend/src/components/layout/Sidebar.js
-import { NavLink } from 'react-router-dom';
+import { PreloadNavLink } from '../../utils/routePreloader';
 import {
   Home,
   Search,
@@ -19,8 +19,8 @@ import {
   Bot,
   Command,
   BookOpen,
-  FlaskConical,
-  Brain
+  Brain,
+  BarChart3
 } from 'lucide-react';
 import './Sidebar.css';
 
@@ -28,7 +28,7 @@ import './Sidebar.css';
 const navItems = [
   { path: '/', icon: Home, label: 'Home', shortcut: 'G H' },
   { path: '/screening', icon: Search, label: 'Screen', shortcut: 'G S' },
-  { path: '/charts', icon: LineChart, label: 'Comparison', shortcut: 'G C' },
+  { path: '/compare', icon: LineChart, label: 'Compare', shortcut: 'G C' },
   { path: '/capital', icon: DollarSign, label: 'Capital', shortcut: 'G D' },
   { path: '/ipo', icon: TrendingUp, label: 'IPOs', shortcut: 'G I' },
   { path: '/sectors', icon: PieChart, label: 'Sectors', shortcut: 'G E' },
@@ -38,21 +38,21 @@ const navItems = [
 const portfolioItems = [
   { path: '/portfolios', icon: Wallet, label: 'Portfolios', shortcut: 'G P' },
   { path: '/investors', icon: Crown, label: 'Investors', shortcut: 'G R' },
+  { path: '/agents', icon: Brain, label: 'Trading Bots', shortcut: 'G X' },
 ];
 
-// RESEARCH - Signals and analytics
+// RESEARCH - Market intelligence and analytics
 const researchItems = [
-  // Market Signals: combines Trending + Insiders + Validation (unified page)
-  { path: '/signals', icon: MessageCircle, label: 'Signals', shortcut: 'G T' },
-  // Research Lab: combines Analytics + Backtesting
-  { path: '/research', icon: FlaskConical, label: 'Research Lab', shortcut: 'G Y' },
+  // Market Intelligence: combines Sentiment + Insiders + Validation (unified page)
+  { path: '/signals', icon: MessageCircle, label: 'Market Intelligence', shortcut: 'G T' },
+  // Factor Analysis: historical factor performance
+  { path: '/research', icon: BarChart3, label: 'Factors', shortcut: 'G F' },
   { path: '/notes', icon: BookOpen, label: 'Notes', shortcut: 'G O' },
+  { path: '/analyst', icon: Bot, label: 'Ask AI', shortcut: 'G A' },
 ];
 
-// TOOLS - AI and alerts
+// TOOLS - Alerts and monitoring
 const secondaryItems = [
-  { path: '/analyst', icon: Bot, label: 'AI Analyst', shortcut: 'G A' },
-  { path: '/agents', icon: Brain, label: 'Agents', shortcut: 'G X' },
   { path: '/alerts', icon: Bell, label: 'Alerts', shortcut: 'G L' },
   { path: '/watchlist', icon: Star, label: 'Watchlist', shortcut: 'G W' },
 ];
@@ -96,7 +96,7 @@ function Sidebar({ collapsed, onToggle, onOpenSearch }) {
       <nav className="sidebar-nav">
         <div className="nav-section">
           {navItems.map(item => (
-            <NavLink
+            <PreloadNavLink
               key={item.path}
               to={item.path}
               className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
@@ -109,7 +109,7 @@ function Sidebar({ collapsed, onToggle, onOpenSearch }) {
                   <span className="nav-shortcut">{item.shortcut}</span>
                 </>
               )}
-            </NavLink>
+            </PreloadNavLink>
           ))}
         </div>
 
@@ -118,7 +118,7 @@ function Sidebar({ collapsed, onToggle, onOpenSearch }) {
         <div className="nav-section">
           <div className="nav-section-label">Portfolio</div>
           {portfolioItems.map(item => (
-            <NavLink
+            <PreloadNavLink
               key={item.path}
               to={item.path}
               className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
@@ -131,7 +131,7 @@ function Sidebar({ collapsed, onToggle, onOpenSearch }) {
                   <span className="nav-shortcut">{item.shortcut}</span>
                 </>
               )}
-            </NavLink>
+            </PreloadNavLink>
           ))}
         </div>
 
@@ -140,7 +140,7 @@ function Sidebar({ collapsed, onToggle, onOpenSearch }) {
         <div className="nav-section">
           <div className="nav-section-label">Research</div>
           {researchItems.map(item => (
-            <NavLink
+            <PreloadNavLink
               key={item.path}
               to={item.path}
               className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
@@ -153,15 +153,16 @@ function Sidebar({ collapsed, onToggle, onOpenSearch }) {
                   <span className="nav-shortcut">{item.shortcut}</span>
                 </>
               )}
-            </NavLink>
+            </PreloadNavLink>
           ))}
         </div>
 
         <div className="nav-divider" />
 
         <div className="nav-section">
+          <div className="nav-section-label">Tools</div>
           {secondaryItems.map(item => (
-            <NavLink
+            <PreloadNavLink
               key={item.path}
               to={item.path}
               className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
@@ -174,14 +175,14 @@ function Sidebar({ collapsed, onToggle, onOpenSearch }) {
                   <span className="nav-shortcut">{item.shortcut}</span>
                 </>
               )}
-            </NavLink>
+            </PreloadNavLink>
           ))}
         </div>
       </nav>
 
       <div className="sidebar-footer">
         {bottomItems.map(item => (
-          <NavLink
+          <PreloadNavLink
             key={item.path}
             to={item.path}
             className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
@@ -194,7 +195,7 @@ function Sidebar({ collapsed, onToggle, onOpenSearch }) {
                 <span className="nav-shortcut">{item.shortcut}</span>
               </>
             )}
-          </NavLink>
+          </PreloadNavLink>
         ))}
       </div>
     </aside>

@@ -2,6 +2,7 @@
 // Main IPO tracking service - discovers, tracks, and manages IPO pipeline
 
 const SECFilingFetcher = require('./secFilingFetcher');
+const { EUIpoFetcher } = require('./ipoTracker/euIpoFetcher');
 
 /**
  * IPO lifecycle stages
@@ -61,11 +62,21 @@ const IPO_FORM_TYPES = {
   WITHDRAWN: ['RW', 'RW WD']
 };
 
+/**
+ * Region codes for IPO tracking
+ */
+const IPO_REGIONS = {
+  US: { name: 'United States', regulator: 'SEC', identifier: 'cik' },
+  EU: { name: 'European Union', regulator: 'ESMA', identifier: 'lei' },
+  UK: { name: 'United Kingdom', regulator: 'FCA', identifier: 'lei' },
+};
+
 class IPOTracker {
   constructor(database, userAgent = 'Stock Analyzer contact@example.com') {
     this.db = database;
     this.userAgent = userAgent;
     this.secFetcher = new SECFilingFetcher(userAgent);
+    this.euFetcher = new EUIpoFetcher(database);
   }
 
   // ============================================
@@ -659,6 +670,244 @@ class IPOTracker {
   }
 
   // ============================================
+  // EU/UK IPO METHODS
+  // ============================================
+
+  /**
+   * Check for new EU/UK prospectus filings
+   * Calls Python scripts via euIpoFetcher
+   */
+  async checkForEUFilings(options = {}) {
+    const { days = 30 } = options;
+
+    console.log('\n========================================');
+    console.log('Starting EU/UK IPO prospectus check...');
+    console.log('========================================\n');
+
+    try {
+      const result = await this.euFetcher.checkForNewProspectuses({ days });
+
+      return {
+        newIPOs: result.processResult.created,
+        updates: result.fetchResult.totalCount,
+        skipped: result.processResult.skipped,
+        errors: result.processResult.errors,
+        duration: result.duration,
+        sources: result.fetchResult.sources,
+      };
+    } catch (error) {
+      console.error('EU/UK IPO check failed:', error.message);
+      this.logCheck('eu_uk_scan', 0, 0, error.message, 0);
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch EU prospectuses only (ESMA)
+   */
+  async checkForESMAFilings(options = {}) {
+    const { days = 30, country = null, ipoOnly = true } = options;
+
+    console.log(`\nFetching ESMA prospectuses (${days} days)...`);
+
+    const result = await this.euFetcher.fetchESMA({ days, country, ipoOnly });
+
+    // Process results
+    let created = 0;
+    let skipped = 0;
+
+    for (const prospectus of result.prospectuses) {
+      if (this.euFetcher.prospectusExists(prospectus)) {
+        skipped++;
+        continue;
+      }
+
+      try {
+        this.euFetcher.createIPOFromProspectus(prospectus);
+        created++;
+      } catch (error) {
+        console.error(`Error creating IPO for ${prospectus.entity_name}: ${error.message}`);
+      }
+    }
+
+    return {
+      source: 'ESMA',
+      region: 'EU',
+      fetched: result.count,
+      created,
+      skipped,
+      error: result.error,
+    };
+  }
+
+  /**
+   * Fetch UK prospectuses only (FCA NSM)
+   */
+  async checkForFCAFilings(options = {}) {
+    const { days = 30, ipoOnly = true } = options;
+
+    console.log(`\nFetching FCA NSM prospectuses (${days} days)...`);
+
+    const result = await this.euFetcher.fetchFCA({ days, ipoOnly });
+
+    // Process results
+    let created = 0;
+    let skipped = 0;
+
+    for (const prospectus of result.prospectuses) {
+      if (this.euFetcher.prospectusExists(prospectus)) {
+        skipped++;
+        continue;
+      }
+
+      try {
+        this.euFetcher.createIPOFromProspectus(prospectus);
+        created++;
+      } catch (error) {
+        console.error(`Error creating IPO for ${prospectus.entity_name}: ${error.message}`);
+      }
+    }
+
+    return {
+      source: 'FCA',
+      region: 'UK',
+      fetched: result.count,
+      created,
+      skipped,
+      error: result.error,
+    };
+  }
+
+  /**
+   * Get IPO by LEI (Legal Entity Identifier)
+   * Used for EU/UK companies
+   */
+  getIPOByLEI(lei) {
+    if (!lei) return null;
+    return this.db.prepare(`
+      SELECT * FROM ipo_tracker
+      WHERE lei = ? AND region IN ('EU', 'UK')
+    `).get(lei);
+  }
+
+  /**
+   * Get IPO by ISIN
+   */
+  getIPOByISIN(isin) {
+    if (!isin) return null;
+    return this.db.prepare(`
+      SELECT * FROM ipo_tracker WHERE isin = ?
+    `).get(isin);
+  }
+
+  /**
+   * Get IPO by prospectus ID
+   */
+  getIPOByProspectusId(prospectusId) {
+    if (!prospectusId) return null;
+    return this.db.prepare(`
+      SELECT * FROM ipo_tracker WHERE prospectus_id = ?
+    `).get(prospectusId);
+  }
+
+  /**
+   * Create EU/UK IPO record from prospectus data
+   */
+  createEUIPO(data) {
+    const stmt = this.db.prepare(`
+      INSERT INTO ipo_tracker (
+        company_name, lei, isin, region, regulator,
+        prospectus_id, prospectus_url, home_member_state,
+        approval_date, initial_s1_date, status, is_active,
+        listing_venue, sector, industry
+      ) VALUES (
+        @company_name, @lei, @isin, @region, @regulator,
+        @prospectus_id, @prospectus_url, @home_member_state,
+        @approval_date, @initial_s1_date, @status, @is_active,
+        @listing_venue, @sector, @industry
+      )
+    `);
+
+    const result = stmt.run({
+      company_name: data.company_name,
+      lei: data.lei || null,
+      isin: data.isin || null,
+      region: data.region || 'EU',
+      regulator: data.regulator || (data.region === 'UK' ? 'FCA' : 'ESMA'),
+      prospectus_id: data.prospectus_id || null,
+      prospectus_url: data.prospectus_url || null,
+      home_member_state: data.home_member_state || null,
+      approval_date: data.approval_date || null,
+      initial_s1_date: data.approval_date || new Date().toISOString().split('T')[0],
+      status: data.status || 'EFFECTIVE',
+      is_active: data.is_active !== undefined ? data.is_active : 1,
+      listing_venue: data.listing_venue || null,
+      sector: data.sector || null,
+      industry: data.industry || null,
+    });
+
+    return this.getIPO(result.lastInsertRowid);
+  }
+
+  /**
+   * Update EU/UK IPO with resolved identifiers
+   * Called after LEI resolution finds ticker/exchange
+   */
+  updateEUIPOIdentifiers(ipoId, identifiers) {
+    const updates = {};
+
+    if (identifiers.ticker) {
+      updates.ticker_proposed = identifiers.ticker;
+    }
+    if (identifiers.exchange) {
+      updates.exchange_proposed = identifiers.exchange;
+    }
+    if (identifiers.isin && !this.getIPO(ipoId)?.isin) {
+      updates.isin = identifiers.isin;
+    }
+    if (identifiers.company_id) {
+      updates.company_id = identifiers.company_id;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      updates.updated_at = new Date().toISOString();
+      this.updateIPO(ipoId, updates);
+      console.log(`  Updated EU/UK IPO ${ipoId}: ${Object.keys(updates).join(', ')}`);
+    }
+
+    return this.getIPO(ipoId);
+  }
+
+  /**
+   * Link EU/UK IPO to existing company via LEI
+   * Uses company_identifiers table if available
+   */
+  async linkEUIPOToCompany(ipoId) {
+    const ipo = this.getIPO(ipoId);
+    if (!ipo || !ipo.lei) return null;
+
+    // Check if company already linked
+    if (ipo.company_id) return ipo.company_id;
+
+    // Look up company by LEI in company_identifiers
+    const identifier = this.db.prepare(`
+      SELECT company_id FROM company_identifiers
+      WHERE identifier_type = 'lei' AND identifier_value = ?
+    `).get(ipo.lei);
+
+    if (identifier?.company_id) {
+      this.updateIPO(ipoId, {
+        company_id: identifier.company_id,
+        updated_at: new Date().toISOString(),
+      });
+      console.log(`  Linked IPO ${ipoId} to company ${identifier.company_id} via LEI`);
+      return identifier.company_id;
+    }
+
+    return null;
+  }
+
+  // ============================================
   // DATABASE CRUD OPERATIONS
   // ============================================
 
@@ -801,9 +1050,16 @@ class IPOTracker {
 
   /**
    * Get IPO pipeline (all active IPOs)
+   * @param {Object} options - Query options
+   * @param {string} options.region - Filter by region: 'US', 'EU', 'UK', or 'all' (default: 'all')
+   * @param {string} options.status - Filter by status
+   * @param {string} options.sector - Filter by sector
+   * @param {string} options.sortBy - Column to sort by
+   * @param {string} options.sortOrder - 'ASC' or 'DESC'
+   * @param {number} options.limit - Max results
    */
   getPipeline(options = {}) {
-    const { status, sector, sortBy = 'initial_s1_date', sortOrder = 'DESC', limit } = options;
+    const { region = 'all', status, sector, sortBy = 'initial_s1_date', sortOrder = 'DESC', limit } = options;
 
     let sql = `
       SELECT * FROM ipo_tracker
@@ -811,6 +1067,12 @@ class IPOTracker {
     `;
 
     const params = [];
+
+    // Region filter
+    if (region && region !== 'all') {
+      sql += ` AND region = ?`;
+      params.push(region.toUpperCase());
+    }
 
     if (status) {
       sql += ` AND status = ?`;
@@ -826,7 +1088,7 @@ class IPOTracker {
     const allowedSortColumns = [
       'initial_s1_date', 'latest_amendment_date', 'effective_date',
       'pricing_date', 'trading_date', 'deal_size', 'company_name',
-      'price_range_high', 'amendment_count', 'created_at'
+      'price_range_high', 'amendment_count', 'created_at', 'approval_date', 'region'
     ];
 
     const safeSortBy = allowedSortColumns.includes(sortBy) ? sortBy : 'initial_s1_date';
@@ -845,15 +1107,24 @@ class IPOTracker {
   /**
    * Get IPOs grouped by stage
    */
-  getByStage() {
+  getByStage(region = 'all') {
     const stages = {};
 
     for (const status of Object.keys(IPO_STAGES)) {
-      stages[status] = this.db.prepare(`
+      let query = `
         SELECT * FROM ipo_tracker
         WHERE status = ? AND is_active = 1
-        ORDER BY initial_s1_date DESC
-      `).all(status);
+      `;
+      const params = [status];
+
+      if (region && region !== 'all') {
+        query += ' AND region = ?';
+        params.push(region);
+      }
+
+      query += ' ORDER BY COALESCE(initial_s1_date, approval_date) DESC';
+
+      stages[status] = this.db.prepare(query).all(...params);
     }
 
     return stages;
@@ -941,8 +1212,20 @@ class IPOTracker {
 
   /**
    * Get pipeline statistics
+   * @param {Object} options - Options
+   * @param {string} options.region - Filter by region: 'US', 'EU', 'UK', or 'all'
    */
-  getStatistics() {
+  getStatistics(options = {}) {
+    const { region = 'all' } = options;
+
+    // Build WHERE clause for region
+    let regionWhere = '';
+    const regionParams = [];
+    if (region && region !== 'all') {
+      regionWhere = ' AND region = ?';
+      regionParams.push(region.toUpperCase());
+    }
+
     const stats = this.db.prepare(`
       SELECT
         COUNT(*) as total_active,
@@ -954,29 +1237,40 @@ class IPOTracker {
         AVG(deal_size) as avg_deal_size,
         SUM(deal_size) as total_deal_size
       FROM ipo_tracker
-      WHERE is_active = 1
-    `).get();
+      WHERE is_active = 1${regionWhere}
+    `).get(...regionParams);
 
     const recentCompleted = this.db.prepare(`
       SELECT COUNT(*) as count
       FROM ipo_tracker
       WHERE status = 'TRADING'
-        AND trading_date > date('now', '-30 days')
-    `).get();
+        AND trading_date > date('now', '-30 days')${regionWhere}
+    `).get(...regionParams);
 
     const withdrawn = this.db.prepare(`
       SELECT COUNT(*) as count
       FROM ipo_tracker
       WHERE status = 'WITHDRAWN'
-        AND withdrawn_date > date('now', '-90 days')
-    `).get();
+        AND withdrawn_date > date('now', '-90 days')${regionWhere}
+    `).get(...regionParams);
 
     const bySector = this.db.prepare(`
       SELECT sector, COUNT(*) as count
       FROM ipo_tracker
-      WHERE is_active = 1 AND sector IS NOT NULL
+      WHERE is_active = 1 AND sector IS NOT NULL${regionWhere}
       GROUP BY sector
       ORDER BY count DESC
+    `).all(...regionParams);
+
+    // Get region breakdown
+    const byRegion = this.db.prepare(`
+      SELECT
+        COALESCE(region, 'US') as region,
+        COUNT(*) as total,
+        SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) as active
+      FROM ipo_tracker
+      GROUP BY region
+      ORDER BY total DESC
     `).all();
 
     const lastCheck = this.db.prepare(`
@@ -985,12 +1279,21 @@ class IPOTracker {
       LIMIT 1
     `).get();
 
+    // Get last check by region
+    const lastCheckByRegion = this.db.prepare(`
+      SELECT region, MAX(checked_at) as last_checked
+      FROM ipo_check_log
+      GROUP BY region
+    `).all();
+
     return {
       ...stats,
       completed_last_30_days: recentCompleted.count,
       withdrawn_last_90_days: withdrawn.count,
       by_sector: bySector,
-      last_check: lastCheck
+      by_region: byRegion,
+      last_check: lastCheck,
+      last_check_by_region: lastCheckByRegion,
     };
   }
 
@@ -1101,4 +1404,4 @@ class IPOTracker {
   }
 }
 
-module.exports = { IPOTracker, IPO_STAGES, IPO_FORM_TYPES };
+module.exports = { IPOTracker, IPO_STAGES, IPO_FORM_TYPES, IPO_REGIONS };

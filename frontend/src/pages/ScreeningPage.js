@@ -204,6 +204,10 @@ function ScreeningPage() {
   const [tableSortColumn, setTableSortColumn] = useState('roic');
   const [tableSortDirection, setTableSortDirection] = useState('desc');
 
+  // Pagination state - render only visible rows for performance
+  const [currentPage, setCurrentPage] = useState(1);
+  const ROWS_PER_PAGE = 50;
+
   // Column visibility state - load from localStorage or use defaults
   const [visibleColumns, setVisibleColumns] = useState(() => {
     const saved = localStorage.getItem(COLUMN_PREFS_KEY);
@@ -221,8 +225,8 @@ function ScreeningPage() {
     localStorage.setItem(COLUMN_PREFS_KEY, JSON.stringify(visibleColumns));
   }, [visibleColumns]);
 
-  // Toggle column visibility
-  const toggleColumn = (columnKey) => {
+  // Toggle column visibility - memoized to prevent re-renders
+  const toggleColumn = useCallback((columnKey) => {
     const column = ALL_COLUMNS.find(c => c.key === columnKey);
     if (column?.alwaysVisible) return; // Can't hide always-visible columns
 
@@ -231,15 +235,15 @@ function ScreeningPage() {
         ? prev.filter(k => k !== columnKey)
         : [...prev, columnKey]
     );
-  };
+  }, []);
 
   // Get visible column definitions in order
   const visibleColumnDefs = useMemo(() => {
     return ALL_COLUMNS.filter(col => visibleColumns.includes(col.key));
   }, [visibleColumns]);
 
-  // Update column filter
-  const updateColumnFilter = (columnKey, value) => {
+  // Update column filter - memoized
+  const updateColumnFilter = useCallback((columnKey, value) => {
     setColumnFilters(prev => {
       if (!value || value === '') {
         const { [columnKey]: _, ...rest } = prev;
@@ -247,18 +251,20 @@ function ScreeningPage() {
       }
       return { ...prev, [columnKey]: value };
     });
-  };
+    setCurrentPage(1); // Reset to first page when filtering
+  }, []);
 
-  // Clear all filters
-  const clearAllFilters = () => {
+  // Clear all filters - memoized
+  const clearAllFilters = useCallback(() => {
     setColumnFilters({});
-  };
+    setCurrentPage(1);
+  }, []);
 
   // Check if any filters are active
   const hasActiveFilters = Object.keys(columnFilters).length > 0;
 
-  // Handle table header click for sorting
-  const handleTableSort = (column) => {
+  // Handle table header click for sorting - memoized
+  const handleTableSort = useCallback((column) => {
     if (tableSortColumn === column) {
       // Toggle direction if same column
       setTableSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
@@ -267,7 +273,8 @@ function ScreeningPage() {
       setTableSortColumn(column);
       setTableSortDirection(['symbol', 'name', 'sector', 'industry'].includes(column) ? 'asc' : 'desc');
     }
-  };
+    setCurrentPage(1); // Reset to first page when sorting
+  }, [tableSortColumn]);
 
   // Filter and sort results client-side
   const filteredAndSortedResults = useMemo(() => {
@@ -331,6 +338,14 @@ function ScreeningPage() {
       return tableSortDirection === 'asc' ? comparison : -comparison;
     });
   }, [results, tableSortColumn, tableSortDirection, columnFilters, hasActiveFilters]);
+
+  // Pagination: get only the rows for the current page
+  const paginatedResults = useMemo(() => {
+    const startIndex = (currentPage - 1) * ROWS_PER_PAGE;
+    return filteredAndSortedResults.slice(startIndex, startIndex + ROWS_PER_PAGE);
+  }, [filteredAndSortedResults, currentPage, ROWS_PER_PAGE]);
+
+  const totalPages = Math.ceil(filteredAndSortedResults.length / ROWS_PER_PAGE);
 
   // Helper to get cell class based on value and column color coding
   const getCellClass = (value, column) => {
@@ -1061,7 +1076,7 @@ function ScreeningPage() {
                 )}
               </thead>
               <tbody>
-                {filteredAndSortedResults.map(stock => {
+                {paginatedResults.map(stock => {
                   const isSelected = selectedForChart.some(s => s.symbol === stock.symbol);
                   return (
                     <tr key={stock.symbol} className={isSelected ? 'selected-row' : ''}>
@@ -1131,6 +1146,43 @@ function ScreeningPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination controls */}
+          {totalPages > 1 && (
+            <div className="pagination-controls">
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                className="pagination-btn"
+              >
+                First
+              </button>
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="pagination-btn"
+              >
+                Previous
+              </button>
+              <span className="pagination-info">
+                Page {currentPage} of {totalPages} ({filteredAndSortedResults.length} results)
+              </span>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="pagination-btn"
+              >
+                Next
+              </button>
+              <button
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages}
+                className="pagination-btn"
+              >
+                Last
+              </button>
+            </div>
+          )}
         </div>
       )}
 

@@ -37,11 +37,24 @@
   justify-content: space-between;
 }
 
+.factor-performance__title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .factor-performance__title {
   margin: 0;
   font-size: 1.1rem;
   font-weight: 600;
   color: var(--text-primary);
+}
+
+.factor-performance__subtitle {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-weight: 400;
 }
 
 .factor-performance__period-select {

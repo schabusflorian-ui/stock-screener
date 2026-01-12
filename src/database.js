@@ -497,6 +497,7 @@ db.exec(`
 
     sources_used INTEGER,
     agreement_score REAL,
+    region TEXT DEFAULT 'US',
 
     calculated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     calculated_date TEXT GENERATED ALWAYS AS (date(calculated_at)) STORED,
@@ -509,6 +510,7 @@ db.exec(`
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_combined_company ON combined_sentiment(company_id);
   CREATE INDEX IF NOT EXISTS idx_combined_date ON combined_sentiment(calculated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_combined_region ON combined_sentiment(region);
 `);
 
 // ============================================

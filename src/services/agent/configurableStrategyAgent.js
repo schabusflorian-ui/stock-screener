@@ -4,6 +4,8 @@
 
 const { StrategyConfigManager } = require('./strategyConfig');
 const { EnhancedQuantSystem } = require('../quant/enhancedQuantSystem');
+const { InsiderTradingSignals } = require('../signals/insiderTradingSignals');
+const { CongressionalTradingSignals } = require('../signals/congressionalTradingSignals');
 
 /**
  * ConfigurableStrategyAgent - Executes a user-defined trading strategy
@@ -31,6 +33,12 @@ class ConfigurableStrategyAgent {
 
     // Initialize quant system (used selectively based on config)
     this.quantSystem = new EnhancedQuantSystem(db);
+
+    // Initialize insider trading signals
+    this.insiderSignals = new InsiderTradingSignals(db);
+
+    // Initialize congressional trading signals
+    this.congressionalSignals = new CongressionalTradingSignals(db);
 
     // Prepare statements
     this._prepareStatements();
@@ -107,28 +115,28 @@ class ConfigurableStrategyAgent {
 
     this.stmtGetMetrics = this.db.prepare(`
       SELECT * FROM calculated_metrics
-      WHERE company_id = ?
+      WHERE company_id = ? AND fiscal_period <= ?
       ORDER BY fiscal_period DESC
       LIMIT 1
     `);
 
     this.stmtGetSentiment = this.db.prepare(`
       SELECT * FROM combined_sentiment
-      WHERE company_id = ?
+      WHERE company_id = ? AND calculated_at <= ?
       ORDER BY calculated_at DESC
       LIMIT 1
     `);
 
     this.stmtGetFactorScores = this.db.prepare(`
       SELECT * FROM stock_factor_scores
-      WHERE company_id = ?
+      WHERE company_id = ? AND score_date <= ?
       ORDER BY score_date DESC
       LIMIT 1
     `);
 
     this.stmtGetIntrinsic = this.db.prepare(`
       SELECT * FROM intrinsic_value_estimates
-      WHERE company_id = ?
+      WHERE company_id = ? AND created_at <= ?
       ORDER BY created_at DESC
       LIMIT 1
     `);
@@ -285,6 +293,26 @@ class ConfigurableStrategyAgent {
       }
     }
 
+    // Insider trading score
+    if (weights.insider > 0) {
+      const insiderScore = this._calculateInsiderScore(stock.id);
+      if (insiderScore !== null) {
+        scores.insider = insiderScore;
+        weightedScore += insiderScore * weights.insider;
+        totalWeight += weights.insider;
+      }
+    }
+
+    // Congressional trading score
+    if (weights.congressional > 0) {
+      const congressionalScore = this._calculateCongressionalScore(stock.id);
+      if (congressionalScore !== null) {
+        scores.congressional = congressionalScore;
+        weightedScore += congressionalScore * weights.congressional;
+        totalWeight += weights.congressional;
+      }
+    }
+
     if (totalWeight === 0) return null;
 
     // Normalize score
@@ -313,7 +341,7 @@ class ConfigurableStrategyAgent {
     }
 
     // Calculate confidence
-    const dataCompleteness = Object.keys(scores).length / 6; // How many signals available
+    const dataCompleteness = Object.keys(scores).length / 8; // How many signals available (now 8 with insider + congressional)
     const signalStrength = Math.abs(adjustedScore);
     const confidence = 0.4 + (dataCompleteness * 0.3) + (signalStrength * 0.3);
 
@@ -511,7 +539,7 @@ class ConfigurableStrategyAgent {
   }
 
   _calculateFundamentalScore(companyId) {
-    const metrics = this.stmtGetMetrics.get(companyId);
+    const metrics = this.stmtGetMetrics.get(companyId, this._getEffectiveDate());
     if (!metrics) return null;
 
     let score = 0;
@@ -543,7 +571,7 @@ class ConfigurableStrategyAgent {
   }
 
   _calculateSentimentScore(companyId) {
-    const sentiment = this.stmtGetSentiment.get(companyId);
+    const sentiment = this.stmtGetSentiment.get(companyId, this._getEffectiveDate());
     if (!sentiment) return null;
 
     // Combined score is typically 0-100
@@ -597,8 +625,9 @@ class ConfigurableStrategyAgent {
   }
 
   _calculateValueScore(companyId, currentPrice) {
-    const metrics = this.stmtGetMetrics.get(companyId);
-    const intrinsic = this.stmtGetIntrinsic.get(companyId);
+    const effectiveDate = this._getEffectiveDate();
+    const metrics = this.stmtGetMetrics.get(companyId, effectiveDate);
+    const intrinsic = this.stmtGetIntrinsic.get(companyId, effectiveDate);
 
     if (!metrics && !intrinsic) return null;
 
@@ -658,6 +687,81 @@ class ConfigurableStrategyAgent {
       else if (moatScore.threatLevel === 'low') score += 0.1;
 
       return Math.max(-1, Math.min(1, score));
+    } catch (e) {
+      return null;
+    }
+  }
+
+  _calculateInsiderScore(companyId) {
+    try {
+      // Get insider trading signal as of effective date
+      const signal = this.insiderSignals.generateSignal(companyId, this._getEffectiveDate());
+      if (!signal) return null;
+
+      // Insider signal already provides score 0-1, convert to -1 to 1 range
+      // Score is already weighted by signal strength (weak/moderate/strong/very strong)
+      // Map to our scoring range:
+      // - 0.0-0.3 (weak) → 0.2
+      // - 0.3-0.5 (moderate) → 0.4
+      // - 0.5-0.7 (strong) → 0.7
+      // - 0.7+ (very strong) → 0.9
+      let score = 0;
+      if (signal.score >= 0.7) {
+        score = 0.9;
+      } else if (signal.score >= 0.5) {
+        score = 0.7;
+      } else if (signal.score >= 0.3) {
+        score = 0.4;
+      } else {
+        score = 0.2;
+      }
+
+      // Additional boost for clusters (3+ insiders)
+      if (signal.metrics.isCluster) {
+        score = Math.min(1.0, score * 1.15);
+      }
+
+      return score;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  _calculateCongressionalScore(companyId) {
+    try {
+      // Get congressional trading signal as of effective date
+      const signal = this.congressionalSignals.generateSignal(companyId, this._getEffectiveDate());
+      if (!signal) return null;
+
+      // Congressional signal provides score 0-1, convert to our scoring range
+      // Research shows congressional trades outperform by 6-10% annually
+      // Map to our scoring range with boost for strong signals:
+      // - 0.0-0.3 (weak) → 0.3
+      // - 0.3-0.5 (moderate) → 0.5
+      // - 0.5-0.7 (strong) → 0.8
+      // - 0.7+ (very strong) → 1.0
+      let score = 0;
+      if (signal.score >= 0.7) {
+        score = 1.0; // Very strong congressional consensus
+      } else if (signal.score >= 0.5) {
+        score = 0.8;
+      } else if (signal.score >= 0.3) {
+        score = 0.5;
+      } else {
+        score = 0.3;
+      }
+
+      // Additional boost for bipartisan support (reduces political risk)
+      if (signal.metrics.isBipartisan) {
+        score = Math.min(1.0, score * 1.1);
+      }
+
+      // Additional boost for Senate purchases (historically higher alpha)
+      if (signal.metrics.senatePurchases > 0) {
+        score = Math.min(1.0, score * 1.05);
+      }
+
+      return score;
     } catch (e) {
       return null;
     }

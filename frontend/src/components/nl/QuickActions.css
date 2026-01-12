@@ -1,0 +1,56 @@
+/* QuickActions.css - Styles for contextual action buttons */
+
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color, #2d2d44);
+}
+
+.quick-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.75rem;
+  background: var(--bg-tertiary, #252540);
+  border: 1px solid var(--border-color, #2d2d44);
+  border-radius: 16px;
+  font-size: 0.8rem;
+  color: var(--text-secondary, #aaa);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.quick-action-btn:hover {
+  background: var(--primary, #6366f1);
+  border-color: var(--primary, #6366f1);
+  color: white;
+  transform: translateY(-1px);
+}
+
+.quick-action-btn:active {
+  transform: translateY(0);
+}
+
+.quick-action-btn svg {
+  opacity: 0.8;
+}
+
+.quick-action-btn:hover svg {
+  opacity: 1;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .quick-actions {
+    gap: 0.35rem;
+  }
+
+  .quick-action-btn {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.75rem;
+  }
+}

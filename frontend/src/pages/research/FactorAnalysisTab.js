@@ -9,12 +9,42 @@ import { historicalAPI } from '../../services/api';
 import './FactorAnalysisTab.css';
 
 const FACTORS = [
-  { id: 'value', label: 'Value', description: 'P/E, P/B ratios' },
-  { id: 'quality', label: 'Quality', description: 'ROE, margins, stability' },
-  { id: 'momentum', label: 'Momentum', description: 'Price momentum' },
-  { id: 'growth', label: 'Growth', description: 'Revenue/earnings growth' },
-  { id: 'size', label: 'Size', description: 'Market capitalization' },
-  { id: 'volatility', label: 'Volatility', description: 'Price volatility' }
+  {
+    id: 'value',
+    label: 'Value',
+    description: 'P/E, P/B ratios',
+    tooltip: 'Measures how "cheap" a stock is relative to fundamentals. High value = low P/E, high book/market. Value stocks historically outperform growth over long periods.'
+  },
+  {
+    id: 'quality',
+    label: 'Quality',
+    description: 'ROE, margins, stability',
+    tooltip: 'Measures company profitability and stability. High quality = high ROE, stable earnings, strong margins. Quality factor provides downside protection.'
+  },
+  {
+    id: 'momentum',
+    label: 'Momentum',
+    description: 'Price momentum',
+    tooltip: 'Measures recent price performance (6-12 months). High momentum = recent winners. Momentum captures the tendency for winners to keep winning short-term.'
+  },
+  {
+    id: 'growth',
+    label: 'Growth',
+    description: 'Revenue/earnings growth',
+    tooltip: 'Measures company growth rates in revenue and earnings. High growth = rapidly expanding businesses, often at premium valuations.'
+  },
+  {
+    id: 'size',
+    label: 'Size',
+    description: 'Market capitalization',
+    tooltip: 'Measures company size by market cap. Small caps historically outperform large caps (size premium) but with higher volatility and liquidity risk.'
+  },
+  {
+    id: 'volatility',
+    label: 'Volatility',
+    description: 'Price volatility',
+    tooltip: 'Measures stock price variability. Low volatility stocks historically provide better risk-adjusted returns (low-vol anomaly). High vol = more risk, not always more return.'
+  }
 ];
 
 const FACTOR_COLORS = {
@@ -95,18 +125,24 @@ export default function FactorAnalysisTab() {
       <div className="factor-controls">
         <div className="factor-toggles">
           {FACTORS.map(factor => (
-            <button
-              key={factor.id}
-              className={`factor-toggle ${selectedFactor === factor.id ? 'active' : ''}`}
-              onClick={() => setSelectedFactor(factor.id)}
-              title={factor.description}
-              style={{
-                borderColor: selectedFactor === factor.id ? FACTOR_COLORS[factor.id] : 'transparent',
-                color: selectedFactor === factor.id ? FACTOR_COLORS[factor.id] : 'inherit'
-              }}
-            >
-              {factor.label}
-            </button>
+            <div key={factor.id} className="factor-toggle-wrapper">
+              <button
+                className={`factor-toggle ${selectedFactor === factor.id ? 'active' : ''}`}
+                onClick={() => setSelectedFactor(factor.id)}
+                style={{
+                  borderColor: selectedFactor === factor.id ? FACTOR_COLORS[factor.id] : 'transparent',
+                  color: selectedFactor === factor.id ? FACTOR_COLORS[factor.id] : 'inherit'
+                }}
+              >
+                {factor.label}
+                <Info size={12} className="factor-toggle-info" />
+              </button>
+              <div className="factor-toggle-tooltip">
+                <strong>{factor.label}</strong>
+                <em>{factor.description}</em>
+                <span>{factor.tooltip}</span>
+              </div>
+            </div>
           ))}
         </div>
         <div className="period-selector">

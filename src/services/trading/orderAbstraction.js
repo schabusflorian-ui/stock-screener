@@ -163,8 +163,7 @@ class PaperTradingAdapter extends BrokerAdapter {
 
   async cancelOrder(orderId) {
     if (!this.connected) throw new Error('Not connected');
-    // Paper trading doesn't support order cancellation in current implementation
-    return { success: false, message: 'Order cancellation not implemented for paper trading' };
+    return this.engine.cancelOrder(this.accountId, orderId);
   }
 
   async getOrderStatus(orderId) {

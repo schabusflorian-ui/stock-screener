@@ -24,7 +24,7 @@ import {
   X,
   BookOpen
 } from 'lucide-react';
-import { companyAPI, trendsAPI, insidersAPI, sentimentAPI, capitalAPI, pricesAPI, dividendsAPI, indicesAPI, investorsAPI, analystAPI, aiRatingsAPI } from '../services/api';
+import { companyAPI, trendsAPI, insidersAPI, sentimentAPI, capitalAPI, pricesAPI, dividendsAPI, indicesAPI, investorsAPI, analystAPI, aiRatingsAPI, congressionalAPI } from '../services/api';
 import {
   PeriodToggle,
   MetricSelector,
@@ -156,6 +156,8 @@ function CompanyPage() {
   const [metrics, setMetrics] = useState([]);
   const [trends, setTrends] = useState(null);
   const [insiderData, setInsiderData] = useState(null);
+  const [congressionalData, setCongressionalData] = useState(null);
+  const [congressionalLoading, setCongressionalLoading] = useState(false);
   const [sentimentData, setSentimentData] = useState(null);
   const [sentimentLoading, setSentimentLoading] = useState(false);
   const [capitalData, setCapitalData] = useState(null);
@@ -240,6 +242,17 @@ function CompanyPage() {
           setInsiderData(insiderRes.data);
         } catch (e) {
           console.log('No insider data available');
+        }
+
+        // Load congressional trading data separately (non-blocking)
+        try {
+          setCongressionalLoading(true);
+          const congressionalRes = await congressionalAPI.getCompanyTrades(symbol, 180);
+          setCongressionalData(congressionalRes.data);
+        } catch (e) {
+          console.log('No congressional trading data available');
+        } finally {
+          setCongressionalLoading(false);
         }
 
         // Load sentiment data separately (non-blocking)
@@ -1546,6 +1559,67 @@ function CompanyPage() {
                 <div className="no-insider-v3">
                   <Users size={28} />
                   <p>No insider activity data available</p>
+                </div>
+              )}
+            </section>
+
+            {/* Congressional Trading Section */}
+            <section className="insider-panel-v3">
+              <h3>
+                <Building2 size={14} />
+                Congressional Trading (6 months)
+              </h3>
+              {congressionalLoading ? (
+                <div className="no-insider-v3">
+                  <Loader size={28} className="spinner" />
+                  <p>Loading congressional data...</p>
+                </div>
+              ) : congressionalData && congressionalData.trades?.length > 0 ? (
+                <div className="insider-content-v3">
+                  <div className="insider-stats-v3">
+                    <div className="stat-item-v3">
+                      <span className="stat-label-v3">Total Trades</span>
+                      <span className="stat-value-v3">{congressionalData.trades.length}</span>
+                    </div>
+                    <div className="stat-item-v3">
+                      <span className="stat-label-v3">Politicians</span>
+                      <span className="stat-value-v3">
+                        {new Set(congressionalData.trades.map(t => t.politician_id)).size}
+                      </span>
+                    </div>
+                    <div className="stat-item-v3">
+                      <span className="stat-label-v3">Purchases</span>
+                      <span className="stat-value-v3">
+                        {congressionalData.trades.filter(t => t.transaction_type === 'purchase').length}
+                      </span>
+                    </div>
+                  </div>
+                  {congressionalData.trades.length > 0 && (
+                    <div className="insider-list-v3">
+                      <div className="list-header">Recent Transactions</div>
+                      {congressionalData.trades.slice(0, 4).map((tx, i) => (
+                        <div key={i} className="tx-row-v3">
+                          <span className={`tx-type-v3 ${tx.transaction_type}`}>
+                            {tx.transaction_type === 'purchase' ? 'BUY' : 'SELL'}
+                          </span>
+                          <span className="tx-name-v3" title={tx.politician_name}>
+                            {tx.politician_name?.split(' ').slice(-1)[0] || 'Unknown'}
+                          </span>
+                          <span className="tx-shares-v3">
+                            {tx.chamber === 'Senate' ? 'Sen.' : 'Rep.'} ({tx.party})
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="view-more-link" style={{ cursor: 'default', opacity: 0.7 }}>
+                    Congressional trading data
+                  </div>
+                </div>
+              ) : (
+                <div className="no-insider-v3">
+                  <Building2 size={28} />
+                  <p>No congressional trading data available</p>
                 </div>
               )}
             </section>

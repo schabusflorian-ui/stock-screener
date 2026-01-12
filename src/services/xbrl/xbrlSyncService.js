@@ -7,13 +7,29 @@
  * 1. Links XBRL companies (company_identifiers) → companies table
  * 2. Syncs xbrl_fundamental_metrics → calculated_metrics
  * 3. Enables EU/UK companies to appear in screening and filtering
+ * 4. Auto-resolves tickers for new companies via GLEIF → ISIN → OpenFIGI
  *
  * This is the critical integration layer that makes XBRL data seamless.
  */
 
+const { SymbolResolver } = require('../identifiers/symbolResolver');
+
 class XBRLSyncService {
-  constructor(database) {
+  constructor(database, options = {}) {
     this.db = database;
+    this.options = {
+      autoResolveTickers: true,  // Auto-resolve tickers for new companies
+      ...options
+    };
+
+    // Initialize SymbolResolver for ticker resolution
+    try {
+      this.symbolResolver = new SymbolResolver(database);
+    } catch (error) {
+      console.warn('⚠️ SymbolResolver initialization failed, ticker auto-resolution disabled:', error.message);
+      this.symbolResolver = null;
+    }
+
     this._prepareStatements();
     console.log('✅ XBRLSyncService initialized');
   }
@@ -57,6 +73,24 @@ class XBRLSyncService {
     // Get unlinked identifiers
     this.stmtGetUnlinkedIdentifiers = this.db.prepare(`
       SELECT * FROM company_identifiers WHERE company_id IS NULL
+    `);
+
+    // Update company_identifiers with resolved ticker
+    this.stmtUpdateIdentifierTicker = this.db.prepare(`
+      UPDATE company_identifiers
+      SET ticker = ?, yahoo_symbol = ?, figi = ?, isin = COALESCE(?, isin),
+          link_status = 'linked', updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `);
+
+    // Get pending identifiers (need ticker resolution)
+    this.stmtGetPendingIdentifiers = this.db.prepare(`
+      SELECT * FROM company_identifiers
+      WHERE link_status = 'pending'
+      AND lei IS NOT NULL AND lei != ''
+      AND (ticker IS NULL OR ticker = '')
+      ORDER BY created_at DESC
+      LIMIT ?
     `);
 
     // Check existing calculated_metrics
@@ -165,6 +199,206 @@ class XBRLSyncService {
         summary.processed++;
         if (result.created) summary.created++;
         if (result.linked) summary.linked++;
+      } catch (error) {
+        console.error(`Error linking identifier ${identifier.id}:`, error.message);
+        summary.errors++;
+      }
+    }
+
+    return summary;
+  }
+
+  // ========================================
+  // Ticker Resolution
+  // ========================================
+
+  /**
+   * Resolve ticker for a single company via GLEIF → ISIN → OpenFIGI pipeline
+   * @param {Object} identifier - Record from company_identifiers
+   * @returns {Promise<Object>} - { resolved, ticker, yahooSymbol, figi, isin }
+   */
+  async resolveTickerForIdentifier(identifier) {
+    if (!this.symbolResolver) {
+      return { resolved: false, error: 'SymbolResolver not available' };
+    }
+
+    const { id, lei, legal_name } = identifier;
+
+    if (!lei) {
+      return { resolved: false, error: 'No LEI available' };
+    }
+
+    try {
+      const result = await this.symbolResolver.resolveFromLEI(lei);
+
+      if (result && result.primaryListing) {
+        const { ticker, yahooSymbol, figi, isin } = result.primaryListing;
+
+        // Update company_identifiers with resolved data
+        this.stmtUpdateIdentifierTicker.run(
+          ticker,
+          yahooSymbol,
+          figi || null,
+          isin || null,
+          id
+        );
+
+        console.log(`  ✓ Resolved ${legal_name?.substring(0, 30) || lei} → ${yahooSymbol}`);
+
+        return {
+          resolved: true,
+          ticker,
+          yahooSymbol,
+          figi,
+          isin,
+          companyName: result.companyName
+        };
+      } else if (result && result.listings && result.listings.length > 0) {
+        // Use first available listing if no primary
+        const listing = result.listings[0];
+
+        this.stmtUpdateIdentifierTicker.run(
+          listing.ticker,
+          listing.yahooSymbol,
+          listing.figi || null,
+          listing.isin || null,
+          id
+        );
+
+        console.log(`  ✓ Resolved (alt) ${legal_name?.substring(0, 30) || lei} → ${listing.yahooSymbol}`);
+
+        return {
+          resolved: true,
+          ticker: listing.ticker,
+          yahooSymbol: listing.yahooSymbol,
+          figi: listing.figi,
+          isin: listing.isin
+        };
+      }
+
+      return { resolved: false, error: 'No listings found' };
+    } catch (error) {
+      console.warn(`  ✗ Failed to resolve ${legal_name || lei}: ${error.message}`);
+      return { resolved: false, error: error.message };
+    }
+  }
+
+  /**
+   * Resolve tickers for pending companies in batch
+   * @param {number} limit - Maximum number to process (default 50)
+   * @param {number} delayMs - Delay between requests in ms (default 500)
+   * @returns {Promise<Object>} - Summary { processed, resolved, failed }
+   */
+  async resolvePendingTickers(limit = 50, delayMs = 500) {
+    if (!this.symbolResolver) {
+      console.warn('SymbolResolver not available, skipping ticker resolution');
+      return { processed: 0, resolved: 0, failed: 0, skipped: true };
+    }
+
+    const pending = this.stmtGetPendingIdentifiers.all(limit);
+    console.log(`\n🔍 Resolving tickers for ${pending.length} pending companies...`);
+
+    const summary = { processed: 0, resolved: 0, failed: 0 };
+
+    for (const identifier of pending) {
+      const result = await this.resolveTickerForIdentifier(identifier);
+      summary.processed++;
+
+      if (result.resolved) {
+        summary.resolved++;
+      } else {
+        summary.failed++;
+      }
+
+      // Rate limiting
+      if (delayMs > 0 && summary.processed < pending.length) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+
+    console.log(`   Ticker resolution: ${summary.resolved} resolved, ${summary.failed} failed`);
+    return summary;
+  }
+
+  /**
+   * Link a company with auto ticker resolution if needed
+   * @param {Object} identifier - Record from company_identifiers
+   * @param {boolean} autoResolve - Whether to auto-resolve ticker if missing
+   * @returns {Promise<Object>} - { companyId, created, linked, tickerResolved }
+   */
+  async linkCompanyWithResolution(identifier, autoResolve = true) {
+    let { ticker, yahoo_symbol } = identifier;
+    let tickerResolved = false;
+
+    // If no ticker and auto-resolve is enabled, try to resolve it
+    if (!ticker && !yahoo_symbol && autoResolve && this.options.autoResolveTickers) {
+      const resolution = await this.resolveTickerForIdentifier(identifier);
+      if (resolution.resolved) {
+        ticker = resolution.ticker;
+        yahoo_symbol = resolution.yahooSymbol;
+        tickerResolved = true;
+
+        // Update identifier object for linkCompany
+        identifier = { ...identifier, ticker, yahoo_symbol };
+      }
+    }
+
+    // Now link the company (sync method)
+    const linkResult = this.linkCompany(identifier);
+
+    return {
+      ...linkResult,
+      tickerResolved
+    };
+  }
+
+  /**
+   * Link all unlinked companies with ticker resolution
+   * @param {Object} options - { autoResolve, resolutionLimit, delayMs }
+   * @returns {Promise<Object>} - Summary
+   */
+  async linkAllUnlinkedCompaniesWithResolution(options = {}) {
+    const {
+      autoResolve = true,
+      resolutionLimit = 100,
+      delayMs = 300
+    } = options;
+
+    const unlinked = this.stmtGetUnlinkedIdentifiers.all();
+    console.log(`Found ${unlinked.length} unlinked XBRL companies`);
+
+    const summary = {
+      processed: 0,
+      created: 0,
+      linked: 0,
+      tickersResolved: 0,
+      errors: 0
+    };
+
+    let resolutionsAttempted = 0;
+
+    for (const identifier of unlinked) {
+      try {
+        // Only auto-resolve if we haven't hit the limit
+        const shouldResolve = autoResolve &&
+          resolutionsAttempted < resolutionLimit &&
+          !identifier.ticker &&
+          identifier.lei;
+
+        const result = await this.linkCompanyWithResolution(identifier, shouldResolve);
+
+        summary.processed++;
+        if (result.created) summary.created++;
+        if (result.linked) summary.linked++;
+        if (result.tickerResolved) {
+          summary.tickersResolved++;
+          resolutionsAttempted++;
+
+          // Rate limiting for API calls
+          if (delayMs > 0) {
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+          }
+        }
       } catch (error) {
         console.error(`Error linking identifier ${identifier.id}:`, error.message);
         summary.errors++;
@@ -418,7 +652,7 @@ class XBRLSyncService {
   }
 
   /**
-   * Full sync: link companies + sync metrics
+   * Full sync: link companies + sync metrics (synchronous, no ticker resolution)
    * @returns {Object} - Combined summary
    */
   fullSync() {
@@ -437,6 +671,40 @@ class XBRLSyncService {
     console.log('\n✅ Full sync complete!\n');
 
     return {
+      companies: linkSummary,
+      metrics: metricsSummary
+    };
+  }
+
+  /**
+   * Full sync with ticker resolution: resolve tickers → link companies → sync metrics
+   * This is the recommended method for scheduled jobs and new data imports
+   * @param {Object} options - { tickerLimit, delayMs }
+   * @returns {Promise<Object>} - Combined summary
+   */
+  async fullSyncWithResolution(options = {}) {
+    const { tickerLimit = 50, delayMs = 500 } = options;
+
+    console.log('\n📊 Starting full XBRL sync with ticker resolution...\n');
+
+    // Step 1: Resolve tickers for pending companies
+    console.log('Step 1: Resolving tickers for pending companies...');
+    const tickerSummary = await this.resolvePendingTickers(tickerLimit, delayMs);
+
+    // Step 2: Link all unlinked companies (with any newly resolved tickers)
+    console.log('\nStep 2: Linking XBRL companies to main database...');
+    const linkSummary = this.linkAllUnlinkedCompanies();
+    console.log(`   Companies: ${linkSummary.created} created, ${linkSummary.linked} linked, ${linkSummary.errors} errors`);
+
+    // Step 3: Sync metrics
+    console.log('\nStep 3: Syncing metrics to calculated_metrics...');
+    const metricsSummary = this.syncMetrics();
+    console.log(`   Metrics: ${metricsSummary.synced} synced, ${metricsSummary.skipped} skipped, ${metricsSummary.errors} errors`);
+
+    console.log('\n✅ Full sync with resolution complete!\n');
+
+    return {
+      tickers: tickerSummary,
       companies: linkSummary,
       metrics: metricsSummary
     };

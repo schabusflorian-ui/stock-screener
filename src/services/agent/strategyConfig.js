@@ -56,16 +56,18 @@ class StrategyConfigManager {
         universe_custom_symbols TEXT,       -- JSON array of specific symbols to include
 
         -- Signal Weights (0-100, must sum to 100 or will be normalized)
-        weight_technical INTEGER DEFAULT 20,
-        weight_fundamental INTEGER DEFAULT 20,
-        weight_sentiment INTEGER DEFAULT 15,
+        weight_technical INTEGER DEFAULT 15,
+        weight_fundamental INTEGER DEFAULT 15,
+        weight_sentiment INTEGER DEFAULT 10,
         weight_momentum INTEGER DEFAULT 15,
         weight_value INTEGER DEFAULT 15,
-        weight_quality INTEGER DEFAULT 15,
+        weight_quality INTEGER DEFAULT 10,
+        weight_insider INTEGER DEFAULT 10,
+        weight_congressional INTEGER DEFAULT 10,
 
         -- Signal Thresholds
-        min_signal_score REAL DEFAULT 0.3,
-        min_confidence REAL DEFAULT 0.6,
+        min_signal_score REAL DEFAULT 0.30,     -- Minimum score to generate signal
+        min_confidence REAL DEFAULT 0.60,       -- Minimum confidence threshold
 
         -- Risk Management
         max_position_size REAL DEFAULT 0.05,        -- Max 5% per position
@@ -85,8 +87,8 @@ class StrategyConfigManager {
 
         -- Regime Sensitivity
         regime_overlay_enabled INTEGER DEFAULT 0,
-        regime_exposure_high_risk REAL DEFAULT 0.5,    -- Exposure multiplier in high risk
-        regime_exposure_elevated REAL DEFAULT 0.75,
+        regime_exposure_high_risk REAL DEFAULT 0.50,   -- 50% exposure in high risk regime
+        regime_exposure_elevated REAL DEFAULT 0.75,    -- 75% exposure in elevated risk
         regime_exposure_normal REAL DEFAULT 1.0,
 
         -- Rebalancing
@@ -170,11 +172,12 @@ class StrategyConfigManager {
         typical_holding_period: 'long',
         config: {
           weight_technical: 5,
-          weight_fundamental: 30,
+          weight_fundamental: 25,
           weight_sentiment: 5,
           weight_momentum: 10,
-          weight_value: 35,
+          weight_value: 30,
           weight_quality: 15,
+          weight_insider: 10,
           max_position_size: 0.08,
           max_positions: 15,
           min_holding_days: 30,
@@ -193,9 +196,10 @@ class StrategyConfigManager {
           weight_technical: 30,
           weight_fundamental: 10,
           weight_sentiment: 15,
-          weight_momentum: 35,
+          weight_momentum: 30,
           weight_value: 0,
           weight_quality: 10,
+          weight_insider: 5,
           max_position_size: 0.05,
           max_positions: 25,
           min_holding_days: 5,
@@ -213,11 +217,12 @@ class StrategyConfigManager {
         typical_holding_period: 'long',
         config: {
           weight_technical: 5,
-          weight_fundamental: 25,
+          weight_fundamental: 20,
           weight_sentiment: 5,
           weight_momentum: 10,
           weight_value: 15,
-          weight_quality: 40,
+          weight_quality: 35,
+          weight_insider: 10,
           max_position_size: 0.10,
           max_positions: 12,
           min_holding_days: 90,
@@ -234,11 +239,12 @@ class StrategyConfigManager {
         typical_holding_period: 'long',
         config: {
           weight_technical: 10,
-          weight_fundamental: 25,
+          weight_fundamental: 20,
           weight_sentiment: 10,
           weight_momentum: 5,
           weight_value: 20,
-          weight_quality: 30,
+          weight_quality: 25,
+          weight_insider: 10,
           max_position_size: 0.05,
           max_positions: 25,
           min_positions: 15,
@@ -255,12 +261,13 @@ class StrategyConfigManager {
         risk_profile: 'aggressive',
         typical_holding_period: 'short',
         config: {
-          weight_technical: 40,
+          weight_technical: 35,
           weight_fundamental: 5,
           weight_sentiment: 25,
           weight_momentum: 20,
           weight_value: 5,
           weight_quality: 5,
+          weight_insider: 5,
           max_position_size: 0.04,
           max_positions: 30,
           min_holding_days: 1,
@@ -279,11 +286,12 @@ class StrategyConfigManager {
         typical_holding_period: 'medium',
         config: {
           weight_technical: 15,
-          weight_fundamental: 20,
+          weight_fundamental: 15,
           weight_sentiment: 10,
           weight_momentum: 15,
           weight_value: 15,
-          weight_quality: 25,
+          weight_quality: 20,
+          weight_insider: 10,
           max_position_size: 0.05,
           max_positions: 20,
           stop_loss_pct: 0.10,
@@ -377,7 +385,7 @@ class StrategyConfigManager {
     // Normalize signal weights to sum to 100
     const weights = [
       'weight_technical', 'weight_fundamental', 'weight_sentiment',
-      'weight_momentum', 'weight_value', 'weight_quality'
+      'weight_momentum', 'weight_value', 'weight_quality', 'weight_insider', 'weight_congressional'
     ];
     const totalWeight = weights.reduce((sum, w) => sum + (finalConfig[w] || 0), 0);
     if (totalWeight > 0 && totalWeight !== 100) {
@@ -585,7 +593,9 @@ class StrategyConfigManager {
       sentiment: strategy.weight_sentiment || 0,
       momentum: strategy.weight_momentum || 0,
       value: strategy.weight_value || 0,
-      quality: strategy.weight_quality || 0
+      quality: strategy.weight_quality || 0,
+      insider: strategy.weight_insider || 0,
+      congressional: strategy.weight_congressional || 0
     };
 
     const total = Object.values(rawWeights).reduce((a, b) => a + b, 0);

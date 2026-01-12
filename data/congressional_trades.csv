@@ -1,0 +1,73 @@
+Politician,Asset Name,Filed Date,Transaction Date,Days Ago,Owner,Type,Amount,Price
+"Bernie Moreno
+RepublicanSenateOH","BOFA FINANCE LLC
+N/A","9 Jan
+2026","19 Dec
+2025","days
+21",Self,BUY,1K–15K,N/A
+"Bernie Moreno
+RepublicanSenateOH","Canadian Imperial Bank of Commerce
+CM:US","9 Jan
+2026","17 Dec
+2025","days
+23",Self,BUY,1K–15K,N/A
+"Jonathan Jackson
+DemocratHouseIL","MercadoLibre Inc
+MELI:US","9 Jan
+2026","10 Dec
+2025","days
+29",Joint,SELL,15K–50K,"$1,970.73"
+"Jonathan Jackson
+DemocratHouseIL","Netflix Inc
+NFLX:US","9 Jan
+2026","8 Dec
+2025","days
+31",Joint,SELL,50K–100K,$96.79
+"Jonathan Jackson
+DemocratHouseIL","Palantir Technologies Inc
+PLTR:US","9 Jan
+2026","22 Dec
+2025","days
+17",Joint,BUY,15K–50K,$193.98
+"Jonathan Jackson
+DemocratHouseIL","Robinhood Markets Inc
+HOOD:US","9 Jan
+2026","22 Dec
+2025","days
+17",Joint,SELL,15K–50K,$122.37
+"Jonathan Jackson
+DemocratHouseIL","Shopify Inc
+SHOP:US","9 Jan
+2026","8 Dec
+2025","days
+31",Joint,BUY,50K–100K,$158.41
+"Jonathan Jackson
+DemocratHouseIL","Tenet Healthcare Corp
+THC:US","9 Jan
+2026","10 Dec
+2025","days
+29",Joint,BUY,15K–50K,$197.47
+"David Rouzer
+RepublicanHouseNC","Boeing Co
+BA:US","8 Jan
+2026","9 Dec
+2025","days
+29",Undisclosed,SELL,1K–15K,$200.37
+"Mike Kelly
+RepublicanHousePA","STATE OF CALIFORNIA
+N/A","8 Jan
+2026","1 Dec
+2025","days
+38",Spouse,SELL,1K–15K,N/A
+"Lisa McClain
+RepublicanHouseMI","xAI PVT
+N/A","8 Jan
+2026","15 Dec
+2025","days
+23",Spouse,BUY,100K–250K,N/A
+"Tim Moore
+RepublicanHouseNC","Cracker Barrel Old Country Store Inc
+CBRL:US","8 Jan
+2026","31 Dec
+2025","days
+7",Undisclosed,BUY,15K–50K,$25.40

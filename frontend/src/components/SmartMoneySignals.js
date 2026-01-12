@@ -52,12 +52,12 @@ function SmartMoneySignals() {
       ]);
 
       setData({
-        newPositions: newPositions.data?.positions || newPositions.data || [],
-        increases: increases.data?.positions || increases.data || [],
-        exits: exits.data?.positions || exits.data || [],
-        insiderBuys: insiderBuys.data?.transactions || insiderBuys.data || [],
-        earningsMomentum: earningsMomentum.data?.stocks || earningsMomentum.data || [],
-        summary: summary.data
+        newPositions: newPositions.data?.opportunities || newPositions.data?.positions || newPositions.data || [],
+        increases: increases.data?.opportunities || increases.data?.positions || increases.data || [],
+        exits: exits.data?.opportunities || exits.data?.positions || exits.data || [],
+        insiderBuys: insiderBuys.data?.opportunities || insiderBuys.data?.transactions || insiderBuys.data || [],
+        earningsMomentum: earningsMomentum.data?.opportunities || earningsMomentum.data?.stocks || earningsMomentum.data || [],
+        summary: summary.data?.summary || summary.data
       });
     } catch (err) {
       console.error('Error loading smart money data:', err);

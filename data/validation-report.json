@@ -1,0 +1,29 @@
+{
+  "timestamp": "2026-01-12T14:01:20.154Z",
+  "optimizationsApplied": {
+    "min_signal_score": 0.2,
+    "min_confidence": 0.5,
+    "stop_loss_pct": 0.15,
+    "regime_exposure_high_risk": 0.75
+  },
+  "averagePerformance": {
+    "return": -63.36333333333332,
+    "alpha": -87.81666666666666,
+    "sharpe": -1.3083333333333333,
+    "winRate": 0.5499999999999999,
+    "trades": 248.83333333333334
+  },
+  "validation": {
+    "passed": [
+      "✅ Trades: 249 - good statistical power"
+    ],
+    "warnings": [],
+    "failed": [
+      "❌ Alpha: -87.82% < -0.5% threshold - REVERT CHANGES",
+      "❌ Win Rate: 0.5% < 25% threshold - SIGNAL QUALITY DILUTED",
+      "❌ Sharpe: -1.31 - NEGATIVE - strategy broken"
+    ]
+  },
+  "overallStatus": "FAILED",
+  "recommendation": "REVERT"
+}

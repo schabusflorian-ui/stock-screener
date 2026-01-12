@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { updatesAPI, insidersAPI, capitalAPI, sentimentAPI, priceUpdatesAPI, indicesAPI, secRefreshAPI, knowledgeAPI } from '../services/api';
 import { PageHeader, Callout } from '../components/ui';
 import { UpdateSystemPanel } from '../components/updates';
+import { SkeletonUpdatesPage } from '../components/Skeleton';
 import './UpdatesPage.css';
 
 
@@ -650,7 +651,7 @@ function UpdatesPage({ embedded = false }) {
   if (loading) {
     return (
       <div className="updates-page">
-        <div className="loading">Loading update status...</div>
+        <SkeletonUpdatesPage />
       </div>
     );
   }

@@ -10,6 +10,7 @@ if (dotenvResult.parsed) {
 }
 
 const express = require('express');
+const compression = require('compression');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
@@ -35,6 +36,16 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
 
+// Enable gzip compression for all responses > 1KB
+app.use(compression({
+  level: 6,
+  threshold: 1024,
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) return false;
+    return compression.filter(req, res);
+  }
+}));
+
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3001',
   credentials: true
@@ -44,6 +55,11 @@ app.use(morgan('dev'));
 app.use(express.json());
 
 // Session configuration
+const sessionSecret = process.env.SESSION_SECRET;
+if (!sessionSecret && process.env.NODE_ENV === 'production') {
+  throw new Error('SESSION_SECRET environment variable is required in production');
+}
+
 app.use(session({
   store: new SQLiteStore({
     client: db.getDatabase(),
@@ -52,7 +68,7 @@ app.use(session({
       intervalMs: 900000 // Clear expired sessions every 15 min
     }
   }),
-  secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
+  secret: sessionSecret || 'dev-only-not-for-production-use',
   resave: false,
   saveUninitialized: false,
   cookie: {
@@ -128,6 +144,7 @@ const xbrlRouter = require('./routes/xbrl');
 const dataRouter = require('./routes/data');
 const identifiersRouter = require('./routes/identifiers');
 const strategiesRouter = require('./routes/strategies');
+const congressionalRouter = require('./routes/congressional');
 
 // Use routes
 app.use('/api/auth', authRouter);
@@ -188,6 +205,7 @@ app.use('/api/xbrl', xbrlRouter);
 app.use('/api/data', dataRouter);
 app.use('/api/identifiers', identifiersRouter);
 app.use('/api/strategies', strategiesRouter(db.getDatabase()));
+app.use('/api/congressional', congressionalRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -252,33 +270,27 @@ app.get('/', (req, res) => {
   });
 });
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({
-    error: 'Not Found',
-    path: req.path
-  });
-});
+// Import error handlers
+const { notFoundHandler, errorHandler } = require('../middleware/errorHandler');
 
-// Error handler
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({
-    error: 'Internal Server Error',
-    message: err.message
-  });
-});
+// 404 handler
+app.use(notFoundHandler);
+
+// Error handler (sanitizes errors in production)
+app.use(errorHandler);
+
+// Import logger
+const logger = require('../lib/logger');
 
 // Start server
 app.listen(PORT, async () => {
-  console.log(`\n🚀 API Server running on http://localhost:${PORT}`);
-  console.log(`📚 Health check: http://localhost:${PORT}/api/health`);
-  console.log(`📊 Companies: http://localhost:${PORT}/api/companies`);
+  logger.info(`API Server running on http://localhost:${PORT}`);
+  logger.info(`Health check: http://localhost:${PORT}/api/health`);
 
   if (passport) {
-    console.log(`🔐 Auth enabled: http://localhost:${PORT}/api/auth/google`);
+    logger.info('Auth enabled (Google OAuth)');
   } else {
-    console.log(`🔐 Auth disabled (set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to enable)`);
+    logger.info('Auth disabled (set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to enable)');
   }
 
   // Initialize Update Orchestrator if enabled
@@ -296,18 +308,16 @@ app.listen(PORT, async () => {
 
       if (tableExists) {
         orchestrator.start();
-        console.log(`📅 Update Scheduler started`);
+        logger.info('Update Scheduler started');
       } else {
-        console.log(`📅 Update Scheduler: Migration not yet run. Run: node src/database-migrations/add-update-system.js`);
+        logger.warn('Update Scheduler: Migration not yet run. Run: node src/database-migrations/add-update-system.js');
       }
     } else {
-      console.log(`📅 Update Scheduler disabled (AUTO_START_SCHEDULER=false)`);
+      logger.info('Update Scheduler disabled (AUTO_START_SCHEDULER=false)');
     }
   } catch (err) {
-    console.error('⚠️  Update Scheduler failed to start:', err.message);
+    logger.error('Update Scheduler failed to start', err);
   }
-
-  console.log('');
 });
 
 module.exports = app;

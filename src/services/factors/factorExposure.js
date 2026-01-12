@@ -398,59 +398,199 @@ class FactorExposureAnalyzer {
       };
     }
 
-    const y = aligned.map(r => r.return);
-    const x = aligned.map(r => marketReturns.get(r.date));
+    // Get factor returns for the date range
+    const dates = aligned.map(r => r.date);
+    const minDate = dates[0];
+    const maxDate = dates[dates.length - 1];
 
-    // Simple OLS regression for market beta
+    const factorReturns = this.db.prepare(`
+      SELECT date, mkt_rf, smb, hml, umd, qmj
+      FROM daily_factor_returns
+      WHERE date >= ? AND date <= ?
+      ORDER BY date
+    `).all(minDate, maxDate);
+
+    // Create factor returns map
+    const factorMap = new Map();
+    factorReturns.forEach(fr => {
+      factorMap.set(fr.date, {
+        mkt: fr.mkt_rf,
+        smb: fr.smb,
+        hml: fr.hml,
+        umd: fr.umd,
+        qmj: fr.qmj
+      });
+    });
+
+    // Align stock returns with factor returns
+    const alignedWithFactors = aligned.filter(r => factorMap.has(r.date));
+
+    // If we don't have enough factor returns, fall back to simple market regression
+    if (alignedWithFactors.length < 30) {
+      const y = aligned.map(r => r.return);
+      const x = aligned.map(r => marketReturns.get(r.date));
+
+      const n = y.length;
+      const sumX = x.reduce((a, b) => a + b, 0);
+      const sumY = y.reduce((a, b) => a + b, 0);
+      const sumXY = x.reduce((sum, xi, i) => sum + xi * y[i], 0);
+      const sumX2 = x.reduce((sum, xi) => sum + xi * xi, 0);
+
+      const marketBeta = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+      const alpha = (sumY - marketBeta * sumX) / n;
+
+      const residuals = y.map((yi, i) => yi - alpha - marketBeta * x[i]);
+      const residualVar = residuals.reduce((sum, r) => sum + r * r, 0) / (n - 2);
+      const residualVol = Math.sqrt(residualVar) * Math.sqrt(252);
+
+      const yMean = sumY / n;
+      const ssTotal = y.reduce((sum, yi) => sum + (yi - yMean) ** 2, 0);
+      const ssResidual = residuals.reduce((sum, r) => sum + r * r, 0);
+      const rSquared = 1 - ssTotal > 0 ? 1 - ssResidual / ssTotal : 0;
+
+      return {
+        betas: { market: marketBeta, value: 0, size: 0, momentum: 0, quality: 0 },
+        rSquared,
+        alpha: alpha * 252,
+        residualVol,
+        informationRatio: residualVol > 0 ? (alpha * 252) / residualVol : 0
+      };
+    }
+
+    // Prepare data for multi-factor regression
+    // Y = alpha + beta_mkt * MKT + beta_smb * SMB + beta_hml * HML + beta_umd * UMD + beta_qmj * QMJ + epsilon
+    const y = alignedWithFactors.map(r => r.return);
     const n = y.length;
-    const sumX = x.reduce((a, b) => a + b, 0);
-    const sumY = y.reduce((a, b) => a + b, 0);
-    const sumXY = x.reduce((sum, xi, i) => sum + xi * y[i], 0);
-    const sumX2 = x.reduce((sum, xi) => sum + xi * xi, 0);
 
-    const marketBeta = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-    const alpha = (sumY - marketBeta * sumX) / n;
+    // Build factor matrix (each row is [1, mkt, smb, hml, umd, qmj])
+    const X = alignedWithFactors.map(r => {
+      const factors = factorMap.get(r.date);
+      return [1, factors.mkt, factors.smb, factors.hml, factors.umd, factors.qmj];
+    });
 
-    // Calculate residuals
-    const residuals = y.map((yi, i) => yi - alpha - marketBeta * x[i]);
-    const residualVar = residuals.reduce((sum, r) => sum + r * r, 0) / (n - 2);
-    const residualVol = Math.sqrt(residualVar) * Math.sqrt(252);
+    // Run multi-factor OLS regression using normal equations: β = (X'X)^-1 X'y
+    const betas = this._multipleRegression(X, y);
 
-    // R-squared
-    const yMean = sumY / n;
+    if (!betas) {
+      // Regression failed, return defaults
+      return {
+        betas: { market: 1, value: 0, size: 0, momentum: 0, quality: 0 },
+        rSquared: 0,
+        alpha: 0,
+        residualVol: 0,
+        informationRatio: 0
+      };
+    }
+
+    const [alpha, betaMkt, betaSmb, betaHml, betaUmd, betaQmj] = betas;
+
+    // Calculate residuals and R-squared
+    const predictions = X.map((xi, i) =>
+      xi[0] * alpha + xi[1] * betaMkt + xi[2] * betaSmb + xi[3] * betaHml + xi[4] * betaUmd + xi[5] * betaQmj
+    );
+    const residuals = y.map((yi, i) => yi - predictions[i]);
+
+    const yMean = y.reduce((a, b) => a + b, 0) / n;
     const ssTotal = y.reduce((sum, yi) => sum + (yi - yMean) ** 2, 0);
     const ssResidual = residuals.reduce((sum, r) => sum + r * r, 0);
-    const rSquared = 1 - ssResidual / ssTotal;
+    const rSquared = ssTotal > 0 ? 1 - ssResidual / ssTotal : 0;
 
-    // Information ratio
+    const residualVar = ssResidual / (n - 6); // n - k where k = number of parameters
+    const residualVol = Math.sqrt(residualVar) * Math.sqrt(252);
+
     const alphaAnnualized = alpha * 252;
     const informationRatio = residualVol > 0 ? alphaAnnualized / residualVol : 0;
 
-    // Estimate other factor exposures based on momentum
-    const momentumReturns = aligned.filter(r => r.mom252d !== null);
-    const avgMomentum = momentumReturns.length > 0
-      ? momentumReturns.reduce((sum, r) => sum + r.mom252d, 0) / momentumReturns.length
-      : 0;
-
-    // Convert momentum to approximate beta
-    const momentumBeta = avgMomentum > 0.3 ? 0.5 :
-                         avgMomentum > 0.1 ? 0.25 :
-                         avgMomentum > -0.1 ? 0 :
-                         avgMomentum > -0.3 ? -0.25 : -0.5;
-
     return {
       betas: {
-        market: marketBeta,
-        value: 0, // Would need HML factor returns
-        size: 0,  // Would need SMB factor returns
-        momentum: momentumBeta,
-        quality: 0
+        market: betaMkt,
+        value: betaHml,      // HML (high minus low book/market)
+        size: betaSmb,       // SMB (small minus big)
+        momentum: betaUmd,   // UMD (up minus down)
+        quality: betaQmj     // QMJ (quality minus junk)
       },
       rSquared,
-      alpha,
+      alpha: alphaAnnualized,
       residualVol,
       informationRatio
     };
+  }
+
+  /**
+   * Multiple linear regression using normal equations
+   * Returns coefficients [intercept, beta1, beta2, ...]
+   */
+  _multipleRegression(X, y) {
+    try {
+      const n = X.length;
+      const k = X[0].length;
+
+      // Compute X'X (k x k matrix)
+      const XtX = Array(k).fill(0).map(() => Array(k).fill(0));
+      for (let i = 0; i < k; i++) {
+        for (let j = 0; j < k; j++) {
+          for (let row = 0; row < n; row++) {
+            XtX[i][j] += X[row][i] * X[row][j];
+          }
+        }
+      }
+
+      // Compute X'y (k x 1 vector)
+      const Xty = Array(k).fill(0);
+      for (let i = 0; i < k; i++) {
+        for (let row = 0; row < n; row++) {
+          Xty[i] += X[row][i] * y[row];
+        }
+      }
+
+      // Solve (X'X)β = X'y using Gaussian elimination
+      const betas = this._gaussianElimination(XtX, Xty);
+      return betas;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * Gaussian elimination to solve Ax = b
+   */
+  _gaussianElimination(A, b) {
+    const n = b.length;
+    const augmented = A.map((row, i) => [...row, b[i]]);
+
+    // Forward elimination
+    for (let i = 0; i < n; i++) {
+      // Find pivot
+      let maxRow = i;
+      for (let k = i + 1; k < n; k++) {
+        if (Math.abs(augmented[k][i]) > Math.abs(augmented[maxRow][i])) {
+          maxRow = k;
+        }
+      }
+
+      // Swap rows
+      [augmented[i], augmented[maxRow]] = [augmented[maxRow], augmented[i]];
+
+      // Make all rows below this one 0 in current column
+      for (let k = i + 1; k < n; k++) {
+        const factor = augmented[k][i] / augmented[i][i];
+        for (let j = i; j <= n; j++) {
+          augmented[k][j] -= factor * augmented[i][j];
+        }
+      }
+    }
+
+    // Back substitution
+    const x = Array(n).fill(0);
+    for (let i = n - 1; i >= 0; i--) {
+      x[i] = augmented[i][n];
+      for (let j = i + 1; j < n; j++) {
+        x[i] -= augmented[i][j] * x[j];
+      }
+      x[i] /= augmented[i][i];
+    }
+
+    return x;
   }
 
   /**

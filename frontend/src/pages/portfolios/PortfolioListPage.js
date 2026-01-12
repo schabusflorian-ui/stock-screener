@@ -1,5 +1,5 @@
 // frontend/src/pages/portfolios/PortfolioListPage.js
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, memo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Briefcase,
@@ -35,6 +35,86 @@ const PORTFOLIO_TYPE_ICONS = {
   backtest: Target
 };
 
+// Format helpers
+const formatValue = (value) => {
+  if (!value && value !== 0) return '-';
+  return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
+const formatPercent = (value) => {
+  if (value === null || value === undefined) return '-';
+  const sign = value >= 0 ? '+' : '';
+  return `${sign}${value.toFixed(2)}%`;
+};
+
+const formatDate = (dateStr) => {
+  if (!dateStr) return '-';
+  return new Date(dateStr).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
+};
+
+// Memoized PortfolioCard component to prevent re-renders
+const PortfolioCard = memo(function PortfolioCard({ portfolio }) {
+  const TypeIcon = PORTFOLIO_TYPE_ICONS[portfolio.type] || Wallet;
+  const isPositive = (portfolio.total_gain_pct || 0) >= 0;
+
+  return (
+    <Link
+      to={`/portfolios/${portfolio.id}`}
+      className="portfolio-card"
+    >
+      <div className="card-header">
+        <div className="portfolio-icon">
+          <TypeIcon size={20} />
+        </div>
+        <div className="portfolio-info">
+          <h3>{portfolio.name}</h3>
+          <span className="portfolio-type">
+            {PORTFOLIO_TYPE_LABELS[portfolio.type] || portfolio.type}
+          </span>
+        </div>
+        <ChevronRight size={20} className="card-arrow" />
+      </div>
+
+      <div className="card-value">
+        <span className="value-label">Total Value</span>
+        <span className="value-amount">{formatValue(portfolio.total_value)}</span>
+      </div>
+
+      <div className="card-performance">
+        <div className={`performance-item ${isPositive ? 'positive' : 'negative'}`}>
+          {isPositive ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+          <span className="performance-value">
+            {formatPercent(portfolio.total_gain_pct)}
+          </span>
+          <span className="performance-amount">
+            ({formatValue(portfolio.total_gain)})
+          </span>
+        </div>
+      </div>
+
+      <div className="card-stats">
+        <div className="stat-item">
+          <BarChart3 size={14} />
+          <span>{portfolio.positions_count || 0} positions</span>
+        </div>
+        <div className="stat-item">
+          <Wallet size={14} />
+          <span>{formatValue(portfolio.cash_balance)} cash</span>
+        </div>
+      </div>
+
+      <div className="card-footer">
+        <Calendar size={12} />
+        <span>Updated {formatDate(portfolio.updated_at)}</span>
+      </div>
+    </Link>
+  );
+});
+
 function PortfolioListPage() {
   const [portfolios, setPortfolios] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -68,26 +148,6 @@ function PortfolioListPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const formatValue = (value) => {
-    if (!value && value !== 0) return '-';
-    return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  };
-
-  const formatPercent = (value) => {
-    if (value === null || value === undefined) return '-';
-    const sign = value >= 0 ? '+' : '';
-    return `${sign}${value.toFixed(2)}%`;
-  };
-
-  const formatDate = (dateStr) => {
-    if (!dateStr) return '-';
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    });
   };
 
   if (loading) {
@@ -227,64 +287,9 @@ function PortfolioListPage() {
           </div>
         ) : (
           <div className="portfolios-grid">
-            {portfolios.map(portfolio => {
-              const TypeIcon = PORTFOLIO_TYPE_ICONS[portfolio.type] || Wallet;
-              const isPositive = (portfolio.total_gain_pct || 0) >= 0;
-
-              return (
-                <Link
-                  key={portfolio.id}
-                  to={`/portfolios/${portfolio.id}`}
-                  className="portfolio-card"
-                >
-                  <div className="card-header">
-                    <div className="portfolio-icon">
-                      <TypeIcon size={20} />
-                    </div>
-                    <div className="portfolio-info">
-                      <h3>{portfolio.name}</h3>
-                      <span className="portfolio-type">
-                        {PORTFOLIO_TYPE_LABELS[portfolio.type] || portfolio.type}
-                      </span>
-                    </div>
-                    <ChevronRight size={20} className="card-arrow" />
-                  </div>
-
-                  <div className="card-value">
-                    <span className="value-label">Total Value</span>
-                    <span className="value-amount">{formatValue(portfolio.total_value)}</span>
-                  </div>
-
-                  <div className="card-performance">
-                    <div className={`performance-item ${isPositive ? 'positive' : 'negative'}`}>
-                      {isPositive ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                      <span className="performance-value">
-                        {formatPercent(portfolio.total_gain_pct)}
-                      </span>
-                      <span className="performance-amount">
-                        ({formatValue(portfolio.total_gain)})
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="card-stats">
-                    <div className="stat-item">
-                      <BarChart3 size={14} />
-                      <span>{portfolio.positions_count || 0} positions</span>
-                    </div>
-                    <div className="stat-item">
-                      <Wallet size={14} />
-                      <span>{formatValue(portfolio.cash_balance)} cash</span>
-                    </div>
-                  </div>
-
-                  <div className="card-footer">
-                    <Calendar size={12} />
-                    <span>Updated {formatDate(portfolio.updated_at)}</span>
-                  </div>
-                </Link>
-              );
-            })}
+            {portfolios.map(portfolio => (
+              <PortfolioCard key={portfolio.id} portfolio={portfolio} />
+            ))}
 
             {/* Add New Card */}
             <button

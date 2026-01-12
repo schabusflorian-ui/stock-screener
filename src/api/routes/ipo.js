@@ -4,7 +4,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../../database');
-const { IPOTracker, IPO_STAGES, IPO_FORM_TYPES } = require('../../services/ipoTracker');
+const { IPOTracker, IPO_STAGES, IPO_FORM_TYPES, IPO_REGIONS } = require('../../services/ipoTracker');
 
 // Initialize IPO tracker
 const database = db.getDatabase();
@@ -17,13 +17,14 @@ const ipoTracker = new IPOTracker(database, 'Stock Analyzer contact@example.com'
 /**
  * GET /api/ipo/pipeline
  * Get all active IPOs in the pipeline
- * Query params: status, sector, sortBy, sortOrder, limit
+ * Query params: region (US|EU|UK|all), status, sector, sortBy, sortOrder, limit
  */
 router.get('/pipeline', (req, res) => {
   try {
-    const { status, sector, sortBy, sortOrder, limit } = req.query;
+    const { region, status, sector, sortBy, sortOrder, limit } = req.query;
 
     const pipeline = ipoTracker.getPipeline({
+      region: region || 'all',
       status,
       sector,
       sortBy: sortBy || 'initial_s1_date',
@@ -33,6 +34,7 @@ router.get('/pipeline', (req, res) => {
 
     res.json({
       count: pipeline.length,
+      region: region || 'all',
       data: pipeline
     });
   } catch (error) {
@@ -44,10 +46,12 @@ router.get('/pipeline', (req, res) => {
 /**
  * GET /api/ipo/by-stage
  * Get IPOs grouped by lifecycle stage
+ * Query params: region (US|EU|UK|all)
  */
 router.get('/by-stage', (req, res) => {
   try {
-    const byStage = ipoTracker.getByStage();
+    const { region } = req.query;
+    const byStage = ipoTracker.getByStage(region || 'all');
 
     // Add stage metadata
     const result = {};
@@ -106,11 +110,16 @@ router.get('/recent', (req, res) => {
 /**
  * GET /api/ipo/statistics
  * Get pipeline statistics
+ * Query params: region (US|EU|UK|all)
  */
 router.get('/statistics', (req, res) => {
   try {
-    const stats = ipoTracker.getStatistics();
-    res.json(stats);
+    const { region } = req.query;
+    const stats = ipoTracker.getStatistics({ region: region || 'all' });
+    res.json({
+      region: region || 'all',
+      ...stats
+    });
   } catch (error) {
     console.error('Error fetching statistics:', error);
     res.status(500).json({ error: error.message });
@@ -148,6 +157,220 @@ router.get('/stages', (req, res) => {
  */
 router.get('/form-types', (req, res) => {
   res.json(IPO_FORM_TYPES);
+});
+
+/**
+ * GET /api/ipo/regions
+ * Get available regions for IPO tracking
+ */
+router.get('/regions', (req, res) => {
+  res.json(IPO_REGIONS);
+});
+
+// ============================================
+// EU/UK IPO ENDPOINTS
+// ============================================
+
+/**
+ * POST /api/ipo/check-eu
+ * Trigger check for new EU/UK prospectus filings
+ */
+router.post('/check-eu', async (req, res) => {
+  try {
+    const { days = 30 } = req.body;
+
+    console.log('API: Starting EU/UK IPO check...');
+    const results = await ipoTracker.checkForEUFilings({ days });
+
+    res.json({
+      success: true,
+      region: 'EU/UK',
+      newIPOs: results.newIPOs,
+      fetched: results.updates,
+      skipped: results.skipped,
+      errors: results.errors,
+      duration: results.duration,
+      sources: results.sources,
+    });
+  } catch (error) {
+    console.error('Error checking EU/UK filings:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/ipo/check-esma
+ * Trigger check for new ESMA (EU) prospectus filings only
+ */
+router.post('/check-esma', async (req, res) => {
+  try {
+    const { days = 30, country = null, ipoOnly = true } = req.body;
+
+    console.log('API: Starting ESMA prospectus check...');
+    const results = await ipoTracker.checkForESMAFilings({ days, country, ipoOnly });
+
+    res.json({
+      success: true,
+      source: 'ESMA',
+      region: 'EU',
+      fetched: results.fetched,
+      created: results.created,
+      skipped: results.skipped,
+      error: results.error,
+    });
+  } catch (error) {
+    console.error('Error checking ESMA filings:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/ipo/check-fca
+ * Trigger check for new FCA NSM (UK) prospectus filings only
+ */
+router.post('/check-fca', async (req, res) => {
+  try {
+    const { days = 30, ipoOnly = true } = req.body;
+
+    console.log('API: Starting FCA NSM prospectus check...');
+    const results = await ipoTracker.checkForFCAFilings({ days, ipoOnly });
+
+    res.json({
+      success: true,
+      source: 'FCA',
+      region: 'UK',
+      fetched: results.fetched,
+      created: results.created,
+      skipped: results.skipped,
+      error: results.error,
+    });
+  } catch (error) {
+    console.error('Error checking FCA filings:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/ipo/lei/:lei
+ * Get IPO by LEI (Legal Entity Identifier) - EU/UK companies
+ */
+router.get('/lei/:lei', (req, res) => {
+  try {
+    const { lei } = req.params;
+
+    // Validate LEI format (20 characters, alphanumeric)
+    if (!lei || !/^[A-Z0-9]{20}$/.test(lei)) {
+      return res.status(400).json({ error: 'Invalid LEI format. LEI must be 20 alphanumeric characters.' });
+    }
+
+    const ipo = ipoTracker.getIPOByLEI(lei);
+
+    if (!ipo) {
+      return res.status(404).json({ error: 'IPO not found for this LEI' });
+    }
+
+    // Get full details with filings
+    const fullIPO = ipoTracker.getIPOWithFilings(ipo.id);
+    fullIPO.stageInfo = IPO_STAGES[fullIPO.status];
+
+    res.json(fullIPO);
+  } catch (error) {
+    console.error('Error fetching IPO by LEI:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/ipo/isin/:isin
+ * Get IPO by ISIN
+ */
+router.get('/isin/:isin', (req, res) => {
+  try {
+    const { isin } = req.params;
+
+    // Basic ISIN validation (12 characters)
+    if (!isin || isin.length !== 12) {
+      return res.status(400).json({ error: 'Invalid ISIN format. ISIN must be 12 characters.' });
+    }
+
+    const ipo = ipoTracker.getIPOByISIN(isin);
+
+    if (!ipo) {
+      return res.status(404).json({ error: 'IPO not found for this ISIN' });
+    }
+
+    // Get full details with filings
+    const fullIPO = ipoTracker.getIPOWithFilings(ipo.id);
+    fullIPO.stageInfo = IPO_STAGES[fullIPO.status];
+
+    res.json(fullIPO);
+  } catch (error) {
+    console.error('Error fetching IPO by ISIN:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/ipo/eu
+ * Manually add an EU/UK IPO
+ */
+router.post('/eu', (req, res) => {
+  try {
+    const {
+      company_name, lei, isin, region = 'EU', regulator,
+      prospectus_id, prospectus_url, home_member_state,
+      approval_date, listing_venue, sector, industry, status = 'EFFECTIVE'
+    } = req.body;
+
+    if (!company_name) {
+      return res.status(400).json({
+        error: 'company_name is required'
+      });
+    }
+
+    // Validate region
+    if (!['EU', 'UK'].includes(region.toUpperCase())) {
+      return res.status(400).json({
+        error: 'region must be EU or UK'
+      });
+    }
+
+    // Check if LEI already exists
+    if (lei) {
+      const existingByLEI = ipoTracker.getIPOByLEI(lei);
+      if (existingByLEI) {
+        return res.status(409).json({
+          error: 'IPO with this LEI already exists',
+          existing: existingByLEI
+        });
+      }
+    }
+
+    const ipo = ipoTracker.createEUIPO({
+      company_name,
+      lei,
+      isin,
+      region: region.toUpperCase(),
+      regulator: regulator || (region.toUpperCase() === 'UK' ? 'FCA' : 'ESMA'),
+      prospectus_id,
+      prospectus_url,
+      home_member_state,
+      approval_date,
+      listing_venue,
+      sector,
+      industry,
+      status
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'EU/UK IPO created',
+      data: ipo
+    });
+  } catch (error) {
+    console.error('Error creating EU/UK IPO:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ============================================

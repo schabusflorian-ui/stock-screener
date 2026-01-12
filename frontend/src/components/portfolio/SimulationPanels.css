@@ -8318,3 +8318,311 @@
     min-width: 100%;
   }
 }
+
+/* ===========================================
+   Fama-French Factor Analysis Tab
+   =========================================== */
+
+.famafrench-tab {
+  padding: var(--space-3);
+}
+
+/* Header Stats */
+.ff-header-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.ff-stat {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  text-align: center;
+  border: 1px solid var(--border-color);
+}
+
+.ff-stat-label {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: var(--space-1);
+}
+
+.ff-stat-value {
+  display: block;
+  font-size: var(--text-xl);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ff-stat-value.positive {
+  color: var(--success-color);
+}
+
+.ff-stat-value.negative {
+  color: var(--danger-color);
+}
+
+.ff-stat-hint {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-top: var(--space-1);
+}
+
+/* Exposures Section */
+.ff-exposures-section {
+  margin-bottom: var(--space-4);
+}
+
+.ff-exposures-section h4 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ff-factors-grid {
+  display: grid;
+  gap: var(--space-3);
+}
+
+/* Returns Chart Section */
+.ff-returns-section {
+  margin-bottom: var(--space-4);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  border: 1px solid var(--border-color);
+}
+
+.ff-returns-section h4 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Factor Statistics Table */
+.ff-stats-section {
+  margin-bottom: var(--space-3);
+}
+
+.ff-stats-section h4 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ff-stats-table {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+
+.ff-stats-header,
+.ff-stats-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.ff-stats-header {
+  background: var(--bg-tertiary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.ff-stats-row {
+  font-size: var(--text-sm);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.ff-stats-row:last-child {
+  border-bottom: none;
+}
+
+.ff-stats-row .factor-code {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ff-stats-row .positive {
+  color: var(--success-color);
+}
+
+.ff-stats-row .negative {
+  color: var(--danger-color);
+}
+
+/* No Data State */
+.ff-no-data {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  text-align: center;
+  color: var(--text-tertiary);
+}
+
+.ff-no-data svg {
+  margin-bottom: var(--space-3);
+  color: var(--warning-color);
+}
+
+.ff-no-data p {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.ff-no-data p.hint {
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  opacity: 0.7;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .ff-header-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .ff-stats-header,
+  .ff-stats-row {
+    grid-template-columns: 2fr 1fr 1fr 1fr;
+    font-size: var(--text-xs);
+    padding: var(--space-1) var(--space-2);
+  }
+}
+
+/* ===========================================
+   Factor Definition Tooltips
+   =========================================== */
+
+.factor-tooltip-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--space-1);
+  cursor: help;
+}
+
+.factor-info-icon {
+  color: var(--text-tertiary);
+  opacity: 0.6;
+  transition: all 0.2s ease;
+}
+
+.factor-tooltip-wrapper:hover .factor-info-icon {
+  color: var(--accent-primary);
+  opacity: 1;
+}
+
+.factor-tooltip-content {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  width: 280px;
+  padding: var(--space-3);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s ease;
+}
+
+.factor-tooltip-wrapper:hover .factor-tooltip-content {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Tooltip arrow */
+.factor-tooltip-content::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: var(--bg-tertiary);
+}
+
+.factor-tooltip-content::before {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 7px solid transparent;
+  border-top-color: var(--border-primary);
+}
+
+.factor-tooltip-content strong {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--space-1);
+}
+
+.factor-tooltip-content em {
+  display: block;
+  font-size: var(--text-xs);
+  font-style: normal;
+  color: var(--accent-primary);
+  margin-bottom: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-secondary);
+}
+
+.factor-tooltip-content span:last-child {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* Adjust tooltip position for items near edges */
+.factor-item:first-child .factor-tooltip-content,
+.factor-item:nth-child(2) .factor-tooltip-content {
+  left: 0;
+  transform: translateX(0);
+}
+
+.factor-item:first-child .factor-tooltip-content::after,
+.factor-item:first-child .factor-tooltip-content::before,
+.factor-item:nth-child(2) .factor-tooltip-content::after,
+.factor-item:nth-child(2) .factor-tooltip-content::before {
+  left: 20px;
+}
+
+/* Mobile tooltip adjustments */
+@media (max-width: 768px) {
+  .factor-tooltip-content {
+    width: 240px;
+    left: 0;
+    transform: translateX(-20%);
+  }
+
+  .factor-tooltip-content::after,
+  .factor-tooltip-content::before {
+    left: 25%;
+  }
+}

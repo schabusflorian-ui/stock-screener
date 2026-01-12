@@ -46,6 +46,148 @@ const PERIOD_NAMES = {
   '63d': '3 Months'
 };
 
+// ============================================
+// HELPER FUNCTIONS FOR INTUITIVE DISPLAY
+// ============================================
+
+// Calculate letter grade from health score
+const getGrade = (healthScore) => {
+  if (healthScore >= 65) return { letter: 'A', color: 'positive', label: 'Excellent' };
+  if (healthScore >= 55) return { letter: 'B', color: 'positive', label: 'Good' };
+  if (healthScore >= 45) return { letter: 'C', color: 'warning', label: 'Average' };
+  return { letter: 'D', color: 'negative', label: 'Weak' };
+};
+
+// Get overall grade from average health score
+const getOverallGrade = (signals) => {
+  const scores = Object.values(signals).map(s => s.healthScore || 0);
+  if (scores.length === 0) return { letter: '-', color: 'neutral', label: 'No Data' };
+  const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+  return getGrade(avg);
+};
+
+// Generate plain English insight for a signal
+const getInsight = (signal) => {
+  const accuracy = Math.round((signal.hitRate || 0) * 100);
+  const ic63d = signal.ic_63d || 0;
+
+  if (accuracy < 50) return "Not beating random chance";
+  if (accuracy >= 55 && ic63d > 0.05) return "Strong long-term predictor";
+  if (accuracy >= 55) return "Reliable predictor";
+  if (ic63d > 0.1) return "Best for longer holds";
+  return "Marginally useful";
+};
+
+// Get actionable recommendation based on signals
+const getRecommendation = (signals) => {
+  const entries = Object.entries(signals);
+  const weak = entries.filter(([, s]) => (s.healthScore || 0) < 45);
+  const strong = entries.filter(([, s]) => (s.healthScore || 0) >= 55);
+
+  if (weak.length === 0 && strong.length > 0) {
+    return "All signals are performing well. Continue current strategy.";
+  }
+  if (weak.length > 0) {
+    const weakName = SIGNAL_NAMES[weak[0][0]] || weak[0][0];
+    return `Consider reducing weight on ${weakName} signals until performance improves.`;
+  }
+  return "Monitor signal performance and adjust weights as needed.";
+};
+
+// Get best and worst performers
+const getPerformers = (signals) => {
+  const entries = Object.entries(signals)
+    .map(([key, signal]) => ({
+      key,
+      name: SIGNAL_NAMES[key] || key,
+      healthScore: signal.healthScore || 0,
+      accuracy: Math.round((signal.hitRate || 0) * 100),
+      grade: getGrade(signal.healthScore || 0)
+    }))
+    .sort((a, b) => b.healthScore - a.healthScore);
+
+  return {
+    best: entries[0] || null,
+    worst: entries[entries.length - 1] || null
+  };
+};
+
+// Calculate average accuracy across signals
+const getAverageAccuracy = (signals) => {
+  const hitRates = Object.values(signals)
+    .map(s => s.hitRate || 0)
+    .filter(h => h > 0);
+  if (hitRates.length === 0) return 0;
+  return Math.round((hitRates.reduce((a, b) => a + b, 0) / hitRates.length) * 100);
+};
+
+// ============================================
+// SIGNAL SUMMARY CARD COMPONENT
+// ============================================
+
+const SignalSummaryCard = ({ signals }) => {
+  const overallGrade = getOverallGrade(signals);
+  const avgAccuracy = getAverageAccuracy(signals);
+  const { best, worst } = getPerformers(signals);
+  const recommendation = getRecommendation(signals);
+
+  return (
+    <div className="signal-summary-card">
+      <div className="signal-summary-card__header">
+        <div className="signal-summary-card__grade">
+          <span className={`grade-badge grade-badge--${overallGrade.letter}`}>
+            {overallGrade.letter}
+          </span>
+          <div className="signal-summary-card__title">
+            <h3>Signal Health: {overallGrade.label}</h3>
+            <p className="signal-summary-card__subtitle">
+              Your signals predict price direction correctly <strong>{avgAccuracy}%</strong> of the time.
+              <span className="benchmark-note"> (Random = 50%)</span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="signal-summary-card__performers">
+        {best && (
+          <div className="performer performer--best">
+            <CheckCircle size={16} />
+            <span>
+              <strong>Best:</strong> {best.name} ({best.grade.letter}, {best.accuracy}% accuracy)
+            </span>
+          </div>
+        )}
+        {worst && worst.healthScore < 50 && (
+          <div className="performer performer--attention">
+            <AlertTriangle size={16} />
+            <span>
+              <strong>Attention:</strong> {worst.name} ({worst.grade.letter}, {worst.accuracy}% accuracy)
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div className="signal-summary-card__recommendation">
+        <span className="recommendation-icon">💡</span>
+        <span>{recommendation}</span>
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// GRADE BADGE COMPONENT
+// ============================================
+
+const GradeBadge = ({ healthScore }) => {
+  const grade = getGrade(healthScore);
+  return (
+    <span className={`grade-badge grade-badge--${grade.letter}`}>
+      {grade.letter}
+    </span>
+  );
+};
+
 const StatusBadge = ({ status, label }) => {
   const statusClass = status === 'HEALTHY' || status === 'pass' ? 'success'
     : status === 'DEGRADED' || status === 'warning' ? 'warning'
@@ -77,22 +219,32 @@ const MetricCard = ({ title, value, subtitle, trend, icon: Icon, status }) => (
   </div>
 );
 
-const ICGauge = ({ value, label }) => {
-  const normalizedValue = Math.max(-1, Math.min(1, value || 0));
-  const percentage = ((normalizedValue + 1) / 2) * 100;
-  const color = normalizedValue > 0.05 ? 'var(--success)'
-    : normalizedValue > 0 ? 'var(--warning)'
-    : 'var(--danger)';
+const ICValue = ({ value, label }) => {
+  const icValue = value || 0;
+  const displayValue = (icValue * 100).toFixed(1);
+
+  // IC interpretation: > 0.05 is good, > 0.02 is okay, < 0 is bad
+  let status = 'neutral';
+  let interpretation = 'Weak';
+  if (icValue > 0.05) {
+    status = 'positive';
+    interpretation = 'Strong';
+  } else if (icValue > 0.02) {
+    status = 'warning';
+    interpretation = 'Moderate';
+  } else if (icValue <= 0) {
+    status = 'negative';
+    interpretation = 'None';
+  }
 
   return (
-    <div className="ic-gauge">
-      <div className="ic-gauge__label">{label}</div>
-      <div className="ic-gauge__bar">
-        <div className="ic-gauge__fill" style={{ width: `${percentage}%`, background: color }} />
-        <div className="ic-gauge__center" />
+    <div className="ic-value-item">
+      <div className="ic-value-item__label">{label}</div>
+      <div className={`ic-value-item__value ic-value-item__value--${status}`}>
+        {displayValue}%
       </div>
-      <div className="ic-gauge__value" style={{ color }}>
-        {(normalizedValue * 100).toFixed(2)}%
+      <div className={`ic-value-item__interpretation ic-value-item__interpretation--${status}`}>
+        {interpretation}
       </div>
     </div>
   );
@@ -104,6 +256,7 @@ function ValidationTab() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [lookbackDays, setLookbackDays] = useState(365);
+  const [showDetails, setShowDetails] = useState(false);
 
   // Data states
   const [healthReport, setHealthReport] = useState(null);
@@ -119,7 +272,9 @@ function ValidationTab() {
       const response = await fetch(`${API_BASE}/validation/signals/health?lookback=${lookbackDays}`);
       const data = await response.json();
       if (data.success) {
-        setHealthReport(data.data);
+        // API spreads data directly on response, not under data.data
+        const { success, ...reportData } = data;
+        setHealthReport(reportData);
       }
     } catch (err) {
       console.error('Failed to fetch health report:', err);
@@ -132,7 +287,8 @@ function ValidationTab() {
       const response = await fetch(`${API_BASE}/validation/signals/ic-decay?lookback=${lookbackDays}`);
       const data = await response.json();
       if (data.success) {
-        setICDecay(data.data);
+        // API returns { success, signals, summary, ... }
+        setICDecay(data.signals || {});
       }
     } catch (err) {
       console.error('Failed to fetch IC decay:', err);
@@ -145,7 +301,8 @@ function ValidationTab() {
       const response = await fetch(`${API_BASE}/validation/signals/hit-rates?lookback=${lookbackDays}`);
       const data = await response.json();
       if (data.success) {
-        setHitRates(data.data);
+        // API returns { success, signals, ... }
+        setHitRates(data.signals || {});
       }
     } catch (err) {
       console.error('Failed to fetch hit rates:', err);
@@ -158,7 +315,13 @@ function ValidationTab() {
       const response = await fetch(`${API_BASE}/validation/signals/regime-stability?lookback=${lookbackDays}`);
       const data = await response.json();
       if (data.success) {
-        setRegimeStability(data.data);
+        // API returns { success, signals, regimeCounts, ... }
+        setRegimeStability({
+          signals: data.signals || {},
+          regimeCounts: data.regimeCounts || {},
+          currentRegime: Object.keys(data.regimeCounts || {})[0] || 'Unknown',
+          stabilityScore: 0.5 // Default
+        });
       }
     } catch (err) {
       console.error('Failed to fetch regime stability:', err);
@@ -173,7 +336,9 @@ function ValidationTab() {
       );
       const data = await response.json();
       if (data.success) {
-        setRollingIC(prev => ({ ...prev, [signalType]: data.data }));
+        // API returns { success, signalType, dataPoints, trend, currentIC }
+        const { success, ...rollingData } = data;
+        setRollingIC(prev => ({ ...prev, [signalType]: rollingData }));
       }
     } catch (err) {
       console.error('Failed to fetch rolling IC:', err);
@@ -253,10 +418,15 @@ function ValidationTab() {
         <Card>
           <div className="validation-empty">
             <AlertTriangle size={48} />
-            <h3>No Signal Data</h3>
-            <p>Run signal calculations to see validation metrics</p>
+            <h3>No Signal Data Available</h3>
+            <p>
+              {healthReport?.error || healthReport?.message || 'Signal validation requires aggregated signals with corresponding price history.'}
+            </p>
+            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 'var(--space-2)' }}>
+              Run signal calculations for stocks in your watchlist to generate validation data.
+            </p>
             <Button onClick={handleRecalculate} disabled={refreshing}>
-              {refreshing ? 'Calculating...' : 'Calculate Signals'}
+              {refreshing ? 'Calculating...' : 'Try Recalculate'}
             </Button>
           </div>
         </Card>
@@ -267,66 +437,73 @@ function ValidationTab() {
 
     return (
       <div className="validation-overview">
-        <div className="validation-metrics-grid">
-          <MetricCard
-            title="Overall Status"
-            value={healthReport.overallStatus}
-            icon={Activity}
-            status={healthReport.overallStatus === 'HEALTHY' ? 'success' : 'warning'}
-          />
-          <MetricCard
-            title="Active Signals"
-            value={signals.length}
-            subtitle="Signal types tracked"
-            icon={Target}
-          />
-          <MetricCard
-            title="Avg IC"
-            value={`${((healthReport.avgIC || 0) * 100).toFixed(2)}%`}
-            subtitle="Information coefficient"
-            trend={healthReport.avgIC > 0.05 ? 'up' : healthReport.avgIC > 0 ? 'neutral' : 'down'}
-            icon={TrendingUp}
-          />
-        </div>
+        {/* Signal Summary Card - Hero section */}
+        <SignalSummaryCard signals={healthReport.signals || {}} />
 
+        {/* Simplified Signal Table */}
         <div className="validation-signals-table">
-          <h3>Signal Health Summary</h3>
+          <div className="validation-signals-table__header">
+            <h3>Signal Performance</h3>
+            <label className="show-details-toggle">
+              <input
+                type="checkbox"
+                checked={showDetails}
+                onChange={(e) => setShowDetails(e.target.checked)}
+              />
+              <span>Show Details</span>
+            </label>
+          </div>
           <table className="validation-table">
             <thead>
               <tr>
                 <th>Signal</th>
-                <th>Status</th>
-                <th>IC (1D)</th>
-                <th>IC (5D)</th>
-                <th>IC (21D)</th>
-                <th>Hit Rate</th>
-                <th>Coverage</th>
+                <th>Grade</th>
+                <th>Accuracy</th>
+                <th>Insight</th>
+                {showDetails && (
+                  <>
+                    <th>IC (1D)</th>
+                    <th>IC (5D)</th>
+                    <th>IC (21D)</th>
+                    <th>Coverage</th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody>
-              {signals.map(([key, signal]) => (
-                <tr key={key}>
-                  <td>{SIGNAL_NAMES[key] || key}</td>
-                  <td>
-                    <StatusBadge status={signal.status} label={signal.status} />
-                  </td>
-                  <td className={signal.ic_1d > 0 ? 'positive' : 'negative'}>
-                    {((signal.ic_1d || 0) * 100).toFixed(2)}%
-                  </td>
-                  <td className={signal.ic_5d > 0 ? 'positive' : 'negative'}>
-                    {((signal.ic_5d || 0) * 100).toFixed(2)}%
-                  </td>
-                  <td className={signal.ic_21d > 0 ? 'positive' : 'negative'}>
-                    {((signal.ic_21d || 0) * 100).toFixed(2)}%
-                  </td>
-                  <td>
-                    {signal.hitRate ? `${(signal.hitRate * 100).toFixed(1)}%` : '-'}
-                  </td>
-                  <td>
-                    {signal.coverage ? `${(signal.coverage * 100).toFixed(1)}%` : '-'}
-                  </td>
-                </tr>
-              ))}
+              {signals.map(([key, signal]) => {
+                const accuracy = Math.round((signal.hitRate || 0) * 100);
+                return (
+                  <tr key={key}>
+                    <td>{SIGNAL_NAMES[key] || key}</td>
+                    <td>
+                      <GradeBadge healthScore={signal.healthScore || 0} />
+                    </td>
+                    <td className={accuracy >= 50 ? 'positive' : 'negative'}>
+                      {accuracy}%
+                    </td>
+                    <td className="insight-cell">
+                      {getInsight(signal)}
+                    </td>
+                    {showDetails && (
+                      <>
+                        <td className={signal.ic_1d > 0 ? 'positive' : 'negative'}>
+                          {((signal.ic_1d || 0) * 100).toFixed(2)}%
+                        </td>
+                        <td className={signal.ic_5d > 0 ? 'positive' : 'negative'}>
+                          {((signal.ic_5d || 0) * 100).toFixed(2)}%
+                        </td>
+                        <td className={signal.ic_21d > 0 ? 'positive' : 'negative'}>
+                          {((signal.ic_21d || 0) * 100).toFixed(2)}%
+                        </td>
+                        <td>
+                          {signal.coverage ? `${(signal.coverage * 100).toFixed(1)}%` : '-'}
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -351,23 +528,41 @@ function ValidationTab() {
     return (
       <div className="validation-ic-decay">
         <p className="validation-description">
-          IC Decay measures how predictive power changes over time. Healthy signals maintain positive IC across horizons.
+          Information Coefficient (IC) measures how well signals predict future returns.
+          Higher values = better predictions. Watch how IC changes across time horizons.
         </p>
         <div className="ic-decay-grid">
-          {Object.entries(icDecay).map(([signalType, data]) => (
-            <Card key={signalType} className="ic-decay-card">
-              <h4>{SIGNAL_NAMES[signalType] || signalType}</h4>
-              <div className="ic-decay-values">
-                {Object.entries(PERIOD_NAMES).map(([period, label]) => (
-                  <ICGauge
-                    key={period}
-                    value={data[`ic_${period}`] || 0}
-                    label={label}
-                  />
-                ))}
-              </div>
-            </Card>
-          ))}
+          {Object.entries(icDecay).map(([signalType, data]) => {
+            // Determine overall signal quality
+            const avgIC = (
+              (data.ic_1d || 0) + (data.ic_5d || 0) +
+              (data.ic_21d || 0) + (data.ic_63d || 0)
+            ) / 4;
+            const overallGrade = getGrade(50 + avgIC * 300); // Scale IC to health score
+
+            return (
+              <Card key={signalType} className="ic-decay-card">
+                <div className="ic-decay-card__header">
+                  <h4>{SIGNAL_NAMES[signalType] || signalType}</h4>
+                  <GradeBadge healthScore={50 + avgIC * 300} />
+                </div>
+                <div className="ic-decay-values">
+                  {Object.entries(PERIOD_NAMES).map(([period, label]) => (
+                    <ICValue
+                      key={period}
+                      value={data[`ic_${period}`] || 0}
+                      label={label}
+                    />
+                  ))}
+                </div>
+                {data.optimalHorizon && (
+                  <div className="ic-decay-card__footer">
+                    Best horizon: <strong>{PERIOD_NAMES[data.optimalHorizon] || data.optimalHorizon}</strong>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
         </div>
       </div>
     );

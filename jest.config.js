@@ -7,6 +7,7 @@ module.exports = {
     'src/services/agent/**/*.js',
     'src/services/trading/**/*.js',
     'src/services/backtesting/**/*.js',
+    'src/services/factors/**/*.js',
     'src/api/routes/**/*.js',
     '!**/node_modules/**',
     '!**/index.js'

@@ -13,6 +13,7 @@ import {
   Sparkline
 } from '../components';
 import { useFormatters } from '../hooks/useFormatters';
+import { SkeletonSectorAnalysis, SkeletonTable } from '../components/Skeleton';
 import './SectorAnalysisPage.css';
 
 const getMomentumClass = (momentum) => {
@@ -159,6 +160,8 @@ function SectorAnalysisPage() {
   const [indexConstituents, setIndexConstituents] = useState([]);
   const [loadingConstituents, setLoadingConstituents] = useState(false);
   const [indexChartPeriod, setIndexChartPeriod] = useState('1y');
+  const [constituentsPage, setConstituentsPage] = useState(1);
+  const CONSTITUENTS_PER_PAGE = 50;
 
   // Top performers controls
   const [topMetric, setTopMetric] = useState('roic');
@@ -455,6 +458,7 @@ function SectorAnalysisPage() {
   // Load constituents when index selected
   useEffect(() => {
     if (selectedIndex?.short_name) {
+      setConstituentsPage(1); // Reset page when index changes
       loadIndexConstituents(selectedIndex.short_name);
     }
   }, [selectedIndex, loadIndexConstituents]);
@@ -466,8 +470,8 @@ function SectorAnalysisPage() {
     }
   }, [selectedIndex?.symbol, indexChartPeriod, loadIndexChartData]);
 
-  // Prepare chart data for sector rotation
-  const getRotationChartData = () => {
+  // Memoize chart data for sector rotation
+  const rotationChartData = useMemo(() => {
     if (!sectorRotation.length) return [];
 
     const allPeriods = new Set();
@@ -484,13 +488,21 @@ function SectorAnalysisPage() {
       });
       return point;
     });
-  };
+  }, [sectorRotation]);
 
   // Get unique sectors for filter dropdown
   const uniqueSectors = useMemo(() =>
     [...new Set(industries.map(i => i.sector).filter(Boolean))].sort(),
     [industries]
   );
+
+  // Paginate index constituents
+  const paginatedConstituents = useMemo(() => {
+    const startIndex = (constituentsPage - 1) * CONSTITUENTS_PER_PAGE;
+    return indexConstituents.slice(startIndex, startIndex + CONSTITUENTS_PER_PAGE);
+  }, [indexConstituents, constituentsPage, CONSTITUENTS_PER_PAGE]);
+
+  const totalConstituentsPages = Math.ceil(indexConstituents.length / CONSTITUENTS_PER_PAGE);
 
   // Filter and sort sectors
   const filteredSectors = useMemo(() => {
@@ -628,7 +640,7 @@ function SectorAnalysisPage() {
   }, [selectedIndustryMetrics]);
 
   if (loading) {
-    return <div className="loading">Loading sector analysis...</div>;
+    return <SkeletonSectorAnalysis />;
   }
 
   return (
@@ -838,40 +850,81 @@ function SectorAnalysisPage() {
                   {loadingConstituents ? (
                     <div className="loading">Loading constituents...</div>
                   ) : indexConstituents.length > 0 ? (
-                    <div className="constituents-table-wrapper">
-                      <table className="constituents-table">
-                        <thead>
-                          <tr>
-                            <th>Symbol</th>
-                            <th>Company</th>
-                            <th>Sector</th>
-                            <th>Industry</th>
-                            <th>Market Cap</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {indexConstituents.map(company => (
-                            <tr key={company.symbol}>
-                              <td>
-                                <Link to={`/company/${company.symbol}`} className="symbol-link">
-                                  {company.symbol}
-                                </Link>
-                              </td>
-                              <td className="company-name">{company.name}</td>
-                              <td>{company.sector || '-'}</td>
-                              <td className="industry-cell">{company.industry || '-'}</td>
-                              <td className="market-cap">
-                                {company.market_cap
-                                  ? company.market_cap >= 1e12
-                                    ? `$${(company.market_cap / 1e12).toFixed(2)}T`
-                                    : `$${(company.market_cap / 1e9).toFixed(1)}B`
-                                  : '-'}
-                              </td>
+                    <>
+                      <div className="constituents-table-wrapper">
+                        <table className="constituents-table">
+                          <thead>
+                            <tr>
+                              <th>Symbol</th>
+                              <th>Company</th>
+                              <th>Sector</th>
+                              <th>Industry</th>
+                              <th>Market Cap</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                          </thead>
+                          <tbody>
+                            {paginatedConstituents.map(company => (
+                              <tr key={company.symbol}>
+                                <td>
+                                  <Link to={`/company/${company.symbol}`} className="symbol-link">
+                                    {company.symbol}
+                                  </Link>
+                                </td>
+                                <td className="company-name">{company.name}</td>
+                                <td>{company.sector || '-'}</td>
+                                <td className="industry-cell">{company.industry || '-'}</td>
+                                <td className="market-cap">
+                                  {company.market_cap
+                                    ? company.market_cap >= 1e12
+                                      ? `$${(company.market_cap / 1e12).toFixed(2)}T`
+                                      : `$${(company.market_cap / 1e9).toFixed(1)}B`
+                                    : '-'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {/* Pagination Controls */}
+                      {totalConstituentsPages > 1 && (
+                        <div className="constituents-pagination">
+                          <button
+                            className="pagination-btn"
+                            onClick={() => setConstituentsPage(1)}
+                            disabled={constituentsPage === 1}
+                          >
+                            First
+                          </button>
+                          <button
+                            className="pagination-btn"
+                            onClick={() => setConstituentsPage(p => Math.max(1, p - 1))}
+                            disabled={constituentsPage === 1}
+                          >
+                            Previous
+                          </button>
+                          <span className="pagination-info">
+                            Page {constituentsPage} of {totalConstituentsPages}
+                            <span className="pagination-detail">
+                              ({(constituentsPage - 1) * CONSTITUENTS_PER_PAGE + 1}-{Math.min(constituentsPage * CONSTITUENTS_PER_PAGE, indexConstituents.length)} of {indexConstituents.length})
+                            </span>
+                          </span>
+                          <button
+                            className="pagination-btn"
+                            onClick={() => setConstituentsPage(p => Math.min(totalConstituentsPages, p + 1))}
+                            disabled={constituentsPage === totalConstituentsPages}
+                          >
+                            Next
+                          </button>
+                          <button
+                            className="pagination-btn"
+                            onClick={() => setConstituentsPage(totalConstituentsPages)}
+                            disabled={constituentsPage === totalConstituentsPages}
+                          >
+                            Last
+                          </button>
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <div className="no-constituents">
                       No constituent data available for this index.
@@ -1372,7 +1425,7 @@ function SectorAnalysisPage() {
           {/* Rotation Chart */}
           <div className="rotation-chart-container">
             <MultiMetricChart
-              data={getRotationChartData()}
+              data={rotationChartData}
               metrics={sectorRotation.slice(0, 6).map((s) => ({
                 key: s.sector,
                 label: s.sector,
@@ -1660,7 +1713,7 @@ function SectorDetailView({ sector, detail, loading, onBack }) {
   }, [detail?.companies, filterText, sortConfig]);
 
   if (loading) {
-    return <div className="loading">Loading sector details...</div>;
+    return <SkeletonTable rows={10} columns={6} />;
   }
 
   if (!detail) {
@@ -1861,7 +1914,7 @@ function IndustryDetailView({ industry, detail, loading, onBack }) {
   }, [detail?.companies, filterText, sortConfig]);
 
   if (loading) {
-    return <div className="loading">Loading industry details...</div>;
+    return <SkeletonTable rows={10} columns={6} />;
   }
 
   if (!detail) {

@@ -13,6 +13,7 @@ const fs = require('fs');
 // Lazy load dependencies
 let db = null;
 let validator = null;
+let signalValidator = null;
 let signalPerformanceTracker = null;
 let mlSignalCombiner = null;
 let validationInProgress = false;
@@ -37,7 +38,24 @@ function initializeValidator() {
 }
 
 /**
- * Initialize Signal Performance Tracker
+ * Initialize Signal Validator (uses aggregated_signals + daily_prices)
+ */
+function initializeSignalValidator() {
+  if (!db) {
+    const database = require('../../database');
+    db = database.getDatabase();
+  }
+
+  if (!signalValidator) {
+    const { SignalValidator } = require('../../services/validation/signalValidator');
+    signalValidator = new SignalValidator(db);
+  }
+
+  return signalValidator;
+}
+
+/**
+ * Initialize Signal Performance Tracker (legacy - uses recommendation_outcomes)
  */
 function initializeSignalTracker() {
   if (!db) {
@@ -418,13 +436,14 @@ router.delete('/cancel', (req, res) => {
 /**
  * GET /api/validation/signals/health
  * Get comprehensive signal health report
+ * Uses aggregated_signals + daily_prices (no AI agent required)
  */
 router.get('/signals/health', (req, res) => {
   try {
-    const tracker = initializeSignalTracker();
+    const validator = initializeSignalValidator();
     const { lookback = 180 } = req.query;
 
-    const report = tracker.getSignalHealthReport(parseInt(lookback));
+    const report = validator.getSignalHealthReport(parseInt(lookback));
 
     res.json({
       success: true,
@@ -442,14 +461,33 @@ router.get('/signals/health', (req, res) => {
  */
 router.get('/signals/ic-decay', (req, res) => {
   try {
-    const tracker = initializeSignalTracker();
+    const validator = initializeSignalValidator();
     const { lookback = 180 } = req.query;
 
-    const decay = tracker.getICDecay(parseInt(lookback));
+    const decay = validator.getICDecay(parseInt(lookback));
+
+    // Transform nested structure to flat format expected by frontend
+    // Backend returns: { technical: { '1d': { ic: 0.05 }, '5d': { ic: 0.03 } } }
+    // Frontend expects: { technical: { ic_1d: 0.05, ic_5d: 0.03 } }
+    const transformedSignals = {};
+    if (decay.data) {
+      for (const [signalType, horizons] of Object.entries(decay.data)) {
+        transformedSignals[signalType] = {
+          ic_1d: horizons['1d']?.ic || 0,
+          ic_5d: horizons['5d']?.ic || 0,
+          ic_21d: horizons['21d']?.ic || 0,
+          ic_63d: horizons['63d']?.ic || 0,
+          decayRate: horizons.decayRate,
+          optimalHorizon: horizons.optimalHorizon,
+        };
+      }
+    }
 
     res.json({
       success: true,
-      ...decay,
+      signals: transformedSignals,
+      lookbackDays: decay.lookbackDays,
+      totalSamples: decay.totalSamples,
     });
   } catch (error) {
     console.error('IC decay error:', error);
@@ -463,14 +501,35 @@ router.get('/signals/ic-decay', (req, res) => {
  */
 router.get('/signals/hit-rates', (req, res) => {
   try {
-    const tracker = initializeSignalTracker();
+    const validator = initializeSignalValidator();
     const { lookback = 180 } = req.query;
 
-    const hitRates = tracker.getHitRatesByPeriod(parseInt(lookback));
+    const hitRates = validator.getHitRatesByPeriod(parseInt(lookback));
+
+    // Transform nested structure to flat format expected by frontend
+    // Backend returns: { technical: { '1d': { hitRate: 0.52 }, '5d': { hitRate: 0.54 } } }
+    // Frontend expects: { technical: { hitRate_1d: 0.52, hitRate_5d: 0.54 } }
+    const transformedSignals = {};
+    if (hitRates.data) {
+      for (const [signalType, periods] of Object.entries(hitRates.data)) {
+        transformedSignals[signalType] = {
+          hitRate_1d: periods['1d']?.hitRate || 0,
+          hitRate_5d: periods['5d']?.hitRate || 0,
+          hitRate_21d: periods['21d']?.hitRate || 0,
+          hitRate_63d: periods['63d']?.hitRate || 0,
+          strongHitRate_1d: periods['1d']?.strongSignalHitRate || 0,
+          strongHitRate_5d: periods['5d']?.strongSignalHitRate || 0,
+          strongHitRate_21d: periods['21d']?.strongSignalHitRate || 0,
+          strongHitRate_63d: periods['63d']?.strongSignalHitRate || 0,
+        };
+      }
+    }
 
     res.json({
       success: true,
-      ...hitRates,
+      signals: transformedSignals,
+      lookbackDays: hitRates.lookbackDays,
+      totalSamples: hitRates.totalSamples,
     });
   } catch (error) {
     console.error('Hit rates error:', error);
@@ -484,13 +543,14 @@ router.get('/signals/hit-rates', (req, res) => {
  */
 router.get('/signals/regime-stability', (req, res) => {
   try {
-    const tracker = initializeSignalTracker();
+    const validator = initializeSignalValidator();
     const { lookback = 365 } = req.query;
 
-    const stability = tracker.getRegimeStability(parseInt(lookback));
+    const stability = validator.getRegimeStability(parseInt(lookback));
 
     res.json({
       success: true,
+      signals: stability.data || {},
       ...stability,
     });
   } catch (error) {
@@ -505,11 +565,11 @@ router.get('/signals/regime-stability', (req, res) => {
  */
 router.get('/signals/rolling-ic/:signalType', (req, res) => {
   try {
-    const tracker = initializeSignalTracker();
+    const validator = initializeSignalValidator();
     const { signalType } = req.params;
     const { window = 60, step = 7, lookback = 365 } = req.query;
 
-    const trend = tracker.getRollingICTrend(
+    const trend = validator.getRollingICTrend(
       signalType,
       parseInt(window),
       parseInt(step),
@@ -532,8 +592,8 @@ router.get('/signals/rolling-ic/:signalType', (req, res) => {
  */
 router.post('/signals/recalculate', (req, res) => {
   try {
-    const tracker = initializeSignalTracker();
-    const results = tracker.recalculateAll();
+    const validator = initializeSignalValidator();
+    const results = validator.recalculateAll();
 
     res.json({
       success: true,

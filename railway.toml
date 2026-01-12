@@ -1,0 +1,23 @@
+# railway.toml
+# Railway deployment configuration
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "node src/api/server.js"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+# Environment variables to set in Railway dashboard:
+# - DATABASE_URL (from Railway PostgreSQL addon)
+# - REDIS_URL (from Railway Redis addon)
+# - SESSION_SECRET (generate secure random string)
+# - ALPHA_VANTAGE_KEY
+# - ANTHROPIC_API_KEY
+# - GOOGLE_CLIENT_ID
+# - GOOGLE_CLIENT_SECRET
+# - SENTRY_DSN
+# - NODE_ENV=production

@@ -122,9 +122,12 @@ class FactorCalculator {
         cm.debt_to_assets,
         cm.current_ratio,
         cm.interest_coverage,
-        cm.asset_turnover
+        cm.asset_turnover,
+        pm.avg_volume_30d,
+        pm.last_price
       FROM companies c
       JOIN calculated_metrics cm ON c.id = cm.company_id
+      LEFT JOIN price_metrics pm ON c.id = pm.company_id
       WHERE cm.fiscal_period <= ?
         AND c.market_cap IS NOT NULL
         AND c.market_cap > 0
@@ -160,6 +163,9 @@ class FactorCalculator {
 
     // Get volatility data
     const volatility = this._calculateVolatility(stock.company_id, scoreDate);
+
+    // Calculate liquidity metrics
+    const liquidity = this._calculateLiquidity(stock);
 
     return {
       company_id: stock.company_id,
@@ -205,7 +211,34 @@ class FactorCalculator {
       raw_leverage: {
         debt_to_equity: stock.debt_to_equity,
         debt_to_assets: stock.debt_to_assets
-      }
+      },
+
+      raw_liquidity: liquidity
+    };
+  }
+
+  /**
+   * Calculate liquidity metrics for a stock
+   * Higher dollar volume and turnover indicate better liquidity
+   */
+  _calculateLiquidity(stock) {
+    if (!stock.avg_volume_30d || !stock.last_price || !stock.market_cap) {
+      return {
+        dollar_volume: null,
+        turnover: null
+      };
+    }
+
+    // Dollar volume = average shares traded * price
+    const dollarVolume = stock.avg_volume_30d * stock.last_price;
+
+    // Turnover ratio = dollar volume / market cap (as percentage)
+    // Higher turnover = more liquid
+    const turnover = (dollarVolume / (stock.market_cap * 1e9)) * 100;
+
+    return {
+      dollar_volume: dollarVolume,
+      turnover: turnover
     };
   }
 
@@ -274,11 +307,109 @@ class FactorCalculator {
       return Math.sqrt(variance) * Math.sqrt(252); // Annualize
     };
 
+    // Calculate beta against S&P 500
+    const beta = this._calculateBeta(companyId, scoreDate, prices);
+
     return {
       volatility_60d: returns.length >= 60 ? calcStdDev(returns.slice(0, 60)) * 100 : null,
       volatility_252d: returns.length >= 252 ? calcStdDev(returns) * 100 : null,
-      beta: null // Would need market data for beta calculation
+      beta
     };
+  }
+
+  /**
+   * Calculate beta (market sensitivity) for a stock
+   * Beta = Covariance(stock returns, market returns) / Variance(market returns)
+   */
+  _calculateBeta(companyId, scoreDate, stockPrices = null) {
+    // Get stock prices if not provided
+    if (!stockPrices) {
+      stockPrices = this.db.prepare(`
+        SELECT date, close
+        FROM daily_prices
+        WHERE company_id = ?
+          AND date <= ?
+        ORDER BY date DESC
+        LIMIT 252
+      `).all(companyId, scoreDate);
+    }
+
+    if (stockPrices.length < 60) {
+      return null; // Need at least 60 days for beta calculation
+    }
+
+    // Get S&P 500 (index_id = 1) prices for the same period
+    const oldestStockDate = stockPrices[stockPrices.length - 1].date;
+    const marketPrices = this.db.prepare(`
+      SELECT date, close
+      FROM market_index_prices
+      WHERE index_id = 1
+        AND date <= ?
+        AND date >= ?
+      ORDER BY date DESC
+    `).all(scoreDate, oldestStockDate);
+
+    if (marketPrices.length < 60) {
+      return null; // Need sufficient market data
+    }
+
+    // Create a map of market prices by date for efficient lookup
+    const marketPriceMap = new Map();
+    marketPrices.forEach(p => marketPriceMap.set(p.date, p.close));
+
+    // Calculate aligned returns (only for dates where we have both stock and market data)
+    const stockReturns = [];
+    const marketReturns = [];
+
+    for (let i = 0; i < stockPrices.length - 1; i++) {
+      const currentDate = stockPrices[i].date;
+      const previousDate = stockPrices[i + 1].date;
+
+      const stockCurrent = stockPrices[i].close;
+      const stockPrevious = stockPrices[i + 1].close;
+      const marketCurrent = marketPriceMap.get(currentDate);
+      const marketPrevious = marketPriceMap.get(previousDate);
+
+      if (stockCurrent && stockPrevious && marketCurrent && marketPrevious) {
+        const stockReturn = (stockCurrent - stockPrevious) / stockPrevious;
+        const marketReturn = (marketCurrent - marketPrevious) / marketPrevious;
+
+        stockReturns.push(stockReturn);
+        marketReturns.push(marketReturn);
+      }
+    }
+
+    if (stockReturns.length < 60) {
+      return null; // Need at least 60 paired observations
+    }
+
+    // Calculate means
+    const stockMean = stockReturns.reduce((a, b) => a + b, 0) / stockReturns.length;
+    const marketMean = marketReturns.reduce((a, b) => a + b, 0) / marketReturns.length;
+
+    // Calculate covariance and variance
+    let covariance = 0;
+    let marketVariance = 0;
+
+    for (let i = 0; i < stockReturns.length; i++) {
+      const stockDev = stockReturns[i] - stockMean;
+      const marketDev = marketReturns[i] - marketMean;
+
+      covariance += stockDev * marketDev;
+      marketVariance += marketDev * marketDev;
+    }
+
+    covariance /= stockReturns.length;
+    marketVariance /= marketReturns.length;
+
+    if (marketVariance === 0) {
+      return null; // Cannot calculate beta if market has no variance
+    }
+
+    // Beta = Cov(stock, market) / Var(market)
+    const beta = covariance / marketVariance;
+
+    return beta;
   }
 
   /**
@@ -347,6 +478,11 @@ class FactorCalculator {
       debt_to_equity: rankPercentile(factorValues, 'raw_leverage.debt_to_equity', false) // Lower = better
     };
 
+    const liquidityPercentiles = {
+      dollar_volume: rankPercentile(factorValues, 'raw_liquidity.dollar_volume', true), // Higher = more liquid
+      turnover: rankPercentile(factorValues, 'raw_liquidity.turnover', true) // Higher = more liquid
+    };
+
     // Add percentiles back to factor values
     return factorValues.map((stock, i) => ({
       ...stock,
@@ -382,6 +518,10 @@ class FactorCalculator {
         },
         leverage: {
           debt_to_equity: leveragePercentiles.debt_to_equity[i]
+        },
+        liquidity: {
+          dollar_volume: liquidityPercentiles.dollar_volume[i],
+          turnover: liquidityPercentiles.turnover[i]
         }
       }
     }));
@@ -455,6 +595,15 @@ class FactorCalculator {
       ? (value_score * 0.6 + growth_score * 0.4)
       : null;
 
+    // Liquidity composite (dollar volume + turnover)
+    const liquidityComponents = [
+      p.liquidity.dollar_volume,
+      p.liquidity.turnover
+    ].filter(v => v != null);
+    const liquidity_score = liquidityComponents.length > 0
+      ? liquidityComponents.reduce((a, b) => a + b, 0) / liquidityComponents.length
+      : null;
+
     // Defensive score (Quality + Low Vol + Dividend)
     const defensiveComponents = [quality_score, volatility_score, dividend_score]
       .filter(v => v != null);
@@ -479,12 +628,10 @@ class FactorCalculator {
       investment_score: null, // Would need asset growth data
       value_growth_blend,
       defensive_score,
+      liquidity_score,
 
       // Beta (from volatility calculation)
       beta: stock.raw_volatility?.beta || null,
-
-      // Liquidity score (would need volume data)
-      liquidity_score: null,
 
       // Final percentiles for key factors
       value_percentile: value_score,

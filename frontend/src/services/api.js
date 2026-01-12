@@ -165,6 +165,7 @@ export const ipoAPI = {
   // Pipeline views
   getPipeline: (options = {}) => {
     const params = new URLSearchParams();
+    if (options.region) params.append('region', options.region);
     if (options.status) params.append('status', options.status);
     if (options.sector) params.append('sector', options.sector);
     if (options.sortBy) params.append('sortBy', options.sortBy);
@@ -172,12 +173,12 @@ export const ipoAPI = {
     if (options.limit) params.append('limit', options.limit);
     return api.get(`/ipo/pipeline?${params.toString()}`);
   },
-  getByStage: () => api.get('/ipo/by-stage'),
+  getByStage: (region = 'all') => api.get(`/ipo/by-stage?region=${region}`),
   getUpcoming: () => api.get('/ipo/upcoming'),
   getRecent: (limit = 20) => api.get(`/ipo/recent?limit=${limit}`),
 
   // Statistics and metadata
-  getStatistics: () => api.get('/ipo/statistics'),
+  getStatistics: (region = 'all') => api.get(`/ipo/statistics?region=${region}`),
   getSectors: () => api.get('/ipo/sectors'),
   getStages: () => api.get('/ipo/stages'),
 
@@ -1544,7 +1545,27 @@ export const nlQueryAPI = {
   },
 
   // Check NL service health
-  health: () => api.get('/nl/health')
+  health: () => api.get('/nl/health'),
+
+  // List all conversations
+  listConversations: (limit = 20, sessionId = null) => {
+    const params = new URLSearchParams();
+    params.append('limit', limit);
+    if (sessionId) params.append('session_id', sessionId);
+    return api.get(`/nl/conversations?${params.toString()}`);
+  },
+
+  // Get a specific conversation with messages
+  getConversation: (conversationId, limit = 50) =>
+    api.get(`/nl/conversation/${conversationId}?limit=${limit}`),
+
+  // Delete a conversation
+  deleteConversation: (conversationId) =>
+    api.delete(`/nl/conversation/${conversationId}`),
+
+  // Start a new conversation
+  newConversation: (sessionId = null, clearPrevious = false) =>
+    api.post('/nl/conversation/new', { session_id: sessionId, clear_previous: clearPrevious })
 };
 
 // SEC Direct Refresh API
@@ -2500,6 +2521,103 @@ export const xbrlAPI = {
   getMetrics: (companyId) => api.get(`/xbrl/metrics/${companyId}`)
 };
 
+// ============================================
+// FACTORS API (Fama-French Factor Analysis)
+// ============================================
+export const factorsAPI = {
+  // Get Fama-French factor exposures for a portfolio
+  getFamaFrenchExposures: (portfolioId, { startDate, endDate } = {}) => {
+    const params = new URLSearchParams();
+    if (startDate) params.append('startDate', startDate);
+    if (endDate) params.append('endDate', endDate);
+    const queryString = params.toString();
+    return api.get(`/factors/portfolio/${portfolioId}/fama-french${queryString ? `?${queryString}` : ''}`);
+  },
+
+  // Get historical factor returns (cumulative by default)
+  getFactorReturns: ({ startDate, endDate, cumulative = true } = {}) => {
+    const params = new URLSearchParams();
+    if (startDate) params.append('startDate', startDate);
+    if (endDate) params.append('endDate', endDate);
+    params.append('cumulative', cumulative.toString());
+    return api.get(`/factors/returns?${params.toString()}`);
+  },
+
+  // Get factor definitions
+  getDefinitions: () => api.get('/factors/definitions'),
+
+  // Get factor scores for a stock
+  getStockFactorScores: (symbol, scoreDate = null) => {
+    const params = scoreDate ? `?scoreDate=${scoreDate}` : '';
+    return api.get(`/factors/stock/${symbol}${params}`);
+  },
+
+  // Get top stocks by factor
+  getTopByFactor: (factor, { limit = 20, scoreDate } = {}) => {
+    const params = new URLSearchParams({ factor, limit });
+    if (scoreDate) params.append('scoreDate', scoreDate);
+    return api.get(`/factors/top?${params.toString()}`);
+  },
+
+  // Get factor regime information
+  getCurrentRegime: () => api.get('/factors/regime'),
+
+  // Get factor statistics
+  getStats: () => api.get('/factors/stats')
+};
+
+// ============================================
+// MACRO API (Economic Indicators & Yield Curve)
+// ============================================
+export const macroAPI = {
+  // Get macroeconomic snapshot
+  getSnapshot: () => api.get('/macro/snapshot'),
+
+  // Get macro trading signals
+  getSignals: () => api.get('/macro/signals'),
+
+  // Get current yield curve
+  getYieldCurve: () => api.get('/macro/yield-curve'),
+
+  // Get yield curve history
+  getYieldCurveHistory: (days = 90) => api.get(`/macro/yield-curve/history?days=${days}`),
+
+  // Get all economic indicators
+  getIndicators: (category = null) => {
+    const params = category ? `?category=${category}` : '';
+    return api.get(`/macro/indicators${params}`);
+  },
+
+  // Get specific indicator history
+  getIndicatorHistory: (seriesId, days = 365) =>
+    api.get(`/macro/indicators/${seriesId}?days=${days}`),
+
+  // Get available indicator categories
+  getCategories: () => api.get('/macro/categories'),
+
+  // Get key macro metrics summary
+  getKeyMetrics: () => api.get('/macro/key-metrics'),
+
+  // Get market valuation indicators
+  getMarketIndicators: () => api.get('/macro/market-indicators'),
+
+  // Get historical market indicators
+  getMarketIndicatorsHistory: (startQuarter = '2015-Q1', indicator = 'all') =>
+    api.get(`/macro/market-indicators/history?startQuarter=${startQuarter}&indicator=${indicator}`),
+
+  // Get safe haven stocks
+  getSafeHavens: (limit = 10) => api.get(`/macro/safe-havens?limit=${limit}`),
+
+  // Get undervalued quality opportunities
+  getOpportunities: (limit = 10) => api.get(`/macro/opportunities?limit=${limit}`),
+
+  // Get macro data status
+  getStatus: () => api.get('/macro/status'),
+
+  // Trigger FRED data update (requires API key)
+  update: () => apiLong.post('/macro/update')
+};
+
 // === European Data API (Price/Index/Valuation) ===
 export const europeanAPI = {
   // Get EU/UK data status
@@ -2524,6 +2642,26 @@ export const europeanAPI = {
   // Get companies by country
   getCompaniesByCountry: (country, limit = 100) =>
     api.get(`/data/european/companies?country=${country}&limit=${limit}`)
+};
+
+// === Congressional Trading API ===
+export const congressionalAPI = {
+  // Get all trades with filters
+  getTrades: (params = {}) => api.get('/congressional/trades', { params }),
+
+  // Get politicians list
+  getPoliticians: (days = 90) => api.get(`/congressional/politicians?days=${days}`),
+
+  // Get purchase clusters
+  getClusters: (days = 30, minPoliticians = 2) =>
+    api.get(`/congressional/clusters?days=${days}&minPoliticians=${minPoliticians}`),
+
+  // Get trades for specific company
+  getCompanyTrades: (ticker, days = 365) =>
+    api.get(`/congressional/company/${ticker}?days=${days}`),
+
+  // Get overall statistics
+  getStats: () => api.get('/congressional/stats')
 };
 
 export default api;

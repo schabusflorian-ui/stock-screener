@@ -1,5 +1,5 @@
 // frontend/src/pages/HomePage.js
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, memo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   TrendingUp,
@@ -23,7 +23,7 @@ import { useWatchlist } from '../context/WatchlistContext';
 import { useFormatters } from '../hooks/useFormatters';
 import { WatchlistButton, MiniChart } from '../components';
 import { NLQueryBar } from '../components/nl';
-import { SkeletonTable } from '../components/Skeleton';
+import { SkeletonTable, SkeletonDashboard } from '../components/Skeleton';
 import {
   PageHeader,
   Badge
@@ -52,8 +52,8 @@ const MACRO_SCREENS = [
   { id: 'credit-stress', name: 'Credit Fortress', description: 'Strong balance sheets', endpoint: 'credit-stress' }
 ];
 
-// Market Indices Section with Charts and Weekly Performance
-function MarketIndicesSection({ indices, priceHistory, loading }) {
+// Market Indices Section with Charts and Weekly Performance - memoized to prevent re-renders
+const MarketIndicesSection = memo(function MarketIndicesSection({ indices, priceHistory, loading }) {
   // Map index symbols to sectors page with index filter
   const getIndexLink = (symbol) => {
     const indexMap = {
@@ -150,10 +150,10 @@ function MarketIndicesSection({ indices, priceHistory, loading }) {
       </div>
     </div>
   );
-}
+});
 
-// Compact Macro Indicators Bar (VIX, 2s10s, HY, MSI - no charts)
-function MacroIndicatorsBar({ indicators }) {
+// Compact Macro Indicators Bar (VIX, 2s10s, HY, MSI - no charts) - memoized
+const MacroIndicatorsBar = memo(function MacroIndicatorsBar({ indicators }) {
   if (!indicators) return null;
 
   const { volatility, treasuryYields, credit, aggregateValuation } = indicators;
@@ -182,10 +182,10 @@ function MacroIndicatorsBar({ indicators }) {
       </div>
     </div>
   );
-}
+});
 
-// Valuation Dashboard Component with Historical Charts
-function ValuationDashboard({ indicators, valuationHistory, loading }) {
+// Valuation Dashboard Component with Historical Charts - memoized
+const ValuationDashboard = memo(function ValuationDashboard({ indicators, valuationHistory, loading }) {
   if (loading) {
     return (
       <div className="valuation-dashboard loading">
@@ -420,10 +420,10 @@ function ValuationDashboard({ indicators, valuationHistory, loading }) {
       )}
     </div>
   );
-}
+});
 
-// Safe Havens & Opportunities Panel
-function OpportunitiesPanel({ indicators, loading }) {
+// Safe Havens & Opportunities Panel - memoized
+const OpportunitiesPanel = memo(function OpportunitiesPanel({ indicators, loading }) {
   if (loading || !indicators) return null;
 
   const { safeHavens, opportunities } = indicators;
@@ -496,10 +496,10 @@ function OpportunitiesPanel({ indicators, loading }) {
       </div>
     </div>
   );
-}
+});
 
-// Regime Banner Component
-function RegimeBanner({ regime, indicators, loading }) {
+// Regime Banner Component - memoized
+const RegimeBanner = memo(function RegimeBanner({ regime, indicators, loading }) {
   if (loading) {
     return (
       <div className="regime-banner regime-loading">
@@ -530,10 +530,10 @@ function RegimeBanner({ regime, indicators, loading }) {
       </div>
     </div>
   );
-}
+});
 
-// Value Screen Results Table
-function ScreenResultsTable({ results, loading }) {
+// Value Screen Results Table - memoized
+const ScreenResultsTable = memo(function ScreenResultsTable({ results, loading }) {
   const { percent: formatPercent, number: formatNumber } = useFormatters();
 
   if (loading) {
@@ -587,10 +587,10 @@ function ScreenResultsTable({ results, loading }) {
       )}
     </div>
   );
-}
+});
 
-// Value Screens Section Component
-function ValueScreensSection({ screens, activeScreen, setActiveScreen, screenResults, screenLoading, screenMeta }) {
+// Value Screens Section Component - memoized
+const ValueScreensSection = memo(function ValueScreensSection({ screens, activeScreen, setActiveScreen, screenResults, screenLoading, screenMeta }) {
   const [isExpanded, setIsExpanded] = useState(true);
 
   return (
@@ -636,10 +636,10 @@ function ValueScreensSection({ screens, activeScreen, setActiveScreen, screenRes
       )}
     </div>
   );
-}
+});
 
-// Compact Market Leaders
-function MarketLeadersCompact({ highlights }) {
+// Compact Market Leaders - memoized
+const MarketLeadersCompact = memo(function MarketLeadersCompact({ highlights }) {
   if (!highlights) return null;
 
   return (
@@ -696,10 +696,10 @@ function MarketLeadersCompact({ highlights }) {
       </div>
     </div>
   );
-}
+});
 
-// Quick Actions
-function QuickActions() {
+// Quick Actions - memoized
+const QuickActions = memo(function QuickActions() {
   const actions = [
     { path: '/screening', icon: Target, label: 'Screen' },
     { path: '/charts', icon: BarChart3, label: 'Compare' },
@@ -719,7 +719,7 @@ function QuickActions() {
       ))}
     </div>
   );
-}
+});
 
 function HomePage() {
   const { watchlist } = useWatchlist();
@@ -872,10 +872,7 @@ function HomePage() {
   if (loading) {
     return (
       <div className="home-page">
-        <div className="loading-overlay">
-          <div className="spinner"></div>
-          <span>Loading dashboard...</span>
-        </div>
+        <SkeletonDashboard />
       </div>
     );
   }

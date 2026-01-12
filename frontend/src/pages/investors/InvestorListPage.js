@@ -23,6 +23,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { investorsAPI, indicesAPI } from '../../services/api';
+import { SkeletonInvestorList } from '../../components/Skeleton';
 import './InvestorListPage.css';
 
 const STYLE_LABELS = {
@@ -246,10 +247,7 @@ function InvestorListPage() {
   if (loading) {
     return (
       <div className="investor-list-page">
-        <div className="loading-container">
-          <RefreshCw className="loading-spinner" size={32} />
-          <p>Loading famous investors...</p>
-        </div>
+        <SkeletonInvestorList />
       </div>
     );
   }

@@ -21,12 +21,14 @@ import {
   Building2,
   HelpCircle
 } from 'lucide-react';
-import { companyAPI, analystAPI, sentimentAPI } from '../../services/api';
+import { companyAPI, nlQueryAPI, sentimentAPI } from '../../services/api';
+import { useNLQuery } from '../../context/NLQueryContext';
 import './CommandPalette.css';
 
 function CommandPalette({ open, onOpenChange }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { openModal: openChatModal } = useNLQuery();
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [recentSearches, setRecentSearches] = useState([]);
@@ -105,9 +107,52 @@ function CommandPalette({ open, onOpenChange }) {
   // Detect if input looks like a question (NL query)
   const looksLikeQuestion = useCallback((text) => {
     if (!text || text.length < 3) return false;
-    const questionWords = ['what', 'why', 'how', 'when', 'where', 'who', 'which', 'is', 'are', 'can', 'should', 'would', 'could', 'will', 'does', 'do', 'compare', 'analyze', 'explain', 'tell', 'show', 'find'];
-    const firstWord = text.toLowerCase().split(' ')[0];
-    return questionWords.includes(firstWord) || text.endsWith('?');
+
+    const lowerText = text.toLowerCase().trim();
+
+    // Check if ends with question mark
+    if (text.endsWith('?')) return true;
+
+    // Check single-word question starters
+    const questionWords = [
+      'what', 'why', 'how', 'when', 'where', 'who', 'which',
+      'is', 'are', 'can', 'should', 'would', 'could', 'will', 'does', 'do',
+      'compare', 'analyze', 'analyse', 'explain', 'list', 'get', 'give'
+    ];
+    const firstWord = lowerText.split(' ')[0];
+    if (questionWords.includes(firstWord)) return true;
+
+    // Check two-word patterns (these should trigger AI even without question mark)
+    const twoWordPatterns = [
+      'show me', 'tell me', 'find me', 'give me', 'get me',
+      'show the', 'find the', 'list the', 'list all',
+      'what is', 'what are', 'what\'s', 'whats',
+      'how is', 'how are', 'how does', 'how do',
+      'who is', 'who are', 'who has',
+      'which stocks', 'which companies', 'which sectors',
+      'compare the', 'analyze the', 'analyse the'
+    ];
+    if (twoWordPatterns.some(pattern => lowerText.startsWith(pattern))) return true;
+
+    // Check for query-like patterns anywhere in text
+    const queryPatterns = [
+      /\bvs\.?\s/i,                      // "AAPL vs MSFT"
+      /\bversus\b/i,                     // "Apple versus Microsoft"
+      /stocks?\s+(with|that|where)/i,    // "stocks with P/E < 15"
+      /companies\s+(with|that|where)/i,  // "companies that have..."
+      /\bsentiment\b/i,                  // "Apple sentiment"
+      /\boversold\b/i,                   // "oversold stocks"
+      /\boverbought\b/i,                 // "overbought stocks"
+      /\bundervalued\b/i,                // "undervalued stocks"
+      /\bovervalued\b/i,                 // "overvalued stocks"
+      /top\s+\d+/i,                      // "top 10 stocks"
+      /best\s+\d+/i,                     // "best 5 dividend stocks"
+      /\bholdings?\b.*\b(buffett|burry|ackman|dalio|soros|icahn|druckenmiller)/i,  // investor holdings
+      /\b(buffett|burry|ackman|dalio|soros|icahn|druckenmiller)\b.*\bholdings?\b/i  // holdings of investor
+    ];
+    if (queryPatterns.some(pattern => pattern.test(lowerText))) return true;
+
+    return false;
   }, []);
 
   // Company-specific quick queries
@@ -132,32 +177,50 @@ function CommandPalette({ open, onOpenChange }) {
     }
 
     try {
-      // Create a quick conversation and get response
-      const convResponse = await analystAPI.createConversation({
-        analystId: 'value', // Value analyst for comprehensive analysis
-        companySymbol: currentCompany || undefined
+      // Use the NL Query API which routes through the hybrid LLM system
+      const response = await nlQueryAPI.query(queryText, {
+        symbol: currentCompany || undefined,
+        company_context: currentCompany ? companyContext : null
       });
 
-      const conversation = convResponse.data.conversation;
+      const result = response.data;
 
-      const msgResponse = await analystAPI.sendMessage(
-        conversation.id,
-        queryText,
-        currentCompany ? companyContext : null
-      );
+      if (result.success) {
+        // Handle the response based on type
+        const responseData = result.result;
+        let responseText = '';
 
-      setNlResponse({
-        query: queryText,
-        response: msgResponse.data.message.content,
-        company: currentCompany,
-        conversationId: conversation.id,
-        timestamp: new Date().toISOString()
-      });
+        if (responseData.type === 'llm_response') {
+          // LLM response - use the message directly
+          responseText = responseData.message || responseData.summary || 'Analysis complete.';
+        } else if (responseData.formatted_response) {
+          // Handler response with formatted text
+          responseText = responseData.formatted_response;
+        } else if (responseData.message) {
+          responseText = responseData.message;
+        } else if (responseData.summary) {
+          responseText = responseData.summary;
+        } else {
+          // Fallback: format the data object
+          responseText = JSON.stringify(responseData, null, 2);
+        }
+
+        setNlResponse({
+          query: queryText,
+          response: responseText,
+          company: currentCompany,
+          data: responseData.data,
+          tools_used: responseData.tools_used,
+          timestamp: new Date().toISOString()
+        });
+      } else {
+        throw new Error(result.error || 'Query failed');
+      }
     } catch (error) {
       console.error('NL Query error:', error);
       setNlResponse({
         query: queryText,
-        error: 'Failed to get AI response. Try again or visit the AI Analyst page.',
+        error: error.response?.data?.error || error.message || 'Failed to get AI response. Try again or visit the AI Analyst page.',
         timestamp: new Date().toISOString()
       });
     } finally {
@@ -275,6 +338,7 @@ function CommandPalette({ open, onOpenChange }) {
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && looksLikeQuestion(search) && !nlLoading) {
                   e.preventDefault();
+                  e.stopPropagation();
                   handleAskAI();
                 }
               }}
@@ -286,8 +350,17 @@ function CommandPalette({ open, onOpenChange }) {
             />
             {search && looksLikeQuestion(search) && !nlLoading && mode !== 'ask' && (
               <button
+                type="button"
                 className="command-ask-btn"
-                onClick={handleAskAI}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleAskAI();
+                }}
+                onMouseDown={(e) => {
+                  // Prevent input blur which could interfere with click
+                  e.preventDefault();
+                }}
                 title="Ask AI (Enter)"
               >
                 <Sparkles size={14} />
@@ -340,6 +413,16 @@ function CommandPalette({ open, onOpenChange }) {
                     <div className="nl-response-content">
                       {nlResponse.response}
                     </div>
+                    {nlResponse.tools_used && nlResponse.tools_used.length > 0 && (
+                      <div className="nl-tools-used">
+                        <span className="nl-tools-label">Data sources:</span>
+                        {nlResponse.tools_used.map((tool, idx) => (
+                          <span key={idx} className="nl-tool-badge">
+                            {tool.replace(/_/g, ' ')}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     <div className="nl-response-actions">
                       <button
                         className="nl-action-btn"
@@ -354,14 +437,17 @@ function CommandPalette({ open, onOpenChange }) {
                       <button
                         className="nl-action-btn primary"
                         onClick={() => {
-                          const analystUrl = nlResponse.company
-                            ? `/analyst?symbol=${nlResponse.company}`
-                            : '/analyst';
-                          navigate(analystUrl);
+                          // Close command palette and open the full chat modal
                           onOpenChange(false);
+                          // Open NL chat modal with context from this conversation
+                          openChatModal('', {
+                            symbol: nlResponse.company,
+                            previousQuery: nlResponse.query,
+                            previousResponse: nlResponse.response
+                          });
                         }}
                       >
-                        Continue in AI Analyst →
+                        Continue Chat →
                       </button>
                     </div>
                   </div>
