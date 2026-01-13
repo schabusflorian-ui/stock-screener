@@ -4,15 +4,15 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { companyAPI } from '../services/api';
 import './FinancialBreakdown.css';
 
-// Format large numbers
-const formatCurrency = (value) => {
+// Format large numbers with currency symbol
+const formatCurrency = (value, currencySymbol = '$') => {
   if (value === null || value === undefined) return '-';
   const absValue = Math.abs(value);
-  if (absValue >= 1e12) return `$${(value / 1e12).toFixed(1)}T`;
-  if (absValue >= 1e9) return `$${(value / 1e9).toFixed(1)}B`;
-  if (absValue >= 1e6) return `$${(value / 1e6).toFixed(1)}M`;
-  if (absValue >= 1e3) return `$${(value / 1e3).toFixed(1)}K`;
-  return `$${value.toFixed(0)}`;
+  if (absValue >= 1e12) return `${currencySymbol}${(value / 1e12).toFixed(1)}T`;
+  if (absValue >= 1e9) return `${currencySymbol}${(value / 1e9).toFixed(1)}B`;
+  if (absValue >= 1e6) return `${currencySymbol}${(value / 1e6).toFixed(1)}M`;
+  if (absValue >= 1e3) return `${currencySymbol}${(value / 1e3).toFixed(1)}K`;
+  return `${currencySymbol}${value.toFixed(0)}`;
 };
 
 const formatPercent = (value) => {
@@ -25,6 +25,7 @@ function FinancialBreakdown({ symbol, periodType }) {
   const [loading, setLoading] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState(null);
   const [viewMode, setViewMode] = useState('chart'); // 'chart' or 'waterfall'
+  const [currency, setCurrency] = useState({ reporting: 'USD', symbol: '$', isUSD: true });
 
   useEffect(() => {
     const loadBreakdown = async () => {
@@ -35,6 +36,9 @@ function FinancialBreakdown({ symbol, periodType }) {
           periodType
         });
         setBreakdown(response.data.breakdown || []);
+        if (response.data.currency) {
+          setCurrency(response.data.currency);
+        }
         if (response.data.breakdown?.length > 0) {
           setSelectedPeriod(response.data.breakdown[0].period);
         }
@@ -48,6 +52,9 @@ function FinancialBreakdown({ symbol, periodType }) {
       loadBreakdown();
     }
   }, [symbol, periodType]);
+
+  // Local formatting function using component's currency state
+  const fmtCurrency = (value) => formatCurrency(value, currency.symbol);
 
   if (loading) return <div className="breakdown-loading">Loading financial data...</div>;
   if (breakdown.length === 0) return <div className="breakdown-empty">No financial breakdown data available</div>;
@@ -101,7 +108,14 @@ function FinancialBreakdown({ symbol, periodType }) {
   return (
     <div className="financial-breakdown">
       <div className="breakdown-header">
-        <h3>Financial Breakdown</h3>
+        <h3>
+          Financial Breakdown
+          {!currency.isUSD && (
+            <span className="currency-badge" title={`Reported in ${currency.name}`}>
+              {currency.symbol} {currency.reporting}
+            </span>
+          )}
+        </h3>
         <div className="breakdown-controls">
           <div className="view-toggle">
             <button
@@ -152,7 +166,7 @@ function FinancialBreakdown({ symbol, periodType }) {
                 <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8' }} unit="B" />
                 <Tooltip
                   contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem' }}
-                  formatter={(value) => `$${value.toFixed(1)}B`}
+                  formatter={(value) => `${currency.symbol}${value.toFixed(1)}B`}
                 />
                 <Legend />
                 <Bar dataKey="Revenue" fill="#3b82f6" />
@@ -186,21 +200,21 @@ function FinancialBreakdown({ symbol, periodType }) {
               <div className="breakdown-summary">
                 <div className="summary-card revenue">
                   <span className="label">Revenue</span>
-                  <span className="value">{formatCurrency(selectedData.revenue)}</span>
+                  <span className="value">{fmtCurrency(selectedData.revenue)}</span>
                 </div>
                 <div className="summary-card">
                   <span className="label">Gross Profit</span>
-                  <span className="value">{formatCurrency(selectedData.grossProfit)}</span>
+                  <span className="value">{fmtCurrency(selectedData.grossProfit)}</span>
                   <span className="percent">{formatPercent(selectedData.margins.grossMargin)}</span>
                 </div>
                 <div className="summary-card">
                   <span className="label">Operating Income</span>
-                  <span className="value">{formatCurrency(selectedData.operatingIncome)}</span>
+                  <span className="value">{fmtCurrency(selectedData.operatingIncome)}</span>
                   <span className="percent">{formatPercent(selectedData.margins.operatingMargin)}</span>
                 </div>
                 <div className="summary-card profit">
                   <span className="label">Net Income</span>
-                  <span className="value">{formatCurrency(selectedData.netIncome)}</span>
+                  <span className="value">{fmtCurrency(selectedData.netIncome)}</span>
                   <span className="percent">{formatPercent(selectedData.margins.netMargin)}</span>
                 </div>
               </div>
@@ -217,7 +231,7 @@ function FinancialBreakdown({ symbol, periodType }) {
                         width: `${item.percent}%`,
                         backgroundColor: item.fill
                       }}
-                      title={`${item.name}: ${formatCurrency(item.value)} (${item.percent.toFixed(1)}%)`}
+                      title={`${item.name}: ${fmtCurrency(item.value)} (${item.percent.toFixed(1)}%)`}
                     />
                   ))}
                 </div>
@@ -246,53 +260,53 @@ function FinancialBreakdown({ symbol, periodType }) {
                   <tbody>
                     <tr className="highlight-row">
                       <td>Revenue</td>
-                      <td>{formatCurrency(selectedData.revenue)}</td>
+                      <td>{fmtCurrency(selectedData.revenue)}</td>
                       <td>100.0%</td>
                     </tr>
                     <tr className="expense-row">
                       <td>Cost of Revenue</td>
-                      <td>{formatCurrency(selectedData.costs.costOfRevenue)}</td>
+                      <td>{fmtCurrency(selectedData.costs.costOfRevenue)}</td>
                       <td>{formatPercent(selectedData.margins.costOfRevenuePercent)}</td>
                     </tr>
                     <tr className="subtotal-row">
                       <td>Gross Profit</td>
-                      <td>{formatCurrency(selectedData.grossProfit)}</td>
+                      <td>{fmtCurrency(selectedData.grossProfit)}</td>
                       <td>{formatPercent(selectedData.margins.grossMargin)}</td>
                     </tr>
                     {selectedData.costs.researchAndDevelopment > 0 && (
                       <tr className="expense-row">
                         <td>Research & Development</td>
-                        <td>{formatCurrency(selectedData.costs.researchAndDevelopment)}</td>
+                        <td>{fmtCurrency(selectedData.costs.researchAndDevelopment)}</td>
                         <td>{formatPercent(selectedData.margins.rdPercent)}</td>
                       </tr>
                     )}
                     {selectedData.costs.sellingGeneralAdmin > 0 && (
                       <tr className="expense-row">
                         <td>Selling, General & Admin</td>
-                        <td>{formatCurrency(selectedData.costs.sellingGeneralAdmin)}</td>
+                        <td>{fmtCurrency(selectedData.costs.sellingGeneralAdmin)}</td>
                         <td>{formatPercent(selectedData.margins.sgaPercent)}</td>
                       </tr>
                     )}
                     <tr className="subtotal-row">
                       <td>Operating Income</td>
-                      <td>{formatCurrency(selectedData.operatingIncome)}</td>
+                      <td>{fmtCurrency(selectedData.operatingIncome)}</td>
                       <td>{formatPercent(selectedData.margins.operatingMargin)}</td>
                     </tr>
                     {selectedData.costs.interestExpense > 0 && (
                       <tr className="expense-row">
                         <td>Interest Expense</td>
-                        <td>{formatCurrency(selectedData.costs.interestExpense)}</td>
+                        <td>{fmtCurrency(selectedData.costs.interestExpense)}</td>
                         <td>{formatPercent((selectedData.costs.interestExpense / selectedData.revenue) * 100)}</td>
                       </tr>
                     )}
                     <tr className="expense-row">
                       <td>Income Tax</td>
-                      <td>{formatCurrency(selectedData.costs.incomeTaxExpense)}</td>
+                      <td>{fmtCurrency(selectedData.costs.incomeTaxExpense)}</td>
                       <td>{formatPercent(selectedData.margins.taxRate)} (eff. rate)</td>
                     </tr>
                     <tr className="total-row">
                       <td>Net Income</td>
-                      <td>{formatCurrency(selectedData.netIncome)}</td>
+                      <td>{fmtCurrency(selectedData.netIncome)}</td>
                       <td>{formatPercent(selectedData.margins.netMargin)}</td>
                     </tr>
                   </tbody>

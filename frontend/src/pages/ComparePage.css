@@ -24,6 +24,47 @@
   margin-bottom: 1.5rem;
 }
 
+/* Currency Info Banner (USD Normalized) */
+.currency-info-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: var(--radius-lg);
+  margin-bottom: 1.5rem;
+}
+
+.currency-info-banner .info-icon {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #3b82f6;
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+  background: rgba(59, 130, 246, 0.15);
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+}
+
+.currency-info-banner .info-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.currency-info-banner .info-content strong {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.currency-info-banner .info-content span {
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
 /* Company Search */
 .company-search {
   margin-bottom: 1.5rem;

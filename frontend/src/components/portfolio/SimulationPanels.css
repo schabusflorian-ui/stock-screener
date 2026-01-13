@@ -255,6 +255,13 @@
   margin-top: var(--space-6);
 }
 
+.percentile-section h5 {
+  margin: 0 0 var(--space-3) 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
 .percentile-chart {
   padding: var(--space-4);
   background: var(--bg-primary);
@@ -1613,7 +1620,7 @@
 .fan-chart-svg {
   width: 100%;
   height: auto;
-  max-height: 300px;
+  max-height: 350px;
 }
 
 .fan-chart-tooltip {
@@ -1723,7 +1730,7 @@
 .distribution-svg {
   width: 100%;
   height: auto;
-  max-height: 100px;
+  max-height: 150px;
 }
 
 /* Percentile Cards */
@@ -8624,5 +8631,211 @@
   .factor-tooltip-content::after,
   .factor-tooltip-content::before {
     left: 25%;
+  }
+}
+
+/* ============================================
+   Benchmark Selector (Expandable)
+   ============================================ */
+
+.benchmark-selector {
+  position: relative;
+}
+
+.benchmark-selector-container {
+  position: relative;
+}
+
+.benchmark-favorites {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.benchmark-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.benchmark-chip:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-color-hover);
+}
+
+.benchmark-chip.selected {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: white;
+}
+
+.benchmark-more-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+}
+
+.benchmark-more-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.benchmark-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  min-width: 280px;
+  max-height: 400px;
+  overflow-y: auto;
+  margin-top: 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+}
+
+.benchmark-dropdown-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.favorites-hint {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
+.benchmark-group {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.benchmark-group:last-child {
+  border-bottom: none;
+}
+
+.benchmark-group-label {
+  padding: 4px 16px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-tertiary);
+}
+
+.benchmark-option {
+  display: flex;
+  align-items: center;
+  padding: 0 8px 0 16px;
+}
+
+.benchmark-option:hover {
+  background: var(--bg-hover);
+}
+
+.benchmark-option.selected {
+  background: rgba(139, 92, 246, 0.1);
+}
+
+.benchmark-option-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-primary);
+}
+
+.benchmark-flag {
+  font-size: 14px;
+}
+
+.benchmark-symbol {
+  font-weight: 600;
+  font-size: 13px;
+  min-width: 40px;
+}
+
+.benchmark-name {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.benchmark-star {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  border-radius: var(--radius-sm);
+  transition: all 0.15s ease;
+}
+
+.benchmark-star:hover {
+  color: var(--color-warning);
+  background: rgba(251, 191, 36, 0.1);
+}
+
+.benchmark-star.favorited {
+  color: var(--color-warning);
+}
+
+/* Mobile adjustments */
+@media (max-width: 640px) {
+  .benchmark-favorites {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .benchmark-favorites::-webkit-scrollbar {
+    display: none;
+  }
+
+  .benchmark-dropdown {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    top: auto;
+    bottom: 16px;
+    max-height: 60vh;
+    border-radius: var(--radius-xl);
   }
 }

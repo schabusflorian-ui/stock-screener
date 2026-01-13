@@ -812,6 +812,7 @@ class IPOTracker {
 
   /**
    * Create EU/UK IPO record from prospectus data
+   * Automatically creates company entry if status is TRADING
    */
   createEUIPO(data) {
     const stmt = this.db.prepare(`
@@ -819,14 +820,16 @@ class IPOTracker {
         company_name, lei, isin, region, regulator,
         prospectus_id, prospectus_url, home_member_state,
         approval_date, initial_s1_date, status, is_active,
-        listing_venue, sector, industry
+        listing_venue, sector, industry, ticker_final
       ) VALUES (
         @company_name, @lei, @isin, @region, @regulator,
         @prospectus_id, @prospectus_url, @home_member_state,
         @approval_date, @initial_s1_date, @status, @is_active,
-        @listing_venue, @sector, @industry
+        @listing_venue, @sector, @industry, @ticker_final
       )
     `);
+
+    const status = data.status || 'EFFECTIVE';
 
     const result = stmt.run({
       company_name: data.company_name,
@@ -839,12 +842,20 @@ class IPOTracker {
       home_member_state: data.home_member_state || null,
       approval_date: data.approval_date || null,
       initial_s1_date: data.approval_date || new Date().toISOString().split('T')[0],
-      status: data.status || 'EFFECTIVE',
+      status: status,
       is_active: data.is_active !== undefined ? data.is_active : 1,
       listing_venue: data.listing_venue || null,
       sector: data.sector || null,
       industry: data.industry || null,
+      ticker_final: data.ticker_final || data.ticker || null,
     });
+
+    const ipo = this.getIPO(result.lastInsertRowid);
+
+    // Auto-create company if IPO is already trading
+    if (status === 'TRADING' && ipo && !ipo.company_id) {
+      this.ensureCompanyExists(ipo);
+    }
 
     return this.getIPO(result.lastInsertRowid);
   }
@@ -956,6 +967,7 @@ class IPOTracker {
 
   /**
    * Update IPO record
+   * Automatically creates company entry when status changes to TRADING
    */
   updateIPO(ipoId, updates) {
     const fields = [];
@@ -973,6 +985,57 @@ class IPOTracker {
     this.db.prepare(`
       UPDATE ipo_tracker SET ${fields.join(', ')} WHERE id = ?
     `).run(...values);
+
+    // Auto-create company when IPO moves to TRADING status
+    if (updates.status === 'TRADING') {
+      const ipo = this.getIPO(ipoId);
+      if (ipo && !ipo.company_id) {
+        this.ensureCompanyExists(ipo);
+      }
+    }
+  }
+
+  /**
+   * Ensure a company entry exists for a trading IPO
+   * Called automatically when IPO status changes to TRADING
+   */
+  ensureCompanyExists(ipo) {
+    const ticker = ipo.ticker_final || ipo.ticker_proposed;
+    if (!ticker) {
+      console.log(`  Cannot create company for IPO ${ipo.id}: no ticker`);
+      return null;
+    }
+
+    try {
+      // Check if company already exists
+      const existing = this.db.prepare(`
+        SELECT id FROM companies WHERE symbol = ? COLLATE NOCASE
+      `).get(ticker);
+
+      if (existing) {
+        // Link to existing company
+        this.db.prepare(`UPDATE ipo_tracker SET company_id = ? WHERE id = ?`).run(existing.id, ipo.id);
+        console.log(`  Linked IPO ${ipo.company_name} to existing company ${ticker}`);
+        return existing.id;
+      }
+
+      // Create new company
+      const exchange = ipo.exchange_final || ipo.exchange_proposed || ipo.listing_venue;
+      const country = ipo.headquarters_country || (ipo.region === 'US' ? 'US' : ipo.home_member_state) || 'US';
+
+      const result = this.db.prepare(`
+        INSERT INTO companies (symbol, name, sector, industry, exchange, country, is_active, cik)
+        VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+      `).run(ticker, ipo.company_name, ipo.sector, ipo.industry, exchange, country, ipo.cik);
+
+      const companyId = result.lastInsertRowid;
+      this.db.prepare(`UPDATE ipo_tracker SET company_id = ? WHERE id = ?`).run(companyId, ipo.id);
+      console.log(`  Created company ${ticker} (id: ${companyId}) for IPO ${ipo.company_name}`);
+      return companyId;
+    } catch (error) {
+      console.error(`  Error creating company for IPO ${ipo.company_name}: ${error.message}`);
+      return null;
+    }
   }
 
   /**
@@ -1059,7 +1122,7 @@ class IPOTracker {
    * @param {number} options.limit - Max results
    */
   getPipeline(options = {}) {
-    const { region = 'all', status, sector, sortBy = 'initial_s1_date', sortOrder = 'DESC', limit } = options;
+    const { region = 'all', status, sector, sortBy = 'initial_s1_date', sortOrder = 'DESC', limit, includeNeedsReview = false } = options;
 
     let sql = `
       SELECT * FROM ipo_tracker
@@ -1067,6 +1130,11 @@ class IPOTracker {
     `;
 
     const params = [];
+
+    // By default, exclude entries that need manual review (auto-fetched EU/UK prospectuses)
+    if (!includeNeedsReview) {
+      sql += ` AND (needs_review IS NULL OR needs_review = 0)`;
+    }
 
     // Region filter
     if (region && region !== 'all') {
@@ -1106,8 +1174,10 @@ class IPOTracker {
 
   /**
    * Get IPOs grouped by stage
+   * @param {string} region - Filter by region: 'US', 'EU', 'UK', or 'all'
+   * @param {boolean} includeNeedsReview - Include entries that need manual review
    */
-  getByStage(region = 'all') {
+  getByStage(region = 'all', includeNeedsReview = false) {
     const stages = {};
 
     for (const status of Object.keys(IPO_STAGES)) {
@@ -1116,6 +1186,11 @@ class IPOTracker {
         WHERE status = ? AND is_active = 1
       `;
       const params = [status];
+
+      // By default, exclude entries that need manual review
+      if (!includeNeedsReview) {
+        query += ' AND (needs_review IS NULL OR needs_review = 0)';
+      }
 
       if (region && region !== 'all') {
         query += ' AND region = ?';

@@ -13,7 +13,8 @@ const IPO_STAGES = {
   S1_AMENDED: { name: 'Amended', shortName: 'Amended', color: '#3b82f6', order: 2 },
   PRICE_RANGE_SET: { name: 'Price Set', shortName: 'Price Set', color: '#8b5cf6', order: 3 },
   EFFECTIVE: { name: 'Effective', shortName: 'Effective', color: '#f59e0b', order: 4 },
-  PRICED: { name: 'Priced', shortName: 'Priced', color: '#10b981', order: 5 }
+  PRICED: { name: 'Priced', shortName: 'Priced', color: '#10b981', order: 5 },
+  TRADING: { name: 'Trading', shortName: 'Trading', color: '#059669', order: 6 }
 };
 
 // Region definitions
@@ -27,59 +28,72 @@ const IPO_REGIONS = {
 // IPO Card Component
 function IPOCard({ ipo, formatCurrency, formatDate }) {
   const region = IPO_REGIONS[ipo.region] || IPO_REGIONS.US;
+  const hasTicker = ipo.ticker_proposed || ipo.ticker_final;
+  const isTrading = ipo.status === 'TRADING';
+  const tradingTicker = ipo.ticker_final || ipo.ticker_proposed;
 
   return (
-    <Link to={`/ipo/${ipo.id}`} className="ipo-card">
-      <div className="ipo-card-header">
-        <div className="ipo-ticker">
-          {ipo.ticker_proposed || ipo.ticker_final || '???'}
+    <div className={`ipo-card ${isTrading ? 'trading' : ''}`}>
+      <Link to={`/ipo/${ipo.id}`} className="ipo-card-link">
+        <div className="ipo-card-header">
+          <div className="ipo-header-left">
+            {ipo.region && (
+              <span className="ipo-region-badge" title={region.name}>
+                {region.flag}
+              </span>
+            )}
+            {hasTicker && (
+              <span className="ipo-ticker">{ipo.ticker_proposed || ipo.ticker_final}</span>
+            )}
+          </div>
+          <div className="ipo-header-right">
+            {(ipo.exchange_proposed || ipo.home_member_state) && (
+              <span className="ipo-exchange">{ipo.exchange_proposed || ipo.home_member_state}</span>
+            )}
+          </div>
         </div>
-        <div className="ipo-header-right">
-          {ipo.region && ipo.region !== 'US' && (
-            <span className="ipo-region-badge" title={region.name}>
-              {region.flag}
-            </span>
-          )}
-          {ipo.exchange_proposed && (
-            <span className="ipo-exchange">{ipo.exchange_proposed}</span>
-          )}
+
+        <div className="ipo-company-name">{ipo.company_name}</div>
+
+        <div className="ipo-card-meta">
+          {ipo.sector && <span className="ipo-sector">{ipo.sector}</span>}
+          {ipo.industry && <span className="ipo-industry">{ipo.industry}</span>}
         </div>
-      </div>
 
-      <div className="ipo-company-name">{ipo.company_name}</div>
-
-      <div className="ipo-card-meta">
-        {ipo.sector && <span className="ipo-sector">{ipo.sector}</span>}
-        {ipo.industry && <span className="ipo-industry">{ipo.industry}</span>}
-      </div>
-
-      {(ipo.price_range_low || ipo.final_price) && (
-        <div className="ipo-price-info">
-          {ipo.final_price ? (
-            <span className="final-price">${ipo.final_price}</span>
-          ) : (
-            <span className="price-range">
-              ${ipo.price_range_low} - ${ipo.price_range_high}
-            </span>
-          )}
-        </div>
-      )}
-
-      {ipo.deal_size > 0 && (
-        <div className="ipo-deal-size">
-          {formatCurrency(ipo.deal_size)} deal
-        </div>
-      )}
-
-      <div className="ipo-card-footer">
-        <span className="ipo-date">
-          {ipo.region === 'US' ? 'Filed' : 'Approved'}: {formatDate(ipo.initial_s1_date || ipo.approval_date)}
-        </span>
-        {ipo.amendment_count > 0 && (
-          <span className="ipo-amendments">{ipo.amendment_count} amendments</span>
+        {(ipo.price_range_low || ipo.final_price) && (
+          <div className="ipo-price-info">
+            {ipo.final_price ? (
+              <span className="final-price">${ipo.final_price}</span>
+            ) : (
+              <span className="price-range">
+                ${ipo.price_range_low} - ${ipo.price_range_high}
+              </span>
+            )}
+          </div>
         )}
-      </div>
-    </Link>
+
+        {ipo.deal_size > 0 && (
+          <div className="ipo-deal-size">
+            {formatCurrency(ipo.deal_size)} deal
+          </div>
+        )}
+
+        <div className="ipo-card-footer">
+          <span className="ipo-date">
+            {ipo.region === 'US' ? 'Filed' : 'Approved'}: {formatDate(ipo.initial_s1_date || ipo.approval_date)}
+          </span>
+          {ipo.amendment_count > 0 && (
+            <span className="ipo-amendments">{ipo.amendment_count} amendments</span>
+          )}
+        </div>
+      </Link>
+
+      {isTrading && tradingTicker && (
+        <Link to={`/company/${tradingTicker}`} className="trading-link-btn">
+          View Stock Analysis
+        </Link>
+      )}
+    </div>
   );
 }
 
@@ -451,14 +465,17 @@ function IPOPipelinePage() {
                     <th>Deal Size</th>
                     <th>Filed</th>
                     <th>Amendments</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {listData.map(ipo => {
                     const stage = IPO_STAGES[ipo.status];
                     const region = IPO_REGIONS[ipo.region] || IPO_REGIONS.US;
+                    const isTrading = ipo.status === 'TRADING';
+                    const tradingTicker = ipo.ticker_final || ipo.ticker_proposed;
                     return (
-                      <tr key={ipo.id}>
+                      <tr key={ipo.id} className={isTrading ? 'trading-row' : ''}>
                         <td className="region-cell" title={region.name}>
                           {region.flag}
                         </td>
@@ -494,6 +511,13 @@ function IPOPipelinePage() {
                         <td>{formatCurrency(ipo.deal_size)}</td>
                         <td>{formatDate(ipo.initial_s1_date || ipo.approval_date)}</td>
                         <td>{ipo.amendment_count || 0}</td>
+                        <td className="actions-cell">
+                          {isTrading && tradingTicker && (
+                            <Link to={`/company/${tradingTicker}`} className="view-stock-link">
+                              View Stock
+                            </Link>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}

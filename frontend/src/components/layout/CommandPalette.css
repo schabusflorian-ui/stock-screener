@@ -467,6 +467,26 @@
   color: var(--brand-primary);
 }
 
+/* Context-aware actions styling */
+.command-group.context-actions {
+  border-bottom: 1px solid rgba(139, 92, 246, 0.15);
+  margin-bottom: var(--space-2);
+  padding-bottom: var(--space-2);
+}
+
+.command-item.context-item {
+  background: rgba(139, 92, 246, 0.04);
+}
+
+.command-item.context-item:hover,
+.command-item.context-item[data-selected="true"] {
+  background: rgba(139, 92, 246, 0.1);
+}
+
+.command-item-icon.context {
+  color: #8b5cf6;
+}
+
 /* Responsive */
 @media (max-width: 640px) {
   .command-palette-overlay {

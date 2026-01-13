@@ -91,6 +91,17 @@ const MARGIN_METRICS = [
   { key: 'net_margin', label: 'Net', color: '#8b5cf6' },
 ];
 
+// Monetary metrics that need USD normalization for cross-currency comparison
+const MONETARY_METRICS = ['revenue', 'net_income', 'operating_income', 'ebitda', 'fcf'];
+
+// Get metric value, preferring USD-normalized for monetary metrics
+const getMetricValue = (metric, key) => {
+  if (MONETARY_METRICS.includes(key)) {
+    return metric[`${key}_usd`] ?? metric[key];
+  }
+  return metric[key];
+};
+
 // Format value for comparison display
 const formatCompareValue = (value, format) => {
   if (value === null || value === undefined || isNaN(value)) return '-';
@@ -905,8 +916,8 @@ function AdvancedChartsPage() {
       } else {
         const metrics = companyData[symbol] || [];
         data = metrics
-          .filter(m => m[selectedMetric] !== null && m[selectedMetric] !== undefined)
-          .map(m => ({ time: m.fiscal_period, value: m[selectedMetric] }))
+          .filter(m => getMetricValue(m, selectedMetric) !== null && getMetricValue(m, selectedMetric) !== undefined)
+          .map(m => ({ time: m.fiscal_period, value: getMetricValue(m, selectedMetric) }))
           .filter(d => !cutoffDate || d.time >= cutoffDate)
           .sort((a, b) => a.time.localeCompare(b.time));
       }
@@ -959,8 +970,8 @@ function AdvancedChartsPage() {
     selectedCompanies.forEach(symbol => {
       const metrics = companyData[symbol] || [];
       const data = metrics
-        .filter(m => m[secondaryMetric] !== null && m[secondaryMetric] !== undefined)
-        .map(m => ({ time: m.fiscal_period, value: m[secondaryMetric] }))
+        .filter(m => getMetricValue(m, secondaryMetric) !== null && getMetricValue(m, secondaryMetric) !== undefined)
+        .map(m => ({ time: m.fiscal_period, value: getMetricValue(m, secondaryMetric) }))
         .sort((a, b) => a.time.localeCompare(b.time));
       result[symbol] = data;
     });

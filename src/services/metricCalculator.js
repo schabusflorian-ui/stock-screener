@@ -2290,6 +2290,185 @@ class MetricCalculator {
       errors
     };
   }
+
+  /**
+   * Calculate TTM (Trailing Twelve Months) metrics for a company
+   *
+   * This method calculates margins and ratios from quarterly data and updates
+   * existing TTM records. It uses COALESCE to only fill in NULL values,
+   * preserving any existing data from imports (PE, PB, EV/EBITDA, etc.).
+   *
+   * @param {Object} db - Database connection
+   * @param {number} companyId - Company ID to calculate TTM for
+   * @returns {Object} Result with success status and details
+   */
+  calculateTTMForCompany(db, companyId) {
+    try {
+      // Get last 4 quarterly records with actual data
+      const quarters = db.prepare(`
+        SELECT * FROM calculated_metrics
+        WHERE company_id = ? AND period_type = 'quarterly'
+          AND (net_margin IS NOT NULL OR gross_margin IS NOT NULL OR roe IS NOT NULL)
+        ORDER BY fiscal_period DESC
+        LIMIT 4
+      `).all(companyId);
+
+      if (quarters.length < 2) {
+        return { success: false, reason: 'Insufficient quarterly data', quarters: quarters.length };
+      }
+
+      const latest = quarters[0];
+
+      // Helper to average non-null values
+      const avgNonNull = (arr, field) => {
+        const values = arr.map(q => q[field]).filter(v => v !== null && v !== undefined);
+        if (values.length === 0) return null;
+        return Math.round((values.reduce((sum, v) => sum + v, 0) / values.length) * 100) / 100;
+      };
+
+      // Calculate ONLY the missing metrics (margins/ratios)
+      // These are derived from quarterly data, not from imports
+      const calculatedFields = {
+        // Average margins over last 4 quarters (or available quarters)
+        net_margin: avgNonNull(quarters, 'net_margin'),
+        gross_margin: avgNonNull(quarters, 'gross_margin'),
+        operating_margin: avgNonNull(quarters, 'operating_margin'),
+        roe: avgNonNull(quarters, 'roe'),
+        roa: avgNonNull(quarters, 'roa'),
+        roic: avgNonNull(quarters, 'roic'),
+        roce: avgNonNull(quarters, 'roce'),
+        fcf_margin: avgNonNull(quarters, 'fcf_margin'),
+
+        // Point-in-time from most recent quarter (balance sheet items)
+        current_ratio: latest.current_ratio,
+        quick_ratio: latest.quick_ratio,
+        debt_to_equity: latest.debt_to_equity,
+        debt_to_assets: latest.debt_to_assets,
+        interest_coverage: latest.interest_coverage,
+        asset_turnover: latest.asset_turnover,
+      };
+
+      // Find existing TTM record (may have PE, PB from imports)
+      const existingTTM = db.prepare(`
+        SELECT id FROM calculated_metrics
+        WHERE company_id = ? AND period_type = 'ttm'
+        ORDER BY fiscal_period DESC LIMIT 1
+      `).get(companyId);
+
+      if (existingTTM) {
+        // UPDATE only the calculated fields, preserve existing import data
+        // Uses COALESCE to only update if calculated value is not null
+        db.prepare(`
+          UPDATE calculated_metrics SET
+            net_margin = COALESCE(?, net_margin),
+            gross_margin = COALESCE(?, gross_margin),
+            operating_margin = COALESCE(?, operating_margin),
+            roe = COALESCE(?, roe),
+            roa = COALESCE(?, roa),
+            roic = COALESCE(?, roic),
+            roce = COALESCE(?, roce),
+            fcf_margin = COALESCE(?, fcf_margin),
+            current_ratio = COALESCE(?, current_ratio),
+            quick_ratio = COALESCE(?, quick_ratio),
+            debt_to_equity = COALESCE(?, debt_to_equity),
+            debt_to_assets = COALESCE(?, debt_to_assets),
+            interest_coverage = COALESCE(?, interest_coverage),
+            asset_turnover = COALESCE(?, asset_turnover),
+            updated_at = datetime('now')
+          WHERE id = ?
+        `).run(
+          calculatedFields.net_margin,
+          calculatedFields.gross_margin,
+          calculatedFields.operating_margin,
+          calculatedFields.roe,
+          calculatedFields.roa,
+          calculatedFields.roic,
+          calculatedFields.roce,
+          calculatedFields.fcf_margin,
+          calculatedFields.current_ratio,
+          calculatedFields.quick_ratio,
+          calculatedFields.debt_to_equity,
+          calculatedFields.debt_to_assets,
+          calculatedFields.interest_coverage,
+          calculatedFields.asset_turnover,
+          existingTTM.id
+        );
+
+        return { success: true, action: 'updated', ttmId: existingTTM.id };
+      } else {
+        // No existing TTM record - create a new one
+        const fiscalPeriod = `TTM-${latest.fiscal_period}`;
+
+        const result = db.prepare(`
+          INSERT INTO calculated_metrics (
+            company_id, fiscal_period, period_type,
+            net_margin, gross_margin, operating_margin,
+            roe, roa, roic, roce, fcf_margin,
+            current_ratio, quick_ratio, debt_to_equity, debt_to_assets,
+            interest_coverage, asset_turnover,
+            created_at, updated_at
+          ) VALUES (?, ?, 'ttm', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+        `).run(
+          companyId,
+          fiscalPeriod,
+          calculatedFields.net_margin,
+          calculatedFields.gross_margin,
+          calculatedFields.operating_margin,
+          calculatedFields.roe,
+          calculatedFields.roa,
+          calculatedFields.roic,
+          calculatedFields.roce,
+          calculatedFields.fcf_margin,
+          calculatedFields.current_ratio,
+          calculatedFields.quick_ratio,
+          calculatedFields.debt_to_equity,
+          calculatedFields.debt_to_assets,
+          calculatedFields.interest_coverage,
+          calculatedFields.asset_turnover
+        );
+
+        return { success: true, action: 'inserted', ttmId: result.lastInsertRowid };
+      }
+    } catch (error) {
+      console.error(`Error calculating TTM for company ${companyId}:`, error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Recalculate TTM metrics for all active companies
+   *
+   * @param {Object} db - Database connection
+   * @returns {Object} Result with counts of updated/inserted/failed
+   */
+  recalculateAllTTM(db) {
+    const companies = db.prepare('SELECT id, symbol FROM companies WHERE is_active = 1').all();
+
+    let updated = 0;
+    let inserted = 0;
+    let failed = 0;
+    let skipped = 0;
+
+    console.log(`\n📊 Calculating TTM metrics for ${companies.length} companies...`);
+
+    for (const company of companies) {
+      const result = this.calculateTTMForCompany(db, company.id);
+
+      if (result.success) {
+        if (result.action === 'updated') updated++;
+        else if (result.action === 'inserted') inserted++;
+      } else if (result.reason === 'Insufficient quarterly data') {
+        skipped++;
+      } else {
+        failed++;
+        console.error(`  ❌ ${company.symbol}: ${result.error || result.reason}`);
+      }
+    }
+
+    console.log(`✅ TTM calculation complete: ${updated} updated, ${inserted} inserted, ${skipped} skipped, ${failed} failed`);
+
+    return { updated, inserted, skipped, failed, total: companies.length };
+  }
 }
 
 module.exports = MetricCalculator;

@@ -1,0 +1,419 @@
+/* frontend/src/components/portfolio/DistributionComparisonChart.css */
+/* Redesigned to match Liquid Glass design system - Larger, interactive chart */
+
+.distribution-comparison-chart {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin: var(--space-4) 0;
+  box-shadow: var(--shadow-md);
+  transition: all var(--transition-normal);
+}
+
+/* Fullscreen mode */
+.distribution-comparison-chart.fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  margin: 0;
+  border-radius: 0;
+  padding: var(--space-6);
+  background: var(--bg-primary);
+  overflow: auto;
+}
+
+/* Header */
+.chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.chart-title-section {
+  flex: 1;
+  min-width: 0;
+}
+
+.chart-header h4 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  line-height: var(--leading-tight);
+}
+
+.chart-subtitle {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  line-height: var(--leading-normal);
+}
+
+/* Chart Controls */
+.chart-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.control-btn {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  cursor: pointer;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.control-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--brand-primary);
+  border-color: var(--brand-primary);
+}
+
+.control-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.zoom-label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-secondary);
+  min-width: 48px;
+  text-align: center;
+}
+
+/* Chart Container - Balanced size */
+.chart-container {
+  position: relative;
+  background: white;
+  border-radius: var(--radius-md);
+  padding: 0;
+  margin-bottom: var(--space-4);
+  border: 1px solid var(--border-primary);
+  width: 100%;
+  cursor: crosshair;
+  overflow: auto;
+}
+
+.fullscreen .chart-container {
+  overflow: hidden;
+}
+
+.distribution-svg {
+  display: block;
+  /* SVG dimensions are set explicitly via props */
+}
+
+/* SVG Elements */
+.distribution-svg text {
+  font-family: var(--font-sans);
+  fill: var(--text-secondary);
+  user-select: none;
+}
+
+.distribution-svg .axis-line {
+  stroke: var(--border-secondary);
+  stroke-width: 2;
+}
+
+.distribution-svg .axis-tick {
+  stroke: var(--border-secondary);
+  stroke-width: 1.5;
+}
+
+.distribution-svg .grid-line {
+  stroke: var(--border-primary);
+  stroke-width: 1;
+  stroke-dasharray: 4,4;
+  opacity: 0.5;
+}
+
+.distribution-svg .tail-zone {
+  transition: opacity var(--transition-normal);
+}
+
+.distribution-svg:hover .tail-zone {
+  opacity: 0.9;
+}
+
+.distribution-svg .divergence-area {
+  transition: opacity var(--transition-normal);
+}
+
+/* Curves - Design system colors */
+.normal-curve {
+  stroke: #10b981;
+  stroke-width: 3;
+  stroke-dasharray: 8, 4;
+  fill: none;
+  filter: drop-shadow(0 2px 4px rgba(16, 185, 129, 0.25));
+  transition: all var(--transition-normal);
+}
+
+.actual-curve {
+  stroke: #ef4444;
+  stroke-width: 3.5;
+  fill: none;
+  filter: drop-shadow(0 2px 4px rgba(239, 68, 68, 0.25));
+  transition: all var(--transition-normal);
+}
+
+.mean-line {
+  stroke: #6366f1;
+  stroke-width: 2;
+  stroke-dasharray: 5, 5;
+  opacity: 0.7;
+}
+
+/* Hover indicator */
+.hover-indicator {
+  animation: fadeIn 0.2s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Interactive Tooltip */
+.chart-tooltip {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.92);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  pointer-events: none;
+  z-index: 1000;
+  box-shadow: var(--shadow-lg);
+  min-width: 180px;
+  animation: tooltipFadeIn 0.15s ease-out;
+}
+
+@keyframes tooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tooltip-header {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: white;
+  margin-bottom: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+  font-size: var(--text-xs);
+}
+
+.tooltip-label {
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: var(--font-medium);
+}
+
+.tooltip-value {
+  font-weight: var(--font-semibold);
+  font-variant-numeric: tabular-nums;
+  color: white;
+}
+
+.tooltip-row.normal .tooltip-value {
+  color: #10b981;
+}
+
+.tooltip-row.actual .tooltip-value {
+  color: #dc2626;
+}
+
+.tooltip-row.divergence {
+  margin-top: var(--space-1);
+  padding-top: var(--space-2);
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.tooltip-row.divergence .tooltip-value {
+  color: var(--warning);
+}
+
+/* Legend */
+.chart-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.legend-line {
+  width: 32px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.legend-line.normal {
+  background: var(--positive);
+  border: 1px dashed var(--positive);
+}
+
+.legend-line.actual {
+  background: var(--negative);
+}
+
+.legend-label {
+  color: var(--text-primary);
+  font-weight: var(--font-medium);
+}
+
+/* Stats Comparison */
+.stats-comparison {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.stat-compare {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+  transition: all var(--transition-fast);
+}
+
+.stat-compare:hover {
+  background: var(--bg-hover);
+  box-shadow: var(--shadow-sm);
+}
+
+.stat-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.stat-icon.safe {
+  color: var(--positive);
+}
+
+.stat-icon.danger {
+  color: var(--negative);
+}
+
+.stat-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1;
+  min-width: 0;
+}
+
+.stat-label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: var(--font-semibold);
+}
+
+.stat-value {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  line-height: var(--leading-normal);
+  color: var(--text-primary);
+}
+
+.stat-value.safe {
+  color: var(--positive);
+}
+
+.stat-value.danger {
+  color: var(--negative);
+}
+
+/* Chart Insight */
+.chart-insight {
+  padding: var(--space-3);
+  background: var(--bg-elevated);
+  border-left: 3px solid var(--brand-primary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+  border-left-width: 3px;
+  border-left-color: var(--brand-primary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  color: var(--text-secondary);
+}
+
+.chart-insight strong {
+  color: var(--text-primary);
+  font-weight: var(--font-semibold);
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .chart-container {
+    min-height: 400px;
+    padding: var(--space-4);
+  }
+}
+
+@media (max-width: 768px) {
+  .distribution-comparison-chart {
+    padding: var(--space-3);
+  }
+
+  .chart-container {
+    min-height: 350px;
+    padding: var(--space-3);
+  }
+
+  .stats-comparison {
+    grid-template-columns: 1fr;
+  }
+
+  .chart-legend {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+}

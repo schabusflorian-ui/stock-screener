@@ -618,18 +618,17 @@ function InsidersTab() {
             <tr>
               <th>Symbol</th>
               <th>Company</th>
-              <th>Representative</th>
-              <th>Party</th>
-              <th>Type</th>
-              <SortableHeader label="Value" sortKey="total_value" currentSort={congressSort} onSort={handleSort(setCongressSort)} />
-              <SortableHeader label="Trades" sortKey="trade_count" currentSort={congressSort} onSort={handleSort(setCongressSort)} />
+              <th>Politicians</th>
+              <SortableHeader label="Buys" sortKey="buy_count" currentSort={congressSort} onSort={handleSort(setCongressSort)} />
+              <SortableHeader label="Sells" sortKey="sell_count" currentSort={congressSort} onSort={handleSort(setCongressSort)} />
+              <SortableHeader label="Total Value" sortKey="total_amount" currentSort={congressSort} onSort={handleSort(setCongressSort)} />
               <th>Last Trade</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {sortedCongressionalTrades.length === 0 ? (
-              <tr><td colSpan="9" className="no-data">No congressional trading data available</td></tr>
+              <tr><td colSpan="8" className="no-data">No congressional trading data available</td></tr>
             ) : (
               sortedCongressionalTrades.map((trade, idx) => (
                 <tr key={`${trade.symbol}-${idx}`}>
@@ -639,20 +638,16 @@ function InsidersTab() {
                     </Link>
                   </td>
                   <td className="company-name">{trade.company_name || trade.symbol}</td>
-                  <td>{trade.representative || trade.politician || '-'}</td>
-                  <td>
-                    <span className={`party-badge ${(trade.party || '').toLowerCase()}`}>
-                      {trade.party || '-'}
-                    </span>
+                  <td className="politicians-cell" title={trade.politicians}>
+                    {trade.politicians ? (
+                      trade.politicians.split(',').slice(0, 2).join(', ') +
+                      (trade.politicians.split(',').length > 2 ? ` +${trade.politicians.split(',').length - 2}` : '')
+                    ) : '-'}
                   </td>
-                  <td>
-                    <TransactionBadge type={trade.transaction_type || trade.type} />
-                  </td>
-                  <td className={trade.transaction_type === 'buy' || trade.type === 'buy' ? 'positive' : 'negative'}>
-                    {formatCurrency(trade.total_value || trade.amount)}
-                  </td>
-                  <td>{trade.trade_count || 1}</td>
-                  <td>{formatDate(trade.last_trade_date || trade.transaction_date)}</td>
+                  <td className="positive">{trade.buy_count || 0}</td>
+                  <td className="negative">{trade.sell_count || 0}</td>
+                  <td>{formatCurrency(trade.total_amount || trade.total_value || 0)}</td>
+                  <td>{formatDate(trade.latest_trade || trade.last_trade_date)}</td>
                   <td>
                     <WatchlistButton symbol={trade.symbol} compact />
                   </td>

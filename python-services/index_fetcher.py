@@ -27,10 +27,23 @@ DB_PATH = Path(__file__).parent.parent / 'data' / 'stocks.db'
 
 # Core indices to track
 CORE_INDICES = {
+    # US Indices
     '^GSPC': 'S&P 500',
     '^DJI': 'Dow Jones Industrial Average',
     '^IXIC': 'NASDAQ Composite',
-    '^RUT': 'Russell 2000'
+    '^RUT': 'Russell 2000',
+    # European Indices
+    '^FTSE': 'FTSE 100',
+    '^GDAXI': 'DAX 40',
+    '^FCHI': 'CAC 40',
+    '^AEX': 'AEX',
+    '^SSMI': 'SMI',
+    '^IBEX': 'IBEX 35',
+    'FTSEMIB.MI': 'FTSE MIB',
+    '^OMX': 'OMX Stockholm 30',
+    '^ATX': 'ATX',
+    '^STOXX50E': 'Euro Stoxx 50',
+    '^STOXX': 'Stoxx Europe 600'
 }
 
 

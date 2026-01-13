@@ -113,8 +113,8 @@ class HistoricalDataProvider {
       SELECT
         COUNT(CASE WHEN transaction_type = 'purchase' THEN 1 END) as buy_count,
         COUNT(CASE WHEN transaction_type = 'sale' THEN 1 END) as sell_count,
-        SUM(CASE WHEN transaction_type = 'purchase' THEN (amount_low + COALESCE(amount_high, amount_low)) / 2 ELSE 0 END) as buy_amount,
-        SUM(CASE WHEN transaction_type = 'sale' THEN (amount_low + COALESCE(amount_high, amount_low)) / 2 ELSE 0 END) as sell_amount
+        SUM(CASE WHEN transaction_type = 'purchase' THEN (amount_min + COALESCE(amount_max, amount_min)) / 2 ELSE 0 END) as buy_amount,
+        SUM(CASE WHEN transaction_type = 'sale' THEN (amount_min + COALESCE(amount_max, amount_min)) / 2 ELSE 0 END) as sell_amount
       FROM congressional_trades
       WHERE company_id = ?
         AND transaction_date BETWEEN date(?, '-90 days') AND ?

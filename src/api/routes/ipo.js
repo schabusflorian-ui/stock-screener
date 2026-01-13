@@ -599,6 +599,156 @@ router.post('/:id/mark-trading', async (req, res) => {
 });
 
 /**
+ * POST /api/ipo/:id/create-company
+ * Create a company entry for a trading IPO
+ */
+router.post('/:id/create-company', async (req, res) => {
+  try {
+    const ipoId = parseInt(req.params.id);
+    const ipo = ipoTracker.getIPO(ipoId);
+
+    if (!ipo) {
+      return res.status(404).json({ error: 'IPO not found' });
+    }
+
+    if (ipo.status !== 'TRADING') {
+      return res.status(400).json({ error: 'IPO is not in TRADING status' });
+    }
+
+    const ticker = ipo.ticker_final || ipo.ticker_proposed;
+    if (!ticker) {
+      return res.status(400).json({ error: 'IPO has no ticker symbol' });
+    }
+
+    // Check if company already exists
+    const existingCompany = database.prepare(`
+      SELECT id, symbol FROM companies WHERE symbol = ? COLLATE NOCASE
+    `).get(ticker);
+
+    if (existingCompany) {
+      // Link IPO to existing company
+      ipoTracker.updateIPO(ipoId, { company_id: existingCompany.id });
+      return res.json({
+        success: true,
+        message: `Linked to existing company ${ticker}`,
+        company_id: existingCompany.id,
+        created: false
+      });
+    }
+
+    // Create new company
+    const exchange = ipo.exchange_final || ipo.exchange_proposed || ipo.listing_venue;
+    const country = ipo.headquarters_country || (ipo.region === 'US' ? 'US' : ipo.home_member_state) || 'US';
+
+    const result = database.prepare(`
+      INSERT INTO companies (
+        symbol, name, sector, industry, exchange, country, is_active, cik
+      ) VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+    `).run(
+      ticker,
+      ipo.company_name,
+      ipo.sector,
+      ipo.industry,
+      exchange,
+      country,
+      ipo.cik
+    );
+
+    const companyId = result.lastInsertRowid;
+    ipoTracker.updateIPO(ipoId, { company_id: companyId });
+
+    res.json({
+      success: true,
+      message: `Created company ${ticker}`,
+      company_id: companyId,
+      created: true
+    });
+  } catch (error) {
+    console.error('Error creating company from IPO:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/ipo/sync-trading-companies
+ * Create company entries for all trading IPOs that don't have them
+ */
+router.post('/sync-trading-companies', async (req, res) => {
+  try {
+    // Get all trading IPOs without company_id
+    const tradingIPOs = database.prepare(`
+      SELECT * FROM ipo_tracker
+      WHERE status = 'TRADING'
+        AND (company_id IS NULL OR company_id = 0)
+        AND (ticker_final IS NOT NULL OR ticker_proposed IS NOT NULL)
+    `).all();
+
+    const results = {
+      processed: 0,
+      created: 0,
+      linked: 0,
+      skipped: 0,
+      errors: []
+    };
+
+    for (const ipo of tradingIPOs) {
+      results.processed++;
+      const ticker = ipo.ticker_final || ipo.ticker_proposed;
+
+      if (!ticker) {
+        results.skipped++;
+        continue;
+      }
+
+      try {
+        // Check if company already exists
+        const existingCompany = database.prepare(`
+          SELECT id FROM companies WHERE symbol = ? COLLATE NOCASE
+        `).get(ticker);
+
+        if (existingCompany) {
+          // Link to existing
+          ipoTracker.updateIPO(ipo.id, { company_id: existingCompany.id });
+          results.linked++;
+        } else {
+          // Create new company
+          const exchange = ipo.exchange_final || ipo.exchange_proposed || ipo.listing_venue;
+          const country = ipo.headquarters_country || (ipo.region === 'US' ? 'US' : ipo.home_member_state) || 'US';
+
+          const insertResult = database.prepare(`
+            INSERT INTO companies (
+              symbol, name, sector, industry, exchange, country, is_active, cik
+            ) VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+          `).run(
+            ticker,
+            ipo.company_name,
+            ipo.sector,
+            ipo.industry,
+            exchange,
+            country,
+            ipo.cik
+          );
+
+          ipoTracker.updateIPO(ipo.id, { company_id: insertResult.lastInsertRowid });
+          results.created++;
+        }
+      } catch (err) {
+        results.errors.push(`${ipo.company_name} (${ticker}): ${err.message}`);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Synced ${results.processed} trading IPOs`,
+      ...results
+    });
+  } catch (error) {
+    console.error('Error syncing trading companies:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * POST /api/ipo/:id/mark-withdrawn
  * Mark IPO as withdrawn
  */

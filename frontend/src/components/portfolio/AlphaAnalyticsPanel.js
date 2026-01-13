@@ -1,12 +1,37 @@
 // frontend/src/components/portfolio/AlphaAnalyticsPanel.js
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Loader, AlertTriangle, TrendingUp, TrendingDown, Activity,
   Award, Target, BarChart3, RefreshCw, ChevronDown, ChevronRight,
-  Minus, Info, CheckCircle, XCircle
+  Minus, Info, CheckCircle, XCircle, Star, MoreHorizontal
 } from 'lucide-react';
 import { simulateAPI } from '../../services/api';
 import './SimulationPanels.css';
+
+// All available benchmarks grouped by region
+const ALL_BENCHMARKS = {
+  US: [
+    { symbol: 'SPY', name: 'S&P 500', flag: '🇺🇸' },
+    { symbol: 'QQQ', name: 'Nasdaq 100', flag: '🇺🇸' },
+    { symbol: 'IWM', name: 'Russell 2000', flag: '🇺🇸' },
+    { symbol: 'VTI', name: 'Total Market', flag: '🇺🇸' },
+    { symbol: 'DIA', name: 'Dow Jones', flag: '🇺🇸' },
+  ],
+  Europe: [
+    { symbol: 'EWU', name: 'FTSE 100', flag: '🇬🇧', index: 'FTSE' },
+    { symbol: 'EWG', name: 'DAX 40', flag: '🇩🇪', index: 'DAX' },
+    { symbol: 'EWQ', name: 'CAC 40', flag: '🇫🇷', index: 'CAC' },
+    { symbol: 'FEZ', name: 'Euro Stoxx 50', flag: '🇪🇺', index: 'SX5E' },
+    { symbol: 'EWN', name: 'AEX', flag: '🇳🇱', index: 'AEX' },
+    { symbol: 'EWL', name: 'SMI', flag: '🇨🇭', index: 'SMI' },
+    { symbol: 'EWP', name: 'IBEX 35', flag: '🇪🇸', index: 'IBEX' },
+    { symbol: 'EWI', name: 'FTSE MIB', flag: '🇮🇹', index: 'FTSEMIB' },
+    { symbol: 'EWD', name: 'OMX 30', flag: '🇸🇪', index: 'OMX30' },
+  ],
+};
+
+// Default favorites (max 3)
+const DEFAULT_FAVORITES = ['SPY', 'QQQ', 'IWM'];
 
 function AlphaAnalyticsPanel({ portfolioId }) {
   const [loading, setLoading] = useState(true);
@@ -21,6 +46,14 @@ function AlphaAnalyticsPanel({ portfolioId }) {
   const [period, setPeriod] = useState('1y');
   const [benchmark, setBenchmark] = useState('SPY');
   const [expandedSections, setExpandedSections] = useState({});
+
+  // Benchmark selector state
+  const [showAllBenchmarks, setShowAllBenchmarks] = useState(false);
+  const [favorites, setFavorites] = useState(() => {
+    const saved = localStorage.getItem('alpha-benchmark-favorites');
+    return saved ? JSON.parse(saved) : DEFAULT_FAVORITES;
+  });
+  const benchmarkDropdownRef = useRef(null);
 
   useEffect(() => {
     loadData();
@@ -64,6 +97,50 @@ function AlphaAnalyticsPanel({ portfolioId }) {
       ...prev,
       [section]: !prev[section]
     }));
+  };
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (benchmarkDropdownRef.current && !benchmarkDropdownRef.current.contains(event.target)) {
+        setShowAllBenchmarks(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Get all benchmarks as flat list
+  const getAllBenchmarksFlat = () => {
+    return [...ALL_BENCHMARKS.US, ...ALL_BENCHMARKS.Europe];
+  };
+
+  // Get benchmark info by symbol
+  const getBenchmarkInfo = (symbol) => {
+    return getAllBenchmarksFlat().find(b => b.symbol === symbol) || { symbol, name: symbol, flag: '' };
+  };
+
+  // Toggle favorite (max 3)
+  const toggleFavorite = (symbol) => {
+    let newFavorites;
+    if (favorites.includes(symbol)) {
+      newFavorites = favorites.filter(f => f !== symbol);
+    } else if (favorites.length < 3) {
+      newFavorites = [...favorites, symbol];
+    } else {
+      // Replace oldest favorite
+      newFavorites = [...favorites.slice(1), symbol];
+    }
+    setFavorites(newFavorites);
+    localStorage.setItem('alpha-benchmark-favorites', JSON.stringify(newFavorites));
+  };
+
+  // Select benchmark
+  const selectBenchmark = (symbol) => {
+    setBenchmark(symbol);
+    setShowAllBenchmarks(false);
+    // Save last used benchmark
+    localStorage.setItem('alpha-last-benchmark', symbol);
   };
 
   const formatPercent = (value, decimals = 2) => {
@@ -143,15 +220,101 @@ function AlphaAnalyticsPanel({ portfolioId }) {
             <option value="5y">5 Years</option>
           </select>
         </div>
-        <div className="control-group">
+
+        {/* Expandable Benchmark Selector */}
+        <div className="control-group benchmark-selector" ref={benchmarkDropdownRef}>
           <label>Benchmark</label>
-          <select value={benchmark} onChange={(e) => setBenchmark(e.target.value)}>
-            <option value="SPY">S&P 500 (SPY)</option>
-            <option value="QQQ">Nasdaq (QQQ)</option>
-            <option value="IWM">Russell 2000 (IWM)</option>
-            <option value="VTI">Total Market (VTI)</option>
-          </select>
+          <div className="benchmark-selector-container">
+            {/* Favorite benchmarks as quick buttons */}
+            <div className="benchmark-favorites">
+              {favorites.map(symbol => {
+                const info = getBenchmarkInfo(symbol);
+                return (
+                  <button
+                    key={symbol}
+                    className={`benchmark-chip ${benchmark === symbol ? 'selected' : ''}`}
+                    onClick={() => selectBenchmark(symbol)}
+                    title={info.name}
+                  >
+                    {info.flag} {symbol}
+                  </button>
+                );
+              })}
+              <button
+                className="benchmark-more-btn"
+                onClick={() => setShowAllBenchmarks(!showAllBenchmarks)}
+                title="More benchmarks"
+              >
+                <MoreHorizontal size={16} />
+              </button>
+            </div>
+
+            {/* Expanded dropdown with all benchmarks */}
+            {showAllBenchmarks && (
+              <div className="benchmark-dropdown">
+                <div className="benchmark-dropdown-header">
+                  <span>Select Benchmark</span>
+                  <span className="favorites-hint">Click star to pin (max 3)</span>
+                </div>
+
+                {/* US Benchmarks */}
+                <div className="benchmark-group">
+                  <div className="benchmark-group-label">🇺🇸 US Indices</div>
+                  {ALL_BENCHMARKS.US.map(b => (
+                    <div
+                      key={b.symbol}
+                      className={`benchmark-option ${benchmark === b.symbol ? 'selected' : ''}`}
+                    >
+                      <button
+                        className="benchmark-option-main"
+                        onClick={() => selectBenchmark(b.symbol)}
+                      >
+                        <span className="benchmark-flag">{b.flag}</span>
+                        <span className="benchmark-symbol">{b.symbol}</span>
+                        <span className="benchmark-name">{b.name}</span>
+                      </button>
+                      <button
+                        className={`benchmark-star ${favorites.includes(b.symbol) ? 'favorited' : ''}`}
+                        onClick={(e) => { e.stopPropagation(); toggleFavorite(b.symbol); }}
+                        title={favorites.includes(b.symbol) ? 'Remove from favorites' : 'Add to favorites'}
+                      >
+                        <Star size={14} fill={favorites.includes(b.symbol) ? 'currentColor' : 'none'} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* European Benchmarks */}
+                <div className="benchmark-group">
+                  <div className="benchmark-group-label">🇪🇺 European Indices</div>
+                  {ALL_BENCHMARKS.Europe.map(b => (
+                    <div
+                      key={b.symbol}
+                      className={`benchmark-option ${benchmark === b.symbol ? 'selected' : ''}`}
+                    >
+                      <button
+                        className="benchmark-option-main"
+                        onClick={() => selectBenchmark(b.symbol)}
+                      >
+                        <span className="benchmark-flag">{b.flag}</span>
+                        <span className="benchmark-symbol">{b.symbol}</span>
+                        <span className="benchmark-name">{b.name}</span>
+                      </button>
+                      <button
+                        className={`benchmark-star ${favorites.includes(b.symbol) ? 'favorited' : ''}`}
+                        onClick={(e) => { e.stopPropagation(); toggleFavorite(b.symbol); }}
+                        title={favorites.includes(b.symbol) ? 'Remove from favorites' : 'Add to favorites'}
+                      >
+                        <Star size={14} fill={favorites.includes(b.symbol) ? 'currentColor' : 'none'} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
+
         <button onClick={loadData} className="refresh-btn" disabled={loading}>
           <RefreshCw size={16} className={loading ? 'spin' : ''} />
         </button>

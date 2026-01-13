@@ -15,6 +15,12 @@ const LLM_PATTERNS = {
   // Calculations and derived metrics
   calculation: /\b(calculate|compute|what would|what is the|nopat|wacc|dcf|intrinsic value|graham|fair value|worth)\b/i,
 
+  // Risk metrics and technical calculations
+  riskMetrics: /\b(sharpe|sortino|alpha|beta|volatility|risk[\s-]?adjusted|drawdown|correlation)\b/i,
+
+  // Methodology and data source questions
+  methodology: /\b(methodology|how (is|are|do you) (it|they|this|the|you) calculat|walk me through|data source|where (does|do) (the|your) data)\b/i,
+
   // Complex reasoning questions
   reasoning: /\b(why|should i|is it|are they|better|worse|recommend|think about|opinion|outlook|analysis)\b/i,
 
@@ -112,6 +118,22 @@ function shouldUseLLM(query, context = {}) {
     return {
       useLLM: true,
       reason: 'Calculation or derived metric request'
+    };
+  }
+
+  // 2b. Check for risk metrics (Sharpe, Sortino, alpha, beta, etc.)
+  if (LLM_PATTERNS.riskMetrics.test(queryLower)) {
+    return {
+      useLLM: true,
+      reason: 'Risk metrics calculation request'
+    };
+  }
+
+  // 2c. Check for methodology/data source questions
+  if (LLM_PATTERNS.methodology.test(queryLower)) {
+    return {
+      useLLM: true,
+      reason: 'Methodology or data source question'
     };
   }
 

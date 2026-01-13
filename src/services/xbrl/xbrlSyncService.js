@@ -455,7 +455,9 @@ class XBRLSyncService {
       INSERT INTO calculated_metrics (
         company_id, fiscal_period, period_type, data_source,
         -- Profitability
-        roic, roe, roa, gross_margin, operating_margin, net_margin,
+        roic, roe, roa, roce, gross_margin, operating_margin, net_margin,
+        -- DuPont Analysis
+        equity_multiplier, dupont_roe,
         -- Cash Flow
         fcf, fcf_yield, fcf_margin, fcf_per_share,
         -- Financial Health
@@ -469,16 +471,19 @@ class XBRLSyncService {
         -- Other
         data_quality_score
       )
-      VALUES (?, ?, ?, 'xbrl', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, 'xbrl', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(company_id, fiscal_period, period_type)
       DO UPDATE SET
         data_source = 'xbrl',
         roic = excluded.roic,
         roe = excluded.roe,
         roa = excluded.roa,
+        roce = excluded.roce,
         gross_margin = excluded.gross_margin,
         operating_margin = excluded.operating_margin,
         net_margin = excluded.net_margin,
+        equity_multiplier = excluded.equity_multiplier,
+        dupont_roe = excluded.dupont_roe,
         fcf = excluded.fcf,
         fcf_yield = excluded.fcf_yield,
         fcf_margin = excluded.fcf_margin,
@@ -502,21 +507,32 @@ class XBRLSyncService {
       }
 
       try {
-        // Data quality: cap extreme ratios at reasonable bounds
+        // ===== DECIMAL TO PERCENTAGE CONVERSION =====
+        // XBRL stores ratios as decimals (0.22 = 22%), but SEC/frontend expects percentages (22 = 22%)
+        // Convert to percentage format for consistency with SEC data
+        const toPercent = (value) => {
+          if (value === null || value === undefined) return null;
+          return value * 100;
+        };
+
+        // Data quality: cap extreme ratios at reasonable bounds (in percentage terms)
         // Extreme values typically indicate data issues (negative equity, tiny denominators)
-        const capRatio = (value, min = -2, max = 2) => {
+        const capRatio = (value, min = -200, max = 200) => {
           if (value === null || value === undefined) return null;
           if (value < min || value > max) return null; // Treat extreme values as unreliable
           return value;
         };
 
-        // Apply caps to ratios (allow -200% to +200%)
-        const cappedROE = capRatio(m.roe);
-        const cappedROIC = capRatio(m.roic);
-        const cappedROA = capRatio(m.roa);
-        const cappedGrossMargin = capRatio(m.gross_margin, -1, 1);
-        const cappedOpMargin = capRatio(m.operating_margin, -5, 1); // Allow larger losses
-        const cappedNetMargin = capRatio(m.net_margin, -5, 1);
+        // Convert XBRL decimals to percentages, then cap at ±200%
+        const cappedROE = capRatio(toPercent(m.roe));
+        const cappedROIC = capRatio(toPercent(m.roic));
+        const cappedROA = capRatio(toPercent(m.roa));
+        const cappedROCE = capRatio(toPercent(m.roce));
+        const cappedGrossMargin = capRatio(toPercent(m.gross_margin), -100, 100);
+        const cappedOpMargin = capRatio(toPercent(m.operating_margin), -500, 100); // Allow larger losses
+        const cappedNetMargin = capRatio(toPercent(m.net_margin), -500, 100);
+        const cappedEquityMultiplier = capRatio(m.equity_multiplier, 0, 20); // Keep as ratio, not percentage
+        const cappedDupontROE = capRatio(toPercent(m.dupont_roe));
 
         // ===== DEBT/EQUITY CALCULATION =====
         // XBRL data rarely has total_debt directly, so we calculate from available fields
@@ -551,12 +567,12 @@ class XBRLSyncService {
           }
         }
 
-        // Calculate FCF yield and FCF margin
+        // Calculate FCF yield and FCF margin (convert to percentage)
         const fcfYield = calculatedFCF && m.total_equity && m.total_equity > 0
-          ? capRatio(calculatedFCF / m.total_equity)
+          ? capRatio((calculatedFCF / m.total_equity) * 100)
           : null;
         const fcfMargin = calculatedFCF && m.revenue
-          ? capRatio(calculatedFCF / m.revenue, -2, 1)
+          ? capRatio((calculatedFCF / m.revenue) * 100, -200, 100)
           : null;
 
         // Calculate FCF per share
@@ -572,17 +588,17 @@ class XBRLSyncService {
           ? companyData[currentIdx + 1]
           : null;
 
-        // Calculate YoY growth rates
+        // Calculate YoY growth rates (convert to percentage)
         let revenueGrowthYoY = null;
         let earningsGrowthYoY = null;
         let fcfGrowthYoY = null;
 
         if (priorYear) {
           if (m.revenue && priorYear.revenue && priorYear.revenue !== 0) {
-            revenueGrowthYoY = (m.revenue - priorYear.revenue) / Math.abs(priorYear.revenue);
+            revenueGrowthYoY = ((m.revenue - priorYear.revenue) / Math.abs(priorYear.revenue)) * 100;
           }
           if (m.net_income && priorYear.net_income && priorYear.net_income !== 0) {
-            earningsGrowthYoY = (m.net_income - priorYear.net_income) / Math.abs(priorYear.net_income);
+            earningsGrowthYoY = ((m.net_income - priorYear.net_income) / Math.abs(priorYear.net_income)) * 100;
           }
           // Use calculatedFCF for growth calculations too
           const priorFCF = priorYear?.free_cash_flow ||
@@ -592,7 +608,7 @@ class XBRLSyncService {
                 ? priorYear.operating_cash_flow + priorYear.investing_cash_flow
                 : null));
           if (calculatedFCF && priorFCF && priorFCF !== 0) {
-            fcfGrowthYoY = (calculatedFCF - priorFCF) / Math.abs(priorFCF);
+            fcfGrowthYoY = ((calculatedFCF - priorFCF) / Math.abs(priorFCF)) * 100;
           }
         }
 
@@ -614,9 +630,13 @@ class XBRLSyncService {
           cappedROIC,
           cappedROE,
           cappedROA,
+          cappedROCE,
           cappedGrossMargin,
           cappedOpMargin,
           cappedNetMargin,
+          // DuPont Analysis
+          cappedEquityMultiplier,
+          cappedDupontROE,
           // Cash Flow (using calculated FCF)
           calculatedFCF,
           fcfYield,
@@ -652,6 +672,170 @@ class XBRLSyncService {
   }
 
   /**
+   * Sync XBRL raw financials to financial_data table
+   * This bridges EU/UK company data to the same table used by US companies
+   * Enables consistent API access to financial statements for all companies
+   * @returns {Object} - Summary { synced, skipped, errors }
+   */
+  syncFinancialData() {
+    // Get all XBRL metrics with linked companies
+    const metrics = this.db.prepare(`
+      SELECT xfm.*, ci.company_id, c.reporting_currency
+      FROM xbrl_fundamental_metrics xfm
+      JOIN company_identifiers ci ON xfm.identifier_id = ci.id
+      JOIN companies c ON ci.company_id = c.id
+      WHERE ci.company_id IS NOT NULL
+      ORDER BY xfm.period_end DESC
+    `).all();
+
+    console.log(`Syncing ${metrics.length} XBRL records to financial_data table`);
+
+    const summary = { synced: 0, skipped: 0, errors: 0 };
+
+    // Prepare statements for each financial statement type
+    const insertStatement = this.db.prepare(`
+      INSERT INTO financial_data (
+        company_id, statement_type, fiscal_date_ending, fiscal_year,
+        period_type, data,
+        -- Balance sheet fields
+        total_assets, total_liabilities, shareholder_equity,
+        current_assets, current_liabilities, cash_and_equivalents,
+        long_term_debt, short_term_debt,
+        -- Income statement fields
+        total_revenue, net_income, operating_income, cost_of_revenue, gross_profit,
+        -- Cash flow fields
+        operating_cashflow, capital_expenditures, shares_outstanding
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(company_id, statement_type, fiscal_date_ending, period_type)
+      DO UPDATE SET
+        data = excluded.data,
+        total_assets = excluded.total_assets,
+        total_liabilities = excluded.total_liabilities,
+        shareholder_equity = excluded.shareholder_equity,
+        current_assets = excluded.current_assets,
+        current_liabilities = excluded.current_liabilities,
+        cash_and_equivalents = excluded.cash_and_equivalents,
+        long_term_debt = excluded.long_term_debt,
+        short_term_debt = excluded.short_term_debt,
+        total_revenue = excluded.total_revenue,
+        net_income = excluded.net_income,
+        operating_income = excluded.operating_income,
+        cost_of_revenue = excluded.cost_of_revenue,
+        gross_profit = excluded.gross_profit,
+        operating_cashflow = excluded.operating_cashflow,
+        capital_expenditures = excluded.capital_expenditures,
+        shares_outstanding = excluded.shares_outstanding,
+        updated_at = CURRENT_TIMESTAMP
+    `);
+
+    for (const m of metrics) {
+      if (!m.company_id) {
+        summary.skipped++;
+        continue;
+      }
+
+      try {
+        const fiscalYear = new Date(m.period_end).getFullYear();
+        const periodType = m.period_type || 'annual';
+        const currency = m.currency || m.reporting_currency || 'EUR';
+
+        // Create income statement record
+        if (m.revenue || m.net_income || m.operating_income) {
+          const incomeData = JSON.stringify({
+            revenue: m.revenue,
+            costOfRevenue: m.cost_of_sales,
+            grossProfit: m.gross_profit,
+            operatingIncome: m.operating_income,
+            ebitda: m.ebitda,
+            netIncome: m.net_income,
+            eps: m.eps_basic,
+            epsDiluted: m.eps_diluted,
+            interestExpense: m.interest_expense,
+            incomeTaxExpense: m.income_tax_expense,
+            currency: currency,
+            _source: 'xbrl'
+          });
+
+          insertStatement.run(
+            m.company_id, 'income_statement', m.period_end, fiscalYear,
+            periodType, incomeData,
+            null, null, null, null, null, null, null, null, // balance sheet fields
+            m.revenue, m.net_income, m.operating_income, m.cost_of_sales, m.gross_profit,
+            null, null, m.shares_outstanding
+          );
+          summary.synced++;
+        }
+
+        // Create balance sheet record
+        if (m.total_assets || m.total_equity || m.total_liabilities) {
+          const balanceData = JSON.stringify({
+            totalAssets: m.total_assets,
+            currentAssets: m.current_assets,
+            nonCurrentAssets: m.non_current_assets,
+            cashAndEquivalents: m.cash_and_equivalents,
+            inventories: m.inventories,
+            tradeReceivables: m.trade_receivables,
+            totalLiabilities: m.total_liabilities,
+            currentLiabilities: m.current_liabilities,
+            nonCurrentLiabilities: m.non_current_liabilities,
+            totalEquity: m.total_equity,
+            retainedEarnings: m.retained_earnings,
+            shareCapital: m.share_capital,
+            totalDebt: m.total_debt,
+            shortTermDebt: m.short_term_debt,
+            longTermDebt: m.long_term_debt,
+            currency: currency,
+            _source: 'xbrl'
+          });
+
+          insertStatement.run(
+            m.company_id, 'balance_sheet', m.period_end, fiscalYear,
+            periodType, balanceData,
+            m.total_assets, m.total_liabilities, m.total_equity,
+            m.current_assets, m.current_liabilities, m.cash_and_equivalents,
+            m.long_term_debt, m.short_term_debt,
+            null, null, null, null, null, // income statement fields
+            null, null, m.shares_outstanding
+          );
+          summary.synced++;
+        }
+
+        // Create cash flow record
+        if (m.operating_cash_flow || m.investing_cash_flow || m.financing_cash_flow) {
+          const cashFlowData = JSON.stringify({
+            operatingCashFlow: m.operating_cash_flow,
+            investingCashFlow: m.investing_cash_flow,
+            financingCashFlow: m.financing_cash_flow,
+            capitalExpenditure: m.capital_expenditure,
+            depreciation: m.depreciation_amortization,
+            freeCashFlow: m.operating_cash_flow && m.capital_expenditure
+              ? m.operating_cash_flow - Math.abs(m.capital_expenditure)
+              : null,
+            currency: currency,
+            _source: 'xbrl'
+          });
+
+          insertStatement.run(
+            m.company_id, 'cash_flow', m.period_end, fiscalYear,
+            periodType, cashFlowData,
+            null, null, null, null, null, null, null, null, // balance sheet fields
+            null, null, null, null, null, // income statement fields
+            m.operating_cash_flow, m.capital_expenditure, null
+          );
+          summary.synced++;
+        }
+
+      } catch (error) {
+        console.error(`Error syncing financial_data for company ${m.company_id}:`, error.message);
+        summary.errors++;
+      }
+    }
+
+    return summary;
+  }
+
+  /**
    * Full sync: link companies + sync metrics (synchronous, no ticker resolution)
    * @returns {Object} - Combined summary
    */
@@ -668,11 +852,17 @@ class XBRLSyncService {
     const metricsSummary = this.syncMetrics();
     console.log(`   Metrics: ${metricsSummary.synced} synced, ${metricsSummary.skipped} skipped, ${metricsSummary.errors} errors`);
 
+    // Step 3: Sync financial_data (raw financials for API compatibility)
+    console.log('\nStep 3: Syncing raw financials to financial_data...');
+    const financialDataSummary = this.syncFinancialData();
+    console.log(`   Financial data: ${financialDataSummary.synced} synced, ${financialDataSummary.skipped} skipped, ${financialDataSummary.errors} errors`);
+
     console.log('\n✅ Full sync complete!\n');
 
     return {
       companies: linkSummary,
-      metrics: metricsSummary
+      metrics: metricsSummary,
+      financialData: financialDataSummary
     };
   }
 
@@ -701,12 +891,18 @@ class XBRLSyncService {
     const metricsSummary = this.syncMetrics();
     console.log(`   Metrics: ${metricsSummary.synced} synced, ${metricsSummary.skipped} skipped, ${metricsSummary.errors} errors`);
 
+    // Step 4: Sync financial_data (raw financials for API compatibility)
+    console.log('\nStep 4: Syncing raw financials to financial_data...');
+    const financialDataSummary = this.syncFinancialData();
+    console.log(`   Financial data: ${financialDataSummary.synced} synced, ${financialDataSummary.skipped} skipped, ${financialDataSummary.errors} errors`);
+
     console.log('\n✅ Full sync with resolution complete!\n');
 
     return {
       tickers: tickerSummary,
       companies: linkSummary,
-      metrics: metricsSummary
+      metrics: metricsSummary,
+      financialData: financialDataSummary
     };
   }
 

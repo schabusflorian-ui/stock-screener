@@ -21,7 +21,7 @@ import Button from '../../components/ui/Button';
 import { Skeleton } from '../../components/Skeleton';
 import './ValidationDashboard.css';
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:3000/api';
+const API_BASE = process.env.REACT_APP_API_URL || '/api';
 
 /**
  * Dashboard tabs

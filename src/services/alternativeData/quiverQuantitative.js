@@ -77,43 +77,44 @@ class QuiverQuantitativeService {
       WHERE id = ?
     `);
 
-    // Trades
+    // Trades - note: politician_name is not a column, use politician_id with JOIN to politicians table
+    // UNIQUE constraint is on (politician_id, transaction_date, asset_description, amount_range)
     this.insertTrade = this.db.prepare(`
       INSERT INTO congressional_trades (
-        politician_id, company_id, symbol, politician_name,
-        transaction_date, disclosure_date, transaction_type,
-        asset_type, amount_low, amount_high, description, source, signal_score
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(politician_name, symbol, transaction_date, transaction_type) DO UPDATE SET
-        disclosure_date = excluded.disclosure_date,
-        amount_low = excluded.amount_low,
-        amount_high = excluded.amount_high,
-        signal_score = excluded.signal_score
+        politician_id, company_id, ticker,
+        transaction_date, filing_date, transaction_type,
+        asset_type, amount_min, amount_max, asset_description, amount_range, source
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(politician_id, transaction_date, asset_description, amount_range) DO UPDATE SET
+        filing_date = excluded.filing_date,
+        amount_min = excluded.amount_min,
+        amount_max = excluded.amount_max
     `);
 
     this.getRecentTrades = this.db.prepare(`
       SELECT ct.*, cp.track_record_score
       FROM congressional_trades ct
       LEFT JOIN congressional_politicians cp ON ct.politician_id = cp.id
-      WHERE ct.symbol = ?
+      WHERE ct.ticker = ?
         AND ct.transaction_date >= date('now', ?)
       ORDER BY ct.transaction_date DESC
     `);
 
     this.getTopBuys = this.db.prepare(`
       SELECT
-        ct.symbol,
+        COALESCE(ct.ticker, c.symbol) as symbol,
         c.name as company_name,
         COUNT(CASE WHEN ct.transaction_type = 'purchase' THEN 1 END) as buy_count,
         COUNT(CASE WHEN ct.transaction_type = 'sale' THEN 1 END) as sell_count,
-        SUM(CASE WHEN ct.transaction_type = 'purchase' THEN ct.signal_score ELSE 0 END) as buy_signal,
-        GROUP_CONCAT(DISTINCT ct.politician_name) as politicians,
+        COUNT(CASE WHEN ct.transaction_type = 'purchase' THEN 1 END) as buy_signal,
+        GROUP_CONCAT(DISTINCT p.full_name) as politicians,
         MAX(ct.transaction_date) as latest_trade,
-        SUM(ct.amount_high) as total_amount
+        SUM(COALESCE(ct.amount_max, 0)) as total_amount
       FROM congressional_trades ct
       LEFT JOIN companies c ON ct.company_id = c.id
+      LEFT JOIN politicians p ON ct.politician_id = p.id
       WHERE ct.transaction_date >= date('now', ?)
-      GROUP BY ct.symbol
+      GROUP BY COALESCE(ct.ticker, c.symbol)
       HAVING buy_count > 0
       ORDER BY buy_signal DESC
       LIMIT ?
@@ -526,11 +527,11 @@ class QuiverQuantitativeService {
         // Get all trades for this politician in last 2 years
         const trades = this.db.prepare(`
           SELECT
-            ct.symbol,
+            ct.ticker as symbol,
             ct.transaction_date,
             ct.transaction_type,
-            ct.amount_low,
-            ct.amount_high,
+            ct.amount_min as amount_low,
+            ct.amount_max as amount_high,
             dp.close as trade_price,
             dp_30.close as price_30d,
             dp_90.close as price_90d

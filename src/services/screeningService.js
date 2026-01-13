@@ -374,13 +374,14 @@ class ScreeningService {
       params.push(...excludeCountries);
     }
 
-    // Market cap filter (convert from billions to actual value) - use price_metrics table
+    // Market cap filter (convert from billions to actual value)
+    // Use market_cap_usd for cross-currency comparison (normalized to USD)
     if (minMarketCap !== undefined && minMarketCap !== null && minMarketCap !== '') {
-      where.push('pm.market_cap >= ?');
+      where.push('COALESCE(pm.market_cap_usd, pm.market_cap) >= ?');
       params.push(parseFloat(minMarketCap) * 1e9);
     }
     if (maxMarketCap !== undefined && maxMarketCap !== null && maxMarketCap !== '') {
-      where.push('pm.market_cap <= ?');
+      where.push('COALESCE(pm.market_cap_usd, pm.market_cap) <= ?');
       params.push(parseFloat(maxMarketCap) * 1e9);
     }
 
@@ -485,8 +486,11 @@ class ScreeningService {
         c.name,
         c.sector,
         c.industry,
+        c.country,
+        c.reporting_currency,
         -- Price metrics (current market data)
         pm.market_cap,
+        pm.market_cap_usd,
         pm.last_price,
         pm.beta,
         pm.enterprise_value,

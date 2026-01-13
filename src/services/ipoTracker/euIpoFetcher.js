@@ -256,9 +256,10 @@ class EUIpoFetcher {
   /**
    * Create IPO record from prospectus
    * @param {Object} prospectus - Normalized prospectus data
+   * @param {boolean} needsReview - Whether entry needs manual review (default: true for auto-fetched)
    * @returns {Object} Created IPO record
    */
-  createIPOFromProspectus(prospectus) {
+  createIPOFromProspectus(prospectus, needsReview = true) {
     // Generate synthetic CIK for EU/UK IPOs (required field in schema)
     // Format: {REGION}-{prospectus_id or LEI}
     const regionPrefix = prospectus.region || 'EU';
@@ -266,6 +267,8 @@ class EUIpoFetcher {
     const syntheticCik = `${regionPrefix}-${uniqueId}`;
 
     // Map prospectus to ipo_tracker fields
+    // Auto-fetched entries are marked needs_review=1 since ESMA data includes
+    // secondary offerings, bonds, and other non-IPO prospectuses
     const data = {
       cik: syntheticCik,
       company_name: prospectus.entity_name,
@@ -280,17 +283,18 @@ class EUIpoFetcher {
       initial_s1_date: prospectus.approval_date, // Use approval date as filing date
       status: 'EFFECTIVE', // Prospectus approved = effective
       is_active: 1,
+      needs_review: needsReview ? 1 : 0, // Auto-fetched entries need manual review
     };
 
     const stmt = this.db.prepare(`
       INSERT INTO ipo_tracker (
         cik, company_name, lei, isin, region, regulator,
         prospectus_id, prospectus_url, home_member_state,
-        approval_date, initial_s1_date, status, is_active
+        approval_date, initial_s1_date, status, is_active, needs_review
       ) VALUES (
         @cik, @company_name, @lei, @isin, @region, @regulator,
         @prospectus_id, @prospectus_url, @home_member_state,
-        @approval_date, @initial_s1_date, @status, @is_active
+        @approval_date, @initial_s1_date, @status, @is_active, @needs_review
       )
     `);
 

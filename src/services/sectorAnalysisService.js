@@ -6,6 +6,10 @@ const db = require('../database');
  *
  * Provides industry-level aggregations, sector rotation insights,
  * top performers by sector, and industry margin comparisons
+ *
+ * NOTE: For cross-currency comparison, we use market_cap_usd (USD-normalized)
+ * instead of market_cap to ensure apples-to-apples sector aggregations.
+ * Ratio metrics (ROIC, margins, PE, etc.) are already currency-agnostic.
  */
 class SectorAnalysisService {
   constructor() {
@@ -27,7 +31,8 @@ class SectorAnalysisService {
           c.industry,
           c.symbol,
           c.name,
-          pm.market_cap
+          pm.market_cap,
+          pm.market_cap_usd
         FROM calculated_metrics m
         JOIN companies c ON m.company_id = c.id
         LEFT JOIN price_metrics pm ON pm.company_id = c.id
@@ -71,8 +76,8 @@ class SectorAnalysisService {
         ROUND(AVG(CASE WHEN fcf_yield BETWEEN -100 AND 100 THEN fcf_yield END), 2) as avg_fcf_yield,
         ROUND(AVG(CASE WHEN fcf_margin BETWEEN -100 AND 100 THEN fcf_margin END), 2) as avg_fcf_margin,
 
-        -- Market Cap totals
-        ROUND(SUM(market_cap) / 1e9, 2) as total_market_cap_b,
+        -- Market Cap totals (USD-normalized for cross-currency comparison)
+        ROUND(SUM(COALESCE(market_cap_usd, market_cap)) / 1e9, 2) as total_market_cap_b,
 
         -- Quality
         ROUND(AVG(data_quality_score), 1) as avg_quality_score
@@ -97,7 +102,8 @@ class SectorAnalysisService {
           c.industry,
           c.symbol,
           c.name,
-          pm.market_cap
+          pm.market_cap,
+          pm.market_cap_usd
         FROM calculated_metrics m
         JOIN companies c ON m.company_id = c.id
         LEFT JOIN price_metrics pm ON pm.company_id = c.id
@@ -139,8 +145,8 @@ class SectorAnalysisService {
         -- Cash Flow
         ROUND(AVG(CASE WHEN fcf_yield BETWEEN -100 AND 100 THEN fcf_yield END), 2) as avg_fcf_yield,
 
-        -- Market Cap
-        ROUND(SUM(market_cap) / 1e9, 2) as total_market_cap_b
+        -- Market Cap (USD-normalized for cross-currency comparison)
+        ROUND(SUM(COALESCE(market_cap_usd, market_cap)) / 1e9, 2) as total_market_cap_b
 
       FROM latest_metrics
       GROUP BY industry
@@ -169,9 +175,11 @@ class SectorAnalysisService {
           c.industry,
           c.symbol,
           c.name,
-          c.market_cap
+          -- Use USD-normalized market cap for cross-currency comparison
+          COALESCE(pm.market_cap_usd, pm.market_cap, c.market_cap) as market_cap_usd
         FROM calculated_metrics m
         JOIN companies c ON m.company_id = c.id
+        LEFT JOIN price_metrics pm ON c.id = pm.company_id
         WHERE m.period_type = ?
           AND m.fiscal_period = (
             SELECT MAX(m2.fiscal_period)
@@ -182,7 +190,7 @@ class SectorAnalysisService {
           AND c.sector IS NOT NULL
           AND m.${safeMetric} IS NOT NULL
           AND c.symbol NOT LIKE 'CIK_%'
-          AND c.market_cap IS NOT NULL
+          AND COALESCE(pm.market_cap_usd, pm.market_cap, c.market_cap) IS NOT NULL
       ),
       ranked AS (
         SELECT
@@ -201,7 +209,7 @@ class SectorAnalysisService {
         ROUND(operating_margin, 2) as operating_margin,
         ROUND(fcf_yield, 2) as fcf_yield,
         ROUND(revenue_growth_yoy, 2) as revenue_growth,
-        ROUND(market_cap / 1e9, 2) as market_cap_b,
+        ROUND(market_cap_usd / 1e9, 2) as market_cap_b,
         fiscal_period,
         rank
       FROM ranked

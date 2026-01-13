@@ -682,15 +682,23 @@ function PeerComparison({ peers, sectorAverage, currentCompany, latestMetrics })
   const sortedPeers = useMemo(() => {
     if (!peers) return [];
     return [...peers].sort((a, b) => {
-      const aVal = a[sortBy] ?? -Infinity;
-      const bVal = b[sortBy] ?? -Infinity;
+      // For market_cap, prefer USD-normalized value for cross-currency comparison
+      const getVal = (p) => {
+        if (sortBy === 'market_cap') {
+          return p.market_cap_usd ?? p.market_cap ?? -Infinity;
+        }
+        return p[sortBy] ?? -Infinity;
+      };
+      const aVal = getVal(a);
+      const bVal = getVal(b);
       return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
     });
   }, [peers, sortBy, sortDir]);
 
   const columns = [
     { key: 'symbol', label: 'Symbol', format: v => v },
-    { key: 'market_cap', label: 'Market Cap', format: formatCurrency },
+    // Use USD-normalized market cap for accurate cross-currency comparison
+    { key: 'market_cap', label: 'Market Cap (USD)', format: (v, peer) => formatCurrency(peer?.market_cap_usd ?? v) },
     { key: 'roic', label: 'ROIC', format: formatPercent },
     { key: 'roe', label: 'ROE', format: formatPercent },
     { key: 'net_margin', label: 'Net Margin', format: formatPercent },
@@ -715,9 +723,9 @@ function PeerComparison({ peers, sectorAverage, currentCompany, latestMetrics })
   const peerChartData = useMemo(() => {
     if (!peers || peers.length === 0) return [];
 
-    // Get top 8 peers by market cap for the chart
+    // Get top 8 peers by USD-normalized market cap for the chart
     const topPeers = [...peers]
-      .sort((a, b) => (b.market_cap || 0) - (a.market_cap || 0))
+      .sort((a, b) => (b.market_cap_usd ?? b.market_cap ?? 0) - (a.market_cap_usd ?? a.market_cap ?? 0))
       .slice(0, 8);
 
     return topPeers.map(peer => ({
@@ -839,7 +847,7 @@ function PeerComparison({ peers, sectorAverage, currentCompany, latestMetrics })
                   >
                     {columns.map(col => (
                       <td key={col.key} className={col.key === 'symbol' ? 'symbol-cell' : ''}>
-                        {col.format(peer[col.key])}
+                        {col.format(peer[col.key], peer)}
                       </td>
                     ))}
                   </tr>

@@ -3,6 +3,7 @@ import { useState, useMemo } from 'react';
 import { Loader, AlertTriangle, CheckCircle, Play, Target, Info, ChevronDown, ChevronUp } from 'lucide-react';
 import { simulateAPI } from '../../services/api';
 import { usePreferences } from '../../context/PreferencesContext';
+import { FatTailWarningBanner, TalebRiskDashboard, DistributionComparisonChart } from './TalebComponents';
 import './SimulationPanels.css';
 
 function MonteCarloPanel({ portfolioId, initialValue }) {
@@ -439,6 +440,28 @@ function MonteCarloPanel({ portfolioId, initialValue }) {
               </div>
             )}
 
+            {/* Taleb-Informed Risk Visualization Components */}
+            {results.distributionFit && results.distributionFit.moments && (
+              <>
+                <FatTailWarningBanner
+                  distributionFit={results.distributionFit}
+                  moments={results.distributionFit.moments}
+                  varComparison={results.distributionFit.varComparison}
+                />
+                <TalebRiskDashboard
+                  distributionFit={results.distributionFit}
+                  moments={results.distributionFit.moments}
+                  varComparison={results.distributionFit.varComparison}
+                  simulationResults={results}
+                />
+                <DistributionComparisonChart
+                  moments={results.distributionFit.moments}
+                  distributionFit={results.distributionFit}
+                  historicalReturns={results.historicalReturns}
+                />
+              </>
+            )}
+
             {/* Fan Chart Visualization */}
             <div className="fan-chart-section">
               <h5>Wealth Trajectory Projection</h5>
@@ -628,16 +651,70 @@ function FanChart({ data, goal, initial, years, hoveredYear, setHoveredYear }) {
 
   const width = 600;
   const height = 280;
-  const padding = { top: 20, right: 60, bottom: 40, left: 70 };
+  const padding = { top: 20, right: 60, bottom: 40, left: 80 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
 
-  // Find max value for scaling
-  const maxValue = Math.max(
-    ...data.map(d => d.p95),
-    goal || 0
-  ) * 1.1;
-  const minValue = 0;
+  // Find data range for scaling (based on actual data only)
+  const actualDataMax = Math.max(...data.map(d => d.p95));
+  const actualDataMin = Math.min(...data.map(d => d.p5));
+
+  // Only include goal in axis if it's within 50% of actual data max
+  // This prevents a $1M goal from stretching axis when data only goes to $300K
+  const goalInRange = goal && goal <= actualDataMax * 1.5;
+  const dataMax = goalInRange ? Math.max(actualDataMax, goal) : actualDataMax;
+  const dataMin = Math.min(actualDataMin, initial || actualDataMin);
+
+  // Generate nice round tick values for Y axis
+  const generateNiceTicks = (min, max, targetTicks = 5) => {
+    // Handle edge case where min equals max
+    if (max <= min) {
+      max = min + 1000;
+    }
+
+    const range = max - min;
+    // Find a nice step size (1, 2, 5, 10, 20, 50, 100, etc.)
+    const roughStep = range / (targetTicks - 1);
+    const magnitude = Math.pow(10, Math.floor(Math.log10(roughStep)));
+    const residual = roughStep / magnitude;
+
+    let niceStep;
+    if (residual <= 1.5) niceStep = magnitude;
+    else if (residual <= 3) niceStep = 2 * magnitude;
+    else if (residual <= 7) niceStep = 5 * magnitude;
+    else niceStep = 10 * magnitude;
+
+    // Calculate nice min/max - keep close to actual data
+    const niceMin = Math.floor(min / niceStep) * niceStep;
+    // Use smaller ceiling to keep axis tight to data
+    const niceMax = Math.ceil(max * 1.05 / niceStep) * niceStep;
+
+    // Generate ticks
+    const ticks = [];
+    for (let tick = niceMin; tick <= niceMax; tick += niceStep) {
+      ticks.push(tick);
+    }
+
+    // Limit to reasonable number of ticks
+    if (ticks.length > 8) {
+      const skipFactor = Math.ceil(ticks.length / 6);
+      return {
+        ticks: ticks.filter((_, i) => i % skipFactor === 0 || i === ticks.length - 1),
+        niceMin,
+        niceMax
+      };
+    }
+
+    return { ticks, niceMin, niceMax };
+  };
+
+  const { ticks: yTicks, niceMin, niceMax } = generateNiceTicks(
+    Math.max(0, dataMin * 0.95),
+    dataMax * 1.05
+  );
+
+  const minValue = niceMin;
+  const maxValue = niceMax;
 
   // Scale functions
   const xScale = (year) => padding.left + (year / years) * chartWidth;
@@ -655,18 +732,35 @@ function FanChart({ data, goal, initial, years, hoveredYear, setHoveredYear }) {
     return data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(d.year)} ${yScale(d[key])}`).join(' ');
   };
 
-  // Format axis labels
+  // Format axis labels with appropriate precision
   const formatAxisValue = (value) => {
-    if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
-    if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`;
-    return `$${value}`;
+    if (value >= 1000000) {
+      const millions = value / 1000000;
+      return millions >= 10 ? `$${millions.toFixed(0)}M` : `$${millions.toFixed(1)}M`;
+    }
+    if (value >= 1000) {
+      const thousands = value / 1000;
+      return thousands >= 100 ? `$${thousands.toFixed(0)}K` : `$${thousands.toFixed(0)}K`;
+    }
+    return `$${value.toLocaleString()}`;
   };
 
-  // Generate Y axis ticks
-  const yTicks = Array.from({ length: 6 }, (_, i) => minValue + (maxValue - minValue) * (i / 5));
+  // Generate X axis ticks (years)
+  const generateYearTicks = (totalYears) => {
+    if (totalYears <= 10) {
+      // Show every year or every 2 years
+      const step = totalYears <= 5 ? 1 : 2;
+      return Array.from({ length: Math.floor(totalYears / step) + 1 }, (_, i) => i * step);
+    } else if (totalYears <= 20) {
+      // Show every 5 years
+      return Array.from({ length: Math.floor(totalYears / 5) + 1 }, (_, i) => i * 5);
+    } else {
+      // Show every 10 years
+      return Array.from({ length: Math.floor(totalYears / 10) + 1 }, (_, i) => i * 10);
+    }
+  };
 
-  // Generate X axis ticks
-  const xTicks = Array.from({ length: Math.min(years + 1, 7) }, (_, i) => Math.round((years * i) / 6));
+  const xTicks = generateYearTicks(years);
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="fan-chart-svg">

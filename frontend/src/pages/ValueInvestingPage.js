@@ -8,7 +8,7 @@ import { useFormatters } from '../hooks/useFormatters';
 import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Activity, DollarSign, BarChart3, Shield } from 'lucide-react';
 import './ValueInvestingPage.css';
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:3000/api';
+const API_BASE = process.env.REACT_APP_API_URL || '/api';
 
 // Macro regime colors and icons
 const REGIME_CONFIG = {
@@ -117,12 +117,12 @@ function ResultsTable({ results, loading }) {
               <td className="company-name">{stock.name?.substring(0, 30)}</td>
               <td>{stock.sector}</td>
               <td className={stock.roic > 0.15 ? 'value-good' : stock.roic > 0.1 ? 'value-neutral' : 'value-bad'}>
-                {formatPercent(stock.roic)}
+                {formatPercent(stock.roic, { multiply: true })}
               </td>
               <td className={stock.pe_ratio < 15 ? 'value-good' : stock.pe_ratio < 25 ? 'value-neutral' : 'value-bad'}>
                 {stock.pe_ratio ? formatNumber(stock.pe_ratio, 1) : 'N/A'}
               </td>
-              <td className={stock.fcf_yield > 0.05 ? 'value-good' : stock.fcf_yield > 0 ? 'value-neutral' : 'value-bad'}>
+              <td className={stock.fcf_yield > 5 ? 'value-good' : stock.fcf_yield > 0 ? 'value-neutral' : 'value-bad'}>
                 {formatPercent(stock.fcf_yield)}
               </td>
               <td className={stock.debt_to_equity < 0.5 ? 'value-good' : stock.debt_to_equity < 1 ? 'value-neutral' : 'value-bad'}>

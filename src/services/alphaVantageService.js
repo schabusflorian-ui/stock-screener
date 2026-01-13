@@ -1,14 +1,17 @@
 // src/services/alphaVantageService.js
 const axios = require('axios');
+const { withCircuitBreaker, EXTERNAL_SERVICES } = require('../utils/circuitBreaker');
+const { retryWithBackoff } = require('../utils/retryWithBackoff');
 
 /**
  * Alpha Vantage API Client
- * 
+ *
  * Handles all communication with Alpha Vantage API
  * Features:
  * - Rate limiting (5 calls/minute for free tier)
  * - Response caching
  * - Error handling and retries
+ * - Circuit breaker for reliability
  * - Clean data normalization
  */
 class AlphaVantageService {
@@ -16,22 +19,26 @@ class AlphaVantageService {
     if (!apiKey) {
       throw new Error('Alpha Vantage API key is required');
     }
-    
+
     this.apiKey = apiKey;
     this.baseURL = 'https://www.alphavantage.co/query';
-    
+
     // Rate limiting for free tier (5 calls per minute)
     this.requestDelay = 12000; // 12 seconds between calls
     this.lastRequestTime = 0;
-    
-    // Simple in-memory cache
+
+    // Simple in-memory cache with size limit (LRU-style eviction)
     this.cache = new Map();
+    this.cacheMaxSize = 500; // Maximum cache entries
     this.cacheConfig = {
       overview: 7 * 24 * 60 * 60 * 1000,      // 7 days
       financials: 7 * 24 * 60 * 60 * 1000,    // 7 days
       prices: 24 * 60 * 60 * 1000              // 24 hours
     };
-    
+
+    // Circuit breaker service name
+    this.circuitBreakerName = 'alpha_vantage';
+
     console.log('✅ Alpha Vantage service initialized');
   }
   
@@ -76,9 +83,23 @@ class AlphaVantageService {
   }
   
   /**
-   * Store data in cache
+   * Store data in cache with LRU-style eviction
    */
   setCache(key, data, ttl) {
+    // Evict oldest entries if cache is full
+    if (this.cache.size >= this.cacheMaxSize) {
+      // Find and remove oldest entries (first 10% of cache)
+      const entriesToRemove = Math.max(1, Math.floor(this.cacheMaxSize * 0.1));
+      const sortedEntries = [...this.cache.entries()]
+        .sort((a, b) => a[1].timestamp - b[1].timestamp)
+        .slice(0, entriesToRemove);
+
+      for (const [oldKey] of sortedEntries) {
+        this.cache.delete(oldKey);
+      }
+      console.log(`🧹 Cache eviction: removed ${sortedEntries.length} old entries`);
+    }
+
     this.cache.set(key, {
       data,
       timestamp: Date.now(),
@@ -87,7 +108,7 @@ class AlphaVantageService {
   }
   
   /**
-   * Make API request with error handling
+   * Make API request with error handling, circuit breaker, and retry logic
    */
   async makeRequest(params) {
     // Check cache first
@@ -95,46 +116,76 @@ class AlphaVantageService {
     const ttl = this.cacheConfig[params.function?.toLowerCase()] || this.cacheConfig.overview;
     const cached = this.getCached(cacheKey, ttl);
     if (cached) return cached;
-    
+
     // Wait for rate limit
     await this.waitForRateLimit();
-    
+
     // Build URL
     const url = new URL(this.baseURL);
     url.searchParams.append('apikey', this.apiKey);
-    
+
     for (const [key, value] of Object.entries(params)) {
       url.searchParams.append(key, value);
     }
-    
+
     console.log(`🌐 API Request: ${params.function} for ${params.symbol || 'data'}`);
-    
-    try {
+
+    // Execute with circuit breaker and retry logic
+    const executeRequest = async () => {
       const response = await axios.get(url.toString(), {
         timeout: 30000 // 30 second timeout
       });
-      
+
       const data = response.data;
-      
-      // Check for API errors
+
+      // Check for API errors (these should not trigger retries)
       if (data.Note) {
-        throw new Error(`API rate limit: ${data.Note}`);
+        const error = new Error(`API rate limit: ${data.Note}`);
+        error.retryable = false;
+        throw error;
       }
-      
+
       if (data['Error Message']) {
-        throw new Error(`API error: ${data['Error Message']}`);
+        const error = new Error(`API error: ${data['Error Message']}`);
+        error.retryable = false;
+        throw error;
       }
-      
+
       if (data.Information) {
-        throw new Error(`API info: ${data.Information}`);
+        const error = new Error(`API info: ${data.Information}`);
+        error.retryable = false;
+        throw error;
       }
-      
+
+      return data;
+    };
+
+    try {
+      // Use circuit breaker with retry logic
+      const data = await withCircuitBreaker(
+        this.circuitBreakerName,
+        () => retryWithBackoff(executeRequest, {
+          maxRetries: 2,
+          initialDelay: 2000,
+          retryableErrors: (error) => {
+            // Don't retry API-level errors
+            if (error.retryable === false) return false;
+            // Retry network/timeout errors
+            if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') return true;
+            if (error.message?.includes('timeout')) return true;
+            if (error.response?.status >= 500) return true;
+            return false;
+          }
+        })
+      );
+
       // Cache successful response
       this.setCache(cacheKey, data, ttl);
-      
+
       return data;
-      
+
     } catch (error) {
+      // Format error message
       if (error.response) {
         throw new Error(`HTTP ${error.response.status}: ${error.response.statusText}`);
       } else if (error.request) {

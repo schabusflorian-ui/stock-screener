@@ -1,0 +1,469 @@
+/* components/onboarding/WelcomeFlow.css */
+/* Updated to match Liquid Glass Design System */
+
+.welcome-flow-overlay {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(135deg, #f0f4ff 0%, #e8f4f8 50%, #fdf4f5 100%);
+  backdrop-filter: blur(20px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 9999;
+  overflow-y: auto;
+}
+
+.welcome-flow-card {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 1rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+  max-width: 42rem;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 2rem;
+}
+
+.welcome-flow-progress {
+  position: fixed;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0.5rem;
+  z-index: 10000;
+}
+
+.progress-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transition: all 0.3s ease;
+}
+
+.progress-dot.active {
+  background: var(--brand-primary, #6366f1);
+  width: 1.5rem;
+  border-radius: 0.25rem;
+}
+
+/* Welcome Step */
+.welcome-step {
+  text-align: center;
+  padding: 2rem 0;
+}
+
+.welcome-icon {
+  width: 5rem;
+  height: 5rem;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1.5rem;
+  font-size: 2.5rem;
+  box-shadow: 0 8px 32px rgba(99, 102, 241, 0.3);
+}
+
+.welcome-title {
+  font-size: 1.875rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary, #374151);
+}
+
+.welcome-description {
+  color: var(--text-secondary, #6b7280);
+  margin-bottom: 2rem;
+  line-height: 1.6;
+  max-width: 28rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.welcome-time {
+  font-size: 0.75rem;
+  color: var(--text-tertiary, #9ca3af);
+  margin-top: 1rem;
+}
+
+/* Interests Step */
+.interests-step,
+.risk-profile-step,
+.watchlist-step,
+.tour-offer-step {
+  padding: 1rem 0;
+}
+
+.step-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary, #374151);
+}
+
+.step-description {
+  color: var(--text-secondary, #6b7280);
+  margin-bottom: 1.5rem;
+  line-height: 1.6;
+}
+
+.interests-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+@media (max-width: 640px) {
+  .interests-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.interest-card {
+  padding: 1rem;
+  border: 1px solid var(--border-primary, rgba(0, 0, 0, 0.06));
+  border-radius: 0.75rem;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.interest-card:hover {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: var(--brand-primary, #6366f1);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15);
+}
+
+.interest-card.selected {
+  border-color: var(--brand-primary, #6366f1);
+  background: rgba(99, 102, 241, 0.08);
+  box-shadow: 0 0 0 1px var(--brand-primary, #6366f1);
+}
+
+.interest-icon {
+  font-size: 1.5rem;
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.interest-label {
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+  color: var(--text-primary, #374151);
+}
+
+.interest-description {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #6b7280);
+  line-height: 1.4;
+}
+
+/* Risk Profile Step */
+.risk-profiles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.risk-profile-card {
+  width: 100%;
+  padding: 1rem;
+  border: 1px solid var(--border-primary, rgba(0, 0, 0, 0.06));
+  border-radius: 0.75rem;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.risk-profile-card:hover {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: var(--brand-primary, #6366f1);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15);
+}
+
+.risk-profile-card.selected {
+  border-color: var(--brand-primary, #6366f1);
+  background: rgba(99, 102, 241, 0.08);
+  box-shadow: 0 0 0 1px var(--brand-primary, #6366f1);
+}
+
+.risk-profile-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.risk-profile-icon {
+  font-size: 1.5rem;
+}
+
+.risk-profile-label {
+  font-weight: 600;
+  color: var(--text-primary, #374151);
+}
+
+.risk-profile-description {
+  font-size: 0.875rem;
+  color: var(--text-secondary, #6b7280);
+}
+
+.risk-profile-details {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-primary, rgba(0, 0, 0, 0.06));
+}
+
+.allocation-bar {
+  display: flex;
+  height: 0.5rem;
+  border-radius: 0.25rem;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+
+.allocation-segment {
+  transition: width 0.3s ease;
+}
+
+.allocation-segment.stocks {
+  background: var(--brand-primary, #6366f1);
+}
+
+.allocation-segment.bonds {
+  background: var(--positive, #10b981);
+}
+
+.allocation-segment.cash {
+  background: var(--warning, #f59e0b);
+}
+
+.allocation-legend {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #6b7280);
+  margin-bottom: 0.5rem;
+}
+
+.risk-meta {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.75rem;
+  color: var(--text-tertiary, #9ca3af);
+}
+
+/* Watchlist Step */
+.watchlist-name-input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--border-primary, rgba(0, 0, 0, 0.06));
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  margin-bottom: 1rem;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+  transition: all 0.2s ease;
+  color: var(--text-primary, #374151);
+}
+
+.watchlist-name-input:focus {
+  outline: none;
+  border-color: var(--brand-primary, #6366f1);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.selected-stocks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.selected-stock-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  color: white;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
+.remove-stock {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 0.25rem;
+  opacity: 0.8;
+  transition: opacity 0.2s ease;
+}
+
+.remove-stock:hover {
+  opacity: 1;
+}
+
+.suggested-stocks-section {
+  margin-bottom: 1.5rem;
+}
+
+.suggested-label {
+  font-size: 0.875rem;
+  color: var(--text-secondary, #6b7280);
+  margin-bottom: 0.5rem;
+}
+
+.suggested-stocks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.suggested-stock-btn {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-primary, rgba(0, 0, 0, 0.06));
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: var(--text-primary, #374151);
+}
+
+.suggested-stock-btn:hover:not(:disabled) {
+  border-color: var(--brand-primary, #6366f1);
+  background: rgba(99, 102, 241, 0.08);
+  transform: translateY(-1px);
+}
+
+.suggested-stock-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Tour Offer Step */
+.tour-offer-step {
+  text-align: center;
+  padding: 2rem 0;
+}
+
+.celebration-icon {
+  width: 5rem;
+  height: 5rem;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1.5rem;
+  font-size: 2.5rem;
+  box-shadow: 0 8px 32px rgba(16, 185, 129, 0.3);
+}
+
+/* Step Actions */
+.step-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+/* Button Styles */
+.btn-primary,
+.btn-secondary,
+.btn-text {
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+}
+
+.btn-primary {
+  flex: 1;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.4);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary.btn-large {
+  width: 100%;
+  padding: 1rem 2rem;
+  font-size: 1.125rem;
+}
+
+.btn-secondary {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+  color: var(--text-primary, #374151);
+  border: 1px solid var(--border-primary, rgba(0, 0, 0, 0.06));
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: var(--brand-primary, #6366f1);
+}
+
+.btn-text {
+  width: 100%;
+  background: transparent;
+  color: var(--text-secondary, #6b7280);
+  padding: 0.75rem;
+}
+
+.btn-text:hover {
+  color: var(--text-primary, #374151);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+/* Scrollbar Styling */
+.welcome-flow-card::-webkit-scrollbar {
+  width: 8px;
+}
+
+.welcome-flow-card::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 4px;
+}
+
+.welcome-flow-card::-webkit-scrollbar-thumb {
+  background: var(--border-secondary, rgba(0, 0, 0, 0.1));
+  border-radius: 4px;
+}
+
+.welcome-flow-card::-webkit-scrollbar-thumb:hover {
+  background: var(--border-secondary, rgba(0, 0, 0, 0.15));
+}

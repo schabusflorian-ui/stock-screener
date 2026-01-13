@@ -1,6 +1,6 @@
 // frontend/src/pages/ScreeningPage.js
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { screeningAPI, companyAPI } from '../services/api';
 import { WatchlistButton, PeriodToggle, ComparisonChart } from '../components';
 import { NLQueryBar } from '../components/nl';
@@ -16,6 +16,7 @@ const ALL_COLUMNS = [
   { key: 'name', label: 'Company', format: 'text', filterable: true },
   { key: 'sector', label: 'Sector', format: 'text', filterable: true },
   { key: 'industry', label: 'Industry', format: 'text', filterable: true },
+  { key: 'country', label: 'Country', format: 'text', filterable: true },
   // Price & Market Data (from price_metrics)
   { key: 'last_price', label: 'Price', format: 'currency', filterable: true },
   { key: 'market_cap', label: 'Mkt Cap', format: 'currency_large', filterable: true },
@@ -161,8 +162,18 @@ function ScreeningPage() {
   const [filterOptions, setFilterOptions] = useState({
     sectors: [],
     industriesBySector: {},
-    availablePeriods: []
+    availablePeriods: [],
+    countries: []
   });
+
+  // Region definitions for quick selection
+  const REGIONS = [
+    { key: 'US', label: 'US', flag: '🇺🇸', countries: ['US', 'USA'] },
+    { key: 'UK', label: 'UK', flag: '🇬🇧', countries: ['GB', 'UK'] },
+    { key: 'EU', label: 'Europe', flag: '🇪🇺', countries: ['DE', 'FR', 'NL', 'ES', 'IT', 'BE', 'AT', 'PT', 'IE', 'GR', 'LU', 'FI'] },
+    { key: 'NORDIC', label: 'Nordic', flag: '🏔️', countries: ['SE', 'DK', 'NO', 'FI'] },
+    { key: 'DACH', label: 'DACH', flag: '🇩🇪', countries: ['DE', 'AT', 'CH'] },
+  ];
 
   // Presets
   const [presets, setPresets] = useState([]);
@@ -179,6 +190,8 @@ function ScreeningPage() {
   const [periodType, setPeriodType] = useState('annual');
   const [selectedSectors, setSelectedSectors] = useState([]);
   const [selectedIndustries, setSelectedIndustries] = useState([]);
+  const [selectedRegions, setSelectedRegions] = useState([]);
+  const [selectedCountries, setSelectedCountries] = useState([]);
   const [sortBy, setSortBy] = useState('roic');
   const [sortOrder, setSortOrder] = useState('DESC');
   const [limit, setLimit] = useState(50);
@@ -219,6 +232,26 @@ function ScreeningPage() {
   const [columnFilters, setColumnFilters] = useState({});
   const [showFilters, setShowFilters] = useState(false);
 
+  // URL search params for deep linking
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Handle URL parameters for sector filter (e.g., from Command Palette)
+  // Note: runCustomScreen is defined later, so we trigger screen via state
+  const [pendingSectorScreen, setPendingSectorScreen] = useState(false);
+
+  useEffect(() => {
+    const sectorParam = searchParams.get('sector');
+    if (sectorParam && filterOptions.sectors.length > 0) {
+      // Check if sector exists in available options
+      if (filterOptions.sectors.includes(sectorParam)) {
+        setSelectedSectors([sectorParam]);
+        setViewMode('custom'); // Switch to custom mode to show the filter
+        setPendingSectorScreen(true); // Flag to run screen after state updates
+        // Clear the URL param after processing
+        setSearchParams({}, { replace: true });
+      }
+    }
+  }, [searchParams, filterOptions.sectors, setSearchParams]);
 
   // Save column preferences to localStorage
   useEffect(() => {
@@ -395,6 +428,8 @@ function ScreeningPage() {
         periodType,
         sectors: selectedSectors,
         industries: selectedIndustries,
+        regions: selectedRegions,
+        countries: selectedCountries,
         sortBy,
         sortOrder,
         limit,
@@ -411,7 +446,15 @@ function ScreeningPage() {
       console.error('Screening error:', error);
       setLoading(false);
     }
-  }, [criteria, periodType, selectedSectors, selectedIndustries, sortBy, sortOrder, limit, historicalMode, lookbackYears, asOfDate]);
+  }, [criteria, periodType, selectedSectors, selectedIndustries, selectedRegions, selectedCountries, sortBy, sortOrder, limit, historicalMode, lookbackYears, asOfDate]);
+
+  // Auto-run screen when sector is set from URL params
+  useEffect(() => {
+    if (pendingSectorScreen && selectedSectors.length > 0) {
+      setPendingSectorScreen(false);
+      runCustomScreen();
+    }
+  }, [pendingSectorScreen, selectedSectors, runCustomScreen]);
 
   // Run preset screen (no limit - returns all matches)
   const runPresetScreen = async (presetId, name) => {
@@ -525,10 +568,10 @@ function ScreeningPage() {
       `"${r.name}"`,
       r.sector,
       `"${r.industry}"`,
-      r.roic?.toFixed(2),
-      r.roe?.toFixed(2),
-      r.net_margin?.toFixed(2),
-      r.fcf_yield?.toFixed(2),
+      (r.roic * 100)?.toFixed(2),
+      (r.roe * 100)?.toFixed(2),
+      (r.net_margin * 100)?.toFixed(2),
+      r.fcf_yield?.toFixed(2),  // already in %
       r.pe_ratio?.toFixed(2),
       r.debt_to_equity?.toFixed(2),
       r.fiscal_period
@@ -793,10 +836,57 @@ function ScreeningPage() {
                 </select>
               </div>
             )}
+
+            {/* Region Filter */}
+            <div className="filter-group">
+              <label>Region</label>
+              <div className="region-buttons">
+                {REGIONS.map(region => (
+                  <button
+                    key={region.key}
+                    className={`region-btn ${selectedRegions.includes(region.key) ? 'active' : ''}`}
+                    onClick={() => {
+                      setSelectedRegions(prev =>
+                        prev.includes(region.key)
+                          ? prev.filter(r => r !== region.key)
+                          : [...prev, region.key]
+                      );
+                      setSelectedCountries([]); // Reset specific countries when region changes
+                    }}
+                    title={`${region.label}: ${region.countries.join(', ')}`}
+                  >
+                    {region.flag} {region.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Country Filter (for fine-grained selection) */}
+            {filterOptions.countries && filterOptions.countries.length > 0 && (
+              <div className="filter-group">
+                <label>Countries {selectedCountries.length > 0 && `(${selectedCountries.length})`}</label>
+                <select
+                  multiple
+                  value={selectedCountries}
+                  onChange={(e) => {
+                    const values = Array.from(e.target.selectedOptions, opt => opt.value);
+                    setSelectedCountries(values);
+                    setSelectedRegions([]); // Reset regions when specific countries are selected
+                  }}
+                  className="multi-select country-select"
+                >
+                  {filterOptions.countries.map(c => (
+                    <option key={c.country} value={c.country}>
+                      {c.country} ({c.company_count})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           {/* Criteria Builder */}
-          <div className="criteria-builder">
+          <div className="criteria-builder" data-tour="filters">
             <div className="criteria-header">
               <h3>Screening Criteria {activeCriteriaCount > 0 && <span className="criteria-count">({activeCriteriaCount} active)</span>}</h3>
               <button className="clear-btn" onClick={clearCriteria}>Clear All</button>
@@ -882,7 +972,7 @@ function ScreeningPage() {
       )}
 
       {!loading && results.length > 0 && (
-        <div className="results-section">
+        <div className="results-section" data-tour="results">
           <div className="results-header">
             <h2>
               {activeScreen}

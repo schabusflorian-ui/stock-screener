@@ -16,7 +16,7 @@ import QuickActions from './QuickActions';
 import './ChatBubble.css';
 
 function ChatBubble({ message, onSymbolClick, onQuickAction }) {
-  const { role, content, result, intent, confidence, timestamp } = message;
+  const { role, content, result, intent, confidence, timestamp, isStreaming } = message;
   const isUser = role === 'user';
   const symbol = result?.symbol;
 
@@ -50,8 +50,33 @@ function ChatBubble({ message, onSymbolClick, onQuickAction }) {
       </div>
 
       <div className="bubble-content">
-        {/* Show summary/interpretation as markdown if available */}
-        {result?.summary && (
+        {/* Streaming content - render incrementally as it arrives */}
+        {isStreaming && content && (
+          <div className="bubble-streaming">
+            <ReactMarkdown
+              components={{
+                p: ({ children }) => <p className="md-p">{children}</p>,
+                strong: ({ children }) => <strong className="md-strong">{children}</strong>,
+                em: ({ children }) => <em className="md-em">{children}</em>,
+                ul: ({ children }) => <ul className="md-ul">{children}</ul>,
+                ol: ({ children }) => <ol className="md-ol">{children}</ol>,
+                li: ({ children }) => <li className="md-li">{children}</li>,
+                code: ({ inline, children }) =>
+                  inline ? (
+                    <code className="md-code-inline">{children}</code>
+                  ) : (
+                    <pre className="md-code-block"><code>{children}</code></pre>
+                  ),
+              }}
+            >
+              {content}
+            </ReactMarkdown>
+            <span className="streaming-cursor" />
+          </div>
+        )}
+
+        {/* Show summary/interpretation as markdown if available (non-streaming) */}
+        {!isStreaming && result?.summary && (
           <div className="bubble-summary">
             <ReactMarkdown
               components={{
@@ -74,8 +99,8 @@ function ChatBubble({ message, onSymbolClick, onQuickAction }) {
           </div>
         )}
 
-        {/* Formatted result data */}
-        {result && result.type !== 'error' && (
+        {/* Formatted result data (only show when done streaming) */}
+        {!isStreaming && result && result.type !== 'error' && (
           <div className="bubble-result">
             {formatResponse(result, onSymbolClick)}
           </div>
@@ -89,15 +114,15 @@ function ChatBubble({ message, onSymbolClick, onQuickAction }) {
           </div>
         )}
 
-        {/* Fallback to plain content if no result */}
-        {!result && content && (
+        {/* Fallback to plain content if no result and not streaming */}
+        {!isStreaming && !result && content && (
           <div className="bubble-text">
             <ReactMarkdown>{content}</ReactMarkdown>
           </div>
         )}
 
-        {/* Quick actions for follow-up queries */}
-        {onQuickAction && result?.type !== 'error' && (
+        {/* Quick actions for follow-up queries (only when done) */}
+        {!isStreaming && onQuickAction && result?.type !== 'error' && (
           <QuickActions
             result={result}
             symbol={symbol}

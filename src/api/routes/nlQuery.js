@@ -12,6 +12,8 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const db = require('../../database');
 const { routeQuery, shouldUseLLM } = require('../../services/nl/queryRouter');
+const { getLLMHandler, SSE_EVENTS } = require('../../services/nl/llmHandler');
+const { ERROR_CODES, sendError, asyncHandler, safeErrorMessage } = require('../../utils/errorHandler');
 
 const database = db.getDatabase();
 
@@ -470,10 +472,7 @@ router.post('/query', async (req, res) => {
     const { query, context, conversation_id, session_id } = req.body;
 
     if (!query || typeof query !== 'string') {
-      return res.status(400).json({
-        success: false,
-        error: 'Query is required and must be a string'
-      });
+      return sendError(res, ERROR_CODES.VALIDATION_ERROR, 'Query is required and must be a string');
     }
 
     // Get or create conversation for memory
@@ -603,10 +602,121 @@ router.post('/query', async (req, res) => {
     return res.json(response);
   } catch (error) {
     console.error('NL query error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to process query'
-    });
+    return sendError(res, ERROR_CODES.INTERNAL_ERROR, 'Failed to process query', safeErrorMessage(error));
+  }
+});
+
+/**
+ * POST /api/nl/query/stream
+ * Process a natural language query with streaming response (SSE)
+ * Returns real-time text deltas and tool execution status
+ */
+router.post('/query/stream', async (req, res) => {
+  // Set up SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+  res.flushHeaders();
+
+  // Helper to send SSE events
+  const sendEvent = (eventType, data) => {
+    res.write(`event: ${eventType}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    const { query, context, conversation_id, session_id } = req.body;
+
+    if (!query || typeof query !== 'string') {
+      sendEvent(SSE_EVENTS.ERROR, { error: 'Query is required and must be a string' });
+      res.end();
+      return;
+    }
+
+    // Get LLM handler
+    const llmHandler = getLLMHandler();
+    if (!llmHandler.isAvailable()) {
+      sendEvent(SSE_EVENTS.ERROR, { error: 'LLM service not available' });
+      res.end();
+      return;
+    }
+
+    // Get or create conversation
+    let conversation = null;
+    let conversationContext = null;
+    let resolvedQuery = query;
+
+    try {
+      conversation = getOrCreateConversation(conversation_id, session_id);
+
+      if (conversation.message_count > 0) {
+        conversationContext = getConversationContext(conversation.id);
+        const resolution = resolveContextualReferences(query, conversationContext);
+        if (resolution.resolved) {
+          resolvedQuery = resolution.query;
+        }
+      }
+    } catch (convError) {
+      console.warn('Conversation tracking error (non-fatal):', convError.message);
+    }
+
+    // Build context
+    const enrichedContext = {
+      ...context,
+      conversation_id: conversation?.id,
+      message_count: conversation?.message_count || 0,
+      last_symbol: conversationContext?.last_symbol,
+      recent_symbols: conversationContext?.recent_symbols,
+      history: conversation?.id ? getConversationHistory(conversation.id, 5) : []
+    };
+
+    // Send conversation ID
+    sendEvent('conversation', { conversation_id: conversation?.id });
+
+    // Process with streaming
+    const result = await llmHandler.processQueryStreaming(
+      resolvedQuery,
+      enrichedContext.history || [],
+      enrichedContext,
+      (eventType, data) => {
+        // Forward events to client
+        sendEvent(eventType, data);
+      }
+    );
+
+    // Store messages in conversation history
+    try {
+      if (conversation && result.success) {
+        const symbols = result.result?.symbol ? [result.result.symbol] : [];
+
+        storeMessage(
+          conversation.id,
+          'user',
+          query,
+          'llm_processed',
+          symbols,
+          null
+        );
+
+        storeMessage(
+          conversation.id,
+          'assistant',
+          result.result?.summary || result.result?.message?.slice(0, 200) || '',
+          'llm_processed',
+          symbols,
+          null
+        );
+      }
+    } catch (storeError) {
+      console.warn('Failed to store message (non-fatal):', storeError.message);
+    }
+
+  } catch (error) {
+    console.error('Streaming query error:', error);
+    sendEvent(SSE_EVENTS.ERROR, { error: 'Failed to process query' });
+  } finally {
+    res.end();
   }
 });
 
@@ -619,10 +729,7 @@ router.post('/classify', async (req, res) => {
     const { query } = req.body;
 
     if (!query) {
-      return res.status(400).json({
-        success: false,
-        error: 'Query is required'
-      });
+      return sendError(res, ERROR_CODES.VALIDATION_ERROR, 'Query is required');
     }
 
     try {
@@ -640,10 +747,7 @@ router.post('/classify', async (req, res) => {
     }
   } catch (error) {
     console.error('Classification error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to classify query'
-    });
+    return sendError(res, ERROR_CODES.INTERNAL_ERROR, 'Failed to classify query', safeErrorMessage(error));
   }
 });
 
@@ -1011,7 +1115,7 @@ router.get('/conversations', (req, res) => {
     });
   } catch (error) {
     console.error('List conversations error:', error);
-    res.status(500).json({ error: 'Failed to list conversations' });
+    return sendError(res, ERROR_CODES.DATABASE_ERROR, 'Failed to list conversations');
   }
 });
 
@@ -1029,7 +1133,7 @@ router.get('/conversation/:id', (req, res) => {
     ).get(id);
 
     if (!conversation) {
-      return res.status(404).json({ error: 'Conversation not found' });
+      return sendError(res, ERROR_CODES.NOT_FOUND, 'Conversation not found');
     }
 
     const messages = getConversationHistory(id, parseInt(limit));
@@ -1041,7 +1145,7 @@ router.get('/conversation/:id', (req, res) => {
     });
   } catch (error) {
     console.error('Get conversation error:', error);
-    res.status(500).json({ error: 'Failed to get conversation' });
+    return sendError(res, ERROR_CODES.DATABASE_ERROR, 'Failed to get conversation');
   }
 });
 
@@ -1060,13 +1164,13 @@ router.delete('/conversation/:id', (req, res) => {
     const result = database.prepare('DELETE FROM nl_conversations WHERE id = ?').run(id);
 
     if (result.changes === 0) {
-      return res.status(404).json({ error: 'Conversation not found' });
+      return sendError(res, ERROR_CODES.NOT_FOUND, 'Conversation not found');
     }
 
     res.json({ success: true, message: 'Conversation deleted' });
   } catch (error) {
     console.error('Delete conversation error:', error);
-    res.status(500).json({ error: 'Failed to delete conversation' });
+    return sendError(res, ERROR_CODES.DATABASE_ERROR, 'Failed to delete conversation');
   }
 });
 
@@ -1097,7 +1201,7 @@ router.post('/conversation/new', (req, res) => {
     });
   } catch (error) {
     console.error('New conversation error:', error);
-    res.status(500).json({ error: 'Failed to create conversation' });
+    return sendError(res, ERROR_CODES.DATABASE_ERROR, 'Failed to create conversation');
   }
 });
 

@@ -46,6 +46,7 @@ import PortfolioInsightsPanel from '../../components/portfolio/PortfolioInsights
 import CorrelationPanel from '../../components/portfolio/CorrelationPanel';
 import AlphaAnalyticsPanel from '../../components/portfolio/AlphaAnalyticsPanel';
 import ExportPanel from '../../components/portfolio/ExportPanel';
+import ExportModal from '../../components/portfolio/ExportModal';
 import { SkeletonPortfolioDetail } from '../../components/Skeleton';
 import {
   AgentRecommendation,
@@ -434,6 +435,7 @@ function PortfolioDetailPage() {
   const [exporting, setExporting] = useState(false);
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [selectedETF, setSelectedETF] = useState(null);
+  const [showExportModal, setShowExportModal] = useState(false);
 
   // Memoize active orders filter - must be before any early returns
   const activeOrders = useMemo(() =>
@@ -727,8 +729,7 @@ function PortfolioDetailPage() {
           <div className="header-actions">
             <button
               className="btn btn-secondary"
-              onClick={() => handleExport('csv')}
-              disabled={exporting}
+              onClick={() => setShowExportModal(true)}
             >
               <Download size={16} />
               <span>Export</span>
@@ -1117,6 +1118,21 @@ function PortfolioDetailPage() {
           <AITradingSection portfolioId={parseInt(id)} />
         )}
 
+        {activeTab === 'backtest' && (
+          <BacktestPanel
+            portfolioId={id}
+            holdings={holdings}
+          />
+        )}
+
+        {activeTab === 'risk' && (
+          <SimulateSection
+            portfolioId={id}
+            holdings={holdings}
+            initialValue={portfolio.total_value}
+          />
+        )}
+
         {activeTab === 'alerts' && (
           <PortfolioAlerts portfolioId={id} />
         )}
@@ -1241,6 +1257,14 @@ function PortfolioDetailPage() {
           onClose={() => setSelectedETF(null)}
         />
       )}
+
+      {/* Export Modal */}
+      <ExportModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        portfolioId={id}
+        portfolioName={portfolio.name}
+      />
     </div>
   );
 }

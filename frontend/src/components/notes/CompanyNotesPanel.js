@@ -396,7 +396,7 @@ function CompanyNotesPanel({ symbol, companyName }) {
               <span className="price">${snapshot.price?.toFixed(2) || '-'}</span>
               <span>{snapshot.pe_ratio?.toFixed(1) || '-'}</span>
               <span>{snapshot.pb_ratio?.toFixed(1) || '-'}</span>
-              <span>{snapshot.roic?.toFixed(1) || '-'}%</span>
+              <span>{(snapshot.roic * 100)?.toFixed(1) || '-'}%</span>
               <Link to={`/notes/${snapshot.note_id}`} className="note-link">
                 {snapshot.note_title || 'View'}
               </Link>

@@ -48,6 +48,9 @@ class HistoricalAgentBacktester {
       // Verbose logging
       verbose: config.verbose || false,
 
+      // Signal weights (optional - for weight optimization)
+      signalWeights: config.signalWeights || null,
+
       ...config
     };
 
@@ -325,8 +328,8 @@ class HistoricalAgentBacktester {
       factor: this._scoreFactor(factors)
     };
 
-    // Combine scores with equal weights
-    const weights = { technical: 0.2, fundamental: 0.2, sentiment: 0.15, insider: 0.15, valuation: 0.15, factor: 0.15 };
+    // Combine scores with configurable weights (defaults to equal weights)
+    const weights = this.config.signalWeights || this._getDefaultWeights();
     let totalScore = 0;
     let totalWeight = 0;
 
@@ -775,6 +778,21 @@ class HistoricalAgentBacktester {
 
     console.log(`\nExecution Time: ${results.elapsedSeconds.toFixed(1)}s`);
     console.log(`${'='.repeat(60)}\n`);
+  }
+
+  /**
+   * Get default signal weights
+   * @returns {Object} Default weights for each signal type
+   */
+  _getDefaultWeights() {
+    return {
+      technical: 0.20,
+      fundamental: 0.20,
+      sentiment: 0.15,
+      insider: 0.15,
+      valuation: 0.15,
+      factor: 0.15
+    };
   }
 }
 

@@ -6,9 +6,15 @@ import { AuthProvider } from './context/AuthContext';
 import { WatchlistProvider } from './context/WatchlistContext';
 import { PreferencesProvider } from './context/PreferencesContext';
 import { NLQueryProvider } from './context/NLQueryContext';
+import { OnboardingProvider } from './context/OnboardingContext';
+import { AnalyticsProvider } from './context/AnalyticsContext';
+import { FeedbackProvider } from './context/FeedbackContext';
 import { Layout } from './components/layout';
-import { ProtectedRoute } from './components/auth';
+import { ProtectedRoute, AdminRoute } from './components/auth';
 import ErrorBoundary from './components/ErrorBoundary';
+import CookieConsent from './components/legal/CookieConsent';
+import { OnboardingManager } from './components/onboarding';
+import { FeedbackManager } from './components/feedback';
 import './styles/design-system.css';
 import './App.css';
 
@@ -73,6 +79,21 @@ const ResearchLabPage = lazy(() => import('./pages/ResearchLabPage'));
 // Lazy load login page
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 
+// Lazy load legal pages
+const TermsPage = lazy(() => import('./pages/legal/TermsPage'));
+const PrivacyPage = lazy(() => import('./pages/legal/PrivacyPage'));
+const DisclaimerPage = lazy(() => import('./pages/legal/DisclaimerPage'));
+const CookiesPage = lazy(() => import('./pages/legal/CookiesPage'));
+
+// Lazy load help center
+const HelpCenter = lazy(() => import('./pages/help/HelpCenter'));
+
+// Lazy load test/demo pages
+const DistributionVisualizationDemo = lazy(() => import('./pages/test/DistributionVisualizationDemo'));
+
+// Lazy load admin pages
+const AnalyticsDashboard = lazy(() => import('./pages/admin/AnalyticsDashboard'));
+
 // Page loading fallback
 function PageLoading() {
   return (
@@ -93,14 +114,30 @@ function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <PreferencesProvider>
-          <WatchlistProvider>
-            <NLQueryProvider>
-              <Router>
+        <OnboardingProvider>
+          <PreferencesProvider>
+            <WatchlistProvider>
+              <NLQueryProvider>
+                <Router>
+                  <AnalyticsProvider>
+                    <FeedbackProvider>
+                      {/* Onboarding Manager - Shows welcome flow and manages tours */}
+                      <OnboardingManager />
+                      {/* Feedback Manager - Handles prompts, help, and support */}
+                      <FeedbackManager />
                 <Suspense fallback={<PageLoading />}>
                   <Routes>
                     {/* Public route - Login */}
                     <Route path="/login" element={<LoginPage />} />
+
+                    {/* Public legal pages */}
+                    <Route path="/legal/terms" element={<TermsPage />} />
+                    <Route path="/legal/privacy" element={<PrivacyPage />} />
+                    <Route path="/legal/disclaimer" element={<DisclaimerPage />} />
+                    <Route path="/legal/cookies" element={<CookiesPage />} />
+
+                    {/* Help Center - accessible to all users */}
+                    <Route path="/help" element={<HelpCenter />} />
 
                     {/* Protected routes */}
                     <Route path="/*" element={
@@ -153,6 +190,8 @@ function App() {
                             <Route path="/backtesting/:portfolioId" element={<BacktestDashboard />} />
                             <Route path="/validation" element={<Navigate to="/signals#validation" replace />} />
                             <Route path="/settings" element={<SettingsPage />} />
+                            <Route path="/admin/analytics" element={<AdminRoute><AnalyticsDashboard /></AdminRoute>} />
+                            <Route path="/test/distribution-visualization-demo" element={<DistributionVisualizationDemo />} />
                           </Routes>
                         </Layout>
                       </ProtectedRoute>
@@ -163,11 +202,16 @@ function App() {
                 <Suspense fallback={null}>
                   <NLChatModal />
                 </Suspense>
+                    </FeedbackProvider>
+                  </AnalyticsProvider>
               </Router>
             </NLQueryProvider>
           </WatchlistProvider>
         </PreferencesProvider>
+        </OnboardingProvider>
       </AuthProvider>
+      {/* Cookie Consent Banner */}
+      <CookieConsent />
     </ErrorBoundary>
   );
 }

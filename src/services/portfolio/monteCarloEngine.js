@@ -54,9 +54,10 @@ class MonteCarloEngine {
     );
 
     // Fit parametric distribution to returns (for enhanced modeling)
+    // ALWAYS calculate distribution moments for Taleb risk visualization
     let fittedDistribution = null;
     let distributionMoments = null;
-    if (returns.length >= 30 && returnModel === 'parametric') {
+    if (returns.length >= 30) {
       try {
         // Calculate annualized returns for fitting (convert daily to annual)
         const annualizedReturns = returns.map(r => r * Math.sqrt(TRADING_DAYS_PER_YEAR));
@@ -202,13 +203,30 @@ class MonteCarloEngine {
     // Calculate Cornish-Fisher VaR comparison if we have distribution moments
     let varComparison = null;
     if (distributionMoments) {
-      varComparison = this.parametricDist.cornishFisherVaR(
+      const var95 = this.parametricDist.cornishFisherVaR(
         simMean,
         simStd,
         distributionMoments.skewness,
         distributionMoments.kurtosis,
         0.95
       );
+      const var99 = this.parametricDist.cornishFisherVaR(
+        simMean,
+        simStd,
+        distributionMoments.skewness,
+        distributionMoments.kurtosis,
+        0.99
+      );
+
+      // Combine both VaR calculations for frontend
+      varComparison = {
+        normalVaR: var95.normalVaR,
+        adjustedVaR: var95.adjustedVaR,
+        underestimationPct: Math.abs(var95.adjustmentPercent),
+        normalVaR99: var99.normalVaR,
+        adjustedVaR99: var99.adjustedVaR,
+        underestimationPct99: Math.abs(var99.adjustmentPercent)
+      };
     }
 
     // Return parsed data for API response
@@ -229,16 +247,14 @@ class MonteCarloEngine {
         params: fittedDistribution.params,
         goodnessOfFit: fittedDistribution.goodnessOfFit,
         moments: distributionMoments ? {
+          mean: distributionMoments.mean,
+          std: distributionMoments.std,
           skewness: distributionMoments.skewness,
           kurtosis: distributionMoments.kurtosis,
           excessKurtosis: distributionMoments.excessKurtosis
         } : null,
         fatTails: distributionMoments ? distributionMoments.kurtosis > 4 : false,
-        varComparison: varComparison ? {
-          normalVaR95: (varComparison.normalVaR * 100).toFixed(2) + '%',
-          adjustedVaR95: (varComparison.adjustedVaR * 100).toFixed(2) + '%',
-          riskUnderestimation: Math.abs(varComparison.adjustmentPercent).toFixed(1) + '%'
-        } : null
+        varComparison: varComparison // Pass raw numeric values for frontend components
       } : null
     };
   }
@@ -271,10 +287,16 @@ class MonteCarloEngine {
     let portfolioAllocations;
     if (portfolioId) {
       portfolioAllocations = this._getPortfolioAllocations(portfolioId);
+      console.log(`[DistributionAnalysis] Portfolio ${portfolioId} has ${portfolioAllocations.length} positions:`,
+        portfolioAllocations.map(a => `${a.symbol} (${(a.weight * 100).toFixed(1)}%)`).join(', '));
     } else if (allocations) {
       portfolioAllocations = allocations;
     } else {
       throw new Error('Either portfolioId or allocations must be provided');
+    }
+
+    if (!portfolioAllocations || portfolioAllocations.length === 0) {
+      throw new Error('No allocations found for analysis');
     }
 
     // Calculate historical returns
@@ -283,8 +305,10 @@ class MonteCarloEngine {
       lookbackYears
     );
 
+    console.log(`[DistributionAnalysis] Got ${returns.length} historical returns, mean: ${(meanReturn * 100).toFixed(4)}%, std: ${(stdReturn * 100).toFixed(4)}%`);
+
     if (returns.length < 30) {
-      throw new Error('Insufficient data for distribution analysis (need at least 30 returns)');
+      throw new Error(`Insufficient data for distribution analysis: got ${returns.length} returns, need at least 30`);
     }
 
     // Annualize returns for analysis
@@ -315,6 +339,21 @@ class MonteCarloEngine {
       portfolioId,
       dataPoints: returns.length,
       lookbackYears,
+      // Frontend expects these fields
+      returns: returns,
+      moments: {
+        mean: meanReturn,
+        std: stdReturn,
+        skewness: summary.moments?.skewness || 0,
+        kurtosis: summary.moments?.kurtosis || 3
+      },
+      distributionFit: {
+        type: fittedDistribution.type,
+        name: fittedDistribution.type === 'studentT' ? "Student's t" :
+              fittedDistribution.type === 'skewedT' ? 'Skewed t' :
+              fittedDistribution.type === 'normal' ? 'Normal' : fittedDistribution.type,
+        params: fittedDistribution.params
+      },
       summary: {
         ...summary,
         annualizedMean: (meanReturn * 100).toFixed(2) + '%',
@@ -329,7 +368,7 @@ class MonteCarloEngine {
         var95Normal: summary.varComparison?.normalVaR,
         var95Adjusted: summary.varComparison?.adjustedVaR,
         riskUnderestimation: summary.varComparison?.adjustmentPercent,
-        fatTailWarning: summary.riskCharacteristics.fatTails
+        fatTailWarning: summary.riskCharacteristics?.fatTails
           ? 'Portfolio has fat tails - normal distribution underestimates risk'
           : null
       }
@@ -388,25 +427,43 @@ class MonteCarloEngine {
         pp.company_id,
         c.symbol,
         pp.shares,
-        pm.last_price
+        COALESCE(pm.last_price, dp.last_close) as last_price
       FROM portfolio_positions pp
       JOIN companies c ON pp.company_id = c.id
       LEFT JOIN price_metrics pm ON c.id = pm.company_id
+      LEFT JOIN (
+        SELECT company_id, adjusted_close as last_close
+        FROM daily_prices dp1
+        WHERE date = (SELECT MAX(date) FROM daily_prices dp2 WHERE dp2.company_id = dp1.company_id)
+      ) dp ON c.id = dp.company_id
       WHERE pp.portfolio_id = ?
     `).all(portfolioId);
+
+    if (!positions || positions.length === 0) {
+      throw new Error(`Portfolio ${portfolioId} has no positions`);
+    }
 
     // Calculate weights based on current values
     let totalValue = 0;
     for (const pos of positions) {
-      const price = pos.last_price || 0;
+      const price = pos.last_price || 100; // Fallback price if none available
       pos.value = pos.shares * price;
       totalValue += pos.value;
+    }
+
+    if (totalValue === 0) {
+      // Equal weight if no prices available
+      return positions.map(pos => ({
+        symbol: pos.symbol,
+        companyId: pos.company_id,
+        weight: 1 / positions.length
+      }));
     }
 
     return positions.map(pos => ({
       symbol: pos.symbol,
       companyId: pos.company_id,
-      weight: totalValue > 0 ? pos.value / totalValue : 1 / positions.length
+      weight: pos.value / totalValue
     }));
   }
 

@@ -1,0 +1,11 @@
+// src/api/index.js - ADD THIS TO YOUR EXISTING FILE
+
+// ... your existing imports ...
+const onboardingRoutes = require('./routes/onboarding');
+
+// ... your existing middleware ...
+
+// ADD THIS LINE with your other routes:
+app.use('/api/onboarding', onboardingRoutes);
+
+// ... rest of your code ...

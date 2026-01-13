@@ -749,6 +749,37 @@
   color: var(--negative);
 }
 
+/* Selectable table styles */
+.screen-results-table.selectable tr {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.screen-results-table.selectable tbody tr:hover {
+  background: rgba(139, 92, 246, 0.04);
+}
+
+.screen-results-table.selectable tbody tr.selected {
+  background: rgba(139, 92, 246, 0.08);
+}
+
+.screen-results-table.selectable tbody tr.selected:hover {
+  background: rgba(139, 92, 246, 0.12);
+}
+
+.screen-results-table .checkbox-col {
+  width: 32px;
+  padding: 0.5rem !important;
+  text-align: center;
+}
+
+.screen-results-table .checkbox-col input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: var(--brand-primary);
+}
+
 .results-more {
   padding: var(--space-2);
   text-align: center;

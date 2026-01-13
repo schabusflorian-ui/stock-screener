@@ -267,22 +267,23 @@ function SectorAnalysisPage() {
     }
   }, []);
 
-  // Load market indices - use ETF-based indices (current data) instead of Yahoo indices (stale)
+  // Load market indices - includes US and European indices from market_indices table
   const loadMarketIndices = useCallback(async () => {
     try {
-      const res = await indicesAPI.getMarket();
-      // ETF response is an array directly
-      const indices = res.data?.data || res.data || [];
+      const res = await indicesAPI.getAll();
+      // Response: { success: true, data: [...] }
+      const indices = res.data?.data || [];
       setMarketIndices(indices);
 
-      // Load price history for sparklines using pricesAPI (current data)
+      // Load price history for sparklines using index prices API
       if (indices.length > 0) {
-        const priceHistoryPromises = indices.slice(0, 4).map(async (idx) => {
+        // Load first 8 indices for sparklines (mix of US and EU)
+        const priceHistoryPromises = indices.slice(0, 8).map(async (idx) => {
           try {
-            // Use pricesAPI.get() which fetches from daily_prices table (current data)
-            const priceRes = await pricesAPI.get(idx.symbol, { period: '1y' });
-            // Response structure: { success: true, data: { prices: [...] } }
-            const prices = priceRes.data?.data?.prices || [];
+            // Use indicesAPI.getPrices for market_index_prices table
+            const priceRes = await indicesAPI.getPrices(idx.symbol, '1y');
+            // Response structure: { success: true, data: [...] }
+            const prices = priceRes.data?.data || [];
             return { symbol: idx.symbol, data: prices };
           } catch (e) {
             return { symbol: idx.symbol, data: [] };
@@ -297,7 +298,7 @@ function SectorAnalysisPage() {
         });
         setIndexPriceHistory(historyMap);
 
-        // Auto-select first index (SPY)
+        // Auto-select first index (S&P 500)
         setSelectedIndex(prev => prev || indices[0]);
       }
     } catch (error) {
@@ -308,13 +309,28 @@ function SectorAnalysisPage() {
   // Load index constituents for major indices
   const loadIndexConstituents = useCallback(async (shortName) => {
     // Map short_name from market_indices to stock_indexes code
+    // US indices
     // market_indices uses: SPX, DOW, NASDAQ, RUT
     // stock_indexes uses: SPX, DJI, NDX, RUT
+    // European indices - map from market_indices short_name to stock_indexes code
     const codeMapping = {
+      // US
       'SPX': 'SPX',
       'DOW': 'DJI',
       'NASDAQ': 'NDX', // NASDAQ Composite -> show NASDAQ-100 constituents
-      'RUT': 'RUT'
+      'RUT': 'RUT',
+      // European (market_indices.short_name -> stock_indexes.code)
+      'FTSE': 'FTSE',
+      'DAX': 'DAX',
+      'CAC': 'CAC',
+      'SX5E': 'SX5E',    // Euro Stoxx 50
+      'AEX': 'AEX',
+      'SMI': 'SMI',
+      'IBEX': 'IBEX',
+      'FTSEMIB': 'FTSEMIB',
+      'OMX30': 'OMX30',  // OMX Stockholm 30
+      'ATX': 'ATX',
+      'SXXP': 'SXXP'     // Stoxx Europe 600
     };
 
     const indexCode = codeMapping[shortName];
@@ -325,7 +341,12 @@ function SectorAnalysisPage() {
     setLoadingConstituents(true);
     try {
       // Different limits based on index size
-      const limits = { SPX: 505, DJI: 30, NDX: 100, RUT: 2000 };
+      const limits = {
+        SPX: 505, DJI: 30, NDX: 100, RUT: 2000,
+        FTSE: 100, DAX: 40, CAC: 40, SX5E: 50,
+        AEX: 25, SMI: 20, IBEX: 35, FTSEMIB: 40,
+        OMX30: 30, ATX: 20, SXXP: 600
+      };
       const limit = limits[indexCode] || 500;
       const res = await indicesAPI.getConstituents(indexCode, limit);
       setIndexConstituents(res.data?.data || []);
@@ -336,14 +357,14 @@ function SectorAnalysisPage() {
     setLoadingConstituents(false);
   }, []);
 
-  // Load chart data for selected index with specific period - use pricesAPI (current data)
+  // Load chart data for selected index with specific period - use indicesAPI.getPrices
   const loadIndexChartData = useCallback(async (symbol, period) => {
     if (!symbol) return;
     try {
-      // Use pricesAPI.get() which fetches from daily_prices table (current data)
-      const priceRes = await pricesAPI.get(symbol, { period });
-      // Response structure: { success: true, data: { prices: [...] } }
-      const prices = priceRes.data?.data?.prices || [];
+      // Use indicesAPI.getPrices for market_index_prices table
+      const priceRes = await indicesAPI.getPrices(symbol, period);
+      // Response structure: { success: true, data: [...] }
+      const prices = priceRes.data?.data || [];
       // Sort ascending (oldest first) for chart
       const sortedData = [...prices].sort((a, b) => new Date(a.date) - new Date(b.date));
       setIndexPriceHistory(prev => ({
@@ -677,36 +698,76 @@ function SectorAnalysisPage() {
       {/* Market Indices Tab */}
       {activeTab === 'indices' && (
         <div className="tab-content indices-tab">
-          {/* Index Selector Cards */}
-          <div className="index-selector-grid">
-            {marketIndices.map(index => (
-              <div
-                key={index.symbol}
-                className={`index-selector-card ${selectedIndex?.symbol === index.symbol ? 'selected' : ''}`}
-                onClick={() => setSelectedIndex(index)}
-              >
-                <div className="selector-header">
-                  <span className="selector-name">{index.short_name || index.name}</span>
-                  <span className={`selector-change ${index.change_1d_pct >= 0 ? 'positive' : 'negative'}`}>
-                    {index.change_1d_pct >= 0 ? '+' : ''}{index.change_1d_pct?.toFixed(2)}%
-                  </span>
-                </div>
-                <div className="selector-price">
-                  {index.last_price?.toLocaleString('en-US', { maximumFractionDigits: 2 })}
-                </div>
-                <div className="selector-sparkline">
-                  {indexPriceHistory[index.symbol]?.length > 0 && (
-                    <Sparkline
-                      data={indexPriceHistory[index.symbol]}
-                      width={120}
-                      height={40}
-                      showChange={false}
-                      color={index.change_ytd >= 0 ? '#10b981' : '#ef4444'}
-                    />
-                  )}
-                </div>
-              </div>
-            ))}
+          {/* Index Selector - Horizontal Strip */}
+          <div className="index-selector-strip">
+            {/* US Indices */}
+            <div className="index-region-group">
+              <span className="region-label">🇺🇸 US</span>
+              {marketIndices
+                .filter(idx => ['SPX', 'DOW', 'NASDAQ', 'RUT'].includes(idx.short_name))
+                .map(index => (
+                  <button
+                    key={index.symbol}
+                    className={`index-chip ${selectedIndex?.symbol === index.symbol ? 'selected' : ''}`}
+                    onClick={() => setSelectedIndex(index)}
+                  >
+                    <span className="chip-name">{index.short_name}</span>
+                    <span className={`chip-change ${index.change_1d_pct >= 0 ? 'positive' : 'negative'}`}>
+                      {index.change_1d_pct >= 0 ? '+' : ''}{index.change_1d_pct?.toFixed(1)}%
+                    </span>
+                  </button>
+                ))}
+            </div>
+
+            <div className="region-divider" />
+
+            {/* European Indices */}
+            <div className="index-region-group">
+              <span className="region-label">🇪🇺 Europe</span>
+              {marketIndices
+                .filter(idx => ['FTSE', 'DAX', 'CAC', 'SX5E', 'SXXP'].includes(idx.short_name))
+                .map(index => {
+                  const flags = { 'FTSE': '🇬🇧', 'DAX': '🇩🇪', 'CAC': '🇫🇷', 'SX5E': '🇪🇺', 'SXXP': '🇪🇺' };
+                  return (
+                    <button
+                      key={index.symbol}
+                      className={`index-chip ${selectedIndex?.symbol === index.symbol ? 'selected' : ''}`}
+                      onClick={() => setSelectedIndex(index)}
+                    >
+                      <span className="chip-flag">{flags[index.short_name]}</span>
+                      <span className="chip-name">{index.short_name}</span>
+                      <span className={`chip-change ${index.change_1d_pct >= 0 ? 'positive' : 'negative'}`}>
+                        {index.change_1d_pct >= 0 ? '+' : ''}{index.change_1d_pct?.toFixed(1)}%
+                      </span>
+                    </button>
+                  );
+                })}
+            </div>
+
+            <div className="region-divider" />
+
+            {/* Other European Indices */}
+            <div className="index-region-group">
+              <span className="region-label">More</span>
+              {marketIndices
+                .filter(idx => ['AEX', 'SMI', 'IBEX', 'FTSEMIB', 'OMX30', 'ATX'].includes(idx.short_name))
+                .map(index => {
+                  const flags = { 'AEX': '🇳🇱', 'SMI': '🇨🇭', 'IBEX': '🇪🇸', 'FTSEMIB': '🇮🇹', 'OMX30': '🇸🇪', 'ATX': '🇦🇹' };
+                  return (
+                    <button
+                      key={index.symbol}
+                      className={`index-chip ${selectedIndex?.symbol === index.symbol ? 'selected' : ''}`}
+                      onClick={() => setSelectedIndex(index)}
+                    >
+                      <span className="chip-flag">{flags[index.short_name]}</span>
+                      <span className="chip-name">{index.short_name}</span>
+                      <span className={`chip-change ${index.change_1d_pct >= 0 ? 'positive' : 'negative'}`}>
+                        {index.change_1d_pct >= 0 ? '+' : ''}{index.change_1d_pct?.toFixed(1)}%
+                      </span>
+                    </button>
+                  );
+                })}
+            </div>
           </div>
 
           {/* Selected Index Details */}
@@ -833,15 +894,12 @@ function SectorAnalysisPage() {
                 </div>
               </div>
 
-              {/* Constituents Table - For major indices */}
-              {['SPX', 'DOW', 'NASDAQ', 'RUT'].includes(selectedIndex.short_name) && (
+              {/* Constituents Table - For major US and European indices */}
+              {['SPX', 'DOW', 'NASDAQ', 'RUT', 'FTSE', 'DAX', 'CAC', 'SX5E', 'AEX', 'SMI', 'IBEX', 'FTSEMIB', 'OMX30', 'ATX', 'SXXP'].includes(selectedIndex.short_name) && (
                 <div className="index-constituents-section">
                   <div className="constituents-header">
                     <h3>
-                      {selectedIndex.short_name === 'SPX' && 'S&P 500 Constituents'}
-                      {selectedIndex.short_name === 'NASDAQ' && 'NASDAQ-100 Constituents'}
-                      {selectedIndex.short_name === 'DOW' && 'Dow Jones Industrial Average Constituents'}
-                      {selectedIndex.short_name === 'RUT' && 'Russell 2000 Constituents'}
+                      {selectedIndex.name} Constituents
                     </h3>
                     <span className="constituents-count">
                       {loadingConstituents ? 'Loading...' : `${indexConstituents.length} companies`}

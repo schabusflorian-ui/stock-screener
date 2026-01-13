@@ -21,6 +21,7 @@ export { default as AlphaCompareChart } from './AlphaCompareChart';
 export { default as SectorAlphaHeatmap } from './SectorAlphaHeatmap';
 export { default as EnhancedSignalsPanel } from './EnhancedSignalsPanel';
 export { default as SmartMoneySignals } from './SmartMoneySignals';
+export { SelectionActionBar } from './SelectionActionBar';
 export {
   AVAILABLE_METRICS,
   DEFAULT_CHART_METRICS,

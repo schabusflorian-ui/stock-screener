@@ -1,7 +1,7 @@
 // frontend/src/components/auth/UserMenu.js
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { Settings, LogOut, Shield } from 'lucide-react';
+import { Settings, LogOut, Shield, HelpCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import './UserMenu.css';
 
@@ -69,6 +69,17 @@ export default function UserMenu() {
               <Settings size={16} />
               Settings
             </Link>
+            <button
+              className="user-menu-item"
+              onClick={() => {
+                setIsOpen(false);
+                window.openHelp?.();
+              }}
+            >
+              <HelpCircle size={16} />
+              Help
+              <span className="user-menu-shortcut">Ctrl+/</span>
+            </button>
           </div>
 
           {/* Sign Out */}

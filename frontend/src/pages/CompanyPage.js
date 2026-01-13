@@ -65,6 +65,7 @@ import './CompanyPage.css';
 const getMetricRating = (value, metricKey) => {
   if (value === null || value === undefined) return 'na';
 
+  // Thresholds are in percentage terms (e.g., 15 = 15%)
   const thresholds = {
     roic: { excellent: 15, good: 10, fair: 5 },
     fcf_yield: { excellent: 8, good: 5, fair: 2 },
@@ -77,36 +78,49 @@ const getMetricRating = (value, metricKey) => {
   const t = thresholds[metricKey];
   if (!t) return 'na';
 
+  // Metrics that come as decimals need to be converted to percentages
+  // (e.g., 0.26 -> 26 for ROIC)
+  // Note: fcf_yield already comes as a percentage from the API
+  const decimalMetrics = ['roic', 'roe', 'net_margin'];
+  const compareValue = decimalMetrics.includes(metricKey) ? value * 100 : value;
+
   // For inverted metrics (lower is better)
   if (metricKey === 'pe_ratio' || metricKey === 'debt_to_equity') {
-    if (value <= t.excellent) return 'excellent';
-    if (value <= t.good) return 'good';
-    if (value <= t.fair) return 'fair';
+    if (compareValue <= t.excellent) return 'excellent';
+    if (compareValue <= t.good) return 'good';
+    if (compareValue <= t.fair) return 'fair';
     return 'poor';
   }
 
   // Normal metrics (higher is better)
-  if (value >= t.excellent) return 'excellent';
-  if (value >= t.good) return 'good';
-  if (value >= t.fair) return 'fair';
+  if (compareValue >= t.excellent) return 'excellent';
+  if (compareValue >= t.good) return 'good';
+  if (compareValue >= t.fair) return 'fair';
   return 'poor';
 };
 
 // MetricBar component with visual progress bar
+// format: 'percent' (value already as %), 'decimal_percent' (value as decimal), 'ratio' (no % suffix)
 const MetricBar = ({ label, value, max, format = 'percent', inverted = false }) => {
   const displayValue = value === null || value === undefined ? null : value;
+  // For decimal_percent format, values come as decimals (0.14 = 14%), so multiply by 100
+  const isDecimalPercent = format === 'decimal_percent';
+  const scaledValue = displayValue !== null && isDecimalPercent ? displayValue * 100 : displayValue;
+  const isPercent = format === 'percent' || format === 'decimal_percent';
   const formattedValue = displayValue !== null
-    ? (format === 'percent' ? `${displayValue.toFixed(1)}%` : displayValue.toFixed(2))
+    ? (isPercent ? `${scaledValue.toFixed(1)}%` : displayValue.toFixed(2))
     : '-';
 
-  // Calculate bar width (0-100%)
-  const normalizedValue = displayValue !== null ? Math.min(Math.max(displayValue, 0), max) : 0;
+  // Calculate bar width (0-100%) - use scaledValue for decimal_percent format
+  const normalizedValue = displayValue !== null
+    ? Math.min(Math.max(isDecimalPercent ? scaledValue : displayValue, 0), max)
+    : 0;
   const barWidth = (normalizedValue / max) * 100;
 
   // Determine color based on value and whether inverted
   const getBarColor = () => {
     if (displayValue === null) return 'neutral';
-    const ratio = displayValue / max;
+    const ratio = normalizedValue / max;
     if (inverted) {
       if (ratio <= 0.3) return 'excellent';
       if (ratio <= 0.5) return 'good';
@@ -142,10 +156,14 @@ function CompanyPage() {
   const fmt = useFormatters();
 
   // Format metric value using preferences
+  // Note: Some metrics come as decimals (0.14 = 14%), others are already percentages
   const formatValue = (value, format) => {
     if (value === null || value === undefined) return '-';
     switch (format) {
-      case 'percent': return fmt.percent(value, { decimals: 1 });
+      case 'decimal_percent': // Metrics that come as decimals (e.g., roic, roe, margins)
+        return fmt.percent(value, { decimals: 1, multiply: true });
+      case 'percent': // Metrics already in percentage form (e.g., fcf_yield, earnings_yield, changes)
+        return fmt.percent(value, { decimals: 1 });
       case 'ratio': return fmt.ratio(value, { decimals: 2, suffix: '' });
       case 'currency': return fmt.currency(value, { compact: true });
       default: return fmt.number(value, { decimals: 2 });
@@ -624,6 +642,14 @@ function CompanyPage() {
               </Link>
               <span className="meta-separator">-</span>
               <span className="meta-industry">{company.company.industry}</span>
+              {company.currency && !company.currency.isUSD && (
+                <>
+                  <span className="meta-separator">-</span>
+                  <span className="meta-currency" title={`Reports in ${company.currency.name}`}>
+                    {company.currency.symbol} {company.currency.reporting}
+                  </span>
+                </>
+              )}
             </div>
             <div className="company-external-links">
               {company.company.cik && (
@@ -688,10 +714,10 @@ function CompanyPage() {
                 }}>{Math.round(latestMetrics.data_quality_score)}</span>
                 <div className="quality-legend">
                   {[
-                    { key: 'Value', color: '#6366f1', value: latestMetrics.roic || 0 },
-                    { key: 'Growth', color: '#10b981', value: latestMetrics.revenue_growth_yoy || 0 },
+                    { key: 'Value', color: '#6366f1', value: (latestMetrics.roic || 0) * 100 },
+                    { key: 'Growth', color: '#10b981', value: (latestMetrics.revenue_growth_yoy || 0) * 100 },
                     { key: 'Health', color: '#3b82f6', value: latestMetrics.current_ratio ? Math.min(latestMetrics.current_ratio * 33, 100) : 0 },
-                    { key: 'Profit', color: '#f59e0b', value: latestMetrics.net_margin || 0 }
+                    { key: 'Profit', color: '#f59e0b', value: (latestMetrics.net_margin || 0) * 100 }
                   ].map((dim) => {
                     const val = Math.min(Math.max(dim.value, 0), 100);
                     return (
@@ -735,6 +761,16 @@ function CompanyPage() {
                 companyName={company.company.name}
                 currentPrice={priceData?.last_price}
               />
+            </div>
+            <div className="action-inline">
+              <span className="inline-title">Compare</span>
+              <button
+                className="compare-btn"
+                onClick={() => navigate(`/compare?symbol=${symbol}`)}
+                title={`Compare ${symbol} with other stocks`}
+              >
+                <BarChart3 size={16} />
+              </button>
             </div>
             {healthStatus && (
               <div className="action-inline">
@@ -792,7 +828,7 @@ function CompanyPage() {
       {mainTab === 'overview' && (
         <div className="overview-v3">
           {/* Row 1: Chart (full width, prominent) */}
-          <section className="chart-section-v3">
+          <section className="chart-section-v3" data-tour="financials">
             <div className="chart-header-v3">
               <h3>Historical Performance</h3>
               <MetricSelector
@@ -833,7 +869,7 @@ function CompanyPage() {
                   <Target size={18} />
                 </div>
                 <div className="hero-content">
-                  <span className="hero-value">{formatValue(latestMetrics.roic, 'percent')}</span>
+                  <span className="hero-value">{formatValue(latestMetrics.roic, 'decimal_percent')}</span>
                   <span className="hero-label">Return on Invested Capital</span>
                 </div>
                 <div className={`hero-indicator ${getMetricRating(latestMetrics.roic, 'roic')}`}>
@@ -1034,10 +1070,10 @@ function CompanyPage() {
                     <span className="category-title">Profitability</span>
                   </div>
                   <div className="category-metrics">
-                    <MetricBar label="ROE" value={latestMetrics.roe} max={30} format="percent" />
-                    <MetricBar label="Net Margin" value={latestMetrics.net_margin} max={40} format="percent" />
-                    <MetricBar label="Gross Margin" value={latestMetrics.gross_margin} max={80} format="percent" />
-                    <MetricBar label="Operating Margin" value={latestMetrics.operating_margin} max={40} format="percent" />
+                    <MetricBar label="ROE" value={latestMetrics.roe} max={30} format="decimal_percent" />
+                    <MetricBar label="Net Margin" value={latestMetrics.net_margin} max={40} format="decimal_percent" />
+                    <MetricBar label="Gross Margin" value={latestMetrics.gross_margin} max={80} format="decimal_percent" />
+                    <MetricBar label="Operating Margin" value={latestMetrics.operating_margin} max={40} format="decimal_percent" />
                   </div>
                 </div>
 
@@ -1067,9 +1103,9 @@ function CompanyPage() {
                   </div>
                   <div className="category-metrics">
                     <MetricBar label="Asset Turnover" value={latestMetrics.asset_turnover} max={2} format="ratio" />
-                    <MetricBar label="ROCE" value={latestMetrics.roce} max={30} format="percent" />
-                    <MetricBar label="ROA" value={latestMetrics.roa} max={20} format="percent" />
-                    <MetricBar label="DuPont ROE" value={latestMetrics.dupont_roe} max={30} format="percent" />
+                    <MetricBar label="ROCE" value={latestMetrics.roce} max={30} format="decimal_percent" />
+                    <MetricBar label="ROA" value={latestMetrics.roa} max={20} format="decimal_percent" />
+                    <MetricBar label="DuPont ROE" value={latestMetrics.dupont_roe} max={30} format="decimal_percent" />
                   </div>
                 </div>
               </div>
@@ -1116,40 +1152,81 @@ function CompanyPage() {
                     </div>
                   </div>
 
-                  {/* Performance vs Market (Alpha) Section */}
-                  {alphaData && (
+                  {/* Performance vs Home Index (Alpha) Section */}
+                  {alphaData?.home && (
                     <div className="trading-section alpha-section">
                       <span className="trading-section-title">
-                        vs {alphaData.benchmark_symbol || 'SPY'}
+                        {alphaData.home.flag} vs {alphaData.home.benchmark}
                       </span>
                       <div className="trading-section-metrics">
                         <div className="trading-metric">
                           <span className="trading-label">Alpha 1M</span>
                           <span className={`trading-value ${
-                            alphaData.alpha_1m > 0 ? 'outperform' : alphaData.alpha_1m < 0 ? 'underperform' : ''
+                            alphaData.home.alpha_1m > 0 ? 'outperform' : alphaData.home.alpha_1m < 0 ? 'underperform' : ''
                           }`}>
-                            {alphaData.alpha_1m != null
-                              ? `${alphaData.alpha_1m >= 0 ? '+' : ''}${alphaData.alpha_1m.toFixed(2)}%`
+                            {alphaData.home.alpha_1m != null
+                              ? `${alphaData.home.alpha_1m >= 0 ? '+' : ''}${alphaData.home.alpha_1m.toFixed(2)}%`
                               : '-'}
                           </span>
                         </div>
                         <div className="trading-metric">
                           <span className="trading-label">Alpha YTD</span>
                           <span className={`trading-value ${
-                            alphaData.alpha_ytd > 0 ? 'outperform' : alphaData.alpha_ytd < 0 ? 'underperform' : ''
+                            alphaData.home.alpha_ytd > 0 ? 'outperform' : alphaData.home.alpha_ytd < 0 ? 'underperform' : ''
                           }`}>
-                            {alphaData.alpha_ytd != null
-                              ? `${alphaData.alpha_ytd >= 0 ? '+' : ''}${alphaData.alpha_ytd.toFixed(2)}%`
+                            {alphaData.home.alpha_ytd != null
+                              ? `${alphaData.home.alpha_ytd >= 0 ? '+' : ''}${alphaData.home.alpha_ytd.toFixed(2)}%`
                               : '-'}
                           </span>
                         </div>
                         <div className="trading-metric">
                           <span className="trading-label">Alpha 1Y</span>
                           <span className={`trading-value ${
-                            alphaData.alpha_1y > 0 ? 'outperform' : alphaData.alpha_1y < 0 ? 'underperform' : ''
+                            alphaData.home.alpha_1y > 0 ? 'outperform' : alphaData.home.alpha_1y < 0 ? 'underperform' : ''
                           }`}>
-                            {alphaData.alpha_1y != null
-                              ? `${alphaData.alpha_1y >= 0 ? '+' : ''}${alphaData.alpha_1y.toFixed(2)}%`
+                            {alphaData.home.alpha_1y != null
+                              ? `${alphaData.home.alpha_1y >= 0 ? '+' : ''}${alphaData.home.alpha_1y.toFixed(2)}%`
+                              : '-'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Performance vs SPY (for non-US companies) */}
+                  {alphaData?.spy && !alphaData.isUS && (
+                    <div className="trading-section alpha-section">
+                      <span className="trading-section-title">
+                        vs {alphaData.spy.benchmark}
+                      </span>
+                      <div className="trading-section-metrics">
+                        <div className="trading-metric">
+                          <span className="trading-label">Alpha 1M</span>
+                          <span className={`trading-value ${
+                            alphaData.spy.alpha_1m > 0 ? 'outperform' : alphaData.spy.alpha_1m < 0 ? 'underperform' : ''
+                          }`}>
+                            {alphaData.spy.alpha_1m != null
+                              ? `${alphaData.spy.alpha_1m >= 0 ? '+' : ''}${alphaData.spy.alpha_1m.toFixed(2)}%`
+                              : '-'}
+                          </span>
+                        </div>
+                        <div className="trading-metric">
+                          <span className="trading-label">Alpha YTD</span>
+                          <span className={`trading-value ${
+                            alphaData.spy.alpha_ytd > 0 ? 'outperform' : alphaData.spy.alpha_ytd < 0 ? 'underperform' : ''
+                          }`}>
+                            {alphaData.spy.alpha_ytd != null
+                              ? `${alphaData.spy.alpha_ytd >= 0 ? '+' : ''}${alphaData.spy.alpha_ytd.toFixed(2)}%`
+                              : '-'}
+                          </span>
+                        </div>
+                        <div className="trading-metric">
+                          <span className="trading-label">Alpha 1Y</span>
+                          <span className={`trading-value ${
+                            alphaData.spy.alpha_1y > 0 ? 'outperform' : alphaData.spy.alpha_1y < 0 ? 'underperform' : ''
+                          }`}>
+                            {alphaData.spy.alpha_1y != null
+                              ? `${alphaData.spy.alpha_1y >= 0 ? '+' : ''}${alphaData.spy.alpha_1y.toFixed(2)}%`
                               : '-'}
                           </span>
                         </div>
@@ -1776,7 +1853,7 @@ function CompanyPage() {
       {mainTab === 'stock' && (
         <div className="stock-capital-content">
           {/* Price Chart Section */}
-          <section className="price-chart-section">
+          <section className="price-chart-section" data-tour="price-chart">
             <h3>
               <TrendingUp size={18} />
               Stock Price
@@ -1888,48 +1965,96 @@ function CompanyPage() {
                   </div>
                 )}
 
-                {/* Alpha Column */}
-                {alphaData && (
+                {/* Alpha Column - vs Home Index */}
+                {alphaData?.home && (
                   <div className="performance-column alpha">
                     <div className="performance-column-header">
-                      <span className="column-symbol">Alpha</span>
-                      <span className="column-label">vs Market</span>
+                      <span className="column-symbol">{alphaData.home.flag} vs {alphaData.home.benchmark}</span>
+                      <span className="column-label">{alphaData.home.benchmarkName}</span>
                     </div>
                     <div className="performance-periods">
                       <div className="performance-row">
                         <span className="period-label">1 Day</span>
-                        <span className={`period-value alpha-value ${alphaData.alpha_1d > 0 ? 'outperform' : alphaData.alpha_1d < 0 ? 'underperform' : ''}`}>
-                          {alphaData.alpha_1d != null ? `${alphaData.alpha_1d >= 0 ? '+' : ''}${alphaData.alpha_1d.toFixed(2)}%` : '-'}
+                        <span className={`period-value alpha-value ${alphaData.home.alpha_1d > 0 ? 'outperform' : alphaData.home.alpha_1d < 0 ? 'underperform' : ''}`}>
+                          {alphaData.home.alpha_1d != null ? `${alphaData.home.alpha_1d >= 0 ? '+' : ''}${alphaData.home.alpha_1d.toFixed(2)}%` : '-'}
                         </span>
                       </div>
                       <div className="performance-row">
                         <span className="period-label">1 Week</span>
-                        <span className={`period-value alpha-value ${alphaData.alpha_1w > 0 ? 'outperform' : alphaData.alpha_1w < 0 ? 'underperform' : ''}`}>
-                          {alphaData.alpha_1w != null ? `${alphaData.alpha_1w >= 0 ? '+' : ''}${alphaData.alpha_1w.toFixed(2)}%` : '-'}
+                        <span className={`period-value alpha-value ${alphaData.home.alpha_1w > 0 ? 'outperform' : alphaData.home.alpha_1w < 0 ? 'underperform' : ''}`}>
+                          {alphaData.home.alpha_1w != null ? `${alphaData.home.alpha_1w >= 0 ? '+' : ''}${alphaData.home.alpha_1w.toFixed(2)}%` : '-'}
                         </span>
                       </div>
                       <div className="performance-row">
                         <span className="period-label">1 Month</span>
-                        <span className={`period-value alpha-value ${alphaData.alpha_1m > 0 ? 'outperform' : alphaData.alpha_1m < 0 ? 'underperform' : ''}`}>
-                          {alphaData.alpha_1m != null ? `${alphaData.alpha_1m >= 0 ? '+' : ''}${alphaData.alpha_1m.toFixed(2)}%` : '-'}
+                        <span className={`period-value alpha-value ${alphaData.home.alpha_1m > 0 ? 'outperform' : alphaData.home.alpha_1m < 0 ? 'underperform' : ''}`}>
+                          {alphaData.home.alpha_1m != null ? `${alphaData.home.alpha_1m >= 0 ? '+' : ''}${alphaData.home.alpha_1m.toFixed(2)}%` : '-'}
                         </span>
                       </div>
                       <div className="performance-row">
                         <span className="period-label">3 Months</span>
-                        <span className={`period-value alpha-value ${alphaData.alpha_3m > 0 ? 'outperform' : alphaData.alpha_3m < 0 ? 'underperform' : ''}`}>
-                          {alphaData.alpha_3m != null ? `${alphaData.alpha_3m >= 0 ? '+' : ''}${alphaData.alpha_3m.toFixed(2)}%` : '-'}
+                        <span className={`period-value alpha-value ${alphaData.home.alpha_3m > 0 ? 'outperform' : alphaData.home.alpha_3m < 0 ? 'underperform' : ''}`}>
+                          {alphaData.home.alpha_3m != null ? `${alphaData.home.alpha_3m >= 0 ? '+' : ''}${alphaData.home.alpha_3m.toFixed(2)}%` : '-'}
                         </span>
                       </div>
                       <div className="performance-row">
                         <span className="period-label">YTD</span>
-                        <span className={`period-value alpha-value ${alphaData.alpha_ytd > 0 ? 'outperform' : alphaData.alpha_ytd < 0 ? 'underperform' : ''}`}>
-                          {alphaData.alpha_ytd != null ? `${alphaData.alpha_ytd >= 0 ? '+' : ''}${alphaData.alpha_ytd.toFixed(2)}%` : '-'}
+                        <span className={`period-value alpha-value ${alphaData.home.alpha_ytd > 0 ? 'outperform' : alphaData.home.alpha_ytd < 0 ? 'underperform' : ''}`}>
+                          {alphaData.home.alpha_ytd != null ? `${alphaData.home.alpha_ytd >= 0 ? '+' : ''}${alphaData.home.alpha_ytd.toFixed(2)}%` : '-'}
                         </span>
                       </div>
                       <div className="performance-row">
                         <span className="period-label">1 Year</span>
-                        <span className={`period-value alpha-value ${alphaData.alpha_1y > 0 ? 'outperform' : alphaData.alpha_1y < 0 ? 'underperform' : ''}`}>
-                          {alphaData.alpha_1y != null ? `${alphaData.alpha_1y >= 0 ? '+' : ''}${alphaData.alpha_1y.toFixed(2)}%` : '-'}
+                        <span className={`period-value alpha-value ${alphaData.home.alpha_1y > 0 ? 'outperform' : alphaData.home.alpha_1y < 0 ? 'underperform' : ''}`}>
+                          {alphaData.home.alpha_1y != null ? `${alphaData.home.alpha_1y >= 0 ? '+' : ''}${alphaData.home.alpha_1y.toFixed(2)}%` : '-'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Alpha Column - vs SPY (for non-US companies) */}
+                {alphaData?.spy && !alphaData.isUS && (
+                  <div className="performance-column alpha">
+                    <div className="performance-column-header">
+                      <span className="column-symbol">vs {alphaData.spy.benchmark}</span>
+                      <span className="column-label">{alphaData.spy.benchmarkName}</span>
+                    </div>
+                    <div className="performance-periods">
+                      <div className="performance-row">
+                        <span className="period-label">1 Day</span>
+                        <span className={`period-value alpha-value ${alphaData.spy.alpha_1d > 0 ? 'outperform' : alphaData.spy.alpha_1d < 0 ? 'underperform' : ''}`}>
+                          {alphaData.spy.alpha_1d != null ? `${alphaData.spy.alpha_1d >= 0 ? '+' : ''}${alphaData.spy.alpha_1d.toFixed(2)}%` : '-'}
+                        </span>
+                      </div>
+                      <div className="performance-row">
+                        <span className="period-label">1 Week</span>
+                        <span className={`period-value alpha-value ${alphaData.spy.alpha_1w > 0 ? 'outperform' : alphaData.spy.alpha_1w < 0 ? 'underperform' : ''}`}>
+                          {alphaData.spy.alpha_1w != null ? `${alphaData.spy.alpha_1w >= 0 ? '+' : ''}${alphaData.spy.alpha_1w.toFixed(2)}%` : '-'}
+                        </span>
+                      </div>
+                      <div className="performance-row">
+                        <span className="period-label">1 Month</span>
+                        <span className={`period-value alpha-value ${alphaData.spy.alpha_1m > 0 ? 'outperform' : alphaData.spy.alpha_1m < 0 ? 'underperform' : ''}`}>
+                          {alphaData.spy.alpha_1m != null ? `${alphaData.spy.alpha_1m >= 0 ? '+' : ''}${alphaData.spy.alpha_1m.toFixed(2)}%` : '-'}
+                        </span>
+                      </div>
+                      <div className="performance-row">
+                        <span className="period-label">3 Months</span>
+                        <span className={`period-value alpha-value ${alphaData.spy.alpha_3m > 0 ? 'outperform' : alphaData.spy.alpha_3m < 0 ? 'underperform' : ''}`}>
+                          {alphaData.spy.alpha_3m != null ? `${alphaData.spy.alpha_3m >= 0 ? '+' : ''}${alphaData.spy.alpha_3m.toFixed(2)}%` : '-'}
+                        </span>
+                      </div>
+                      <div className="performance-row">
+                        <span className="period-label">YTD</span>
+                        <span className={`period-value alpha-value ${alphaData.spy.alpha_ytd > 0 ? 'outperform' : alphaData.spy.alpha_ytd < 0 ? 'underperform' : ''}`}>
+                          {alphaData.spy.alpha_ytd != null ? `${alphaData.spy.alpha_ytd >= 0 ? '+' : ''}${alphaData.spy.alpha_ytd.toFixed(2)}%` : '-'}
+                        </span>
+                      </div>
+                      <div className="performance-row">
+                        <span className="period-label">1 Year</span>
+                        <span className={`period-value alpha-value ${alphaData.spy.alpha_1y > 0 ? 'outperform' : alphaData.spy.alpha_1y < 0 ? 'underperform' : ''}`}>
+                          {alphaData.spy.alpha_1y != null ? `${alphaData.spy.alpha_1y >= 0 ? '+' : ''}${alphaData.spy.alpha_1y.toFixed(2)}%` : '-'}
                         </span>
                       </div>
                     </div>
@@ -2267,6 +2392,29 @@ function CompanyPage() {
       {mainTab === 'news' && (
         <NewsAndEvents symbol={symbol} />
       )}
+
+      {/* Mobile Action Bar - visible only on mobile */}
+      <div className="mobile-action-bar">
+        <WatchlistButton
+          symbol={company.company.symbol}
+          name={company.company.name}
+          sector={company.company.sector}
+          size="small"
+        />
+        <AddToPortfolioButton
+          symbol={company.company.symbol}
+          companyId={company.company.id}
+          companyName={company.company.name}
+          currentPrice={priceData?.last_price}
+        />
+        <button
+          className="mobile-compare-btn"
+          onClick={() => navigate(`/compare?symbol=${symbol}`)}
+        >
+          <BarChart3 size={18} />
+          <span>Compare</span>
+        </button>
+      </div>
     </div>
   );
 }

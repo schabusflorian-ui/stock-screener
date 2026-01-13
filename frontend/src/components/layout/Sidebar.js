@@ -20,25 +20,27 @@ import {
   Command,
   BookOpen,
   Brain,
-  BarChart3
+  BarChart3,
+  BarChart2
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 import './Sidebar.css';
 
 // DISCOVERY - Core navigation items
 const navItems = [
-  { path: '/', icon: Home, label: 'Home', shortcut: 'G H' },
-  { path: '/screening', icon: Search, label: 'Screen', shortcut: 'G S' },
-  { path: '/compare', icon: LineChart, label: 'Compare', shortcut: 'G C' },
-  { path: '/capital', icon: DollarSign, label: 'Capital', shortcut: 'G D' },
-  { path: '/ipo', icon: TrendingUp, label: 'IPOs', shortcut: 'G I' },
-  { path: '/sectors', icon: PieChart, label: 'Sectors', shortcut: 'G E' },
+  { path: '/', icon: Home, label: 'Home', shortcut: 'G H', dataTour: 'home' },
+  { path: '/screening', icon: Search, label: 'Screen', shortcut: 'G S', dataTour: 'screening' },
+  { path: '/compare', icon: LineChart, label: 'Compare', shortcut: 'G C', dataTour: 'compare' },
+  { path: '/capital', icon: DollarSign, label: 'Capital', shortcut: 'G D', dataTour: 'capital' },
+  { path: '/ipo', icon: TrendingUp, label: 'IPOs', shortcut: 'G I', dataTour: 'ipo' },
+  { path: '/sectors', icon: PieChart, label: 'Sectors', shortcut: 'G E', dataTour: 'sectors' },
 ];
 
 // PORTFOLIO - User portfolio management
 const portfolioItems = [
-  { path: '/portfolios', icon: Wallet, label: 'Portfolios', shortcut: 'G P' },
-  { path: '/investors', icon: Crown, label: 'Investors', shortcut: 'G R' },
-  { path: '/agents', icon: Brain, label: 'Trading Bots', shortcut: 'G X' },
+  { path: '/portfolios', icon: Wallet, label: 'Portfolios', shortcut: 'G P', dataTour: 'portfolios' },
+  { path: '/investors', icon: Crown, label: 'Investors', shortcut: 'G R', dataTour: 'investors' },
+  { path: '/agents', icon: Brain, label: 'Trading Bots', shortcut: 'G X', dataTour: 'agents' },
 ];
 
 // RESEARCH - Market intelligence and analytics
@@ -53,15 +55,22 @@ const researchItems = [
 
 // TOOLS - Alerts and monitoring
 const secondaryItems = [
-  { path: '/alerts', icon: Bell, label: 'Alerts', shortcut: 'G L' },
-  { path: '/watchlist', icon: Star, label: 'Watchlist', shortcut: 'G W' },
+  { path: '/alerts', icon: Bell, label: 'Alerts', shortcut: 'G L', dataTour: 'alerts' },
+  { path: '/watchlist', icon: Star, label: 'Watchlist', shortcut: 'G W', dataTour: 'watchlist' },
 ];
 
 const bottomItems = [
   { path: '/settings', icon: Settings, label: 'Settings', shortcut: 'G ,' },
 ];
 
+// Admin-only items
+const adminItems = [
+  { path: '/admin/analytics', icon: BarChart2, label: 'Analytics', shortcut: 'G Y', adminOnly: true },
+];
+
 function Sidebar({ collapsed, onToggle, onOpenSearch }) {
+  const { isAdmin } = useAuth();
+
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
       <div className="sidebar-header">
@@ -101,6 +110,7 @@ function Sidebar({ collapsed, onToggle, onOpenSearch }) {
               to={item.path}
               className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
               title={collapsed ? item.label : undefined}
+              data-tour={item.dataTour}
             >
               <item.icon size={18} className="nav-icon" />
               {!collapsed && (
@@ -123,6 +133,7 @@ function Sidebar({ collapsed, onToggle, onOpenSearch }) {
               to={item.path}
               className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
               title={collapsed ? item.label : undefined}
+              data-tour={item.dataTour}
             >
               <item.icon size={18} className="nav-icon" />
               {!collapsed && (
@@ -167,6 +178,7 @@ function Sidebar({ collapsed, onToggle, onOpenSearch }) {
               to={item.path}
               className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
               title={collapsed ? item.label : undefined}
+              data-tour={item.dataTour}
             >
               <item.icon size={18} className="nav-icon" />
               {!collapsed && (
@@ -186,6 +198,24 @@ function Sidebar({ collapsed, onToggle, onOpenSearch }) {
             key={item.path}
             to={item.path}
             className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            title={collapsed ? item.label : undefined}
+          >
+            <item.icon size={18} className="nav-icon" />
+            {!collapsed && (
+              <>
+                <span className="nav-label">{item.label}</span>
+                <span className="nav-shortcut">{item.shortcut}</span>
+              </>
+            )}
+          </PreloadNavLink>
+        ))}
+
+        {/* Admin Analytics - only visible to admins */}
+        {isAdmin && adminItems.map(item => (
+          <PreloadNavLink
+            key={item.path}
+            to={item.path}
+            className={({ isActive }) => `nav-item admin-nav-item ${isActive ? 'active' : ''}`}
             title={collapsed ? item.label : undefined}
           >
             <item.icon size={18} className="nav-icon" />

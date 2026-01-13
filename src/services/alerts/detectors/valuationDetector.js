@@ -92,7 +92,7 @@ class ValuationDetector {
   }
 
   getCurrentMetrics(companyId) {
-    // Join DCF valuations, price metrics, and calculated metrics
+    // Join DCF valuations, price metrics, and get most recent non-null calculated metrics
     const row = this.db.prepare(`
       SELECT
         pm.last_price as currentPrice,
@@ -102,17 +102,16 @@ class ValuationDetector {
           THEN ((dcf.intrinsic_value_per_share - pm.last_price) / dcf.intrinsic_value_per_share * 100)
           ELSE NULL
         END as dcfDiscount,
-        cm.pe_ratio as pe,
-        cm.pb_ratio as pb,
-        cm.fcf_yield as fcfYield,
-        cm.roic,
-        cm.debt_to_equity as debtEquity
+        (SELECT pe_ratio FROM calculated_metrics WHERE company_id = c.id AND pe_ratio IS NOT NULL ORDER BY fiscal_period DESC LIMIT 1) as pe,
+        (SELECT pb_ratio FROM calculated_metrics WHERE company_id = c.id AND pb_ratio IS NOT NULL ORDER BY fiscal_period DESC LIMIT 1) as pb,
+        (SELECT fcf_yield FROM calculated_metrics WHERE company_id = c.id AND fcf_yield IS NOT NULL ORDER BY fiscal_period DESC LIMIT 1) as fcfYield,
+        (SELECT roic FROM calculated_metrics WHERE company_id = c.id AND roic IS NOT NULL ORDER BY fiscal_period DESC LIMIT 1) as roic,
+        (SELECT debt_to_equity FROM calculated_metrics WHERE company_id = c.id AND debt_to_equity IS NOT NULL ORDER BY fiscal_period DESC LIMIT 1) as debtEquity
       FROM companies c
       LEFT JOIN price_metrics pm ON c.id = pm.company_id
       LEFT JOIN dcf_valuations dcf ON c.id = dcf.company_id
-      LEFT JOIN calculated_metrics cm ON c.id = cm.company_id AND cm.period_type = 'annual'
       WHERE c.id = ?
-      ORDER BY cm.fiscal_period DESC, dcf.calculated_at DESC
+      ORDER BY dcf.calculated_at DESC
       LIMIT 1
     `).get(companyId);
 

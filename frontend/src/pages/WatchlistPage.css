@@ -323,3 +323,25 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* Selection styles for watchlist table */
+.watchlist-page .checkbox-col {
+  width: 36px;
+  padding: 0.5rem !important;
+  text-align: center;
+}
+
+.watchlist-page .checkbox-col input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: var(--brand-primary);
+}
+
+.watchlist-page tr.selected {
+  background: rgba(139, 92, 246, 0.08) !important;
+}
+
+.watchlist-page tr.selected:hover {
+  background: rgba(139, 92, 246, 0.12) !important;
+}

@@ -1,0 +1,20 @@
+Hello {{recipientName}},
+
+Here's your notification digest with {{count}} new notifications.
+
+================================================================================
+RECENT NOTIFICATIONS
+================================================================================
+
+{{#each notifications}}
+[{{severity}}] {{title}}
+{{body}}
+{{createdAt}}
+
+{{/each}}
+
+--------------------------------------------------------------------------------
+
+View all notifications: {{viewAllUrl}}
+
+Manage notification preferences: {{unsubscribeUrl}}

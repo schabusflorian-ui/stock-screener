@@ -88,6 +88,14 @@
   padding: 0.25rem 0;
 }
 
+/* Additional Charts Container - for multi-stock price charts */
+.fmt-additional-charts {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
 .fmt-tools-used {
   display: flex;
   flex-wrap: wrap;

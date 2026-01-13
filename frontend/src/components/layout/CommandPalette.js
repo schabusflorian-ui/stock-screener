@@ -539,6 +539,42 @@ function CommandPalette({ open, onOpenChange }) {
               </Command.Group>
             )}
 
+            {/* Context-Aware Actions (when on company page) */}
+            {mode === 'search' && !search && currentCompany && (
+              <Command.Group heading={`Actions for ${currentCompany}`} className="command-group context-actions">
+                <Command.Item
+                  value={`action:compare-${currentCompany}`}
+                  onSelect={() => {
+                    navigate(`/compare?symbol=${currentCompany}`);
+                    onOpenChange(false);
+                  }}
+                  className="command-item context-item"
+                >
+                  <BarChart3 size={16} className="command-item-icon context" />
+                  <span className="command-item-label">Add {currentCompany} to Compare</span>
+                  <ArrowRight size={14} className="command-item-arrow" />
+                </Command.Item>
+                <Command.Item
+                  value={`action:peers-${currentCompany}`}
+                  onSelect={() => {
+                    // Filter by same sector if available
+                    const sector = companyContext?.company?.company?.sector;
+                    if (sector) {
+                      navigate(`/screening?sector=${encodeURIComponent(sector)}`);
+                    } else {
+                      navigate('/screening');
+                    }
+                    onOpenChange(false);
+                  }}
+                  className="command-item context-item"
+                >
+                  <Search size={16} className="command-item-icon context" />
+                  <span className="command-item-label">Find peers in same sector</span>
+                  <ArrowRight size={14} className="command-item-arrow" />
+                </Command.Item>
+              </Command.Group>
+            )}
+
             {/* Quick Actions */}
             {mode === 'search' && !search && (
               <Command.Group heading="Actions" className="command-group">

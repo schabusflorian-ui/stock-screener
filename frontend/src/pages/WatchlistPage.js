@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Star, Download, Trash2, Eye, X, TrendingUp, TrendingDown } from 'lucide-react';
 import { companyAPI, pricesAPI, indicesAPI } from '../services/api';
 import { useWatchlist } from '../context/WatchlistContext';
-import { AlphaCompareChart } from '../components';
+import { AlphaCompareChart, SelectionActionBar } from '../components';
 import { AddToPortfolioButton } from '../components/portfolio';
 import PriceAlertButton from '../components/PriceAlertButton';
 import WatchlistAlertNotifications from '../components/WatchlistAlertNotifications';
@@ -44,6 +44,7 @@ function WatchlistPage() {
   const [sortBy, setSortBy] = useState('addedAt');
   const [sortOrder, setSortOrder] = useState('desc');
   const [showAlphaChart, setShowAlphaChart] = useState(true);
+  const [selectedSymbols, setSelectedSymbols] = useState([]);
 
   // Load metrics, prices, and alpha for all watchlist items
   useEffect(() => {
@@ -157,10 +158,10 @@ function WatchlistPage() {
         prices.change_1m?.toFixed(2) || '',
         alpha.alpha_1m?.toFixed(2) || '',
         alpha.alpha_ytd?.toFixed(2) || '',
-        metrics.roic?.toFixed(1) || '',
-        metrics.roe?.toFixed(1) || '',
-        metrics.net_margin?.toFixed(1) || '',
-        metrics.fcf_yield?.toFixed(1) || '',
+        (metrics.roic * 100)?.toFixed(1) || '',
+        (metrics.roe * 100)?.toFixed(1) || '',
+        (metrics.net_margin * 100)?.toFixed(1) || '',
+        metrics.fcf_yield?.toFixed(1) || '',  // fcf_yield already in %
         metrics.debt_to_equity?.toFixed(2) || '',
         fmt.date(item.addedAt)
       ];
@@ -179,6 +180,34 @@ function WatchlistPage() {
     if (sortBy !== column) return <span className="sort-icon">↕</span>;
     return <span className="sort-icon active">{sortOrder === 'asc' ? '↑' : '↓'}</span>;
   };
+
+  // Selection handlers for bulk actions
+  const handleToggleSelect = useCallback((symbol) => {
+    setSelectedSymbols(prev =>
+      prev.includes(symbol)
+        ? prev.filter(s => s !== symbol)
+        : [...prev, symbol]
+    );
+  }, []);
+
+  const handleToggleSelectAll = useCallback(() => {
+    setSelectedSymbols(prev => {
+      const allSymbols = sortedWatchlist.map(item => item.symbol);
+      const allSelected = allSymbols.every(s => prev.includes(s));
+      return allSelected ? [] : allSymbols;
+    });
+  }, [sortedWatchlist]);
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedSymbols([]);
+  }, []);
+
+  const handleBulkRemove = useCallback(() => {
+    if (window.confirm(`Remove ${selectedSymbols.length} items from watchlist?`)) {
+      selectedSymbols.forEach(symbol => removeFromWatchlist(symbol));
+      setSelectedSymbols([]);
+    }
+  }, [selectedSymbols, removeFromWatchlist]);
 
   // Memoize averages calculation for summary
   const averages = useMemo(() => {
@@ -244,9 +273,27 @@ function WatchlistPage() {
         </Card>
       ) : (
         <Section title="Holdings">
+          {/* Selection Action Bar */}
+          <SelectionActionBar
+            selectedItems={selectedSymbols}
+            onClear={handleClearSelection}
+            showRemove={true}
+            onRemove={handleBulkRemove}
+          />
           <Table>
             <Table.Header>
               <Table.Row>
+                <Table.Head className="checkbox-col">
+                  <input
+                    type="checkbox"
+                    checked={sortedWatchlist.length > 0 && selectedSymbols.length === sortedWatchlist.length}
+                    ref={el => {
+                      if (el) el.indeterminate = selectedSymbols.length > 0 && selectedSymbols.length < sortedWatchlist.length;
+                    }}
+                    onChange={handleToggleSelectAll}
+                    title="Select all"
+                  />
+                </Table.Head>
                 <Table.Head onClick={() => handleSort('symbol')} className="sortable-header">
                   Symbol <SortIcon column="symbol" />
                 </Table.Head>
@@ -289,8 +336,25 @@ function WatchlistPage() {
                 const metrics = metricsData[item.symbol] || {};
                 const prices = priceData[item.symbol] || {};
                 const alpha = alphaData[item.symbol] || {};
+                const isSelected = selectedSymbols.includes(item.symbol);
                 return (
-                  <Table.Row key={item.symbol}>
+                  <Table.Row
+                    key={item.symbol}
+                    className={isSelected ? 'selected' : ''}
+                    onClick={(e) => {
+                      // Don't toggle if clicking on link or button
+                      if (e.target.closest('a, button, input')) return;
+                      handleToggleSelect(item.symbol);
+                    }}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <Table.Cell className="checkbox-col" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => handleToggleSelect(item.symbol)}
+                      />
+                    </Table.Cell>
                     <Table.Cell>
                       <Link to={`/company/${item.symbol}`} className="symbol-link">
                         {item.symbol}

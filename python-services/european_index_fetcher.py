@@ -113,6 +113,15 @@ EUROPEAN_INDICES = {
         'yahoo_suffix': None,  # Mixed exchanges
         'flag_column': 'is_eurostoxx50',
         'expected_count': 50
+    },
+    'ATX': {
+        'code': 'ATX',
+        'name': 'ATX',
+        'country': 'AT',
+        'wiki_url': 'https://en.wikipedia.org/wiki/Austrian_Traded_Index',
+        'yahoo_suffix': '.VI',
+        'flag_column': 'is_atx',
+        'expected_count': 20
     }
 }
 
@@ -292,6 +301,176 @@ class EuropeanIndexFetcher:
             logger.error(f"Error fetching Euro Stoxx 50: {e}")
             return None
 
+    def fetch_aex(self):
+        """Fetch AEX constituents (Netherlands)"""
+        logger.info("Fetching AEX constituents from Wikipedia...")
+
+        try:
+            html = self._fetch_html(EUROPEAN_INDICES['AEX']['wiki_url'])
+            tables = pd.read_html(html)
+
+            df = self._find_constituents_table(tables, 25)
+            if df is None:
+                logger.error("Could not find AEX constituents table")
+                return None
+
+            df = self._standardize_columns(df)
+
+            # AEX tickers need .AS suffix
+            if 'ticker' in df.columns:
+                df['yahoo_symbol'] = df['ticker'].apply(
+                    lambda x: f"{str(x).strip()}.AS" if pd.notna(x) else None
+                )
+
+            logger.info(f"Found {len(df)} AEX constituents")
+            return df
+
+        except Exception as e:
+            logger.error(f"Error fetching AEX: {e}")
+            return None
+
+    def fetch_smi(self):
+        """Fetch SMI constituents (Switzerland)"""
+        logger.info("Fetching SMI constituents from Wikipedia...")
+
+        try:
+            html = self._fetch_html(EUROPEAN_INDICES['SMI']['wiki_url'])
+            tables = pd.read_html(html)
+
+            df = self._find_constituents_table(tables, 20)
+            if df is None:
+                logger.error("Could not find SMI constituents table")
+                return None
+
+            df = self._standardize_columns(df)
+
+            # SMI tickers need .SW suffix
+            if 'ticker' in df.columns:
+                df['yahoo_symbol'] = df['ticker'].apply(
+                    lambda x: f"{str(x).strip()}.SW" if pd.notna(x) else None
+                )
+
+            logger.info(f"Found {len(df)} SMI constituents")
+            return df
+
+        except Exception as e:
+            logger.error(f"Error fetching SMI: {e}")
+            return None
+
+    def fetch_ibex(self):
+        """Fetch IBEX 35 constituents (Spain)"""
+        logger.info("Fetching IBEX 35 constituents from Wikipedia...")
+
+        try:
+            html = self._fetch_html(EUROPEAN_INDICES['IBEX']['wiki_url'])
+            tables = pd.read_html(html)
+
+            df = self._find_constituents_table(tables, 35)
+            if df is None:
+                logger.error("Could not find IBEX 35 constituents table")
+                return None
+
+            df = self._standardize_columns(df)
+
+            # IBEX tickers need .MC suffix
+            if 'ticker' in df.columns:
+                df['yahoo_symbol'] = df['ticker'].apply(
+                    lambda x: f"{str(x).strip()}.MC" if pd.notna(x) else None
+                )
+
+            logger.info(f"Found {len(df)} IBEX 35 constituents")
+            return df
+
+        except Exception as e:
+            logger.error(f"Error fetching IBEX 35: {e}")
+            return None
+
+    def fetch_ftsemib(self):
+        """Fetch FTSE MIB constituents (Italy)"""
+        logger.info("Fetching FTSE MIB constituents from Wikipedia...")
+
+        try:
+            html = self._fetch_html(EUROPEAN_INDICES['FTSEMIB']['wiki_url'])
+            tables = pd.read_html(html)
+
+            df = self._find_constituents_table(tables, 40)
+            if df is None:
+                logger.error("Could not find FTSE MIB constituents table")
+                return None
+
+            df = self._standardize_columns(df)
+
+            # FTSE MIB tickers need .MI suffix
+            if 'ticker' in df.columns:
+                df['yahoo_symbol'] = df['ticker'].apply(
+                    lambda x: f"{str(x).strip()}.MI" if pd.notna(x) else None
+                )
+
+            logger.info(f"Found {len(df)} FTSE MIB constituents")
+            return df
+
+        except Exception as e:
+            logger.error(f"Error fetching FTSE MIB: {e}")
+            return None
+
+    def fetch_omx30(self):
+        """Fetch OMX Stockholm 30 constituents (Sweden)"""
+        logger.info("Fetching OMX Stockholm 30 constituents from Wikipedia...")
+
+        try:
+            html = self._fetch_html(EUROPEAN_INDICES['OMX30']['wiki_url'])
+            tables = pd.read_html(html)
+
+            df = self._find_constituents_table(tables, 30)
+            if df is None:
+                logger.error("Could not find OMX Stockholm 30 constituents table")
+                return None
+
+            df = self._standardize_columns(df)
+
+            # OMX30 tickers need .ST suffix
+            if 'ticker' in df.columns:
+                df['yahoo_symbol'] = df['ticker'].apply(
+                    lambda x: f"{str(x).strip()}.ST" if pd.notna(x) else None
+                )
+
+            logger.info(f"Found {len(df)} OMX Stockholm 30 constituents")
+            return df
+
+        except Exception as e:
+            logger.error(f"Error fetching OMX Stockholm 30: {e}")
+            return None
+
+    def fetch_atx(self):
+        """Fetch ATX constituents (Austria)"""
+        logger.info("Fetching ATX constituents from Wikipedia...")
+
+        try:
+            # ATX Wikipedia page
+            wiki_url = 'https://en.wikipedia.org/wiki/Austrian_Traded_Index'
+            html = self._fetch_html(wiki_url)
+            tables = pd.read_html(html)
+
+            df = self._find_constituents_table(tables, 20)
+            if df is None:
+                logger.error("Could not find ATX constituents table")
+                return None
+
+            df = self._standardize_columns(df)
+
+            # ATX tickers need .VI suffix
+            if 'ticker' in df.columns:
+                df['yahoo_symbol'] = df['ticker'].apply(
+                    lambda x: f"{str(x).strip()}.VI" if pd.notna(x) else None
+                )
+
+            logger.info(f"Found {len(df)} ATX constituents")
+            return df
+
+        except Exception as e:
+            logger.error(f"Error fetching ATX: {e}")
+            return None
+
     def ensure_index_flags_exist(self):
         """Ensure index flag columns exist in companies table"""
         conn = self.get_connection()
@@ -305,7 +484,7 @@ class EuropeanIndexFetcher:
             # Add missing flag columns
             flag_columns = [
                 'is_ftse', 'is_dax', 'is_cac', 'is_aex', 'is_smi',
-                'is_ibex', 'is_ftsemib', 'is_omx30', 'is_eurostoxx50'
+                'is_ibex', 'is_ftsemib', 'is_omx30', 'is_eurostoxx50', 'is_atx'
             ]
 
             for flag in flag_columns:
@@ -519,6 +698,12 @@ class EuropeanIndexFetcher:
             'DAX': self.fetch_dax40,
             'CAC': self.fetch_cac40,
             'SX5E': self.fetch_eurostoxx50,
+            'AEX': self.fetch_aex,
+            'SMI': self.fetch_smi,
+            'IBEX': self.fetch_ibex,
+            'FTSEMIB': self.fetch_ftsemib,
+            'OMX30': self.fetch_omx30,
+            'ATX': self.fetch_atx,
         }
 
         if index_code not in fetch_methods:
@@ -540,7 +725,8 @@ class EuropeanIndexFetcher:
 
     def fetch_all(self):
         """Fetch all major European indices"""
-        for index_code in ['FTSE', 'DAX', 'CAC', 'SX5E']:
+        all_indices = ['FTSE', 'DAX', 'CAC', 'SX5E', 'AEX', 'SMI', 'IBEX', 'FTSEMIB', 'OMX30', 'ATX']
+        for index_code in all_indices:
             logger.info(f"\n{'='*50}")
             logger.info(f"Processing {index_code}")
             logger.info(f"{'='*50}")

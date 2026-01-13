@@ -151,6 +151,11 @@ function NotFoundView({ result }) {
 function LLMResponseView({ result }) {
   const content = result.message || result.response || result.answer || result.text || result.content;
 
+  // Debug: log chart data
+  if (result.chart_data) {
+    console.log('[LLMResponseView] chart_data:', result.chart_data.type, result.chart_data.series?.length);
+  }
+
   return (
     <div className="fmt-llm-response">
       {result.symbol && (
@@ -162,12 +167,26 @@ function LLMResponseView({ result }) {
         <ReactMarkdown>{content}</ReactMarkdown>
       </div>
 
+      {/* Render multi-series price comparison chart if present */}
+      {result.price_comparison_chart && (
+        <ChartRenderer chartData={result.price_comparison_chart} />
+      )}
+
       {/* Render inline chart if present */}
       {result.chart_data && (
         <ChartRenderer chartData={result.chart_data} />
       )}
 
-      {/* Render additional charts (e.g., analyst ratings pie chart) */}
+      {/* Render additional price charts (for multi-stock queries) */}
+      {result.additional_charts && result.additional_charts.length > 0 && (
+        <div className="fmt-additional-charts">
+          {result.additional_charts.map((chart, i) => (
+            <ChartRenderer key={i} chartData={chart} />
+          ))}
+        </div>
+      )}
+
+      {/* Render analyst ratings pie chart if present */}
       {result.analyst_chart_data && (
         <ChartRenderer chartData={result.analyst_chart_data} />
       )}
@@ -258,7 +277,12 @@ function ComparisonView({ result, onSymbolClick }) {
         </div>
       )}
 
-      {/* Render comparison chart if present */}
+      {/* Render multi-series price comparison chart if present */}
+      {result.price_comparison_chart && (
+        <ChartRenderer chartData={result.price_comparison_chart} />
+      )}
+
+      {/* Render comparison bar chart if present */}
       {result.chart_data && (
         <ChartRenderer chartData={result.chart_data} />
       )}

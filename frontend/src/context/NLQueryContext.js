@@ -23,8 +23,15 @@ function getSessionId() {
   return sessionId;
 }
 
+// Get saved panel state from localStorage
+function getSavedPanelState() {
+  const saved = localStorage.getItem('nl_panel_open');
+  return saved === 'true';
+}
+
 export function NLQueryProvider({ children }) {
   const [isModalOpen, setModalOpen] = useState(false);
+  const [isPanelOpen, setPanelOpen] = useState(getSavedPanelState);
   const [initialQuery, setInitialQuery] = useState('');
   const [context, setContext] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -121,13 +128,29 @@ export function NLQueryProvider({ children }) {
   /**
    * Add a message to the conversation
    * @param {object} message - { role: 'user'|'assistant', content, result?, intent?, ... }
+   * @returns {string} - The message ID
    */
   const addMessage = useCallback((message) => {
+    const id = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     setMessages(prev => [...prev, {
       ...message,
-      id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id,
       timestamp: new Date().toISOString()
     }]);
+    return id;
+  }, []);
+
+  /**
+   * Update an existing message by ID (used for streaming updates)
+   * @param {string} messageId - The message ID to update
+   * @param {object} updates - Fields to update/merge
+   */
+  const updateMessage = useCallback((messageId, updates) => {
+    setMessages(prev => prev.map(msg =>
+      msg.id === messageId
+        ? { ...msg, ...updates }
+        : msg
+    ));
   }, []);
 
   /**
@@ -173,9 +196,42 @@ export function NLQueryProvider({ children }) {
     loadConversation(convId);
   }, [conversationId, loadConversation]);
 
+  /**
+   * Open the chat panel (sidebar)
+   */
+  const openPanel = useCallback(() => {
+    setPanelOpen(true);
+    localStorage.setItem('nl_panel_open', 'true');
+  }, []);
+
+  /**
+   * Close the chat panel
+   */
+  const closePanel = useCallback(() => {
+    setPanelOpen(false);
+    localStorage.setItem('nl_panel_open', 'false');
+    // Refresh conversation list when closing
+    loadConversationList();
+  }, [loadConversationList]);
+
+  /**
+   * Toggle the chat panel
+   */
+  const togglePanel = useCallback(() => {
+    setPanelOpen(prev => {
+      const newValue = !prev;
+      localStorage.setItem('nl_panel_open', String(newValue));
+      if (!newValue) {
+        loadConversationList();
+      }
+      return newValue;
+    });
+  }, [loadConversationList]);
+
   const value = {
     // State
     isModalOpen,
+    isPanelOpen,
     initialQuery,
     context,
     messages,
@@ -187,7 +243,11 @@ export function NLQueryProvider({ children }) {
     // Actions
     openModal,
     closeModal,
+    openPanel,
+    closePanel,
+    togglePanel,
     addMessage,
+    updateMessage,
     clearConversation,
     updateConversationId,
     setContext,

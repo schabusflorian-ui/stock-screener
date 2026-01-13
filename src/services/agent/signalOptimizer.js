@@ -491,6 +491,127 @@ class SignalOptimizer {
   }
 
   /**
+   * Use optimized weights from weight optimization run
+   * Loads best weights from grid search optimization
+   * @param {number} runId - Optimization run ID (optional, uses most recent if not specified)
+   * @returns {Object} Result with loaded weights
+   */
+  useOptimizedWeightsFromRun(runId = null) {
+    try {
+      let weightData;
+
+      if (runId) {
+        // Get specific run
+        weightData = this.db.prepare(`
+          SELECT best_weights, best_alpha, walk_forward_efficiency
+          FROM weight_optimization_runs
+          WHERE id = ? AND status = 'completed' AND best_weights IS NOT NULL
+        `).get(runId);
+      } else {
+        // Get most recent successful run
+        weightData = this.db.prepare(`
+          SELECT id, best_weights, best_alpha, walk_forward_efficiency
+          FROM weight_optimization_runs
+          WHERE status = 'completed' AND best_weights IS NOT NULL
+          ORDER BY completed_at DESC
+          LIMIT 1
+        `).get();
+      }
+
+      if (!weightData || !weightData.best_weights) {
+        return {
+          success: false,
+          error: 'No optimization run found with valid weights',
+          usingDefaults: true,
+          weights: this.baseWeights
+        };
+      }
+
+      const optimizedWeights = JSON.parse(weightData.best_weights);
+
+      // Map the 6 backtester signals to the 8 signalOptimizer signals
+      // The backtester uses: technical, fundamental, sentiment, insider, valuation, factor
+      // SignalOptimizer uses: technical, sentiment, insider, fundamental, alternative, valuation, filing_13f, earnings
+      const mappedWeights = {
+        technical: optimizedWeights.technical || this.baseWeights.technical,
+        sentiment: optimizedWeights.sentiment || this.baseWeights.sentiment,
+        insider: optimizedWeights.insider || this.baseWeights.insider,
+        fundamental: optimizedWeights.fundamental || this.baseWeights.fundamental,
+        alternative: optimizedWeights.factor ? optimizedWeights.factor * 0.5 : this.baseWeights.alternative,
+        valuation: optimizedWeights.valuation || this.baseWeights.valuation,
+        filing_13f: optimizedWeights.factor ? optimizedWeights.factor * 0.3 : this.baseWeights.filing_13f,
+        earnings: optimizedWeights.factor ? optimizedWeights.factor * 0.2 : this.baseWeights.earnings
+      };
+
+      // Normalize
+      const normalized = this.normalizeWeights(mappedWeights);
+
+      // Update base weights with optimized values
+      this.baseWeights = normalized;
+
+      // Clear cache to use new weights
+      this.clearCache();
+
+      return {
+        success: true,
+        runId: weightData.id || runId,
+        alpha: weightData.best_alpha,
+        walkForwardEfficiency: weightData.walk_forward_efficiency,
+        weights: normalized,
+        sourceWeights: optimizedWeights
+      };
+    } catch (error) {
+      console.error('Error loading optimized weights:', error);
+      return {
+        success: false,
+        error: error.message,
+        usingDefaults: true,
+        weights: this.baseWeights
+      };
+    }
+  }
+
+  /**
+   * Load regime-specific weights from optimization
+   * @param {string} regime - Market regime
+   * @returns {Object} Weights for the specified regime
+   */
+  loadRegimeOptimizedWeights(regime) {
+    try {
+      const regimeData = this.db.prepare(`
+        SELECT technical_weight, fundamental_weight, sentiment_weight,
+               insider_weight, valuation_weight, factor_weight,
+               alpha, sharpe_ratio, walk_forward_efficiency
+        FROM regime_optimal_weights
+        WHERE regime = ? AND is_active = 1
+        ORDER BY valid_from DESC
+        LIMIT 1
+      `).get(regime);
+
+      if (!regimeData) {
+        return null;
+      }
+
+      // Map to signalOptimizer format
+      const weights = {
+        technical: regimeData.technical_weight,
+        sentiment: regimeData.sentiment_weight,
+        insider: regimeData.insider_weight,
+        fundamental: regimeData.fundamental_weight,
+        alternative: regimeData.factor_weight * 0.5,
+        valuation: regimeData.valuation_weight,
+        filing_13f: regimeData.factor_weight * 0.3,
+        earnings: regimeData.factor_weight * 0.2
+      };
+
+      return this.normalizeWeights(weights);
+    } catch (error) {
+      console.error('Error loading regime weights:', error);
+      return null;
+    }
+  }
+
+  /**
    * Get signal contribution analysis
    * Shows how each signal contributes to overall performance
    */

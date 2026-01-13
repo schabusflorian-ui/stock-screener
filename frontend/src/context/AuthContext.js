@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 
 const AuthContext = createContext(null);
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:3000';
+const API_BASE = process.env.REACT_APP_API_URL || '';
 
 // Admin access expiry: 24 hours
 const ADMIN_ACCESS_EXPIRY = 24 * 60 * 60 * 1000;
@@ -79,19 +79,28 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('adminAccessTime');
     setIsAdmin(false);
 
+    // Clear user state immediately
+    setUser(null);
+
     try {
+      // Call backend logout endpoint
       await fetch(`${API_BASE}/api/auth/logout`, {
         method: 'POST',
         credentials: 'include'
       });
-      setUser(null);
-      window.location.href = '/login';
     } catch (error) {
       console.error('Logout failed:', error);
-      // Still redirect even on error
-      setUser(null);
-      window.location.href = '/login';
+      // Continue with logout anyway
     }
+
+    // Note: We intentionally don't clear watchlist/onboarding localStorage
+    // because users may want to keep their local data even after logout
+    // Backend data is user-specific and protected by authentication
+
+    // Force redirect after a short delay to ensure state updates
+    setTimeout(() => {
+      window.location.href = '/login';
+    }, 100);
   }, []);
 
   const value = {

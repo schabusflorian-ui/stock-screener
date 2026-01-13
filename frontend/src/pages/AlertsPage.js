@@ -1,11 +1,13 @@
 // frontend/src/pages/AlertsPage.js
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { alertsAPI, pricesAPI } from '../services/api';
+import { RefreshCw, Bell, AlertCircle } from 'lucide-react';
+import { alertsAPI, notificationsAPI, pricesAPI } from '../services/api';
 import { PageHeader, Button, Callout } from '../components/ui';
+import NotificationCenter from '../components/notifications/NotificationCenter';
 import './AlertsPage.css';
 
-// Format date
+// Format date (for legacy mode)
 const formatDate = (dateStr) => {
   if (!dateStr) return '-';
   const date = new Date(dateStr);
@@ -25,8 +27,8 @@ const formatDate = (dateStr) => {
   });
 };
 
-// Alert card component
-const AlertCard = ({ alert, onMarkRead, onDismiss, priceData }) => {
+// Legacy Alert card component (used when unified API is unavailable)
+const LegacyAlertCard = ({ alert, onMarkRead, onDismiss, priceData }) => {
   const price = priceData?.[alert.symbol];
   const signalColors = {
     strong_buy: { bg: '#D1FAE5', border: '#10B981', text: '#065F46' },
@@ -110,8 +112,8 @@ const AlertCard = ({ alert, onMarkRead, onDismiss, priceData }) => {
   );
 };
 
-// Summary card component
-const SummaryCard = ({ summary, onScan }) => {
+// Legacy Summary card component
+const LegacySummaryCard = ({ summary }) => {
   return (
     <div className="summary-card">
       <div className="summary-stats">
@@ -140,8 +142,8 @@ const SummaryCard = ({ summary, onScan }) => {
   );
 };
 
-// Filter bar component
-const FilterBar = ({ filters, setFilters, onMarkAllRead }) => {
+// Legacy Filter bar component
+const LegacyFilterBar = ({ filters, setFilters, onMarkAllRead }) => {
   const signalTypes = ['strong_buy', 'buy', 'watch', 'warning', 'info'];
   const alertTypes = ['valuation', 'fundamental', 'price', 'filing', 'composite'];
 
@@ -228,6 +230,11 @@ const FilterBar = ({ filters, setFilters, onMarkAllRead }) => {
 };
 
 export default function AlertsPage() {
+  // State for unified vs legacy mode
+  const [useUnifiedAPI, setUseUnifiedAPI] = useState(true);
+  const [checkingAPI, setCheckingAPI] = useState(true);
+
+  // Legacy mode state
   const [alerts, setAlerts] = useState([]);
   const [summary, setSummary] = useState(null);
   const [filters, setFilters] = useState({});
@@ -237,8 +244,30 @@ export default function AlertsPage() {
   const [hasMore, setHasMore] = useState(false);
   const [priceData, setPriceData] = useState({});
 
-  // Load alerts
+  // Check if unified API is available
+  useEffect(() => {
+    const checkUnifiedAPI = async () => {
+      try {
+        const response = await notificationsAPI.getSummary();
+        if (response.data?.success) {
+          setUseUnifiedAPI(true);
+        } else {
+          setUseUnifiedAPI(false);
+        }
+      } catch (err) {
+        console.log('Unified notifications API not available, using legacy alerts');
+        setUseUnifiedAPI(false);
+      } finally {
+        setCheckingAPI(false);
+      }
+    };
+    checkUnifiedAPI();
+  }, []);
+
+  // Legacy mode: Load alerts
   const loadAlerts = useCallback(async (reset = true) => {
+    if (useUnifiedAPI) return; // Skip in unified mode
+
     try {
       if (reset) setLoading(true);
       setError(null);
@@ -281,10 +310,12 @@ export default function AlertsPage() {
     } finally {
       setLoading(false);
     }
-  }, [filters, alerts.length, priceData]);
+  }, [useUnifiedAPI, filters, alerts.length, priceData]);
 
-  // Load summary
+  // Legacy mode: Load summary
   const loadSummary = useCallback(async () => {
+    if (useUnifiedAPI) return; // Skip in unified mode
+
     try {
       const response = await alertsAPI.getSummary();
       if (response.data?.success) {
@@ -293,51 +324,53 @@ export default function AlertsPage() {
     } catch (err) {
       console.error('Error loading summary:', err);
     }
-  }, []);
+  }, [useUnifiedAPI]);
 
-  // Initial load
+  // Legacy mode: Initial load
   useEffect(() => {
-    loadAlerts(true);
-    loadSummary();
+    if (!checkingAPI && !useUnifiedAPI) {
+      loadAlerts(true);
+      loadSummary();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters]);
+  }, [checkingAPI, useUnifiedAPI, filters]);
 
-  // Mark as read
+  // Legacy mode: Mark as read
   const handleMarkRead = async (alertId) => {
     try {
       await alertsAPI.markAsRead(alertId);
       setAlerts(prev => prev.map(a =>
         a.id === alertId ? { ...a, is_read: 1 } : a
       ));
-      loadSummary(); // eslint-disable-line react-hooks/exhaustive-deps
+      loadSummary();
     } catch (err) {
       console.error('Error marking alert as read:', err);
     }
   };
 
-  // Dismiss alert
+  // Legacy mode: Dismiss alert
   const handleDismiss = async (alertId) => {
     try {
       await alertsAPI.dismiss(alertId);
       setAlerts(prev => prev.filter(a => a.id !== alertId));
-      loadSummary(); // eslint-disable-line react-hooks/exhaustive-deps
+      loadSummary();
     } catch (err) {
       console.error('Error dismissing alert:', err);
     }
   };
 
-  // Mark all as read
+  // Legacy mode: Mark all as read
   const handleMarkAllRead = async () => {
     try {
       await alertsAPI.markAllAsRead();
       setAlerts(prev => prev.map(a => ({ ...a, is_read: 1 })));
-      loadSummary(); // eslint-disable-line react-hooks/exhaustive-deps
+      loadSummary();
     } catch (err) {
       console.error('Error marking all as read:', err);
     }
   };
 
-  // Run scan
+  // Run scan (works for both modes)
   const handleScan = async () => {
     try {
       setScanning(true);
@@ -346,8 +379,14 @@ export default function AlertsPage() {
       if (response.data?.success) {
         const results = response.data.data;
         alert(`Scan complete: ${results.alertsGenerated} alerts generated from ${results.companiesEvaluated} companies`);
-        loadAlerts(true);
-        loadSummary(); // eslint-disable-line react-hooks/exhaustive-deps
+        // Refresh notifications/alerts
+        if (useUnifiedAPI) {
+          // The NotificationCenter will auto-refresh
+          window.location.reload();
+        } else {
+          loadAlerts(true);
+          loadSummary();
+        }
       }
     } catch (err) {
       setError(err.message);
@@ -356,6 +395,57 @@ export default function AlertsPage() {
     }
   };
 
+  // Show loading while checking API availability
+  if (checkingAPI) {
+    return (
+      <div className="alerts-page">
+        <PageHeader
+          title="Notification Center"
+          subtitle="Alerts, signals, and important updates"
+        />
+        <div className="loading">
+          <RefreshCw className="spinning" size={24} />
+          <p>Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Unified mode: Use NotificationCenter component
+  if (useUnifiedAPI) {
+    return (
+      <div className="alerts-page">
+        <PageHeader
+          title="Notification Center"
+          subtitle="Alerts, signals, and important updates across all your investments"
+          actions={
+            <Button
+              variant="primary"
+              onClick={handleScan}
+              disabled={scanning}
+            >
+              <RefreshCw size={16} className={scanning ? 'spinning' : ''} />
+              {scanning ? 'Scanning...' : 'Run Scan'}
+            </Button>
+          }
+        />
+
+        {error && (
+          <Callout type="error">
+            {error}
+          </Callout>
+        )}
+
+        <NotificationCenter
+          mode="full"
+          showSummary={true}
+          showFilters={true}
+        />
+      </div>
+    );
+  }
+
+  // Legacy mode: Original AlertsPage implementation
   return (
     <div className="alerts-page">
       <PageHeader
@@ -378,9 +468,9 @@ export default function AlertsPage() {
         </Callout>
       )}
 
-      <SummaryCard summary={summary} onScan={handleScan} />
+      <LegacySummaryCard summary={summary} />
 
-      <FilterBar
+      <LegacyFilterBar
         filters={filters}
         setFilters={setFilters}
         onMarkAllRead={handleMarkAllRead}
@@ -390,6 +480,7 @@ export default function AlertsPage() {
         <div className="loading">Loading alerts...</div>
       ) : alerts.length === 0 ? (
         <div className="empty-state">
+          <Bell size={48} className="empty-icon" />
           <p>No alerts found</p>
           <p className="hint">Run a scan to detect new buy signals and alerts</p>
         </div>
@@ -397,7 +488,7 @@ export default function AlertsPage() {
         <>
           <div className="alerts-list">
             {alerts.map(alert => (
-              <AlertCard
+              <LegacyAlertCard
                 key={alert.id}
                 alert={alert}
                 onMarkRead={handleMarkRead}

@@ -3,6 +3,8 @@ const express = require('express');
 const router = express.Router();
 const db = require('../../database');
 const newsService = require('../../services/newsService');
+const currencyService = require('../../services/currencyService');
+const indexMappingService = require('../../services/indexMappingService');
 
 const database = db.getDatabase();
 
@@ -305,6 +307,24 @@ router.get('/:symbol', (req, res) => {
         max_drawdown_3y,
         max_drawdown_5y,
         drawdown_recovery_days,
+        -- Alpha vs SPY (global benchmark)
+        alpha_1d,
+        alpha_1w,
+        alpha_1m,
+        alpha_3m,
+        alpha_6m,
+        alpha_1y,
+        alpha_ytd,
+        benchmark_symbol,
+        -- Alpha vs home index
+        alpha_1d_home,
+        alpha_1w_home,
+        alpha_1m_home,
+        alpha_3m_home,
+        alpha_6m_home,
+        alpha_1y_home,
+        alpha_ytd_home,
+        home_benchmark,
         updated_at
       FROM price_metrics
       WHERE company_id = ?
@@ -371,10 +391,31 @@ router.get('/:symbol', (req, res) => {
       }
     }
 
+    // Get reporting currency for non-US companies
+    const reportingCurrency = currencyService.getCompanyCurrency(company.id);
+    const currencyInfo = currencyService.getCurrencyInfo(reportingCurrency);
+
+    // Get home index for company based on country
+    const homeIndex = indexMappingService.getHomeIndex(company.country);
+    const isUS = indexMappingService.isUSCompany(company.country);
+
     res.json({
       company,
       latest_metrics: enrichedMetrics,
-      price_metrics: priceMetrics
+      price_metrics: priceMetrics,
+      currency: {
+        reporting: reportingCurrency,
+        symbol: currencyInfo.symbol,
+        name: currencyInfo.name,
+        isUSD: reportingCurrency === 'USD'
+      },
+      home_index: {
+        code: homeIndex.code,
+        etf: homeIndex.etf,
+        name: homeIndex.name,
+        flag: homeIndex.flag,
+        isUS: isUS
+      }
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -519,22 +560,30 @@ router.get('/:symbol/metrics', (req, res) => {
 
     // Batch fetch stock prices - get latest price <= each fiscal period
     // Use window function to get the most recent price for each period
-    const priceDataBatch = database.prepare(`
-      WITH period_prices AS (
-        SELECT
-          fp.period,
-          dp.adjusted_close,
-          dp.close,
-          dp.date,
-          ROW_NUMBER() OVER (PARTITION BY fp.period ORDER BY dp.date DESC) as rn
-        FROM (SELECT ? as period UNION ALL ${fiscalPeriods.slice(1).map(() => 'SELECT ?').join(' UNION ALL ')}) fp
-        JOIN daily_prices dp ON dp.company_id = ? AND dp.date <= fp.period
-      )
-      SELECT period, adjusted_close, close, date
-      FROM period_prices
-      WHERE rn = 1
-    `).all(...fiscalPeriods, company.id);
-    const priceMap = new Map(priceDataBatch.map(d => [d.period, d]));
+    // Handle edge case where there's only one period (avoid empty UNION ALL)
+    let priceMap = new Map();
+    if (fiscalPeriods.length > 0) {
+      const periodUnionSQL = fiscalPeriods.length === 1
+        ? 'SELECT ? as period'
+        : `SELECT ? as period${fiscalPeriods.slice(1).map(() => ' UNION ALL SELECT ?').join('')}`;
+
+      const priceDataBatch = database.prepare(`
+        WITH period_prices AS (
+          SELECT
+            fp.period,
+            dp.adjusted_close,
+            dp.close,
+            dp.date,
+            ROW_NUMBER() OVER (PARTITION BY fp.period ORDER BY dp.date DESC) as rn
+          FROM (${periodUnionSQL}) fp
+          JOIN daily_prices dp ON dp.company_id = ? AND dp.date <= fp.period
+        )
+        SELECT period, adjusted_close, close, date
+        FROM period_prices
+        WHERE rn = 1
+      `).all(...fiscalPeriods, company.id);
+      priceMap = new Map(priceDataBatch.map(d => [d.period, d]));
+    }
 
     // Enrich metrics with pre-fetched data
     const enrichedMetrics = metrics.map(m => {
@@ -649,14 +698,37 @@ router.get('/:symbol/metrics', (req, res) => {
     // Determine data source from metrics (sec = US quarterly, xbrl = EU annual)
     const dataSource = enrichedMetrics[0]?.data_source || 'sec';
 
+    // Get reporting currency for non-US companies
+    const reportingCurrency = currencyService.getCompanyCurrency(company.id);
+    const currencyInfo = currencyService.getCurrencyInfo(reportingCurrency);
+
+    // Add USD-converted values for monetary fields if not already USD
+    const metricsWithCurrency = enrichedMetrics.map(m => {
+      const result = { ...m, reporting_currency: reportingCurrency };
+      if (reportingCurrency !== 'USD') {
+        // Add USD equivalents for key monetary values
+        if (m.revenue) result.revenue_usd = currencyService.toUSD(m.revenue, reportingCurrency);
+        if (m.net_income) result.net_income_usd = currencyService.toUSD(m.net_income, reportingCurrency);
+        if (m.fcf) result.fcf_usd = currencyService.toUSD(m.fcf, reportingCurrency);
+        if (m.operating_income) result.operating_income_usd = currencyService.toUSD(m.operating_income, reportingCurrency);
+      }
+      return result;
+    });
+
     res.json({
       symbol: symbol.toUpperCase(),
-      count: enrichedMetrics.length,
+      count: metricsWithCurrency.length,
       period_type,
       data_source: dataSource,
       fiscal_year_end: fiscalYearEndInfo,
       available_periods: periodTypes,
-      metrics: enrichedMetrics,
+      metrics: metricsWithCurrency,
+      currency: {
+        reporting: reportingCurrency,
+        symbol: currencyInfo.symbol,
+        name: currencyInfo.name,
+        isUSD: reportingCurrency === 'USD'
+      },
       current_price_data: currentPriceMetrics ? {
         price: currentPriceMetrics.last_price,
         market_cap: currentPriceMetrics.market_cap,
@@ -863,13 +935,50 @@ router.get('/:symbol/breakdown', (req, res) => {
                   'July', 'August', 'September', 'October', 'November', 'December'][fiscalConfig.fiscal_year_end_month - 1]
     } : null;
 
+    // Get reporting currency for non-US companies
+    const reportingCurrency = currencyService.getCompanyCurrency(company.id);
+    const currencyInfo = currencyService.getCurrencyInfo(reportingCurrency);
+
+    // Add USD-converted values for monetary fields if not already USD
+    const breakdownWithUSD = breakdown.map(item => {
+      if (reportingCurrency === 'USD') {
+        return item;
+      }
+      return {
+        ...item,
+        // USD equivalents for absolute values
+        revenue_usd: currencyService.toUSD(item.revenue, reportingCurrency),
+        costOfRevenue_usd: currencyService.toUSD(item.costOfRevenue, reportingCurrency),
+        grossProfit_usd: currencyService.toUSD(item.grossProfit, reportingCurrency),
+        operatingExpenses_usd: currencyService.toUSD(item.operatingExpenses, reportingCurrency),
+        operatingIncome_usd: currencyService.toUSD(item.operatingIncome, reportingCurrency),
+        netIncome_usd: currencyService.toUSD(item.netIncome, reportingCurrency),
+        // USD equivalents for cost breakdown
+        costs_usd: {
+          costOfRevenue: currencyService.toUSD(item.costs.costOfRevenue, reportingCurrency),
+          researchAndDevelopment: currencyService.toUSD(item.costs.researchAndDevelopment, reportingCurrency),
+          sellingGeneralAdmin: currencyService.toUSD(item.costs.sellingGeneralAdmin, reportingCurrency),
+          depreciation: currencyService.toUSD(item.costs.depreciation, reportingCurrency),
+          interestExpense: currencyService.toUSD(item.costs.interestExpense, reportingCurrency),
+          incomeTaxExpense: currencyService.toUSD(item.costs.incomeTaxExpense, reportingCurrency),
+          otherExpenses: currencyService.toUSD(item.costs.otherExpenses, reportingCurrency),
+        }
+      };
+    });
+
     res.json({
       symbol: symbol.toUpperCase(),
       period_type,
       fiscal_year_end: fiscalYearEndInfo,
-      count: breakdown.length,
+      count: breakdownWithUSD.length,
       available_periods: availablePeriods,
-      breakdown
+      breakdown: breakdownWithUSD,
+      currency: {
+        reporting: reportingCurrency,
+        symbol: currencyInfo.symbol,
+        name: currencyInfo.name,
+        isUSD: reportingCurrency === 'USD'
+      }
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1046,11 +1155,21 @@ router.get('/:symbol/balance-sheet', (req, res) => {
       };
     });
 
+    // Get reporting currency for non-US companies
+    const reportingCurrency = currencyService.getCompanyCurrency(company.id);
+    const currencyInfo = currencyService.getCurrencyInfo(reportingCurrency);
+
     res.json({
       symbol: symbol.toUpperCase(),
       period_type,
       count: breakdown.length,
-      breakdown
+      breakdown,
+      currency: {
+        reporting: reportingCurrency,
+        symbol: currencyInfo.symbol,
+        name: currencyInfo.name,
+        isUSD: reportingCurrency === 'USD'
+      }
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1221,11 +1340,21 @@ router.get('/:symbol/cash-flow', (req, res) => {
       };
     });
 
+    // Get reporting currency for non-US companies
+    const reportingCurrency = currencyService.getCompanyCurrency(company.id);
+    const currencyInfo = currencyService.getCurrencyInfo(reportingCurrency);
+
     res.json({
       symbol: symbol.toUpperCase(),
       period_type,
       count: breakdown.length,
-      breakdown
+      breakdown,
+      currency: {
+        reporting: reportingCurrency,
+        symbol: currencyInfo.symbol,
+        name: currencyInfo.name,
+        isUSD: reportingCurrency === 'USD'
+      }
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1291,6 +1420,7 @@ router.get('/:symbol/analysis', (req, res) => {
 
     // Get peer companies and sector averages in a single optimized query using CTE
     // This avoids the N+1 correlated subquery pattern
+    // Uses market_cap_usd for cross-currency comparison
     const peerAndSectorData = database.prepare(`
       WITH latest_metrics AS (
         SELECT company_id, MAX(fiscal_period) as max_period
@@ -1299,13 +1429,16 @@ router.get('/:symbol/analysis', (req, res) => {
         GROUP BY company_id
       ),
       company_latest AS (
-        SELECT c.id, c.symbol, c.name, c.sector, c.industry, c.market_cap,
+        SELECT c.id, c.symbol, c.name, c.sector, c.industry,
+               c.reporting_currency, c.country,
+               pm.market_cap, pm.market_cap_usd,
                m.roic, m.roe, m.net_margin, m.debt_to_equity, m.fcf_yield,
                m.pe_ratio, m.pb_ratio, m.revenue_growth_yoy
         FROM companies c
         JOIN latest_metrics lm ON c.id = lm.company_id
         JOIN calculated_metrics m ON c.id = m.company_id
           AND m.fiscal_period = lm.max_period AND m.period_type = ?
+        LEFT JOIN price_metrics pm ON c.id = pm.company_id
         WHERE c.is_active = 1
       )
       SELECT
@@ -1317,9 +1450,10 @@ router.get('/:symbol/analysis', (req, res) => {
     `).all(period_type, period_type, company.industry, symbol.toUpperCase(), company.sector, company.industry, company.sector);
 
     // Split results into peers and calculate sector averages
+    // Sort by USD-normalized market cap for fair cross-currency comparison
     const peers = peerAndSectorData
       .filter(r => r.is_peer)
-      .sort((a, b) => (b.market_cap || 0) - (a.market_cap || 0))
+      .sort((a, b) => (b.market_cap_usd || b.market_cap || 0) - (a.market_cap_usd || a.market_cap || 0))
       .slice(0, 10);
 
     const sectorCompanies = peerAndSectorData.filter(r => r.is_sector);

@@ -34,9 +34,31 @@ const IFRS_MAPPINGS = {
   'ifrs-full:CurrentLiabilities': 'current_liabilities',
   'ifrs-full:NoncurrentLiabilities': 'non_current_liabilities',
   'ifrs-full:TradeAndOtherCurrentPayables': 'trade_payables',
+
+  // Borrowings - Standard concepts
   'ifrs-full:CurrentBorrowings': 'short_term_debt',
   'ifrs-full:NoncurrentBorrowings': 'long_term_debt',
   'ifrs-full:Borrowings': 'total_debt',
+
+  // Alternative debt aggregates
+  'ifrs-full:FinancialLiabilities': 'total_financial_liabilities',
+  'ifrs-full:LoansAndBorrowings': 'total_debt',
+
+  // Other financial liabilities (catch-all for non-standard debt)
+  'ifrs-full:OtherFinancialLiabilities': 'other_debt',
+  'ifrs-full:OtherCurrentFinancialLiabilities': 'short_term_debt',
+  'ifrs-full:OtherNoncurrentFinancialLiabilities': 'long_term_debt',
+
+  // IFRS 16 Lease Liabilities (critical for post-2019 filings)
+  'ifrs-full:LeaseLiabilities': 'lease_liabilities',
+  'ifrs-full:CurrentLeaseLiabilities': 'short_term_debt',
+  'ifrs-full:NoncurrentLeaseLiabilities': 'long_term_debt',
+
+  // Alternative lease naming
+  'ifrs-full:LeaseObligations': 'lease_liabilities',
+  'ifrs-full:CurrentLeaseObligation': 'short_term_debt',
+  'ifrs-full:NoncurrentLeaseObligation': 'long_term_debt',
+
   'ifrs-full:CurrentProvisions': 'current_provisions',
   'ifrs-full:NoncurrentProvisions': 'non_current_provisions',
 
@@ -56,6 +78,23 @@ const IFRS_MAPPINGS = {
   // ==========================================
   'ifrs-full:Revenue': 'revenue',
   'ifrs-full:RevenueFromContractsWithCustomers': 'revenue',
+
+  // Bank/Financial Institution Revenue Alternatives
+  // Banks don't report "revenue" - they use interest income and fee income
+  'ifrs-full:InterestIncomeExpenseNet': 'net_interest_income',
+  'ifrs-full:NetInterestIncome': 'net_interest_income',
+  'ifrs-full:InterestRevenueCalculatedUsingEffectiveInterestMethod': 'interest_revenue',
+  'ifrs-full:FeeAndCommissionIncome': 'fee_income',
+  'ifrs-full:NetFeeAndCommissionIncome': 'net_fee_income',
+  'ifrs-full:TradingIncome': 'trading_income',
+  'ifrs-full:NetTradingIncome': 'trading_income',
+
+  // Insurance Company Revenue
+  'ifrs-full:InsuranceServiceResult': 'insurance_service_result',
+  'ifrs-full:InsuranceRevenue': 'insurance_revenue',
+  'ifrs-full:PremiumsWrittenNet': 'premiums_written',
+  'ifrs-full:GrossInsuranceContractLiabilitiesForRemainingCoverage': 'insurance_liabilities',
+
   'ifrs-full:CostOfSales': 'cost_of_sales',
   'ifrs-full:GrossProfit': 'gross_profit',
   'ifrs-full:DistributionCosts': 'distribution_costs',
@@ -74,18 +113,44 @@ const IFRS_MAPPINGS = {
   'ifrs-full:ProfitLossAttributableToOwnersOfParent': 'net_income',
   'ifrs-full:BasicEarningsLossPerShare': 'eps_basic',
   'ifrs-full:DilutedEarningsLossPerShare': 'eps_diluted',
+
+  // Shares Outstanding - Multiple variants
   'ifrs-full:NumberOfSharesOutstanding': 'shares_outstanding',
+  'ifrs-full:WeightedAverageNumberOfSharesOutstandingBasic': 'shares_outstanding',
+  'ifrs-full:WeightedAverageNumberOfSharesOutstandingDiluted': 'diluted_shares_outstanding',
+  'ifrs-full:SharesIssued': 'shares_issued',
+  'ifrs-full:NumberOfIssuedShares': 'shares_issued',
+  'ifrs-full:SharesInTreasury': 'treasury_shares',
+
   'ifrs-full:DividendsPerShare': 'dividends_per_share',
 
   // EBITDA components - multiple naming conventions
   'ifrs-full:DepreciationAndAmortisationExpense': 'depreciation_amortization',
   'ifrs-full:DepreciationAmortisationAndImpairmentLossReversalOfImpairmentLossRecognisedInProfitOrLoss': 'depreciation_amortization',
+
+  // US spelling variants (some European companies use US IFRS)
+  'ifrs-full:DepreciationAndAmortizationExpense': 'depreciation_amortization',
+
+  // Separate D&A components
   'ifrs-full:DepreciationExpense': 'depreciation',
   'ifrs-full:AmortisationExpense': 'amortization',
+
+  // Specific asset class depreciation
+  'ifrs-full:DepreciationOfPropertyPlantAndEquipment': 'depreciation',
+  'ifrs-full:DepreciationPropertyPlantAndEquipment': 'depreciation',
+
+  // Intangible amortization specifics
+  'ifrs-full:AmortisationOfIntangibleAssets': 'amortization',
+  'ifrs-full:AmortizationOfIntangibleAssets': 'amortization',
+
+  // Impairment
   'ifrs-full:ImpairmentLossRecognisedInProfitOrLoss': 'impairment_loss',
-  // Also check indirect cash flow D&A add-backs
+
+  // Cash flow statement variants (D&A add-backs in indirect method)
   'ifrs-full:AdjustmentsForDepreciationAndAmortisationExpense': 'depreciation_amortization',
   'ifrs-full:AdjustmentsForDepreciationExpense': 'depreciation',
+  'ifrs-full:AdjustmentsForAmortisationExpense': 'amortization',
+  'ifrs-full:ChargesAgainstDepreciationAndAmortizationExpense': 'depreciation_amortization',
 
   // ==========================================
   // Cash Flow Statement
@@ -96,6 +161,15 @@ const IFRS_MAPPINGS = {
   'ifrs-full:CashFlowsFromUsedInFinancingActivities': 'financing_cash_flow',
   'ifrs-full:PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities': 'capital_expenditure',
   'ifrs-full:AcquisitionOfPropertyPlantAndEquipment': 'capital_expenditure',
+  // Additional CapEx variants used in EU filings
+  'ifrs-full:AdditionsToPropertyPlantAndEquipment': 'capital_expenditure',
+  'ifrs-full:IncreaseThroughPurchasePropertyPlantAndEquipment': 'capital_expenditure',
+  'ifrs-full:PaymentsForPropertyPlantAndEquipment': 'capital_expenditure',
+  'ifrs-full:PaymentsToAcquirePropertyPlantAndEquipment': 'capital_expenditure',
+  // Intangible additions (for total CapEx calculation)
+  'ifrs-full:AdditionsToIntangibleAssetsOtherThanGoodwill': 'intangible_additions',
+  'ifrs-full:PurchaseOfIntangibleAssetsClassifiedAsInvestingActivities': 'intangible_additions',
+
   'ifrs-full:DividendsPaid': 'dividends_paid',
   'ifrs-full:DividendsPaidClassifiedAsFinancingActivities': 'dividends_paid',
   'ifrs-full:PaymentsToAcquireOrRedeemEntitysShares': 'share_repurchases',
@@ -417,6 +491,7 @@ class XBRLParser {
 
   /**
    * Determine if period is annual, quarterly, etc.
+   * Enhanced to better detect semi-annual/interim reporting periods
    * @private
    */
   _determinePeriodType(period) {
@@ -432,9 +507,22 @@ class XBRLParser {
     const end = new Date(period.endDate);
     const days = Math.round((end - start) / (1000 * 60 * 60 * 24));
 
-    if (days >= 360 && days <= 370) return 'annual';
-    if (days >= 180 && days <= 185) return 'semi-annual';
-    if (days >= 89 && days <= 92) return 'quarterly';
+    // Annual: 360-375 days (~12 months, allowing for leap years and fiscal year variations)
+    if (days >= 360 && days <= 375) return 'annual';
+
+    // Semi-annual: 170-195 days (~5.5-6.5 months)
+    // Expanded range to capture more interim reporting periods:
+    // - Jan 1 - Jun 30 = 181 days (standard H1)
+    // - Jan 1 - Jul 31 = 212 days (some companies)
+    // - Feb 1 - Jul 31 = 181 days
+    // - Fiscal half-years may not align with calendar
+    if (days >= 170 && days <= 195) return 'semi-annual';
+
+    // Quarterly: 85-95 days (~3 months)
+    // Expanded from 89-92 to capture more variations
+    if (days >= 85 && days <= 95) return 'quarterly';
+
+    // Monthly: 28-31 days
     if (days >= 28 && days <= 31) return 'monthly';
 
     return 'other';
@@ -554,19 +642,125 @@ class XBRLParser {
         }
       }
 
-      // Free Cash Flow
-      if (!m.free_cash_flow && m.operating_cash_flow !== undefined && m.capital_expenditure !== undefined) {
-        m.free_cash_flow = m.operating_cash_flow - Math.abs(m.capital_expenditure);
+      // Free Cash Flow - Multiple calculation strategies
+      if (!m.free_cash_flow) {
+        // Strategy 1: OCF - CapEx (standard formula)
+        if (m.operating_cash_flow !== undefined && m.capital_expenditure !== undefined) {
+          m.free_cash_flow = m.operating_cash_flow - Math.abs(m.capital_expenditure);
+        }
+        // Strategy 2: OCF + ICF (ICF is typically negative, includes CapEx + acquisitions)
+        // This is a reasonable proxy when CapEx is not separately reported
+        // Most large EU companies report OCF and ICF but not CapEx separately
+        else if (m.operating_cash_flow !== undefined && m.investing_cash_flow !== undefined) {
+          m.free_cash_flow = m.operating_cash_flow + m.investing_cash_flow;
+        }
       }
 
-      // Total Debt if not directly available
-      if (!m.total_debt && (m.short_term_debt || m.long_term_debt)) {
-        m.total_debt = (m.short_term_debt || 0) + (m.long_term_debt || 0);
+      // Total Debt - Enhanced calculation with multiple fallbacks
+      if (!m.total_debt) {
+        // Method 1: Sum short-term + long-term debt + lease liabilities (IFRS 16)
+        if (m.short_term_debt || m.long_term_debt || m.lease_liabilities) {
+          m.total_debt = (m.short_term_debt || 0) + (m.long_term_debt || 0) + (m.lease_liabilities || 0);
+        }
+        // Method 2: Use total_financial_liabilities as fallback
+        else if (m.total_financial_liabilities) {
+          m.total_debt = m.total_financial_liabilities;
+        }
+        // Method 3: Use other_debt as last resort
+        else if (m.other_debt) {
+          m.total_debt = m.other_debt;
+        }
+      }
+
+      // Also add lease liabilities to existing total_debt if not already included
+      if (m.total_debt && m.lease_liabilities && !m.long_term_debt && !m.short_term_debt) {
+        // If we only have total_debt directly but also have separate lease liabilities, add them
+        m.total_debt = m.total_debt + m.lease_liabilities;
+      }
+
+      // Total Assets - Derive from components if not directly available
+      if (!m.total_assets) {
+        // Method 1: Sum current + non-current assets
+        if (m.current_assets || m.non_current_assets) {
+          m.total_assets = (m.current_assets || 0) + (m.non_current_assets || 0);
+        }
+        // Method 2: Calculate from equity + liabilities (accounting equation)
+        else if (m.total_equity && m.total_liabilities) {
+          m.total_assets = m.total_equity + m.total_liabilities;
+        }
+      }
+
+      // Total Liabilities - Derive from components if not directly available
+      if (!m.total_liabilities) {
+        // Method 1: Sum current + non-current liabilities
+        if (m.current_liabilities || m.non_current_liabilities) {
+          m.total_liabilities = (m.current_liabilities || 0) + (m.non_current_liabilities || 0);
+        }
+        // Method 2: Calculate from total_assets - total_equity
+        else if (m.total_assets && m.total_equity) {
+          m.total_liabilities = m.total_assets - m.total_equity;
+        }
       }
 
       // Gross Profit if not directly available
       if (!m.gross_profit && m.revenue && m.cost_of_sales) {
         m.gross_profit = m.revenue - Math.abs(m.cost_of_sales);
+      }
+
+      // Shares Outstanding - Enhanced calculation
+      if (!m.shares_outstanding) {
+        // Method 1: Calculate from issued shares - treasury shares
+        if (m.shares_issued && m.treasury_shares) {
+          m.shares_outstanding = m.shares_issued - m.treasury_shares;
+        }
+        // Method 2: Use shares_issued directly if no treasury shares specified
+        else if (m.shares_issued) {
+          m.shares_outstanding = m.shares_issued;
+        }
+      }
+
+      // === Bank/Financial Revenue Derivation ===
+      // Banks don't report "revenue" - derive from income components
+      if (!m.revenue) {
+        // Method 1: Net Interest Income + Fee Income (most common for banks)
+        if (m.net_interest_income || m.fee_income || m.trading_income) {
+          m.revenue = (m.net_interest_income || 0) +
+                      (m.fee_income || m.net_fee_income || 0) +
+                      (m.trading_income || 0);
+          m._revenue_derived_from = 'bank_income';
+        }
+        // Method 2: Interest Revenue (for simpler financial companies)
+        else if (m.interest_revenue) {
+          m.revenue = m.interest_revenue;
+          m._revenue_derived_from = 'interest_revenue';
+        }
+        // Method 3: Insurance Revenue/Premiums
+        else if (m.insurance_revenue || m.premiums_written) {
+          m.revenue = m.insurance_revenue || m.premiums_written;
+          m._revenue_derived_from = 'insurance';
+        }
+      }
+
+      // === Operating Income Derivation ===
+      if (!m.operating_income) {
+        // Method 1: Profit Before Tax + Interest Expense (excludes financing costs)
+        if (m.profit_before_tax !== undefined && m.interest_expense) {
+          m.operating_income = m.profit_before_tax + Math.abs(m.interest_expense);
+          m._op_income_derived = true;
+        }
+        // Method 2: Net Income + Tax + Interest (work backwards from bottom line)
+        else if (m.net_income !== undefined && m.income_tax_expense && m.interest_expense) {
+          m.operating_income = m.net_income +
+                               Math.abs(m.income_tax_expense) +
+                               Math.abs(m.interest_expense);
+          m._op_income_derived = true;
+        }
+        // Method 3: Revenue - Cost of Sales - Operating Expenses
+        else if (m.revenue && m.cost_of_sales && (m.distribution_costs || m.admin_expenses)) {
+          const opex = (m.distribution_costs || 0) + (m.admin_expenses || 0) + (m.other_expenses || 0);
+          m.operating_income = m.revenue - Math.abs(m.cost_of_sales) - opex;
+          m._op_income_derived = true;
+        }
       }
 
       // === Ratios ===
@@ -606,13 +800,43 @@ class XBRLParser {
         }
       }
 
+      // ROCE = Operating Income / Capital Employed
+      // Capital Employed = Total Assets - Current Liabilities
+      if (!m.roce && m.operating_income !== undefined && m.total_assets && m.current_liabilities) {
+        const capitalEmployed = m.total_assets - m.current_liabilities;
+        if (capitalEmployed > 0) {
+          m.roce = m.operating_income / capitalEmployed;
+        }
+      }
+
+      // DuPont Analysis Components
+      // Equity Multiplier = Total Assets / Total Equity
+      if (!m.equity_multiplier && m.total_assets && m.total_equity && m.total_equity !== 0) {
+        m.equity_multiplier = m.total_assets / m.total_equity;
+      }
+
+      // DuPont ROE = Net Margin × Asset Turnover × Equity Multiplier
+      // First ensure we have asset_turnover calculated
+      const assetTurnover = m.asset_turnover || (m.revenue && m.total_assets ? m.revenue / m.total_assets : null);
+      if (!m.dupont_roe && m.net_margin !== undefined && assetTurnover && m.equity_multiplier) {
+        m.dupont_roe = m.net_margin * assetTurnover * m.equity_multiplier;
+      }
+
       // Liquidity ratios
       if (m.current_liabilities && m.current_liabilities !== 0) {
         if (m.current_assets !== undefined && !m.current_ratio) {
           m.current_ratio = m.current_assets / m.current_liabilities;
         }
-        if (m.current_assets !== undefined && m.inventories !== undefined && !m.quick_ratio) {
-          m.quick_ratio = (m.current_assets - (m.inventories || 0)) / m.current_liabilities;
+        // Quick ratio with fallback for service companies without inventory
+        if (m.current_assets !== undefined && !m.quick_ratio) {
+          if (m.inventories !== undefined) {
+            // Standard: (Current Assets - Inventories) / Current Liabilities
+            m.quick_ratio = (m.current_assets - m.inventories) / m.current_liabilities;
+          } else {
+            // For service companies without inventory, use current assets directly
+            // This is effectively the same as assuming inventories = 0
+            m.quick_ratio = m.current_assets / m.current_liabilities;
+          }
         }
       }
 
@@ -722,6 +946,12 @@ class XBRLParser {
       shares_outstanding: m.shares_outstanding || null,
       dividends_per_share: m.dividends_per_share || null,
 
+      // Bank/Financial specific income
+      net_interest_income: m.net_interest_income || null,
+      fee_income: m.fee_income || m.net_fee_income || null,
+      trading_income: m.trading_income || null,
+      insurance_revenue: m.insurance_revenue || m.premiums_written || null,
+
       // Cash Flow
       operating_cash_flow: m.operating_cash_flow || null,
       investing_cash_flow: m.investing_cash_flow || null,
@@ -739,13 +969,22 @@ class XBRLParser {
       roe: m.roe || null,
       roa: m.roa || null,
       roic: m.roic || null,
+      roce: m.roce || null,
       current_ratio: m.current_ratio || null,
       quick_ratio: m.quick_ratio || null,
       debt_to_equity: m.debt_to_equity || null,
       debt_to_assets: m.debt_to_assets || null,
       interest_coverage: m.interest_coverage || null,
       asset_turnover: m.asset_turnover || null,
-      inventory_turnover: m.inventory_turnover || null
+      inventory_turnover: m.inventory_turnover || null,
+
+      // DuPont Analysis
+      equity_multiplier: m.equity_multiplier || null,
+      dupont_roe: m.dupont_roe || null,
+
+      // Operating expense breakdown (IFRS)
+      distribution_costs: m.distribution_costs || null,
+      admin_expenses: m.admin_expenses || null
     };
   }
 }

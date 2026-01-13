@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { companyAPI, pricesAPI, indicesAPI } from '../services/api';
 import { NLQueryBar } from '../components/nl';
 import { PageHeader } from '../components/ui';
@@ -50,6 +50,7 @@ function ComparePage() {
     return fmt.number(value, { compact: true });
   };
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [selectedCompanies, setSelectedCompanies] = useState([]);
@@ -155,7 +156,8 @@ function ComparePage() {
         historicalMetrics: metricsRes.data.metrics,
         breakdown: breakdownRes.data.breakdown,
         fiscalYearEnd: metricsRes.data.fiscal_year_end,
-        priceMetrics
+        priceMetrics,
+        currency: companyRes.data.currency || metricsRes.data.currency || { reporting: 'USD', symbol: '$', isUSD: true }
       };
     } catch (error) {
       console.error(`Error loading data for ${symbol}:`, error);
@@ -184,15 +186,17 @@ function ComparePage() {
     reloadAllData();
   }, [periodType, selectedCompanies, loadCompanyData]);
 
-  const addCompany = async (symbol) => {
-    if (selectedCompanies.length >= 5) {
-      alert('Maximum 5 companies can be compared');
-      return;
-    }
-    if (selectedCompanies.includes(symbol)) return;
+  const addCompany = useCallback(async (symbol) => {
+    setSelectedCompanies(prev => {
+      if (prev.length >= 5) {
+        alert('Maximum 5 companies can be compared');
+        return prev;
+      }
+      if (prev.includes(symbol)) return prev;
+      return [...prev, symbol];
+    });
 
     setLoading(true);
-    setSelectedCompanies(prev => [...prev, symbol]);
     setSearchQuery('');
     setSearchResults([]);
 
@@ -212,7 +216,44 @@ function ComparePage() {
       }));
     }
     setLoading(false);
-  };
+  }, [loadCompanyData]);
+
+  // Handle URL parameters for symbol(s) - auto-add companies from URL
+  // This effect must be after addCompany is defined
+  useEffect(() => {
+    if (allCompanies.length === 0) return;
+
+    // Check for single symbol (?symbol=AAPL) or multiple (?symbols=AAPL,MSFT,GOOGL)
+    const singleSymbol = searchParams.get('symbol');
+    const multipleSymbols = searchParams.get('symbols');
+
+    // Only process if there are URL params to handle
+    if (!singleSymbol && !multipleSymbols) return;
+
+    const symbolsToAdd = [];
+    if (singleSymbol) {
+      symbolsToAdd.push(singleSymbol.toUpperCase());
+    }
+    if (multipleSymbols) {
+      symbolsToAdd.push(...multipleSymbols.split(',').map(s => s.trim().toUpperCase()));
+    }
+
+    if (symbolsToAdd.length > 0) {
+      // Clear URL params first to prevent re-processing
+      setSearchParams({}, { replace: true });
+
+      // Add each symbol sequentially to handle async state updates properly
+      const addSymbolsSequentially = async () => {
+        for (const symbol of symbolsToAdd.slice(0, 5)) {
+          // Verify symbol exists in our database
+          if (allCompanies.some(c => c.symbol.toUpperCase() === symbol)) {
+            await addCompany(symbol);
+          }
+        }
+      };
+      addSymbolsSequentially();
+    }
+  }, [searchParams, allCompanies, setSearchParams, addCompany]);
 
   const removeCompany = (symbol) => {
     setSelectedCompanies(prev => prev.filter(s => s !== symbol));
@@ -351,7 +392,28 @@ function ComparePage() {
     });
   };
 
-  // Revenue comparison chart data
+  // Check if companies have mixed currencies (for warning display)
+  const getMixedCurrencyInfo = () => {
+    const currencies = selectedCompanies
+      .map(symbol => companyData[symbol]?.currency?.reporting)
+      .filter(Boolean);
+
+    const uniqueCurrencies = [...new Set(currencies)];
+    const hasMixed = uniqueCurrencies.length > 1;
+
+    return {
+      hasMixed,
+      currencies: uniqueCurrencies,
+      byCompany: selectedCompanies.reduce((acc, symbol) => {
+        acc[symbol] = companyData[symbol]?.currency || { reporting: 'USD', symbol: '$' };
+        return acc;
+      }, {})
+    };
+  };
+
+  const currencyInfo = getMixedCurrencyInfo();
+
+  // Revenue comparison chart data (always uses USD-normalized values for cross-currency comparison)
   const getRevenueComparisonData = () => {
     const allDates = new Set();
     selectedCompanies.forEach(symbol => {
@@ -377,8 +439,11 @@ function ComparePage() {
       };
       selectedCompanies.forEach(symbol => {
         const bd = breakdownData[symbol]?.find(b => b.period === date);
-        point[`${symbol}_revenue`] = bd?.revenue ? bd.revenue / 1e9 : null;
-        point[`${symbol}_netIncome`] = bd?.netIncome ? bd.netIncome / 1e9 : null;
+        // Prefer USD-normalized values for accurate cross-currency comparison
+        const revenue = bd?.revenue_usd ?? bd?.revenue;
+        const netIncome = bd?.netIncome_usd ?? bd?.netIncome;
+        point[`${symbol}_revenue`] = revenue ? revenue / 1e9 : null;
+        point[`${symbol}_netIncome`] = netIncome ? netIncome / 1e9 : null;
       });
       return point;
     });
@@ -693,6 +758,19 @@ function ComparePage() {
             <div className="loading">Loading comparison data...</div>
           ) : (
             <>
+              {/* Currency Info Banner */}
+              {currencyInfo.hasMixed && (
+                <div className="currency-info-banner">
+                  <span className="info-icon">$</span>
+                  <div className="info-content">
+                    <strong>USD Normalized</strong>
+                    <span>
+                      Companies report in {currencyInfo.currencies.join(', ')}. All monetary values converted to USD for comparison.
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {/* Overview View */}
               {viewMode === 'overview' && (
                 <div className="overview-section">
@@ -1200,7 +1278,7 @@ function ComparePage() {
                 <div className="financials-section">
                   <div className="charts-grid">
                     <div className="chart-card full-width">
-                      <h4>Revenue Trend (in Billions)</h4>
+                      <h4>Revenue Trend (USD Billions)</h4>
                       <ResponsiveContainer width="100%" height={300}>
                         <AreaChart data={getRevenueComparisonData()}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -1228,11 +1306,16 @@ function ComparePage() {
                     </div>
 
                     <div className="chart-card">
-                      <h4>Latest Period Breakdown</h4>
+                      <h4>Latest Period Breakdown (USD)</h4>
                       <div className="breakdown-cards">
                         {selectedCompanies.map((symbol, idx) => {
                           const bd = breakdownData[symbol]?.[0];
                           if (!bd) return null;
+                          // Use USD-normalized values for cross-currency comparison
+                          const revenue = bd.revenue_usd ?? bd.revenue;
+                          const grossProfit = bd.grossProfit_usd ?? bd.grossProfit;
+                          const operatingIncome = bd.operatingIncome_usd ?? bd.operatingIncome;
+                          const netIncome = bd.netIncome_usd ?? bd.netIncome;
                           return (
                             <div key={symbol} className="breakdown-card" style={{ borderColor: COMPANY_COLORS[idx] }}>
                               <div className="breakdown-header">
@@ -1243,19 +1326,19 @@ function ComparePage() {
                               </div>
                               <div className="breakdown-item">
                                 <span>Revenue</span>
-                                <span>${formatCurrencyShort(bd.revenue)}</span>
+                                <span>${formatCurrencyShort(revenue)}</span>
                               </div>
                               <div className="breakdown-item">
                                 <span>Gross Profit</span>
-                                <span>${formatCurrencyShort(bd.grossProfit)} ({bd.margins?.grossMargin?.toFixed(1)}%)</span>
+                                <span>${formatCurrencyShort(grossProfit)} ({bd.margins?.grossMargin?.toFixed(1)}%)</span>
                               </div>
                               <div className="breakdown-item">
                                 <span>Operating Income</span>
-                                <span>${formatCurrencyShort(bd.operatingIncome)} ({bd.margins?.operatingMargin?.toFixed(1)}%)</span>
+                                <span>${formatCurrencyShort(operatingIncome)} ({bd.margins?.operatingMargin?.toFixed(1)}%)</span>
                               </div>
                               <div className="breakdown-item highlight">
                                 <span>Net Income</span>
-                                <span>${formatCurrencyShort(bd.netIncome)} ({bd.margins?.netMargin?.toFixed(1)}%)</span>
+                                <span>${formatCurrencyShort(netIncome)} ({bd.margins?.netMargin?.toFixed(1)}%)</span>
                               </div>
                             </div>
                           );
@@ -1264,7 +1347,7 @@ function ComparePage() {
                     </div>
 
                     <div className="chart-card">
-                      <h4>Net Income Trend (in Billions)</h4>
+                      <h4>Net Income Trend (USD Billions)</h4>
                       <ResponsiveContainer width="100%" height={300}>
                         <ComposedChart data={getRevenueComparisonData()}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />

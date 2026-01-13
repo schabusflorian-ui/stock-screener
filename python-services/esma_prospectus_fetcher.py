@@ -206,6 +206,62 @@ class ESMAProspectusFetcher:
             logger.error(f"Solr API request failed: {e}")
             return []
 
+    def fetch_all_countries(
+        self,
+        days: int = 365,
+        ipo_only: bool = True,
+        limit_per_country: int = 200
+    ) -> list:
+        """
+        Fetch prospectuses from ALL EU/EEA countries.
+
+        This avoids the global search limit issue where only 1000 results are returned
+        but 6000+ exist. By searching country-by-country, we get complete coverage.
+
+        Args:
+            days: Number of days to look back
+            ipo_only: If True, filter to likely IPOs only
+            limit_per_country: Max results per country (200 is usually enough)
+
+        Returns:
+            List of all prospectus records, deduplicated
+        """
+        # Major IPO markets first, then others
+        priority_countries = ['DE', 'FR', 'NL', 'ES', 'SE', 'IT', 'NO', 'PL', 'RO', 'BE', 'AT']
+        other_countries = [c for c in EU_COUNTRIES.keys() if c not in priority_countries]
+        all_countries = priority_countries + other_countries
+
+        all_results = []
+        seen_ids = set()
+
+        logger.info(f"Fetching ESMA prospectuses from {len(all_countries)} countries ({days} days)")
+
+        for country in all_countries:
+            try:
+                results = self.fetch_prospectuses(
+                    days=days,
+                    country=country,
+                    limit=limit_per_country
+                )
+
+                # Filter to IPOs if requested
+                if ipo_only:
+                    results = [r for r in results if r.get('is_ipo')]
+
+                # Deduplicate by document_id
+                for r in results:
+                    doc_id = r.get('document_id')
+                    if doc_id and doc_id not in seen_ids:
+                        seen_ids.add(doc_id)
+                        all_results.append(r)
+
+            except Exception as e:
+                logger.warning(f"Error fetching {country}: {e}")
+                continue
+
+        logger.info(f"Total: {len(all_results)} unique prospectuses from all countries")
+        return all_results
+
     def _parse_documents(self, docs: list) -> list:
         """Parse ESMA Solr document records into standardized format."""
         results = []
@@ -345,11 +401,88 @@ class ESMAProspectusFetcher:
         - prospectus_type_code: STDA (Standalone) = likely equity IPO
         - prospectus_type_code: BPRO (Base Prospectus) = usually bonds/debt
         - document_type: FTWS (Final Terms), SUPP (Supplement) = updates
+
+        We also filter out known non-IPO entities:
+        - Major banks (they file prospectuses for bond issuances)
+        - Securitization vehicles (SPVs for structured products)
+        - Already-listed companies doing secondary offerings
         """
         doc_type = doc.get('document_type', '')
         prospectus_type = doc.get('prospectus_type_code', '')
         doc_type_descr = doc.get('document_type_descr', '').lower()
         prospectus_descr = doc.get('prospectus_type_descr', '').lower()
+
+        # Get entity name for filtering
+        party_name = doc.get('party_name', '').upper()
+        entity_name = party_name.split(' - ')[0].strip() if ' - ' in party_name else party_name
+
+        # ===== EXCLUDE NON-IPO ENTITIES =====
+
+        # Major banks - they file prospectuses for bond programs, not IPOs
+        bank_keywords = [
+            'BANK', 'BANQUE', 'BANKA', 'BANCO', 'CREDIT', 'CRÉDIT',
+            'CITIGROUP', 'MORGAN STANLEY', 'GOLDMAN SACHS', 'JP MORGAN',
+            'HSBC', 'BARCLAYS', 'DEUTSCHE BANK', 'BNP PARIBAS', 'ING ',
+            'SOCIETE GENERALE', 'SOCIÉTÉ GÉNÉRALE', 'NATWEST', 'LLOYDS',
+            'SANTANDER', 'BBVA', 'UNICREDIT', 'INTESA', 'COMMERZBANK',
+            'NORDEA', 'DANSKE', 'RABOBANK', 'ABN AMRO', 'CREDIT SUISSE',
+            'UBS ', 'STANDARD CHARTERED', 'NOMURA', 'MIZUHO', 'DAIWA'
+        ]
+        if any(kw in entity_name for kw in bank_keywords):
+            return False
+
+        # Securitization vehicles and SPVs
+        spv_keywords = [
+            'SECURITISATION', 'SECURITIZATION', 'TITULIZACION',
+            'S.R.L.', 'SRL', 'DESIGNATED ACTIVITY COMPANY', 'DAC',
+            'RMBS', 'CMBS', 'ABS ', 'CLO ', 'CDO ',
+            'SPECIAL PURPOSE', 'SPV', 'FUNDING', 'ISSUER',
+            'COVERED BOND', 'PFANDBRIEF', 'FONDO DE'
+        ]
+        if any(kw in entity_name for kw in spv_keywords):
+            return False
+
+        # Export credit agencies and government entities
+        gov_keywords = [
+            'EXPORTKREDIT', 'EXPORT CREDIT', 'GOVERNMENT', 'SOVEREIGN',
+            'TREASURY', 'REPUBLIC OF', 'KINGDOM OF', 'STATE OF'
+        ]
+        if any(kw in entity_name for kw in gov_keywords):
+            return False
+
+        # Investment funds and asset managers (existing entities)
+        fund_keywords = [
+            'FUND', 'FONDS', 'INVESTMENT', 'ASSET MANAGEMENT',
+            'CAPITAL PARTNERS', 'HOLDING', 'HOLDINGS'
+        ]
+        # Only exclude if it looks like an existing fund, not a new company
+        # Note: Some legitimate IPOs have "Holdings" in name, so be careful
+
+        # ETP/ETN issuers
+        if 'ETP' in entity_name or 'ETN' in entity_name:
+            return False
+
+        # Swedish companies ending in AB are often already-listed doing secondary offerings
+        # These include: Prisma Properties, Obducat, Magnolia Bostad, etc.
+        # Note: This is a heuristic - some legitimate IPOs come from Sweden
+        # The issue is ESMA doesn't distinguish IPO vs secondary offering
+        swedish_secondary_keywords = [
+            'PROPERTIES', 'BOSTAD', 'FASTIGHETER', 'FINANS',
+            'LIFESCIENCE', 'LIFECARE', 'BIOTECH'
+        ]
+        if entity_name.endswith(' AB') or entity_name.endswith(' AB (PUBL)'):
+            # Swedish AB companies filing prospectuses are often secondary offerings
+            # Real Swedish IPOs are rare - most list on Nasdaq First North without EU prospectus
+            if any(kw in entity_name for kw in swedish_secondary_keywords):
+                return False
+
+        # Norwegian ASA companies - often secondary offerings
+        if ' ASA' in entity_name:
+            # Check for known secondary offering patterns
+            if any(kw in entity_name for kw in ['REACH', 'DOF', 'PROTECTOR', 'AIRTHINGS']):
+                return False
+
+        # ===== DOCUMENT TYPE FILTERS =====
 
         # Base prospectus is usually for bond/debt programs, not equity IPOs
         if prospectus_type == 'BPRO' or 'base prospectus' in prospectus_descr:
@@ -362,6 +495,8 @@ class ESMAProspectusFetcher:
         # Final terms are for existing programs
         if doc_type == 'FTWS' or 'final terms' in doc_type_descr:
             return False
+
+        # ===== POSITIVE IPO INDICATORS =====
 
         # Standalone prospectuses are typically for equity IPOs
         if prospectus_type == 'STDA' or 'standalone' in prospectus_descr:
@@ -437,6 +572,11 @@ def main():
         action='store_true',
         help='List available country codes'
     )
+    parser.add_argument(
+        '--all-countries',
+        action='store_true',
+        help='Fetch from ALL EU/EEA countries (avoids global search limit issue)'
+    )
 
     args = parser.parse_args()
 
@@ -454,18 +594,25 @@ def main():
     if args.lei:
         logger.info(f"Fetching prospectuses for LEI: {args.lei}")
         results = fetcher.fetch_by_lei(args.lei)
+    elif args.all_countries:
+        # Fetch from all countries to avoid global search limit
+        logger.info(f"Fetching from ALL EU/EEA countries ({args.days} days)")
+        results = fetcher.fetch_all_countries(
+            days=args.days,
+            ipo_only=args.ipo_only,
+            limit_per_country=args.limit
+        )
     else:
-        # Standard fetch
+        # Standard fetch (single country or global with limit)
         results = fetcher.fetch_prospectuses(
             days=args.days,
             country=args.country,
             limit=args.limit
         )
-
-    # Filter to IPO-only if requested
-    if args.ipo_only:
-        results = [r for r in results if r.get('is_ipo', False)]
-        logger.info(f"Filtered to {len(results)} likely IPO prospectuses")
+        # Filter to IPO-only if requested
+        if args.ipo_only:
+            results = [r for r in results if r.get('is_ipo', False)]
+            logger.info(f"Filtered to {len(results)} likely IPO prospectuses")
 
     # Remove raw_data for cleaner output
     for r in results:

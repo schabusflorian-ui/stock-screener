@@ -1,0 +1,16 @@
+*** CRITICAL ALERT - IMMEDIATE ATTENTION REQUIRED ***
+
+{{categoryLabel}} {{#if primaryEntity}}| {{primaryEntity.label}}{{/if}}
+
+{{title}}
+================================================================================
+
+{{body}}
+
+Triggered at: {{createdAt}}
+
+Take action: {{viewUrl}}
+
+--------------------------------------------------------------------------------
+This is a critical alert that requires your immediate attention.
+Manage notification preferences: {{unsubscribeUrl}}

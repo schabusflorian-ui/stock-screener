@@ -21,7 +21,7 @@ import {
 import { statsAPI, indicesAPI } from '../services/api';
 import { useWatchlist } from '../context/WatchlistContext';
 import { useFormatters } from '../hooks/useFormatters';
-import { WatchlistButton, MiniChart } from '../components';
+import { WatchlistButton, MiniChart, SelectionActionBar } from '../components';
 import { NLQueryBar } from '../components/nl';
 import { SkeletonTable, SkeletonDashboard } from '../components/Skeleton';
 import {
@@ -30,7 +30,7 @@ import {
 } from '../components/ui';
 import './HomePage.css';
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:3000/api';
+const API_BASE = process.env.REACT_APP_API_URL || '/api';
 
 // Macro regime colors and icons
 const REGIME_CONFIG = {
@@ -532,8 +532,14 @@ const RegimeBanner = memo(function RegimeBanner({ regime, indicators, loading })
   );
 });
 
-// Value Screen Results Table - memoized
-const ScreenResultsTable = memo(function ScreenResultsTable({ results, loading }) {
+// Value Screen Results Table - memoized with selection support
+const ScreenResultsTable = memo(function ScreenResultsTable({
+  results,
+  loading,
+  selectedSymbols = [],
+  onToggleSelect,
+  onToggleSelectAll
+}) {
   const { percent: formatPercent, number: formatNumber } = useFormatters();
 
   if (loading) {
@@ -544,11 +550,26 @@ const ScreenResultsTable = memo(function ScreenResultsTable({ results, loading }
     return <div className="no-results">No stocks match the current criteria</div>;
   }
 
+  const displayedResults = results.slice(0, 8);
+  const allDisplayedSelected = displayedResults.every(s => selectedSymbols.includes(s.symbol));
+  const someSelected = selectedSymbols.length > 0 && !allDisplayedSelected;
+
   return (
     <div className="screen-results-table-container">
-      <table className="screen-results-table">
+      <table className="screen-results-table selectable">
         <thead>
           <tr>
+            <th className="checkbox-col">
+              <input
+                type="checkbox"
+                checked={allDisplayedSelected && displayedResults.length > 0}
+                ref={el => {
+                  if (el) el.indeterminate = someSelected;
+                }}
+                onChange={() => onToggleSelectAll(displayedResults.map(s => s.symbol))}
+                title="Select all displayed"
+              />
+            </th>
             <th>Symbol</th>
             <th>Company</th>
             <th>ROIC</th>
@@ -558,28 +579,46 @@ const ScreenResultsTable = memo(function ScreenResultsTable({ results, loading }
           </tr>
         </thead>
         <tbody>
-          {results.slice(0, 8).map((stock) => (
-            <tr key={stock.symbol}>
-              <td>
-                <Link to={`/company/${stock.symbol}`} className="symbol-link">
-                  {stock.symbol}
-                </Link>
-              </td>
-              <td className="company-name">{stock.name?.substring(0, 20)}</td>
-              <td className={stock.roic > 0.15 ? 'value-good' : stock.roic > 0.1 ? 'value-neutral' : 'value-bad'}>
-                {formatPercent(stock.roic)}
-              </td>
-              <td className={stock.pe_ratio < 15 ? 'value-good' : stock.pe_ratio < 25 ? 'value-neutral' : 'value-bad'}>
-                {stock.pe_ratio ? formatNumber(stock.pe_ratio, 1) : 'N/A'}
-              </td>
-              <td className={stock.fcf_yield > 0.05 ? 'value-good' : stock.fcf_yield > 0 ? 'value-neutral' : 'value-bad'}>
-                {formatPercent(stock.fcf_yield)}
-              </td>
-              <td>
-                <WatchlistButton symbol={stock.symbol} size="small" />
-              </td>
-            </tr>
-          ))}
+          {displayedResults.map((stock) => {
+            const isSelected = selectedSymbols.includes(stock.symbol);
+            return (
+              <tr
+                key={stock.symbol}
+                className={isSelected ? 'selected' : ''}
+                onClick={(e) => {
+                  // Don't toggle if clicking on link or button
+                  if (e.target.closest('a, button')) return;
+                  onToggleSelect(stock.symbol);
+                }}
+              >
+                <td className="checkbox-col" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => onToggleSelect(stock.symbol)}
+                  />
+                </td>
+                <td>
+                  <Link to={`/company/${stock.symbol}`} className="symbol-link">
+                    {stock.symbol}
+                  </Link>
+                </td>
+                <td className="company-name">{stock.name?.substring(0, 20)}</td>
+                <td className={stock.roic > 0.15 ? 'value-good' : stock.roic > 0.1 ? 'value-neutral' : 'value-bad'}>
+                  {formatPercent(stock.roic, { multiply: true })}
+                </td>
+                <td className={stock.pe_ratio < 15 ? 'value-good' : stock.pe_ratio < 25 ? 'value-neutral' : 'value-bad'}>
+                  {stock.pe_ratio ? formatNumber(stock.pe_ratio, 1) : 'N/A'}
+                </td>
+                <td className={stock.fcf_yield > 5 ? 'value-good' : stock.fcf_yield > 0 ? 'value-neutral' : 'value-bad'}>
+                  {formatPercent(stock.fcf_yield)}
+                </td>
+                <td>
+                  <WatchlistButton symbol={stock.symbol} size="small" />
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
       {results.length > 8 && (
@@ -589,9 +628,40 @@ const ScreenResultsTable = memo(function ScreenResultsTable({ results, loading }
   );
 });
 
-// Value Screens Section Component - memoized
+// Value Screens Section Component - memoized with selection support
 const ValueScreensSection = memo(function ValueScreensSection({ screens, activeScreen, setActiveScreen, screenResults, screenLoading, screenMeta }) {
   const [isExpanded, setIsExpanded] = useState(true);
+  const [selectedSymbols, setSelectedSymbols] = useState([]);
+
+  // Clear selection when screen changes
+  useEffect(() => {
+    setSelectedSymbols([]);
+  }, [activeScreen]);
+
+  const handleToggleSelect = useCallback((symbol) => {
+    setSelectedSymbols(prev =>
+      prev.includes(symbol)
+        ? prev.filter(s => s !== symbol)
+        : [...prev, symbol]
+    );
+  }, []);
+
+  const handleToggleSelectAll = useCallback((symbols) => {
+    setSelectedSymbols(prev => {
+      const allSelected = symbols.every(s => prev.includes(s));
+      if (allSelected) {
+        // Deselect all displayed
+        return prev.filter(s => !symbols.includes(s));
+      } else {
+        // Select all displayed
+        return [...new Set([...prev, ...symbols])];
+      }
+    });
+  }, []);
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedSymbols([]);
+  }, []);
 
   return (
     <div className="screens-section">
@@ -631,7 +701,19 @@ const ValueScreensSection = memo(function ValueScreensSection({ screens, activeS
             </div>
           )}
 
-          <ScreenResultsTable results={screenResults} loading={screenLoading} />
+          {/* Selection Action Bar */}
+          <SelectionActionBar
+            selectedItems={selectedSymbols}
+            onClear={handleClearSelection}
+          />
+
+          <ScreenResultsTable
+            results={screenResults}
+            loading={screenLoading}
+            selectedSymbols={selectedSymbols}
+            onToggleSelect={handleToggleSelect}
+            onToggleSelectAll={handleToggleSelectAll}
+          />
         </div>
       )}
     </div>
@@ -656,7 +738,7 @@ const MarketLeadersCompact = memo(function MarketLeadersCompact({ highlights }) 
             <Link to={`/company/${company.symbol}`} key={company.symbol} className="leader-row">
               <span className="leader-rank">#{idx + 1}</span>
               <span className="leader-symbol">{company.symbol}</span>
-              <span className="leader-value positive">{company.roic?.toFixed(1)}%</span>
+              <span className="leader-value positive">{(company.roic * 100)?.toFixed(1)}%</span>
             </Link>
           ))}
         </div>

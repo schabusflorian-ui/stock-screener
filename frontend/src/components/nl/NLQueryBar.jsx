@@ -11,7 +11,7 @@ import { Search, X, Sparkles } from 'lucide-react';
 import { useNLQuery } from '../../context/NLQueryContext';
 import './NLQueryBar.css';
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:3000';
+const API_BASE = process.env.REACT_APP_API_URL || '';
 
 function NLQueryBar({ context, placeholder }) {
   const [query, setQuery] = useState('');

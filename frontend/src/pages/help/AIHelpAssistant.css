@@ -1,0 +1,232 @@
+/* pages/help/AIHelpAssistant.css */
+
+.ai-help-assistant {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  margin-bottom: 2rem;
+}
+
+.ai-help-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 1rem;
+  color: white;
+}
+
+.ai-help-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 1.125rem;
+}
+
+.ai-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.ai-help-body {
+  padding: 1.5rem;
+  min-height: 200px;
+}
+
+/* Examples */
+.ai-help-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.examples-title {
+  font-size: 0.875rem;
+  color: #718096;
+  margin-bottom: 0.5rem;
+}
+
+.example-question {
+  text-align: left;
+  padding: 0.75rem 1rem;
+  background: #f7fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  color: #4a5568;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.9375rem;
+}
+
+.example-question:hover {
+  background: #edf2f7;
+  border-color: #cbd5e0;
+  transform: translateX(4px);
+}
+
+/* Loading */
+.ai-help-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  color: #718096;
+}
+
+.loading-spinner {
+  width: 2rem;
+  height: 2rem;
+  border: 3px solid #e2e8f0;
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 1rem;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Response */
+.ai-help-response {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.response-answer {
+  background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+  padding: 1rem;
+  border-radius: 0.5rem;
+  border-left: 4px solid #667eea;
+  margin-bottom: 1rem;
+  line-height: 1.6;
+  color: #2d3748;
+}
+
+.response-actions {
+  margin-bottom: 1rem;
+}
+
+.actions-title {
+  font-size: 0.875rem;
+  color: #718096;
+  margin-bottom: 0.5rem;
+}
+
+.action-button {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  margin-right: 0.5rem;
+  margin-bottom: 0.5rem;
+  background: white;
+  border: 1px solid #667eea;
+  color: #667eea;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.action-button:hover {
+  background: #667eea;
+  color: white;
+}
+
+.ask-another-btn {
+  width: 100%;
+  padding: 0.625rem;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  color: #4a5568;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ask-another-btn:hover {
+  background: #f7fafc;
+  border-color: #cbd5e0;
+}
+
+/* Footer / Input */
+.ai-help-footer {
+  background: #f7fafc;
+  padding: 1rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.ai-help-input-wrapper {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.ai-help-input {
+  flex: 1;
+  padding: 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  font-size: 0.9375rem;
+  resize: vertical;
+  font-family: inherit;
+  transition: border-color 0.2s ease;
+}
+
+.ai-help-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.ai-help-send {
+  padding: 0 1rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+  align-self: flex-end;
+}
+
+.ai-help-send:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.ai-help-send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ai-help-disclaimer {
+  font-size: 0.75rem;
+  color: #a0aec0;
+  text-align: center;
+  margin: 0;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .ai-help-body {
+    padding: 1rem;
+  }
+
+  .ai-help-input {
+    font-size: 16px; /* Prevents zoom on iOS */
+  }
+}

@@ -7,7 +7,10 @@ import {
   Database,
   Settings,
   LifeBuoy,
-  Users
+  Users,
+  Shield,
+  Bell,
+  BarChart2
 } from 'lucide-react';
 import { PageHeader } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
@@ -18,6 +21,9 @@ import DatabaseStats from '../../components/settings/DatabaseStats';
 import PreferencesForm from '../../components/settings/PreferencesForm';
 import SupportPanel from '../../components/settings/SupportPanel';
 import UserManagementPanel from '../../components/settings/UserManagementPanel';
+import LegalPanel from '../../components/settings/LegalPanel';
+import NotificationPreferences from '../../components/settings/NotificationPreferences';
+import ActivitySummary from '../../components/settings/ActivitySummary';
 import './SettingsPage.css';
 
 const BASE_TABS = [
@@ -25,7 +31,10 @@ const BASE_TABS = [
   { id: 'health', label: 'Data Health', icon: Activity },
   { id: 'integrations', label: 'Integrations', icon: Key },
   { id: 'database', label: 'Database', icon: Database },
+  { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'preferences', label: 'Preferences', icon: Settings },
+  { id: 'activity', label: 'My Activity', icon: BarChart2 },
+  { id: 'legal', label: 'Legal & Privacy', icon: Shield },
   { id: 'support', label: 'Support', icon: LifeBuoy },
 ];
 
@@ -50,8 +59,14 @@ function SettingsPage() {
         return <IntegrationsPanel />;
       case 'database':
         return <DatabaseStats />;
+      case 'notifications':
+        return <NotificationPreferences />;
       case 'preferences':
         return <PreferencesForm />;
+      case 'activity':
+        return <ActivitySummary />;
+      case 'legal':
+        return <LegalPanel />;
       case 'support':
         return <SupportPanel />;
       case 'users':

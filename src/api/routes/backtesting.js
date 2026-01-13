@@ -740,4 +740,324 @@ router.post('/comprehensive-report', async (req, res) => {
   }
 });
 
+// ============================================
+// Weight Optimization Endpoints
+// ============================================
+
+const { WeightOptimizer, DEFAULT_WEIGHTS } = require('../../services/backtesting/weightOptimizer');
+const { SignalPredictivePowerAnalyzer } = require('../../services/backtesting/signalPredictivePower');
+
+/**
+ * POST /api/backtesting/weight-optimization/run
+ * Start a weight optimization run
+ */
+router.post('/weight-optimization/run', async (req, res) => {
+  try {
+    const {
+      runName,
+      startDate,
+      endDate,
+      optimizationTarget = 'alpha',
+      stepSize = 0.10,
+      regimeSpecific = true,
+      runAblation = true,
+      useWalkForward = true
+    } = req.body;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        success: false,
+        error: 'startDate and endDate are required'
+      });
+    }
+
+    const optimizer = new WeightOptimizer(db);
+    const results = await optimizer.runOptimization({
+      runName,
+      startDate,
+      endDate,
+      optimizationTarget,
+      stepSize,
+      regimeSpecific,
+      runAblation,
+      useWalkForward,
+      verbose: true
+    });
+
+    res.json({
+      success: true,
+      data: results
+    });
+  } catch (error) {
+    console.error('Weight optimization error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/backtesting/weight-optimization/results/:runId
+ * Get results of a weight optimization run
+ */
+router.get('/weight-optimization/results/:runId', (req, res) => {
+  try {
+    const runId = parseInt(req.params.runId);
+    const optimizer = new WeightOptimizer(db);
+    const results = optimizer.getOptimizationResults(runId);
+
+    if (!results) {
+      return res.status(404).json({
+        success: false,
+        error: 'Optimization run not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: results
+    });
+  } catch (error) {
+    console.error('Get optimization results error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/backtesting/weight-optimization/runs
+ * List all optimization runs
+ */
+router.get('/weight-optimization/runs', (req, res) => {
+  try {
+    const runs = db.prepare(`
+      SELECT id, run_name, run_type, start_date, end_date,
+             optimization_target, total_combinations_tested,
+             best_alpha, best_sharpe, improvement_pct,
+             walk_forward_efficiency, status, created_at, completed_at
+      FROM weight_optimization_runs
+      ORDER BY created_at DESC
+      LIMIT 50
+    `).all();
+
+    res.json({
+      success: true,
+      data: runs
+    });
+  } catch (error) {
+    console.error('List optimization runs error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/backtesting/weight-optimization/best-weights
+ * Get current best weights (optionally by regime)
+ */
+router.get('/weight-optimization/best-weights', (req, res) => {
+  try {
+    const { regime } = req.query;
+    const optimizer = new WeightOptimizer(db);
+
+    if (regime) {
+      // Get regime-specific weights
+      const regimeWeights = db.prepare(`
+        SELECT * FROM regime_optimal_weights
+        WHERE regime = ? AND is_active = 1
+        ORDER BY valid_from DESC
+        LIMIT 1
+      `).get(regime);
+
+      if (regimeWeights) {
+        return res.json({
+          success: true,
+          data: {
+            regime,
+            weights: {
+              technical: regimeWeights.technical_weight,
+              fundamental: regimeWeights.fundamental_weight,
+              sentiment: regimeWeights.sentiment_weight,
+              insider: regimeWeights.insider_weight,
+              valuation: regimeWeights.valuation_weight,
+              factor: regimeWeights.factor_weight
+            },
+            alpha: regimeWeights.alpha,
+            sharpe: regimeWeights.sharpe_ratio
+          }
+        });
+      }
+    }
+
+    // Get overall best weights from most recent completed run
+    const bestRun = db.prepare(`
+      SELECT best_weights, best_alpha, best_sharpe
+      FROM weight_optimization_runs
+      WHERE status = 'completed' AND best_weights IS NOT NULL
+      ORDER BY completed_at DESC
+      LIMIT 1
+    `).get();
+
+    if (bestRun) {
+      return res.json({
+        success: true,
+        data: {
+          regime: regime || 'ALL',
+          weights: JSON.parse(bestRun.best_weights),
+          alpha: bestRun.best_alpha,
+          sharpe: bestRun.best_sharpe
+        }
+      });
+    }
+
+    // Return defaults if no optimization has been run
+    res.json({
+      success: true,
+      data: {
+        regime: 'ALL',
+        weights: DEFAULT_WEIGHTS,
+        alpha: null,
+        sharpe: null,
+        note: 'No optimization run found, returning default weights'
+      }
+    });
+  } catch (error) {
+    console.error('Get best weights error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/backtesting/signal-predictive-power/analyze
+ * Analyze predictive power of all signals
+ */
+router.post('/signal-predictive-power/analyze', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.body;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        success: false,
+        error: 'startDate and endDate are required'
+      });
+    }
+
+    const analyzer = new SignalPredictivePowerAnalyzer(db);
+    const results = await analyzer.analyzeAllSignals(startDate, endDate);
+
+    res.json({
+      success: true,
+      data: results
+    });
+  } catch (error) {
+    console.error('Signal predictive power analysis error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/backtesting/signal-predictive-power/ranking
+ * Get signals ranked by predictive power
+ */
+router.get('/signal-predictive-power/ranking', (req, res) => {
+  try {
+    const { regime = 'ALL', horizon = 21 } = req.query;
+
+    const rankings = db.prepare(`
+      SELECT signal_type, ic, ic_ir, hit_rate, composite_score,
+             decay_half_life, sample_size, calculated_at
+      FROM signal_predictive_power
+      WHERE regime = ? AND horizon_days = ?
+      ORDER BY composite_score DESC
+    `).all(regime, parseInt(horizon));
+
+    // Add ranks
+    rankings.forEach((r, i) => r.rank = i + 1);
+
+    res.json({
+      success: true,
+      data: {
+        regime,
+        horizon: parseInt(horizon),
+        rankings
+      }
+    });
+  } catch (error) {
+    console.error('Get signal ranking error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/backtesting/ablation-study
+ * Run ablation study (remove each signal one at a time)
+ */
+router.post('/ablation-study', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.body;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        success: false,
+        error: 'startDate and endDate are required'
+      });
+    }
+
+    const optimizer = new WeightOptimizer(db);
+    const results = await optimizer.runOptimization({
+      runName: `Ablation_${new Date().toISOString().split('T')[0]}`,
+      startDate,
+      endDate,
+      stepSize: 1.0, // No grid search, just ablation
+      regimeSpecific: false,
+      runAblation: true,
+      useWalkForward: false,
+      verbose: true
+    });
+
+    res.json({
+      success: true,
+      data: {
+        baseline: results.baseline,
+        ablationResults: results.ablationResults
+      }
+    });
+  } catch (error) {
+    console.error('Ablation study error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/backtesting/weight-optimization/regime-weights
+ * Get optimal weights for all regimes
+ */
+router.get('/weight-optimization/regime-weights', (req, res) => {
+  try {
+    const optimizer = new WeightOptimizer(db);
+    const regimeWeights = optimizer.getActiveRegimeWeights();
+
+    const formatted = {};
+    for (const rw of regimeWeights) {
+      formatted[rw.regime] = {
+        weights: {
+          technical: rw.technical_weight,
+          fundamental: rw.fundamental_weight,
+          sentiment: rw.sentiment_weight,
+          insider: rw.insider_weight,
+          valuation: rw.valuation_weight,
+          factor: rw.factor_weight
+        },
+        alpha: rw.alpha,
+        sharpe: rw.sharpe_ratio,
+        walkForwardEfficiency: rw.walk_forward_efficiency
+      };
+    }
+
+    res.json({
+      success: true,
+      data: formatted
+    });
+  } catch (error) {
+    console.error('Get regime weights error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 module.exports = router;

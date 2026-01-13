@@ -4,11 +4,14 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import CommandPalette from './CommandPalette';
+import ChatPanel from '../nl/ChatPanel';
+import { useNLQuery } from '../../context/NLQueryContext';
 import './Layout.css';
 
 function Layout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { isPanelOpen, togglePanel } = useNLQuery();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -124,7 +127,7 @@ function Layout({ children }) {
   }, []);
 
   return (
-    <div className={`app-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+    <div className={`app-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${isPanelOpen ? 'chat-panel-open' : ''}`}>
       <Sidebar
         collapsed={sidebarCollapsed}
         onToggle={handleToggleSidebar}
@@ -140,6 +143,8 @@ function Layout({ children }) {
         <Header
           onOpenCommandPalette={handleOpenCommandPalette}
           onToggleMobileSidebar={handleToggleMobileSidebar}
+          onToggleChatPanel={togglePanel}
+          isChatPanelOpen={isPanelOpen}
         />
         <main className="main-content">
           {children}
@@ -150,6 +155,9 @@ function Layout({ children }) {
         open={commandPaletteOpen}
         onOpenChange={setCommandPaletteOpen}
       />
+
+      {/* AI Chat Panel */}
+      <ChatPanel />
     </div>
   );
 }

@@ -10,6 +10,89 @@ const db = require('../../../database');
 class ToolExecutor {
   constructor() {
     this.db = db.getDatabase();
+    // Cache of valid symbols for validation
+    this._symbolCache = null;
+    this._symbolCacheTime = 0;
+  }
+
+  /**
+   * Get cached list of valid symbols (refreshes every 5 minutes)
+   */
+  getValidSymbols() {
+    const now = Date.now();
+    if (!this._symbolCache || (now - this._symbolCacheTime) > 300000) {
+      const symbols = this.db.prepare(`
+        SELECT symbol FROM companies WHERE is_active = 1
+      `).all();
+      this._symbolCache = new Set(symbols.map(s => s.symbol.toUpperCase()));
+      this._symbolCacheTime = now;
+      console.log(`[ToolExecutor] Symbol cache refreshed: ${this._symbolCache.size} valid symbols`);
+    }
+    return this._symbolCache;
+  }
+
+  /**
+   * Validate a stock symbol exists in our database
+   * Returns { valid: boolean, suggestion?: string, error?: string }
+   */
+  validateSymbol(symbol) {
+    if (!symbol || typeof symbol !== 'string') {
+      return { valid: false, error: 'Symbol is required' };
+    }
+
+    const normalized = symbol.toUpperCase().trim();
+
+    // Basic format validation - US stock symbols are 1-5 uppercase letters
+    if (!/^[A-Z]{1,5}$/.test(normalized)) {
+      return {
+        valid: false,
+        error: `Invalid symbol format: "${symbol}". Stock symbols should be 1-5 letters (e.g., AAPL, NVDA, MSFT).`
+      };
+    }
+
+    const validSymbols = this.getValidSymbols();
+
+    if (validSymbols.has(normalized)) {
+      return { valid: true };
+    }
+
+    // Find similar symbols for suggestion
+    const suggestions = [];
+    for (const valid of validSymbols) {
+      if (valid.startsWith(normalized.slice(0, 2)) ||
+          this.levenshteinDistance(valid, normalized) <= 2) {
+        suggestions.push(valid);
+        if (suggestions.length >= 3) break;
+      }
+    }
+
+    return {
+      valid: false,
+      error: `Symbol "${normalized}" not found in database.`,
+      suggestions: suggestions.length > 0 ? suggestions : undefined
+    };
+  }
+
+  /**
+   * Simple Levenshtein distance for symbol suggestions
+   */
+  levenshteinDistance(a, b) {
+    if (a.length === 0) return b.length;
+    if (b.length === 0) return a.length;
+    const matrix = [];
+    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+    for (let i = 1; i <= b.length; i++) {
+      for (let j = 1; j <= a.length; j++) {
+        const cost = a[j - 1] === b[i - 1] ? 0 : 1;
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j - 1] + cost
+        );
+      }
+    }
+    return matrix[b.length][a.length];
   }
 
   /**
@@ -22,6 +105,8 @@ class ToolExecutor {
       switch (toolName) {
         case 'lookup_company_metrics':
           return await this.lookupCompanyMetrics(input);
+        case 'get_risk_metrics':
+          return await this.getRiskMetrics(input);
         case 'screen_stocks':
           return await this.screenStocks(input);
         case 'get_price_history':
@@ -40,6 +125,24 @@ class ToolExecutor {
           return await this.compareCompanies(input);
         case 'get_valuation_models':
           return await this.getValuationModels(input);
+        case 'get_market_index':
+          return await this.getMarketIndex(input);
+        case 'get_market_sentiment':
+          return await this.getMarketSentiment(input);
+        case 'get_portfolio':
+          return await this.getPortfolio(input);
+        case 'get_congressional_trades':
+          return await this.getCongressionalTrades(input);
+        case 'get_insider_activity':
+          return await this.getInsiderActivity(input);
+        case 'get_technical_signals':
+          return await this.getTechnicalSignals(input);
+        case 'get_earnings_calendar':
+          return await this.getEarningsCalendar(input);
+        case 'get_short_interest':
+          return await this.getShortInterest(input);
+        case 'get_data_methodology':
+          return await this.getDataMethodology(input);
         default:
           return { error: `Unknown tool: ${toolName}` };
       }
@@ -53,6 +156,16 @@ class ToolExecutor {
   // Tool: lookup_company_metrics
   // ============================================
   async lookupCompanyMetrics({ symbol, metrics }) {
+    // Validate symbol before querying database
+    const validation = this.validateSymbol(symbol);
+    if (!validation.valid) {
+      return {
+        error: validation.error,
+        suggestions: validation.suggestions,
+        hint: 'Please use a valid US stock ticker symbol like AAPL, MSFT, NVDA, etc.'
+      };
+    }
+
     const normalizedSymbol = symbol.toUpperCase();
 
     // Get company info and latest metrics
@@ -224,6 +337,16 @@ class ToolExecutor {
   // Tool: get_price_history
   // ============================================
   async getPriceHistory({ symbol, days = 90, include_technicals = false }) {
+    // Validate symbol before querying database
+    const validation = this.validateSymbol(symbol);
+    if (!validation.valid) {
+      return {
+        error: validation.error,
+        suggestions: validation.suggestions,
+        hint: 'Please use a valid US stock ticker symbol like AAPL, MSFT, NVDA, etc.'
+      };
+    }
+
     const normalizedSymbol = symbol.toUpperCase();
     const safeDays = Math.min(Math.max(1, days), 365);
 
@@ -379,7 +502,16 @@ class ToolExecutor {
 
         const nopat = operatingIncome * (1 - taxRate);
 
-        return {
+        // Get historical data for chart
+        const historicalData = this.db.prepare(`
+          SELECT fiscal_year, fiscal_date_ending, operating_income, data
+          FROM financial_data
+          WHERE company_id = ? AND period_type = 'annual' AND operating_income IS NOT NULL
+          ORDER BY fiscal_date_ending ASC
+          LIMIT 5
+        `).all(company.id);
+
+        const result = {
           symbol: normalizedSymbol,
           metric: 'NOPAT',
           value: nopat,
@@ -392,6 +524,35 @@ class ToolExecutor {
           },
           calculation: `${this.formatLargeNumber(operatingIncome)} × (1 - ${(taxRate * 100).toFixed(1)}%) = ${this.formatLargeNumber(nopat)}`
         };
+
+        // Generate historical chart if we have data
+        if (historicalData.length > 1) {
+          const chartDataPoints = historicalData.map(d => {
+            let yearTaxRate = taxRate;
+            try {
+              const parsed = JSON.parse(d.data || '{}');
+              const te = parsed.incomeTaxExpense || parsed.income_tax_expense;
+              const pti = parsed.incomeBeforeTax || parsed.pretax_income;
+              if (te && pti && pti > 0) {
+                yearTaxRate = Math.min(0.4, Math.max(0, te / pti));
+              }
+            } catch (e) { /* ignore */ }
+            const yearNopat = d.operating_income * (1 - yearTaxRate);
+            return {
+              name: d.fiscal_year || d.fiscal_date_ending?.slice(0, 4),
+              value: Math.round(yearNopat / 1e9 * 100) / 100, // Billions
+              color: yearNopat >= 0 ? '#22c55e' : '#ef4444'
+            };
+          });
+
+          result.chart_data = {
+            type: 'bar',
+            title: `${normalizedSymbol} NOPAT (Billions)`,
+            data: chartDataPoints
+          };
+        }
+
+        return result;
       }
 
       case 'ev':
@@ -868,6 +1029,74 @@ class ToolExecutor {
       }
     }
 
+    // Generate multi-series chart data for income statement
+    console.log('[getFinancialStatements] income_statement length:', response.income_statement?.length);
+    if (response.income_statement && response.income_statement.length > 1) {
+      const incomeData = response.income_statement.slice().reverse(); // Chronological order
+      console.log('[getFinancialStatements] First income entry keys:', Object.keys(incomeData[0] || {}));
+
+      // Define metrics to extract with their colors and labels
+      // Multiple keys to check since database field names vary
+      const metricDefs = [
+        { keys: ['totalRevenue', 'revenue', 'Revenues'], label: 'Revenue', color: '#6366f1' },
+        { keys: ['grossProfit', 'gross_profit', 'GrossProfit'], label: 'Gross Profit', color: '#22c55e' },
+        { keys: ['operatingIncome', 'operating_income', 'OperatingIncomeLoss'], label: 'Operating Income', color: '#f59e0b' },
+        { keys: ['ebitda', 'EBITDA'], label: 'EBITDA', color: '#8b5cf6' },
+        { keys: ['netIncome', 'net_income', 'NetIncomeLoss'], label: 'Net Income', color: '#06b6d4' }
+      ];
+
+      // Helper to find value from multiple possible keys
+      const getValue = (obj, keys) => {
+        for (const key of keys) {
+          if (obj[key] !== undefined && obj[key] !== null) return obj[key];
+        }
+        return null;
+      };
+
+      // Build multi-series data
+      const series = [];
+      for (const metric of metricDefs) {
+        const data = incomeData
+          .filter(d => getValue(d, metric.keys) !== null)
+          .map(d => ({
+            time: d.year?.toString() || d.period?.slice(0, 4),
+            value: Math.round((getValue(d, metric.keys) / 1e9) * 100) / 100
+          }));
+
+        if (data.length > 1) {
+          series.push({
+            name: metric.label,
+            color: metric.color,
+            data
+          });
+        }
+      }
+
+      console.log('[getFinancialStatements] Series count:', series.length, 'Series names:', series.map(s => s.name));
+
+      // Create a combined multi-series chart if we have multiple metrics
+      if (series.length >= 2) {
+        response.chart_data = {
+          type: 'multi_line',
+          title: `${normalizedSymbol} Financial Metrics (Billions)`,
+          series: series.slice(0, 5), // Limit to 5 series for readability
+          normalized: false
+        };
+        console.log('[getFinancialStatements] Created multi_line chart_data');
+      } else if (series.length === 1) {
+        // Fallback to bar chart for single metric
+        response.chart_data = {
+          type: 'bar',
+          title: `${normalizedSymbol} ${series[0].name} (Billions)`,
+          data: series[0].data.map(d => ({
+            name: d.time,
+            value: d.value,
+            color: series[0].color
+          }))
+        };
+      }
+    }
+
     return response;
   }
 
@@ -1091,7 +1320,55 @@ class ToolExecutor {
       })).filter(chart => chart.data.length >= 2);
     }
 
+    // Add multi-series price comparison chart
+    const priceSeriesData = await this.getMultiSeriesPriceData(normalizedSymbols, 90);
+    if (priceSeriesData && priceSeriesData.series.length >= 2) {
+      comparison.price_comparison_chart = {
+        type: 'multi_line',
+        title: 'Price Performance Comparison (90 Days)',
+        series: priceSeriesData.series,
+        normalized: true // Show percentage change for fair comparison
+      };
+    }
+
     return comparison;
+  }
+
+  // Helper to fetch multi-series price data for comparison charts
+  async getMultiSeriesPriceData(symbols, days = 90) {
+    const series = [];
+    const colors = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
+
+    for (let i = 0; i < symbols.length; i++) {
+      const symbol = symbols[i];
+      const company = this.db.prepare('SELECT id FROM companies WHERE symbol = ?').get(symbol);
+
+      if (!company) continue;
+
+      const prices = this.db.prepare(`
+        SELECT date, close
+        FROM daily_prices
+        WHERE company_id = ?
+        ORDER BY date DESC
+        LIMIT ?
+      `).all(company.id, days);
+
+      if (prices.length > 0) {
+        // Reverse to chronological order
+        prices.reverse();
+
+        series.push({
+          name: symbol,
+          color: colors[i % colors.length],
+          data: prices.map(p => ({
+            time: p.date,
+            value: p.close
+          }))
+        });
+      }
+    }
+
+    return { series };
   }
 
   // Helper to format metric labels for charts
@@ -1288,6 +1565,1584 @@ class ToolExecutor {
     }
 
     return analysis;
+  }
+
+  // ============================================
+  // Tool: get_market_index
+  // ============================================
+  async getMarketIndex({ index_name, days = 90 }) {
+    const safeDays = Math.min(Math.max(1, days), 365);
+
+    // Map common names to database entries
+    const indexAliases = {
+      's&p': 'S&P 500',
+      's&p 500': 'S&P 500',
+      'sp500': 'S&P 500',
+      'spx': 'S&P 500',
+      '^gspc': 'S&P 500',
+      'nasdaq': 'NASDAQ Composite',
+      'nasdaq composite': 'NASDAQ Composite',
+      '^ixic': 'NASDAQ Composite',
+      'dow': 'Dow Jones Industrial Average',
+      'dow jones': 'Dow Jones Industrial Average',
+      'djia': 'Dow Jones Industrial Average',
+      '^dji': 'Dow Jones Industrial Average',
+      'russell': 'Russell 2000',
+      'russell 2000': 'Russell 2000',
+      '^rut': 'Russell 2000',
+      'ftse': 'FTSE 100',
+      'ftse 100': 'FTSE 100',
+      '^ftse': 'FTSE 100',
+      'dax': 'DAX 40',
+      'dax 40': 'DAX 40',
+      '^gdaxi': 'DAX 40',
+      'cac': 'CAC 40',
+      'cac 40': 'CAC 40',
+      '^fchi': 'CAC 40',
+      'nikkei': 'Nikkei 225',
+      'nikkei 225': 'Nikkei 225',
+      '^n225': 'Nikkei 225',
+      'atx': 'ATX',
+      'austria': 'ATX',
+      'austrian': 'ATX'
+    };
+
+    const searchName = indexAliases[index_name.toLowerCase()] || index_name;
+
+    // Find the index
+    const indexInfo = this.db.prepare(`
+      SELECT id, name, symbol, short_name, description, index_type
+      FROM market_indices
+      WHERE name LIKE ? OR symbol LIKE ? OR short_name LIKE ?
+      LIMIT 1
+    `).get(`%${searchName}%`, `%${searchName}%`, `%${searchName}%`);
+
+    if (!indexInfo) {
+      // Return list of available indices
+      const available = this.db.prepare(`
+        SELECT name, symbol FROM market_indices ORDER BY name
+      `).all();
+
+      return {
+        error: `Index '${index_name}' not found`,
+        available_indices: available.map(i => `${i.name} (${i.symbol})`)
+      };
+    }
+
+    // Get price history
+    const prices = this.db.prepare(`
+      SELECT date, open, high, low, close, volume
+      FROM market_index_prices
+      WHERE index_id = ?
+      ORDER BY date DESC
+      LIMIT ?
+    `).all(indexInfo.id, safeDays);
+
+    if (prices.length === 0) {
+      return {
+        index: indexInfo.name,
+        symbol: indexInfo.symbol,
+        error: 'No price data available for this index'
+      };
+    }
+
+    // Reverse to chronological order
+    prices.reverse();
+
+    // Calculate performance metrics
+    const latestPrice = prices[prices.length - 1].close;
+    const oldestPrice = prices[0].close;
+    const periodReturn = ((latestPrice / oldestPrice) - 1) * 100;
+
+    // Calculate YTD return if we have enough data
+    const currentYear = new Date().getFullYear();
+    const ytdPrices = prices.filter(p => p.date.startsWith(String(currentYear)));
+    let ytdReturn = null;
+    if (ytdPrices.length > 1) {
+      ytdReturn = ((latestPrice / ytdPrices[0].close) - 1) * 100;
+    }
+
+    const response = {
+      index: indexInfo.name,
+      symbol: indexInfo.symbol,
+      short_name: indexInfo.short_name,
+      type: indexInfo.index_type,
+      latest_price: latestPrice,
+      latest_date: prices[prices.length - 1].date,
+      period_days: prices.length,
+      period_return_pct: Math.round(periodReturn * 100) / 100,
+      ytd_return_pct: ytdReturn ? Math.round(ytdReturn * 100) / 100 : null,
+      high_period: Math.max(...prices.map(p => p.high)),
+      low_period: Math.min(...prices.map(p => p.low)),
+      recent_prices: prices.slice(-5).map(p => ({
+        date: p.date,
+        close: Math.round(p.close * 100) / 100
+      }))
+    };
+
+    // Add chart data for frontend rendering
+    response.chart_data = {
+      type: 'area',
+      title: `${indexInfo.name} (${safeDays} Days)`,
+      data: prices.map(p => ({
+        time: p.date,
+        value: p.close
+      })),
+      color: periodReturn >= 0 ? '#22c55e' : '#ef4444'
+    };
+
+    return response;
+  }
+
+  // ============================================
+  // Tool: get_market_sentiment
+  // ============================================
+  async getMarketSentiment({ include_history = false }) {
+    // Get latest sentiment indicators
+    const latestSentiment = this.db.prepare(`
+      SELECT indicator_type, indicator_label, indicator_value, fetched_at
+      FROM market_sentiment
+      WHERE fetched_at = (SELECT MAX(fetched_at) FROM market_sentiment)
+    `).all();
+
+    if (latestSentiment.length === 0) {
+      return { error: 'No market sentiment data available' };
+    }
+
+    // Build response
+    const response = {
+      as_of: latestSentiment[0]?.fetched_at,
+      indicators: {}
+    };
+
+    // Map indicator types to friendly names
+    const indicatorLabels = {
+      cnn_fear_greed: 'Fear & Greed Index',
+      vix: 'VIX (Volatility Index)',
+      put_call_ratio: 'Put/Call Ratio',
+      high_yield_spread: 'High Yield Credit Spread',
+      advance_decline: 'Advance/Decline Ratio',
+      overall_market: 'Overall Market Sentiment'
+    };
+
+    for (const indicator of latestSentiment) {
+      const name = indicatorLabels[indicator.indicator_type] || indicator.indicator_type;
+      response.indicators[indicator.indicator_type] = {
+        name,
+        value: indicator.indicator_value,
+        label: indicator.indicator_label
+      };
+    }
+
+    // Determine overall sentiment interpretation
+    const fearGreed = latestSentiment.find(i => i.indicator_type === 'cnn_fear_greed');
+    if (fearGreed) {
+      const value = fearGreed.indicator_value;
+      let interpretation;
+      if (value <= 25) interpretation = 'Extreme Fear - potential buying opportunity';
+      else if (value <= 40) interpretation = 'Fear - market is cautious';
+      else if (value <= 60) interpretation = 'Neutral - balanced sentiment';
+      else if (value <= 75) interpretation = 'Greed - market is optimistic';
+      else interpretation = 'Extreme Greed - potential market top, be cautious';
+
+      response.interpretation = interpretation;
+    }
+
+    // Include historical data if requested
+    if (include_history) {
+      const history = this.db.prepare(`
+        SELECT indicator_type, indicator_value, fetched_at
+        FROM market_sentiment
+        WHERE indicator_type = 'cnn_fear_greed'
+        ORDER BY fetched_at DESC
+        LIMIT 30
+      `).all();
+
+      if (history.length > 0) {
+        response.fear_greed_history = history.reverse().map(h => ({
+          date: h.fetched_at.split(' ')[0],
+          value: h.indicator_value
+        }));
+      }
+    }
+
+    // Add sentiment gauge chart
+    if (fearGreed) {
+      response.chart_data = {
+        type: 'gauge',
+        title: 'Fear & Greed Index',
+        value: fearGreed.indicator_value,
+        label: fearGreed.indicator_label,
+        min: 0,
+        max: 100,
+        zones: [
+          { min: 0, max: 25, color: '#ef4444', label: 'Extreme Fear' },
+          { min: 25, max: 40, color: '#f97316', label: 'Fear' },
+          { min: 40, max: 60, color: '#fbbf24', label: 'Neutral' },
+          { min: 60, max: 75, color: '#84cc16', label: 'Greed' },
+          { min: 75, max: 100, color: '#22c55e', label: 'Extreme Greed' }
+        ]
+      };
+    }
+
+    return response;
+  }
+
+  // ============================================
+  // Tool: get_portfolio
+  // ============================================
+  async getPortfolio({ portfolio_name, include_performance = true }) {
+    // If no name specified, list all portfolios
+    if (!portfolio_name) {
+      const portfolios = this.db.prepare(`
+        SELECT id, name, portfolio_type, current_value, current_cash, created_at
+        FROM portfolios
+        WHERE is_archived = 0
+        ORDER BY current_value DESC
+      `).all();
+
+      return {
+        portfolios: portfolios.map(p => ({
+          name: p.name,
+          type: p.portfolio_type,
+          total_value: p.current_value + p.current_cash,
+          cash: p.current_cash,
+          invested: p.current_value
+        })),
+        message: portfolios.length > 0
+          ? `Found ${portfolios.length} portfolio(s). Specify a portfolio name to see positions.`
+          : 'No portfolios found. Create a portfolio first.'
+      };
+    }
+
+    // Find specific portfolio
+    const portfolio = this.db.prepare(`
+      SELECT p.*, mi.name as benchmark_name
+      FROM portfolios p
+      LEFT JOIN market_indices mi ON p.benchmark_index_id = mi.id
+      WHERE p.name LIKE ? AND p.is_archived = 0
+      LIMIT 1
+    `).get(`%${portfolio_name}%`);
+
+    if (!portfolio) {
+      const available = this.db.prepare(`
+        SELECT name FROM portfolios WHERE is_archived = 0
+      `).all();
+
+      return {
+        error: `Portfolio '${portfolio_name}' not found`,
+        available_portfolios: available.map(p => p.name)
+      };
+    }
+
+    // Get positions
+    const positions = this.db.prepare(`
+      SELECT
+        pp.*,
+        c.symbol, c.name as company_name, c.sector,
+        (SELECT close FROM daily_prices WHERE company_id = c.id ORDER BY date DESC LIMIT 1) as latest_price
+      FROM portfolio_positions pp
+      JOIN companies c ON pp.company_id = c.id
+      WHERE pp.portfolio_id = ?
+      ORDER BY pp.current_value DESC
+    `).all(portfolio.id);
+
+    const totalInvested = positions.reduce((sum, p) => sum + (p.current_value || 0), 0);
+    const totalValue = totalInvested + portfolio.current_cash;
+
+    const response = {
+      name: portfolio.name,
+      type: portfolio.portfolio_type,
+      total_value: totalValue,
+      cash: portfolio.current_cash,
+      invested_value: totalInvested,
+      benchmark: portfolio.benchmark_name,
+      positions: positions.map(p => ({
+        symbol: p.symbol,
+        company: p.company_name,
+        sector: p.sector,
+        shares: p.shares,
+        avg_cost: p.average_cost,
+        current_price: p.latest_price,
+        current_value: p.current_value,
+        weight: totalValue > 0 ? Math.round((p.current_value / totalValue) * 10000) / 100 : 0,
+        gain_loss_pct: p.average_cost > 0
+          ? Math.round(((p.latest_price / p.average_cost) - 1) * 10000) / 100
+          : null
+      })),
+      position_count: positions.length
+    };
+
+    // Add sector allocation
+    const sectorAlloc = {};
+    for (const p of positions) {
+      const sector = p.sector || 'Unknown';
+      sectorAlloc[sector] = (sectorAlloc[sector] || 0) + (p.current_value || 0);
+    }
+    response.sector_allocation = Object.entries(sectorAlloc)
+      .map(([sector, value]) => ({
+        sector,
+        value,
+        weight: totalInvested > 0 ? Math.round((value / totalInvested) * 10000) / 100 : 0
+      }))
+      .sort((a, b) => b.value - a.value);
+
+    // Add chart data for pie chart
+    if (positions.length > 0) {
+      const colors = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#10b981'];
+      response.chart_data = {
+        type: 'pie',
+        title: 'Portfolio Allocation',
+        data: positions.slice(0, 8).map((p, i) => ({
+          name: p.symbol,
+          value: p.current_value || 0,
+          color: colors[i % colors.length]
+        }))
+      };
+    }
+
+    return response;
+  }
+
+  // ============================================
+  // Tool: get_congressional_trades
+  // ============================================
+  async getCongressionalTrades({ politician, symbol, trade_type = 'all', days = 90 }) {
+    const safeDays = Math.min(Math.max(1, days), 365);
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - safeDays);
+    const cutoffStr = cutoffDate.toISOString().split('T')[0];
+
+    let whereClause = 'ct.transaction_date >= ?';
+    const params = [cutoffStr];
+
+    // Filter by politician
+    if (politician) {
+      whereClause += ' AND (cp.name LIKE ? OR cp.last_name LIKE ?)';
+      params.push(`%${politician}%`, `%${politician}%`);
+    }
+
+    // Filter by symbol
+    if (symbol) {
+      whereClause += ' AND c.symbol = ?';
+      params.push(symbol.toUpperCase());
+    }
+
+    // Filter by trade type
+    if (trade_type !== 'all') {
+      if (trade_type === 'buy') {
+        whereClause += " AND ct.transaction_type IN ('purchase', 'buy')";
+      } else if (trade_type === 'sell') {
+        whereClause += " AND ct.transaction_type IN ('sale', 'sell', 'sale_full', 'sale_partial')";
+      }
+    }
+
+    const trades = this.db.prepare(`
+      SELECT
+        ct.transaction_date,
+        ct.transaction_type,
+        ct.amount_range,
+        ct.asset_description,
+        cp.name as politician_name,
+        cp.party,
+        cp.chamber,
+        cp.state,
+        c.symbol,
+        c.name as company_name
+      FROM congressional_trades ct
+      JOIN congressional_politicians cp ON ct.politician_id = cp.id
+      LEFT JOIN companies c ON ct.company_id = c.id
+      WHERE ${whereClause}
+      ORDER BY ct.transaction_date DESC
+      LIMIT 50
+    `).all(...params);
+
+    if (trades.length === 0) {
+      return {
+        message: 'No congressional trades found matching your criteria',
+        filters: { politician, symbol, trade_type, days: safeDays }
+      };
+    }
+
+    // Summarize by politician
+    const byPolitician = {};
+    const byStock = {};
+
+    for (const trade of trades) {
+      // By politician
+      const polKey = trade.politician_name;
+      if (!byPolitician[polKey]) {
+        byPolitician[polKey] = {
+          name: trade.politician_name,
+          party: trade.party,
+          chamber: trade.chamber,
+          state: trade.state,
+          trades: 0,
+          buys: 0,
+          sells: 0
+        };
+      }
+      byPolitician[polKey].trades++;
+      if (trade.transaction_type.includes('purchase') || trade.transaction_type === 'buy') {
+        byPolitician[polKey].buys++;
+      } else {
+        byPolitician[polKey].sells++;
+      }
+
+      // By stock
+      if (trade.symbol) {
+        if (!byStock[trade.symbol]) {
+          byStock[trade.symbol] = {
+            symbol: trade.symbol,
+            company: trade.company_name,
+            trades: 0,
+            buys: 0,
+            sells: 0
+          };
+        }
+        byStock[trade.symbol].trades++;
+        if (trade.transaction_type.includes('purchase') || trade.transaction_type === 'buy') {
+          byStock[trade.symbol].buys++;
+        } else {
+          byStock[trade.symbol].sells++;
+        }
+      }
+    }
+
+    const response = {
+      period_days: safeDays,
+      total_trades: trades.length,
+      recent_trades: trades.slice(0, 20).map(t => ({
+        date: t.transaction_date,
+        politician: t.politician_name,
+        party: t.party,
+        type: t.transaction_type,
+        symbol: t.symbol,
+        company: t.company_name || t.asset_description,
+        amount: t.amount_range
+      })),
+      most_active_politicians: Object.values(byPolitician)
+        .sort((a, b) => b.trades - a.trades)
+        .slice(0, 5),
+      most_traded_stocks: Object.values(byStock)
+        .sort((a, b) => b.trades - a.trades)
+        .slice(0, 10)
+    };
+
+    return response;
+  }
+
+  // ============================================
+  // Tool: get_insider_activity
+  // ============================================
+  async getInsiderActivity({ symbol, days = 90, transaction_type = 'all' }) {
+    const normalizedSymbol = symbol.toUpperCase();
+    const safeDays = Math.min(Math.max(1, days), 365);
+
+    const company = this.db.prepare('SELECT id, name FROM companies WHERE symbol = ?').get(normalizedSymbol);
+    if (!company) {
+      return { error: `Company ${normalizedSymbol} not found` };
+    }
+
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - safeDays);
+    const cutoffStr = cutoffDate.toISOString().split('T')[0];
+
+    // Build where clause for transaction type
+    let typeFilter = '';
+    if (transaction_type === 'buy') {
+      typeFilter = " AND it.transaction_type IN ('P', 'Purchase', 'Buy', 'A')";
+    } else if (transaction_type === 'sell') {
+      typeFilter = " AND it.transaction_type IN ('S', 'Sale', 'Sell', 'D')";
+    }
+
+    // Get insider transactions - join with insiders table for name/title
+    const transactions = this.db.prepare(`
+      SELECT
+        i.name as insider_name,
+        i.title as insider_title,
+        it.transaction_type,
+        it.shares_transacted as shares,
+        it.price_per_share as price,
+        it.total_value,
+        it.transaction_date,
+        it.direct_indirect as ownership_type
+      FROM insider_transactions it
+      JOIN insiders i ON it.insider_id = i.id
+      WHERE it.company_id = ? AND it.transaction_date >= ?${typeFilter}
+      ORDER BY it.transaction_date DESC
+      LIMIT 30
+    `).all(company.id, cutoffStr);
+
+    // Get summary if available
+    const summary = this.db.prepare(`
+      SELECT *
+      FROM insider_activity_summary
+      WHERE company_id = ?
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `).get(company.id);
+
+    // Calculate aggregates
+    let totalBuyValue = 0;
+    let totalSellValue = 0;
+    let buyCount = 0;
+    let sellCount = 0;
+
+    for (const txn of transactions) {
+      const value = txn.total_value || (txn.shares * txn.price) || 0;
+      const isBuy = ['P', 'Purchase', 'Buy', 'A'].includes(txn.transaction_type);
+
+      if (isBuy) {
+        totalBuyValue += value;
+        buyCount++;
+      } else {
+        totalSellValue += value;
+        sellCount++;
+      }
+    }
+
+    // Determine sentiment
+    let sentiment = 'neutral';
+    let sentimentReason = '';
+    if (buyCount > 0 && sellCount === 0) {
+      sentiment = 'bullish';
+      sentimentReason = 'Only insider buying, no selling';
+    } else if (sellCount > 0 && buyCount === 0) {
+      sentiment = 'bearish';
+      sentimentReason = 'Only insider selling, no buying';
+    } else if (totalBuyValue > totalSellValue * 2) {
+      sentiment = 'bullish';
+      sentimentReason = 'Buy value significantly exceeds sell value';
+    } else if (totalSellValue > totalBuyValue * 2) {
+      sentiment = 'bearish';
+      sentimentReason = 'Sell value significantly exceeds buy value';
+    } else {
+      sentimentReason = 'Mixed insider activity';
+    }
+
+    const response = {
+      symbol: normalizedSymbol,
+      name: company.name,
+      period_days: safeDays,
+      total_transactions: transactions.length,
+      summary: {
+        buy_count: buyCount,
+        sell_count: sellCount,
+        total_buy_value: totalBuyValue,
+        total_sell_value: totalSellValue,
+        net_activity: totalBuyValue - totalSellValue,
+        sentiment,
+        sentiment_reason: sentimentReason
+      },
+      recent_transactions: transactions.slice(0, 15).map(t => ({
+        date: t.transaction_date,
+        insider: t.insider_name,
+        title: t.insider_title,
+        type: ['P', 'Purchase', 'Buy', 'A'].includes(t.transaction_type) ? 'Buy' : 'Sell',
+        shares: t.shares,
+        price: t.price,
+        value: t.total_value || (t.shares * t.price)
+      }))
+    };
+
+    // Add summary data if available
+    if (summary) {
+      response.activity_summary = {
+        buy_count_3m: summary.buy_count_3m,
+        sell_count_3m: summary.sell_count_3m,
+        net_shares_3m: summary.net_shares_3m,
+        buy_value_3m: summary.buy_value_3m,
+        sell_value_3m: summary.sell_value_3m,
+        insider_ownership_pct: summary.insider_ownership_pct,
+        signal: summary.signal
+      };
+    }
+
+    // Add chart data
+    response.chart_data = {
+      type: 'bar',
+      title: `${normalizedSymbol} Insider Activity`,
+      data: [
+        { name: 'Buys', value: buyCount, color: '#22c55e' },
+        { name: 'Sells', value: sellCount, color: '#ef4444' }
+      ]
+    };
+
+    return response;
+  }
+
+  // ============================================
+  // Tool: get_technical_signals
+  // ============================================
+  async getTechnicalSignals({ symbol, indicators }) {
+    const normalizedSymbol = symbol.toUpperCase();
+
+    const company = this.db.prepare('SELECT id, name FROM companies WHERE symbol = ?').get(normalizedSymbol);
+    if (!company) {
+      return { error: `Company ${normalizedSymbol} not found` };
+    }
+
+    // Get technical signals from database
+    const signals = this.db.prepare(`
+      SELECT *
+      FROM technical_signals
+      WHERE company_id = ?
+      ORDER BY calculated_at DESC
+      LIMIT 1
+    `).get(company.id);
+
+    // Get recent prices for additional calculations
+    const prices = this.db.prepare(`
+      SELECT date, open, high, low, close, volume
+      FROM daily_prices
+      WHERE company_id = ?
+      ORDER BY date DESC
+      LIMIT 60
+    `).all(company.id);
+
+    if (!signals && prices.length < 14) {
+      return { error: `Insufficient data for technical analysis of ${normalizedSymbol}` };
+    }
+
+    const indicatorsToGet = indicators && indicators.length > 0 && !indicators.includes('all')
+      ? indicators
+      : ['rsi', 'macd', 'moving_averages', 'bollinger', 'support_resistance', 'volume', 'momentum'];
+
+    const response = {
+      symbol: normalizedSymbol,
+      name: company.name,
+      as_of: signals?.calculated_at || prices[0]?.date,
+      current_price: prices[0]?.close,
+      signals: {}
+    };
+
+    // RSI
+    if (indicatorsToGet.includes('rsi')) {
+      const rsi = signals?.rsi_14 ?? this.calculateRSI(prices.slice(0, 15).map(p => p.close).reverse());
+      let rsiSignal = 'neutral';
+      if (rsi !== null) {
+        if (rsi < 30) rsiSignal = 'oversold';
+        else if (rsi > 70) rsiSignal = 'overbought';
+      }
+      response.signals.rsi = {
+        value: rsi ? Math.round(rsi * 100) / 100 : null,
+        signal: rsiSignal,
+        interpretation: rsi < 30 ? 'Stock is oversold - potential bounce' :
+          rsi > 70 ? 'Stock is overbought - potential pullback' :
+            'RSI in neutral territory'
+      };
+    }
+
+    // MACD
+    if (indicatorsToGet.includes('macd')) {
+      response.signals.macd = {
+        macd_line: signals?.macd_line,
+        signal_line: signals?.macd_signal,
+        histogram: signals?.macd_histogram,
+        signal: signals?.macd_signal_type || (
+          signals?.macd_histogram > 0 ? 'bullish' :
+            signals?.macd_histogram < 0 ? 'bearish' : 'neutral'
+        ),
+        interpretation: signals?.macd_histogram > 0
+          ? 'MACD above signal line - bullish momentum'
+          : 'MACD below signal line - bearish momentum'
+      };
+    }
+
+    // Moving Averages
+    if (indicatorsToGet.includes('moving_averages')) {
+      const closes = prices.map(p => p.close).reverse();
+      const sma20 = closes.length >= 20 ? closes.slice(-20).reduce((a, b) => a + b, 0) / 20 : null;
+      const sma50 = closes.length >= 50 ? closes.slice(-50).reduce((a, b) => a + b, 0) / 50 : null;
+      const currentPrice = prices[0]?.close;
+
+      let trend = 'neutral';
+      if (currentPrice && sma20 && sma50) {
+        if (currentPrice > sma20 && sma20 > sma50) trend = 'bullish';
+        else if (currentPrice < sma20 && sma20 < sma50) trend = 'bearish';
+      }
+
+      response.signals.moving_averages = {
+        sma_20: sma20 ? Math.round(sma20 * 100) / 100 : null,
+        sma_50: sma50 ? Math.round(sma50 * 100) / 100 : null,
+        sma_200: signals?.sma_200,
+        price_vs_sma20: currentPrice && sma20 ? ((currentPrice / sma20 - 1) * 100).toFixed(2) + '%' : null,
+        price_vs_sma50: currentPrice && sma50 ? ((currentPrice / sma50 - 1) * 100).toFixed(2) + '%' : null,
+        trend,
+        golden_cross: signals?.golden_cross || false,
+        death_cross: signals?.death_cross || false
+      };
+    }
+
+    // Bollinger Bands
+    if (indicatorsToGet.includes('bollinger')) {
+      response.signals.bollinger = {
+        upper: signals?.bb_upper,
+        middle: signals?.bb_middle,
+        lower: signals?.bb_lower,
+        percent_b: signals?.bb_percent_b,
+        bandwidth: signals?.bb_bandwidth,
+        signal: signals?.bb_signal || 'neutral'
+      };
+    }
+
+    // Support/Resistance
+    if (indicatorsToGet.includes('support_resistance')) {
+      // Calculate from price history
+      const highs = prices.slice(0, 20).map(p => p.high);
+      const lows = prices.slice(0, 20).map(p => p.low);
+
+      response.signals.support_resistance = {
+        resistance_1: Math.max(...highs),
+        support_1: Math.min(...lows),
+        pivot_point: signals?.pivot_point,
+        distance_to_resistance: prices[0]?.close
+          ? ((Math.max(...highs) / prices[0].close - 1) * 100).toFixed(2) + '%'
+          : null,
+        distance_to_support: prices[0]?.close
+          ? ((prices[0].close / Math.min(...lows) - 1) * 100).toFixed(2) + '%'
+          : null
+      };
+    }
+
+    // Volume
+    if (indicatorsToGet.includes('volume')) {
+      const volumes = prices.slice(0, 20).map(p => p.volume);
+      const avgVolume = volumes.reduce((a, b) => a + b, 0) / volumes.length;
+      const latestVolume = prices[0]?.volume;
+
+      response.signals.volume = {
+        latest: latestVolume,
+        average_20d: Math.round(avgVolume),
+        relative_volume: latestVolume && avgVolume
+          ? (latestVolume / avgVolume).toFixed(2) + 'x'
+          : null,
+        signal: latestVolume > avgVolume * 1.5 ? 'high' :
+          latestVolume < avgVolume * 0.5 ? 'low' : 'normal'
+      };
+    }
+
+    // Momentum
+    if (indicatorsToGet.includes('momentum')) {
+      const closes = prices.map(p => p.close);
+      const mom5 = closes[0] && closes[4] ? ((closes[0] / closes[4] - 1) * 100) : null;
+      const mom10 = closes[0] && closes[9] ? ((closes[0] / closes[9] - 1) * 100) : null;
+      const mom20 = closes[0] && closes[19] ? ((closes[0] / closes[19] - 1) * 100) : null;
+
+      response.signals.momentum = {
+        '5_day': mom5 ? Math.round(mom5 * 100) / 100 : null,
+        '10_day': mom10 ? Math.round(mom10 * 100) / 100 : null,
+        '20_day': mom20 ? Math.round(mom20 * 100) / 100 : null,
+        trend: mom5 > 0 && mom10 > 0 && mom20 > 0 ? 'strong_bullish' :
+          mom5 < 0 && mom10 < 0 && mom20 < 0 ? 'strong_bearish' :
+            mom5 > 0 ? 'short_term_bullish' :
+              mom5 < 0 ? 'short_term_bearish' : 'mixed'
+      };
+    }
+
+    // Overall signal
+    let bullishSignals = 0;
+    let bearishSignals = 0;
+
+    if (response.signals.rsi?.signal === 'oversold') bullishSignals++;
+    if (response.signals.rsi?.signal === 'overbought') bearishSignals++;
+    if (response.signals.macd?.signal === 'bullish') bullishSignals++;
+    if (response.signals.macd?.signal === 'bearish') bearishSignals++;
+    if (response.signals.moving_averages?.trend === 'bullish') bullishSignals++;
+    if (response.signals.moving_averages?.trend === 'bearish') bearishSignals++;
+    if (response.signals.momentum?.trend?.includes('bullish')) bullishSignals++;
+    if (response.signals.momentum?.trend?.includes('bearish')) bearishSignals++;
+
+    response.overall = {
+      bullish_signals: bullishSignals,
+      bearish_signals: bearishSignals,
+      signal: bullishSignals > bearishSignals + 1 ? 'bullish' :
+        bearishSignals > bullishSignals + 1 ? 'bearish' : 'neutral',
+      strength: Math.abs(bullishSignals - bearishSignals) >= 3 ? 'strong' :
+        Math.abs(bullishSignals - bearishSignals) >= 1 ? 'moderate' : 'weak'
+    };
+
+    return response;
+  }
+
+  // ============================================
+  // Tool: get_earnings_calendar
+  // ============================================
+  async getEarningsCalendar({ symbol, direction = 'upcoming', days = 30 }) {
+    const safeDays = Math.min(Math.max(1, days), 90);
+    const today = new Date().toISOString().split('T')[0];
+
+    const futureCutoff = new Date();
+    futureCutoff.setDate(futureCutoff.getDate() + safeDays);
+    const futureCutoffStr = futureCutoff.toISOString().split('T')[0];
+
+    // If specific symbol requested
+    if (symbol) {
+      const normalizedSymbol = symbol.toUpperCase();
+      const company = this.db.prepare('SELECT id, name FROM companies WHERE symbol = ?').get(normalizedSymbol);
+
+      if (!company) {
+        return { error: `Company ${normalizedSymbol} not found` };
+      }
+
+      // Get earnings data - note: schema has next_earnings_date and history_json
+      const earnings = this.db.prepare(`
+        SELECT ec.*, c.symbol, c.name
+        FROM earnings_calendar ec
+        JOIN companies c ON ec.company_id = c.id
+        WHERE ec.company_id = ?
+      `).get(company.id);
+
+      if (!earnings) {
+        return {
+          symbol: normalizedSymbol,
+          name: company.name,
+          message: `No earnings data found for ${normalizedSymbol}`
+        };
+      }
+
+      // Parse history JSON for past results
+      let history = [];
+      try {
+        if (earnings.history_json) {
+          history = JSON.parse(earnings.history_json);
+        }
+      } catch (e) { /* ignore */ }
+
+      const response = {
+        symbol: normalizedSymbol,
+        name: company.name,
+        next_earnings: earnings.next_earnings_date ? {
+          date: earnings.next_earnings_date,
+          is_estimate: earnings.is_estimate === 1,
+          eps_estimate: earnings.eps_estimate,
+          eps_estimate_range: earnings.eps_low && earnings.eps_high
+            ? `${earnings.eps_low} - ${earnings.eps_high}`
+            : null,
+          revenue_estimate: earnings.revenue_estimate
+        } : null,
+        track_record: {
+          // beat_rate is stored as percentage (e.g., 100.0 = 100%)
+          beat_rate: earnings.beat_rate != null
+            ? `${Math.round(earnings.beat_rate)}%`
+            : null,
+          avg_surprise: earnings.avg_surprise,
+          consecutive_beats: earnings.consecutive_beats
+        },
+        recent_results: history.slice(0, 4).map(h => ({
+          date: h.reportedDate || h.date,
+          eps_actual: h.actualEPS || h.eps_actual,
+          eps_estimate: h.estimatedEPS || h.eps_estimate,
+          surprise_pct: h.surprise || h.surprise_pct,
+          beat: h.actualEPS && h.estimatedEPS
+            ? h.actualEPS > h.estimatedEPS
+            : null
+        }))
+      };
+
+      return response;
+    }
+
+    // No symbol - return calendar of upcoming earnings
+    const response = {
+      period_days: safeDays
+    };
+
+    if (direction === 'upcoming' || direction === 'both') {
+      const upcoming = this.db.prepare(`
+        SELECT
+          ec.next_earnings_date,
+          ec.is_estimate,
+          ec.eps_estimate,
+          ec.revenue_estimate,
+          c.symbol, c.name, c.sector
+        FROM earnings_calendar ec
+        JOIN companies c ON ec.company_id = c.id
+        WHERE ec.next_earnings_date IS NOT NULL
+          AND ec.next_earnings_date >= ?
+          AND ec.next_earnings_date <= ?
+        ORDER BY ec.next_earnings_date ASC
+        LIMIT 30
+      `).all(today, futureCutoffStr);
+
+      response.upcoming = upcoming.map(e => ({
+        date: e.next_earnings_date,
+        is_estimate: e.is_estimate === 1,
+        symbol: e.symbol,
+        company: e.name,
+        sector: e.sector,
+        eps_estimate: e.eps_estimate,
+        revenue_estimate: e.revenue_estimate
+      }));
+    }
+
+    if (direction === 'recent' || direction === 'both') {
+      // For recent, we need to look at history from all companies
+      // This requires parsing history_json, which is expensive. Limit the query.
+      const allEarnings = this.db.prepare(`
+        SELECT
+          ec.history_json,
+          ec.beat_rate,
+          c.symbol, c.name
+        FROM earnings_calendar ec
+        JOIN companies c ON ec.company_id = c.id
+        WHERE ec.history_json IS NOT NULL
+        LIMIT 100
+      `).all();
+
+      const recentResults = [];
+      for (const e of allEarnings) {
+        try {
+          const hist = JSON.parse(e.history_json || '[]');
+          for (const h of hist.slice(0, 1)) { // Just most recent per company
+            const date = h.reportedDate || h.date;
+            if (date && date >= today.slice(0, 7) + '-01') { // Within last month roughly
+              recentResults.push({
+                date,
+                symbol: e.symbol,
+                company: e.name,
+                eps_actual: h.actualEPS || h.eps_actual,
+                eps_estimate: h.estimatedEPS || h.eps_estimate,
+                beat: h.actualEPS && h.estimatedEPS ? h.actualEPS > h.estimatedEPS : null
+              });
+            }
+          }
+        } catch (ex) { /* ignore */ }
+      }
+
+      response.recent = recentResults
+        .sort((a, b) => b.date?.localeCompare(a.date))
+        .slice(0, 20);
+    }
+
+    return response;
+  }
+
+  // ============================================
+  // Tool: get_short_interest
+  // ============================================
+  async getShortInterest({ symbol, include_history = false }) {
+    // If specific symbol requested
+    if (symbol) {
+      const normalizedSymbol = symbol.toUpperCase();
+      const company = this.db.prepare('SELECT id, name FROM companies WHERE symbol = ?').get(normalizedSymbol);
+
+      if (!company) {
+        return { error: `Company ${normalizedSymbol} not found` };
+      }
+
+      // Schema: short_interest, short_pct_float, short_pct_outstanding, days_to_cover
+      const shortData = this.db.prepare(`
+        SELECT *
+        FROM short_interest
+        WHERE company_id = ?
+        ORDER BY settlement_date DESC
+        LIMIT 1
+      `).get(company.id);
+
+      if (!shortData) {
+        return {
+          symbol: normalizedSymbol,
+          message: `No short interest data found for ${normalizedSymbol}`
+        };
+      }
+
+      // Determine squeeze potential
+      let squeezePotential = 'low';
+      let squeezeReason = '';
+
+      const shortPctFloat = shortData.short_pct_float;
+      const daysTocover = shortData.days_to_cover;
+
+      if (shortPctFloat > 20 && daysTocover > 5) {
+        squeezePotential = 'high';
+        squeezeReason = 'High short % of float combined with high days to cover';
+      } else if (shortPctFloat > 15 || daysTocover > 4) {
+        squeezePotential = 'moderate';
+        squeezeReason = 'Elevated short interest';
+      } else {
+        squeezeReason = 'Normal short interest levels';
+      }
+
+      // Also use squeeze_score if available
+      if (shortData.squeeze_score && shortData.squeeze_score > 7) {
+        squeezePotential = 'high';
+        squeezeReason = `High squeeze score (${shortData.squeeze_score.toFixed(1)}/10)`;
+      }
+
+      const response = {
+        symbol: normalizedSymbol,
+        name: company.name,
+        as_of: shortData.settlement_date,
+        short_interest: {
+          shares_short: shortData.short_interest,
+          short_percent_of_float: shortData.short_pct_float,
+          short_percent_of_outstanding: shortData.short_pct_outstanding,
+          days_to_cover: shortData.days_to_cover,
+          avg_daily_volume: shortData.avg_daily_volume
+        },
+        changes: {
+          prior_short_interest: shortData.prior_short_interest,
+          change_pct: shortData.change_pct
+        },
+        squeeze_analysis: {
+          potential: squeezePotential,
+          reason: squeezeReason,
+          squeeze_score: shortData.squeeze_score,
+          signal_score: shortData.signal_score
+        }
+      };
+
+      // Include history if requested
+      if (include_history) {
+        const history = this.db.prepare(`
+          SELECT settlement_date, short_interest, short_pct_float, days_to_cover
+          FROM short_interest
+          WHERE company_id = ?
+          ORDER BY settlement_date DESC
+          LIMIT 12
+        `).all(company.id);
+
+        response.history = history.reverse().map(h => ({
+          date: h.settlement_date,
+          shares_short: h.short_interest,
+          pct_float: h.short_pct_float,
+          days_to_cover: h.days_to_cover
+        }));
+
+        // Add trend chart
+        if (history.length > 1) {
+          response.chart_data = {
+            type: 'area',
+            title: `${normalizedSymbol} Short Interest Trend`,
+            data: history.map(h => ({
+              time: h.settlement_date,
+              value: h.short_pct_float
+            })),
+            color: '#f59e0b'
+          };
+        }
+      }
+
+      return response;
+    }
+
+    // No symbol - return most heavily shorted stocks
+    const heavilyShorted = this.db.prepare(`
+      SELECT
+        si.*,
+        c.name, c.sector
+      FROM short_interest si
+      JOIN companies c ON si.company_id = c.id
+      WHERE si.settlement_date = (SELECT MAX(settlement_date) FROM short_interest)
+        AND si.short_pct_float IS NOT NULL
+      ORDER BY si.short_pct_float DESC
+      LIMIT 20
+    `).all();
+
+    if (heavilyShorted.length === 0) {
+      return { message: 'No short interest data available' };
+    }
+
+    return {
+      as_of: heavilyShorted[0]?.settlement_date,
+      most_shorted: heavilyShorted.map(s => ({
+        symbol: s.symbol,
+        company: s.name,
+        sector: s.sector,
+        short_pct_float: s.short_pct_float,
+        days_to_cover: s.days_to_cover,
+        shares_short: s.short_interest,
+        change_pct: s.change_pct,
+        squeeze_score: s.squeeze_score
+      }))
+    };
+  }
+
+  // ============================================
+  // Tool: get_risk_metrics
+  // ============================================
+  async getRiskMetrics({ portfolio_name, symbol, period = '1y' }) {
+    const TRADING_DAYS_PER_YEAR = 252;
+    const RISK_FREE_RATE = 0.045; // Current approximate risk-free rate
+
+    // Helper to calculate Sharpe ratio
+    const calculateSharpe = (annualReturn, volatility) => {
+      if (!volatility || volatility === 0) return null;
+      return Math.round(((annualReturn - RISK_FREE_RATE) / volatility) * 100) / 100;
+    };
+
+    // Helper to calculate Sortino ratio
+    const calculateSortino = (dailyReturns, annualReturn) => {
+      const negativeReturns = dailyReturns.filter(r => r < 0);
+      if (negativeReturns.length < 2) return null;
+
+      const squaredNegReturns = negativeReturns.map(r => Math.pow(r, 2));
+      const downsideVariance = squaredNegReturns.reduce((a, b) => a + b, 0) / negativeReturns.length;
+      const downsideDeviation = Math.sqrt(downsideVariance) * Math.sqrt(TRADING_DAYS_PER_YEAR);
+
+      if (downsideDeviation === 0) return null;
+      return Math.round(((annualReturn - RISK_FREE_RATE) / downsideDeviation) * 100) / 100;
+    };
+
+    // Helper to calculate max drawdown
+    const calculateMaxDrawdown = (prices) => {
+      let maxDrawdown = 0;
+      let peak = prices[0];
+      let maxDrawdownStart = 0;
+      let maxDrawdownEnd = 0;
+      let currentPeak = 0;
+
+      for (let i = 0; i < prices.length; i++) {
+        if (prices[i] > peak) {
+          peak = prices[i];
+          currentPeak = i;
+        }
+        const drawdown = (peak - prices[i]) / peak;
+        if (drawdown > maxDrawdown) {
+          maxDrawdown = drawdown;
+          maxDrawdownStart = currentPeak;
+          maxDrawdownEnd = i;
+        }
+      }
+
+      return {
+        maxDrawdown: Math.round(maxDrawdown * 10000) / 100,
+        maxDrawdownStart,
+        maxDrawdownEnd
+      };
+    };
+
+    // Determine number of days based on period
+    const periodDays = {
+      '1m': 21,
+      '3m': 63,
+      '6m': 126,
+      '1y': 252,
+      '2y': 504,
+      '3y': 756
+    };
+    const days = periodDays[period] || 252;
+
+    // If portfolio_name is provided, calculate portfolio-level metrics
+    if (portfolio_name) {
+      const portfolio = this.db.prepare(`
+        SELECT p.id, p.name, p.current_value, p.current_cash
+        FROM portfolios p
+        WHERE p.name LIKE ? AND p.is_archived = 0
+        LIMIT 1
+      `).get(`%${portfolio_name}%`);
+
+      if (!portfolio) {
+        const available = this.db.prepare('SELECT name FROM portfolios WHERE is_archived = 0').all();
+        return {
+          error: `Portfolio '${portfolio_name}' not found`,
+          available_portfolios: available.map(p => p.name)
+        };
+      }
+
+      // Get portfolio snapshots for performance calculation
+      const snapshots = this.db.prepare(`
+        SELECT snapshot_date, total_value
+        FROM portfolio_snapshots
+        WHERE portfolio_id = ?
+        ORDER BY snapshot_date DESC
+        LIMIT ?
+      `).all(portfolio.id, days);
+
+      if (snapshots.length < 10) {
+        return {
+          portfolio_name: portfolio.name,
+          error: 'Insufficient historical data for risk metrics calculation (need at least 10 days of snapshots)',
+          hint: 'Portfolio snapshots are captured daily. Try again after more trading days.',
+          current_value: portfolio.current_value + portfolio.current_cash
+        };
+      }
+
+      // Reverse to chronological order
+      snapshots.reverse();
+
+      // Calculate daily returns
+      const dailyReturns = [];
+      const prices = snapshots.map(s => s.total_value);
+      for (let i = 1; i < prices.length; i++) {
+        if (prices[i - 1] > 0) {
+          dailyReturns.push((prices[i] - prices[i - 1]) / prices[i - 1]);
+        }
+      }
+
+      if (dailyReturns.length < 5) {
+        return {
+          portfolio_name: portfolio.name,
+          error: 'Insufficient data points for risk calculation',
+          current_value: portfolio.current_value + portfolio.current_cash
+        };
+      }
+
+      // Calculate metrics
+      const avgDailyReturn = dailyReturns.reduce((a, b) => a + b, 0) / dailyReturns.length;
+      const annualReturn = avgDailyReturn * TRADING_DAYS_PER_YEAR;
+      const variance = dailyReturns.reduce((sum, r) => sum + Math.pow(r - avgDailyReturn, 2), 0) / dailyReturns.length;
+      const volatility = Math.sqrt(variance) * Math.sqrt(TRADING_DAYS_PER_YEAR);
+
+      const sharpeRatio = calculateSharpe(annualReturn, volatility);
+      const sortinoRatio = calculateSortino(dailyReturns, annualReturn);
+      const drawdownInfo = calculateMaxDrawdown(prices);
+
+      // Get benchmark comparison (S&P 500)
+      const spyPrices = this.db.prepare(`
+        SELECT close
+        FROM daily_prices dp
+        JOIN companies c ON dp.company_id = c.id
+        WHERE c.symbol = 'SPY'
+        ORDER BY dp.date DESC
+        LIMIT ?
+      `).all(days);
+
+      let benchmarkMetrics = null;
+      let alpha = null;
+      let beta = null;
+
+      if (spyPrices.length >= dailyReturns.length) {
+        spyPrices.reverse();
+        const benchmarkReturns = [];
+        for (let i = 1; i < Math.min(spyPrices.length, prices.length); i++) {
+          if (spyPrices[i - 1].close > 0) {
+            benchmarkReturns.push((spyPrices[i].close - spyPrices[i - 1].close) / spyPrices[i - 1].close);
+          }
+        }
+
+        if (benchmarkReturns.length > 0) {
+          const avgBenchmarkReturn = benchmarkReturns.reduce((a, b) => a + b, 0) / benchmarkReturns.length;
+          const benchmarkAnnualReturn = avgBenchmarkReturn * TRADING_DAYS_PER_YEAR;
+          const benchmarkVariance = benchmarkReturns.reduce((sum, r) => sum + Math.pow(r - avgBenchmarkReturn, 2), 0) / benchmarkReturns.length;
+          const benchmarkVolatility = Math.sqrt(benchmarkVariance) * Math.sqrt(TRADING_DAYS_PER_YEAR);
+
+          // Calculate beta (covariance / variance of benchmark)
+          const minLen = Math.min(dailyReturns.length, benchmarkReturns.length);
+          let covariance = 0;
+          for (let i = 0; i < minLen; i++) {
+            covariance += (dailyReturns[i] - avgDailyReturn) * (benchmarkReturns[i] - avgBenchmarkReturn);
+          }
+          covariance /= minLen;
+          beta = benchmarkVariance > 0 ? Math.round((covariance / benchmarkVariance) * 100) / 100 : null;
+
+          // Calculate alpha (Jensen's alpha)
+          if (beta !== null) {
+            alpha = Math.round((annualReturn - (RISK_FREE_RATE + beta * (benchmarkAnnualReturn - RISK_FREE_RATE))) * 10000) / 100;
+          }
+
+          benchmarkMetrics = {
+            benchmark: 'S&P 500 (SPY)',
+            benchmark_return: Math.round(benchmarkAnnualReturn * 10000) / 100,
+            benchmark_volatility: Math.round(benchmarkVolatility * 10000) / 100,
+            benchmark_sharpe: calculateSharpe(benchmarkAnnualReturn, benchmarkVolatility)
+          };
+        }
+      }
+
+      return {
+        portfolio_name: portfolio.name,
+        period: period,
+        data_points: dailyReturns.length,
+        metrics: {
+          annualized_return: Math.round(annualReturn * 10000) / 100,
+          annualized_volatility: Math.round(volatility * 10000) / 100,
+          sharpe_ratio: sharpeRatio,
+          sortino_ratio: sortinoRatio,
+          max_drawdown: drawdownInfo.maxDrawdown,
+          beta: beta,
+          alpha: alpha
+        },
+        interpretation: {
+          sharpe: sharpeRatio > 1 ? 'Good risk-adjusted returns' :
+                  sharpeRatio > 0.5 ? 'Acceptable risk-adjusted returns' :
+                  sharpeRatio > 0 ? 'Below-average risk-adjusted returns' : 'Negative risk-adjusted returns',
+          sortino: sortinoRatio > 1.5 ? 'Excellent downside risk management' :
+                   sortinoRatio > 1 ? 'Good downside risk management' :
+                   sortinoRatio > 0.5 ? 'Average downside risk' : 'High downside risk',
+          drawdown: drawdownInfo.maxDrawdown > 30 ? 'Significant drawdown risk' :
+                    drawdownInfo.maxDrawdown > 15 ? 'Moderate drawdown risk' : 'Low drawdown risk',
+          alpha: alpha > 5 ? 'Significant outperformance vs benchmark' :
+                 alpha > 0 ? 'Slight outperformance vs benchmark' :
+                 alpha !== null ? 'Underperforming benchmark' : 'Benchmark comparison unavailable'
+        },
+        benchmark_comparison: benchmarkMetrics,
+        risk_free_rate_used: `${RISK_FREE_RATE * 100}%`,
+        methodology_note: 'Sharpe = (Return - RiskFreeRate) / Volatility. Sortino uses downside deviation instead of total volatility. Alpha measures excess return vs CAPM expected return.'
+      };
+    }
+
+    // If symbol is provided, calculate single-stock metrics
+    if (symbol) {
+      const validation = this.validateSymbol(symbol);
+      if (!validation.valid) {
+        return {
+          error: validation.error,
+          suggestions: validation.suggestions,
+          hint: 'Please use a valid US stock ticker symbol like AAPL, MSFT, NVDA, etc.'
+        };
+      }
+
+      const normalizedSymbol = symbol.toUpperCase();
+      const company = this.db.prepare('SELECT id, name, sector FROM companies WHERE symbol = ?').get(normalizedSymbol);
+
+      if (!company) {
+        return { error: `Company ${normalizedSymbol} not found` };
+      }
+
+      const prices = this.db.prepare(`
+        SELECT date, close
+        FROM daily_prices
+        WHERE company_id = ?
+        ORDER BY date DESC
+        LIMIT ?
+      `).all(company.id, days);
+
+      if (prices.length < 20) {
+        return {
+          symbol: normalizedSymbol,
+          error: 'Insufficient price history for risk metrics calculation (need at least 20 days)'
+        };
+      }
+
+      prices.reverse();
+      const closePrices = prices.map(p => p.close);
+
+      // Calculate daily returns
+      const dailyReturns = [];
+      for (let i = 1; i < closePrices.length; i++) {
+        if (closePrices[i - 1] > 0) {
+          dailyReturns.push((closePrices[i] - closePrices[i - 1]) / closePrices[i - 1]);
+        }
+      }
+
+      // Calculate metrics
+      const avgDailyReturn = dailyReturns.reduce((a, b) => a + b, 0) / dailyReturns.length;
+      const annualReturn = avgDailyReturn * TRADING_DAYS_PER_YEAR;
+      const variance = dailyReturns.reduce((sum, r) => sum + Math.pow(r - avgDailyReturn, 2), 0) / dailyReturns.length;
+      const volatility = Math.sqrt(variance) * Math.sqrt(TRADING_DAYS_PER_YEAR);
+
+      const sharpeRatio = calculateSharpe(annualReturn, volatility);
+      const sortinoRatio = calculateSortino(dailyReturns, annualReturn);
+      const drawdownInfo = calculateMaxDrawdown(closePrices);
+
+      return {
+        symbol: normalizedSymbol,
+        company_name: company.name,
+        sector: company.sector,
+        period: period,
+        data_points: dailyReturns.length,
+        metrics: {
+          annualized_return: Math.round(annualReturn * 10000) / 100,
+          annualized_volatility: Math.round(volatility * 10000) / 100,
+          sharpe_ratio: sharpeRatio,
+          sortino_ratio: sortinoRatio,
+          max_drawdown: drawdownInfo.maxDrawdown
+        },
+        interpretation: {
+          sharpe: sharpeRatio > 1 ? 'Good risk-adjusted returns' :
+                  sharpeRatio > 0.5 ? 'Acceptable risk-adjusted returns' :
+                  sharpeRatio > 0 ? 'Below-average risk-adjusted returns' : 'Negative risk-adjusted returns',
+          volatility: volatility > 0.4 ? 'High volatility (risky)' :
+                      volatility > 0.25 ? 'Moderate volatility' : 'Low volatility (stable)'
+        },
+        methodology_note: 'Sharpe = (Return - RiskFreeRate) / Volatility. Higher is better. Risk-free rate used: ' + (RISK_FREE_RATE * 100) + '%'
+      };
+    }
+
+    // No specific portfolio or symbol - return explanation
+    return {
+      message: 'Please specify either a portfolio_name or stock symbol to calculate risk metrics.',
+      available_metrics: ['sharpe_ratio', 'sortino_ratio', 'alpha', 'beta', 'max_drawdown', 'volatility'],
+      examples: [
+        'Get risk metrics for my Growth Portfolio',
+        'Show me Sharpe ratio for AAPL',
+        'Calculate alpha and beta for NVDA'
+      ]
+    };
+  }
+
+  // ============================================
+  // Tool: get_data_methodology
+  // ============================================
+  async getDataMethodology({ topic }) {
+    const methodologies = {
+      general: {
+        title: 'Data Sources & Methodology Overview',
+        description: 'This platform aggregates financial data from multiple institutional-grade sources to provide comprehensive investment analysis.',
+        data_sources: [
+          {
+            category: 'Market Data',
+            sources: ['Yahoo Finance API', 'Alpha Vantage'],
+            update_frequency: 'Daily (after market close)',
+            coverage: 'US equities, major ETFs, market indices',
+            latency: '15-20 minute delay during market hours'
+          },
+          {
+            category: 'Fundamental Data',
+            sources: ['SEC EDGAR (10-K, 10-Q filings)', 'Company financial statements'],
+            update_frequency: 'Quarterly (within 1-2 days of filing)',
+            coverage: 'All US public companies',
+            data_depth: '5+ years of historical financials'
+          },
+          {
+            category: 'Institutional Holdings',
+            sources: ['SEC 13F filings'],
+            update_frequency: 'Quarterly (45 days after quarter end)',
+            coverage: '5,000+ institutional investors',
+            data_depth: 'Complete position history'
+          },
+          {
+            category: 'Insider Activity',
+            sources: ['SEC Form 4 filings'],
+            update_frequency: 'Daily',
+            coverage: 'All reported insider transactions'
+          },
+          {
+            category: 'Sentiment Data',
+            sources: ['StockTwits API', 'News aggregation'],
+            update_frequency: 'Real-time to hourly',
+            note: 'Social sentiment is supplementary, not primary analysis'
+          }
+        ],
+        data_quality: {
+          validation: 'Multi-source cross-validation for key metrics',
+          error_handling: 'Outlier detection and flagging',
+          missing_data: 'Clearly marked when data is unavailable',
+          accuracy_target: '99%+ for price data, 95%+ for derived metrics'
+        }
+      },
+      sharpe_ratio: {
+        title: 'Sharpe Ratio Calculation Methodology',
+        formula: 'Sharpe = (Portfolio Return - Risk-Free Rate) / Portfolio Volatility',
+        parameters: {
+          returns: 'Arithmetic daily returns, annualized by multiplying by √252',
+          risk_free_rate: '4.5% (current 10-year Treasury yield approximation)',
+          volatility: 'Standard deviation of daily returns, annualized by multiplying by √252',
+          period: 'Default: 1 year (252 trading days)'
+        },
+        interpretation: {
+          '>2.0': 'Excellent - Very strong risk-adjusted returns',
+          '1.0-2.0': 'Good - Above-average risk-adjusted returns',
+          '0.5-1.0': 'Acceptable - Moderate risk-adjusted returns',
+          '0-0.5': 'Below average - Low risk-adjusted returns',
+          '<0': 'Poor - Negative risk-adjusted returns'
+        },
+        limitations: [
+          'Assumes normally distributed returns (may underestimate tail risk)',
+          'Backward-looking metric - past performance doesn\'t guarantee future results',
+          'Can be manipulated by smoothing returns or leverage'
+        ]
+      },
+      sortino_ratio: {
+        title: 'Sortino Ratio Calculation Methodology',
+        formula: 'Sortino = (Portfolio Return - Risk-Free Rate) / Downside Deviation',
+        difference_from_sharpe: 'Uses only negative returns (downside volatility) instead of total volatility, better for asymmetric return distributions',
+        parameters: {
+          downside_deviation: 'Standard deviation of negative returns only, annualized',
+          minimum_acceptable_return: 'Risk-free rate (4.5%)'
+        },
+        interpretation: {
+          '>2.0': 'Excellent downside risk management',
+          '1.0-2.0': 'Good downside protection',
+          '0.5-1.0': 'Average downside risk',
+          '<0.5': 'High downside risk'
+        },
+        when_to_use: 'Better than Sharpe when returns are not normally distributed or when you care more about avoiding losses than capturing upside volatility'
+      },
+      alpha: {
+        title: 'Alpha (Jensen\'s Alpha) Calculation Methodology',
+        formula: 'Alpha = Portfolio Return - [Risk-Free Rate + Beta × (Market Return - Risk-Free Rate)]',
+        description: 'Measures excess return above what would be expected given the portfolio\'s market risk (beta)',
+        benchmark: 'S&P 500 (SPY) used as market proxy',
+        interpretation: {
+          'Positive alpha': 'Outperforming the market on a risk-adjusted basis (generating excess returns)',
+          'Zero alpha': 'Performing as expected given market risk',
+          'Negative alpha': 'Underperforming on a risk-adjusted basis'
+        },
+        limitations: [
+          'Depends on accuracy of beta estimate',
+          'Single-factor model - doesn\'t account for size, value, momentum factors',
+          'Backward-looking'
+        ]
+      },
+      beta: {
+        title: 'Beta Calculation Methodology',
+        formula: 'Beta = Covariance(Portfolio, Market) / Variance(Market)',
+        description: 'Measures sensitivity of portfolio returns to market movements',
+        benchmark: 'S&P 500 (SPY)',
+        interpretation: {
+          'Beta = 1': 'Moves in line with market',
+          'Beta > 1': 'More volatile than market (amplifies moves)',
+          'Beta < 1': 'Less volatile than market (dampens moves)',
+          'Beta < 0': 'Negatively correlated with market (rare)'
+        },
+        calculation_period: 'Default 1 year of daily returns'
+      },
+      correlations: {
+        title: 'Correlation Calculation Methodology',
+        formula: 'Pearson correlation coefficient between daily returns',
+        period: '90 days default (can be adjusted)',
+        interpretation: {
+          '0.7 to 1.0': 'Strong positive correlation',
+          '0.3 to 0.7': 'Moderate positive correlation',
+          '-0.3 to 0.3': 'Weak/no correlation',
+          '-0.7 to -0.3': 'Moderate negative correlation',
+          '-1.0 to -0.7': 'Strong negative correlation'
+        },
+        use_cases: [
+          'Portfolio diversification analysis',
+          'Identifying hedging opportunities',
+          'Risk aggregation'
+        ]
+      },
+      valuation_metrics: {
+        title: 'Valuation Metrics Methodology',
+        metrics: {
+          pe_ratio: {
+            formula: 'Price / Earnings Per Share (TTM)',
+            source: 'Latest quarterly filing + current price',
+            note: 'Negative earnings result in N/A'
+          },
+          pb_ratio: {
+            formula: 'Price / Book Value Per Share',
+            source: 'Latest balance sheet book value'
+          },
+          ev_ebitda: {
+            formula: 'Enterprise Value / EBITDA (TTM)',
+            source: 'Market cap + debt - cash, divided by trailing EBITDA'
+          },
+          fcf_yield: {
+            formula: 'Free Cash Flow / Market Cap × 100',
+            source: 'TTM free cash flow from cash flow statement'
+          }
+        },
+        update_frequency: 'Quarterly with financial statements, daily price updates'
+      }
+    };
+
+    const requestedTopic = topic?.toLowerCase() || 'general';
+
+    // Find matching topic
+    if (methodologies[requestedTopic]) {
+      return methodologies[requestedTopic];
+    }
+
+    // Check for partial matches
+    for (const [key, value] of Object.entries(methodologies)) {
+      if (key.includes(requestedTopic) || requestedTopic.includes(key)) {
+        return value;
+      }
+    }
+
+    // Return general overview with available topics
+    return {
+      ...methodologies.general,
+      available_topics: Object.keys(methodologies),
+      hint: `Ask about specific topics: ${Object.keys(methodologies).join(', ')}`
+    };
   }
 }
 

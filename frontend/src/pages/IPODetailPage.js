@@ -312,27 +312,44 @@ function IPODetailPage() {
         <section className="detail-card company-info">
           <h2>Company Info</h2>
           <div className="card-content">
-            <DataRow label="CIK" value={ipo.cik} />
-            <DataRow label="Industry" value={ipo.industry} />
-            <DataRow label="Sector" value={ipo.sector} />
-            <DataRow label="Headquarters" value={ipo.headquarters_state} />
-            <DataRow label="Country" value={ipo.headquarters_country || 'United States'} />
-            {ipo.employee_count && (
-              <DataRow label="Employees" value={ipo.employee_count.toLocaleString()} />
-            )}
-            {ipo.founded_year && (
-              <DataRow label="Founded" value={ipo.founded_year} />
-            )}
-            {ipo.website && (
-              <DataRow
-                label="Website"
-                value={
-                  <a href={ipo.website} target="_blank" rel="noreferrer">
-                    {ipo.website.replace(/^https?:\/\//, '')}
-                  </a>
-                }
-              />
-            )}
+            <div className="company-info-list">
+              <div className="info-row">
+                <span className="info-label">Sector</span>
+                <span className="info-value">{ipo.sector || '-'}</span>
+              </div>
+              <div className="info-row">
+                <span className="info-label">Industry</span>
+                <span className="info-value">{ipo.industry || '-'}</span>
+              </div>
+              <div className="info-row">
+                <span className="info-label">Country</span>
+                <span className="info-value">{ipo.headquarters_country || (ipo.region === 'US' ? 'United States' : ipo.home_member_state) || '-'}</span>
+              </div>
+              {ipo.headquarters_state && (
+                <div className="info-row">
+                  <span className="info-label">Headquarters</span>
+                  <span className="info-value">{ipo.headquarters_state}</span>
+                </div>
+              )}
+              {ipo.employee_count && (
+                <div className="info-row">
+                  <span className="info-label">Employees</span>
+                  <span className="info-value">{ipo.employee_count.toLocaleString()}</span>
+                </div>
+              )}
+              {ipo.founded_year && (
+                <div className="info-row">
+                  <span className="info-label">Founded</span>
+                  <span className="info-value">{ipo.founded_year}</span>
+                </div>
+              )}
+              {ipo.cik && (
+                <div className="info-row">
+                  <span className="info-label">CIK/ID</span>
+                  <span className="info-value info-value-small">{ipo.cik}</span>
+                </div>
+              )}
+            </div>
           </div>
 
           {ipo.business_description && (
@@ -341,6 +358,25 @@ function IPODetailPage() {
               <p>{ipo.business_description}</p>
             </div>
           )}
+
+          {/* Links Section */}
+          <div className="company-links">
+            {ipo.prospectus_url && (
+              <a href={ipo.prospectus_url} target="_blank" rel="noreferrer" className="company-link prospectus-link">
+                View Prospectus
+              </a>
+            )}
+            {ipo.website && (
+              <a href={ipo.website} target="_blank" rel="noreferrer" className="company-link website-link">
+                Company Website
+              </a>
+            )}
+            {ipo.status === 'TRADING' && ipo.ticker_final && (
+              <Link to={`/company/${ipo.ticker_final}`} className="company-link trading-link">
+                View Stock Analysis
+              </Link>
+            )}
+          </div>
         </section>
 
         {/* Pre-IPO Financials */}
@@ -491,17 +527,6 @@ function IPODetailPage() {
         )}
       </section>
 
-      {/* Link to company page if trading */}
-      {ipo.status === 'TRADING' && ipo.company_id && (
-        <section className="trading-link-section">
-          <Link
-            to={`/company/${ipo.ticker_final || ipo.ticker_proposed}`}
-            className="company-page-link"
-          >
-            View Full Company Analysis
-          </Link>
-        </section>
-      )}
     </div>
   );
 }

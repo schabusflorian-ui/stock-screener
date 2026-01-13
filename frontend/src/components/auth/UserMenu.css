@@ -136,11 +136,24 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  width: 100%;
   padding: var(--space-2) var(--space-4);
+  border: none;
+  background: transparent;
   color: var(--text-secondary);
   text-decoration: none;
   font-size: var(--text-sm);
+  cursor: pointer;
   transition: all 0.15s ease;
+}
+
+.user-menu-shortcut {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  background: var(--bg-secondary);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
 }
 
 .user-menu-item:hover {

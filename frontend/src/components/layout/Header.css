@@ -15,7 +15,7 @@
   justify-content: space-between;
   padding: 0 var(--space-6);
   z-index: var(--z-sticky);
-  transition: left var(--transition-normal);
+  transition: left var(--transition-normal), right var(--transition-normal);
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
 }
 
@@ -133,6 +133,24 @@
 .header-btn:hover {
   background: rgba(99, 102, 241, 0.08);
   color: var(--brand-primary);
+}
+
+/* AI Chat Button */
+.ai-chat-btn {
+  position: relative;
+}
+
+.ai-chat-btn.active {
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--brand-primary);
+}
+
+.ai-chat-btn:hover {
+  background: rgba(99, 102, 241, 0.12);
+}
+
+.ai-chat-btn.active:hover {
+  background: rgba(99, 102, 241, 0.2);
 }
 
 /* Notification Badge */
