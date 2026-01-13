@@ -13,7 +13,7 @@ const ANALYST_NAMES = {
   growth: 'Catherine',
   contrarian: 'Diana',
   quant: 'Marcus',
-  risk: 'Nikolai',
+  tailrisk: 'Nikolai',
   tech: 'Elena'
 };
 
@@ -22,7 +22,7 @@ const ANALYST_ICONS = {
   growth: '📈',
   contrarian: '🔄',
   quant: '🧮',
-  risk: '🛡️',
+  tailrisk: '⚡',
   tech: '💻'
 };
 

@@ -3,7 +3,7 @@ import axios from 'axios';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL
   ? `${process.env.REACT_APP_API_URL}/api`
-  : 'http://localhost:3000/api';
+  : '/api';  // Use relative URL to leverage CRA proxy in development
 
 // Check if using local admin bypass (matches AuthContext logic)
 const hasLocalAdminBypass = () => {
@@ -45,17 +45,63 @@ apiLong.interceptors.request.use((config) => {
   return config;
 });
 
-// Response interceptor to handle 401 errors
+// Response interceptor to handle errors consistently
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    // Handle network errors
+    if (!error.response) {
+      console.error('[API] Network error:', error.message);
+      return Promise.reject({
+        code: 'NETWORK_ERROR',
+        message: 'Network error. Please check your connection.',
+        originalError: error
+      });
+    }
+
+    // Handle 401 (unauthorized)
     if (error.response?.status === 401) {
       // Don't redirect if using local admin bypass (just failed for other reason)
       if (!hasLocalAdminBypass()) {
         window.location.href = '/login';
       }
     }
-    return Promise.reject(error);
+
+    // Extract standardized error format from response
+    const errorData = error.response?.data?.error || error.response?.data;
+    const formattedError = {
+      code: errorData?.code || `HTTP_${error.response?.status}`,
+      message: errorData?.message || error.message || 'An error occurred',
+      status: error.response?.status,
+      details: errorData?.details,
+      originalError: error
+    };
+
+    console.error(`[API] Error ${formattedError.code}:`, formattedError.message);
+    return Promise.reject(formattedError);
+  }
+);
+
+// Apply same interceptor to long timeout instance
+apiLong.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (!error.response) {
+      return Promise.reject({
+        code: 'NETWORK_ERROR',
+        message: 'Network error. Please check your connection.',
+        originalError: error
+      });
+    }
+
+    const errorData = error.response?.data?.error || error.response?.data;
+    return Promise.reject({
+      code: errorData?.code || `HTTP_${error.response?.status}`,
+      message: errorData?.message || error.message || 'An error occurred',
+      status: error.response?.status,
+      details: errorData?.details,
+      originalError: error
+    });
   }
 );
 
@@ -808,6 +854,72 @@ export const alertsAPI = {
   getConfig: () => api.get('/alerts/config')
 };
 
+// ============================================
+// UNIFIED NOTIFICATIONS API
+// ============================================
+export const notificationsAPI = {
+  // Get all notifications with filters
+  getNotifications: (filters = {}) => {
+    const params = new URLSearchParams();
+    if (filters.status) params.append('status', filters.status);
+    if (filters.category) params.append('category', filters.category);
+    if (filters.categories) params.append('categories', filters.categories.join(','));
+    if (filters.severity) params.append('severity', filters.severity);
+    if (filters.minPriority) params.append('minPriority', filters.minPriority);
+    if (filters.maxPriority) params.append('maxPriority', filters.maxPriority);
+    if (filters.portfolioId) params.append('portfolioId', filters.portfolioId);
+    if (filters.companyId) params.append('companyId', filters.companyId);
+    if (filters.symbol) params.append('symbol', filters.symbol);
+    if (filters.includeExpired) params.append('includeExpired', 'true');
+    if (filters.includeDismissed) params.append('includeDismissed', 'true');
+    if (filters.limit) params.append('limit', filters.limit);
+    if (filters.offset) params.append('offset', filters.offset);
+    return api.get(`/notifications?${params.toString()}`);
+  },
+
+  // Get notification summary for header badge
+  getSummary: () => api.get('/notifications/summary'),
+
+  // Get dashboard notifications
+  getDashboard: (limit = 10) => api.get(`/notifications/dashboard?limit=${limit}`),
+
+  // Get single notification
+  getNotification: (id) => api.get(`/notifications/${id}`),
+
+  // Get notification clusters
+  getClusters: (limit = 20) => api.get(`/notifications/groups/clusters?limit=${limit}`),
+
+  // Mark as read
+  markAsRead: (id) => api.post(`/notifications/${id}/read`),
+
+  // Mark as actioned
+  markAsActioned: (id, actionId) => api.post(`/notifications/${id}/action`, { actionId }),
+
+  // Dismiss
+  dismiss: (id) => api.post(`/notifications/${id}/dismiss`),
+
+  // Snooze
+  snooze: (id, until) => api.post(`/notifications/${id}/snooze`, { until }),
+
+  // Bulk mark as read
+  bulkMarkAsRead: (filters = {}) => api.post('/notifications/bulk-read', filters),
+
+  // Bulk dismiss
+  bulkDismiss: (filters = {}) => api.post('/notifications/bulk-dismiss', filters),
+
+  // Get user preferences
+  getPreferences: () => api.get('/notifications/user/preferences'),
+
+  // Update user preferences
+  updatePreferences: (updates) => api.put('/notifications/user/preferences', updates),
+
+  // Create notification (internal use)
+  create: (notification) => api.post('/notifications', notification),
+
+  // Get system config
+  getConfig: () => api.get('/notifications/system/config')
+};
+
 export const dcfAPI = {
   // Get DCF valuation for a company
   getValuation: (symbol, currentPrice, sharesOutstanding) => {
@@ -1452,58 +1564,93 @@ export const analystAPI = {
       companyContext
     }, { timeout: 120000 }),
 
-  // Send a message with streaming response (returns EventSource)
-  sendMessageStream: (conversationId, message, companyContext = null, callbacks = {}) => {
-    const { onStart, onToken, onComplete, onError, onDone } = callbacks;
+  // Send a message with streaming response using fetch + ReadableStream
+  sendMessageStream: async (conversationId, message, companyContext = null, callbacks = {}) => {
+    const { onStart, onToken, onComplete, onError, onDone, onThinking } = callbacks;
 
-    // Build URL with query parameters
-    const params = new URLSearchParams({ message });
-    if (companyContext) {
-      params.append('companyContext', JSON.stringify(companyContext));
-    }
+    console.log('[analystAPI.sendMessageStream] Starting for conversation:', conversationId);
 
-    const url = `${API_BASE_URL}/analyst/conversations/${conversationId}/messages/stream?${params.toString()}`;
+    try {
+      const response = await fetch(`${API_BASE_URL}/analyst/conversations/${conversationId}/messages/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, companyContext })
+      });
 
-    const eventSource = new EventSource(url);
+      console.log('[analystAPI.sendMessageStream] Response status:', response.status);
 
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-
-        switch (data.type) {
-          case 'start':
-            onStart?.(data.id);
-            break;
-          case 'token':
-            onToken?.(data.content);
-            break;
-          case 'complete':
-            onComplete?.(data.message);
-            break;
-          case 'error':
-            onError?.(new Error(data.error));
-            eventSource.close();
-            break;
-          case 'done':
-            onDone?.();
-            eventSource.close();
-            break;
-          default:
-            break;
-        }
-      } catch (e) {
-        console.error('Error parsing SSE event:', e);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-    };
 
-    eventSource.onerror = (error) => {
-      console.error('SSE error:', error);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let chunkCount = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          console.log('[analystAPI.sendMessageStream] Stream ended after', chunkCount, 'chunks');
+          break;
+        }
+
+        chunkCount++;
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+
+        if (chunkCount <= 3) {
+          console.log('[analystAPI.sendMessageStream] Chunk', chunkCount, ':', chunk.substring(0, 100));
+        }
+
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop(); // Keep incomplete chunk
+
+        for (const line of lines) {
+          // Skip SSE comments (lines starting with :)
+          if (line.startsWith(':')) {
+            console.log('[analystAPI.sendMessageStream] SSE comment:', line);
+            continue;
+          }
+
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              console.log('[analystAPI.sendMessageStream] Event:', data.type);
+
+              switch (data.type) {
+                case 'thinking':
+                  onThinking?.();
+                  break;
+                case 'start':
+                  onStart?.(data.id);
+                  break;
+                case 'token':
+                  onToken?.(data.content);
+                  break;
+                case 'complete':
+                  onComplete?.(data.message);
+                  break;
+                case 'error':
+                  onError?.(new Error(data.error));
+                  return;
+                case 'done':
+                  onDone?.();
+                  return;
+                default:
+                  break;
+              }
+            } catch (e) {
+              console.warn('[analystAPI.sendMessageStream] JSON parse error for line:', line);
+            }
+          }
+        }
+      }
+      onDone?.();
+    } catch (error) {
+      console.error('[analystAPI.sendMessageStream] Error:', error);
       onError?.(error);
-      eventSource.close();
-    };
-
-    // Return the EventSource so caller can close it if needed
-    return eventSource;
+    }
   },
 
   // Quick one-shot analysis without conversation

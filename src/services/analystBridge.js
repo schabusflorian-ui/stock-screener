@@ -281,6 +281,7 @@ async function executePythonCli(command, args = {}) {
 /**
  * Stream tokens from Python chat_stream command
  * Yields objects with { type: 'token'|'done', content: string }
+ * Uses explicit stream event handlers for reliability across Node versions
  */
 async function* streamFromPython(conversationId, message, companyContext) {
   const cliRunnerPath = path.join(__dirname, 'ai', 'cli_runner.py');
@@ -292,23 +293,70 @@ async function* streamFromPython(conversationId, message, companyContext) {
 
   const python = spawn('python3', [cliRunnerPath, 'analyst:chat_stream', args]);
 
+  // Queue for incoming chunks and synchronization
+  const chunks = [];
+  let resolveNext = null;
+  let finished = false;
+  let processError = null;
+
+  // Set up event handlers
+  python.stdout.on('data', (chunk) => {
+    chunks.push(chunk.toString());
+    if (resolveNext) {
+      resolveNext();
+      resolveNext = null;
+    }
+  });
+
+  python.stderr.on('data', (chunk) => {
+    console.error('Python stderr:', chunk.toString());
+  });
+
+  python.on('close', (code) => {
+    finished = true;
+    if (code !== 0) {
+      processError = new Error(`Python streaming exited with code ${code}`);
+    }
+    if (resolveNext) {
+      resolveNext();
+      resolveNext = null;
+    }
+  });
+
+  python.on('error', (err) => {
+    processError = err;
+    finished = true;
+    if (resolveNext) {
+      resolveNext();
+      resolveNext = null;
+    }
+  });
+
   let buffer = '';
 
-  // Handle streaming output line by line
-  for await (const chunk of python.stdout) {
-    buffer += chunk.toString();
+  // Process chunks as they arrive
+  while (!finished || chunks.length > 0) {
+    // Wait for data if queue is empty and process hasn't finished
+    if (chunks.length === 0 && !finished) {
+      await new Promise(r => resolveNext = r);
+    }
 
-    // Process complete lines (newline-delimited JSON)
-    const lines = buffer.split('\n');
-    buffer = lines.pop(); // Keep incomplete line in buffer
+    // Process all available chunks
+    while (chunks.length > 0) {
+      buffer += chunks.shift();
 
-    for (const line of lines) {
-      if (line.trim()) {
-        try {
-          const data = JSON.parse(line);
-          yield data;
-        } catch (e) {
-          console.error('Failed to parse streaming line:', line);
+      // Split on newlines and process complete JSON lines
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // Keep incomplete line in buffer
+
+      for (const line of lines) {
+        if (line.trim()) {
+          try {
+            const data = JSON.parse(line);
+            yield data;
+          } catch (e) {
+            // Skip invalid JSON lines
+          }
         }
       }
     }
@@ -320,21 +368,14 @@ async function* streamFromPython(conversationId, message, companyContext) {
       const data = JSON.parse(buffer);
       yield data;
     } catch (e) {
-      console.error('Failed to parse final buffer:', buffer);
+      // Ignore final buffer parse errors
     }
   }
 
-  // Wait for process to complete
-  await new Promise((resolve, reject) => {
-    python.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(`Python streaming exited with code ${code}`));
-      } else {
-        resolve();
-      }
-    });
-    python.on('error', reject);
-  });
+  // Throw if there was a process error
+  if (processError) {
+    throw processError;
+  }
 }
 
 /**
@@ -384,20 +425,33 @@ class AnalystService {
 
   /**
    * List all available analysts.
+   * Falls back to mock data if Python service fails.
    */
   async getAnalysts() {
     if (this.usePython) {
-      return executePython('list_analysts');
+      try {
+        return await executePython('list_analysts');
+      } catch (e) {
+        console.warn('Python list_analysts failed, using fallback:', e.message);
+        this.pythonAvailable = false;
+        this.lastPythonError = e.message;
+      }
     }
     return Object.values(ANALYSTS);
   }
 
   /**
    * Get analyst details.
+   * Falls back to mock data if Python service fails.
    */
   async getAnalystInfo(analystId) {
     if (this.usePython) {
-      return executePython('get_analyst', { analyst_id: analystId });
+      try {
+        return await executePython('get_analyst', { analyst_id: analystId });
+      } catch (e) {
+        console.warn('Python get_analyst failed, using fallback:', e.message);
+        this.pythonAvailable = false;
+      }
     }
 
     if (!ANALYSTS[analystId]) {
@@ -496,6 +550,13 @@ class AnalystService {
    * Yields tokens one at a time for real-time display.
    */
   async *chatStream(conversationId, message, companyContext = null) {
+    // Generate message ID for the response immediately (before any async work)
+    const responseId = this._generateId();
+
+    // Yield start event IMMEDIATELY to keep connection alive
+    // This must be before any await to prevent client timeouts
+    yield { type: 'start', id: responseId };
+
     const conv = conversationStore.getConversation(conversationId);
     if (!conv) {
       throw new Error(`Conversation not found: ${conversationId}`);
@@ -517,12 +578,6 @@ class AnalystService {
       timestamp: new Date().toISOString()
     };
     conversationStore.addMessage(conversationId, userMsg);
-
-    // Generate message ID for the response
-    const responseId = this._generateId();
-
-    // Emit start event
-    yield { type: 'start', id: responseId };
 
     let fullContent = '';
 

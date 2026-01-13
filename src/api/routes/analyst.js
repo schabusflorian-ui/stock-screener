@@ -181,20 +181,20 @@ router.delete('/conversations/:id', async (req, res) => {
 });
 
 /**
- * GET /api/analyst/conversations/:id/messages/stream
+ * POST /api/analyst/conversations/:id/messages/stream
  * Stream a message response using Server-Sent Events (SSE)
  *
- * Query:
- * - message: string (required) - The user's message (URL encoded)
- * - companyContext: string (optional) - JSON stringified company data
+ * Body:
+ * - message: string (required) - The user's message
+ * - companyContext: object (optional) - Company context data
  */
-router.get('/conversations/:id/messages/stream', async (req, res) => {
-  const { message, companyContext } = req.query;
+router.post('/conversations/:id/messages/stream', async (req, res) => {
+  const { message, companyContext } = req.body;
 
   if (!message || typeof message !== 'string' || message.trim().length === 0) {
     return res.status(400).json({
       success: false,
-      error: 'message query parameter is required'
+      error: 'message is required in request body'
     });
   }
 
@@ -203,52 +203,97 @@ router.get('/conversations/:id/messages/stream', async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+
+  // Prevent socket timeout during streaming
+  if (res.socket) {
+    res.socket.setKeepAlive(true);
+    res.socket.setTimeout(0); // Disable timeout
+  }
+  if (req.socket) {
+    req.socket.setKeepAlive(true);
+    req.socket.setTimeout(0);
+  }
+
   res.flushHeaders();
 
-  // Handle client disconnect
+  // Send initial comment to establish connection
+  res.write(': connected\n\n');
+
+  const startTime = Date.now();
+  console.log('[Analyst Stream] Starting stream for conversation:', req.params.id, 'at', startTime);
+
+  // Handle client disconnect - use res.on('close') not req.on('close')
+  // req.on('close') fires when the request body is fully read (immediately for POST)
+  // res.on('close') fires when the response connection actually closes
   let isConnected = true;
-  req.on('close', () => {
-    isConnected = false;
+
+  // Track if we closed the response ourselves vs client disconnect
+  let responseEnded = false;
+
+  res.on('close', () => {
+    if (!responseEnded) {
+      // Response closed before we called res.end() - client disconnected
+      isConnected = false;
+      console.log('[Analyst Stream] Client disconnected at +', Date.now() - startTime, 'ms');
+    }
   });
 
-  try {
-    // Parse company context if provided
-    let parsedContext = null;
-    if (companyContext) {
-      try {
-        parsedContext = JSON.parse(companyContext);
-      } catch (e) {
-        // Ignore parse errors, use null context
+  // Send initial "thinking" event immediately to keep connection alive
+  res.write(`data: ${JSON.stringify({ type: 'thinking' })}\n\n`);
+  console.log('[Analyst Stream] Wrote thinking event at +', Date.now() - startTime, 'ms');
+
+  // Create the stream generator
+  console.log('[Analyst Stream] Creating stream generator at +', Date.now() - startTime, 'ms');
+  const stream = analystService.chatStream(
+    req.params.id,
+    message.trim(),
+    companyContext || null
+  );
+  const iterator = stream[Symbol.asyncIterator]();
+  let eventCount = 0;
+
+  // Use callback-based iteration to keep event loop active (like setInterval does)
+  const processNext = () => {
+    if (!isConnected) {
+      console.log('[Analyst Stream] Client disconnected after', eventCount, 'events at +', Date.now() - startTime, 'ms');
+      responseEnded = true;
+      res.end();
+      return;
+    }
+
+    iterator.next().then(({ value: event, done }) => {
+      if (done) {
+        console.log('[Analyst Stream] Stream complete, sent', eventCount, 'events at +', Date.now() - startTime, 'ms');
+        if (isConnected) {
+          res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+        }
+        responseEnded = true;
+        res.end();
+        return;
       }
-    }
 
-    // Stream the response
-    const stream = analystService.chatStream(
-      req.params.id,
-      message.trim(),
-      parsedContext
-    );
-
-    for await (const event of stream) {
-      if (!isConnected) break;
-
-      // Send SSE event
+      console.log('[Analyst Stream] Got event:', event.type, 'at +', Date.now() - startTime, 'ms');
+      eventCount++;
       res.write(`data: ${JSON.stringify(event)}\n\n`);
-    }
 
-    // Send done event
-    if (isConnected) {
-      res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
-    }
-  } catch (error) {
-    console.error('Error streaming message:', error);
+      if (eventCount <= 3) {
+        console.log('[Analyst Stream] Sent event:', event.type);
+      }
 
-    if (isConnected) {
-      res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
-    }
-  } finally {
-    res.end();
-  }
+      // Schedule next iteration - setImmediate keeps event loop active
+      setImmediate(processNext);
+    }).catch((error) => {
+      console.error('[Analyst Stream] Error:', error.message);
+      if (isConnected) {
+        res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
+      }
+      responseEnded = true;
+      res.end();
+    });
+  };
+
+  // Start processing
+  processNext();
 });
 
 /**
