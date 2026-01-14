@@ -1392,16 +1392,30 @@ async function executeApproved(signalId) {
     // Check if paper trading or live
     if (portfolio.mode === 'paper') {
       // Paper trading execution
-      const { PaperTradingEngine } = require('./paperTradingEngine');
+      const { PaperTradingEngine } = require('../trading/paperTrading');
       const paperEngine = new PaperTradingEngine(db);
 
-      const tradeResult = await paperEngine.executeTrade({
-        portfolioId: portfolio.portfolio_id,
+      // Get or create paper account for this portfolio
+      const accountName = `portfolio_${portfolio.portfolio_id}`;
+      let account;
+      try {
+        account = paperEngine.getAccount(accountName);
+      } catch (e) {
+        // Create account if it doesn't exist
+        account = paperEngine.createAccount(accountName, portfolio.initial_capital || 100000);
+      }
+
+      // Determine order side
+      const side = signal.action.includes('buy') ? 'BUY' : 'SELL';
+      const shares = signal.suggested_shares || Math.floor((portfolio.initial_capital * 0.05) / (signal.price_at_signal || 100));
+
+      // Submit order using the paper trading engine
+      const tradeResult = paperEngine.submitOrder(account.id, {
         symbol: signal.symbol,
-        action: signal.action.includes('buy') ? 'buy' : 'sell',
-        shares: signal.position_size_shares || 10,
-        orderType: 'market',
-        agentSignalId: signal.id
+        side: side,
+        orderType: 'MARKET',
+        quantity: shares || 10,
+        notes: `Agent signal ${signal.id}: ${signal.action}`
       });
 
       // Update signal status
@@ -1410,21 +1424,20 @@ async function executeApproved(signalId) {
         SET status = 'executed',
             executed_at = ?,
             executed_price = ?,
-            executed_shares = ?,
-            updated_at = ?
+            executed_shares = ?
         WHERE id = ?
-      `).run(now, tradeResult.executedPrice, tradeResult.executedShares, now, signalId);
+      `).run(now, tradeResult.avgFillPrice || tradeResult.fillPrice, tradeResult.filledQuantity || shares, signalId);
 
       // Log activity
       logActivity(signal.agent_id, portfolio.portfolio_id, 'trade_executed',
-        `Executed ${signal.action.toUpperCase()} ${tradeResult.executedShares} shares of ${signal.symbol} @ $${tradeResult.executedPrice?.toFixed(2)}`, null, signalId);
+        `Executed ${signal.action.toUpperCase()} ${tradeResult.filledQuantity || shares} shares of ${signal.symbol} @ $${(tradeResult.avgFillPrice || tradeResult.fillPrice)?.toFixed(2)}`, null, signalId);
 
       return {
         ...signal,
         status: 'executed',
         executed_at: now,
-        executed_price: tradeResult.executedPrice,
-        executed_shares: tradeResult.executedShares,
+        executed_price: tradeResult.avgFillPrice || tradeResult.fillPrice,
+        executed_shares: tradeResult.filledQuantity || shares,
         trade: tradeResult
       };
     } else {
