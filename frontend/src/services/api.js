@@ -1465,6 +1465,10 @@ export const simulateAPI = {
     const { period = '5y', initialCapital = 100000 } = params;
     return api.get(`/simulate/portfolios/${portfolioId}/kelly/taleb-risk?period=${period}&initialCapital=${initialCapital}`, { timeout: 60000 });
   },
+  getKellyMultiAsset: (portfolioId, params = {}) => {
+    const { period = '3y', kellyFraction = 0.25, riskFreeRate = 0.05 } = params;
+    return api.get(`/simulate/portfolios/${portfolioId}/kelly/multi-asset?period=${period}&kellyFraction=${kellyFraction}&riskFreeRate=${riskFreeRate}`, { timeout: 60000 });
+  },
   analyzeSingleHolding: (symbol, params = {}) => {
     const { portfolioId, period = '3y', riskFreeRate = 0.05, benchmarkSymbol = 'SPY', kellyFractions } = params;
     let url = `/simulate/kelly/analyze/${symbol}?period=${period}&riskFreeRate=${riskFreeRate}&benchmarkSymbol=${benchmarkSymbol}`;
@@ -2365,11 +2369,20 @@ export const agentsAPI = {
   getSignal: (id, signalId) => api.get(`/agents/${id}/signals/${signalId}`),
 
   // Approve a signal
-  approveSignal: (id, signalId) => api.post(`/agents/${id}/signals/${signalId}/approve`),
+  approveSignal: (id, signalId) => {
+    if (!id || !signalId) {
+      return Promise.reject(new Error('Missing agentId or signalId'));
+    }
+    return api.post(`/agents/${id}/signals/${signalId}/approve`);
+  },
 
   // Reject a signal
-  rejectSignal: (id, signalId, reason = '') =>
-    api.post(`/agents/${id}/signals/${signalId}/reject`, { reason }),
+  rejectSignal: (id, signalId, reason = '') => {
+    if (!id || !signalId) {
+      return Promise.reject(new Error('Missing agentId or signalId'));
+    }
+    return api.post(`/agents/${id}/signals/${signalId}/reject`, { reason });
+  },
 
   // Approve all pending signals
   approveAllSignals: (id) => api.post(`/agents/${id}/signals/approve-all`),
@@ -2530,10 +2543,10 @@ export const paperTradingAPI = {
 // ML SIGNAL COMBINER API
 // ============================================
 export const mlCombinerAPI = {
-  // Get ML model status
-  getStatus: () => api.get('/validation/ml/status'),
+  // Get ML model status (can be slow due to data gathering)
+  getStatus: () => api.get('/validation/ml/status', { timeout: 60000 }),
 
-  // Train the ML signal combiner
+  // Train the ML signal combiner (long-running operation)
   train: (lookbackDays = 730) =>
     apiLong.post('/validation/ml/train', { lookbackDays }),
 
@@ -2809,6 +2822,73 @@ export const congressionalAPI = {
 
   // Get overall statistics
   getStats: () => api.get('/congressional/stats')
+};
+
+// === Unified Strategy API ===
+export const unifiedStrategyAPI = {
+  // Get all strategies
+  getAll: (params = {}) => api.get('/unified-strategies', { params }),
+
+  // Get strategy presets
+  getPresets: () => api.get('/unified-strategies/presets'),
+
+  // Get a specific strategy
+  get: (id) => api.get(`/unified-strategies/${id}`),
+
+  // Create a new strategy
+  create: (config) => api.post('/unified-strategies', config),
+
+  // Create from preset
+  createFromPreset: (presetName, overrides = {}) =>
+    api.post('/unified-strategies/from-preset', { presetName, overrides }),
+
+  // Create multi-strategy
+  createMulti: (parent, children) =>
+    api.post('/unified-strategies/multi', { parent, children }),
+
+  // Update a strategy
+  update: (id, updates) => api.put(`/unified-strategies/${id}`, updates),
+
+  // Delete a strategy
+  delete: (id, hard = false) =>
+    api.delete(`/unified-strategies/${id}${hard ? '?hard=true' : ''}`),
+
+  // Duplicate a strategy
+  duplicate: (id, newName) =>
+    api.post(`/unified-strategies/${id}/duplicate`, { newName }),
+
+  // Generate signal for a stock
+  generateSignal: (strategyId, symbol, portfolioContext = {}) =>
+    api.post(`/unified-strategies/${strategyId}/signal`, { symbol, portfolioContext }),
+
+  // Generate signals for multiple stocks
+  generateSignals: (strategyId, symbols, portfolioContext = {}) =>
+    api.post(`/unified-strategies/${strategyId}/signals`, { symbols, portfolioContext }),
+
+  // Run backtest (long-running operation)
+  runBacktest: (strategyId, config) =>
+    apiLong.post(`/unified-strategies/${strategyId}/backtest`, config),
+
+  // Get backtest history
+  getBacktestHistory: (strategyId, limit = 10) =>
+    api.get(`/unified-strategies/${strategyId}/backtest/history?limit=${limit}`),
+
+  // Get current market regime
+  getCurrentRegime: () => api.get('/unified-strategies/regime/current'),
+
+  // Get regime history
+  getRegimeHistory: (days = 30) =>
+    api.get(`/unified-strategies/regime/history?days=${days}`),
+
+  // Get allocations for multi-strategy
+  getAllocations: (strategyId) =>
+    api.get(`/unified-strategies/${strategyId}/allocations`),
+
+  // Validate strategy config
+  validate: (config) => api.post('/unified-strategies/validate', config),
+
+  // Get available signal types
+  getAvailableSignals: () => api.get('/unified-strategies/signals/available')
 };
 
 export default api;

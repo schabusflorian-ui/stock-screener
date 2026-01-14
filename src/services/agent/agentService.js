@@ -24,6 +24,13 @@ const DEFAULT_WEIGHTS = {
   valueQuality: 0.10
 };
 
+// Ensure unified_strategy_id column exists (for existing databases)
+try {
+  db.exec(`ALTER TABLE trading_agents ADD COLUMN unified_strategy_id INTEGER REFERENCES unified_strategies(id)`);
+} catch (e) {
+  // Column already exists
+}
+
 // Strategy presets
 const STRATEGY_PRESETS = {
   technical: {
@@ -215,7 +222,9 @@ function createAgent(config) {
     universe_type = 'all',
     universe_filter = null,
     // Region for sentiment sources
-    region = 'US'
+    region = 'US',
+    // Unified strategy reference (new system)
+    unified_strategy_id = null
   } = config;
 
   // Apply preset weights if strategy is not custom
@@ -257,7 +266,7 @@ function createAgent(config) {
       auto_execute, execution_threshold, require_confirmation, allowed_actions,
       use_optimized_weights, use_hmm_regime, use_ml_combiner, use_factor_exposure, use_probabilistic_dcf,
       apply_earnings_filter, earnings_blackout_days,
-      universe_type, universe_filter, region
+      universe_type, universe_filter, region, unified_strategy_id
     ) VALUES (
       ?, ?, ?,
       ?, ?, ?, ?,
@@ -268,7 +277,7 @@ function createAgent(config) {
       ?, ?, ?, ?,
       ?, ?, ?, ?, ?,
       ?, ?,
-      ?, ?, ?
+      ?, ?, ?, ?
     )
   `);
 
@@ -282,7 +291,7 @@ function createAgent(config) {
     auto_execute, execution_threshold, require_confirmation, allowed_actions,
     use_optimized_weights, use_hmm_regime, use_ml_combiner, use_factor_exposure, use_probabilistic_dcf,
     apply_earnings_filter, earnings_blackout_days,
-    universe_type, universe_filter, region
+    universe_type, universe_filter, region, unified_strategy_id
   );
 
   // Log activity
@@ -305,7 +314,7 @@ function updateAgent(id, updates) {
     'auto_execute', 'execution_threshold', 'require_confirmation', 'allowed_actions',
     'use_optimized_weights', 'use_hmm_regime', 'use_ml_combiner', 'use_factor_exposure', 'use_probabilistic_dcf',
     'apply_earnings_filter', 'earnings_blackout_days',
-    'universe_type', 'universe_filter', 'region'
+    'universe_type', 'universe_filter', 'region', 'unified_strategy_id'
   ];
 
   const fieldsToUpdate = Object.keys(updates).filter(key => allowedFields.includes(key));
@@ -568,7 +577,7 @@ function getSignals(agentId, options = {}) {
     status = null,
     limit = 50,
     offset = 0,
-    sortBy = 'signal_date',
+    sortBy = 'overall_score',  // Default: sort by signal strength (best opportunities first)
     sortOrder = 'DESC'
   } = options;
 
@@ -581,10 +590,15 @@ function getSignals(agentId, options = {}) {
   }
 
   const validSortColumns = ['signal_date', 'confidence', 'overall_score', 'symbol'];
-  const sortColumn = validSortColumns.includes(sortBy) ? sortBy : 'signal_date';
+  const sortColumn = validSortColumns.includes(sortBy) ? sortBy : 'overall_score';
   const order = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
   params.push(limit, offset);
+
+  // Sort by primary column, then by confidence as secondary for ties
+  const orderClause = sortColumn === 'overall_score'
+    ? `ORDER BY ABS(asig.overall_score) ${order}, asig.confidence DESC`
+    : `ORDER BY asig.${sortColumn} ${order}`;
 
   const signals = db.prepare(`
     SELECT
@@ -594,7 +608,7 @@ function getSignals(agentId, options = {}) {
     FROM agent_signals asig
     LEFT JOIN companies c ON asig.company_id = c.id
     ${whereClause}
-    ORDER BY asig.${sortColumn} ${order}
+    ${orderClause}
     LIMIT ? OFFSET ?
   `).all(...params);
 
@@ -622,6 +636,11 @@ function getPendingSignals(agentId) {
 function approveSignal(signalId, portfolioId = null) {
   const signal = getSignal(signalId);
   if (!signal) return null;
+
+  // Validate signal has required fields
+  if (!signal.action || !signal.symbol) {
+    throw new Error(`Invalid signal data: missing action or symbol for signal ${signalId}`);
+  }
 
   const stmt = db.prepare(`
     UPDATE agent_signals
@@ -1130,21 +1149,59 @@ async function generateSignals(agentId) {
     // Run batch recommendations
     const result = await tradingAgent.batchRecommendations(symbols, portfolioContext, null);
 
-    // Filter recommendations by agent thresholds
-    const minConfidence = agent.min_confidence || 0.6;
-    const minScore = agent.min_signal_score || 0.3;
+    // Signal tier thresholds for opportunity visibility
+    const SIGNAL_TIERS = {
+      STRONG: { minConfidence: 0.65, minScore: 0.35 },      // Auto-approve eligible
+      MODERATE: { minConfidence: 0.50, minScore: 0.25 },    // Show to user, require approval
+      BORDERLINE: { minConfidence: 0.40, minScore: 0.20 }   // Near-miss watchlist
+    };
+
+    // Filter recommendations by agent thresholds (relaxed defaults to not miss opportunities)
+    const minConfidence = agent.min_confidence || 0.50;  // Relaxed from 0.6
+    const minScore = agent.min_signal_score || 0.25;     // Relaxed from 0.3
 
     let signalsGenerated = 0;
     let errors = result.errors?.length || 0;
 
+    // Classify signal tier based on confidence and score
+    const classifyTier = (confidence, score) => {
+      const absScore = Math.abs(score);
+      if (confidence >= SIGNAL_TIERS.STRONG.minConfidence && absScore >= SIGNAL_TIERS.STRONG.minScore) {
+        return 'STRONG';
+      } else if (confidence >= SIGNAL_TIERS.MODERATE.minConfidence && absScore >= SIGNAL_TIERS.MODERATE.minScore) {
+        return 'MODERATE';
+      } else if (confidence >= SIGNAL_TIERS.BORDERLINE.minConfidence && absScore >= SIGNAL_TIERS.BORDERLINE.minScore) {
+        return 'BORDERLINE';
+      }
+      return null; // Below all thresholds
+    };
+
     for (const rec of result.recommendations) {
-      // Skip holds and low-confidence recommendations
+      // Skip holds
       if (rec.action === 'hold') continue;
-      if (rec.confidence < minConfidence) continue;
-      if (Math.abs(rec.score) < minScore) continue;
+
+      // Classify tier
+      const tier = classifyTier(rec.confidence, rec.score);
+
+      // Skip signals below all tier thresholds
+      if (!tier) continue;
 
       // Map action to agent_signals format
       const action = rec.action; // 'strong_buy', 'buy', 'sell', 'strong_sell'
+
+      // Enhance reasoning with tier information
+      let reasoning = rec.reasoning;
+      if (typeof reasoning === 'object') {
+        reasoning = { ...reasoning, tier };
+      } else if (typeof reasoning === 'string') {
+        try {
+          reasoning = { ...JSON.parse(reasoning), tier };
+        } catch {
+          reasoning = { text: reasoning, tier };
+        }
+      } else {
+        reasoning = { tier };
+      }
 
       // Create signal in database
       createSignal(agentId, {
@@ -1162,14 +1219,14 @@ async function generateSignals(agentId) {
         position_size_pct: rec.positionSize,
         position_value: rec.suggestedValue,
         suggested_shares: rec.suggestedShares,
-        reasoning: rec.reasoning,
+        reasoning: reasoning,
         expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7 days
       });
 
       signalsGenerated++;
 
-      // Auto-approve if confidence exceeds threshold
-      if (agent.auto_execute && rec.confidence >= agent.execution_threshold) {
+      // Auto-approve only STRONG tier signals if confidence exceeds threshold
+      if (agent.auto_execute && tier === 'STRONG' && rec.confidence >= agent.execution_threshold) {
         // Get the last inserted signal and approve it
         const lastSignal = db.prepare(`
           SELECT id FROM agent_signals WHERE agent_id = ? ORDER BY id DESC LIMIT 1
@@ -1359,8 +1416,8 @@ async function executeApproved(signalId) {
       `).run(now, tradeResult.executedPrice, tradeResult.executedShares, now, signalId);
 
       // Log activity
-      logActivity(signal.agent_id, 'trade_executed',
-        `Executed ${signal.action.toUpperCase()} ${tradeResult.executedShares} shares of ${signal.symbol} @ $${tradeResult.executedPrice?.toFixed(2)}`);
+      logActivity(signal.agent_id, portfolio.portfolio_id, 'trade_executed',
+        `Executed ${signal.action.toUpperCase()} ${tradeResult.executedShares} shares of ${signal.symbol} @ $${tradeResult.executedPrice?.toFixed(2)}`, null, signalId);
 
       return {
         ...signal,
@@ -1375,8 +1432,8 @@ async function executeApproved(signalId) {
       throw new Error('Live trading not yet implemented');
     }
   } catch (error) {
-    // Log error
-    logActivity(signal.agent_id, 'trade_error', `Failed to execute ${signal.symbol}: ${error.message}`);
+    // Log error (using 'trade_failed' which is in the allowed CHECK constraint)
+    logActivity(signal.agent_id, portfolio?.portfolio_id || null, 'trade_failed', `Failed to execute ${signal.symbol}: ${error.message}`, null, signalId);
     throw error;
   }
 }
@@ -1471,6 +1528,82 @@ function updateAgentSettings(agentId, settings) {
 }
 
 /**
+ * Link an agent to a unified strategy
+ * This allows the agent to use the unified strategy engine for signal generation
+ */
+function linkToUnifiedStrategy(agentId, strategyId) {
+  const stmt = db.prepare(`
+    UPDATE trading_agents
+    SET unified_strategy_id = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `);
+  stmt.run(strategyId, agentId);
+
+  logActivity(agentId, null, 'settings_updated', `Linked to unified strategy #${strategyId}`);
+
+  return getAgent(agentId);
+}
+
+/**
+ * Unlink an agent from a unified strategy
+ */
+function unlinkUnifiedStrategy(agentId) {
+  const stmt = db.prepare(`
+    UPDATE trading_agents
+    SET unified_strategy_id = NULL, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `);
+  stmt.run(agentId);
+
+  logActivity(agentId, null, 'settings_updated', 'Unlinked from unified strategy');
+
+  return getAgent(agentId);
+}
+
+/**
+ * Get agent's linked unified strategy
+ */
+function getLinkedStrategy(agentId) {
+  const agent = db.prepare(`
+    SELECT unified_strategy_id FROM trading_agents WHERE id = ?
+  `).get(agentId);
+
+  if (!agent || !agent.unified_strategy_id) {
+    return null;
+  }
+
+  // Get strategy details
+  const strategy = db.prepare(`
+    SELECT * FROM unified_strategies WHERE id = ?
+  `).get(agent.unified_strategy_id);
+
+  if (!strategy) {
+    return null;
+  }
+
+  return {
+    id: strategy.id,
+    name: strategy.name,
+    strategy_type: strategy.strategy_type,
+    signal_weights: JSON.parse(strategy.signal_weights || '{}'),
+    risk_params: JSON.parse(strategy.risk_params || '{}'),
+    universe_config: JSON.parse(strategy.universe_config || '{}'),
+    regime_config: JSON.parse(strategy.regime_config || '{}')
+  };
+}
+
+/**
+ * Get all agents using a specific unified strategy
+ */
+function getAgentsByStrategy(strategyId) {
+  return db.prepare(`
+    SELECT * FROM trading_agents
+    WHERE unified_strategy_id = ? AND is_active = 1
+    ORDER BY name
+  `).all(strategyId);
+}
+
+/**
  * Get lightweight live status for polling
  */
 function getLiveStatus(agentId) {
@@ -1553,5 +1686,11 @@ module.exports = {
   approveAllExecutions,
   executeAllApproved,
   updateAgentSettings,
-  getLiveStatus
+  getLiveStatus,
+
+  // Unified Strategy Integration
+  linkToUnifiedStrategy,
+  unlinkUnifiedStrategy,
+  getLinkedStrategy,
+  getAgentsByStrategy
 };

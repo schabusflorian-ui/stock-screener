@@ -57,6 +57,14 @@ class GradientBoostingRegressor {
    * @param {number[]} y Target values
    */
   fit(X, y) {
+    // Null safety: validate input data
+    if (!X || X.length === 0 || !X[0] || !y || y.length === 0) {
+      throw new Error('Invalid training data: X and y must be non-empty arrays');
+    }
+    if (X.length !== y.length) {
+      throw new Error(`Training data mismatch: X has ${X.length} samples but y has ${y.length}`);
+    }
+
     const nSamples = X.length;
     const nFeatures = X[0].length;
 

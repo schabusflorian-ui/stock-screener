@@ -242,7 +242,7 @@ router.get('/:id/signals/:signalId', (req, res) => {
  */
 router.post('/:id/signals/:signalId/approve', (req, res) => {
   try {
-    const { portfolioId } = req.body;
+    const { portfolioId } = req.body || {};
     const signal = agentService.approveSignal(
       parseInt(req.params.signalId, 10),
       portfolioId ? parseInt(portfolioId, 10) : null
@@ -263,7 +263,7 @@ router.post('/:id/signals/:signalId/approve', (req, res) => {
  */
 router.post('/:id/signals/:signalId/reject', (req, res) => {
   try {
-    const { reason } = req.body;
+    const { reason } = req.body || {};
     const signal = agentService.rejectSignal(
       parseInt(req.params.signalId, 10),
       reason
