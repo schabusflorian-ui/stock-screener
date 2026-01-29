@@ -14,7 +14,7 @@ const fs = require('fs');
 // Add new migrations here as they are created
 const POSTGRES_MIGRATIONS = [
   '000-postgres-base-schema.js',
-  // Add more PostgreSQL-compatible migrations here
+  '001-add-all-missing-tables.js',
 ];
 
 async function runMigrations() {
