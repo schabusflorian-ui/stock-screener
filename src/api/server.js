@@ -96,6 +96,22 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
   passport = configurePassport(db.getDatabase());
 }
 
+// ============================================
+// CRITICAL: Health check MUST be registered BEFORE middleware
+// Railway's internal healthcheck needs to bypass:
+// - HTTPS redirects (healthcheck uses HTTP internally)
+// - CORS checks (no Origin header)
+// - Rate limiting (shouldn't count against quotas)
+// - Session middleware (no session needed)
+// ============================================
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
 // Middleware
 // Security headers - comprehensive protection
 const isProduction = process.env.NODE_ENV === 'production';
@@ -428,14 +444,8 @@ app.use('/api/batch', batchRouter);
 app.use('/api/subscription', subscriptionRouter);
 app.use('/api/system', systemRouter); // PHASE 2: Enhanced system health endpoints
 
-// Health check - basic endpoint for load balancers
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  });
-});
+// Note: Basic /api/health endpoint is registered early (before middleware) to ensure
+// Railway's healthcheck can reach it without being blocked by HTTPS redirects, CORS, etc.
 
 // Detailed health check - includes service status
 app.get('/api/health/detailed', async (req, res) => {
