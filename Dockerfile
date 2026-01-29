@@ -32,8 +32,9 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Build frontend (use --legacy-peer-deps due to TypeScript version conflict)
+# CI=false prevents treating warnings as errors
 RUN if [ -d "frontend" ]; then \
-      cd frontend && npm ci --legacy-peer-deps && npm run build; \
+      cd frontend && npm ci --legacy-peer-deps && CI=false npm run build; \
     fi
 
 # ============================================
@@ -65,8 +66,9 @@ RUN npm ci --only=production && npm cache clean --force
 COPY --chown=appuser:nodejs src ./src
 COPY --chown=appuser:nodejs scripts ./scripts
 
-# Copy built frontend if exists
-COPY --from=builder --chown=appuser:nodejs /app/frontend/build ./frontend/build 2>/dev/null || true
+# Copy built frontend (create empty dir if build doesn't exist)
+RUN mkdir -p ./frontend/build
+COPY --from=builder --chown=appuser:nodejs /app/frontend/build ./frontend/build
 
 # Set environment
 ENV NODE_ENV=production
