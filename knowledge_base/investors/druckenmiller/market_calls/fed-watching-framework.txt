@@ -1,0 +1,113 @@
+Title: Druckenmiller's Fed Watching Framework
+Author: Stanley Druckenmiller
+Source: Synthesized from interviews and public commentary
+Type: framework
+Category: macro
+
+---
+
+## The Central Bank Framework
+
+Stanley Druckenmiller's investment philosophy centers on one key insight: central bank policy, particularly the Federal Reserve, is the dominant driver of asset prices. Understanding this framework is essential for macro investing.
+
+### Core Principle: Follow the Liquidity
+
+"Don't fight the Fed" isn't just a cliche - it's the foundation of macro investing. When the Fed is injecting liquidity into the system, risk assets tend to rise. When the Fed is withdrawing liquidity, risk assets tend to fall.
+
+Key liquidity indicators to watch:
+1. Fed balance sheet expansion/contraction
+2. M2 money supply growth
+3. Reverse repo facility usage
+4. Bank reserves
+5. Credit spreads (indicator of financial conditions)
+
+### The Fed Pivot Trade
+
+The most profitable trades often come at Fed policy inflection points:
+
+**Dovish Pivot Signals:**
+- Slowing pace of rate hikes
+- Increased emphasis on employment mandate
+- Language softening on inflation
+- Financial stability concerns emerging
+- Action: Get long risk assets before the market fully prices it in
+
+**Hawkish Pivot Signals:**
+- Acceleration of rate hikes
+- Hawkish Fed speakers
+- Inflation remaining elevated
+- Strong employment data
+- Action: Reduce risk, potentially go short
+
+### Timing the Cycle
+
+"Never invest in the present. The present is already priced in."
+
+Druckenmiller looks 18-24 months ahead:
+1. Where will inflation be?
+2. Where will the economy be in the cycle?
+3. What will the Fed be doing?
+4. What does the market expect vs. what's likely?
+
+The edge comes from correctly anticipating divergence between market expectations and reality.
+
+### Position Sizing Based on Fed Regime
+
+**High Conviction Fed Tailwind:**
+- Balance sheet expansion + rate cuts
+- Maximum long exposure
+- Use leverage on conviction ideas
+- "Go for the jugular"
+
+**Fed Headwind:**
+- Balance sheet contraction + rate hikes
+- Reduce exposure significantly
+- Focus on capital preservation
+- Wait for better opportunities
+
+**Transitional Periods:**
+- Most dangerous times
+- Reduce position sizes
+- Wait for clarity
+- Watch for policy mistakes
+
+### Reading the Fed's Body Language
+
+Beyond the official statements, watch for:
+- Dissenting votes and their direction
+- Changes in dot plot clustering
+- Unusual emphasis in speeches
+- Policy mistakes they're trying to correct
+- External pressures (fiscal policy, global events)
+
+### Historical Patterns
+
+Major market tops often coincide with:
+- Peak Fed hawkishness
+- Maximum rate hike expectations
+- Financial conditions at tightest levels
+
+Major market bottoms often coincide with:
+- Fed pivot to dovish
+- Expectations of rate cuts
+- Financial conditions easing
+
+### The Druckenmiller Test
+
+Before any major position, ask:
+1. What is the Fed doing now?
+2. What will the Fed be doing in 18-24 months?
+3. Is this already priced in?
+4. If I'm wrong, how much can I lose?
+5. If I'm right, how much can I make?
+
+Only take the trade if the risk/reward is asymmetric in your favor.
+
+### Common Mistakes to Avoid
+
+1. Fighting the Fed's direction
+2. Trading on current data instead of forward expectations
+3. Over-diversifying during high-conviction opportunities
+4. Under-sizing positions when you have edge
+5. Staying too long after the regime changes
+6. Confusing volatility with opportunity

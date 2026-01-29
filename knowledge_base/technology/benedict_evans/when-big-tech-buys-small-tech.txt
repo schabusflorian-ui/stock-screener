@@ -1,0 +1,46 @@
+Title: When big tech buys small tech
+Source: Benedict Evans
+URL: https://www.ben-evans.com/benedictevans/2021/11/12/when-big-tech-buys-small-tech
+Author: Benedict Evans
+Type: essay
+
+---
+
+When big tech buys small tech
+Acquisitions are a big part of the discussion around competition in tech today, and a big set of questions. It’s easy to say that we wouldn’t let Amazon buy Zappos or Google buy DoubleClick again, but everyone’s favourite puzzle is Instagram. Facebook bought a pre-revenue startup with 13 staff, and it’s now commonplace to say that this was anti-competitive, and a failure of regulation, but at the time a lot of people thought that buying this thing for a billion dollars of money was
+insane
+.
+The Instagram acquisition was at least reviewed by regulators, but a frequent talking point now is that in recent years there have been hundreds and hundred of other acquisitions by giant tech companies that didn’t get any scrutiny at all, far less get blocked, and that this represents a systemic regulatory failure. Responding to this, earlier this year the US FTC ordered Google, Apple, Facebook, Amazon and Microsoft to provide data on every single acquisition they made from 2010 to 2019, and published some aggregate data as a report in September. You can read it
+here
+.
+The headline number is that there were 616 qualifying acquisitions of more than $1m in those 10 years, an average of 12 per company per year. Indeed ‘hundreds of acquisitions’ - but what were they, and what does that tell us?
+A first observation: the vast majority of these companies were very small: 40% were bought for less than $10m and 80% for less than $50m, while 55% had less than ten staff and 90% had less than 50 staff.
+This prompts a question. If Amazon buys a company with six people for $4m, was this a competitive threat - the next Zappos or Shopify - or was that company pursuing a small opportunity, or hadn’t really worked (and half of VC-backed startups fail), and was bought for a small set of technology to tuck-in, and to hire the engineers (a so-called ‘acquihire’)?
+We are, after all, in the
+hottest funding environment
+for tech start-ups in history. If you can plausibly claim you have a path to build a billion dollar company, Tiger Global will leave blank term sheets under your Tesla’s  windscreen wipers. Why would you take $5m or $15m, especially given you probably won’t see a penny of that yourself once the investors are paid down (and they’ll be taking a loss as well)? How much do you honestly want to work at Microsoft? The decision to take the money is a signal - it probably wasn’t that kind of company.
+Of course, if you start from the presumption that these
+must
+have been ‘killer acquisitions’ then you can explain this by saying that Amazon
+must
+have squashed a much bigger business and then bought the scrap for pennies. The word ‘must’ is a tell, though - this data provides no evidence for or against that. Meanwhile, you could certainly argue that Amazon used its market power to weaken Zappos before buying it - but like Instagram, that was not a small deal - Amazon paid $1.2bn (and $545m for Diapers.com).  But regardless - if you do think ‘crush and buy’ is a systemic issue, your point of intervention should probably be the point it’s being crushed, not the point it’s too late.
+The second interesting strand in the data is the bigger acquisitions, and their context in the broader market. The FTC report has a bracket for deals over $50m, and this might be a useful shorthand to think about whether anyone made any money. Given the structure of the VC business, a $25m exit would be a failure for many kinds of fund even if it was a cash-on-cash return, given the time and opportunity costs.
+If we say that those $50m-plus deals are the ones where someone might have made money (and even here it’s only a subset), how does that compare to the rest of the industry? The FTC report says that there were 86 US exits to GAFAM for over $50m from 2010 to 2019. According to the
+NVCA
+, there were 2,100 US VC exits for over $50m in that period. Selling to those five companies was 4% of decent-sized exits.
+(People sometimes suggest that entrepreneurs start companies and VCs fund them in the hope that they will be bought by Google. This data should make it clear why VCs think this is hilarious.)
+The same point applies to the total data set. GAFAM bought 400 US companies from 2010 to 2019 for over $1m, of which 86 were over $50m and 314 were between $1m and $50m. In the same period, the NVCA reports 3,600 US VC exits where a value was disclosed (and 9,600 total).
+This prompts a broader observation: I’m not always sure how many people understand just how many startups are being created now. From 2010 to 2019, YCombinator alone
+backed
+1,561 US companies (353 have died and 253 were acquired, while 955 remain independent). In the total US market, the NVCA reported 32,000 companies raising their first funding. This, really, is the context for those 400 US GAFAM acquisitions. Equally, around half of all VC-backed startups produce a less than 1x return - failure to create a giant company is entirely normal, and a necessary part of the model (I wrote about this
+here
+).
+None of this is to say that Facebook’s acquisitions of Instagram and WhatsApp don’t raise profound questions for our theories of regulation and competition. But if one asks those questions, and talks about ‘hundreds of acquisitions’, one needs to know what those companies were, and know the context of the broader market. For every billion dollar startup, whether it’s bought by ‘big tech’ or stays independent, there are hundreds of others that never make it, or at least not that far, and the vast majority of Silicon Valley acquisitions, by any company, represent the recycling of talent and capital from ideas that didn’t go all the way into new ideas that might. Silicon Valley is a machine for running experiments, and most of the experiments don’t work - that’s part of what ‘experiment’ means.
+Meanwhile, for every Instagram, there’s a PA Semi, which Apple bought in 2008 for $278m. PA Semi is the reason Apple is now creating its own chips to power all of its devices, and why those chips are better that anything from Intel or Qualcomm. Intel had a near-monopoly of CPUs for personal computing for close to 40 years, and now Apple has broken that dominance, because of an acquisition. If that deal had been illegal, as some of the more populist voices in this discussion propose, that layer of competition would look very different. Ecosystems are complicated.
+This isn’t going to get any easier. Regulators are still arguing about how to look at Instagram, and to avoid that mistake again (if mistake it was), nine years after the deal. How will they react the first time two DAOs with ‘significant market power’ merge, if there’s no legal entity, no ‘CEO’ and no-one with a majority of the votes? What would any of those terms mean?
+* This presumes that all those acquisitions were of VC-backed companies. In reality, the percentage is even smaller.
+Policy
+,
+VC
+Benedict Evans
+12 November 2021

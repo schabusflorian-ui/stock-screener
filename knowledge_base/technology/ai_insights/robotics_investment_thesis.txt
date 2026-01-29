@@ -1,0 +1,87 @@
+Title: Robotics Investment Thesis
+Source: AI & Robotics Investment Insights
+Type: investment_framework
+
+---
+
+
+ROBOTICS INVESTMENT THESIS
+
+THE OPPORTUNITY:
+
+Labor costs rising + robot costs falling = massive adoption curve
+
+Key inflection points:
+- Manufacturing robots: Already economic
+- Warehouse robots: Rapidly becoming economic
+- Humanoid robots: 5-10 years from economic viability
+
+SEGMENTS:
+
+1. INDUSTRIAL ROBOTICS (Mature)
+- Fanuc, ABB, KUKA
+- Commoditizing
+- Growth in emerging markets
+- Margin pressure
+
+2. LOGISTICS/WAREHOUSE (High Growth)
+- Amazon Robotics (Kiva)
+- Locus Robotics
+- Symbotic
+- Massive TAM as e-commerce grows
+
+3. AUTONOMOUS VEHICLES (Uncertain)
+- Robotaxis: Waymo, Cruise
+- Trucks: Aurora, TuSimple
+- Regulatory uncertainty
+- High capital requirements
+
+4. HUMANOID ROBOTS (Speculative)
+- Tesla Optimus
+- Figure AI
+- 1X Technologies
+- High risk, high reward
+
+WHAT TO LOOK FOR:
+
+1. Unit Economics
+- Cost per task vs human labor
+- Payback period for customers
+- Utilization rates
+
+2. Technical Moat
+- Proprietary perception systems
+- Manipulation capabilities
+- Fleet learning
+
+3. Go-to-Market
+- Robotics-as-a-Service (RaaS) models
+- Integration with existing workflows
+- Customer concentration
+
+4. Competitive Dynamics
+- Can big tech/auto replicate?
+- Patent protection
+- Talent moat
+
+RISKS:
+
+- Hardware is hard (margins, reliability)
+- Long sales cycles
+- Customer concentration
+- Big tech competition
+- Regulatory (especially autonomous vehicles)
+
+HISTORICAL LESSON:
+
+Many robotics companies have failed despite good technology:
+- Rethink Robotics (Baxter)
+- Anki
+- Jibo
+
+Common failure modes:
+- Technology ahead of economics
+- Poor product-market fit
+- Undercapitalized for hardware development
+
+Success requires: Right technology + Right economics + Right timing

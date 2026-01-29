@@ -1,0 +1,18 @@
+Title: Unknown
+Source: Benedict Evans
+URL: https://www.ben-evans.com/benedictevans/category/Voice
+Author: Benedict Evans
+Type: essay
+
+---
+
+Smart home, machine learning and discovery
+Smart home today looks a lot like the world of kitchen gadgets a few generations ago - and so does machine learning. We have a bunch of cheap commodity components (DC motors! Cameras! Wifi chips! Voice recognition!) and we’re trying to work out how to bolt them together into things that makes sense. There are lots of experiments - some things will be the toasters or benders of the future, and some will be the electric can-opener.
+Read More
+Voice
+,
+IoT
+,
+Artificial Intelligence
+Benedict Evans
+4 April 2019

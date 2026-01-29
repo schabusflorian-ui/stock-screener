@@ -1,0 +1,43 @@
+Title: Not even wrong: ways to predict technology
+Source: Benedict Evans
+URL: https://www.ben-evans.com/benedictevans/2020/5/16/not-even-wrong
+Author: Benedict Evans
+Type: essay
+
+---
+
+Not even wrong: ways to predict technology
+"That is not only not right; it is not even wrong"
+- Wolfgang Pauli
+A lot of really important technologies started out looking like expensive, impractical toys. It doesn’t work, isn’t useful, and the only thing you can do with it is trivial. The engineering isn’t finished, the building blocks don’t fit together, the volumes are too low and the manufacturing process is new and imperfect. In parallel, many or even most important things propose some new way of doing things, or even an entirely new thing to do. So it doesn’t work, it’s expensive, and it’s silly. It’s a toy.
+Some of the most important things of the last 100 years or so looked like this. Aircraft, cars, telephones, mobile phones and personal computers were all dismissed as toys. “Well done Mr Wright - you flew over a few sand dunes. Why do we care?”
+But on the other hand, plenty of things that looked like useless toys never did become anything more than that. The fact that people laughed at X and X then started working does not tell us that if people now laugh Y or Z, those will work too.
+So, we have a pair of equal and opposite fallacies. There is no predictive value in saying ‘that doesn’t work’ or ‘that looks like a toy’, and there is no predictive value in saying ‘people always say that’. As Pauli put it, statements like this are ‘not even wrong’ - they give no insight into what will happen.
+Instead, you have to go one level further. You need a theory for why this will get better, or why it won’t, and for why people will change their behaviour, or for why they won’t.
+“They laughed at Columbus and they laughed at the Wright brothers. But they also laughed at Bozo the Clown.”
+- Carl Sagan
+To understand this, I like to compare the
+Wright Flier
+with the
+Bell Rocket Belt
+. Both of these were expensive impractical toys, but one of them changed the world and the other did not.
+The Wright Flier could only fly 200 metres, and the Rocket Belt could only fly for 21 seconds. They were both ‘toys’. But the Flier was a breakthrough of principle. There was no reason why it couldn't get much better, very quickly, and
+Blériot
+flew across the English Channel just six years later. There was a very clear and obvious
+path
+to make it better. Conversely, the Rocket Belt flew for 21 seconds because it used almost a litre of fuel per second, and to fly like this for half a hour you’d need almost two tonnes of fuel, and you can’t carry that on your back. There was no roadmap to make it better without changing the laws of physics. There’s no hindsight or survivor bias in this, either - we knew it in 1962.
+These roadmaps can come in steps. It took quite a few steps to get from the Flier to something that made ocean liners obsolete, and each of those steps were useful. The PC also came in steps - from hobbyists to spreadsheets to web browsers. The same thing for mobile - we went from expensive analogue phones for a few people to cheap GSM phones for billions of people to smartphones that changed what mobile meant. But there was always a path. The Apple 1, Netscape and the iPhone all looked like impractical toys that ‘couldn’t be used for real work’, but there were obvious roadmaps to change that - not necessarily all the way to the future, but certainly to a useful next step.
+Equally, sometimes the roadmap is ‘forget about this for 20 years’. The Newton or the IBM Simon were just too early, as was the first wave of VR in the 80s and 90s. You could have said, deterministically, that Moore’s Law would make VR or pocket computers useful
+at some point
+, so there was notionally a roadmap, but the roadmap told you to work on something else. This is different to the Rocket Belt, where there was
+no
+foreseeable future development that would make it work.
+Then, sometimes the missing piece pops into existence in unpredictable ways. I have a fascinating essay by Hiram Maxim saying that he had everything about flight working in the late 19th century except for the engine - he couldn‘t make a steam engine with the right power-to-weight ratio, and then the internal combustion engine changed all the equations. This isn’t a roadmap either - hoping that something new will come along, but you don’t know what or when, is not a plan.
+Finally, sometimes you have a roadmap but discover that it runs out short of the destination. This might be what has happened to autonomous cars. The machine learning breakthrough of 2013 gave us a clear roadmap to go from AVs that didn’t work at all to AVs that work pretty well but not well enough. We have 10% left to go, but it now looks at least possible that the last 10% is 90% of the effort, and that might need something different. We might now be Hiram Maxim, waiting for an ICE.
+Much the same sort of questions apply to the other side of the problem - even if this did get very cheap and very good, who would use it? You can’t do a waterfall chart of an engineering roadmap here, but you can again ask questions - what would have to change? Are you proposing a change in human nature, or a different way of expressing it? What’s your theory of why things will change or why they won’t?
+Philip II of Macedon to Sparta: “You are advised to submit without further delay, for if I bring my army into your land, I will destroy your farms, slay your people, and raze your city.”
+Sparta: “If”
+The thread through all of this is that we don’t know what will happen, but we do know what could happen - we don’t know the answer, but we can at least ask useful questions. The key challenge to any assertion about what will happen, I think, is to ask ‘well, what would have to change?’ Could this happen, and if it did, would it work? We’re always going to be wrong sometimes, but we can try to be wrong for the right reasons. As Pauli put it, a theory might be right or wrong, but it does have to be a theory in the first place. So, do you have a theory?
+How tech works
+Benedict Evans
+16 May 2020

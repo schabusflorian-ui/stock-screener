@@ -1,0 +1,94 @@
+
+
+============================================================
+       INVESTMENT METRICS VALIDATION SYSTEM
+============================================================
+
+Configuration:
+  Sample size: 30 companies
+  Comparison mode: Annual
+  Save results: Yes
+  Verbose mode: No
+📊 Initializing database...
+✅ Database schema created successfully!
+📁 Database location: /Users/florianschabus/Investment Project/data/stocks.db
+
+
+Starting validation...
+
+
+1. Selecting sample companies...
+   Added 10 mega-cap companies
+   After sector sampling: 13 companies
+   Final sample: 30 companies
+
+   Sample Distribution:
+   - Total companies: 30
+   - Mega-caps included: 10
+   - By sector:
+     Technology: 9
+     Manufacturing: 8
+     Retail Trade: 4
+     Healthcare: 3
+     Finance: 2
+     Utilities: 1
+     Services: 1
+     Insurance: 1
+     Communication: 1
+
+2. Fetching Yahoo Finance data (est. 21s)...
+   Comparison mode: Annual
+   Progress: 1/30 (3%) | AAPL   ✗ | 2s elapsed       Progress: 2/30 (7%) | MSFT   ✗ | 3s elapsed       Progress: 3/30 (10%) | GOOGL  ✗ | 5s elapsed       Progress: 4/30 (13%) | AMZN   ✗ | 6s elapsed       Progress: 5/30 (17%) | NVDA   ✗ | 8s elapsed       Progress: 6/30 (20%) | META   ✗ | 9s elapsed       Progress: 7/30 (23%) | TSLA   ✗ | 11s elapsed       Progress: 8/30 (27%) | BRK-B  ✗ | 12s elapsed       Progress: 9/30 (30%) | JPM    ✗ | 14s elapsed       Progress: 10/30 (33%) | V      ✗ | 15s elapsed       Progress: 11/30 (37%) | ABBV   ✗ | 17s elapsed       Progress: 12/30 (40%) | UNH    ✗ | 18s elapsed       Progress: 13/30 (43%) | NEE    ✗ | 20s elapsed       Progress: 14/30 (47%) | VZ     ✗ | 21s elapsed       Progress: 15/30 (50%) | XOM    ✗ | 23s elapsed       Progress: 16/30 (53%) | PEP    ✗ | 24s elapsed       Progress: 17/30 (57%) | HON    ✗ | 26s elapsed       Progress: 18/30 (60%) | ORCL   ✗ | 27s elapsed       Progress: 19/30 (63%) | MA     ✗ | 29s elapsed       Progress: 20/30 (67%) | CVX    ✗ | 30s elapsed       Progress: 21/30 (70%) | DIS    ✗ | 32s elapsed       Progress: 22/30 (73%) | NKE    ✗ | 33s elapsed       Progress: 23/30 (77%) | MCD    ✗ | 35s elapsed       Progress: 24/30 (80%) | PM     ✗ | 36s elapsed       Progress: 25/30 (83%) | WFC    ✗ | 38s elapsed       Progress: 26/30 (87%) | COST   ✗ | 39s elapsed       Progress: 27/30 (90%) | LOW    ✗ | 41s elapsed       Progress: 28/30 (93%) | TXN    ✗ | 42s elapsed       Progress: 29/30 (97%) | BA     ✗ | 44s elapsed       Progress: 30/30 (100%) | MRK    ✗ | 45s elapsed    
+3. Analyzed 0 companies (30 failed)
+
+
+
+======================================================================
+               METRICS VALIDATION REPORT
+======================================================================
+
+Validation Date: 12/14/2025, 5:26:01 PM
+Companies Sampled: 30
+Companies Analyzed: 0
+API Calls Made: 0
+Overall Accuracy: 0%
+
+----------------------------------------------------------------------
+PER-METRIC ACCURACY
+----------------------------------------------------------------------
+Metric              Accuracy    Avg Diff    Median    N     Status
+----------------------------------------------------------------------
+gross_margin        N/A         N/A         N/A       0     undefined
+operating_margin    N/A         N/A         N/A       0     undefined
+net_margin          N/A         N/A         N/A       0     undefined
+roe                 N/A         N/A         N/A       0     undefined
+roa                 N/A         N/A         N/A       0     undefined
+current_ratio       N/A         N/A         N/A       0     undefined
+quick_ratio         N/A         N/A         N/A       0     undefined
+debt_to_equity      N/A         N/A         N/A       0     undefined
+pe_ratio            N/A         N/A         N/A       0     undefined
+pb_ratio            N/A         N/A         N/A       0     undefined
+
+----------------------------------------------------------------------
+WARNINGS (30)
+----------------------------------------------------------------------
+  AAPL: fetch failed
+  MSFT: fetch failed
+  GOOGL: fetch failed
+  AMZN: fetch failed
+  NVDA: fetch failed
+  META: fetch failed
+  TSLA: fetch failed
+  BRK-B: fetch failed
+  JPM: fetch failed
+  V: fetch failed
+
+======================================================================
+❌ VALIDATION FAILED - Significant discrepancies found
+======================================================================
+
+Results saved to: validation-results-2025-12-14.json
+
+Total time: 45.5s
+Average per company: Infinitys
+

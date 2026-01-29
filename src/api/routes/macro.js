@@ -6,7 +6,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { FREDService } = require('../../services/data');
+const { FREDService } = require('../../services/dataProviders');
 const db = require('../../database');
 
 // Initialize service

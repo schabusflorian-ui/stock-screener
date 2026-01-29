@@ -1,0 +1,76 @@
+{
+  "investorId": 79,
+  "lastAccessionNumber": null,
+  "status": "completed",
+  "timestamp": "2026-01-25T12:16:11.987Z",
+  "progress": {
+    "currentInvestor": 79,
+    "currentInvestorName": "Leopold Aschenbrenner",
+    "investorsProcessed": 45,
+    "investorsTotal": 45,
+    "filingsProcessed": 3,
+    "filingsTotal": 3,
+    "errors": [
+      {
+        "investorId": 50,
+        "investorName": "Cliff Asness",
+        "filingDate": "2018-05-15",
+        "error": "database is locked"
+      },
+      {
+        "investorId": 53,
+        "investorName": "David Shaw",
+        "filingDate": "2018-08-14",
+        "error": "fetch failed"
+      },
+      {
+        "investorId": 68,
+        "investorName": "Dan Sundheim",
+        "filingDate": "2024-11-14",
+        "error": "database is locked"
+      },
+      {
+        "investorId": 68,
+        "investorName": "Dan Sundheim",
+        "filingDate": "2025-02-14",
+        "error": "database is locked"
+      },
+      {
+        "investorId": 68,
+        "investorName": "Dan Sundheim",
+        "filingDate": "2025-05-15",
+        "error": "database is locked"
+      },
+      {
+        "investorId": 68,
+        "investorName": "Dan Sundheim",
+        "filingDate": "2025-08-14",
+        "error": "database is locked"
+      },
+      {
+        "investorId": 69,
+        "investorName": "Lee Ainslie",
+        "filingDate": "2016-02-16",
+        "error": "database is locked"
+      },
+      {
+        "investorId": 69,
+        "investorName": "Lee Ainslie",
+        "filingDate": "2016-05-16",
+        "error": "database is locked"
+      },
+      {
+        "investorId": 69,
+        "investorName": "Lee Ainslie",
+        "filingDate": "2016-08-15",
+        "error": "database is locked"
+      },
+      {
+        "investorId": 69,
+        "investorName": "Lee Ainslie",
+        "filingDate": "2016-11-14",
+        "error": "database is locked"
+      }
+    ]
+  }
+}

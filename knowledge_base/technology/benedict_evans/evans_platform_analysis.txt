@@ -1,0 +1,119 @@
+Title: Platform Business Models - Benedict Evans
+Source: Benedict Evans
+Author: Benedict Evans
+Type: tech_analysis
+
+---
+
+
+PLATFORM BUSINESS MODELS - Benedict Evans
+
+WHAT IS A PLATFORM?
+
+Definition: Enables value creation by third parties.
+
+Key characteristics:
+- Two or more sides
+- Network effects between sides
+- Value increases with participation
+- Platform captures portion of value
+
+Not a platform if:
+- You create all the value yourself
+- No network effects
+- Doesn't enable others
+
+PLATFORM TYPES:
+
+1. MARKETPLACES
+- Connect buyers and sellers
+- Take transaction fee
+- Examples: Amazon, Uber, Airbnb
+
+2. DEVELOPER PLATFORMS
+- Enable building applications
+- Take revenue share or fees
+- Examples: iOS, Android, AWS
+
+3. SOCIAL PLATFORMS
+- Connect people
+- Monetize attention
+- Examples: Facebook, TikTok
+
+4. DATA PLATFORMS
+- Aggregate data
+- Provide insights/services
+- Examples: Bloomberg, Nielsen
+
+PLATFORM ECONOMICS:
+
+Revenue models:
+- Transaction fee (% of GMV)
+- Subscription (per user/month)
+- Advertising (attention monetization)
+- Take rate (platform fee)
+
+Key metrics:
+- GMV (Gross Merchandise Value)
+- Take rate (Revenue/GMV)
+- CAC (Customer Acquisition Cost)
+- LTV (Lifetime Value)
+- Net revenue retention
+
+PLATFORM POWER:
+
+Sources of power:
+1. Network effects (more users = more value)
+2. Data accumulation (better with more usage)
+3. Switching costs (hard to leave)
+4. Ecosystem (third parties invested)
+
+Limits to power:
+- Regulation
+- Multi-tenanting (users on multiple platforms)
+- Disintermediation risk
+- New technology shifts
+
+PLATFORM RISKS:
+
+1. Chicken and egg problem
+- Need both sides
+- Cold start is hard
+- Solutions: Subsidize one side, fake supply
+
+2. Quality control
+- Platform reputation depends on participants
+- But you don't control them
+- Trust and safety challenges
+
+3. Disintermediation
+- Participants bypass platform
+- After initial connection made
+- Example: Craigslist → direct contact
+
+4. Commoditization
+- Platform becomes utility
+- Pressure on take rates
+- Race to bottom
+
+ATTACKING PLATFORMS:
+
+Strategies:
+1. Vertical focus (specialize in niche)
+2. Geographic focus (local strength)
+3. Different modality (photos vs text)
+4. Better experience (10x improvement)
+5. Lower take rate (price competition)
+6. New technology (mobile, AI, crypto)
+
+DEFENDING PLATFORMS:
+
+Strategies:
+1. Increase switching costs
+2. Vertical integration
+3. Acquire threats
+4. Continuous innovation
+5. Reduce take rate preemptively
+6. Regulation as moat
+
+"Platforms are powerful when they seem inevitable."

@@ -1,0 +1,125 @@
+Title: Recognizing Regime Change in Markets
+Author: Stanley Druckenmiller
+Source: Synthesized from public commentary
+Type: framework
+Category: macro
+
+---
+
+## Understanding Market Regimes
+
+Markets operate in different regimes, and the most dangerous times for investors are during regime transitions. Druckenmiller's success comes partly from recognizing when regimes are about to change.
+
+### What is a Market Regime?
+
+A regime is a persistent market environment characterized by:
+- Dominant narrative and sentiment
+- Prevailing monetary/fiscal policy
+- Economic growth trajectory
+- Risk appetite level
+- Correlation patterns
+
+### Signs of Regime Change
+
+**Macro Signals:**
+1. Central bank policy inflection
+2. Yield curve shape changes
+3. Credit spreads widening/narrowing
+4. Currency volatility spikes
+5. Commodity price dislocations
+
+**Market Signals:**
+1. Leadership rotation (growth to value or vice versa)
+2. Sector performance divergence
+3. Factor crowding unwinding
+4. Volatility regime shift
+5. Correlation breakdowns
+
+**Sentiment Signals:**
+1. Consensus becomes extreme
+2. "This time is different" narratives
+3. Massive inflows/outflows
+4. Expert confidence at extremes
+5. Retail participation peaks/troughs
+
+### Historical Regime Changes
+
+**2000 Tech Bubble Burst:**
+- Fed raising rates into overvaluation
+- IPO frenzy and retail speculation peak
+- P/E ratios at historical extremes
+- Leadership concentrated in narrow sector
+- Credit markets showed early stress
+
+**2007-2008 Financial Crisis:**
+- Housing prices rolling over
+- Credit spreads widening
+- Bank earnings quality declining
+- Leverage at extreme levels
+- Fed behind the curve
+
+**2020 COVID Crash and Recovery:**
+- Exogenous shock creating regime break
+- Massive fiscal and monetary response
+- Fastest regime change in history
+- New leadership emerged (tech, stay-at-home)
+
+**2022 Inflation Regime:**
+- 40-year inflation breakout
+- Fed forced into aggressive hiking
+- Growth to value rotation
+- Duration assets crushed
+- Dollar strength regime
+
+### Positioning for Regime Change
+
+**Phase 1: Recognition (Early)**
+- Identify divergences from prevailing narrative
+- Look for non-confirming signals
+- Watch for smart money positioning shifts
+- Begin reducing positions in old regime winners
+
+**Phase 2: Transition (Most Dangerous)**
+- High volatility, unclear direction
+- False signals common
+- Patience is crucial
+- Focus on capital preservation
+- Small position sizes
+
+**Phase 3: New Regime Established**
+- New leadership emerges
+- Narrative shifts
+- Trend followers pile in
+- Opportunity to increase position size
+- "Go for the jugular" when confirmed
+
+### Druckenmiller's Regime Checklist
+
+Before calling a regime change:
+1. Is the Fed changing direction?
+2. Are credit markets confirming?
+3. Is the dollar signaling?
+4. Are correlations breaking down?
+5. Is sentiment at an extreme?
+6. Is leadership rotating?
+
+Need at least 4/6 signals to have confidence in regime change.
+
+### Risk Management During Transitions
+
+"The first thing I do when I think there's a regime change is get smaller. You can always get bigger later. You can't get back money you've lost."
+
+Key principles:
+- Cut position sizes 50%+ at first signs
+- Wait for confirmation before rebuilding
+- Don't try to time the exact bottom or top
+- Accept some opportunity cost for protection
+- Preserve capital to fight another day
+
+### Common Regime Change Mistakes
+
+1. **Anchoring to old regime:** Expecting mean reversion when regime has changed
+2. **Fighting the new regime:** Doubling down on old positions
+3. **Too early:** Calling regime change on noise vs. signal
+4. **Too late:** Missing the transition entirely
+5. **Right theme, wrong timing:** Correctly identifying change but poor execution

@@ -1,0 +1,103 @@
+Title: Portfolio Construction for Tail Risk - Mark Spitznagel
+Source: Mark Spitznagel - Universa Investments
+Author: Mark Spitznagel
+Type: investment_philosophy
+
+---
+
+
+PORTFOLIO CONSTRUCTION FOR TAIL RISK - Mark Spitznagel
+
+THE UNIVERSA APPROACH:
+
+Core insight: Most investors are fragile to crashes.
+They either:
+1. Suffer massive drawdowns
+2. Miss out on upside by being too conservative
+3. Try (and fail) to time markets
+
+The solution: STRUCTURED CONVEXITY
+
+COMPONENTS:
+
+1. CORE PORTFOLIO (85-95%)
+Risk assets that compound over time:
+- Quality equities
+- Real assets
+- Growth exposure
+
+This portion WILL suffer in crashes.
+That's expected and acceptable.
+
+2. TAIL HEDGE (5-15%)
+Explicit crash protection:
+- Far out-of-the-money puts
+- Volatility strategies
+- Designed to explode upward in crashes
+
+This portion bleeds slowly in normal times.
+That's the cost of insurance.
+
+THE MATHEMATICS:
+
+Without tail hedge:
+- Years 1-9: +10% per year = 2.36x
+- Year 10: -50% crash
+- End result: 1.18x (1.7% CAGR)
+
+With 5% tail hedge allocation:
+- Years 1-9: +8% per year (drag from hedge cost)
+- Year 10: Hedge returns +300%, core -50%
+- Net year 10: -15% instead of -50%
+- End result: 1.68x (5.3% CAGR)
+
+The hedge RAISES long-term returns by reducing crash damage.
+
+IMPLEMENTATION OPTIONS:
+
+For Institutions:
+- Universa-style tail hedge funds
+- Managed volatility strategies
+- Systematic put buying programs
+
+For Individuals:
+- Cash as dry powder (less efficient but simple)
+- Long-dated put options (requires expertise)
+- Barbell with quality bonds (traditional)
+
+KEY PRINCIPLES:
+
+1. Cost Efficiency
+- Tail hedge must be cheap enough
+- Expensive insurance kills returns
+- Focus on far OTM, long-dated options
+
+2. Explosive Payoff
+- Hedge must pay off BIG in crashes
+- Small protection is useless
+- Need 10x+ returns in tail events
+
+3. Discipline
+- Keep paying the "premium"
+- Don't remove hedge during long bull markets
+- That's when you need it most
+
+4. Reinvestment
+- After crash gains, redeploy into cheap assets
+- This is where long-term wealth is made
+- "Make money during crashes, compound during recovery"
+
+BEHAVIORAL CHALLENGE:
+
+The hardest part: Watching hedge "bleed" for years.
+
+In calm markets:
+- Tail hedge loses money every year
+- Looks like a waste
+- Pressure to remove it
+
+But crashes come eventually.
+Those who removed protection are devastated.
+Those who maintained it prosper.
+
+"Pay a little, make a lot. That's the whole strategy."

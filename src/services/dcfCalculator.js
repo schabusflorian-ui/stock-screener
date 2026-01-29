@@ -13,7 +13,7 @@
  * - Margin of safety buy targets
  */
 
-const { FREDService } = require('./data/fredService');
+const { FREDService } = require('./dataProviders/fredService');
 
 class DCFCalculator {
   constructor(db) {

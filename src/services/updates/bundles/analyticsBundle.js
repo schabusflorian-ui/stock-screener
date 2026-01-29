@@ -345,7 +345,7 @@ class AnalyticsBundle {
     await onProgress(5, 'Starting market indicator update...');
 
     const { HistoricalMarketIndicatorsService } = require('../../historicalMarketIndicators');
-    const { FREDService } = require('../../data/fredService');
+    const { FREDService } = require('../../dataProviders/fredService');
 
     const service = new HistoricalMarketIndicatorsService(db);
     const fredService = new FREDService();

@@ -1,0 +1,191 @@
+{
+  "individualReviews": {
+    "benjamin": {
+      "analyst": "Benjamin",
+      "role": "Value",
+      "sentiment": "very_concerned",
+      "points": [
+        "CRITICAL: 0% win rate means fundamentally broken stock selection. Not finding value.",
+        "Signal threshold looks appropriate for value hunting",
+        "30-day average hold violates value principles (need 180+ days for thesis to play out)",
+        "Alpha generation is modest but achievable"
+      ]
+    },
+    "marcus": {
+      "analyst": "Marcus",
+      "role": "Quant",
+      "sentiment": "concerned",
+      "points": [
+        "Sharpe 0.00 below acceptable threshold (target >1.0)",
+        "0% turnover is manageable",
+        "Insufficient data on stop loss vs volatility relationship",
+        "Need more trade data for statistical analysis"
+      ]
+    },
+    "sarah": {
+      "analyst": "Sarah",
+      "role": "Growth",
+      "sentiment": "concerned",
+      "points": [
+        "60-day underwater exit kills compounders mid-recovery. Growth needs patience",
+        "Momentum weight 15% too low for growth strategies (should be 30-40%)",
+        "No max hold constraint allows compounding to work",
+        "Negative returns indicate missing high-quality growth opportunities"
+      ]
+    },
+    "elena": {
+      "analyst": "Elena",
+      "role": "Tail Risk",
+      "sentiment": "very_concerned",
+      "points": [
+        "0.5x regime multiplier = asymmetric overcorrection. Cutting exposure too aggressively",
+        "No tail hedge allocation - portfolio vulnerable to black swans",
+        "5704.0% max drawdown is CATASTROPHIC - many investors would abandon strategy",
+        "4498% volatility too high - creates behavioral risk"
+      ]
+    },
+    "alex": {
+      "analyst": "Alex",
+      "role": "Contrarian",
+      "sentiment": "very_concerned",
+      "points": [
+        "99.1% signal rejection = missing the crowd-hated opportunities. Best alpha is in the rejected 99.1%",
+        "0.6 confidence threshold = only buying consensus picks. Contrarian plays rejected",
+        "Sentiment weight 15% underutilized - missing sentiment extremes",
+        "Need benchmark comparison for contrarian assessment"
+      ]
+    }
+  },
+  "debates": [
+    {
+      "topic": "Position Sizing",
+      "exchanges": [
+        {
+          "speaker": "Marcus",
+          "statement": "5% max position size but actual allocation only 1.6-6.4% after multipliers. Running limited positions but leaving 50%+ capital on sidelines. Leaving alpha on table."
+        },
+        {
+          "speaker": "Benjamin",
+          "statement": "Disagree. With 38%+ volatility and catastrophic drawdown, we need SMALLER positions, not larger. Problem is stock selection quality, not position size."
+        },
+        {
+          "speaker": "Sarah",
+          "statement": "You're both right. High-conviction growth with strong fundamentals: 5% too small. Deep value turnarounds or cyclicals: 2-3% appropriate. Need dynamic sizing by conviction AND quality."
+        }
+      ],
+      "consensus": "Position sizing should vary by strategy type, conviction level, and company quality. Not one-size-fits-all."
+    },
+    {
+      "topic": "Signal Filtering",
+      "exchanges": [
+        {
+          "speaker": "Alex",
+          "statement": "99.1% rejection rate means we're only buying what everyone agrees on. The alpha is in the 99.1% we're rejecting - the uncomfortable, consensus-hated ideas."
+        },
+        {
+          "speaker": "Benjamin",
+          "statement": "Quality over quantity. Rather have 20 good ideas than 200 mediocre ones. Filtering protects capital."
+        },
+        {
+          "speaker": "Marcus",
+          "statement": "Statistically, going from 200 trades to 500-800 trades increases sample size, reduces luck factor, and smooths returns. But only if edge persists at lower thresholds. Need to test incrementally."
+        }
+      ],
+      "consensus": "Test moderate filter relaxation (0.3→0.25→0.2) incrementally. Monitor if edge persists. If win rate collapses, revert. If win rate holds, capture more opportunities."
+    },
+    {
+      "topic": "Risk Management",
+      "exchanges": [
+        {
+          "speaker": "Elena",
+          "statement": "40%+ drawdown with tail hedge 'enabled' means risk management is broken. Either hedge isn't working or position sizing is wrong. This drawdown ends careers."
+        },
+        {
+          "speaker": "Marcus",
+          "statement": "10% stop loss with 38% volatility = getting stopped out by noise. Stop should be 1.5-2x volatility (15-20%) to avoid false exits while still protecting capital."
+        },
+        {
+          "speaker": "Sarah",
+          "statement": "60-day underwater exit kills recovering growth stocks. After correction, need 90-180 days for business momentum to reflect in price. Exiting at day 60 = selling the bottom."
+        }
+      ],
+      "consensus": "Risk management needs calibration: widen stops to 15%, extend underwater exit to 90+ days, reduce regime suppression from 0.5x to 0.75x. Goal: protect from disaster, not from volatility."
+    }
+  ],
+  "recommendations": {
+    "unanimous": [],
+    "highPriority": [
+      {
+        "priority": 1,
+        "recommendation": "Reduce signal filtering from 99.1% to 85% rejection",
+        "impact": "High - increases opportunities 5-7x",
+        "effort": "Low (30 min)",
+        "analysts": [
+          "Marcus",
+          "Alex",
+          "Sarah"
+        ],
+        "dissent": "Benjamin cautious about quality dilution",
+        "implementation": "minScore 0.3→0.2, minConfidence 0.6→0.5",
+        "expectedOutcome": "206 trades → 500-800 trades, maintain win rate >35%"
+      },
+      {
+        "priority": 2,
+        "recommendation": "Widen stop losses from 10% to 15%",
+        "impact": "Medium - reduce false exits by 30-40%",
+        "effort": "Low (5 min)",
+        "analysts": [
+          "Marcus",
+          "Sarah",
+          "Elena"
+        ],
+        "implementation": "stop_loss_pct 0.10 → 0.15",
+        "expectedOutcome": "Fewer premature exits, improved win rate"
+      },
+      {
+        "priority": 3,
+        "recommendation": "Reduce regime suppression from 0.5x to 0.75x",
+        "impact": "Medium - increase exposure in elevated risk",
+        "effort": "Low (5 min)",
+        "analysts": [
+          "Elena",
+          "Alex",
+          "Marcus"
+        ],
+        "implementation": "regime_exposure_high_risk 0.5 → 0.75",
+        "expectedOutcome": "Less asymmetric penalty, participate in recoveries"
+      }
+    ],
+    "moderate": [
+      {
+        "recommendation": "Increase position sizing for high-conviction signals",
+        "impact": "Medium - better alpha capture",
+        "effort": "Medium (1 hour)",
+        "analysts": [
+          "Marcus",
+          "Sarah"
+        ],
+        "dissent": "Benjamin wants smaller positions given current drawdowns",
+        "implementation": "Boost signal scale from 50-100% to 70-100%, add 15% boost for confidence >0.75"
+      },
+      {
+        "recommendation": "Extend underwater exit from 60 to 90-120 days",
+        "impact": "Medium - allow recovery time",
+        "effort": "Low (5 min)",
+        "analysts": [
+          "Sarah",
+          "Benjamin"
+        ],
+        "implementation": "exit_underwater_days 60 → 90"
+      }
+    ],
+    "experimental": []
+  },
+  "summary": {
+    "currentState": "CRITICAL - Strategy non-functional",
+    "criticalIssues": 0,
+    "quickWins": 3,
+    "estimatedImpact": "+8-15% alpha from quick fixes alone",
+    "timeline": "1-2 weeks for high-priority fixes, 4 weeks for full optimization"
+  }
+}

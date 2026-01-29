@@ -1,0 +1,193 @@
+Title: Jeffrey Gundlach's Fixed Income Framework
+Author: Jeffrey Gundlach
+Source: DoubleLine webcasts and public commentary
+Type: webcast
+Category: macro
+
+---
+
+## The Bond King's Perspective
+
+"The bond market is the smart money. If you want to know what's really going on in the economy, don't look at stocks - look at bonds."
+
+### Why Bonds Matter for All Investors
+
+1. **Leading indicator:** Bond markets often signal economic shifts before equities
+2. **Risk-free rate:** Foundation for all asset valuation
+3. **Credit conditions:** Early warning system for stress
+4. **Fed expectations:** Real-time pricing of monetary policy
+
+---
+
+## Yield Curve Analysis
+
+"The yield curve is the single most important chart in finance. It tells you more about the economy and markets than any other indicator."
+
+### Yield Curve Shapes
+
+**Normal (Upward Sloping):**
+- Short rates lower than long rates
+- Economy functioning normally
+- Positive term premium
+- Banks can profit from maturity transformation
+
+**Flat:**
+- Short and long rates similar
+- Late cycle indicator
+- Economy may be slowing
+- Transition state - watch carefully
+
+**Inverted:**
+- Short rates higher than long rates
+- Historically reliable recession predictor
+- Fed policy is restrictive
+- Credit conditions tightening
+
+### Yield Curve Signals
+
+"Every recession in the last 50 years has been preceded by yield curve inversion. It's not a perfect timing tool, but ignoring it is foolish."
+
+Key spreads to watch:
+- 2Y/10Y spread (most watched)
+- 3M/10Y spread (Fed's preferred)
+- 2Y/30Y spread (steepness indicator)
+
+---
+
+## Credit Spread Analysis
+
+"Credit spreads tell you how much the market is worried about default risk. When spreads are tight, everyone is complacent. When spreads blow out, fear has arrived."
+
+### Credit Spread Levels
+
+**Tight spreads (risk-on):**
+- Investor complacency high
+- Risk/reward unfavorable
+- Late cycle warning
+- Probably not the time to add risk
+
+**Wide spreads (risk-off):**
+- Fear elevated
+- Potential opportunity
+- Must distinguish panic from justified concern
+- Quality matters more than ever
+
+### IG vs HY Spreads
+
+- Investment grade: Watch for corporate stress
+- High yield: Canary in coal mine
+- Ratio between them: Risk appetite indicator
+
+---
+
+## Duration Management
+
+"Duration is the most important risk factor in bond portfolios. Get it wrong and nothing else matters."
+
+### Duration Defined
+
+Duration measures sensitivity to interest rate changes:
+- Higher duration = more sensitive to rate moves
+- Lower duration = less sensitive to rate moves
+
+### Duration Positioning
+
+**Extend duration when:**
+- Fed pivoting to easier policy
+- Economy weakening
+- Inflation expectations falling
+- Recession risk rising
+
+**Shorten duration when:**
+- Fed tightening
+- Inflation rising unexpectedly
+- Economy overheating
+- Term premium too low
+
+"Don't fight the Fed with your duration positioning. If they're raising rates, you want to be short duration. If they're cutting, you want to be long."
+
+---
+
+## Real Yields
+
+"Nominal yields are misleading. What matters is real yields - what you earn after inflation."
+
+### Real Yield Framework
+
+Real Yield = Nominal Yield - Expected Inflation
+
+**Positive real yields:**
+- Bonds providing true return above inflation
+- Attractive for income investors
+- May signal tight monetary policy
+
+**Negative real yields:**
+- Bonds losing purchasing power
+- Financial repression environment
+- Pushes investors toward risk assets
+
+---
+
+## The Gundlach Portfolio Framework
+
+### Core Holdings
+
+1. **High-quality duration:** Government bonds for recession protection
+2. **Credit exposure:** Investment grade corporates for yield
+3. **Mortgage-backed:** Agency MBS for stable cash flows
+4. **TIPS:** Inflation protection when warranted
+
+### Tactical Tilts
+
+Based on cycle positioning:
+- Early cycle: Add credit risk, shorter duration
+- Mid cycle: Balanced approach
+- Late cycle: Reduce credit risk, extend duration
+- Recession: Maximum quality, long duration
+
+### Risk Management
+
+"The biggest mistake fixed income investors make is reaching for yield when spreads are tight. The extra 50 basis points isn't worth the risk."
+
+Key principles:
+- Never stretch for yield in tight spread environments
+- Quality matters more when cycle is late
+- Liquidity premium is real - respect it
+- Don't fight the direction of rates
+
+---
+
+## Market Indicators to Watch
+
+### Daily/Weekly
+
+1. 10-year Treasury yield
+2. 2Y/10Y spread
+3. Investment grade credit spreads
+4. High yield spreads
+5. TED spread (banking stress)
+
+### Monthly
+
+1. Inflation data vs expectations
+2. Employment trends
+3. Fed policy signals
+4. Corporate earnings (credit quality)
+5. Global rate differentials
+
+### Quarterly
+
+1. Economic growth trajectory
+2. Credit cycle positioning
+3. Fiscal policy changes
+4. Structural supply/demand shifts
+
+---
+
+## Key Lessons
+
+"The bond market is a voting machine in the short term and a weighing machine in the long term, just like stocks. But it votes more honestly because bond investors have to get paid back."
+
+"Interest rates are the most important price in the economy. They affect everything - housing, corporate investment, government deficits, currency values. Understand rates and you understand the foundation of everything else."
+
+"In bond investing, avoiding big losses is more important than capturing every basis point of upside. The math of recovery from losses is brutal."

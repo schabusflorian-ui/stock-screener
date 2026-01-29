@@ -1,0 +1,135 @@
+Title: Semiconductor Industry Investment Analysis
+Source: AI & Robotics Investment Insights
+Type: investment_framework
+
+---
+
+
+SEMICONDUCTOR INDUSTRY INVESTMENT ANALYSIS
+
+THE CHIP STACK - LAYERS OF VALUE:
+
+1. EQUIPMENT MAKERS (Picks & Shovels)
+- ASML: Monopoly on EUV lithography
+- Applied Materials, Lam Research, KLA
+- Tokyo Electron (Japan)
+- Critical bottleneck in chip production
+- Long-term secular growth
+
+2. FOUNDRIES (Manufacturing)
+- TSMC: 90%+ of advanced chips
+- Samsung Foundry
+- Intel Foundry Services (catching up)
+- Massive capex requirements
+- Geographic concentration risk (Taiwan)
+
+3. CHIP DESIGNERS
+- Nvidia (AI/Gaming GPUs)
+- AMD (CPUs, GPUs, Data Center)
+- Qualcomm (Mobile)
+- Broadcom (Networking)
+- Marvell (Data Infrastructure)
+
+4. MEMORY
+- Samsung, SK Hynix (Korea)
+- Micron (US)
+- Commodity-like, cyclical
+- HBM (High Bandwidth Memory) for AI is hot
+
+AI CHIP LANDSCAPE 2024-2025:
+
+NVIDIA DOMINANCE:
+- 80%+ market share in AI training
+- CUDA ecosystem lock-in
+- Data center revenue > gaming
+- Blackwell architecture (2024)
+- Competition emerging but years behind
+
+CHALLENGERS:
+- AMD MI300 series: Gaining traction
+- Intel Gaudi: Struggling for adoption
+- Google TPU: Internal use primarily
+- Amazon Trainium/Inferentia: AWS-focused
+- Startups: Cerebras, Groq, SambaNova
+
+CUSTOM SILICON TREND:
+- Apple M-series: Vertical integration
+- Google TPU: Training efficiency
+- Amazon Graviton: Cost advantage
+- Microsoft Maia: Azure AI
+- Meta MTIA: Internal workloads
+
+INVESTMENT THEMES:
+
+1. AI Compute Demand
+- 10x growth in AI compute demand expected
+- Supply constraints on advanced chips
+- Nvidia pricing power
+- HBM shortage through 2025
+
+2. Geopolitical Risk
+- Taiwan concentration (TSMC)
+- China restrictions (CHIPS Act)
+- Reshoring/friendshoring
+- Supply chain resilience
+
+3. Memory Renaissance
+- HBM demand from AI
+- DDR5 transition
+- Storage for AI workloads
+
+4. Edge AI
+- On-device inference
+- Qualcomm, MediaTek
+- Power efficiency matters
+- Privacy/latency benefits
+
+VALUATION CONSIDERATIONS:
+
+Nvidia at 30x+ forward P/E:
+- Is the growth priced in?
+- How long can dominance last?
+- What happens when demand normalizes?
+
+Equipment makers:
+- ASML monopoly = premium valuation
+- Cyclical but with secular tailwinds
+- China exposure risk
+
+Memory:
+- Highly cyclical historically
+- AI changes demand dynamics?
+- Boom/bust patterns
+
+KEY METRICS TO WATCH:
+- Data center revenue growth
+- AI chip ASPs (average selling price)
+- Foundry utilization rates
+- HBM capacity additions
+- Customer concentration
+- China revenue exposure
+
+RISK FACTORS:
+
+1. Cyclicality
+- Chip industry is boom/bust
+- Inventory corrections happen
+- Demand can collapse quickly
+
+2. Competition
+- China developing alternatives
+- Open-source chip designs
+- New architectures
+
+3. Customer Concentration
+- Big tech is major buyer
+- Vertical integration threat
+- Pricing pressure
+
+4. Technology Transitions
+- New architectures could disrupt
+- Quantum computing (long-term)
+- Novel materials
+
+"Semiconductors are the new oil - critical infrastructure
+for the digital economy."

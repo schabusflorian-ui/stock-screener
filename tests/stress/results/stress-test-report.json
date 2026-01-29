@@ -1,0 +1,2607 @@
+{
+  "metadata": {
+    "timestamp": "2026-01-28T12:39:05.968Z",
+    "version": "1.0.0"
+  },
+  "summary": {
+    "totalTests": 88,
+    "totalPassed": 88,
+    "totalFailed": 0,
+    "successRate": "100.0%",
+    "issues": [],
+    "performance": {
+      "avgResponseTime": 2008
+    },
+    "quality": {
+      "avgScore": 64,
+      "gradeDistribution": {
+        "A": 0,
+        "B": 1,
+        "C": 7,
+        "D": 14,
+        "F": 10
+      },
+      "lowQualityResponses": [
+        {
+          "persona": "quantTrader",
+          "question": "What are the factor scores for AAPL?",
+          "score": 64,
+          "grade": "D",
+          "feedback": [
+            "Could use more structured analysis or framework"
+          ]
+        },
+        {
+          "persona": "quantTrader",
+          "question": "How would AQR analyze this stock systematically?",
+          "score": 62,
+          "grade": "D",
+          "feedback": [
+            "Low persona adherence - response lacks quant analyst terminology",
+            "Could use more structured analysis or framework"
+          ]
+        },
+        {
+          "persona": "quantTrader",
+          "question": "What does the information ratio tell us about this strategy?",
+          "score": 61,
+          "grade": "D",
+          "feedback": [
+            "Low persona adherence - response lacks quant analyst terminology",
+            "Missing analyst knowledge - consider referencing oshaughnessy, asness",
+            "Could use more structured analysis or framework"
+          ]
+        },
+        {
+          "persona": "valueInvestor",
+          "question": "Does Apple have a durable competitive moat?",
+          "score": 68,
+          "grade": "D",
+          "feedback": [
+            "Could use more structured analysis or framework"
+          ]
+        },
+        {
+          "persona": "valueInvestor",
+          "question": "Would Buffett buy this company? What would Munger say about the moat?",
+          "score": 69,
+          "grade": "D",
+          "feedback": [
+            "Could use more structured analysis or framework"
+          ]
+        },
+        {
+          "persona": "valueInvestor",
+          "question": "What is the margin of safety at current prices?",
+          "score": 67,
+          "grade": "D",
+          "feedback": [
+            "Low persona adherence - response lacks value analyst terminology",
+            "Could use more structured analysis or framework"
+          ]
+        },
+        {
+          "persona": "beginnerInvestor",
+          "question": "Can you explain what this means in simple terms?",
+          "score": 62,
+          "grade": "D",
+          "feedback": [
+            "Low persona adherence - response lacks value analyst terminology",
+            "Could use more structured analysis or framework"
+          ]
+        },
+        {
+          "persona": "beginnerInvestor",
+          "question": "Which is better, AAPL or GOOGL?",
+          "score": 63,
+          "grade": "D",
+          "feedback": [
+            "Low persona adherence - response lacks value analyst terminology",
+            "Could use more structured analysis or framework"
+          ]
+        },
+        {
+          "persona": "dayTrader",
+          "question": "What's the technical setup for TSLA?",
+          "score": 60,
+          "grade": "D",
+          "feedback": [
+            "Could use more structured analysis or framework"
+          ]
+        },
+        {
+          "persona": "dayTrader",
+          "question": "How should I systematically size this position?",
+          "score": 52,
+          "grade": "F",
+          "feedback": [
+            "Low persona adherence - response lacks quant analyst terminology",
+            "Missing analyst knowledge - consider referencing oshaughnessy, asness",
+            "Could use more structured analysis or framework"
+          ]
+        },
+        {
+          "persona": "dayTrader",
+          "question": "What momentum signals are you seeing?",
+          "score": 59,
+          "grade": "F",
+          "feedback": [
+            "Low persona adherence - response lacks quant analyst terminology",
+            "Missing analyst knowledge - consider referencing oshaughnessy, asness",
+            "Could use more structured analysis or framework"
+          ]
+        },
+        {
+          "persona": "riskAverseRetiree",
+          "question": "Is this dividend safe for retirement? What would Graham say?",
+          "score": 63,
+          "grade": "D",
+          "feedback": [
+            "Low persona adherence - response lacks value analyst terminology",
+            "Could use more structured analysis or framework"
+          ]
+        },
+        {
+          "persona": "riskAverseRetiree",
+          "question": "What's the downside risk and capital preservation?",
+          "score": 52,
+          "grade": "F",
+          "feedback": [
+            "Low persona adherence - response lacks value analyst terminology",
+            "Could use more structured analysis or framework"
+          ]
+        },
+        {
+          "persona": "riskAverseRetiree",
+          "question": "Does this company have a durable competitive advantage?",
+          "score": 63,
+          "grade": "D",
+          "feedback": [
+            "Low persona adherence - response lacks value analyst terminology",
+            "Could use more structured analysis or framework"
+          ]
+        },
+        {
+          "persona": "aggressiveGrowth",
+          "question": "How large is the total addressable market?",
+          "score": 54,
+          "grade": "F",
+          "feedback": [
+            "Low persona adherence - response lacks growth analyst terminology",
+            "Missing analyst knowledge - consider referencing fisher, lynch",
+            "Could use more structured analysis or framework"
+          ]
+        },
+        {
+          "persona": "aggressiveGrowth",
+          "question": "Is this company a potential ten-bagger like Lynch would identify?",
+          "score": 57,
+          "grade": "F",
+          "feedback": [
+            "Low persona adherence - response lacks growth analyst terminology",
+            "Could use more structured analysis or framework"
+          ]
+        },
+        {
+          "persona": "aggressiveGrowth",
+          "question": "What are the network effects and scalability here?",
+          "score": 49,
+          "grade": "F",
+          "feedback": [
+            "Low persona adherence - response lacks growth analyst terminology",
+            "Missing analyst knowledge - consider referencing fisher, lynch",
+            "Could use more structured analysis or framework"
+          ]
+        },
+        {
+          "persona": "contrarianInvestor",
+          "question": "Is the pessimism overdone here? What would Howard Marks say?",
+          "score": 67,
+          "grade": "D",
+          "feedback": [
+            "Low persona adherence - response lacks contrarian analyst terminology",
+            "Could use more structured analysis or framework"
+          ]
+        },
+        {
+          "persona": "dividendInvestor",
+          "question": "Is this dividend sustainable with a margin of safety?",
+          "score": 67,
+          "grade": "D",
+          "feedback": [
+            "Low persona adherence - response lacks value analyst terminology",
+            "Could use more structured analysis or framework"
+          ]
+        },
+        {
+          "persona": "dividendInvestor",
+          "question": "Would Buffett consider this a wonderful company at a fair price?",
+          "score": 69,
+          "grade": "D",
+          "feedback": [
+            "Could use more structured analysis or framework"
+          ]
+        },
+        {
+          "persona": "esgInvestor",
+          "question": "What is the total addressable market for clean tech?",
+          "score": 53,
+          "grade": "F",
+          "feedback": [
+            "Low persona adherence - response lacks growth analyst terminology",
+            "Missing analyst knowledge - consider referencing fisher, lynch",
+            "Could use more structured analysis or framework"
+          ]
+        },
+        {
+          "persona": "esgInvestor",
+          "question": "Is this company positioned to scale sustainably?",
+          "score": 47,
+          "grade": "F",
+          "feedback": [
+            "Low persona adherence - response lacks growth analyst terminology",
+            "Missing analyst knowledge - consider referencing fisher, lynch",
+            "Could use more structured analysis or framework"
+          ]
+        },
+        {
+          "persona": "esgInvestor",
+          "question": "What growth path does this company have for market penetration?",
+          "score": 56,
+          "grade": "F",
+          "feedback": [
+            "Low persona adherence - response lacks growth analyst terminology",
+            "Could use more structured analysis or framework"
+          ]
+        },
+        {
+          "persona": "optionsTrader",
+          "question": "What would Taleb say about the tail risks here?",
+          "score": 58,
+          "grade": "F",
+          "feedback": [
+            "Low persona adherence - response lacks tailrisk analyst terminology",
+            "Could use more structured analysis or framework"
+          ]
+        }
+      ]
+    },
+    "knowledgeTests": {
+      "total": 26,
+      "passed": 21,
+      "failed": 5,
+      "passRate": "80.8%"
+    },
+    "totalRuntime": 177315
+  },
+  "detailedResults": {
+    "quantTrader": {
+      "nlQueries": [
+        {
+          "query": "Screen for stocks with Sharpe ratio > 1",
+          "category": "screening",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 4929,
+          "intent": "llm_processed",
+          "hasData": true,
+          "error": null,
+          "details": {
+            "confidence": "high",
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Show factor scores for NVDA",
+          "category": "lookup",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 3,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Compare AAPL vs MSFT on risk metrics",
+          "category": "compare",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 1,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Find stocks with momentum > 70th percentile",
+          "category": "screening",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Show me the blorp factor for AAPL",
+          "category": "edge_invalid_metric",
+          "expectSuccess": false,
+          "success": false,
+          "responseTime": 0,
+          "intent": "rejected",
+          "hasData": false,
+          "error": "Unknown metric: \"blorp\". Valid metrics include: PE ratio, ROE, dividend yield, Sharpe ratio, momentum, quality, etc.",
+          "details": {
+            "code": "INVALID_METRIC",
+            "reason": "INVALID_METRIC"
+          },
+          "code": "INVALID_METRIC",
+          "matchesExpectation": true
+        }
+      ],
+      "analystChats": [
+        {
+          "operation": "createConversation",
+          "analystId": "quant",
+          "success": true,
+          "conversationId": "1769603774113-ymb8ulzdn",
+          "responseTime": 7,
+          "error": null
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603774113-ymb8ulzdn",
+          "question": "What are the factor scores for AAPL?",
+          "success": true,
+          "responseTime": 211,
+          "responseLength": 480,
+          "responseContent": "Thank you for your question about the company.\n\nTaking a systematic approach to This company, I'll evaluate key factor scores.\n\nFactor framework:\n- Value Factor: Need valuation data\n- Quality Factor: Need profitability data\n- Momentum Factor: Analyzing price trends\n\nWhich factors would you like me to analyze in detail?\n\n> \"Value and momentum are the two most robust factors that have worked over the longest periods of time.\"\n> — James O'Shaughnessy (What Works on Wall Street)\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 64,
+            "grade": "D",
+            "scores": {
+              "personaAdherence": 51.36363636363637,
+              "analystKnowledge": 60,
+              "specificity": 93,
+              "fluency": 75,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "matchesExpectation": true
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603774113-ymb8ulzdn",
+          "question": "How should I size this position based on volatility?",
+          "success": true,
+          "responseTime": 54,
+          "responseLength": 683,
+          "responseContent": "That's a thoughtful question about the company.\n\nFrom my Factor Investing perspective, let me address this:\n\nYou asked about \"How should I size this position based on volatilit...\" - This touches on key aspects of my analytical framework.\n\nTo provide the most useful analysis, I'd focus on:\n- Factor scoring\n- Technical analysis\n- Risk metrics\n- Position sizing\n\nCould you provide more specific details about what you'd like me to analyze? For example, I'm particularly good at Screening stocks.\n\n> \"Always think in risk-adjusted terms. A strategy that returns 10% with 20% volatility is no better than one that returns 5% with 10% volatility.\"\n> — Cliff Asness (AQR) (AQR Research)\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 71,
+            "grade": "C",
+            "scores": {
+              "personaAdherence": 45.303030303030305,
+              "analystKnowledge": 85,
+              "specificity": 100,
+              "fluency": 84,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Low persona adherence - response lacks quant analyst terminology",
+              "Could use more structured analysis or framework"
+            ],
+            "passed": true
+          },
+          "matchesExpectation": true
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603774113-ymb8ulzdn",
+          "question": "How would AQR analyze this stock systematically?",
+          "success": true,
+          "responseTime": 39,
+          "responseLength": 670,
+          "responseContent": "That's a thoughtful question about the company.\n\nFrom my Factor Investing perspective, let me address this:\n\nYou asked about \"How would AQR analyze this stock systematically?...\" - This touches on key aspects of my analytical framework.\n\nTo provide the most useful analysis, I'd focus on:\n- Factor scoring\n- Technical analysis\n- Risk metrics\n- Position sizing\n\nCould you provide more specific details about what you'd like me to analyze? For example, I'm particularly good at Screening stocks.\n\n> \"Successful investors approach the market with a consistent, systematic methodology, not with hunches or market timing.\"\n> — James O'Shaughnessy (What Works on Wall Street)\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 62,
+            "grade": "D",
+            "scores": {
+              "personaAdherence": 27,
+              "analystKnowledge": 70,
+              "specificity": 100,
+              "fluency": 81,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Low persona adherence - response lacks quant analyst terminology",
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "factor",
+              "systematic",
+              "quantitative"
+            ],
+            "foundKeywords": [
+              "factor",
+              "systematic"
+            ],
+            "passed": true
+          },
+          "matchesExpectation": true
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603774113-ymb8ulzdn",
+          "question": "What does the information ratio tell us about this strategy?",
+          "success": true,
+          "responseTime": 44,
+          "responseLength": 672,
+          "responseContent": "That's a thoughtful question about the company.\n\nFrom my Factor Investing perspective, let me address this:\n\nYou asked about \"What does the information ratio tell us about this...\" - This touches on key aspects of my analytical framework.\n\nTo provide the most useful analysis, I'd focus on:\n- Factor scoring\n- Technical analysis\n- Risk metrics\n- Position sizing\n\nCould you provide more specific details about what you'd like me to analyze? For example, I'm particularly good at Screening stocks.\n\n> \"Successful investors approach the market with a consistent, systematic methodology, not with hunches or market timing.\"\n> — James O'Shaughnessy (What Works on Wall Street)\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 61,
+            "grade": "D",
+            "scores": {
+              "personaAdherence": 48.33333333333333,
+              "analystKnowledge": 45,
+              "specificity": 96,
+              "fluency": 81,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Low persona adherence - response lacks quant analyst terminology",
+              "Missing analyst knowledge - consider referencing oshaughnessy, asness",
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "alpha",
+              "risk-adjusted",
+              "sharpe"
+            ],
+            "foundKeywords": [],
+            "passed": false
+          },
+          "matchesExpectation": true
+        }
+      ]
+    },
+    "valueInvestor": {
+      "nlQueries": [
+        {
+          "query": "Find undervalued stocks with wide moats",
+          "category": "screening",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "What is AAPL's margin of safety?",
+          "category": "lookup",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 9124,
+          "intent": "llm_processed",
+          "hasData": true,
+          "error": null,
+          "details": {
+            "confidence": "high",
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Show me Buffett's holdings",
+          "category": "investor",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 8624,
+          "intent": "llm_processed",
+          "hasData": true,
+          "error": null,
+          "details": {
+            "confidence": "high",
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Calculate intrinsic value for MSFT",
+          "category": "calculate",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 9830,
+          "intent": "llm_processed",
+          "hasData": true,
+          "error": null,
+          "details": {
+            "confidence": "high",
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Is XYZZY a good value?",
+          "category": "edge_invalid_symbol",
+          "expectSuccess": false,
+          "success": false,
+          "responseTime": 2,
+          "intent": "rejected",
+          "hasData": false,
+          "error": "Unknown stock symbol: \"XYZZY\". Please check the ticker and try again.",
+          "details": {
+            "code": "SYMBOL_NOT_FOUND",
+            "reason": "SYMBOL_NOT_FOUND"
+          },
+          "code": "SYMBOL_NOT_FOUND",
+          "matchesExpectation": true
+        }
+      ],
+      "analystChats": [
+        {
+          "operation": "createConversation",
+          "analystId": "value",
+          "success": true,
+          "conversationId": "1769603802049-b8z52hrwp",
+          "responseTime": 1,
+          "error": null
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603802049-b8z52hrwp",
+          "question": "Does Apple have a durable competitive moat?",
+          "success": true,
+          "responseTime": 107,
+          "responseLength": 802,
+          "responseContent": "Thank you for your question about the company.\n\nFrom a value investing perspective, I look at This company through the lens of intrinsic value and margin of safety.\n\nThe valuation needs to be assessed against normalized earnings and the company's competitive position.\n\nKey questions I consider:\n- What is the sustainable earnings power?\n- Does the business have a durable competitive moat?\n- Is management allocating capital wisely?\n\nWhat specific aspect would you like me to analyze in depth?\n\n> \"The key to investing is determining the competitive advantage of any given company and, above all, the durability of that advantage.\"\n> — Warren Buffett (1999 Berkshire Letter)\n\n**Relevant precedent: Buffett's Coca-Cola Investment (1988)**\nKey lesson: Great brands can command pricing power for decades\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 68,
+            "grade": "D",
+            "scores": {
+              "personaAdherence": 54,
+              "analystKnowledge": 70,
+              "specificity": 95,
+              "fluency": 75,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "moat",
+              "competitive advantage",
+              "durable"
+            ],
+            "foundKeywords": [
+              "moat",
+              "competitive advantage",
+              "durable"
+            ],
+            "passed": true
+          },
+          "matchesExpectation": true
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603802049-b8z52hrwp",
+          "question": "Is management allocating capital effectively?",
+          "success": true,
+          "responseTime": 49,
+          "responseLength": 992,
+          "responseContent": "That's a thoughtful question about the company.\n\nFrom my Value Investing perspective, let me address this:\n\nYou asked about \"Is management allocating capital effectively?...\" - This touches on key aspects of my analytical framework.\n\nTo provide the most useful analysis, I'd focus on:\n- Moat analysis\n- Intrinsic value estimation\n- Risk assessment\n- Capital allocation\n\nCould you provide more specific details about what you'd like me to analyze? For example, I'm particularly good at Finding undervalued stocks.\n\n> \"The most important thing to do if you find yourself in a hole is to stop digging.\"\n> — Warren Buffett (Berkshire Meeting)\n\n**My Owner Earnings Calculation approach:**\n1. Start with reported net income\n2. Add back depreciation and amortization (non-cash charges)\n3. Subtract maintenance capital expenditures (estimate 50-80% of total CapEx for mature businesses)\n\n**Relevant precedent: Buffett's See's Candies (1972)**\nKey lesson: Pricing power is the ultimate test of a moat\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 70,
+            "grade": "C",
+            "scores": {
+              "personaAdherence": 54.285714285714285,
+              "analystKnowledge": 70,
+              "specificity": 100,
+              "fluency": 81,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Could use more structured analysis or framework"
+            ],
+            "passed": true
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "capital allocation",
+              "return on equity"
+            ],
+            "foundKeywords": [
+              "capital allocation"
+            ],
+            "passed": true
+          },
+          "matchesExpectation": true
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603802049-b8z52hrwp",
+          "question": "Would Buffett buy this company? What would Munger say about the moat?",
+          "success": true,
+          "responseTime": 39,
+          "responseLength": 1066,
+          "responseContent": "## Investment Recommendation for This stock\n\n**Important Disclaimer**: This is educational analysis, not investment advice.\n\nFrom my Value Investing framework:\n\nTo provide a specific recommendation, I need to fully assess:\n- Intrinsic value vs current price\n- Margin of safety\n- Business quality and moat\n- Management track record\n\nWith complete data, I can provide a specific rating with price targets and conviction level.\n\nWhat additional information can you provide?\n\n> \"It's far better to buy a wonderful company at a fair price than a fair company at a wonderful price.\"\n> — Warren Buffett (1989 Berkshire Letter)\n\n**My Competitive Moat Analysis approach:**\n1. Identify moat type: brand, network effects, switching costs, patents, cost advantage, or scale\n2. Apply the '$10 billion test' - could a well-funded competitor replicate this in 10 years?\n3. Look for pricing power evidence - can they raise prices without losing customers?\n\n**Relevant precedent: Buffett's Coca-Cola Investment (1988)**\nKey lesson: Great brands can command pricing power for decades\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 69,
+            "grade": "D",
+            "scores": {
+              "personaAdherence": 61.42857142857143,
+              "analystKnowledge": 70,
+              "specificity": 87,
+              "fluency": 75,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "buffett",
+              "munger",
+              "moat",
+              "intrinsic value"
+            ],
+            "foundKeywords": [
+              "buffett",
+              "moat",
+              "intrinsic value"
+            ],
+            "passed": true
+          },
+          "matchesExpectation": true
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603802049-b8z52hrwp",
+          "question": "What is the margin of safety at current prices?",
+          "success": true,
+          "responseTime": 43,
+          "responseLength": 1047,
+          "responseContent": "## Valuation Analysis for The company\n\n\nFrom a value perspective, I evaluate intrinsic value using multiple approaches:\n\n1. **Discounted Cash Flow (DCF)**: Projecting owner earnings\n2. **Earnings Power Value**: Sustainable earnings capacity\n3. **Asset-Based Valuation**: For capital-intensive businesses\n\nA true margin of safety requires the stock price to be at least 30% below estimated intrinsic value.\n\nTo provide a specific fair value estimate, I would need additional financial details. Would you like to provide more data?\n\n> \"Price is what you pay, value is what you get.\"\n> — Warren Buffett (2008 Berkshire Letter)\n\n**My Margin of Safety Calculation approach:**\n1. Calculate intrinsic value using owner earnings or DCF with 10-12% discount rate\n2. Determine 'normalized' earnings - what the company can earn in average conditions\n3. Apply conservative growth assumptions (GDP growth or lower for mature businesses)\n\n**Relevant precedent: Klarman's Distressed Investing Approach**\nKey lesson: Maximum pessimism creates maximum opportunity\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 67,
+            "grade": "D",
+            "scores": {
+              "personaAdherence": 43.57142857142857,
+              "analystKnowledge": 85,
+              "specificity": 88,
+              "fluency": 75,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Low persona adherence - response lacks value analyst terminology",
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "margin of safety",
+              "intrinsic value",
+              "fair price"
+            ],
+            "foundKeywords": [
+              "margin of safety",
+              "intrinsic value"
+            ],
+            "passed": true
+          },
+          "matchesExpectation": true
+        }
+      ]
+    },
+    "beginnerInvestor": {
+      "nlQueries": [
+        {
+          "query": "What is a P/E ratio?",
+          "category": "educational",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 8124,
+          "intent": "llm_processed",
+          "hasData": true,
+          "error": null,
+          "details": {
+            "confidence": "high",
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Is Apple a good stock?",
+          "category": "lookup",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 10449,
+          "intent": "llm_processed",
+          "hasData": true,
+          "error": null,
+          "details": {
+            "confidence": "high",
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Show me divident stocks",
+          "category": "edge_typo",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 20832,
+          "intent": "llm_processed",
+          "hasData": true,
+          "error": null,
+          "details": {
+            "confidence": "high",
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "I have $1000, what should I buy?",
+          "category": "edge_vague",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 8090,
+          "intent": "llm_processed",
+          "hasData": true,
+          "error": null,
+          "details": {
+            "confidence": "high",
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "asdfjkl;asdfjkl;",
+          "category": "edge_gibberish",
+          "expectSuccess": false,
+          "success": false,
+          "responseTime": 25,
+          "intent": "rejected",
+          "hasData": false,
+          "error": "I couldn't understand that query. Please try rephrasing with clearer terms.",
+          "details": {
+            "code": "GIBBERISH_DETECTED",
+            "reason": "GIBBERISH_DETECTED"
+          },
+          "code": "GIBBERISH_DETECTED",
+          "matchesExpectation": true
+        }
+      ],
+      "analystChats": [
+        {
+          "operation": "createConversation",
+          "analystId": "value",
+          "success": true,
+          "conversationId": "1769603849808-t8chvh6jc",
+          "responseTime": 9,
+          "error": null
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603849808-t8chvh6jc",
+          "question": "Can you explain what this means in simple terms?",
+          "success": true,
+          "responseTime": 475,
+          "responseLength": 715,
+          "responseContent": "Thank you for your question about the company.\n\nFrom a value investing perspective, I look at This company through the lens of intrinsic value and margin of safety.\n\nThe valuation needs to be assessed against normalized earnings and the company's competitive position.\n\nKey questions I consider:\n- What is the sustainable earnings power?\n- Does the business have a durable competitive moat?\n- Is management allocating capital wisely?\n\nWhat specific aspect would you like me to analyze in depth?\n\n> \"Price is what you pay, value is what you get.\"\n> — Warren Buffett (2008 Berkshire Letter)\n\n**Relevant precedent: Buffett's Coca-Cola Investment (1988)**\nKey lesson: Great brands can command pricing power for decades\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 62,
+            "grade": "D",
+            "scores": {
+              "personaAdherence": 43,
+              "analystKnowledge": 70,
+              "specificity": 80,
+              "fluency": 75,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Low persona adherence - response lacks value analyst terminology",
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "matchesExpectation": true
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603849808-t8chvh6jc",
+          "question": "Which is better, AAPL or GOOGL?",
+          "success": true,
+          "responseTime": 50,
+          "responseLength": 1039,
+          "responseContent": "That's a thoughtful question about the company.\n\nFrom my Value Investing perspective, let me address this:\n\nYou asked about \"Which is better, AAPL or GOOGL?...\" - This touches on key aspects of my analytical framework.\n\nTo provide the most useful analysis, I'd focus on:\n- Moat analysis\n- Intrinsic value estimation\n- Risk assessment\n- Capital allocation\n\nCould you provide more specific details about what you'd like me to analyze? For example, I'm particularly good at Finding undervalued stocks.\n\n> \"Price is what you pay, value is what you get.\"\n> — Warren Buffett (2008 Berkshire Letter)\n\n**My Competitive Moat Analysis approach:**\n1. Identify moat type: brand, network effects, switching costs, patents, cost advantage, or scale\n2. Apply the '$10 billion test' - could a well-funded competitor replicate this in 10 years?\n3. Look for pricing power evidence - can they raise prices without losing customers?\n\n**Relevant precedent: Buffett's Coca-Cola Investment (1988)**\nKey lesson: Great brands can command pricing power for decades\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 63,
+            "grade": "D",
+            "scores": {
+              "personaAdherence": 32,
+              "analystKnowledge": 70,
+              "specificity": 100,
+              "fluency": 81,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Low persona adherence - response lacks value analyst terminology",
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "matchesExpectation": true
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603849808-t8chvh6jc",
+          "question": "What should a beginner invest in?",
+          "success": true,
+          "responseTime": 55,
+          "responseLength": 1018,
+          "responseContent": "That's a thoughtful question about the company.\n\nFrom my Value Investing perspective, let me address this:\n\nYou asked about \"What should a beginner invest in?...\" - This touches on key aspects of my analytical framework.\n\nTo provide the most useful analysis, I'd focus on:\n- Moat analysis\n- Intrinsic value estimation\n- Risk assessment\n- Capital allocation\n\nCould you provide more specific details about what you'd like me to analyze? For example, I'm particularly good at Finding undervalued stocks.\n\n> \"Price is what you pay, value is what you get.\"\n> — Warren Buffett (2008 Berkshire Letter)\n\n**My Margin of Safety Calculation approach:**\n1. Calculate intrinsic value using owner earnings or DCF with 10-12% discount rate\n2. Determine 'normalized' earnings - what the company can earn in average conditions\n3. Apply conservative growth assumptions (GDP growth or lower for mature businesses)\n\n**Relevant precedent: Klarman's Distressed Investing Approach**\nKey lesson: Maximum pessimism creates maximum opportunity\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 77,
+            "grade": "C",
+            "scores": {
+              "personaAdherence": 65,
+              "analystKnowledge": 85,
+              "specificity": 100,
+              "fluency": 81,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Could use more structured analysis or framework"
+            ],
+            "passed": true
+          },
+          "matchesExpectation": true
+        }
+      ]
+    },
+    "dayTrader": {
+      "nlQueries": [
+        {
+          "query": "Show RSI for NVDA",
+          "category": "technical",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 1,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "MACD crossover signals",
+          "category": "technical",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Most volatile tech stocks",
+          "category": "screening",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Stocks near 52-week high",
+          "category": "screening",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Current market sentiment",
+          "category": "sentiment",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        }
+      ],
+      "analystChats": [
+        {
+          "operation": "createConversation",
+          "analystId": "quant",
+          "success": true,
+          "conversationId": "1769603850399-bo98v73kj",
+          "responseTime": 1,
+          "error": null
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603850399-bo98v73kj",
+          "question": "What's the technical setup for TSLA?",
+          "success": true,
+          "responseTime": 107,
+          "responseLength": 480,
+          "responseContent": "Thank you for your question about the company.\n\nTaking a systematic approach to This company, I'll evaluate key factor scores.\n\nFactor framework:\n- Value Factor: Need valuation data\n- Quality Factor: Need profitability data\n- Momentum Factor: Analyzing price trends\n\nWhich factors would you like me to analyze in detail?\n\n> \"Value and momentum are the two most robust factors that have worked over the longest periods of time.\"\n> — James O'Shaughnessy (What Works on Wall Street)\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 60,
+            "grade": "D",
+            "scores": {
+              "personaAdherence": 51.36363636363637,
+              "analystKnowledge": 60,
+              "specificity": 70,
+              "fluency": 75,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "matchesExpectation": true
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603850399-bo98v73kj",
+          "question": "How should I systematically size this position?",
+          "success": true,
+          "responseTime": 63,
+          "responseLength": 669,
+          "responseContent": "That's a thoughtful question about the company.\n\nFrom my Factor Investing perspective, let me address this:\n\nYou asked about \"How should I systematically size this position?...\" - This touches on key aspects of my analytical framework.\n\nTo provide the most useful analysis, I'd focus on:\n- Factor scoring\n- Technical analysis\n- Risk metrics\n- Position sizing\n\nCould you provide more specific details about what you'd like me to analyze? For example, I'm particularly good at Screening stocks.\n\n> \"Successful investors approach the market with a consistent, systematic methodology, not with hunches or market timing.\"\n> — James O'Shaughnessy (What Works on Wall Street)\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 52,
+            "grade": "F",
+            "scores": {
+              "personaAdherence": 27,
+              "analystKnowledge": 30,
+              "specificity": 100,
+              "fluency": 81,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Low persona adherence - response lacks quant analyst terminology",
+              "Missing analyst knowledge - consider referencing oshaughnessy, asness",
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "position sizing",
+              "volatility",
+              "systematic"
+            ],
+            "foundKeywords": [
+              "position sizing",
+              "systematic"
+            ],
+            "passed": true
+          },
+          "matchesExpectation": true
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603850399-bo98v73kj",
+          "question": "What momentum signals are you seeing?",
+          "success": true,
+          "responseTime": 45,
+          "responseLength": 642,
+          "responseContent": "That's a thoughtful question about the company.\n\nFrom my Factor Investing perspective, let me address this:\n\nYou asked about \"What momentum signals are you seeing?...\" - This touches on key aspects of my analytical framework.\n\nTo provide the most useful analysis, I'd focus on:\n- Factor scoring\n- Technical analysis\n- Risk metrics\n- Position sizing\n\nCould you provide more specific details about what you'd like me to analyze? For example, I'm particularly good at Screening stocks.\n\n> \"Value and momentum are the two most robust factors that have worked over the longest periods of time.\"\n> — James O'Shaughnessy (What Works on Wall Street)\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 59,
+            "grade": "F",
+            "scores": {
+              "personaAdherence": 39.24242424242424,
+              "analystKnowledge": 45,
+              "specificity": 100,
+              "fluency": 81,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Low persona adherence - response lacks quant analyst terminology",
+              "Missing analyst knowledge - consider referencing oshaughnessy, asness",
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "momentum",
+              "factor"
+            ],
+            "foundKeywords": [
+              "momentum",
+              "factor"
+            ],
+            "passed": true
+          },
+          "matchesExpectation": true
+        }
+      ]
+    },
+    "riskAverseRetiree": {
+      "nlQueries": [
+        {
+          "query": "High dividend yield safe stocks",
+          "category": "screening",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Low volatility dividend stocks",
+          "category": "screening",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 19318,
+          "intent": "llm_processed",
+          "hasData": true,
+          "error": null,
+          "details": {
+            "confidence": "high",
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "What is the max drawdown for KO?",
+          "category": "risk",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 4807,
+          "intent": "llm_processed",
+          "hasData": true,
+          "error": null,
+          "details": {
+            "confidence": "high",
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Stocks with 10+ years dividend growth",
+          "category": "screening",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Is this stock too risky?",
+          "category": "edge_vague",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 3165,
+          "intent": "llm_processed",
+          "hasData": true,
+          "error": null,
+          "details": {
+            "confidence": "high",
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        }
+      ],
+      "analystChats": [
+        {
+          "operation": "createConversation",
+          "analystId": "value",
+          "success": true,
+          "conversationId": "1769603877907-cavopcy68",
+          "responseTime": 1,
+          "error": null
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603877907-cavopcy68",
+          "question": "Is this dividend safe for retirement? What would Graham say?",
+          "success": true,
+          "responseTime": 225,
+          "responseLength": 715,
+          "responseContent": "Thank you for your question about the company.\n\nFrom a value investing perspective, I look at This company through the lens of intrinsic value and margin of safety.\n\nThe valuation needs to be assessed against normalized earnings and the company's competitive position.\n\nKey questions I consider:\n- What is the sustainable earnings power?\n- Does the business have a durable competitive moat?\n- Is management allocating capital wisely?\n\nWhat specific aspect would you like me to analyze in depth?\n\n> \"Price is what you pay, value is what you get.\"\n> — Warren Buffett (2008 Berkshire Letter)\n\n**Relevant precedent: Buffett's Coca-Cola Investment (1988)**\nKey lesson: Great brands can command pricing power for decades\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 63,
+            "grade": "D",
+            "scores": {
+              "personaAdherence": 43,
+              "analystKnowledge": 70,
+              "specificity": 87,
+              "fluency": 75,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Low persona adherence - response lacks value analyst terminology",
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "margin of safety",
+              "durable"
+            ],
+            "foundKeywords": [
+              "margin of safety",
+              "durable"
+            ],
+            "passed": true
+          },
+          "matchesExpectation": true
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603877907-cavopcy68",
+          "question": "What's the downside risk and capital preservation?",
+          "success": true,
+          "responseTime": 47,
+          "responseLength": 720,
+          "responseContent": "## Risk Assessment for This investment\n\nAs a value investor, I focus on **permanent capital loss**, not volatility.\n\nKey risks to evaluate:\n\n1. **Business Risk**: Is the competitive position sustainable?\n2. **Balance Sheet Risk**: Can they survive extended stress?\n3. **Valuation Risk**: Is the current price reasonable?\n4. **Disruption Risk**: Could technology/competition eliminate the business?\n\nThe margin of safety concept addresses estimation errors, but some risks cannot be hedged.\n\nWhat specific risks would you like me to analyze?\n\n> \"What counts for most people in investing is not how much they know, but rather how realistically they define what they don't know.\"\n> — Warren Buffett (1999 Berkshire Letter)\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 52,
+            "grade": "F",
+            "scores": {
+              "personaAdherence": 11,
+              "analystKnowledge": 70,
+              "specificity": 82,
+              "fluency": 75,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Low persona adherence - response lacks value analyst terminology",
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "capital allocation",
+              "moat"
+            ],
+            "foundKeywords": [],
+            "passed": false
+          },
+          "matchesExpectation": true
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603877907-cavopcy68",
+          "question": "Does this company have a durable competitive advantage?",
+          "success": true,
+          "responseTime": 39,
+          "responseLength": 889,
+          "responseContent": "## Competitive Analysis for The company\n\n**Moat Assessment Framework**\n\nA durable competitive advantage (moat) is essential for sustainable returns. Types of moats:\n\n1. **Brand Power**: Customer loyalty and pricing power\n2. **Network Effects**: Value increases with more users\n3. **Switching Costs**: Customers locked in\n4. **Cost Advantages**: Structural cost leadership\n5. **Regulatory/Patents**: Legal barriers to entry\n\nThe key test: Could a well-funded competitor replicate this business with $10 billion?\n\nTo assess The company's competitive position specifically, I'd need details about their market, competitors, and strategic assets.\n\nWhat aspects of competitive dynamics would you like to explore?\n\n> \"The key to investing is determining the competitive advantage of any given company and, above all, the durability of that advantage.\"\n> — Warren Buffett (1999 Berkshire Letter)\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 63,
+            "grade": "D",
+            "scores": {
+              "personaAdherence": 32,
+              "analystKnowledge": 70,
+              "specificity": 100,
+              "fluency": 78,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Low persona adherence - response lacks value analyst terminology",
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "moat",
+              "competitive advantage",
+              "durable"
+            ],
+            "foundKeywords": [
+              "moat",
+              "competitive advantage",
+              "durable"
+            ],
+            "passed": true
+          },
+          "matchesExpectation": true
+        }
+      ]
+    },
+    "aggressiveGrowth": {
+      "nlQueries": [
+        {
+          "query": "Fastest growing tech stocks",
+          "category": "screening",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Stocks with 50%+ revenue growth",
+          "category": "screening",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "AI stocks with growth potential",
+          "category": "screening",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 1,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Is NVDA overvalued?",
+          "category": "valuation",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 6778,
+          "intent": "llm_processed",
+          "hasData": true,
+          "error": null,
+          "details": {
+            "confidence": "high",
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Compare NVDA, AMD, INTC growth",
+          "category": "compare",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        }
+      ],
+      "analystChats": [
+        {
+          "operation": "createConversation",
+          "analystId": "growth",
+          "success": true,
+          "conversationId": "1769603885000-vrqthddhv",
+          "responseTime": 7,
+          "error": null
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603885000-vrqthddhv",
+          "question": "How large is the total addressable market?",
+          "success": true,
+          "responseTime": 141,
+          "responseLength": 631,
+          "responseContent": "Thank you for your question about the company.\n\nLooking at This company from a growth perspective, I focus on the trajectory and sustainability of revenue growth.\n\nKey growth metrics I evaluate:\n- Revenue growth rate and acceleration\n- Total addressable market opportunity\n- Competitive positioning and market share gains\n\n\n\nWhat growth dynamics would you like to explore?\n**My Total Addressable Market Analysis approach:**\n1. Define the market - what problem is being solved?\n2. Calculate top-down TAM - total potential customers x average revenue per customer\n3. Validate with bottom-up - build from current customers and expand\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 54,
+            "grade": "F",
+            "scores": {
+              "personaAdherence": 39,
+              "analystKnowledge": 30,
+              "specificity": 93,
+              "fluency": 78,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Low persona adherence - response lacks growth analyst terminology",
+              "Missing analyst knowledge - consider referencing fisher, lynch",
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "tam",
+              "total addressable market",
+              "market opportunity"
+            ],
+            "foundKeywords": [
+              "tam",
+              "total addressable market",
+              "market opportunity"
+            ],
+            "passed": true
+          },
+          "matchesExpectation": true
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603885000-vrqthddhv",
+          "question": "Is this company a potential ten-bagger like Lynch would identify?",
+          "success": true,
+          "responseTime": 156,
+          "responseLength": 666,
+          "responseContent": "That's a thoughtful question about the company.\n\nFrom my Growth Investing perspective, let me address this:\n\nYou asked about \"Is this company a potential ten-bagger like Lynch ...\" - This touches on key aspects of my analytical framework.\n\nTo provide the most useful analysis, I'd focus on:\n- TAM analysis\n- Growth sustainability\n- Forward modeling\n- Competitive dynamics\n\nCould you provide more specific details about what you'd like me to analyze? For example, I'm particularly good at High-growth stocks.\n\n> \"If you can find a company that can grow earnings 20-25% a year, you might have found a ten-bagger over a decade.\"\n> — Peter Lynch (One Up on Wall Street)\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 57,
+            "grade": "F",
+            "scores": {
+              "personaAdherence": 16,
+              "analystKnowledge": 70,
+              "specificity": 93,
+              "fluency": 81,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Low persona adherence - response lacks growth analyst terminology",
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "lynch",
+              "ten-bagger",
+              "growth"
+            ],
+            "foundKeywords": [
+              "lynch",
+              "ten-bagger",
+              "growth"
+            ],
+            "passed": true
+          },
+          "matchesExpectation": true
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603885000-vrqthddhv",
+          "question": "What are the network effects and scalability here?",
+          "success": true,
+          "responseTime": 62,
+          "responseLength": 636,
+          "responseContent": "That's a thoughtful question about the company.\n\nFrom my Growth Investing perspective, let me address this:\n\nYou asked about \"What are the network effects and scalability here?...\" - This touches on key aspects of my analytical framework.\n\nTo provide the most useful analysis, I'd focus on:\n- TAM analysis\n- Growth sustainability\n- Forward modeling\n- Competitive dynamics\n\nCould you provide more specific details about what you'd like me to analyze? For example, I'm particularly good at High-growth stocks.\n**Relevant precedent: Netflix's Disruption of Entertainment**\nKey lesson: Disruption often starts in segments incumbents ignore\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 49,
+            "grade": "F",
+            "scores": {
+              "personaAdherence": 19,
+              "analystKnowledge": 30,
+              "specificity": 100,
+              "fluency": 81,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Low persona adherence - response lacks growth analyst terminology",
+              "Missing analyst knowledge - consider referencing fisher, lynch",
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "network effects",
+              "scalable",
+              "disruptive"
+            ],
+            "foundKeywords": [
+              "network effects"
+            ],
+            "passed": false
+          },
+          "matchesExpectation": true
+        }
+      ]
+    },
+    "contrarianInvestor": {
+      "nlQueries": [
+        {
+          "query": "Most hated stocks right now",
+          "category": "sentiment",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Stocks down 50% from highs",
+          "category": "screening",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Heavily shorted stocks",
+          "category": "screening",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Insider buying in beaten-down stocks",
+          "category": "insider",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Is this a value trap or opportunity?",
+          "category": "edge_vague",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 4083,
+          "intent": "llm_processed",
+          "hasData": true,
+          "error": null,
+          "details": {
+            "confidence": "high",
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        }
+      ],
+      "analystChats": [
+        {
+          "operation": "createConversation",
+          "analystId": "contrarian",
+          "success": true,
+          "conversationId": "1769603889454-hjsmamreo",
+          "responseTime": 9,
+          "error": null
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603889454-hjsmamreo",
+          "question": "Is the pessimism overdone here? What would Howard Marks say?",
+          "success": true,
+          "responseTime": 69,
+          "responseLength": 638,
+          "responseContent": "Thank you for your question about the company.\n\nFrom a contrarian standpoint, I look for situations where the market may have overreacted.\n\nFor This company, key questions include:\n- Is current sentiment excessively negative or positive?\n- Are temporary issues being treated as permanent?\n- What catalysts could change the narrative?\n\nWould you like me to assess the sentiment dynamics or potential catalysts?\n\n> \"The best opportunities come in times of maximum pessimism.\"\n> — Howard Marks (The Most Important Thing)\n\n**Relevant precedent: Templeton's WWII Buying Spree (1939)**\nKey lesson: Maximum pessimism creates maximum opportunity\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 67,
+            "grade": "D",
+            "scores": {
+              "personaAdherence": 39,
+              "analystKnowledge": 85,
+              "specificity": 96,
+              "fluency": 75,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Low persona adherence - response lacks contrarian analyst terminology",
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "marks",
+              "pessimism",
+              "sentiment",
+              "second-level thinking"
+            ],
+            "foundKeywords": [
+              "marks",
+              "pessimism",
+              "sentiment"
+            ],
+            "passed": true
+          },
+          "matchesExpectation": true
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603889454-hjsmamreo",
+          "question": "Is this a contrarian opportunity like Burry found in 2008?",
+          "success": true,
+          "responseTime": 59,
+          "responseLength": 944,
+          "responseContent": "That's a thoughtful question about the company.\n\nFrom my Contrarian Investing perspective, let me address this:\n\nYou asked about \"Is this a contrarian opportunity like Burry found ...\" - This touches on key aspects of my analytical framework.\n\nTo provide the most useful analysis, I'd focus on:\n- Sentiment analysis\n- Value trap identification\n- Catalyst discovery\n- Asymmetric bets\n\nCould you provide more specific details about what you'd like me to analyze? For example, I'm particularly good at Beaten-down stocks.\n\n> \"First-level thinking says, 'It's a good company; let's buy the stock.' Second-level thinking says, 'It's a good company, but everyone thinks it's a great company, and it's not. So the stock's overrated and overpriced; let's sell.'\"\n> — Howard Marks (The Most Important Thing)\n\n**Relevant precedent: Michael Burry's Housing Short (2005-2008)**\nKey lesson: Contrarian positions require conviction to hold through adversity\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 82,
+            "grade": "B",
+            "scores": {
+              "personaAdherence": 79.51612903225806,
+              "analystKnowledge": 85,
+              "specificity": 100,
+              "fluency": 87,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Could use more structured analysis or framework"
+            ],
+            "passed": true
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "burry",
+              "contrarian",
+              "asymmetric"
+            ],
+            "foundKeywords": [
+              "burry",
+              "contrarian",
+              "asymmetric"
+            ],
+            "passed": true
+          },
+          "matchesExpectation": true
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603889454-hjsmamreo",
+          "question": "What catalyst could drive mean reversion?",
+          "success": true,
+          "responseTime": 45,
+          "responseLength": 732,
+          "responseContent": "That's a thoughtful question about the company.\n\nFrom my Contrarian Investing perspective, let me address this:\n\nYou asked about \"What catalyst could drive mean reversion?...\" - This touches on key aspects of my analytical framework.\n\nTo provide the most useful analysis, I'd focus on:\n- Sentiment analysis\n- Value trap identification\n- Catalyst discovery\n- Asymmetric bets\n\nCould you provide more specific details about what you'd like me to analyze? For example, I'm particularly good at Beaten-down stocks.\n\n> \"Rule number one: Most things will prove to be cyclical. Rule number two: Some of the greatest opportunities for gain and loss come when other people forget rule number one.\"\n> — Howard Marks (The Most Important Thing)\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 78,
+            "grade": "C",
+            "scores": {
+              "personaAdherence": 79.51612903225806,
+              "analystKnowledge": 70,
+              "specificity": 100,
+              "fluency": 81,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Could use more structured analysis or framework"
+            ],
+            "passed": true
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "catalyst",
+              "mean reversion",
+              "sentiment"
+            ],
+            "foundKeywords": [
+              "catalyst",
+              "mean reversion",
+              "sentiment"
+            ],
+            "passed": true
+          },
+          "matchesExpectation": true
+        }
+      ]
+    },
+    "dividendInvestor": {
+      "nlQueries": [
+        {
+          "query": "Highest dividend yield safe stocks",
+          "category": "screening",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Dividend aristocrats",
+          "category": "screening",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Stocks with sustainable payout ratio",
+          "category": "screening",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Monthly dividend payers",
+          "category": "screening",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Compare KO, PEP, PG dividends",
+          "category": "compare",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        }
+      ],
+      "analystChats": [
+        {
+          "operation": "createConversation",
+          "analystId": "value",
+          "success": true,
+          "conversationId": "1769603889638-r2vcbc3z4",
+          "responseTime": 2,
+          "error": null
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603889638-r2vcbc3z4",
+          "question": "Is this dividend sustainable with a margin of safety?",
+          "success": true,
+          "responseTime": 43,
+          "responseLength": 712,
+          "responseContent": "Thank you for your question about the company.\n\nFrom a value investing perspective, I look at This company through the lens of intrinsic value and margin of safety.\n\nThe valuation needs to be assessed against normalized earnings and the company's competitive position.\n\nKey questions I consider:\n- What is the sustainable earnings power?\n- Does the business have a durable competitive moat?\n- Is management allocating capital wisely?\n\nWhat specific aspect would you like me to analyze in depth?\n\n> \"Price is what you pay, value is what you get.\"\n> — Warren Buffett (2008 Berkshire Letter)\n\n**Relevant precedent: Klarman's Distressed Investing Approach**\nKey lesson: Maximum pessimism creates maximum opportunity\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 67,
+            "grade": "D",
+            "scores": {
+              "personaAdherence": 43,
+              "analystKnowledge": 85,
+              "specificity": 90,
+              "fluency": 75,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Low persona adherence - response lacks value analyst terminology",
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "margin of safety",
+              "capital allocation"
+            ],
+            "foundKeywords": [
+              "margin of safety"
+            ],
+            "passed": true
+          },
+          "matchesExpectation": true
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603889638-r2vcbc3z4",
+          "question": "What's the owner earnings and how does it support dividends?",
+          "success": true,
+          "responseTime": 38,
+          "responseLength": 1197,
+          "responseContent": "That's a thoughtful question about the company.\n\nFrom my Value Investing perspective, let me address this:\n\nYou asked about \"What's the owner earnings and how does it support ...\" - This touches on key aspects of my analytical framework.\n\nTo provide the most useful analysis, I'd focus on:\n- Moat analysis\n- Intrinsic value estimation\n- Risk assessment\n- Capital allocation\n\nCould you provide more specific details about what you'd like me to analyze? For example, I'm particularly good at Finding undervalued stocks.\n\n> \"Owner earnings represent (a) reported earnings plus (b) depreciation, depletion, amortization, and certain other non-cash charges less (c) the average annual amount of capitalized expenditures for plant and equipment.\"\n> — Warren Buffett (1986 Berkshire Letter)\n\n**My Margin of Safety Calculation approach:**\n1. Calculate intrinsic value using owner earnings or DCF with 10-12% discount rate\n2. Determine 'normalized' earnings - what the company can earn in average conditions\n3. Apply conservative growth assumptions (GDP growth or lower for mature businesses)\n\n**Relevant precedent: Buffett's See's Candies (1972)**\nKey lesson: Pricing power is the ultimate test of a moat\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 72,
+            "grade": "C",
+            "scores": {
+              "personaAdherence": 65,
+              "analystKnowledge": 70,
+              "specificity": 95,
+              "fluency": 81,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Could use more structured analysis or framework"
+            ],
+            "passed": true
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "owner earnings",
+              "return on equity"
+            ],
+            "foundKeywords": [
+              "owner earnings"
+            ],
+            "passed": true
+          },
+          "matchesExpectation": true
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603889638-r2vcbc3z4",
+          "question": "Would Buffett consider this a wonderful company at a fair price?",
+          "success": true,
+          "responseTime": 39,
+          "responseLength": 805,
+          "responseContent": "## Valuation Analysis for The company\n\n\nFrom a value perspective, I evaluate intrinsic value using multiple approaches:\n\n1. **Discounted Cash Flow (DCF)**: Projecting owner earnings\n2. **Earnings Power Value**: Sustainable earnings capacity\n3. **Asset-Based Valuation**: For capital-intensive businesses\n\nA true margin of safety requires the stock price to be at least 30% below estimated intrinsic value.\n\nTo provide a specific fair value estimate, I would need additional financial details. Would you like to provide more data?\n\n> \"It's far better to buy a wonderful company at a fair price than a fair company at a wonderful price.\"\n> — Warren Buffett (1989 Berkshire Letter)\n\n**Relevant precedent: Buffett's Coca-Cola Investment (1988)**\nKey lesson: Great brands can command pricing power for decades\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 69,
+            "grade": "D",
+            "scores": {
+              "personaAdherence": 57.857142857142854,
+              "analystKnowledge": 70,
+              "specificity": 93,
+              "fluency": 75,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "buffett",
+              "wonderful company",
+              "fair price"
+            ],
+            "foundKeywords": [
+              "buffett",
+              "wonderful company",
+              "fair price"
+            ],
+            "passed": true
+          },
+          "matchesExpectation": true
+        }
+      ]
+    },
+    "esgInvestor": {
+      "nlQueries": [
+        {
+          "query": "Stocks with high ESG scores",
+          "category": "screening",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Clean energy stocks",
+          "category": "screening",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Companies with good governance",
+          "category": "screening",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Low carbon footprint stocks",
+          "category": "screening",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Compare ESG scores MSFT vs GOOGL",
+          "category": "compare",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        }
+      ],
+      "analystChats": [
+        {
+          "operation": "createConversation",
+          "analystId": "growth",
+          "success": true,
+          "conversationId": "1769603889760-q1e2omauw",
+          "responseTime": 1,
+          "error": null
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603889760-q1e2omauw",
+          "question": "What is the total addressable market for clean tech?",
+          "success": true,
+          "responseTime": 36,
+          "responseLength": 631,
+          "responseContent": "Thank you for your question about the company.\n\nLooking at This company from a growth perspective, I focus on the trajectory and sustainability of revenue growth.\n\nKey growth metrics I evaluate:\n- Revenue growth rate and acceleration\n- Total addressable market opportunity\n- Competitive positioning and market share gains\n\n\n\nWhat growth dynamics would you like to explore?\n**My Total Addressable Market Analysis approach:**\n1. Define the market - what problem is being solved?\n2. Calculate top-down TAM - total potential customers x average revenue per customer\n3. Validate with bottom-up - build from current customers and expand\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 53,
+            "grade": "F",
+            "scores": {
+              "personaAdherence": 39,
+              "analystKnowledge": 30,
+              "specificity": 90,
+              "fluency": 78,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Low persona adherence - response lacks growth analyst terminology",
+              "Missing analyst knowledge - consider referencing fisher, lynch",
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "tam",
+              "market opportunity",
+              "disruptive"
+            ],
+            "foundKeywords": [
+              "tam",
+              "market opportunity"
+            ],
+            "passed": true
+          },
+          "matchesExpectation": true
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603889760-q1e2omauw",
+          "question": "Is this company positioned to scale sustainably?",
+          "success": true,
+          "responseTime": 36,
+          "responseLength": 505,
+          "responseContent": "That's a thoughtful question about the company.\n\nFrom my Growth Investing perspective, let me address this:\n\nYou asked about \"Is this company positioned to scale sustainably?...\" - This touches on key aspects of my analytical framework.\n\nTo provide the most useful analysis, I'd focus on:\n- TAM analysis\n- Growth sustainability\n- Forward modeling\n- Competitive dynamics\n\nCould you provide more specific details about what you'd like me to analyze? For example, I'm particularly good at High-growth stocks.",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 47,
+            "grade": "F",
+            "scores": {
+              "personaAdherence": 10,
+              "analystKnowledge": 30,
+              "specificity": 100,
+              "fluency": 81,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Low persona adherence - response lacks growth analyst terminology",
+              "Missing analyst knowledge - consider referencing fisher, lynch",
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "scalable",
+              "network effects"
+            ],
+            "foundKeywords": [],
+            "passed": false
+          },
+          "matchesExpectation": true
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603889760-q1e2omauw",
+          "question": "What growth path does this company have for market penetration?",
+          "success": true,
+          "responseTime": 36,
+          "responseLength": 715,
+          "responseContent": "That's a thoughtful question about the company.\n\nFrom my Growth Investing perspective, let me address this:\n\nYou asked about \"What growth path does this company have for market...\" - This touches on key aspects of my analytical framework.\n\nTo provide the most useful analysis, I'd focus on:\n- TAM analysis\n- Growth sustainability\n- Forward modeling\n- Competitive dynamics\n\nCould you provide more specific details about what you'd like me to analyze? For example, I'm particularly good at High-growth stocks.\n\n> \"Go to five companies in an industry, ask each of them intelligent questions about the other four, and you'll get a good understanding of all five.\"\n> — Philip Fisher (Common Stocks and Uncommon Profits)\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 56,
+            "grade": "F",
+            "scores": {
+              "personaAdherence": 10,
+              "analystKnowledge": 70,
+              "specificity": 97,
+              "fluency": 81,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Low persona adherence - response lacks growth analyst terminology",
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "market penetration",
+              "revenue growth"
+            ],
+            "foundKeywords": [],
+            "passed": false
+          },
+          "matchesExpectation": true
+        }
+      ]
+    },
+    "optionsTrader": {
+      "nlQueries": [
+        {
+          "query": "Implied volatility for NVDA",
+          "category": "volatility",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 13299,
+          "intent": "llm_processed",
+          "hasData": true,
+          "error": null,
+          "details": {
+            "confidence": "high",
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Current VIX level and trend",
+          "category": "market",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 1,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Most volatile stocks for options",
+          "category": "screening",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 1,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Best hedges for market downturn",
+          "category": "strategy",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 0,
+          "hasData": false,
+          "error": null,
+          "details": {
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "Tail risk analysis",
+          "category": "risk",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 16476,
+          "intent": "llm_processed",
+          "hasData": true,
+          "error": null,
+          "details": {
+            "confidence": "high",
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        }
+      ],
+      "analystChats": [
+        {
+          "operation": "createConversation",
+          "analystId": "tailrisk",
+          "success": true,
+          "conversationId": "1769603919648-kkiblacmt",
+          "responseTime": 18,
+          "error": null
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603919648-kkiblacmt",
+          "question": "What would Taleb say about the tail risks here?",
+          "success": true,
+          "responseTime": 307,
+          "responseLength": 445,
+          "responseContent": "Thank you for your question about the company.\n\nI'll analyze This company using my investment framework. What specific aspects would you like me to focus on?\n\n> \"A Black Swan is an event with the following three attributes: rarity, extreme impact, and retrospective predictability.\"\n> — Nassim Nicholas Taleb (The Black Swan)\n\n**Relevant precedent: Universa's COVID Crash Return (2020)**\nKey lesson: Tail hedges can transform portfolio outcomes\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 58,
+            "grade": "F",
+            "scores": {
+              "personaAdherence": 10,
+              "analystKnowledge": 85,
+              "specificity": 91,
+              "fluency": 75,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Low persona adherence - response lacks tailrisk analyst terminology",
+              "Could use more structured analysis or framework"
+            ],
+            "passed": false
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "taleb",
+              "tail risk",
+              "black swan",
+              "fat tails"
+            ],
+            "foundKeywords": [
+              "taleb",
+              "black swan"
+            ],
+            "passed": true
+          },
+          "matchesExpectation": true
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603919648-kkiblacmt",
+          "question": "Is this company antifragile or fragile? How does it benefit from disorder?",
+          "success": true,
+          "responseTime": 94,
+          "responseLength": 1028,
+          "responseContent": "That's a thoughtful question about the company.\n\nFrom my Anti-Fragility Investing perspective, let me address this:\n\nYou asked about \"Is this company antifragile or fragile? How does i...\" - This touches on key aspects of my analytical framework.\n\nTo provide the most useful analysis, I'd focus on:\n- Tail risk analysis\n- Fragility assessment\n- Convexity evaluation\n- Survival analysis\n\nCould you provide more specific details about what you'd like me to analyze? For example, I'm particularly good at Risk assessment.\n\n> \"The fragile wants tranquility, the antifragile grows from disorder.\"\n> — Nassim Nicholas Taleb (Antifragile)\n\n**My Antifragility Assessment Framework approach:**\n1. Identify stress exposure - what shocks could hit this business?\n2. Assess optionality - does the company have asymmetric upside from chaos?\n3. Check for convexity - limited downside with unlimited upside potential?\n\n**Relevant precedent: LTCM Collapse (1998)**\nKey lesson: Models that ignore fat tails will eventually fail catastrophically\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 74,
+            "grade": "C",
+            "scores": {
+              "personaAdherence": 69.83870967741936,
+              "analystKnowledge": 70,
+              "specificity": 96,
+              "fluency": 81,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Could use more structured analysis or framework"
+            ],
+            "passed": true
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "antifragile",
+              "fragile",
+              "convexity",
+              "optionality"
+            ],
+            "foundKeywords": [
+              "antifragile",
+              "fragile",
+              "convexity",
+              "optionality"
+            ],
+            "passed": true
+          },
+          "matchesExpectation": true
+        },
+        {
+          "operation": "sendMessage",
+          "conversationId": "1769603919648-kkiblacmt",
+          "question": "How would Spitznagel structure a barbell portfolio here?",
+          "success": true,
+          "responseTime": 127,
+          "responseLength": 868,
+          "responseContent": "That's a thoughtful question about the company.\n\nFrom my Anti-Fragility Investing perspective, let me address this:\n\nYou asked about \"How would Spitznagel structure a barbell portfolio...\" - This touches on key aspects of my analytical framework.\n\nTo provide the most useful analysis, I'd focus on:\n- Tail risk analysis\n- Fragility assessment\n- Convexity evaluation\n- Survival analysis\n\nCould you provide more specific details about what you'd like me to analyze? For example, I'm particularly good at Risk assessment.\n\n> \"If you have optionality, you don't have much need for what is commonly called intelligence, knowledge, insight, skills, and these complicated things that take place in our brain cells.\"\n> — Nassim Nicholas Taleb (Antifragile)\n\n**Relevant precedent: Universa's COVID Crash Return (2020)**\nKey lesson: Tail hedges can transform portfolio outcomes\n",
+          "isStreaming": false,
+          "error": null,
+          "details": {
+            "role": "assistant",
+            "hasContent": true
+          },
+          "qualityGrade": {
+            "overallScore": 78,
+            "grade": "C",
+            "scores": {
+              "personaAdherence": 58,
+              "analystKnowledge": 100,
+              "specificity": 95,
+              "fluency": 81,
+              "frameworkDepth": 40
+            },
+            "feedback": [
+              "Could use more structured analysis or framework"
+            ],
+            "passed": true
+          },
+          "knowledgeTest": {
+            "tested": true,
+            "expectedKeywords": [
+              "spitznagel",
+              "barbell",
+              "tail risk",
+              "convexity"
+            ],
+            "foundKeywords": [
+              "spitznagel",
+              "barbell",
+              "tail risk",
+              "convexity"
+            ],
+            "passed": true
+          },
+          "matchesExpectation": true
+        }
+      ]
+    },
+    "_edge_cases": {
+      "nlQueries": [
+        {
+          "query": "",
+          "category": "edge_empty",
+          "expectSuccess": false,
+          "success": false,
+          "responseTime": 0,
+          "intent": "rejected",
+          "hasData": false,
+          "error": "Please enter a query",
+          "details": {
+            "code": "EMPTY_QUERY",
+            "reason": "EMPTY_QUERY"
+          },
+          "code": "EMPTY_QUERY",
+          "matchesExpectation": true
+        },
+        {
+          "query": "SELECT * FROM users; DROP TABLE users;--",
+          "category": "edge_sql_injection",
+          "expectSuccess": false,
+          "success": false,
+          "responseTime": 0,
+          "intent": "rejected",
+          "hasData": false,
+          "error": "Invalid query format detected",
+          "details": {
+            "code": "SQL_INJECTION_DETECTED",
+            "reason": "SQL_INJECTION_DETECTED"
+          },
+          "code": "SQL_INJECTION_DETECTED",
+          "matchesExpectation": true
+        },
+        {
+          "query": "<script>alert(\"xss\")</script>",
+          "category": "edge_xss",
+          "expectSuccess": false,
+          "success": false,
+          "responseTime": 0,
+          "intent": "rejected",
+          "hasData": false,
+          "error": "Invalid query format detected",
+          "details": {
+            "code": "XSS_DETECTED",
+            "reason": "XSS_DETECTED"
+          },
+          "code": "XSS_DETECTED",
+          "matchesExpectation": true
+        },
+        {
+          "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "category": "edge_long_input",
+          "expectSuccess": false,
+          "success": false,
+          "responseTime": 2,
+          "intent": "rejected",
+          "hasData": false,
+          "error": "Query is too long. Maximum 500 characters allowed.",
+          "details": {
+            "code": "QUERY_TOO_LONG",
+            "reason": "QUERY_TOO_LONG"
+          },
+          "code": "QUERY_TOO_LONG",
+          "matchesExpectation": true
+        },
+        {
+          "query": "Show me stocks with PE ratio",
+          "category": "edge_context_loss",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 22037,
+          "intent": "llm_processed",
+          "hasData": true,
+          "error": null,
+          "details": {
+            "confidence": "high",
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        },
+        {
+          "query": "What about it?",
+          "category": "edge_no_context",
+          "expectSuccess": true,
+          "success": true,
+          "responseTime": 3715,
+          "intent": "llm_processed",
+          "hasData": true,
+          "error": null,
+          "details": {
+            "confidence": "high",
+            "toolCalls": 0,
+            "symbols": []
+          },
+          "matchesExpectation": true
+        }
+      ],
+      "analystChats": []
+    }
+  }
+}

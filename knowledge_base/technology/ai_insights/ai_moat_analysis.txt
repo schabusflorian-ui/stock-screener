@@ -1,0 +1,110 @@
+Title: AI Company Moat Analysis
+Source: AI & Robotics Investment Insights
+Type: investment_framework
+
+---
+
+
+AI COMPANY MOAT ANALYSIS
+
+TYPES OF AI MOATS:
+
+1. DATA MOATS
+
+Strong data moat characteristics:
+- Proprietary data source
+- Data improves with usage
+- Network effects in data collection
+- Regulatory barriers to replication
+
+Examples:
+- Tesla: Billions of real driving miles
+- Google: Search query data
+- Scale AI: Labeled data relationships
+
+Weak data moat signs:
+- Public data only
+- Data doesn't improve model
+- Easy to replicate collection
+- No network effects
+
+2. MODEL MOATS (Weakening)
+
+Historically:
+- Best models = competitive advantage
+- High barriers to entry
+- Talent scarcity
+
+Now:
+- Open source closing gap
+- Foundation models commoditizing
+- Fine-tuning more important than training
+- Model performance converging
+
+Model moat now requires:
+- Unique architecture for specific domain
+- Massive scale (only for largest players)
+- Continuous improvement infrastructure
+
+3. DISTRIBUTION MOATS
+
+The real moat in AI:
+- Existing customer relationships
+- Embedded in workflows
+- Brand trust
+- Switching costs created
+
+Examples:
+- Microsoft: Office integration with Copilot
+- Salesforce: CRM integration with Einstein
+- Adobe: Creative tool integration with Firefly
+
+4. SYSTEM MOATS
+
+End-to-end solutions harder to replicate:
+- Multiple components integrated
+- Data flows between components
+- Optimization across stack
+- Deep customer integration
+
+Example: Tesla's full stack
+- Hardware (cars, FSD computer)
+- Software (Autopilot, OS)
+- Data (fleet learning)
+- Manufacturing (cost advantage)
+
+5. TALENT MOATS (Temporary)
+
+AI talent concentration matters:
+- Top researchers create step changes
+- Culture attracts more talent
+- But talent is mobile
+- Not sustainable alone
+
+EVALUATING AI COMPANIES:
+
+Score each moat (1-5):
+□ Data moat strength
+□ Model differentiation
+□ Distribution advantage
+□ System integration
+□ Talent concentration
+
+Strong AI companies: 15+ total
+Risky AI companies: <10 total
+
+QUESTIONS TO ASK:
+
+1. What data does the company have that others don't?
+2. Does the model improve with more usage?
+3. How embedded is the product in customer workflows?
+4. Can OpenAI/Google easily replicate this?
+5. What happens when models get 10x cheaper?
+
+THE ULTIMATE MOAT TEST:
+
+"If [Big Tech Company] launched this exact product tomorrow,
+would customers switch?"
+
+If yes → Weak moat, avoid
+If no → Investigate why not

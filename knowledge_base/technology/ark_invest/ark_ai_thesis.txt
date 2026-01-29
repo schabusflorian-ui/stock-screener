@@ -1,0 +1,117 @@
+Title: AI Investment Thesis - ARK Invest
+Source: ARK Invest Research
+Type: research
+
+---
+
+
+AI INVESTMENT THESIS - ARK Invest
+
+THE AI OPPORTUNITY:
+
+ARK's view: AI could add $200T+ to global GDP by 2030.
+
+Key drivers:
+1. Software 2.0: AI writes better code than humans
+2. Knowledge worker productivity: 10x improvements
+3. New products/services: Currently impossible
+4. Cost deflation across industries
+
+AI INVESTMENT LAYERS:
+
+Layer 1: Compute (Semiconductors)
+- Nvidia (dominant in training GPUs)
+- AMD, Intel (competition emerging)
+- Custom silicon (Google TPU, Amazon)
+- Specialized AI chips startups
+
+Layer 2: Cloud/Infrastructure
+- Hyperscalers (AWS, Azure, GCP)
+- AI-specific infrastructure
+- Edge computing
+- Data centers
+
+Layer 3: Foundation Models
+- OpenAI, Anthropic, Google
+- Open source alternatives
+- Vertical-specific models
+
+Layer 4: Applications
+- Enterprise AI tools
+- Consumer AI products
+- Vertical solutions
+- AI-native companies
+
+WHERE ARK IS INVESTING:
+
+Primary focus:
+- AI hardware (especially Nvidia)
+- AI-enabled software companies
+- Companies leveraging AI for competitive advantage
+
+Selection criteria:
+- Clear AI integration
+- Proprietary data advantages
+- Scalable AI applications
+- Strong R&D investment
+
+AUTONOMOUS SYSTEMS:
+
+Robotaxis:
+- Tesla Autopilot/FSD
+- Waymo, Cruise
+- Potential for $10T+ market
+- Hardware + software + data flywheel
+
+Drones:
+- Delivery (Amazon, Wing)
+- Industrial inspection
+- Agriculture
+- Military/defense
+
+Industrial Automation:
+- Manufacturing robots
+- Warehouse automation
+- Logistics optimization
+- Quality control
+
+AI PRODUCTIVITY GAINS:
+
+Knowledge work transformation:
+- Coding: 10x productivity (GitHub Copilot)
+- Writing: 5x productivity
+- Research: 100x faster
+- Customer service: 90% automation potential
+
+Enterprise adoption curve:
+- 2023-2025: Experimentation
+- 2025-2027: Integration
+- 2027-2030: Transformation
+
+RISKS AND CONCERNS:
+
+Technical:
+- AI capability plateau
+- Hallucination/reliability issues
+- Energy consumption
+- Talent concentration
+
+Economic:
+- Job displacement
+- Wealth concentration
+- Regulatory backlash
+- Security concerns
+
+Investment:
+- Valuation bubbles
+- Technology obsolescence
+- Competitive dynamics
+- Execution risk
+
+POSITION SIZING:
+
+Given uncertainty:
+- Diversify across AI stack
+- Higher allocation to picks-and-shovels
+- Accept high volatility
+- 5+ year time horizon

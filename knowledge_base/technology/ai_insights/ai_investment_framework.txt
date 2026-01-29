@@ -1,0 +1,74 @@
+Title: AI Investment Framework
+Source: AI & Robotics Investment Insights
+Type: investment_framework
+
+---
+
+
+AI INVESTMENT FRAMEWORK
+
+WHERE VALUE ACCRUES IN AI:
+
+1. COMPUTE LAYER
+- Nvidia (GPUs) - Current winner
+- Custom chips (Google TPU, Amazon Inferentia)
+- Risk: Commoditization over time
+- Moat: Manufacturing complexity, CUDA ecosystem
+
+2. MODEL LAYER
+- OpenAI, Anthropic, Google, Meta
+- Massive capital requirements
+- Winner-take-most dynamics likely
+- Risk: Open source competition
+
+3. APPLICATION LAYER
+- Vertical-specific AI applications
+- Workflow integration
+- Data moats possible
+- Risk: Platform dependence
+
+4. INFRASTRUCTURE LAYER
+- Cloud providers (AWS, Azure, GCP)
+- MLOps tools (Weights & Biases, etc.)
+- Data infrastructure
+
+INVESTMENT CRITERIA FOR AI COMPANIES:
+
+1. Data Advantage
+- Proprietary data that improves with use
+- Network effects in data collection
+- Regulatory moats (healthcare, finance)
+
+2. Workflow Integration
+- Deep embedding in customer processes
+- High switching costs
+- Mission-critical use cases
+
+3. Vertical Focus
+- Domain expertise
+- Specialized models
+- Less competition from giants
+
+4. Unit Economics
+- Inference costs declining
+- Gross margin trajectory
+- Path to profitability
+
+RED FLAGS:
+
+- "We use AI" without specific value prop
+- AI as feature vs AI as core product
+- No data moat or network effects
+- Competition with foundation model providers
+- High inference costs with no path to improvement
+
+THE SHOVEL SELLERS:
+
+In gold rushes, sell picks and shovels:
+- Nvidia (GPUs)
+- Cloud providers (compute)
+- Data labeling (Scale AI)
+- MLOps tools
+- Cybersecurity for AI
+
+These often have better risk/reward than picking AI application winners.

@@ -1,0 +1,124 @@
+Title: Energy Storage Investment Thesis - ARK Invest
+Source: ARK Invest Research
+Type: research
+
+---
+
+
+ENERGY STORAGE INVESTMENT THESIS - ARK Invest
+
+THE OPPORTUNITY:
+
+Energy storage is foundational to:
+- Electric vehicles
+- Renewable energy grid
+- Consumer electronics
+- Autonomous systems
+
+ARK view: Battery costs will decline 40% by 2030.
+
+BATTERY TECHNOLOGY:
+
+Lithium-ion evolution:
+- 2010: $1,100/kWh
+- 2020: $137/kWh
+- 2023: $100/kWh
+- 2030: $60/kWh (ARK projection)
+
+Cost decline drivers:
+- Manufacturing scale
+- Chemistry improvements
+- Supply chain optimization
+- New materials
+
+BEYOND LITHIUM-ION:
+
+Solid-state batteries:
+- Higher energy density
+- Faster charging
+- Safer
+- 3-5 years from commercial scale
+
+Sodium-ion:
+- Cheaper materials
+- Good for grid storage
+- Lower energy density
+
+Other technologies:
+- Flow batteries
+- Hydrogen fuel cells
+- Compressed air
+- Various chemistries
+
+ELECTRIC VEHICLES:
+
+EV adoption curve:
+- 2023: ~15% of new car sales
+- 2030: 60-70% (ARK projection)
+- Faster than consensus expects
+
+Key drivers:
+- Cost parity approaching
+- Charging infrastructure growing
+- Consumer preference shifting
+- Regulatory push
+
+Winners:
+- Tesla (vertical integration)
+- Battery suppliers (CATL, LG, Panasonic)
+- Material suppliers (lithium, nickel, cobalt)
+
+GRID STORAGE:
+
+Renewable + Storage = Baseload replacement
+
+Solar + battery becomes cheaper than:
+- New coal plants (already)
+- New gas plants (by 2025)
+- Existing plants (by 2030)
+
+Implications:
+- Utility model transformation
+- Distributed energy growth
+- Grid modernization required
+
+INVESTMENT FRAMEWORK:
+
+Direct exposure:
+- EV manufacturers (Tesla)
+- Battery manufacturers
+- Battery material suppliers
+
+Indirect exposure:
+- Charging infrastructure
+- Mining companies
+- Utility-scale storage developers
+
+Value chain analysis:
+- Most value in cells/packs
+- Materials are commodity
+- Integration is key
+
+RISKS:
+
+Technology:
+- New chemistry disruption
+- Safety issues
+- Recycling challenges
+
+Supply chain:
+- Lithium supply constraints
+- China dominance
+- Geopolitical risks
+
+Adoption:
+- Charging infrastructure gaps
+- Consumer hesitancy
+- Grid integration challenges
+
+Competition:
+- Chinese manufacturers
+- Overcapacity risk
+- Margin pressure
+
+"The energy transition is happening faster than most realize."

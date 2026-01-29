@@ -1,0 +1,75 @@
+Title: Safe Haven Investing Principles - Mark Spitznagel
+Source: Mark Spitznagel - Universa Investments
+Author: Mark Spitznagel
+Type: investment_philosophy
+
+---
+
+
+Safe Haven Investing - Mark Spitznagel:
+
+WHAT IS A SAFE HAVEN?
+
+A true safe haven must:
+1. Protect during crashes (obvious)
+2. Not destroy wealth over time (often ignored)
+3. Improve overall portfolio CAGR (the real test)
+
+WHAT FAILS AS SAFE HAVEN:
+
+1. Gold
+- Doesn't consistently protect in crashes
+- Long periods of underperformance
+- Fails the "raises CAGR" test
+
+2. Bonds (Traditional)
+- Work until they don't
+- Zero/negative rates eliminate upside
+- Correlated with stocks in some crashes
+
+3. Simple Diversification
+- Correlations spike in crashes
+- When you need protection most, it fails
+- "Diworsification" destroys returns
+
+WHAT WORKS:
+
+1. Tail Risk Hedging (Universa approach)
+- Far out-of-the-money puts
+- Lose small amounts regularly
+- Win enormous amounts in crashes
+- NET: Raises portfolio CAGR
+
+2. Cash + Patience
+- Dry powder for crashes
+- Opportunity cost in bull markets
+- But HUGE gains buying bottoms
+
+3. The "Barbell" Approach
+- 90% in safe assets
+- 10% in extremely aggressive bets
+- No middle ground (fragile zone)
+
+THE MATH OF SAFE HAVENS:
+
+Traditional thinking: "What returns during crashes?"
+Correct thinking: "What raises my LONG-TERM CAGR?"
+
+Example:
+- Strategy A: +8% normally, -40% in crashes
+- Strategy B: +6% normally, +0% in crashes
+- Strategy B is BETTER over time
+
+The cost of large losses is geometric:
+- Lose 50% → Need 100% to recover
+- Lose 75% → Need 300% to recover
+- AVOIDING large losses > SEEKING large gains
+
+IMPLEMENTATION:
+
+1. Accept lower returns in normal times
+2. Structure for massive outperformance in crashes
+3. Use crashes to redeploy at low prices
+4. Compound from a higher base
+
+"It's not about predicting crashes. It's about being positioned for them."

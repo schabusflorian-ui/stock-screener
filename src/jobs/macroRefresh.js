@@ -14,7 +14,7 @@
 
 require('dotenv').config();
 
-const { FREDService } = require('../services/data');
+const { FREDService } = require('../services/dataProviders');
 const db = require('../database');
 
 async function main() {

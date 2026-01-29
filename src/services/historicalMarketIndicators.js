@@ -1667,6 +1667,7 @@ class HistoricalMarketIndicatorsService {
       ),
 
       -- Step 5: Calculate historical market cap using price_metrics shares
+      -- Filter out companies with negative TTM earnings (e.g., TCJA 2018 one-time charges)
       final_data AS (
         SELECT
           te.company_id,
@@ -1679,16 +1680,14 @@ class HistoricalMarketIndicatorsService {
           AND dp.adjusted_close > 0
           AND pm.shares_outstanding > 0
           AND dp.adjusted_close * pm.shares_outstanding > 1e9  -- Min $1B market cap
+          AND te.ttm_net_income > 0  -- ADDED: Only profitable companies for P/E calculation
       )
 
       -- Step 6: Aggregate to index level
       SELECT
         COUNT(*) as company_count,
         SUM(market_cap) as total_market_cap,
-        SUM(ttm_net_income) as total_ttm_earnings,
-        SUM(CASE WHEN ttm_net_income > 0 THEN market_cap ELSE 0 END) as profitable_market_cap,
-        SUM(CASE WHEN ttm_net_income > 0 THEN ttm_net_income ELSE 0 END) as profitable_earnings,
-        SUM(CASE WHEN ttm_net_income <= 0 THEN ttm_net_income ELSE 0 END) as total_losses
+        SUM(ttm_net_income) as total_ttm_earnings
       FROM final_data
     `).get(
       quarterEndDate,    // quarterly_earnings filter
@@ -1704,6 +1703,8 @@ class HistoricalMarketIndicatorsService {
     }
 
     // Calculate P/E = Total Market Cap / Total TTM Earnings
+    // Note: Only includes profitable companies (TTM earnings > 0) to avoid
+    // distortions from one-time charges (e.g., TCJA 2018 repatriation taxes)
     const pe = result.total_market_cap / result.total_ttm_earnings;
 
     return {
@@ -1711,10 +1712,8 @@ class HistoricalMarketIndicatorsService {
       companyCount: result.company_count,
       totalMarketCap: result.total_market_cap,
       totalTTMEarnings: result.total_ttm_earnings,
-      profitableMarketCap: result.profitable_market_cap,
-      profitableEarnings: result.profitable_earnings,
-      totalLosses: result.total_losses,
-      method: 'ttm_corrected_shares',
+      totalImpliedEarnings: result.total_ttm_earnings,  // For backward compatibility
+      method: 'ttm_profitable_only',
     };
   }
 

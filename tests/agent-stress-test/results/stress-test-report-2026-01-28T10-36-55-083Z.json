@@ -1,0 +1,269 @@
+{
+  "metadata": {
+    "timestamp": "2026-01-28T10:36:55.070Z",
+    "totalRuntime": "108.56s",
+    "simulationDays": 5,
+    "usersCreated": 10
+  },
+  "summary": {
+    "totalIssues": 0,
+    "criticalIssues": 0,
+    "highIssues": 0,
+    "mediumIssues": 0,
+    "lowIssues": 0
+  },
+  "crossSectionalCoverage": {
+    "quant_trader": {
+      "name": "Marcus Chen",
+      "description": "Quant Trader - Heavy technical, ML features, high frequency",
+      "riskTolerance": "aggressive",
+      "signalFrequency": "high",
+      "tested": true
+    },
+    "buffett_style": {
+      "name": "William Graham",
+      "description": "Value Investor - Buffett/Graham style, patient, long-term",
+      "riskTolerance": "conservative",
+      "signalFrequency": "low",
+      "tested": true
+    },
+    "beginner_investor": {
+      "name": "Alex Newbie",
+      "description": "Beginner - DCA strategy, very low risk, high cash reserve",
+      "riskTolerance": "very_conservative",
+      "signalFrequency": "very_low",
+      "tested": true
+    },
+    "momentum_trader": {
+      "name": "Flash Thompson",
+      "description": "Momentum Trader - Technical heavy, trend-following",
+      "riskTolerance": "aggressive",
+      "signalFrequency": "high",
+      "tested": true
+    },
+    "sentiment_driven": {
+      "name": "Sophie Sentiment",
+      "description": "Sentiment-Driven - Social/news focused, event-driven",
+      "riskTolerance": "moderate",
+      "signalFrequency": "medium-high",
+      "tested": true
+    },
+    "insider_following": {
+      "name": "Ian Insider",
+      "description": "Insider Following - Tracks insider buys, 13F, congressional",
+      "riskTolerance": "moderate",
+      "signalFrequency": "low-medium",
+      "tested": true
+    },
+    "super_investor": {
+      "name": "Charlie Follower",
+      "description": "13F Super-Investor - Clones famous investors",
+      "riskTolerance": "conservative",
+      "signalFrequency": "low",
+      "tested": true
+    },
+    "risk_averse": {
+      "name": "Margaret Safe",
+      "description": "Risk-Averse - Ultra conservative, pause in crisis",
+      "riskTolerance": "very_conservative",
+      "signalFrequency": "very_low",
+      "tested": true
+    },
+    "aggressive_growth": {
+      "name": "Cathy Moonshot",
+      "description": "Aggressive Growth - High positions, low cash, high sector",
+      "riskTolerance": "very_aggressive",
+      "signalFrequency": "very_high",
+      "tested": true
+    },
+    "hybrid_diversified": {
+      "name": "Henry Balanced",
+      "description": "Hybrid Diversified - All features enabled, balanced",
+      "riskTolerance": "moderate",
+      "signalFrequency": "medium",
+      "tested": true
+    }
+  },
+  "temporalCoverage": {
+    "totalScenarios": 5,
+    "coveredScenarios": 1,
+    "coverage": "20%",
+    "details": [
+      {
+        "scenario": "BULL_MARKET",
+        "covered": false
+      },
+      {
+        "scenario": "BEAR_MARKET",
+        "covered": false
+      },
+      {
+        "scenario": "HIGH_VOLATILITY",
+        "covered": false
+      },
+      {
+        "scenario": "CRISIS",
+        "covered": false
+      },
+      {
+        "scenario": "SIDEWAYS",
+        "covered": true
+      }
+    ]
+  },
+  "metrics": {
+    "runtime": "108.56s",
+    "usersSetup": 10,
+    "totalDaysSimulated": 50,
+    "totalSignals": 0,
+    "totalTrades": 0,
+    "totalErrors": 75,
+    "avgSignalsPerDay": "0.00",
+    "avgTradesPerDay": "0.00",
+    "scenariosCovered": 1,
+    "perUser": {
+      "quant_trader": {
+        "userId": "quant_trader",
+        "daysSimulated": 5,
+        "totalSignals": 0,
+        "totalTrades": 0,
+        "totalErrors": 10,
+        "avgSignalsPerDay": "0.00",
+        "avgTradesPerDay": "0.00",
+        "avgDayDuration": "924",
+        "errorRate": 0
+      },
+      "buffett_style": {
+        "userId": "buffett_style",
+        "daysSimulated": 5,
+        "totalSignals": 0,
+        "totalTrades": 0,
+        "totalErrors": 5,
+        "avgSignalsPerDay": "0.00",
+        "avgTradesPerDay": "0.00",
+        "avgDayDuration": "4177",
+        "errorRate": 0
+      },
+      "beginner_investor": {
+        "userId": "beginner_investor",
+        "daysSimulated": 5,
+        "totalSignals": 0,
+        "totalTrades": 0,
+        "totalErrors": 5,
+        "avgSignalsPerDay": "0.00",
+        "avgTradesPerDay": "0.00",
+        "avgDayDuration": "696",
+        "errorRate": 0
+      },
+      "momentum_trader": {
+        "userId": "momentum_trader",
+        "daysSimulated": 5,
+        "totalSignals": 0,
+        "totalTrades": 0,
+        "totalErrors": 10,
+        "avgSignalsPerDay": "0.00",
+        "avgTradesPerDay": "0.00",
+        "avgDayDuration": "764",
+        "errorRate": 0
+      },
+      "sentiment_driven": {
+        "userId": "sentiment_driven",
+        "daysSimulated": 5,
+        "totalSignals": 0,
+        "totalTrades": 0,
+        "totalErrors": 10,
+        "avgSignalsPerDay": "0.00",
+        "avgTradesPerDay": "0.00",
+        "avgDayDuration": "699",
+        "errorRate": 0
+      },
+      "insider_following": {
+        "userId": "insider_following",
+        "daysSimulated": 5,
+        "totalSignals": 0,
+        "totalTrades": 0,
+        "totalErrors": 5,
+        "avgSignalsPerDay": "0.00",
+        "avgTradesPerDay": "0.00",
+        "avgDayDuration": "654",
+        "errorRate": 0
+      },
+      "super_investor": {
+        "userId": "super_investor",
+        "daysSimulated": 5,
+        "totalSignals": 0,
+        "totalTrades": 0,
+        "totalErrors": 5,
+        "avgSignalsPerDay": "0.00",
+        "avgTradesPerDay": "0.00",
+        "avgDayDuration": "3334",
+        "errorRate": 0
+      },
+      "risk_averse": {
+        "userId": "risk_averse",
+        "daysSimulated": 5,
+        "totalSignals": 0,
+        "totalTrades": 0,
+        "totalErrors": 5,
+        "avgSignalsPerDay": "0.00",
+        "avgTradesPerDay": "0.00",
+        "avgDayDuration": "3372",
+        "errorRate": 0
+      },
+      "aggressive_growth": {
+        "userId": "aggressive_growth",
+        "daysSimulated": 5,
+        "totalSignals": 0,
+        "totalTrades": 0,
+        "totalErrors": 10,
+        "avgSignalsPerDay": "0.00",
+        "avgTradesPerDay": "0.00",
+        "avgDayDuration": "786",
+        "errorRate": 0
+      },
+      "hybrid_diversified": {
+        "userId": "hybrid_diversified",
+        "daysSimulated": 5,
+        "totalSignals": 0,
+        "totalTrades": 0,
+        "totalErrors": 10,
+        "avgSignalsPerDay": "0.00",
+        "avgTradesPerDay": "0.00",
+        "avgDayDuration": "3902",
+        "errorRate": 0
+      }
+    },
+    "performance": {
+      "agent_scan": {
+        "operation": "agent_scan",
+        "count": 5,
+        "successRate": "100.0",
+        "avgDuration": "7",
+        "minDuration": 2,
+        "maxDuration": 10,
+        "p50": 8,
+        "p95": 10,
+        "p99": 10
+      },
+      "snapshot": {
+        "operation": "snapshot",
+        "count": 50,
+        "successRate": "100.0",
+        "avgDuration": "0",
+        "minDuration": 0,
+        "maxDuration": 0,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0
+      }
+    }
+  },
+  "issues": {
+    "CRITICAL": [],
+    "BUG": [],
+    "EDGE_CASE": [],
+    "PERFORMANCE": [],
+    "UI": []
+  },
+  "recommendations": []
+}

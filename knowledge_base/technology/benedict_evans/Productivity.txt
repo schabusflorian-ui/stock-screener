@@ -1,0 +1,16 @@
+Title: Unknown
+Source: Benedict Evans
+URL: https://www.ben-evans.com/benedictevans/category/Productivity
+Author: Benedict Evans
+Type: essay
+
+---
+
+Looking for AI use-cases
+We’ve had ChatGPT for 18 months, but what’s it for? What are the use-cases? Why isn’t it useful for everyone, right now? Do Large Language Models become universal tools that can do ‘any’ task, or do we wrap them in single-purpose apps, and build thousands of new companies around that?
+Read More
+Artificial Intelligence
+,
+Productivity
+Benedict Evans
+19 April 2024

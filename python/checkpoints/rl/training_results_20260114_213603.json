@@ -1,0 +1,75 @@
+{
+  "symbols": [
+    "AAPL",
+    "GOOGL"
+  ],
+  "n_assets": 2,
+  "n_days": 1000,
+  "total_timesteps": 1000,
+  "config": {
+    "env": {
+      "lookback_window": 60,
+      "episode_length": 252,
+      "initial_capital": 1000000,
+      "max_position_size": 0.25,
+      "min_position_size": 0.0,
+      "allow_short": false,
+      "transaction_cost_pct": 0.001,
+      "slippage_pct": 0.0005,
+      "max_drawdown_limit": 0.2,
+      "target_volatility": 0.15,
+      "reward_type": "RewardType.SHARPE",
+      "risk_free_rate": 0.02,
+      "reward_scaling": 1.0,
+      "turnover_penalty": 0.001,
+      "concentration_penalty": 0.001,
+      "include_technical": true,
+      "include_fundamental": true,
+      "include_market": true,
+      "normalize_observations": true
+    },
+    "agent": {
+      "hidden_sizes": [
+        256,
+        256
+      ],
+      "activation": "tanh",
+      "learning_rate": 0.0003,
+      "gamma": 0.99,
+      "gae_lambda": 0.95,
+      "clip_epsilon": 0.2,
+      "clip_value": true,
+      "value_clip_epsilon": 0.2,
+      "n_epochs": 10,
+      "batch_size": 64,
+      "n_steps": 2048,
+      "normalize_advantages": true,
+      "entropy_coef": 0.01,
+      "value_coef": 0.5,
+      "max_grad_norm": 0.5,
+      "action_std_init": 0.6,
+      "action_std_decay": 0.05,
+      "action_std_min": 0.1,
+      "log_interval": 10,
+      "device": "cpu"
+    }
+  },
+  "training_start": "2026-01-14T21:36:01.912268",
+  "training": {
+    "total_episodes": 3,
+    "final_mean_reward": 9.01488581308944,
+    "policy_loss_final": null,
+    "value_loss_final": null
+  },
+  "evaluation": {
+    "mean_reward": 21.094055939351904,
+    "std_reward": 7.978444174798929,
+    "mean_sharpe": 1.5544420119871076,
+    "mean_return": 0.27485507900095685,
+    "mean_max_dd": 0.11088413936316552,
+    "mean_volatility": 0.16460087213006633,
+    "mean_turnover": 0.0
+  },
+  "model_path": "/Users/florianschabus/Investment Project/python/checkpoints/rl/ppo_final.pt",
+  "training_end": "2026-01-14T21:36:03.407064"
+}

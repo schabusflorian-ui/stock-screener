@@ -1,0 +1,33 @@
+Title: Retail, search and Amazon’s $40bn ‘advertising’ business
+Source: Benedict Evans
+URL: https://www.ben-evans.com/benedictevans/2023/3/6/ways-to-think-about-amazon-advertising
+Author: Benedict Evans
+Type: essay
+
+---
+
+Retail, search and Amazon’s $40bn ‘advertising’ business
+I first started
+paying attention
+to Amazon’s ad business a couple of years ago, when a line called ‘other’ in the back of the accounts started to grow really fast. In 2021 Amazon started splitting it out, and last year Amazon had $38bn of ad revenue, more than any traditional media company and bigger than the entire (now much reduced) global newspaper industry.
+View fullsize
+View fullsize
+View fullsize
+The simplest way to look at this is as a very profitable new business. $38bn is a small percentage of Amazon’s overall $502bn 2022 revenue, but it probably had well over 50% operating margins, which would mean it brought in as much operating profit as AWS - $20-25bn, and without anything like as much capex. (Amazon's overall operating income, meanwhile, was only $12bn.)
+View fullsize
+More interesting, perhaps, is the fact that $38bn is also more than reported revenue for Prime, which also points to the problem with trying to calculate a stand-alone profitability for this. Prime has directly attributable revenue and costs, but it’s also an important marketing tool, and it drives increased purchasing: the real revenue from Prime is a lot more than subscription fee. In the same way, calculating an actual P&L for Amazon Ads would be pretty artificial (this is also why Apple doesn’t generate a P&L for the app store, even internally).
+View fullsize
+So, what are the ads doing for Amazon? Some people think they’re degrading the experience - certainly, it’s hard to shop without wading though them. But you could also ask whether this is ‘advertising’ or ‘marketing’ - indeed, you could ask the same about Google’s search ads. Is paying for placement an ad, or trade dollars, or end caps, or a slotting fee? Does that distinction break down? Does it matter?
+On the other hand, you could look at this as price discrimination. Which of the brands on offer on Amazon have enough of a margin that they could be paying Amazon more? How would you know? Sure, you can squeeze them one at a time, but one-at-a-time of anything isn’t the Amazon way. Offering brands the chance to buy their way to the top is scalable bargaining - an auction model for the retailer’s cut. Let the brands decide on the ROI and bid against each other instead of trying to manage that yourself.
+This is also the role of Marketplace: infinite scaling. Instead of having to hire buying teams one-at-a-time to source and range everything you might want to sell on Amazon, you open up the APIs so that those teams can do the job without actually working for you. Now you sell placement not just as price discrimination but as a filter. After all, if anyone can now list anything on your site, and you have hundreds of millions of SKUs, how can you surface what people might actually want to buy? One signal might be seeing what the vendors are willing to put money behind. (In a sense, Amazon Marketplace is not just a ‘two-sided marketplace’ between consumers and vendors, but also or alternatively a one-sided market in which Amazon is the buyer and Marketplace vendors compete - and bid - to be ranged.)
+The broader story of Amazon Ads, of course, is the ‘retail media’ gold rush: the realisation that a high-traffic website or app could be ad inventory even if you’re not a media company, that you have very relevant ‘consented’ first party data (at the very least intent if not broader profiles) and probably purchase attribution too, that all of this now has more relative value given the push against cookies and third party data everywhere else - and that advertising margins are a lot higher than retail margins. Hence, Walmart had $2.7b of ad revenue last year (New York Times ad revenue was $523m) and Uber is at $500m run rate. GroupM thinks the whole segment was 10% of US ad revenue last year. Nature finds a way.
+View fullsize
+I think the real macro implication, though, is that definitional question - ‘is that advertising or marketing?’ There was a joke a few years ago that rent is the new CAC, and that now applies to everything. The TAM for search ads (whatever LLMs do to search) is not ‘advertising’ (let alone online advertising) but everything that is spent to reach and serve a customer, starting with retail rents. This applies to Amazon, but even more to Google - you can ask whether Google’s ads are ‘advertising’ or ‘marketing’, but also ask whether the TAM for buying placement in Google search results is ‘advertising’, ‘marketing’ or just its customers’ operating margins. How do you reach a consumer? Do you spend your budget on TV ads or search ads, or on retail rents, or on giving retailers a margin versus selling direct, or giving the retailer a better price for better placement, or free shipping, or a better returns policy? Everything below P&G’s COGS line is up for grabs. Are Amazon Ads advertising, marketing, slotting fees, trade dollars, discounts or price discrimination? ‘Yes’. The same, indeed, applies to Amazon itself, which is now, apparently, the world’s largest advertiser.
+View fullsize
+Amazon
+,
+Advertising
+,
+Ecommerce
+Benedict Evans
+6 March 2023

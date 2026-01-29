@@ -1,0 +1,134 @@
+Title: AI Investment Framework - a16z
+Source: Andreessen Horowitz (a16z)
+Type: tech_analysis
+
+---
+
+
+AI INVESTMENT FRAMEWORK - a16z
+
+THE AI STACK:
+
+Layer 1: COMPUTE
+- GPUs, TPUs, custom silicon
+- Data centers, cloud infrastructure
+- Edge computing
+
+Layer 2: FOUNDATION MODELS
+- Large Language Models (LLMs)
+- Image/video generation
+- Multimodal models
+
+Layer 3: TOOLING & INFRASTRUCTURE
+- MLOps, training infrastructure
+- Vector databases, embeddings
+- Fine-tuning, RLHF tools
+
+Layer 4: APPLICATIONS
+- Vertical-specific solutions
+- Horizontal productivity tools
+- Consumer applications
+
+WHERE VALUE ACCRUES:
+
+Current state (2024):
+- Compute: Nvidia dominates
+- Models: OpenAI leads, but competitive
+- Tooling: Fragmented, opportunities exist
+- Apps: Early, winners unclear
+
+Long-term expectations:
+- Compute: Commoditizes somewhat
+- Models: Few winners, possibly open source
+- Tooling: Consolidation around winners
+- Apps: Biggest value creation opportunity
+
+AI COMPANY EVALUATION:
+
+MOAT SOURCES:
+
+1. Data Moats
+- Proprietary training data
+- User-generated data flywheel
+- Unique data relationships
+
+2. Model Moats (Weakening)
+- Fine-tuned models on proprietary data
+- Domain-specific architectures
+- Speed/cost advantages
+
+3. Distribution Moats
+- Existing customer relationships
+- Embedded in workflows
+- Brand and trust
+
+4. System Moats
+- End-to-end solutions
+- Integration with existing systems
+- Switching cost creation
+
+RED FLAGS:
+
+- "We use AI" with no specific moat
+- Thin wrapper on OpenAI API
+- No proprietary data strategy
+- Competing directly with foundation model providers
+- High inference costs with no margin path
+
+GREEN FLAGS:
+
+- Proprietary data that improves with usage
+- Deep workflow integration
+- Clear unit economics path
+- Domain expertise + AI capabilities
+- Solves $1M+ problems
+
+THE "SO WHAT" TEST:
+
+For any AI startup, ask:
+1. What can this do that couldn't be done before?
+2. Why can't OpenAI/Google add this feature?
+3. What happens when models get 10x cheaper?
+4. What's the data flywheel?
+
+AI MARKET DYNAMICS:
+
+Short-term (1-3 years):
+- Hype exceeds reality
+- Many startups, few survivors
+- Incumbents experiment
+- Regulation uncertainty
+
+Medium-term (3-7 years):
+- Clear winners emerge
+- Massive productivity gains
+- Workflow transformation
+- Industry restructuring
+
+Long-term (7+ years):
+- AI is table stakes
+- Every company is "AI company"
+- New industries emerge
+- Hard to predict specifics
+
+INVESTMENT APPROACH:
+
+Picks and shovels strategy:
+- Infrastructure always needed
+- Less dependent on app winners
+- Example: Nvidia, cloud providers
+
+Vertical specialists:
+- Deep domain knowledge
+- Harder for big tech to replicate
+- Clear customer pain points
+- Example: Healthcare AI, Legal AI
+
+Platform plays:
+- Enable others to build
+- Network effects possible
+- High-risk, high-reward
+- Example: Hugging Face
+
+"The companies that will win in AI are those that solve real problems,
+not those that have the most sophisticated technology."

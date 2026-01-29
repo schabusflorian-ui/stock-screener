@@ -1,0 +1,158 @@
+Title: Cloud Computing Investment Analysis
+Source: AI & Robotics Investment Insights
+Type: investment_framework
+
+---
+
+
+CLOUD COMPUTING INVESTMENT ANALYSIS
+
+THE CLOUD LANDSCAPE:
+
+HYPERSCALERS:
+1. AWS (Amazon) - Market leader
+2. Azure (Microsoft) - Fastest growing
+3. GCP (Google) - Strong in AI/ML
+4. Alibaba Cloud - China leader
+5. Oracle Cloud - Enterprise focus
+
+MARKET DYNAMICS:
+
+Cloud adoption curve:
+- Still early innings (30-40% of workloads)
+- Secular growth continues
+- AI accelerating adoption
+- Hybrid/multi-cloud emerging
+
+Growth rates:
+- Overall market: 15-20% CAGR
+- AI/ML services: 30%+ CAGR
+- Individual companies vary
+
+CLOUD LAYERS:
+
+1. Infrastructure (IaaS)
+- Compute, storage, networking
+- Commodity-like, margin pressure
+- Scale advantages matter
+
+2. Platform (PaaS)
+- Databases, containers, serverless
+- Higher margins
+- Stickier than IaaS
+
+3. Software (SaaS)
+- Application layer
+- Highest margins
+- Direct customer relationship
+
+AI CLOUD OPPORTUNITY:
+
+New revenue streams:
+- AI/ML training infrastructure
+- Inference APIs
+- Model hosting
+- Vector databases
+
+Who benefits:
+- All hyperscalers adding AI
+- Nvidia GPU demand
+- AI-native SaaS
+- MLOps tools
+
+INVESTMENT APPROACHES:
+
+1. Hyperscalers
+- Amazon (AWS ~15% of revenue, 60%+ operating income)
+- Microsoft (Azure growing 25%+, Copilot monetization)
+- Google (GCP losses improving, AI leadership)
+
+2. Cloud-Native Software
+- Snowflake, Datadog, MongoDB
+- Pure-play cloud beneficiaries
+- Higher growth, higher valuations
+
+3. Infrastructure Enablers
+- Nvidia (GPUs for cloud)
+- Arista (data center networking)
+- Pure Storage (flash storage)
+
+4. Security
+- CrowdStrike, Palo Alto
+- Security spending resilient
+- AI enhancing products
+
+VALUATION FRAMEWORK:
+
+For cloud software:
+- Rule of 40+ (Growth + FCF margin)
+- EV/Revenue vs growth rate
+- Net revenue retention (>120% is elite)
+- Gross margins (>75% is good)
+
+For hyperscalers:
+- Segment cloud from other businesses
+- Look at operating margins
+- Capex efficiency
+- Customer acquisition
+
+CURRENT THEMES:
+
+1. AI Infrastructure Buildout
+- Massive capex from hyperscalers
+- GPU/AI chip demand
+- Data center construction
+
+2. Efficiency Focus
+- Customers optimizing spend
+- Cost optimization tools
+- Better unit economics
+
+3. Vertical Clouds
+- Industry-specific solutions
+- Compliance/regulatory needs
+- Healthcare, finance, government
+
+4. Edge Computing
+- Latency-sensitive applications
+- 5G enablement
+- IoT integration
+
+RISKS:
+
+1. Cyclicality
+- Tech spending cuts
+- Optimization headwinds
+- Budget scrutiny
+
+2. Competition
+- Price pressure
+- Feature commoditization
+- Open source alternatives
+
+3. Concentration
+- AWS dominance
+- Vendor lock-in concerns
+- Regulatory attention
+
+4. Execution
+- Capex discipline
+- AI transition costs
+- Talent competition
+
+THE AI CATALYST:
+
+Why AI accelerates cloud:
+- Massive compute requirements
+- Data gravity (data in cloud, AI in cloud)
+- Model hosting complexity
+- Continuous training needs
+
+Who wins:
+- Hyperscalers with AI infrastructure
+- GPU providers (Nvidia)
+- AI-native SaaS
+- Data platform companies
+
+"Cloud computing is the foundation of the AI era.
+Every AI application runs on cloud infrastructure."

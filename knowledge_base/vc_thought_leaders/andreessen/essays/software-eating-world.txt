@@ -1,0 +1,186 @@
+Title: Why Software is Eating the World
+Author: Marc Andreessen
+Source: WSJ op-ed and subsequent commentary
+Type: essay
+Category: technology
+
+---
+
+## The Core Thesis
+
+"Software is eating the world. More and more major businesses and industries are being run on software and delivered as online services."
+
+### What This Means
+
+Every industry is being transformed by software:
+- Retail → E-commerce (Amazon)
+- Media → Streaming (Netflix, Spotify)
+- Telecommunications → Internet services (Skype, WhatsApp)
+- Automotive → Software-defined vehicles (Tesla)
+- Financial services → Fintech
+- Healthcare → Digital health
+- Education → EdTech
+
+"In the future, every company will be a software company."
+
+---
+
+## Why Now?
+
+### Technological Convergence
+
+1. **Cloud computing:** Eliminates massive upfront infrastructure costs
+2. **Mobile:** 5 billion smartphones create global distribution
+3. **Broadband:** Enables rich applications everywhere
+4. **AI/ML:** Software that improves itself
+5. **Open source:** Dramatically lowers development costs
+
+### Economic Reality
+
+"Six decades into the computer revolution, four decades since the invention of the microprocessor, and two decades into the rise of the modern Internet, all of the technology required to transform industries through software finally works and can be widely delivered at global scale."
+
+---
+
+## Software Company Advantages
+
+### Why Software Wins
+
+**1. Zero Marginal Cost**
+- Software can serve 1 user or 1 billion users for nearly the same cost
+- Traditional businesses have linear cost scaling
+- This creates massive operating leverage
+
+**2. Network Effects**
+- More users → more valuable for each user
+- Creates winner-take-all dynamics
+- First mover advantage that compounds
+
+**3. Rapid Iteration**
+- Deploy improvements instantly
+- Learn from user behavior in real-time
+- Continuously improve product-market fit
+
+**4. Global Distribution**
+- Internet provides instant global reach
+- No physical distribution constraints
+- Massive addressable markets
+
+**5. Data Advantage**
+- Software collects data on every interaction
+- Data improves the product
+- Creates compounding advantage over time
+
+---
+
+## Identifying Software Winners
+
+### The Andreessen Framework
+
+**1. Product-Market Fit**
+"The only thing that matters is getting to product-market fit."
+- Users pulling product out of your hands
+- Organic growth and word-of-mouth
+- Clear retention and engagement metrics
+
+**2. Distribution Advantage**
+"First-time founders focus on product. Second-time founders focus on distribution."
+- How will you reach customers efficiently?
+- What's the customer acquisition cost?
+- Is there a network effect in distribution?
+
+**3. Business Model Clarity**
+- How will you capture value?
+- What's the unit economics?
+- Does it scale favorably?
+
+**4. Team Quality**
+"People are everything. If you don't get the people right, nothing else matters."
+- Technical excellence
+- Domain expertise
+- Execution capability
+
+---
+
+## Tech Optimism
+
+"The spread of computers and the Internet will put jobs in two categories: people who tell computers what to do, and people who are told by computers what to do."
+
+### The Optimist Case
+
+- Technology creates more jobs than it destroys
+- Standards of living have improved dramatically
+- Access to information democratized
+- Global coordination enabled at unprecedented scale
+- Problems that were unsolvable now have solutions
+
+### Addressing Concerns
+
+"Technology is the solution to most of humanity's problems. The question is whether we have the courage to pursue it."
+
+On job displacement: Automation eliminates tasks, not jobs. New industries create new employment.
+
+On inequality: Technology democratizes access to tools and information that were previously available only to the wealthy.
+
+On social media: The problems are real but solvable through better technology and design.
+
+---
+
+## Investment Implications
+
+### What to Look For
+
+**1. Software-First Companies**
+- Software is the core product, not an add-on
+- Technology is competitive advantage, not cost center
+- Engineering talent is the scarcest resource
+
+**2. Large Markets Being Transformed**
+- Big traditional industries being disrupted
+- Clear inefficiencies addressable by software
+- Incumbents slow to adapt
+
+**3. Strong Network Effects**
+- Product value increases with usage
+- High switching costs once established
+- Winner-take-all or winner-take-most dynamics
+
+**4. Recurring Revenue**
+- SaaS business models
+- Subscription economics
+- Predictable, compounding revenue
+
+### Warning Signs
+
+- Software as a feature, not the product
+- No clear path to network effects
+- Competing on price, not innovation
+- Founder-market fit questions
+- Over-reliance on capital, under-reliance on product
+
+---
+
+## The Long View
+
+"The companies that will be built in the next 20 years will make the last 20 years look like a warm-up act."
+
+### Future Waves
+
+- AI/ML transforming every industry
+- Autonomous systems (vehicles, factories, logistics)
+- Biotech revolution (software meets biology)
+- Climate tech (software optimizing energy and resources)
+- Space technology
+
+"We're still in the early innings of the software revolution. Most industries haven't even begun their transformation."
+
+---
+
+## Key Quotes
+
+"In a world where software is eating the world, every company needs to become a software company."
+
+"The classic sign of a bubble is when there's too much capital chasing too few good companies. Today we have the opposite: too many good companies and too little capital."
+
+"Invest in things that look like toys but are actually the next platform."
+
+"The best time to invest in transformative companies is when everyone else thinks they're crazy."

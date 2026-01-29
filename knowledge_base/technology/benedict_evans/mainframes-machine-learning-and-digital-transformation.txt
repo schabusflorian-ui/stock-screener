@@ -1,0 +1,41 @@
+Title: Mainframes, ML and digital transformation
+Source: Benedict Evans
+URL: https://www.ben-evans.com/benedictevans/2021/8/31/mainframes-machine-learning-and-digital-transformation
+Author: Benedict Evans
+Type: essay
+
+---
+
+Mainframes, ML and digital transformation
+Patrick Collison once made a
+joke
+that if you erect enough enterprise software billboards, an airport will spontaneously appear around them. It’s a pretty good bet that all of those billboards would say ‘digital transformation’, and that phrase always sounds to me like a parody of tech marketing. It’s got ‘digital!’ in there, and ‘transformation!’ - what on earth could this mean? If you poke away at it a little, though, this describes a pretty interesting generational shift in the technology inside big companies.
+Perhaps the best high level way to talk about this is just to say, as a gross generalisation, that in the 60s and 70s giant companies bought mainframes, and in the 80s and 90s the centre of gravity of enterprise IT moved from mainframes to client-server, Oracle, Windows and PCs, and now it’s moving again, to cloud and SaaS, and a bunch of other technologies that come with that.
+Moving from mainframes to client-server didn't just mean you went from renting one kind of box to buying another - it changed the whole way that computing worked. In particular, software became a separate business, and there were all sorts of new companies selling you new kinds of software, some of which solved existing problems but some of which changed how a company could operate. SAP made just-in-time supply chains a lot easier, and that enabled Zara, and Tim Cook’s Apple. New categories of software enabled new ways of doing business.
+The same shift is happening now, as companies move to the cloud - you go from owning boxes to renting them (
+perhaps
+), but more importantly you change what kinds of software you can use. If buying software means a URL, a login and a corporate credit card instead of getting onto the global IT department’s datacenter deployment schedule for sometime in the next three years, then you can have a lot more software from a lot more companies.
+Okta’s larger customers
+have an average of 175 different apps. That may be an under-statement - anything up to half of the software in big companies isn't bought through IT at all, and they may not even know about it.
+Just like the last time around, that means many more problems can be solved, or discovered, or created. A common thread in most of the enterprise software pitches I've listened to in the last decade is how many opportunities there are to solve a piece of workflow in some very specific department or industry that would never have occurred to you if you weren't deeply familiar with it. Human needs are infinite. There are also common building blocks of technologies or concepts that are now being deployed over and over almost indefinitely - that might mean machine learning but it also might mean taking concepts that are 20 years old (two-sided networks, for example) and applying them to some new industry. These opportunities can be a lot bigger than you might think - Adobe bought
+frame.io
+for roughly the same as Avid’s market cap. A network layer that captures the workflows of a whole ecosystem can produce as much value as a highly specialised professional tool used by one part of it. Software eats the world, you might say.
+Frame.io is cool, and taps into some
+current trends
+in productivity (Fred Wilson also wrote about this
+here
+back in 2014), but a lot of this is probably just doing ‘modern software’ over and over again. My favourite example is this slide from Vodafone. Vodafone runs mobile networks in a lot of countries, with hundreds of millions of customers, and so it has 2.6 million invoices to pay every year. Those are all ‘digital’ (indeed, probably Oracle, and note that Vodafone is not an old company), but what could you do with that if you started from scratch today? How many startups does that generate, generalised across 100 other giant companies with similar stories? You can bet that Google doesn’t use Oracle or SAP for its back-office (oh,
+wait
+).
+View fullsize
+It’s also interesting just how long this can take. If you live in Silicon Valley, it would be natural to think that cloud and SaaS are old and done and boring, but this chart from Goldman Sachs, showing a survey of big company CIOs, suggests that less than a quarter of their workflows are in the cloud so far, and they're moving slower than they expected. This stuff takes time, and you don't necessarily have the budget or justification to rebuild everything overnight.
+View fullsize
+PCs and client-server aren’t going away, or at least, not any time soon. Equally, today’s YC founders weren't born the last time anybody in Silicon Valley thought about mainframes, but IBM’s install base (measured in computing capacity) is still growing - in fact IBM shipped record mainframe capacity last year. When technology becomes obsolete it doesn't stop working, and in fact generally it retreats to its core customers and their core use cases, and puts up prices. That can be a great business, for a while.
+View fullsize
+On the other hand, the pandemic has created a reason to accelerate all of this. I've spoken to a big CPG company that might be perfectly happy with its ERP, except that it can't ship less than 1,000 units per order and now they want to do direct-to-consumer (this is part of the
+Shopify story
+). I've also spoken to people at a huge retailer that was perfectly happy with its point of sale system, but discovered that it can't be extended to do ‘buy online pick up in store’. The old systems are good at the old things.
+Most of this won’t be very dramatic - these are multi-year infrastructure migration projects, and a decade-long generational shift (enterprise IT is boring for a reason). But you might also call this ‘gradually, then suddenly’, and it’s a generational shift that in some ways is as fundamental as the consumer internet’s shift from PCs to smartphones. It also sometimes gets buried in all the discussion of VR and crypto, and of what comes after smartphones, but we’ve got another decade or two of  ‘digital transformation’, and then it’ll be called something else.
+How tech works
+Benedict Evans
+31 August 2021

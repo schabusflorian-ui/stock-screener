@@ -1,0 +1,116 @@
+Title: Robotics Investment Thesis - ARK Invest
+Source: ARK Invest Research
+Type: research
+
+---
+
+
+ROBOTICS INVESTMENT THESIS - ARK Invest
+
+THE OPPORTUNITY:
+
+Global labor costs: $30T+ annually
+Robot costs falling exponentially
+Convergence point approaching
+
+ARK projection: Robots could generate $24T+ in revenue by 2030.
+
+ROBOTICS SEGMENTS:
+
+1. INDUSTRIAL ROBOTS (Mature)
+Market leaders: Fanuc, ABB, KUKA
+Current use: Manufacturing, assembly
+Trend: Collaborative robots (cobots)
+Growth: 10-15% annually
+
+2. LOGISTICS/WAREHOUSE ROBOTS (High Growth)
+Market leaders: Amazon Robotics, Symbotic
+Current use: Fulfillment, sorting
+Trend: Full warehouse automation
+Growth: 30%+ annually
+
+3. SERVICE ROBOTS (Emerging)
+Current use: Cleaning, delivery
+Examples: iRobot, delivery bots
+Trend: Hospitality, healthcare
+Growth: 40%+ annually
+
+4. AUTONOMOUS VEHICLES (Pre-Commercial)
+Leaders: Tesla, Waymo, Cruise
+Current use: Testing, limited deployment
+Trend: Robotaxis, autonomous trucks
+Growth: Exponential once proven
+
+5. HUMANOID ROBOTS (Early Stage)
+Players: Tesla Optimus, Figure
+Current use: R&D, demos
+Trend: General-purpose robots
+Growth: Speculative
+
+COST CURVES:
+
+Industrial robots:
+- 2015: $100K average
+- 2023: $40K average
+- 2030: $15K projected (ARK)
+
+Autonomous driving:
+- Sensor costs falling 70%+ per year
+- Compute costs following Moore's Law
+- Data advantage compounds
+
+LABOR VS ROBOT ECONOMICS:
+
+When robots become cheaper than labor:
+- Minimum wage: $15/hr = $30K/year
+- Robot cost: Falling toward $15-20K
+- Robot works 24/7 (3x human hours)
+- No benefits, sick days, turnover
+
+Payback period approaching 1 year
+Then adoption accelerates rapidly
+
+INVESTMENT APPROACH:
+
+Direct plays:
+- Robot manufacturers
+- Autonomous vehicle developers
+- Sensor/component suppliers
+
+Indirect plays:
+- Companies using robots for advantage
+- Software for robot operations
+- AI/ML for robot intelligence
+
+WHAT TO WATCH:
+
+Technical milestones:
+- Humanoid dexterity improvements
+- Autonomous driving safety metrics
+- Robot reliability/uptime
+- AI reasoning capabilities
+
+Adoption indicators:
+- Enterprise robot deployments
+- Robotaxi miles/passengers
+- Warehouse automation rates
+- Manufacturing penetration
+
+RISKS:
+
+Technical:
+- Harder than expected
+- Safety issues
+- Reliability challenges
+
+Economic:
+- Job displacement backlash
+- Regulatory restrictions
+- Union resistance
+
+Competitive:
+- Chinese competition
+- Commoditization
+- Winner-take-all risks
+
+"Robots are not the future. They are the present being deployed."

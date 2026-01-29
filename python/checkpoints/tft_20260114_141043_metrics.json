@@ -1,0 +1,52 @@
+{
+  "config": {
+    "model_type": "tft",
+    "hidden_size": 128,
+    "num_layers": 2,
+    "num_attention_heads": 4,
+    "dropout": 0.1,
+    "sequence_length": 60,
+    "prediction_horizon": 21,
+    "batch_size": 64,
+    "learning_rate": 0.0001,
+    "weight_decay": 1e-05,
+    "epochs": 15,
+    "early_stopping_patience": 10,
+    "min_delta": 0.001,
+    "train_ratio": 0.7,
+    "val_ratio": 0.15,
+    "test_ratio": 0.15,
+    "purge_gap_days": 5,
+    "use_technical": true,
+    "use_fundamental": true,
+    "use_alternative": true,
+    "use_factors": true,
+    "use_market": true,
+    "quantiles": [
+      0.1,
+      0.5,
+      0.9
+    ],
+    "output_uncertainty": true,
+    "gradient_clip_norm": 1.0,
+    "label_smoothing": 0.0,
+    "device": "cpu",
+    "checkpoint_dir": "/Users/florianschabus/Investment Project/python/checkpoints",
+    "model_name": "stock_lstm"
+  },
+  "metrics": {
+    "loss": 0.027655223752332835,
+    "mse": "1.5870305",
+    "rmse": "1.259774",
+    "mae": "0.07474696",
+    "ic": 0.012956892142777496,
+    "ic_ir": 0.575649340319241,
+    "direction_accuracy": 0.6426410627383927,
+    "sharpe": 0.5566729099035996,
+    "calibration_1std": 0.6498750493226358,
+    "mean_predicted_std": "0.061717976",
+    "n_samples": 7603,
+    "walk_forward_efficiency": 1.0
+  },
+  "timestamp": "20260114_141043"
+}

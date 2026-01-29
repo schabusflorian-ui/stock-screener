@@ -989,7 +989,7 @@ class MasterScheduler {
    */
   async runMarketIndicatorUpdate() {
     const { HistoricalMarketIndicatorsService } = require('../services/historicalMarketIndicators');
-    const { FREDService } = require('../services/data/fredService');
+    const { FREDService } = require('../services/dataProviders/fredService');
     const db = require('../database');
 
     const database = db.getDatabase();

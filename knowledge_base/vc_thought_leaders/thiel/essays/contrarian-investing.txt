@@ -1,0 +1,154 @@
+Title: Contrarian Investing - The Thiel Approach
+Author: Peter Thiel
+Source: Stanford CS183, interviews, and public commentary
+Type: essay
+Category: contrarian
+
+---
+
+## The Essence of Contrarian Thinking
+
+"Brilliant thinking is rare, but courage is in even shorter supply than genius."
+
+Being contrarian isn't just about disagreeing with the crowd. It's about having a well-reasoned view that differs from consensus AND having the courage to act on it.
+
+### The Contrarian Framework
+
+**Step 1:** What does the consensus believe?
+**Step 2:** Why might the consensus be wrong?
+**Step 3:** What's the variant perception that could prove true?
+**Step 4:** What's the catalyst for the market to recognize this?
+**Step 5:** What's the risk if you're wrong?
+
+---
+
+## Why Contrarian Views Work
+
+### Market Efficiency Fallacy
+
+"Markets are efficient in the sense that all publicly known information is reflected in prices. But this doesn't mean prices are right - it means mistakes are driven by what most people don't know or don't believe."
+
+### Consensus Creates Mispricing
+
+- Consensus bullishness leads to overvaluation
+- Consensus bearishness leads to undervaluation
+- The bigger the consensus, the bigger the potential mispricing
+
+### The Courage Premium
+
+Most investors can identify opportunities but lack the courage to:
+1. Take positions against the crowd
+2. Size positions appropriately
+3. Hold through volatility
+4. Act when it's most uncomfortable
+
+This is why contrarian opportunities persist.
+
+---
+
+## Contrarian in Practice
+
+### Technology Sector Examples
+
+**Consensus (1999):** Internet companies will dominate everything
+**Contrarian truth:** Most internet companies had no path to profitability
+
+**Consensus (2002):** Internet is dead, back to "real" businesses
+**Contrarian truth:** The right internet businesses would dominate (Google, Amazon)
+
+**Consensus (2010):** Facebook is a fad, social networks are bubbles
+**Contrarian truth:** Network effects would create unprecedented value
+
+### Identifying Contrarian Opportunities
+
+Look for situations where:
+1. Strong consensus exists (90%+ agree)
+2. The consensus is based on extrapolation, not analysis
+3. There's a plausible alternative narrative
+4. Few people are positioned for the alternative
+5. Time horizon is long enough for thesis to play out
+
+---
+
+## The Contrarian Questions
+
+### For Markets
+
+"What do people believe about this asset class that is wrong?"
+"What would have to be true for the consensus to reverse?"
+"Where is the crowd extrapolating linearly when the path is non-linear?"
+
+### For Companies
+
+"What does everyone believe about this company that might be wrong?"
+"What are they overlooking or dismissing?"
+"What would change if my variant perception proves correct?"
+
+### For Technology
+
+"What important technology does everyone think is impossible or far away?"
+"What's being dismissed as a toy that could become critical infrastructure?"
+"Where are people conflating difficulty with impossibility?"
+
+---
+
+## Risk Management for Contrarians
+
+### Position Sizing
+
+"If you're going to be contrarian, you need to be right AND you need to be sized appropriately. Being right with a tiny position is as useless as being wrong."
+
+But also:
+
+"Don't bet the farm on any single contrarian view. You need to survive being wrong to benefit from being right."
+
+### Time Horizon
+
+Contrarian views often require longer time horizons to play out:
+- The crowd can be wrong longer than you can stay solvent
+- Plan for 3-5 year holding periods minimum
+- Have conviction but also have patience
+
+### Exit Strategy
+
+Even contrarian positions need exit criteria:
+- What would prove your thesis wrong?
+- At what point does the consensus become your view (time to sell)?
+- What's your loss limit?
+
+---
+
+## Common Contrarian Mistakes
+
+### Contrarian for Its Own Sake
+
+"Being contrarian isn't about disagreeing with everyone. Some consensus views are correct. The key is having a well-reasoned basis for your disagreement."
+
+### Underestimating the Crowd
+
+"Sometimes the crowd is right. The skill is knowing when consensus reflects genuine insight versus when it reflects herding behavior."
+
+### Confusing Unpopular with Correct
+
+Just because a view is unpopular doesn't make it right. You need:
+1. A specific reason why consensus is wrong
+2. Evidence that supports your variant view
+3. A mechanism for value recognition
+
+### Poor Timing
+
+"Being early is the same as being wrong in markets. You can have the right view but get destroyed by timing."
+
+---
+
+## The Ultimate Contrarian Test
+
+Before taking a contrarian position, answer honestly:
+
+1. Is my view truly differentiated, or am I in a different consensus?
+2. Do I have genuine insight, or am I just being contrary?
+3. Can I articulate specifically why the consensus is wrong?
+4. Am I prepared to be wrong and look foolish?
+5. Is this the right size for my conviction level?
+
+"The best contrarian opportunities are obvious in hindsight but terrifying in real-time. That's what creates the return premium."
