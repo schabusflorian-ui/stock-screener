@@ -605,9 +605,11 @@ const server = createServer(app);
 const serverInfo = getServerInfo(server);
 
 // Start server
-server.listen(PORT, async () => {
+// Bind to 0.0.0.0 to accept connections from outside the container (required for Docker/Railway)
+const HOST = '0.0.0.0';
+server.listen(PORT, HOST, async () => {
   const protocol = serverInfo.protocol === 'HTTP/2' ? 'https' : 'http';
-  logger.info(`API Server running on ${protocol}://localhost:${PORT} (${serverInfo.protocol})`);
+  logger.info(`API Server running on ${protocol}://${HOST}:${PORT} (${serverInfo.protocol})`);
   logger.info(`Health check: ${protocol}://localhost:${PORT}/api/health`);
 
   if (passport) {
