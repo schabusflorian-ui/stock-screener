@@ -9,7 +9,7 @@
 aptPkgs = ["curl"]
 
 [phases.build]
-cmds = ["npm ci", "cd frontend && npm ci && npm run build"]
+cmds = ["npm ci", "cd frontend && npm ci --legacy-peer-deps && npm run build"]
 
 [start]
 cmd = "npm run start:production"

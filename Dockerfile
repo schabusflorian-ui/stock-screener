@@ -31,9 +31,9 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Build frontend
+# Build frontend (use --legacy-peer-deps due to TypeScript version conflict)
 RUN if [ -d "frontend" ]; then \
-      cd frontend && npm ci && npm run build; \
+      cd frontend && npm ci --legacy-peer-deps && npm run build; \
     fi
 
 # ============================================
