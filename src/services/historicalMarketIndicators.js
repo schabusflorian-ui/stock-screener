@@ -16,7 +16,7 @@
  * - Quarterly aggregation aligned to calendar quarters
  */
 
-const db = require('../database');
+const { getDatabaseSync } = require('../lib/db');
 
 // Statistical configuration
 const CONFIG = {
@@ -44,7 +44,8 @@ const CONFIG = {
 
 class HistoricalMarketIndicatorsService {
   constructor() {
-    this.db = db.getDatabase();
+    const dbWrapper = getDatabaseSync();
+    this.db = dbWrapper.raw; // Get the raw better-sqlite3 instance
   }
 
   /**
@@ -210,11 +211,14 @@ class HistoricalMarketIndicatorsService {
    * Used for S&P 500 / GDP ratio comparison with Buffett Indicator
    */
   getSP500HistoricalMarketCap(targetDate) {
-    // First, find the closest trading day on or before the target date
+    // First, find the closest trading day with S&P 500 data on or before the target date
     const closestDate = this.db.prepare(`
-      SELECT MAX(date) as closest_date
-      FROM daily_prices
-      WHERE date <= ?
+      SELECT MAX(dp.date) as closest_date
+      FROM daily_prices dp
+      JOIN companies c ON dp.company_id = c.id
+      WHERE dp.date <= ?
+        AND c.is_sp500 = 1
+        AND c.is_active = 1
     `).get(targetDate);
 
     const actualDate = closestDate?.closest_date || targetDate;

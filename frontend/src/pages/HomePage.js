@@ -367,7 +367,7 @@ const BuffettComparisonCard = memo(function BuffettComparisonCard({ data, linkTo
                 ]}
               />
               <Tooltip
-                formatter={(value, name) => [`${value?.toFixed(0)}%`, name === 'buffett' ? 'All Stocks' : 'S&P 500']}
+                formatter={(value, name) => [`${value?.toFixed(0)}%`, name]}
                 labelFormatter={(label) => label}
                 contentStyle={{
                   background: '#1E293B',
@@ -426,6 +426,7 @@ const SP500PECard = memo(function SP500PECard({ chartData, linkTo }) {
   const processedData = useMemo(() => {
     if (!chartData || chartData.length === 0) return [];
     return chartData.map(d => ({
+      quarter: d.quarter,
       date: d.date,
       value: d.value
     }));
@@ -544,8 +545,14 @@ const SP500PECard = memo(function SP500PECard({ chartData, linkTo }) {
                 label={{ value: '+100%', position: 'right', fontSize: 8, fill: '#EF4444' }}
               />
               <Tooltip
-                formatter={(value) => [`${value?.toFixed(1)}x`, 'P/E']}
-                labelFormatter={(label) => label}
+                formatter={(value, name) => [`${value?.toFixed(1)}x`, name]}
+                labelFormatter={(label, payload) => {
+                  // Show quarter label from the data point
+                  if (payload && payload.length > 0 && payload[0].payload.quarter) {
+                    return payload[0].payload.quarter;
+                  }
+                  return label;
+                }}
                 contentStyle={{
                   background: '#1E293B',
                   border: 'none',

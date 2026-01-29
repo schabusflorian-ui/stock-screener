@@ -12,15 +12,16 @@
  *   --force           Recalculate even if data exists
  */
 
-const db = require('../database');
+const { getDatabaseSync } = require('../lib/db');
 const { HistoricalMarketIndicatorsService } = require('../services/historicalMarketIndicators');
 const { FREDService } = require('../services/dataProviders/fredService');
 
 class MarketIndicatorBackfill {
   constructor() {
-    this.db = db.getDatabase();
+    this.dbWrapper = getDatabaseSync();
+    this.db = this.dbWrapper.raw; // Get the raw better-sqlite3 instance
     this.indicatorService = new HistoricalMarketIndicatorsService();
-    this.fredService = new FREDService(db);
+    this.fredService = new FREDService(require('../database'));
 
     // Ensure aggregate_msi and buffett_source columns exist
     this.ensureColumns();
@@ -178,6 +179,10 @@ class MarketIndicatorBackfill {
     const buffett = this.indicatorService.calculateBuffettIndicator(quarter);
     // Use V2 method with proper Q4 inference and outlier filtering
     const sp500PETtm = this.indicatorService.getSP500PEForQuarterV2(quarter);
+
+    // Calculate S&P 500 market cap separately (even if P/E can't be calculated due to missing earnings)
+    const sp500MarketCapData = this.indicatorService.getSP500HistoricalMarketCap(quarterEndDate);
+
     // Use getQuarterMetricsAsOf() instead of getQuarterMetrics() to fix seasonal fluctuations
     // getQuarterMetrics() filters by fiscal_period date range, causing Q4 spikes (90% have Dec 31 FYE)
     // getQuarterMetricsAsOf() uses most recent data per company, giving consistent sample sizes
@@ -206,12 +211,13 @@ class MarketIndicatorBackfill {
         companyCount: buffett.companyCount,
         source: buffett.source || 'calculated'
       } : null,
-      sp500PE: sp500PETtm?.value ? {
-        value: Math.round(sp500PETtm.value * 100) / 100,
-        marketCap: sp500PETtm.totalMarketCap,
-        earnings: sp500PETtm.totalTTMEarnings || sp500PETtm.totalImpliedEarnings,
-        companyCount: sp500PETtm.companyCount,
-        method: sp500PETtm.method
+      sp500PE: (sp500PETtm?.value || sp500MarketCapData?.totalMarketCapBillions) ? {
+        value: sp500PETtm?.value ? Math.round(sp500PETtm.value * 100) / 100 : null,
+        // Use marketCap from P/E calculation if available, otherwise use standalone calculation
+        marketCap: sp500PETtm?.totalMarketCap || (sp500MarketCapData?.totalMarketCapBillions ? sp500MarketCapData.totalMarketCapBillions * 1e9 : null),
+        earnings: sp500PETtm?.totalTTMEarnings || sp500PETtm?.totalImpliedEarnings || null,
+        companyCount: sp500PETtm?.companyCount || sp500MarketCapData?.companyCount || null,
+        method: sp500PETtm?.method || 'market_cap_only'
       } : null,
       aggregate: aggregateMetrics?.metrics ? {
         medianPE: aggregateMetrics.metrics.pe_ratio ? Math.round(aggregateMetrics.metrics.pe_ratio * 100) / 100 : null,

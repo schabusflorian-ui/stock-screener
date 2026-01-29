@@ -1,16 +1,17 @@
 // frontend/src/components/research/QuantWorkbench/FactorRepository.js
-// Factor Repository - Unified view of standard, custom, and combination factors
+// Factor Repository - Unified view with integrated health status
+// Supports table and panel views with detail popup
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Loader, AlertTriangle, Trash2, Eye, Copy, ToggleRight, ToggleLeft,
-  Search, Filter, TrendingUp, Calculator, Sliders, Target, Activity,
-  ChevronDown, ChevronUp
+  Search, TrendingUp, Calculator, Sliders, Target, Activity,
+  ChevronDown, ChevronUp, LayoutGrid, LayoutList, X, Info,
+  CheckCircle, XCircle, Clock, RefreshCw
 } from '../../icons';
 
 // ============================================================
 // STANDARD FACTOR DEFINITIONS
-// These are the 6 core factors available to all users
 // ============================================================
 const STANDARD_FACTORS = [
   {
@@ -93,19 +94,163 @@ const STANDARD_FACTORS = [
   }
 ];
 
+// IC thresholds for health status
+const IC_THRESHOLDS = {
+  STRONG: 0.03,
+  MODERATE: 0.01,
+  WEAK: 0
+};
+
 // ============================================================
-// TYPE BADGE COMPONENT
+// HELPER COMPONENTS
 // ============================================================
+
 function TypeBadge({ type }) {
   const config = {
     standard: { label: 'Standard', className: 'type-standard' },
     custom: { label: 'Custom', className: 'type-custom' },
     combination: { label: 'Combination', className: 'type-combination' }
   };
-
   const { label, className } = config[type] || config.custom;
-
   return <span className={`type-badge ${className}`}>{label}</span>;
+}
+
+function HealthIndicator({ status, compact = false }) {
+  const config = {
+    healthy: { Icon: CheckCircle, color: 'var(--positive)', label: 'Healthy' },
+    caution: { Icon: AlertTriangle, color: 'var(--warning)', label: 'Caution' },
+    weak: { Icon: XCircle, color: 'var(--negative)', label: 'Weak' },
+    unknown: { Icon: Clock, color: 'var(--text-tertiary)', label: 'Untested' }
+  };
+  const { Icon, color, label } = config[status] || config.unknown;
+
+  if (compact) {
+    return (
+      <span className={`health-indicator compact ${status}`} title={label}>
+        <Icon size={14} style={{ color }} />
+      </span>
+    );
+  }
+
+  return (
+    <span className={`health-indicator ${status}`}>
+      <Icon size={14} style={{ color }} />
+      <span style={{ color }}>{label}</span>
+    </span>
+  );
+}
+
+// ============================================================
+// FACTOR DETAIL POPUP
+// ============================================================
+function FactorDetailPopup({ factor, onClose, onSelect }) {
+  if (!factor) return null;
+
+  const isStandard = factor.type === 'standard';
+  const FactorIcon = factor.Icon || Calculator;
+
+  return (
+    <div className="factor-detail-overlay" onClick={onClose}>
+      <div className="factor-detail-popup" onClick={e => e.stopPropagation()}>
+        <button className="popup-close" onClick={onClose}>
+          <X size={20} />
+        </button>
+
+        {/* Header */}
+        <div className="popup-header">
+          <div className="popup-icon">
+            <FactorIcon size={24} />
+          </div>
+          <div className="popup-title">
+            <h3>{factor.name}</h3>
+            <div className="popup-badges">
+              <TypeBadge type={factor.type} />
+              <HealthIndicator status={factor.healthStatus} />
+            </div>
+          </div>
+        </div>
+
+        {/* Description */}
+        <p className="popup-description">{factor.description}</p>
+
+        {/* Formula */}
+        <div className="popup-section">
+          <h4>Formula</h4>
+          <code className="popup-formula">{factor.formula}</code>
+        </div>
+
+        {/* Academic Basis (Standard factors) */}
+        {isStandard && factor.academicBasis && (
+          <div className="popup-section">
+            <h4>Academic Basis</h4>
+            <p>{factor.academicBasis}</p>
+          </div>
+        )}
+
+        {/* IC Range */}
+        <div className="popup-section">
+          <h4>IC Performance</h4>
+          <div className="popup-stats">
+            {isStandard ? (
+              <>
+                <div className="popup-stat">
+                  <span className="stat-label">Expected IC Range</span>
+                  <span className="stat-value">
+                    {(factor.expectedIC.low * 100).toFixed(1)}% - {(factor.expectedIC.high * 100).toFixed(1)}%
+                  </span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="popup-stat">
+                  <span className="stat-label">IC (21d)</span>
+                  <span className={`stat-value ${factor.ic21d > 0 ? 'positive' : factor.ic21d < 0 ? 'negative' : ''}`}>
+                    {factor.ic21d != null ? `${(factor.ic21d * 100).toFixed(2)}%` : '-'}
+                  </span>
+                </div>
+                <div className="popup-stat">
+                  <span className="stat-label">T-Statistic</span>
+                  <span className={`stat-value ${factor.tstat > 2 ? 'positive' : ''}`}>
+                    {factor.tstat?.toFixed(2) || '-'}
+                  </span>
+                </div>
+                <div className="popup-stat">
+                  <span className="stat-label">IC IR</span>
+                  <span className="stat-value">
+                    {factor.icIR?.toFixed(2) || '-'}
+                  </span>
+                </div>
+                <div className="popup-stat">
+                  <span className="stat-label">Uniqueness</span>
+                  <span className={`stat-value ${factor.uniquenessScore > 0.5 ? 'positive' : ''}`}>
+                    {factor.uniquenessScore != null ? `${(factor.uniquenessScore * 100).toFixed(0)}%` : '-'}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Metrics Used */}
+        <div className="popup-section">
+          <h4>Metrics Used</h4>
+          <div className="popup-metrics">
+            {(factor.metrics || factor.requiredMetrics || []).map(m => (
+              <code key={m} className="metric-tag">{m}</code>
+            ))}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="popup-actions">
+          <button className="btn-primary" onClick={() => { onSelect(factor); onClose(); }}>
+            <Eye size={16} />
+            Analyze Factor
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ============================================================
@@ -118,6 +263,7 @@ export default function FactorRepository({
   showCombinations = true
 }) {
   const [customFactors, setCustomFactors] = useState([]);
+  const [healthData, setHealthData] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [sortBy, setSortBy] = useState('type');
@@ -125,7 +271,9 @@ export default function FactorRepository({
   const [deleting, setDeleting] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
-  const [expandedStandardFactors, setExpandedStandardFactors] = useState({});
+  const [viewMode, setViewMode] = useState('panels'); // 'table' or 'panels'
+  const [selectedPopupFactor, setSelectedPopupFactor] = useState(null);
+  const [refreshingHealth, setRefreshingHealth] = useState(false);
 
   // Load custom factors from API
   const loadFactors = useCallback(async () => {
@@ -140,7 +288,6 @@ export default function FactorRepository({
         throw new Error(data.error || 'Failed to load factors');
       }
 
-      // Mark custom factors with type
       const customWithType = (data.data || []).map(f => ({
         ...f,
         type: f.isCombination ? 'combination' : 'custom'
@@ -154,6 +301,59 @@ export default function FactorRepository({
     }
   }, []);
 
+  // Load health data for all factors
+  const loadHealthData = useCallback(async (factors) => {
+    setRefreshingHealth(true);
+    const health = {};
+
+    try {
+      // Fetch IC stats for each factor
+      await Promise.all(
+        factors.map(async (factor) => {
+          try {
+            if (factor.type === 'custom' && factor.ic_stats) {
+              // Use stored stats for custom factors
+              const ic21d = factor.ic_stats?.['21'] || factor.ic_stats?.ic_21d || 0;
+              const tstat = factor.ic_tstat || 0;
+              health[factor.id] = {
+                ic21d,
+                tstat,
+                icIR: factor.ic_ir || 0,
+                status: getHealthStatus(ic21d, tstat)
+              };
+            } else if (factor.type === 'standard') {
+              // For standard factors, use expected IC
+              health[factor.id] = {
+                ic21d: factor.expectedIC?.high || 0,
+                tstat: 2.5, // Assume significant for standard
+                status: factor.expectedIC?.high >= IC_THRESHOLDS.STRONG ? 'healthy' : 'caution'
+              };
+            } else {
+              health[factor.id] = { status: 'unknown' };
+            }
+          } catch {
+            health[factor.id] = { status: 'unknown' };
+          }
+        })
+      );
+
+      setHealthData(health);
+    } finally {
+      setRefreshingHealth(false);
+    }
+  }, []);
+
+  // Calculate health status based on IC and t-stat
+  const getHealthStatus = (ic, tstat) => {
+    const absIC = Math.abs(ic || 0);
+    const absTstat = Math.abs(tstat || 0);
+
+    if (absIC >= IC_THRESHOLDS.STRONG && absTstat >= 2) return 'healthy';
+    if (absIC >= IC_THRESHOLDS.MODERATE && absTstat >= 1.5) return 'caution';
+    if (absIC > 0) return 'weak';
+    return 'unknown';
+  };
+
   useEffect(() => {
     loadFactors();
   }, [loadFactors]);
@@ -161,52 +361,55 @@ export default function FactorRepository({
   // Combine all factors into unified list
   const allFactors = useMemo(() => {
     const factors = [];
-
-    // Add standard factors if enabled
-    if (showStandardFactors) {
-      factors.push(...STANDARD_FACTORS);
-    }
-
-    // Add custom factors
+    if (showStandardFactors) factors.push(...STANDARD_FACTORS);
     const customs = customFactors.filter(f => f.type === 'custom');
     factors.push(...customs);
-
-    // Add combinations if enabled
     if (showCombinations) {
       const combos = customFactors.filter(f => f.type === 'combination');
       factors.push(...combos);
     }
-
     return factors;
   }, [showStandardFactors, showCombinations, customFactors]);
 
+  // Load health when factors change
+  useEffect(() => {
+    if (allFactors.length > 0) {
+      loadHealthData(allFactors);
+    }
+  }, [allFactors, loadHealthData]);
+
+  // Enrich factors with health data
+  const enrichedFactors = useMemo(() => {
+    return allFactors.map(f => ({
+      ...f,
+      healthStatus: healthData[f.id]?.status || 'unknown',
+      ic21d: healthData[f.id]?.ic21d ?? f.icStats?.[21] ?? f.expectedIC?.high,
+      tstat: healthData[f.id]?.tstat ?? f.icTstat,
+      icIR: healthData[f.id]?.icIR ?? f.icIR
+    }));
+  }, [allFactors, healthData]);
+
   // Filter and sort factors
   const filteredFactors = useMemo(() => {
-    let result = [...allFactors];
+    let result = [...enrichedFactors];
 
-    // Apply search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       result = result.filter(f =>
         f.name.toLowerCase().includes(query) ||
         f.formula?.toLowerCase().includes(query) ||
-        f.description?.toLowerCase().includes(query) ||
-        f.metrics?.some(m => m.toLowerCase().includes(query))
+        f.description?.toLowerCase().includes(query)
       );
     }
 
-    // Apply type filter
     if (typeFilter !== 'all') {
       result = result.filter(f => f.type === typeFilter);
     }
 
-    // Apply sorting
     result.sort((a, b) => {
       let comparison = 0;
-
       switch (sortBy) {
         case 'type':
-          // Standard first, then custom, then combination
           const typeOrder = { standard: 0, custom: 1, combination: 2 };
           comparison = typeOrder[a.type] - typeOrder[b.type];
           if (comparison === 0) comparison = a.name.localeCompare(b.name);
@@ -214,46 +417,32 @@ export default function FactorRepository({
         case 'name':
           comparison = a.name.localeCompare(b.name);
           break;
-        case 'created_at':
-          // Standard factors don't have createdAt, put them first
-          if (!a.createdAt && !b.createdAt) comparison = a.name.localeCompare(b.name);
-          else if (!a.createdAt) comparison = -1;
-          else if (!b.createdAt) comparison = 1;
-          else comparison = new Date(b.createdAt) - new Date(a.createdAt);
+        case 'health':
+          const healthOrder = { healthy: 0, caution: 1, weak: 2, unknown: 3 };
+          comparison = healthOrder[a.healthStatus] - healthOrder[b.healthStatus];
           break;
         case 'ic':
-          const aIC = a.icStats?.[21] ?? a.expectedIC?.high ?? -999;
-          const bIC = b.icStats?.[21] ?? b.expectedIC?.high ?? -999;
+          const aIC = a.ic21d ?? -999;
+          const bIC = b.ic21d ?? -999;
           comparison = bIC - aIC;
           break;
         default:
           comparison = 0;
       }
-
       return sortOrder === 'ASC' ? comparison : -comparison;
     });
 
     return result;
-  }, [allFactors, searchQuery, typeFilter, sortBy, sortOrder]);
+  }, [enrichedFactors, searchQuery, typeFilter, sortBy, sortOrder]);
 
   // Delete custom factor
   const handleDelete = async (factorId) => {
-    if (!window.confirm('Are you sure you want to delete this factor? This action cannot be undone.')) {
-      return;
-    }
-
+    if (!window.confirm('Are you sure you want to delete this factor?')) return;
     setDeleting(factorId);
-
     try {
-      const response = await fetch(`/api/factors/user/${factorId}`, {
-        method: 'DELETE'
-      });
+      const response = await fetch(`/api/factors/user/${factorId}`, { method: 'DELETE' });
       const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to delete factor');
-      }
-
+      if (!data.success) throw new Error(data.error || 'Failed to delete');
       setCustomFactors(prev => prev.filter(f => f.id !== factorId));
     } catch (err) {
       alert('Failed to delete factor: ' + err.message);
@@ -262,7 +451,7 @@ export default function FactorRepository({
     }
   };
 
-  // Toggle active status for custom factors
+  // Toggle active status
   const handleToggleActive = async (factorId, currentActive) => {
     try {
       const response = await fetch(`/api/factors/user/${factorId}/toggle-active`, {
@@ -271,71 +460,34 @@ export default function FactorRepository({
         body: JSON.stringify({ active: !currentActive })
       });
       const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to toggle active status');
-      }
-
+      if (!data.success) throw new Error(data.error || 'Failed to toggle');
       setCustomFactors(prev => prev.map(f =>
         f.id === factorId ? { ...f, isActive: !currentActive } : f
       ));
     } catch (err) {
-      alert('Failed to toggle active status: ' + err.message);
+      alert('Failed to toggle: ' + err.message);
     }
   };
 
-  // Copy formula to clipboard
+  // Copy formula
   const copyFormula = (formula) => {
     navigator.clipboard.writeText(formula);
   };
 
-  // Toggle expanded state for standard factors
-  const toggleExpanded = (factorId) => {
-    setExpandedStandardFactors(prev => ({
-      ...prev,
-      [factorId]: !prev[factorId]
-    }));
-  };
-
-  // Format date
-  const formatDate = (dateStr) => {
-    if (!dateStr) return '-';
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  };
-
-  // Get quality badge
-  const getQualityBadge = (factor) => {
-    // For standard factors, use expected IC
-    if (factor.type === 'standard') {
-      if (factor.expectedIC?.high >= 0.03) {
-        return <span className="quality-badge strong">Strong</span>;
-      }
-      return <span className="quality-badge moderate">Moderate</span>;
-    }
-
-    // For custom factors, use actual stats
-    if (!factor.icTstat) {
-      return <span className="quality-badge untested">Untested</span>;
-    }
-
-    if (factor.icTstat > 2 && factor.wfe > 0.5 && factor.uniquenessScore > 0.3) {
-      return <span className="quality-badge strong">Strong</span>;
-    } else if (factor.icTstat > 1.5 && factor.wfe > 0.3) {
-      return <span className="quality-badge moderate">Moderate</span>;
-    } else if (factor.icTstat > 1) {
-      return <span className="quality-badge weak">Weak</span>;
-    }
-    return <span className="quality-badge untested">Untested</span>;
-  };
-
-  // Count by type
+  // Type counts
   const typeCounts = useMemo(() => ({
     all: allFactors.length,
     standard: allFactors.filter(f => f.type === 'standard').length,
     custom: allFactors.filter(f => f.type === 'custom').length,
     combination: allFactors.filter(f => f.type === 'combination').length
   }), [allFactors]);
+
+  // Health summary
+  const healthSummary = useMemo(() => ({
+    healthy: enrichedFactors.filter(f => f.healthStatus === 'healthy').length,
+    caution: enrichedFactors.filter(f => f.healthStatus === 'caution').length,
+    weak: enrichedFactors.filter(f => f.healthStatus === 'weak').length
+  }), [enrichedFactors]);
 
   if (loading && customFactors.length === 0) {
     return (
@@ -358,21 +510,46 @@ export default function FactorRepository({
 
   return (
     <div className="factor-repository">
-      {/* Header with Search and Filters */}
+      {/* Header with Health Summary */}
       <div className="repository-header">
-        <div className="header-title">
-          <h4>All Factors</h4>
-          <span className="factor-count">{filteredFactors.length} of {allFactors.length} factors</span>
+        <div className="header-left">
+          <h3>Factor Repository</h3>
+          <span className="factor-count">{filteredFactors.length} factors</span>
+        </div>
+        <div className="header-right">
+          {/* Health Summary Pills */}
+          <div className="health-summary-pills">
+            <span className="health-pill healthy">
+              <CheckCircle size={14} />
+              {healthSummary.healthy}
+            </span>
+            <span className="health-pill caution">
+              <AlertTriangle size={14} />
+              {healthSummary.caution}
+            </span>
+            <span className="health-pill weak">
+              <XCircle size={14} />
+              {healthSummary.weak}
+            </span>
+          </div>
+          <button
+            className="refresh-health-btn"
+            onClick={() => loadHealthData(allFactors)}
+            disabled={refreshingHealth}
+            title="Refresh health data"
+          >
+            <RefreshCw size={14} className={refreshingHealth ? 'spin' : ''} />
+          </button>
         </div>
       </div>
 
-      {/* Search and Filter Bar */}
+      {/* Controls Bar */}
       <div className="repository-controls">
         <div className="search-box">
           <Search size={16} className="search-icon" />
           <input
             type="text"
-            placeholder="Search factors by name, formula, or metrics..."
+            placeholder="Search factors..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -393,7 +570,7 @@ export default function FactorRepository({
             ))}
           </div>
 
-          {/* Sort Dropdown */}
+          {/* Sort */}
           <select
             value={`${sortBy}-${sortOrder}`}
             onChange={(e) => {
@@ -403,176 +580,182 @@ export default function FactorRepository({
             }}
             className="sort-select"
           >
-            <option value="type-ASC">Type (Standard First)</option>
+            <option value="type-ASC">Type</option>
             <option value="name-ASC">Name (A-Z)</option>
-            <option value="name-DESC">Name (Z-A)</option>
-            <option value="created_at-DESC">Newest First</option>
-            <option value="ic-DESC">Best IC First</option>
+            <option value="health-ASC">Health (Best First)</option>
+            <option value="ic-DESC">IC (Highest)</option>
           </select>
+
+          {/* View Toggle */}
+          <div className="view-toggle">
+            <button
+              className={`view-btn ${viewMode === 'table' ? 'active' : ''}`}
+              onClick={() => setViewMode('table')}
+              title="Table view"
+            >
+              <LayoutList size={16} />
+            </button>
+            <button
+              className={`view-btn ${viewMode === 'panels' ? 'active' : ''}`}
+              onClick={() => setViewMode('panels')}
+              title="Panel view"
+            >
+              <LayoutGrid size={16} />
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Factor List */}
       {filteredFactors.length === 0 ? (
         <div className="empty-state">
-          <div className="empty-icon">
-            <Search size={48} />
-          </div>
+          <Search size={48} />
           <h4>No factors found</h4>
-          <p>
-            {searchQuery || typeFilter !== 'all'
-              ? 'Try adjusting your search or filters.'
-              : 'Create your first custom factor using the Configure tab.'}
-          </p>
+          <p>Try adjusting your search or filters.</p>
+        </div>
+      ) : viewMode === 'table' ? (
+        /* Table View */
+        <div className="factor-table-container">
+          <table className="factor-table">
+            <thead>
+              <tr>
+                <th>Factor</th>
+                <th>Type</th>
+                <th className="right">IC (21d)</th>
+                <th className="right">T-Stat</th>
+                <th>Health</th>
+                <th className="actions-col">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredFactors.map(factor => {
+                const FactorIcon = factor.Icon || Calculator;
+                return (
+                  <tr
+                    key={factor.id}
+                    className={`factor-row ${selectedFactorId === factor.id ? 'selected' : ''}`}
+                    onClick={() => setSelectedPopupFactor(factor)}
+                  >
+                    <td className="factor-name-cell">
+                      <FactorIcon size={16} className="factor-icon" />
+                      <span className="factor-name">{factor.name}</span>
+                    </td>
+                    <td>
+                      <TypeBadge type={factor.type} />
+                    </td>
+                    <td className={`right mono ${factor.ic21d > 0 ? 'positive' : factor.ic21d < 0 ? 'negative' : ''}`}>
+                      {factor.ic21d != null ? `${(factor.ic21d * 100).toFixed(2)}%` : '-'}
+                    </td>
+                    <td className={`right mono ${factor.tstat > 2 ? 'positive' : ''}`}>
+                      {factor.tstat?.toFixed(2) || '-'}
+                    </td>
+                    <td>
+                      <HealthIndicator status={factor.healthStatus} compact />
+                    </td>
+                    <td className="actions-cell" onClick={e => e.stopPropagation()}>
+                      <button
+                        className="action-btn"
+                        onClick={() => onFactorSelect(factor)}
+                        title="Analyze"
+                      >
+                        <Eye size={14} />
+                      </button>
+                      <button
+                        className="action-btn"
+                        onClick={() => setSelectedPopupFactor(factor)}
+                        title="Details"
+                      >
+                        <Info size={14} />
+                      </button>
+                      {factor.type !== 'standard' && (
+                        <button
+                          className="action-btn delete"
+                          onClick={() => handleDelete(factor.id)}
+                          disabled={deleting === factor.id}
+                          title="Delete"
+                        >
+                          {deleting === factor.id ? <Loader size={14} className="spin" /> : <Trash2 size={14} />}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       ) : (
-        <div className="factor-list">
+        /* Panel View */
+        <div className="factor-panels">
           {filteredFactors.map(factor => {
-            const isStandard = factor.type === 'standard';
-            const isExpanded = expandedStandardFactors[factor.id];
             const FactorIcon = factor.Icon || Calculator;
+            const isStandard = factor.type === 'standard';
 
             return (
               <div
                 key={factor.id}
-                className={`factor-card ${selectedFactorId === factor.id ? 'selected' : ''} ${factor.isActive ? 'active' : ''} ${factor.type}`}
+                className={`factor-panel ${selectedFactorId === factor.id ? 'selected' : ''} ${factor.healthStatus}`}
+                onClick={() => setSelectedPopupFactor(factor)}
               >
-                <div className="factor-main">
-                  <div className="factor-header">
-                    <div className="factor-name-row">
-                      <div className="factor-icon-name">
-                        <FactorIcon size={18} className="factor-icon" />
-                        <h5>{factor.name}</h5>
-                      </div>
-                      <div className="factor-badges">
-                        <TypeBadge type={factor.type} />
-                        {getQualityBadge(factor)}
-                        {factor.isActive && <span className="active-badge">Active</span>}
-                      </div>
-                    </div>
-
-                    <div className="factor-formula">
-                      <code>{factor.formula}</code>
-                      <button
-                        className="copy-btn"
-                        onClick={() => copyFormula(factor.formula)}
-                        title="Copy formula"
-                      >
-                        <Copy size={14} />
-                      </button>
-                    </div>
-
-                    {factor.description && (
-                      <p className="factor-description">{factor.description}</p>
-                    )}
+                <div className="panel-header">
+                  <div className="panel-icon">
+                    <FactorIcon size={20} />
                   </div>
-
-                  {/* Standard Factor Expandable Details */}
-                  {isStandard && (
-                    <button
-                      className="expand-toggle"
-                      onClick={() => toggleExpanded(factor.id)}
-                    >
-                      {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                      {isExpanded ? 'Less details' : 'More details'}
-                    </button>
-                  )}
-
-                  {isStandard && isExpanded && (
-                    <div className="standard-details">
-                      <div className="detail-row">
-                        <span className="detail-label">Academic Basis:</span>
-                        <span className="detail-value">{factor.academicBasis}</span>
-                      </div>
-                      <div className="detail-row">
-                        <span className="detail-label">Expected IC Range:</span>
-                        <span className="detail-value">
-                          {(factor.expectedIC.low * 100).toFixed(1)}% - {(factor.expectedIC.high * 100).toFixed(1)}%
-                        </span>
-                      </div>
-                      <div className="detail-row">
-                        <span className="detail-label">Metrics Used:</span>
-                        <span className="detail-value metrics-list">
-                          {factor.metrics.map(m => (
-                            <code key={m}>{m}</code>
-                          ))}
-                        </span>
-                      </div>
+                  <div className="panel-title">
+                    <h4>{factor.name}</h4>
+                    <div className="panel-badges">
+                      <TypeBadge type={factor.type} />
+                      <HealthIndicator status={factor.healthStatus} compact />
                     </div>
-                  )}
+                  </div>
+                </div>
 
-                  {/* Stats for Custom Factors */}
-                  {!isStandard && factor.icStats && (
-                    <div className="factor-stats">
-                      <div className="stat">
-                        <span className="stat-label">IC (21d)</span>
-                        <span className={`stat-value ${factor.icStats?.[21] > 0 ? 'positive' : factor.icStats?.[21] < 0 ? 'negative' : ''}`}>
-                          {factor.icStats?.[21] != null ? `${(factor.icStats[21] * 100).toFixed(2)}%` : '-'}
-                        </span>
-                      </div>
-                      <div className="stat">
-                        <span className="stat-label">T-Stat</span>
-                        <span className={`stat-value ${factor.icTstat > 2 ? 'positive' : ''}`}>
-                          {factor.icTstat?.toFixed(2) || '-'}
-                        </span>
-                      </div>
-                      <div className="stat">
-                        <span className="stat-label">Uniqueness</span>
-                        <span className={`stat-value ${factor.uniquenessScore > 0.5 ? 'positive' : factor.uniquenessScore < 0.3 ? 'negative' : ''}`}>
-                          {factor.uniquenessScore != null ? `${(factor.uniquenessScore * 100).toFixed(0)}%` : '-'}
-                        </span>
-                      </div>
-                      <div className="stat">
-                        <span className="stat-label">WFE</span>
-                        <span className={`stat-value ${factor.wfe > 0.5 ? 'positive' : factor.wfe < 0.3 ? 'negative' : ''}`}>
-                          {factor.wfe != null ? `${(factor.wfe * 100).toFixed(0)}%` : '-'}
-                        </span>
-                      </div>
-                    </div>
-                  )}
+                <p className="panel-description">{factor.description}</p>
 
-                  {/* Meta for Custom Factors */}
-                  {!isStandard && (
-                    <div className="factor-meta">
-                      {factor.requiredMetrics && (
-                        <span className="meta-item">
-                          Uses: {factor.requiredMetrics.join(', ')}
-                        </span>
-                      )}
-                      {factor.createdAt && (
-                        <span className="meta-item">
-                          Created: {formatDate(factor.createdAt)}
-                        </span>
-                      )}
+                <div className="panel-stats">
+                  <div className="panel-stat">
+                    <span className="stat-label">IC</span>
+                    <span className={`stat-value ${factor.ic21d > 0 ? 'positive' : ''}`}>
+                      {factor.ic21d != null ? `${(factor.ic21d * 100).toFixed(1)}%` : '-'}
+                    </span>
+                  </div>
+                  <div className="panel-stat">
+                    <span className="stat-label">T-Stat</span>
+                    <span className={`stat-value ${factor.tstat > 2 ? 'positive' : ''}`}>
+                      {factor.tstat?.toFixed(1) || '-'}
+                    </span>
+                  </div>
+                  {!isStandard && factor.uniquenessScore != null && (
+                    <div className="panel-stat">
+                      <span className="stat-label">Unique</span>
+                      <span className="stat-value">{(factor.uniquenessScore * 100).toFixed(0)}%</span>
                     </div>
                   )}
                 </div>
 
-                {/* Actions */}
-                <div className="factor-actions">
+                <div className="panel-actions" onClick={e => e.stopPropagation()}>
                   <button
-                    className="action-btn analyze"
+                    className="panel-action-btn primary"
                     onClick={() => onFactorSelect(factor)}
-                    title="Select for analysis"
                   >
-                    <Eye size={16} />
+                    <Eye size={14} />
+                    Analyze
                   </button>
                   {!isStandard && (
                     <>
                       <button
-                        className={`action-btn toggle ${factor.isActive ? 'active' : ''}`}
+                        className={`panel-action-btn toggle ${factor.isActive ? 'active' : ''}`}
                         onClick={() => handleToggleActive(factor.id, factor.isActive)}
                         title={factor.isActive ? 'Deactivate' : 'Activate'}
                       >
-                        {factor.isActive ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+                        {factor.isActive ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
                       </button>
                       <button
-                        className="action-btn delete"
+                        className="panel-action-btn delete"
                         onClick={() => handleDelete(factor.id)}
                         disabled={deleting === factor.id}
-                        title="Delete factor"
                       >
-                        {deleting === factor.id ? <Loader size={16} className="spin" /> : <Trash2 size={16} />}
+                        {deleting === factor.id ? <Loader size={14} className="spin" /> : <Trash2 size={14} />}
                       </button>
                     </>
                   )}
@@ -583,27 +766,16 @@ export default function FactorRepository({
         </div>
       )}
 
-      {/* Legend */}
-      <div className="repository-legend">
-        <h5>Factor Types</h5>
-        <div className="legend-items">
-          <div className="legend-item">
-            <TypeBadge type="standard" />
-            <span>Pre-built factors based on academic research</span>
-          </div>
-          <div className="legend-item">
-            <TypeBadge type="custom" />
-            <span>Your own factor formulas from metrics</span>
-          </div>
-          <div className="legend-item">
-            <TypeBadge type="combination" />
-            <span>Weighted combinations of multiple factors</span>
-          </div>
-        </div>
-      </div>
+      {/* Detail Popup */}
+      {selectedPopupFactor && (
+        <FactorDetailPopup
+          factor={selectedPopupFactor}
+          onClose={() => setSelectedPopupFactor(null)}
+          onSelect={onFactorSelect}
+        />
+      )}
     </div>
   );
 }
 
-// Export standard factors for use in other components
 export { STANDARD_FACTORS };

@@ -14,7 +14,6 @@ import FactorFormulaBuilder from './FactorFormulaBuilder';
 import ICDashboard from './ICDashboard';
 import FactorRepository from './FactorRepository';
 import SignalGenerator from './SignalGenerator';
-import FactorHealthDashboard from './FactorHealthDashboard';
 import SectorFactorHeatmap from './SectorFactorHeatmap';
 import WalkForwardVisualization from './WalkForwardVisualization';
 // Import Factor Lab components
@@ -210,18 +209,12 @@ export default function QuantWorkbench({ standalone = false }) {
       switch (activeTab) {
         case 'browse':
           return (
-            <div className="browse-tab">
-              {/* Factor Health Overview */}
-              <FactorHealthDashboard onFactorSelect={handleFactorSelect} />
-
-              {/* Factor Repository */}
-              <FactorRepository
-                onFactorSelect={handleFactorSelect}
-                selectedFactorId={selectedFactor?.id}
-                showStandardFactors={true}
-                showCombinations={true}
-              />
-            </div>
+            <FactorRepository
+              onFactorSelect={handleFactorSelect}
+              selectedFactorId={selectedFactor?.id}
+              showStandardFactors={true}
+              showCombinations={true}
+            />
           );
 
         case 'configure':
