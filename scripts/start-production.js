@@ -43,10 +43,32 @@ function validateEnvironment() {
     console.error('❌ Missing required environment variables:');
     missing.forEach(v => console.error(`   - ${v}`));
     console.error('');
-    console.error('Set these in Railway dashboard:');
-    console.error('  DATABASE_URL: Your Railway PostgreSQL connection string');
-    console.error('  SESSION_SECRET: Generate with: openssl rand -hex 32');
-    process.exit(1);
+
+    // Auto-generate SESSION_SECRET if missing (temporary workaround)
+    if (missing.includes('SESSION_SECRET')) {
+      const crypto = require('crypto');
+      process.env.SESSION_SECRET = crypto.randomBytes(32).toString('hex');
+      console.warn('⚠️  Auto-generated SESSION_SECRET for this session');
+      console.warn('   ⚠️  WARNING: Sessions will not persist across deployments!');
+      console.warn('   Set SESSION_SECRET in Railway dashboard: openssl rand -hex 32');
+      console.warn('');
+
+      // Remove SESSION_SECRET from missing list
+      const missingWithoutSession = missing.filter(v => v !== 'SESSION_SECRET');
+      if (missingWithoutSession.length > 0) {
+        console.error('Still missing:');
+        missingWithoutSession.forEach(v => console.error(`   - ${v}`));
+        console.error('');
+        console.error('Set these in Railway dashboard:');
+        console.error('  DATABASE_URL: Your Railway PostgreSQL connection string');
+        process.exit(1);
+      }
+    } else {
+      console.error('Set these in Railway dashboard:');
+      console.error('  DATABASE_URL: Your Railway PostgreSQL connection string');
+      console.error('  SESSION_SECRET: Generate with: openssl rand -hex 32');
+      process.exit(1);
+    }
   }
 
   // Check blocked variables
