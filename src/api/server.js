@@ -618,26 +618,21 @@ server.listen(PORT, async () => {
 
   // Initialize Update Orchestrator if enabled
   try {
+    const { isUsingPostgres } = require('../lib/db');
     const autoStartScheduler = process.env.AUTO_START_SCHEDULER !== 'false';
-    if (autoStartScheduler) {
+
+    // UpdateOrchestrator uses SQLite-specific prepared statements and is not yet compatible with PostgreSQL
+    if (isUsingPostgres()) {
+      logger.info('Update Scheduler: Skipped in PostgreSQL mode (SQLite-only feature)');
+    } else if (autoStartScheduler) {
       const { getUpdateOrchestrator } = require('../services/updates/updateOrchestrator');
       const orchestrator = getUpdateOrchestrator(db.getDatabase());
 
       // Check if update_jobs table exists (migration has run)
-      // Use dialect-aware table existence check
-      const { isUsingPostgres } = require('../lib/db');
-      let tableExists;
-      if (isUsingPostgres()) {
-        const result = await db.getDatabase().query(
-          `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'update_jobs')`
-        );
-        tableExists = result.rows[0]?.exists;
-      } else {
-        tableExists = db.getDatabase().prepare(`
-          SELECT name FROM sqlite_master
-          WHERE type='table' AND name='update_jobs'
-        `).get();
-      }
+      const tableExists = db.getDatabase().prepare(`
+        SELECT name FROM sqlite_master
+        WHERE type='table' AND name='update_jobs'
+      `).get();
 
       if (tableExists) {
         orchestrator.start();

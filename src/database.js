@@ -16,15 +16,22 @@ const isPostgres = isUsingPostgres();
 let _dbInstance = null;
 
 // In PostgreSQL mode, provide stub methods that no-op or throw helpful errors
+// Only log warnings in development mode to reduce production noise
+const isDevelopment = process.env.NODE_ENV !== 'production';
+
 const postgresStubs = {
   // SQLite-specific methods that don't exist in PostgreSQL
   exec: () => {
-    console.warn('[Database] db.exec() called in PostgreSQL mode - operation skipped');
-    console.warn('[Database] Schema should be managed via migrations, not exec()');
+    if (isDevelopment) {
+      console.warn('[Database] db.exec() called in PostgreSQL mode - operation skipped');
+      console.warn('[Database] Schema should be managed via migrations, not exec()');
+    }
   },
   prepare: (sql) => {
-    console.warn('[Database] db.prepare() called in PostgreSQL mode - returning stub');
-    console.warn('[Database] SQL:', sql.substring(0, 100));
+    if (isDevelopment) {
+      console.warn('[Database] db.prepare() called in PostgreSQL mode - returning stub');
+      console.warn('[Database] SQL:', sql.substring(0, 100));
+    }
     // Return a stub that has .get(), .all(), .run() methods
     return {
       get: () => null,
@@ -33,7 +40,9 @@ const postgresStubs = {
     };
   },
   pragma: () => {
-    console.warn('[Database] db.pragma() called in PostgreSQL mode - operation skipped');
+    if (isDevelopment) {
+      console.warn('[Database] db.pragma() called in PostgreSQL mode - operation skipped');
+    }
   },
   close: async () => {
     const database = await getDatabase();
@@ -60,9 +69,11 @@ const db = new Proxy({}, {
         return postgresStubs[prop];
       }
 
-      // For other methods, warn and return undefined
-      console.warn(`[Database] db.${String(prop)} accessed in PostgreSQL mode - returning undefined`);
-      console.warn(`[Database] Please update code to use async getDatabase() for PostgreSQL`);
+      // For other methods, warn and return undefined (only in development)
+      if (isDevelopment) {
+        console.warn(`[Database] db.${String(prop)} accessed in PostgreSQL mode - returning undefined`);
+        console.warn(`[Database] Please update code to use async getDatabase() for PostgreSQL`);
+      }
       return undefined;
     }
 
@@ -74,9 +85,11 @@ const db = new Proxy({}, {
 // This allows synchronous code to work (with stubs) even in PostgreSQL mode
 function getDatabaseSafe() {
   if (isPostgres) {
-    // Return the db proxy with stubs instead of a Promise
-    console.warn('[Database] getDatabase() called synchronously in PostgreSQL mode');
-    console.warn('[Database] Returning stub - proper async support needed');
+    // Return the db proxy with stubs instead of a Promise (only warn in development)
+    if (isDevelopment) {
+      console.warn('[Database] getDatabase() called synchronously in PostgreSQL mode');
+      console.warn('[Database] Returning stub - proper async support needed');
+    }
     return db;
   }
   return getDatabase();
