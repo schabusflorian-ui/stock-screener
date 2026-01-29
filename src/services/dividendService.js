@@ -2,11 +2,25 @@
  * Dividend Service - Provides dividend data and analytics
  */
 
-const { getDatabase } = require('../database');
+const { getDatabase, isPostgres } = require('../database');
 
 class DividendService {
   constructor() {
-    this.db = getDatabase();
+    this.isPostgres = isPostgres;
+
+    // In SQLite mode, initialize synchronously
+    if (!isPostgres) {
+      try {
+        this.db = getDatabase();
+      } catch (err) {
+        console.warn('[DividendService] Database initialization failed:', err.message);
+        this.db = null;
+      }
+    } else {
+      // In PostgreSQL mode, db will be initialized when needed
+      this.db = null;
+      console.log('[DividendService] PostgreSQL mode - async initialization required');
+    }
   }
 
   /**

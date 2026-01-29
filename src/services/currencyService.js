@@ -1,7 +1,7 @@
 // src/services/currencyService.js
 // Currency conversion service for standardizing financial data across currencies
 
-const { getDatabase } = require('../database');
+const { getDatabase, isPostgres } = require('../database');
 
 // Default exchange rates (fallback if API unavailable)
 // Rates are relative to USD (1 USD = X of currency)
@@ -36,14 +36,32 @@ let ratesCache = {
 
 class CurrencyService {
   constructor() {
-    this.db = getDatabase();
-    this.ensureRatesTable();
+    this.db = null;
+    this.dbReady = false;
+    this.isPostgres = isPostgres;
+
+    // In SQLite mode, initialize synchronously
+    if (!isPostgres) {
+      try {
+        this.db = getDatabase();
+        this.ensureRatesTable();
+        this.dbReady = true;
+      } catch (err) {
+        console.warn('[CurrencyService] SQLite initialization failed:', err.message);
+        console.warn('[CurrencyService] Currency conversion feature will use fallback rates only');
+      }
+    } else {
+      // In PostgreSQL mode, skip table creation (should be handled by migrations)
+      console.log('[CurrencyService] PostgreSQL mode - skipping table initialization');
+    }
   }
 
   /**
-   * Ensure historical exchange rates table exists
+   * Ensure historical exchange rates table exists (SQLite only)
    */
   ensureRatesTable() {
+    if (isPostgres) return; // Skip in PostgreSQL mode
+
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS exchange_rates_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
