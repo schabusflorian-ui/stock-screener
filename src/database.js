@@ -70,9 +70,22 @@ const db = new Proxy({}, {
   }
 });
 
+// Wrapper for getDatabase that returns db proxy in PostgreSQL mode
+// This allows synchronous code to work (with stubs) even in PostgreSQL mode
+function getDatabaseSafe() {
+  if (isPostgres) {
+    // Return the db proxy with stubs instead of a Promise
+    console.warn('[Database] getDatabase() called synchronously in PostgreSQL mode');
+    console.warn('[Database] Returning stub - proper async support needed');
+    return db;
+  }
+  return getDatabase();
+}
+
 module.exports = {
   db,
-  getDatabase,
+  getDatabase: getDatabaseSafe, // Override to return stubs in PostgreSQL mode
+  getDatabaseAsync: getDatabase, // Keep original async version available
   getDatabaseSync,
   isPostgres,
   dialect,
