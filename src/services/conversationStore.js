@@ -7,20 +7,30 @@
  */
 
 const path = require('path');
-const { db, isPostgres } = require('../database');
+const { db, isPostgres, getDatabase } = require('../database');
 
 class ConversationStore {
   constructor() {
-    // Use shared database instance from database.js
-    // In PostgreSQL mode, this will be a proxy that throws helpful errors
-    this.db = db;
+    // In PostgreSQL mode, skip initialization until async method is called
+    this.isPostgres = isPostgres;
+    this.db = null; // Will be initialized lazily
     this.cache = new Map();
     this.cacheMaxSize = 100;
     this.cacheMaxAge = 30 * 60 * 1000; // 30 minutes
+    this.statementsReady = false;
 
     // Only prepare statements in SQLite mode
     if (!isPostgres) {
-      this._prepareStatements();
+      try {
+        this.db = db;
+        this._prepareStatements();
+        this.statementsReady = true;
+      } catch (err) {
+        console.warn('[ConversationStore] SQLite initialization failed:', err.message);
+        console.warn('[ConversationStore] Analyst conversations feature will be disabled');
+      }
+    } else {
+      console.log('[ConversationStore] PostgreSQL mode - async initialization required');
     }
   }
 
