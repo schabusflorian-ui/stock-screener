@@ -28,6 +28,8 @@ const BLOCKED_ENV_VARS = [
 // Validate environment
 function validateEnvironment() {
   console.log('🔍 Validating environment...');
+  console.log('   NODE_ENV:', process.env.NODE_ENV);
+  console.log('   PORT:', process.env.PORT);
 
   const isProduction = process.env.NODE_ENV === 'production';
 
@@ -40,6 +42,10 @@ function validateEnvironment() {
   if (missing.length > 0) {
     console.error('❌ Missing required environment variables:');
     missing.forEach(v => console.error(`   - ${v}`));
+    console.error('');
+    console.error('Set these in Railway dashboard:');
+    console.error('  DATABASE_URL: Your Railway PostgreSQL connection string');
+    console.error('  SESSION_SECRET: Generate with: openssl rand -hex 32');
     process.exit(1);
   }
 
@@ -55,16 +61,20 @@ function validateEnvironment() {
   if (!process.env.DATABASE_URL.startsWith('postgres')) {
     console.error('❌ DATABASE_URL must be a PostgreSQL connection string');
     console.error('   Expected: postgres://user:password@host:port/database');
+    console.error('   Got:', process.env.DATABASE_URL.substring(0, 15) + '...');
     process.exit(1);
   }
 
   // Validate SESSION_SECRET length
   if (process.env.SESSION_SECRET.length < 32) {
     console.error('❌ SESSION_SECRET must be at least 32 characters');
+    console.error('   Current length:', process.env.SESSION_SECRET.length);
     console.error('   Generate with: openssl rand -hex 32');
     process.exit(1);
   }
 
+  console.log('   DATABASE_URL: ✓ PostgreSQL');
+  console.log('   SESSION_SECRET: ✓ Valid');
   console.log('✅ Environment validated');
 }
 
@@ -128,12 +138,27 @@ async function main() {
   console.log('═'.repeat(60));
   console.log('');
 
-  validateEnvironment();
-  await runMigrations();
+  try {
+    validateEnvironment();
+  } catch (error) {
+    console.error('❌ Environment validation failed:', error.message);
+    console.error(error.stack);
+    process.exit(1);
+  }
+
+  try {
+    await runMigrations();
+  } catch (error) {
+    console.error('❌ Migration failed:', error.message);
+    console.error(error.stack);
+    process.exit(1);
+  }
+
   startApplication();
 }
 
 main().catch(error => {
   console.error('❌ Startup failed:', error.message);
+  console.error(error.stack);
   process.exit(1);
 });
