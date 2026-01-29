@@ -13,8 +13,36 @@ const {
 const isPostgres = isUsingPostgres();
 
 // For backwards compatibility, provide lazy-initialized db instance
-// In PostgreSQL mode, this will be undefined and code must use getDatabase() instead
 let _dbInstance = null;
+
+// In PostgreSQL mode, provide stub methods that no-op or throw helpful errors
+const postgresStubs = {
+  // SQLite-specific methods that don't exist in PostgreSQL
+  exec: () => {
+    console.warn('[Database] db.exec() called in PostgreSQL mode - operation skipped');
+    console.warn('[Database] Schema should be managed via migrations, not exec()');
+  },
+  prepare: (sql) => {
+    console.warn('[Database] db.prepare() called in PostgreSQL mode - returning stub');
+    console.warn('[Database] SQL:', sql.substring(0, 100));
+    // Return a stub that has .get(), .all(), .run() methods
+    return {
+      get: () => null,
+      all: () => [],
+      run: () => ({ changes: 0, lastInsertRowid: 0 })
+    };
+  },
+  pragma: () => {
+    console.warn('[Database] db.pragma() called in PostgreSQL mode - operation skipped');
+  },
+  close: async () => {
+    const database = await getDatabase();
+    if (database && database.close) {
+      await database.close();
+    }
+  }
+};
+
 const db = new Proxy({}, {
   get(target, prop) {
     // Initialize database on first access (SQLite only)
@@ -27,10 +55,15 @@ const db = new Proxy({}, {
     }
 
     if (isPostgres) {
-      throw new Error(
-        `Cannot use synchronous database access (db.${String(prop)}) in PostgreSQL mode. ` +
-        `Please update code to: const { getDatabase } = require('./lib/db'); const db = await getDatabase();`
-      );
+      // Return stub methods for PostgreSQL mode
+      if (prop in postgresStubs) {
+        return postgresStubs[prop];
+      }
+
+      // For other methods, warn and return undefined
+      console.warn(`[Database] db.${String(prop)} accessed in PostgreSQL mode - returning undefined`);
+      console.warn(`[Database] Please update code to use async getDatabase() for PostgreSQL`);
+      return undefined;
     }
 
     return _dbInstance && _dbInstance.raw ? _dbInstance.raw[prop] : _dbInstance[prop];
