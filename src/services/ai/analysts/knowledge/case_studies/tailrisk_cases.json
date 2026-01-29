@@ -1,0 +1,78 @@
+{
+  "analyst": "tailrisk",
+  "case_studies": [
+    {
+      "id": "ltcm_collapse",
+      "title": "LTCM Collapse (1998)",
+      "company": "Long-Term Capital Management",
+      "type": "Cautionary Tale",
+      "thesis": {
+        "fragility": "25:1 leverage, convergence trades assumed normal distributions",
+        "black_swan": "Russian default created unprecedented correlations",
+        "hubris": "Nobel laureates believed they had eliminated risk",
+        "outcome": "Lost $4.6B in weeks, required Fed-orchestrated bailout"
+      },
+      "taleb_analysis": {
+        "fat_tails": "Models ignored possibility of 10-sigma events",
+        "leverage": "Amplified fragility to catastrophic levels",
+        "correlation": "Assets became perfectly correlated in crisis",
+        "skin_in_game": "Partners had significant personal exposure"
+      },
+      "lessons": [
+        "Models that ignore fat tails will eventually fail catastrophically",
+        "Leverage transforms temporary losses into permanent destruction",
+        "Correlations break down exactly when you need diversification most",
+        "Intelligence without humility is dangerous"
+      ],
+      "keywords": ["black swan", "fat tails", "leverage", "fragile", "correlation"],
+      "sources": ["When Genius Failed", "Taleb's Black Swan"]
+    },
+    {
+      "id": "universa_2020",
+      "title": "Universa's COVID Crash Return (2020)",
+      "investor": "Mark Spitznagel / Universa",
+      "thesis": {
+        "strategy": "Persistent tail hedging with deep OTM puts",
+        "cost": "Accepts 'bleed' of ~2-3% annually in normal times",
+        "payoff": "Made 4,144% return in March 2020 crash",
+        "portfolio_effect": "Hedged portfolios significantly outperformed"
+      },
+      "structure": {
+        "allocation": "~3% of portfolio in tail hedges",
+        "instruments": "Deep out-of-the-money puts (30%+ OTM)",
+        "rebalancing": "Consistent monthly rolling of positions"
+      },
+      "lessons": [
+        "Tail hedges can transform portfolio outcomes",
+        "Accept small consistent costs for asymmetric protection",
+        "Don't try to time when to hedge - always be hedged",
+        "Convex payoffs are worth paying for"
+      ],
+      "keywords": ["tail risk", "convexity", "hedging", "black swan", "barbell"],
+      "sources": ["Universa Reports", "Spitznagel Interviews"]
+    },
+    {
+      "id": "taleb_2008_hedge",
+      "title": "Taleb's 2008 Portfolio Protection",
+      "investor": "Nassim Taleb / Empirica",
+      "thesis": {
+        "philosophy": "Long-term out-of-the-money options for tail protection",
+        "2008_result": "Made significant returns during crisis",
+        "approach": "Barbell of treasury bonds + tail hedges"
+      },
+      "antifragile_principles": {
+        "survival_first": "Never risk ruin for incremental gains",
+        "convexity": "Structure positions with limited downside, unlimited upside",
+        "optionality": "Pay for options, don't sell them"
+      },
+      "lessons": [
+        "Fragile systems appear stable until they suddenly collapse",
+        "Protection is cheapest when no one wants it",
+        "Antifragile portfolios get stronger from volatility",
+        "Via negativa: What you avoid matters more than what you do"
+      ],
+      "keywords": ["antifragile", "barbell", "optionality", "survival", "convexity"],
+      "sources": ["Antifragile", "Taleb Interviews"]
+    }
+  ]
+}

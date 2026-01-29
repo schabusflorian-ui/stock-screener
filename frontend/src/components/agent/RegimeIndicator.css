@@ -1,0 +1,131 @@
+/* frontend/src/components/agent/RegimeIndicator.css */
+/* PRISM Design System - AI Visual Components */
+
+.regime-indicator {
+  background: linear-gradient(180deg,
+    rgba(124, 58, 237, 0.02) 0%,
+    var(--glass-bg) 100%);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid rgba(124, 58, 237, 0.1);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  box-shadow: var(--glass-shadow);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Gradient top border */
+.regime-indicator::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg,
+    var(--color-ai-violet) 0%,
+    var(--color-ai-blue) 50%,
+    var(--color-ai-cyan) 100%);
+}
+
+.regime-indicator--loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  padding: var(--space-3) var(--space-4);
+}
+
+.regime-indicator--compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--regime-bg);
+  color: var(--regime-color);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+}
+
+.regime-indicator--compact .regime-confidence {
+  opacity: 0.8;
+  font-size: var(--text-xs);
+}
+
+.regime-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+/* Regime icon with breathing animation */
+.regime-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-lg);
+  background: var(--regime-bg);
+  color: var(--regime-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  animation: prism-breathe 4s ease-in-out infinite;
+}
+
+.regime-icon::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: var(--radius-lg);
+  background: var(--regime-bg);
+  opacity: 0.3;
+  z-index: -1;
+  animation: prism-glow 4s ease-in-out infinite;
+}
+
+.regime-info { flex: 1; }
+.regime-title { margin: 0; font-size: var(--text-lg); color: var(--text-primary); }
+.regime-description { margin: var(--space-1) 0 0; font-size: var(--text-sm); color: var(--text-secondary); }
+
+.regime-confidence-badge {
+  background: var(--regime-bg);
+  color: var(--regime-color);
+  padding: var(--space-1) 10px;
+  border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+}
+
+.regime-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-primary);
+}
+
+.regime-metric {
+  text-align: center;
+}
+
+.metric-label {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  margin-bottom: var(--space-1);
+}
+
+.metric-value {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+}
+
+.regime-footer {
+  margin-top: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-align: right;
+}

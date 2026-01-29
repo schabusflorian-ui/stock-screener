@@ -1,0 +1,91 @@
+{
+  "author": "Nassim Nicholas Taleb",
+  "analyst": "tailrisk",
+  "quotes": [
+    {
+      "id": "taleb_antifragile_def",
+      "text": "Antifragility is beyond resilience or robustness. The resilient resists shocks and stays the same; the antifragile gets better.",
+      "source": "Antifragile",
+      "topics": ["antifragile", "resilience", "volatility"]
+    },
+    {
+      "id": "taleb_wind_fire",
+      "text": "Wind extinguishes a candle and energizes fire. You want to be the fire and wish for the wind.",
+      "source": "Antifragile",
+      "topics": ["antifragile", "convexity", "volatility"]
+    },
+    {
+      "id": "taleb_fragile_tranquility",
+      "text": "The fragile wants tranquility, the antifragile grows from disorder.",
+      "source": "Antifragile",
+      "topics": ["antifragile", "fragile", "disorder"]
+    },
+    {
+      "id": "taleb_black_swan",
+      "text": "A Black Swan is an event with the following three attributes: rarity, extreme impact, and retrospective predictability.",
+      "source": "The Black Swan",
+      "topics": ["black swan", "tail risk", "fat tails"]
+    },
+    {
+      "id": "taleb_skin_game",
+      "text": "Never trust anyone who doesn't have skin in the game. Without it, fools and crooks will profit and their mistakes will never come back to haunt them.",
+      "source": "Skin in the Game",
+      "topics": ["skin in the game", "risk", "accountability"]
+    },
+    {
+      "id": "taleb_barbell",
+      "text": "If you have optionality, you don't have much need for what is commonly called intelligence, knowledge, insight, skills, and these complicated things that take place in our brain cells.",
+      "source": "Antifragile",
+      "topics": ["optionality", "barbell", "convexity"]
+    },
+    {
+      "id": "taleb_via_negativa",
+      "text": "The learning of life is about what to avoid. You reduce most of your personal risks of accident thanks to a small number of measures.",
+      "source": "Antifragile",
+      "topics": ["via negativa", "risk management", "survival"]
+    },
+    {
+      "id": "taleb_fat_tails",
+      "text": "In Extremistan, inequalities are such that one single observation can disproportionately impact the aggregate.",
+      "source": "The Black Swan",
+      "topics": ["fat tails", "extremistan", "tail risk"]
+    },
+    {
+      "id": "taleb_convexity",
+      "text": "Fragility implies more to lose than to gain, equals more downside than upside, equals unfavorable asymmetry.",
+      "source": "Antifragile",
+      "topics": ["convexity", "asymmetry", "fragile"]
+    },
+    {
+      "id": "taleb_survival",
+      "text": "The main thing is to not go bust. Survival first, then performance.",
+      "source": "Interview",
+      "topics": ["survival", "risk management", "capital preservation"]
+    }
+  ],
+  "coAuthors": [
+    {
+      "name": "Mark Spitznagel",
+      "quotes": [
+        {
+          "id": "spitznagel_barbell",
+          "text": "The barbell strategy is about having a mix of extremely safe assets and highly speculative ones, with nothing in between.",
+          "source": "The Dao of Capital",
+          "topics": ["barbell", "tail risk", "portfolio construction"]
+        },
+        {
+          "id": "spitznagel_roundabout",
+          "text": "Take the roundabout path to profit. Immediate gratification in markets often leads to ruin.",
+          "source": "The Dao of Capital",
+          "topics": ["patience", "convexity", "long term"]
+        },
+        {
+          "id": "spitznagel_crash",
+          "text": "Market crashes are opportunities for those who have prepared with tail hedges.",
+          "source": "Interview",
+          "topics": ["tail risk", "black swan", "hedging"]
+        }
+      ]
+    }
+  ]
+}

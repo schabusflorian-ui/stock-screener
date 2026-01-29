@@ -1,0 +1,195 @@
+/* frontend/src/components/agents/OverviewHero.css */
+/* Hero section for Agent Overview tab */
+
+.overview-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  background: linear-gradient(135deg,
+    rgba(124, 58, 237, 0.08) 0%,
+    var(--bg-secondary) 100%);
+  border: 1px solid rgba(124, 58, 237, 0.15);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-5);
+}
+
+.overview-hero__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(135deg, var(--color-ai-violet), var(--color-ai-blue));
+  border-radius: var(--radius-md);
+  color: white;
+  flex-shrink: 0;
+}
+
+.overview-hero__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.overview-hero__label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--space-1);
+}
+
+/* Value Hero (Advanced Agents) */
+.overview-hero__primary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.overview-hero__value {
+  font-size: var(--text-3xl);
+  font-weight: var(--font-bold);
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.overview-hero__pnl {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-base);
+  font-weight: var(--font-medium);
+}
+
+.overview-hero__pnl.positive {
+  color: var(--positive);
+}
+
+.overview-hero__pnl.negative {
+  color: var(--negative);
+}
+
+.overview-hero__secondary {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  margin-top: var(--space-2);
+}
+
+/* Progress Hero (Beginner Agents) */
+.overview-hero__progress-container {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-2) 0;
+}
+
+.overview-hero__progress-bar {
+  flex: 1;
+  height: 12px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.overview-hero__progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-ai-violet), var(--color-ai-blue));
+  border-radius: var(--radius-full);
+  transition: width var(--transition-slow);
+}
+
+.overview-hero__progress-percent {
+  font-size: var(--text-xl);
+  font-weight: var(--font-bold);
+  color: var(--color-ai-violet);
+  min-width: 60px;
+  text-align: right;
+}
+
+.overview-hero__progress-values {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.overview-hero__current {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  color: var(--text-primary);
+}
+
+.overview-hero__separator {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+
+.overview-hero__target {
+  font-size: var(--text-base);
+  color: var(--text-secondary);
+}
+
+/* Empty Hero */
+.overview-hero--empty {
+  background: var(--bg-secondary);
+  border-color: var(--border-primary);
+}
+
+.overview-hero--empty .overview-hero__icon {
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+}
+
+.overview-hero__empty-text {
+  font-size: var(--text-base);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-3);
+}
+
+.overview-hero__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-ai-violet);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: all var(--transition-normal);
+}
+
+.overview-hero__cta:hover {
+  background: var(--color-ai-blue);
+  transform: translateY(-1px);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .overview-hero {
+    flex-direction: column;
+    align-items: stretch;
+    padding: var(--space-4);
+  }
+
+  .overview-hero__icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .overview-hero__value {
+    font-size: var(--text-2xl);
+  }
+
+  .overview-hero__progress-percent {
+    font-size: var(--text-lg);
+  }
+
+  .overview-hero__current {
+    font-size: var(--text-xl);
+  }
+}

@@ -1,0 +1,303 @@
+/* =============================================================================
+   PRISM TYPOGRAPHY COMPONENTS
+   Premium Financial UI Typography System
+   ============================================================================= */
+
+/* =============================================================================
+   HEADING COMPONENT
+   ============================================================================= */
+
+.prism-heading {
+  font-family: var(--font-sans);
+  margin: 0;
+  padding: 0;
+  line-height: var(--leading-tight);
+}
+
+/* H1 - Large display heading, light weight for premium feel */
+.prism-heading--h1 {
+  font-size: 32px;
+  font-weight: var(--font-light);
+  color: var(--color-navy-900);
+  letter-spacing: var(--tracking-tight);
+}
+
+/* H2 - Section heading, semibold */
+.prism-heading--h2 {
+  font-size: 24px;
+  font-weight: var(--font-semibold);
+  color: var(--color-navy-900);
+}
+
+/* H3 - Subsection heading, semibold */
+.prism-heading--h3 {
+  font-size: 18px;
+  font-weight: var(--font-semibold);
+  color: var(--color-navy-900);
+}
+
+/* Heading with bottom margin */
+.prism-heading--with-margin {
+  margin-bottom: var(--space-4);
+}
+
+/* Dark theme adjustments */
+[data-theme="dark"] .prism-heading--h1,
+[data-theme="dark"] .prism-heading--h2,
+[data-theme="dark"] .prism-heading--h3 {
+  color: var(--text-primary);
+}
+
+/* =============================================================================
+   TEXT COMPONENT
+   ============================================================================= */
+
+.prism-text {
+  font-family: var(--font-sans);
+  margin: 0;
+  padding: 0;
+  line-height: var(--leading-normal);
+}
+
+/* Body text - default style */
+.prism-text--body {
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  font-weight: var(--font-normal);
+}
+
+/* Secondary text - less emphasis */
+.prism-text--secondary {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  font-weight: var(--font-normal);
+}
+
+/* Muted text - lowest emphasis */
+.prism-text--muted {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  font-weight: var(--font-normal);
+}
+
+/* Text size modifiers */
+.prism-text--xs {
+  font-size: var(--text-xs);
+}
+
+.prism-text--sm {
+  font-size: var(--text-sm);
+}
+
+.prism-text--base {
+  font-size: var(--text-base);
+}
+
+.prism-text--md {
+  font-size: var(--text-md);
+}
+
+.prism-text--lg {
+  font-size: var(--text-lg);
+}
+
+/* Text weight modifiers */
+.prism-text--medium {
+  font-weight: var(--font-medium);
+}
+
+.prism-text--semibold {
+  font-weight: var(--font-semibold);
+}
+
+.prism-text--bold {
+  font-weight: var(--font-bold);
+}
+
+/* Text alignment */
+.prism-text--center {
+  text-align: center;
+}
+
+.prism-text--right {
+  text-align: right;
+}
+
+/* Truncation */
+.prism-text--truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Line clamping */
+.prism-text--clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.prism-text--clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* =============================================================================
+   LABEL COMPONENT - Section Labels with Gold Color
+   ============================================================================= */
+
+.prism-label {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.1em;
+  color: var(--color-gold-700);
+  text-transform: uppercase;
+  margin: 0;
+  padding: 0;
+  line-height: var(--leading-normal);
+}
+
+/* Label with bottom margin for sections */
+.prism-label--with-margin {
+  margin-bottom: var(--space-4);
+}
+
+/* Dark theme - gold adjusts for visibility */
+[data-theme="dark"] .prism-label {
+  color: var(--color-gold-500);
+}
+
+/* =============================================================================
+   MONO NUMBER COMPONENT - Monospace for Numeric Displays
+   ============================================================================= */
+
+.prism-mono-number {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+  padding: 0;
+}
+
+/* Default style */
+.prism-mono-number--default {
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  font-weight: var(--font-normal);
+}
+
+/* Size variants */
+.prism-mono-number--xs {
+  font-size: var(--text-xs);
+}
+
+.prism-mono-number--sm {
+  font-size: var(--text-sm);
+}
+
+.prism-mono-number--base {
+  font-size: var(--text-base);
+}
+
+.prism-mono-number--md {
+  font-size: var(--text-md);
+}
+
+.prism-mono-number--lg {
+  font-size: var(--text-lg);
+}
+
+.prism-mono-number--xl {
+  font-size: var(--text-xl);
+}
+
+.prism-mono-number--2xl {
+  font-size: var(--text-2xl);
+}
+
+.prism-mono-number--3xl {
+  font-size: var(--text-3xl);
+}
+
+.prism-mono-number--4xl {
+  font-size: var(--text-4xl);
+}
+
+/* Weight variants */
+.prism-mono-number--medium {
+  font-weight: var(--font-medium);
+}
+
+.prism-mono-number--semibold {
+  font-weight: var(--font-semibold);
+}
+
+.prism-mono-number--bold {
+  font-weight: var(--font-bold);
+}
+
+/* Semantic color variants */
+.prism-mono-number--positive {
+  color: var(--positive);
+}
+
+.prism-mono-number--negative {
+  color: var(--negative);
+}
+
+.prism-mono-number--warning {
+  color: var(--warning);
+}
+
+.prism-mono-number--muted {
+  color: var(--text-muted);
+}
+
+/* With change indicator arrows */
+.prism-mono-number--with-indicator.prism-mono-number--positive::before {
+  content: '\25B2 ';
+  font-size: 0.75em;
+}
+
+.prism-mono-number--with-indicator.prism-mono-number--negative::before {
+  content: '\25BC ';
+  font-size: 0.75em;
+}
+
+/* Text alignment */
+.prism-mono-number--center {
+  text-align: center;
+}
+
+.prism-mono-number--right {
+  text-align: right;
+}
+
+/* =============================================================================
+   RESPONSIVE ADJUSTMENTS
+   ============================================================================= */
+
+@media (max-width: 768px) {
+  .prism-heading--h1 {
+    font-size: 28px;
+  }
+
+  .prism-heading--h2 {
+    font-size: 20px;
+  }
+
+  .prism-heading--h3 {
+    font-size: 16px;
+  }
+
+  .prism-mono-number--4xl {
+    font-size: var(--text-3xl);
+  }
+
+  .prism-mono-number--3xl {
+    font-size: var(--text-2xl);
+  }
+}

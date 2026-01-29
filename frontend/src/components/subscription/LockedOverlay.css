@@ -1,0 +1,394 @@
+/* LockedOverlay.css - PRISM Design System Styled */
+
+.locked-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.locked-overlay__backdrop {
+  position: absolute;
+  inset: 0;
+  /* Base PRISM Navy gradient */
+  background:
+    /* Radial gradient glow at center */
+    radial-gradient(ellipse at center, rgba(124, 58, 237, 0.15) 0%, transparent 60%),
+    /* Vertical Navy gradient */
+    linear-gradient(
+      180deg,
+      rgba(15, 23, 42, 0.5) 0%,
+      rgba(15, 23, 42, 0.85) 50%,
+      rgba(2, 6, 23, 0.95) 100%
+    );
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
+  border: 1px solid rgba(124, 58, 237, 0.2);
+}
+
+/* Pro tier backdrop - Blue to Violet glow */
+.locked-overlay__backdrop--pro {
+  background:
+    /* Blue-violet radial glow */
+    radial-gradient(ellipse at 30% 20%, rgba(59, 130, 246, 0.2) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 80%, rgba(124, 58, 237, 0.15) 0%, transparent 50%),
+    /* Navy base */
+    linear-gradient(
+      180deg,
+      rgba(15, 23, 42, 0.5) 0%,
+      rgba(15, 23, 42, 0.85) 50%,
+      rgba(2, 6, 23, 0.95) 100%
+    );
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  /* Subtle blue edge glow */
+  box-shadow: inset 0 0 60px rgba(59, 130, 246, 0.08);
+}
+
+/* Ultra tier backdrop - Violet to Gold glow */
+.locked-overlay__backdrop--ultra {
+  background:
+    /* Violet-gold prismatic radial glows */
+    radial-gradient(ellipse at 20% 30%, rgba(124, 58, 237, 0.2) 0%, transparent 45%),
+    radial-gradient(ellipse at 80% 70%, rgba(212, 175, 55, 0.15) 0%, transparent 45%),
+    radial-gradient(ellipse at 50% 50%, rgba(37, 99, 235, 0.1) 0%, transparent 60%),
+    /* Navy base */
+    linear-gradient(
+      180deg,
+      rgba(15, 23, 42, 0.5) 0%,
+      rgba(15, 23, 42, 0.85) 50%,
+      rgba(2, 6, 23, 0.95) 100%
+    );
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  /* Subtle gold edge glow */
+  box-shadow: inset 0 0 80px rgba(212, 175, 55, 0.06);
+}
+
+/* Animated gradient shimmer for backdrop */
+@keyframes backdrop-shimmer {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.95;
+  }
+}
+
+.locked-overlay__backdrop {
+  animation: backdrop-shimmer 6s ease-in-out infinite;
+}
+
+.locked-overlay__content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: var(--space-6, 24px);
+  max-width: 340px;
+  /* Glass card effect with gradient border */
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.8) 0%, rgba(2, 6, 23, 0.9) 100%);
+  border-radius: var(--radius-lg, 12px);
+  border: 1px solid rgba(124, 58, 237, 0.25);
+  /* Premium glow */
+  box-shadow:
+    0 0 40px rgba(124, 58, 237, 0.1),
+    0 4px 24px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* Pro tier content card */
+.locked-overlay--pro .locked-overlay__content {
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  box-shadow:
+    0 0 40px rgba(59, 130, 246, 0.12),
+    0 0 80px rgba(124, 58, 237, 0.06),
+    0 4px 24px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* Ultra tier content card */
+.locked-overlay--ultra .locked-overlay__content {
+  border: 1px solid rgba(212, 175, 55, 0.25);
+  box-shadow:
+    0 0 40px rgba(124, 58, 237, 0.12),
+    0 0 80px rgba(212, 175, 55, 0.08),
+    0 4px 24px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.locked-overlay__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  /* PRISM gradient background */
+  background: linear-gradient(135deg, #7C3AED 0%, #2563EB 50%, #D4AF37 100%);
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+  margin-bottom: var(--space-4, 16px);
+  /* Sparkling white icon */
+  color: white;
+  /* Premium glow */
+  box-shadow:
+    0 0 24px rgba(124, 58, 237, 0.4),
+    0 0 48px rgba(212, 175, 55, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* Pro tier icon - blue to violet */
+.locked-overlay__icon--pro {
+  background: linear-gradient(135deg, #3B82F6 0%, #7C3AED 100%);
+  box-shadow:
+    0 0 24px rgba(59, 130, 246, 0.4),
+    0 0 48px rgba(124, 58, 237, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* Ultra tier icon - violet to gold */
+.locked-overlay__icon--ultra {
+  background: linear-gradient(135deg, #7C3AED 0%, #D4AF37 100%);
+  box-shadow:
+    0 0 24px rgba(124, 58, 237, 0.4),
+    0 0 48px rgba(212, 175, 55, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* Shimmer animation for icon */
+@keyframes icon-shimmer {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.locked-overlay__icon {
+  background-size: 200% 200%;
+  animation: icon-shimmer 4s ease-in-out infinite;
+}
+
+.locked-overlay__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: white;
+  border-radius: 100px;
+  margin-bottom: var(--space-3, 12px);
+  /* Gold glow for premium feel */
+  box-shadow: 0 0 16px rgba(212, 175, 55, 0.25);
+}
+
+/* Badge variants - PRISM aligned */
+.locked-overlay__badge--pro {
+  background: linear-gradient(135deg, #3B82F6, #7C3AED);
+}
+
+.locked-overlay__badge--ultra {
+  background: linear-gradient(135deg, #7C3AED, #D4AF37);
+}
+
+.locked-overlay__title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text-primary, #fff);
+  margin: 0 0 var(--space-2, 8px);
+}
+
+.locked-overlay__description {
+  font-size: 14px;
+  color: var(--color-text-secondary, #94A3B8);
+  margin: 0 0 var(--space-4, 16px);
+  line-height: 1.5;
+}
+
+.locked-overlay__benefits {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--space-4, 16px);
+  text-align: left;
+  width: 100%;
+}
+
+.locked-overlay__benefits li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  font-size: 13px;
+  color: var(--color-text-secondary, #94A3B8);
+  padding: var(--space-1, 4px) 0;
+}
+
+.locked-overlay__benefits li svg {
+  /* PRISM emerald for checkmarks */
+  color: var(--color-ai-emerald, #059669);
+  flex-shrink: 0;
+}
+
+.locked-overlay__cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2, 8px);
+  padding: 14px 28px;
+  font-size: 14px;
+  font-weight: 600;
+  color: white;
+  /* Default PRISM AI gradient */
+  background: linear-gradient(135deg, #7C3AED 0%, #3B82F6 50%, #D4AF37 100%);
+  background-size: 200% 200%;
+  border: none;
+  border-radius: var(--radius-md, 8px);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  width: 100%;
+  max-width: 260px;
+  /* Premium glow */
+  box-shadow:
+    0 4px 16px rgba(124, 58, 237, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+/* Pro tier CTA - blue to violet */
+.locked-overlay__cta--pro {
+  background: linear-gradient(135deg, #3B82F6 0%, #7C3AED 100%);
+  box-shadow:
+    0 4px 16px rgba(59, 130, 246, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+/* Ultra tier CTA - violet to gold */
+.locked-overlay__cta--ultra {
+  background: linear-gradient(135deg, #7C3AED 0%, #D4AF37 100%);
+  box-shadow:
+    0 4px 16px rgba(212, 175, 55, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.locked-overlay__cta:hover {
+  background-position: 100% 0;
+  transform: translateY(-2px);
+  box-shadow:
+    0 8px 24px rgba(124, 58, 237, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.locked-overlay__cta--pro:hover {
+  box-shadow:
+    0 8px 24px rgba(59, 130, 246, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.locked-overlay__cta--ultra:hover {
+  box-shadow:
+    0 8px 24px rgba(212, 175, 55, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.locked-overlay__cta:active {
+  transform: translateY(0);
+}
+
+.locked-overlay__current {
+  font-size: 12px;
+  color: var(--color-text-tertiary, #64748B);
+  margin: var(--space-3, 12px) 0 0;
+}
+
+.locked-overlay__current span {
+  font-weight: 500;
+  color: var(--color-text-secondary, #94A3B8);
+}
+
+/* Compact variant */
+.locked-overlay--compact .locked-overlay__content {
+  padding: var(--space-4, 16px);
+  max-width: 280px;
+}
+
+.locked-overlay--compact .locked-overlay__icon {
+  width: 40px;
+  height: 40px;
+  margin-bottom: var(--space-2, 8px);
+}
+
+.locked-overlay--compact .locked-overlay__title {
+  font-size: 15px;
+}
+
+.locked-overlay--compact .locked-overlay__description {
+  font-size: 13px;
+  margin-bottom: var(--space-3, 12px);
+}
+
+.locked-overlay--compact .locked-overlay__benefits {
+  margin-bottom: var(--space-3, 12px);
+}
+
+.locked-overlay--compact .locked-overlay__cta {
+  padding: 10px 20px;
+  font-size: 13px;
+  max-width: 200px;
+}
+
+/* Animation for attention - default/pro */
+@keyframes subtle-pulse-pro {
+  0%, 100% {
+    box-shadow:
+      0 0 40px rgba(59, 130, 246, 0.12),
+      0 0 80px rgba(124, 58, 237, 0.06),
+      0 4px 24px rgba(0, 0, 0, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+  50% {
+    box-shadow:
+      0 0 50px rgba(59, 130, 246, 0.18),
+      0 0 100px rgba(124, 58, 237, 0.1),
+      0 4px 28px rgba(0, 0, 0, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+}
+
+/* Animation for Ultra tier - violet to gold */
+@keyframes subtle-pulse-ultra {
+  0%, 100% {
+    box-shadow:
+      0 0 40px rgba(124, 58, 237, 0.12),
+      0 0 80px rgba(212, 175, 55, 0.08),
+      0 4px 24px rgba(0, 0, 0, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+  50% {
+    box-shadow:
+      0 0 50px rgba(124, 58, 237, 0.18),
+      0 0 100px rgba(212, 175, 55, 0.15),
+      0 4px 28px rgba(0, 0, 0, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+}
+
+/* Default pulse */
+.locked-overlay__content {
+  animation: subtle-pulse-pro 4s ease-in-out infinite;
+}
+
+/* Pro tier pulse */
+.locked-overlay--pro .locked-overlay__content {
+  animation: subtle-pulse-pro 4s ease-in-out infinite;
+}
+
+/* Ultra tier pulse */
+.locked-overlay--ultra .locked-overlay__content {
+  animation: subtle-pulse-ultra 4s ease-in-out infinite;
+}

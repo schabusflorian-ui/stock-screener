@@ -1,0 +1,88 @@
+{
+  "analyst": "growth",
+  "case_studies": [
+    {
+      "id": "amazon_tam",
+      "title": "Amazon's TAM Expansion Story",
+      "company": "Amazon (AMZN)",
+      "thesis": {
+        "initial_tam": "Online book sales (~$20B market)",
+        "expansion": "Extended to all retail, then cloud, advertising, streaming",
+        "moat_evolution": "Distribution network, Prime membership, data flywheel",
+        "result": "From books to $500B+ revenue across multiple massive TAMs"
+      },
+      "lessons": [
+        "Initial TAM can dramatically underestimate true opportunity",
+        "Platform companies can expand into adjacent markets",
+        "Customer obsession creates expansion optionality",
+        "Reinvesting all profits into growth can create enormous value"
+      ],
+      "keywords": ["tam", "market opportunity", "flywheel", "platform"],
+      "sources": ["Bezos Letters", "ARK Research on Amazon"]
+    },
+    {
+      "id": "netflix_disruption",
+      "title": "Netflix's Disruption of Entertainment",
+      "company": "Netflix (NFLX)",
+      "thesis": {
+        "disruption_path": "DVD mail → Streaming → Original content",
+        "incumbent_blind_spot": "Blockbuster couldn't cannibalize profitable stores",
+        "network_effect": "Content recommendations improve with scale",
+        "result": "From $1B to $30B+ revenue, transformed industry"
+      },
+      "phases": {
+        "phase_1": "Low-end disruption of video rental (DVD by mail)",
+        "phase_2": "Technology shift to streaming",
+        "phase_3": "Vertical integration into content production"
+      },
+      "lessons": [
+        "Disruption often starts in segments incumbents ignore",
+        "Incumbents face innovator's dilemma",
+        "Streaming created winner-take-most dynamics",
+        "Original content became competitive moat"
+      ],
+      "keywords": ["disruption", "s-curve", "winner-take-all", "network effects"],
+      "sources": ["Christensen Analysis", "Hastings' No Rules Rules"]
+    },
+    {
+      "id": "lynch_dunkin",
+      "title": "Peter Lynch's Dunkin' Donuts",
+      "company": "Dunkin' Donuts",
+      "investor": "Peter Lynch",
+      "thesis": {
+        "observation": "Noticed coffee was great, stores always busy",
+        "research": "'Scuttlebutt' - talked to customers and employees",
+        "expansion": "Validated franchise growth opportunity",
+        "result": "Multi-bagger return as chain expanded"
+      },
+      "lessons": [
+        "Best ideas can come from everyday observations",
+        "Simple businesses can be great investments",
+        "Franchise models offer scalable growth",
+        "Know what you own - actually use the product"
+      ],
+      "keywords": ["growth", "research", "scalable", "franchise"],
+      "sources": ["One Up on Wall Street", "Lynch Interviews"]
+    },
+    {
+      "id": "fisher_motorola",
+      "title": "Philip Fisher's Motorola Investment",
+      "company": "Motorola",
+      "investor": "Philip Fisher",
+      "thesis": {
+        "research_method": "'Scuttlebutt' - interviewed competitors, suppliers, customers",
+        "growth_drivers": "R&D culture, management quality, market expansion",
+        "holding_period": "Held for decades through multiple technology cycles",
+        "result": "Extraordinary long-term returns"
+      },
+      "lessons": [
+        "Quality of management determines long-term outcomes",
+        "R&D-driven companies can sustain growth",
+        "Hold great companies through volatility",
+        "Primary research provides edge over desk analysis"
+      ],
+      "keywords": ["growth", "management", "research", "long term"],
+      "sources": ["Common Stocks and Uncommon Profits"]
+    }
+  ]
+}

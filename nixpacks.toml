@@ -1,0 +1,15 @@
+# nixpacks.toml
+# Configuration for Railway Nixpacks builder
+
+[variables]
+# No environment variables needed at build time
+# All sensitive vars are runtime-only
+
+[phases.setup]
+aptPkgs = ["curl"]
+
+[phases.build]
+cmds = ["npm ci", "cd frontend && npm ci && npm run build"]
+
+[start]
+cmd = "npm run start:production"

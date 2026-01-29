@@ -1,0 +1,100 @@
+/* frontend/src/pages/MarketSignalsPage.css */
+/* Unified Market Signals page styles - PRISM Design System Compliant */
+
+.signals-page {
+  padding: var(--space-4, 1rem);
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+/* Tab Navigation - PRISM styling */
+.signals-tabs {
+  display: flex;
+  gap: var(--space-2, 0.5rem);
+  margin-bottom: var(--space-4, 1rem);
+  padding: var(--space-1, 0.25rem);
+  background: var(--bg-secondary, #f8fafc);
+  border-radius: var(--radius-lg, 12px);
+  border: 1px solid var(--border-subtle, #e2e8f0);
+}
+
+.signals-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+  padding: var(--space-2, 0.5rem) var(--space-4, 1rem);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md, 8px);
+  color: var(--text-secondary, #64748b);
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex: 1;
+  justify-content: center;
+  font-family: inherit;
+}
+
+.signals-tab:hover:not(.active) {
+  background: var(--bg-tertiary, #f1f5f9);
+  color: var(--text-primary, #0f172a);
+}
+
+/* PRISM: Active tab uses dark navy slate #0F172A */
+.signals-tab.active {
+  background: var(--color-slate-900, #0F172A);
+  color: white;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+/* PRISM: Focus state with violet outline */
+.signals-tab:focus-visible {
+  outline: 2px solid var(--color-ai, #7C3AED);
+  outline-offset: 2px;
+}
+
+.signals-tab .tab-label {
+  white-space: nowrap;
+}
+
+/* Tab Content */
+.signals-content {
+  min-height: 400px;
+}
+
+/* Override child page styles to remove duplicate headers */
+.signals-content .page-header {
+  display: none;
+}
+
+.signals-content .trending-page,
+.signals-content .insider-page,
+.signals-content .validation-dashboard {
+  padding: 0;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .signals-page {
+    padding: var(--space-3);
+  }
+
+  .signals-tabs {
+    flex-wrap: wrap;
+  }
+
+  .signals-tab {
+    flex: 1 1 auto;
+    min-width: 100px;
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .signals-tab .tab-label {
+    display: none;
+  }
+
+  .signals-tab.active .tab-label {
+    display: inline;
+  }
+}

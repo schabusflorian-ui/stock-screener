@@ -1,0 +1,215 @@
+/* frontend/src/components/analyst/ConversationHistory.css */
+/* PRISM Design System - AI Conversation History */
+
+.conversation-history {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.history-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-primary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.history-header .refresh-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--duration-150) var(--ease-out);
+}
+
+.history-header .refresh-btn:hover {
+  color: var(--color-ai-violet);
+  background: var(--bg-tertiary);
+}
+
+.history-loading,
+.history-error,
+.history-empty {
+  padding: var(--space-6);
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.history-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.history-loading .spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.history-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.history-empty p {
+  font-size: var(--text-xs);
+  margin: 0;
+  opacity: 0.7;
+}
+
+.history-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-primary);
+  transition: background var(--duration-150) var(--ease-out);
+}
+
+.history-item:last-child {
+  border-bottom: none;
+}
+
+.history-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.history-item.active {
+  background: linear-gradient(90deg,
+    rgba(124, 58, 237, 0.08) 0%,
+    rgba(37, 99, 235, 0.04) 100%);
+  border-left: 3px solid var(--color-ai-violet);
+  box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.1);
+}
+
+.history-item-icon {
+  font-size: var(--text-lg);
+  flex-shrink: 0;
+}
+
+.history-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.history-item-title {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: var(--space-1);
+}
+
+.history-item-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.history-symbol {
+  background: var(--gold-muted);
+  color: var(--gold);
+  padding: var(--space-0-5) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-weight: var(--font-medium);
+}
+
+.history-messages,
+.history-time {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.history-item-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.history-delete-btn {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity var(--duration-150) var(--ease-out),
+              color var(--duration-150) var(--ease-out),
+              background var(--duration-150) var(--ease-out);
+}
+
+.history-item:hover .history-delete-btn {
+  opacity: 1;
+}
+
+.history-delete-btn:hover {
+  color: var(--negative);
+  background: var(--negative-muted);
+}
+
+.history-arrow {
+  color: var(--text-tertiary);
+  opacity: 0;
+  transition: opacity var(--duration-150) var(--ease-out),
+              transform var(--duration-150) var(--ease-out);
+}
+
+.history-item:hover .history-arrow {
+  opacity: 1;
+  transform: translateX(2px);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .history-list {
+    max-height: 300px;
+  }
+
+  .history-item {
+    padding: var(--space-3);
+  }
+
+  .history-delete-btn {
+    opacity: 1;
+  }
+
+  .history-arrow {
+    display: none;
+  }
+}

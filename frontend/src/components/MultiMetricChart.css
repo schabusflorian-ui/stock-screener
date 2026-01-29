@@ -1,0 +1,338 @@
+/* MultiMetricChart.css - Prism Design System */
+
+.multi-metric-chart-container {
+  background: var(--bg-primary);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-default);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  box-shadow: var(--shadow-sm);
+}
+
+.multi-metric-chart-empty {
+  background: var(--bg-primary);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-default);
+  padding: var(--space-12);
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+/* Header Row - Single line with all controls */
+.mmc-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.mmc-header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.mmc-header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Time Range Buttons - Prism Chip Style */
+.time-range-buttons {
+  display: flex;
+  gap: 1px;
+  background: var(--bg-surface);
+  border-radius: var(--radius-md);
+  padding: 2px;
+  border: 1px solid var(--border-default);
+}
+
+.time-range-buttons button {
+  padding: var(--space-1) var(--space-2);
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.time-range-buttons button:hover {
+  color: var(--text-primary);
+  background: var(--color-gold-50);
+}
+
+.time-range-buttons button.active {
+  background: var(--color-navy-900);
+  color: white;
+  font-weight: var(--font-semibold);
+}
+
+/* Compact Legend - Small chips in header row */
+.mmc-legend-compact {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  flex-wrap: wrap;
+}
+
+.mmc-legend-compact .legend-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  font-size: var(--text-2xs);
+  border-left: 3px solid var(--metric-color);
+}
+
+.mmc-legend-compact .legend-chip:hover {
+  background: var(--color-gold-50);
+  border-color: var(--color-gold-200);
+  border-left-color: var(--metric-color);
+}
+
+.mmc-legend-compact .legend-chip.active {
+  border-left-color: var(--metric-color);
+}
+
+.mmc-legend-compact .legend-chip.hidden {
+  opacity: 0.35;
+  border-left-color: var(--text-tertiary);
+}
+
+/* Area chart indicator - subtle gradient background */
+.mmc-legend-compact .legend-chip.area-style {
+  background: linear-gradient(
+    to bottom,
+    var(--bg-surface) 0%,
+    color-mix(in srgb, var(--metric-color) 8%, var(--bg-surface)) 100%
+  );
+}
+
+.mmc-legend-compact .legend-name {
+  color: var(--text-secondary);
+  font-weight: var(--font-medium);
+  white-space: nowrap;
+}
+
+.mmc-legend-compact .legend-chip.active .legend-name {
+  color: var(--text-primary);
+}
+
+.mmc-legend-compact .axis-tag {
+  color: var(--text-tertiary);
+  font-weight: var(--font-normal);
+  margin-left: 1px;
+}
+
+.mmc-legend-compact .legend-val {
+  color: var(--metric-color);
+  font-weight: var(--font-semibold);
+  font-family: var(--font-mono);
+}
+
+.mmc-legend-compact .legend-pct {
+  font-family: var(--font-mono);
+  font-weight: var(--font-semibold);
+}
+
+.mmc-legend-compact .legend-pct.up {
+  color: var(--positive);
+}
+
+.mmc-legend-compact .legend-pct.down {
+  color: var(--negative);
+}
+
+/* Chart Mode Buttons */
+.chart-mode-buttons {
+  display: flex;
+  background: var(--bg-surface);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  border: 1px solid var(--border-default);
+}
+
+.chart-mode-buttons button {
+  padding: var(--space-1) var(--space-1-5);
+  background: transparent;
+  border: none;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  transition: all var(--duration-fast) var(--ease-out);
+  opacity: 0.5;
+  line-height: 1;
+}
+
+.chart-mode-buttons button:hover {
+  background: var(--color-gold-50);
+  opacity: 1;
+}
+
+.chart-mode-buttons button.active {
+  background: var(--color-gold-100);
+  opacity: 1;
+}
+
+/* Reset Button */
+.reset-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.reset-btn:hover {
+  border-color: var(--color-gold-400);
+  color: var(--color-gold-600);
+  background: var(--color-gold-50);
+}
+
+/* Hover Period Indicator */
+.hover-period {
+  text-align: center;
+  padding: var(--space-1);
+}
+
+.hover-period span {
+  font-size: var(--text-2xs);
+  color: var(--color-gold-600);
+  font-weight: var(--font-medium);
+  background: var(--color-gold-50);
+  padding: var(--space-0-5) var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-gold-200);
+}
+
+/* Chart Canvas */
+.mmc-canvas {
+  width: 100%;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+/* Axis Description - below chart */
+.mmc-axis-description {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--space-1-5) var(--space-3);
+  background: var(--bg-muted);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+
+.mmc-axis-description span {
+  font-size: var(--text-2xs);
+  font-weight: var(--font-medium);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  color: var(--text-tertiary);
+}
+
+/* Chart style indicators in axis description */
+.mmc-axis-description .line-indicator {
+  width: 16px;
+  height: 2px;
+  flex-shrink: 0;
+}
+
+.mmc-axis-description .line-indicator.solid {
+  background: var(--text-tertiary);
+}
+
+.mmc-axis-description .area-indicator {
+  width: 16px;
+  height: 10px;
+  flex-shrink: 0;
+  background: linear-gradient(
+    to bottom,
+    var(--text-tertiary) 0%,
+    rgba(148, 163, 184, 0.3) 30%,
+    rgba(148, 163, 184, 0.1) 100%
+  );
+  border-top: 2px solid var(--text-tertiary);
+  border-radius: 0 0 2px 2px;
+}
+
+/* Instructions */
+.mmc-instructions {
+  text-align: center;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.mmc-instructions span {
+  font-size: var(--text-2xs);
+  color: var(--text-tertiary);
+}
+
+/* Legacy classes (kept for compatibility) */
+.mmc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.mmc-header h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-md);
+  font-weight: var(--font-semibold);
+}
+
+.mmc-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .mmc-header-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+
+  .mmc-header-left {
+    width: 100%;
+  }
+
+  .mmc-legend-compact {
+    max-width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: var(--space-1);
+  }
+
+  .mmc-axis-description {
+    flex-direction: column;
+    gap: var(--space-1);
+    align-items: flex-start;
+  }
+}

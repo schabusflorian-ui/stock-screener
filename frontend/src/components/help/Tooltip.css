@@ -1,0 +1,134 @@
+/* components/help/Tooltip.css */
+/* Prism Design System Compliant */
+
+.help-tooltip-trigger {
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: help;
+  color: var(--text-muted);
+  transition: color var(--duration-200) ease;
+}
+
+.help-tooltip-trigger:hover {
+  color: var(--text-secondary);
+}
+
+.help-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.help-tooltip-content {
+  background: var(--color-navy-900);
+  color: #FFFFFF;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  max-width: 20rem;
+  box-shadow: var(--shadow-md);
+  z-index: var(--z-tooltip);
+  animation: tooltipFadeIn var(--duration-200) ease;
+}
+
+@keyframes tooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.help-tooltip-content p {
+  margin: 0;
+}
+
+.help-tooltip-arrow {
+  fill: var(--color-navy-900);
+}
+
+/* Metric Tooltip */
+.metric-tooltip-content {
+  padding: var(--space-1) 0;
+}
+
+.metric-tooltip-title {
+  font-weight: var(--font-semibold);
+  margin-bottom: var(--space-2);
+  font-size: var(--text-base);
+}
+
+.metric-tooltip-description {
+  margin-bottom: var(--space-2);
+  color: var(--color-navy-200);
+}
+
+.metric-tooltip-formula,
+.metric-tooltip-interpretation {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: var(--text-xs);
+  color: var(--color-navy-300);
+}
+
+.metric-tooltip-formula strong,
+.metric-tooltip-interpretation strong {
+  color: white;
+  display: block;
+  margin-bottom: var(--space-1);
+}
+
+/* Metric Card */
+.metric-card {
+  padding: var(--space-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  transition: all var(--duration-200) ease;
+}
+
+.metric-card:hover {
+  background: rgba(212, 175, 55, 0.04);
+  border-color: var(--color-gold-500);
+  box-shadow: var(--shadow-gold-sm);
+}
+
+.metric-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-navy-500);
+  margin-bottom: var(--space-2);
+}
+
+.metric-value {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  font-family: var(--font-mono);
+  color: var(--color-navy-900);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.metric-trend {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  font-family: var(--font-mono);
+}
+
+.metric-trend.up {
+  color: var(--positive);
+}
+
+.metric-trend.down {
+  color: var(--negative);
+}

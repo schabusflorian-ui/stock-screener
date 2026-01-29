@@ -1,0 +1,334 @@
+/* Theses Page Styles */
+
+.theses-page {
+  padding: var(--space-6);
+  padding-left: var(--space-8);
+  max-width: 1400px;
+  margin: 0 auto;
+  color: var(--text-primary);
+}
+
+.header-actions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+/* Summary Cards */
+.summary-card {
+  text-align: center;
+  padding: var(--space-4);
+}
+
+.summary-value {
+  font-size: var(--text-3xl);
+  font-weight: var(--font-bold);
+  color: var(--text-primary);
+}
+
+.summary-value.success { color: var(--positive); }
+.summary-value.danger { color: var(--negative); }
+
+.summary-label {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  margin-top: var(--space-1);
+}
+
+/* Alert Cards */
+.alert-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.alert-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid var(--warning);
+}
+
+.alert-content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Alert icons use warning color */
+.alert-content svg {
+  color: var(--warning);
+}
+
+.alert-content strong {
+  color: var(--text-primary);
+}
+
+.alert-detail {
+  margin-left: var(--space-2);
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+/* Catalyst List */
+.catalyst-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.catalyst-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+}
+
+.catalyst-date {
+  min-width: 60px;
+  font-weight: var(--font-semibold);
+  color: var(--brand-primary);
+  font-size: var(--text-sm);
+}
+
+.catalyst-content {
+  flex: 1;
+}
+
+.catalyst-symbol {
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.catalyst-text {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* Filter Bar */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--border-primary);
+  margin-bottom: var(--space-4);
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.filter-btn {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  background: none;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.filter-btn:hover {
+  border-color: var(--brand-primary);
+  color: var(--brand-primary);
+}
+
+.filter-btn.active {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: white;
+}
+
+/* Loading State */
+.loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-12);
+  color: var(--text-tertiary);
+}
+
+/* Theses Grid */
+.theses-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: var(--space-4);
+}
+
+/* Thesis Card */
+.thesis-card {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4);
+  transition: all var(--transition-fast);
+  border: 1px solid var(--border-primary);
+}
+
+.thesis-card:hover {
+  border-color: var(--border-secondary);
+  box-shadow: var(--shadow-md);
+}
+
+.thesis-card.active {
+  border-left: 3px solid var(--positive);
+}
+
+.thesis-card.achieved {
+  border-left: 3px solid var(--brand-primary);
+}
+
+.thesis-card.invalidated {
+  border-left: 3px solid var(--negative);
+  opacity: 0.8;
+}
+
+.thesis-card.closed {
+  opacity: 0.7;
+}
+
+.thesis-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-3);
+}
+
+.thesis-type {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+}
+
+.thesis-symbol {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  cursor: pointer;
+}
+
+.thesis-symbol .symbol {
+  font-size: var(--text-lg);
+  font-weight: var(--font-bold);
+  color: var(--text-primary);
+}
+
+.thesis-symbol .name {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+
+.thesis-symbol:hover .symbol {
+  color: var(--brand-primary);
+}
+
+.thesis-title {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-3);
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.thesis-title:hover {
+  color: var(--brand-primary);
+}
+
+.thesis-metrics {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border-primary);
+  border-bottom: 1px solid var(--border-primary);
+  margin-bottom: var(--space-3);
+}
+
+.thesis-metrics .metric {
+  display: flex;
+  flex-direction: column;
+}
+
+.thesis-metrics .label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.thesis-metrics .value {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.thesis-metrics .change {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+}
+
+.thesis-metrics .change.positive { color: var(--positive); }
+.thesis-metrics .change.negative { color: var(--negative); }
+
+.thesis-conviction {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.thesis-conviction .label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.thesis-conviction .stars {
+  color: var(--warning);
+  letter-spacing: 2px;
+}
+
+.thesis-status-bar {
+  display: flex;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.thesis-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: auto;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .theses-page {
+    padding: var(--space-4);
+  }
+
+  .theses-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-bar {
+    flex-wrap: wrap;
+  }
+
+  .filter-group {
+    flex-wrap: wrap;
+  }
+}

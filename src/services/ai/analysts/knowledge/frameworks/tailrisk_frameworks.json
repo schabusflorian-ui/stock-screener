@@ -1,0 +1,97 @@
+{
+  "analyst": "tailrisk",
+  "frameworks": [
+    {
+      "id": "antifragility_assessment",
+      "name": "Antifragility Assessment Framework",
+      "description": "Evaluate whether a company benefits from volatility, disorder, and stress",
+      "steps": [
+        "1. Identify stress exposure - what shocks could hit this business?",
+        "2. Assess optionality - does the company have asymmetric upside from chaos?",
+        "3. Check for convexity - limited downside with unlimited upside potential?",
+        "4. Evaluate skin in the game - is management's wealth tied to outcomes?",
+        "5. Look for via negativa - does the company avoid fragile practices?"
+      ],
+      "scoring": {
+        "antifragile": "Benefits from volatility, has optionality, positive convexity",
+        "robust": "Survives shocks unchanged, neutral to volatility",
+        "fragile": "Harmed by volatility, negative convexity, hidden tail risks"
+      },
+      "keywords": ["antifragile", "fragile", "optionality", "convexity", "volatility"],
+      "sources": ["Taleb's Antifragile", "Spitznagel's Dao of Capital"]
+    },
+    {
+      "id": "barbell_strategy",
+      "name": "Barbell Portfolio Strategy",
+      "description": "Combine extremely safe assets with highly speculative ones, nothing in between",
+      "structure": {
+        "safe_side": "85-90% in ultra-safe assets (cash, treasuries, gold)",
+        "speculative_side": "10-15% in asymmetric bets with massive upside potential",
+        "avoid": "Middle-risk investments with moderate returns and hidden tail risks"
+      },
+      "principles": [
+        "1. Maximum loss is capped at the speculative allocation",
+        "2. Safe side provides survival insurance",
+        "3. Speculative side captures black swan upside",
+        "4. Rebalance after big wins to lock in gains",
+        "5. Never put safe-side money at risk"
+      ],
+      "keywords": ["barbell", "tail risk", "asymmetric", "survival", "optionality"],
+      "sources": ["Taleb's Antifragile", "Universa Investments"]
+    },
+    {
+      "id": "fragility_detection",
+      "name": "Hidden Fragility Detection",
+      "description": "Identify companies with dangerous hidden tail risks",
+      "red_flags": [
+        "High leverage (debt/EBITDA > 4x)",
+        "Concentrated customer or supplier base",
+        "Cyclical business with fixed costs",
+        "Regulatory capture that could reverse",
+        "Earnings reliant on financial engineering",
+        "Management compensation tied to short-term metrics",
+        "Complex corporate structures hiding risks"
+      ],
+      "keywords": ["fragile", "tail risk", "black swan", "leverage", "concentration"],
+      "sources": ["Taleb's Risk Analysis", "LTCM Case Study"]
+    },
+    {
+      "id": "convexity_analysis",
+      "name": "Convexity Analysis Framework",
+      "description": "Identify investments with favorable asymmetric payoffs",
+      "positive_convexity": {
+        "description": "More to gain than to lose, benefits from volatility",
+        "examples": ["Call options", "Companies with optionality", "Early-stage growth"],
+        "characteristics": "Limited downside, unlimited upside, loves uncertainty"
+      },
+      "negative_convexity": {
+        "description": "More to lose than to gain, harmed by volatility",
+        "examples": ["Short options", "Leveraged companies", "Fragile businesses"],
+        "characteristics": "Limited upside, unlimited downside, needs stability"
+      },
+      "keywords": ["convexity", "asymmetric", "optionality", "upside", "downside"],
+      "sources": ["Taleb on Convexity", "Spitznagel on Asymmetric Payoffs"]
+    },
+    {
+      "id": "tail_hedge_construction",
+      "name": "Tail Hedge Construction",
+      "description": "How to build protection against black swan events",
+      "methods": [
+        "Deep out-of-the-money put options (15-30% OTM)",
+        "VIX call options or VIX ETFs",
+        "Inverse ETFs in small allocations",
+        "Treasury bonds (flight to quality)",
+        "Gold and precious metals"
+      ],
+      "principles": [
+        "1. Spend small amounts consistently (1-2% of portfolio/year)",
+        "2. Accept the bleed in normal times as insurance cost",
+        "3. Size for the crash - hedges should pay 10-100x in crisis",
+        "4. Never try to time when to hedge",
+        "5. Rebalance into hedges after rallies"
+      ],
+      "keywords": ["tail risk", "hedging", "black swan", "protection", "insurance"],
+      "sources": ["Universa Investments", "Spitznagel Interviews"]
+    }
+  ]
+}

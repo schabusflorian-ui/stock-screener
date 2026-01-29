@@ -1,0 +1,95 @@
+/* frontend/src/components/prism/PRISMScore.css */
+
+.prism-score-gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.prism-score-gauge.large svg {
+  width: 160px;
+  height: 160px;
+}
+
+.prism-score-gauge.small svg {
+  width: 100px;
+  height: 100px;
+}
+
+.score-arc {
+  transition: stroke-dashoffset 0.8s ease-out;
+}
+
+.score-value {
+  font-size: 32px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+.score-label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.prism-score-gauge.small .score-value {
+  font-size: 20px;
+}
+
+.prism-score-gauge.small .score-label {
+  font-size: 11px;
+}
+
+.score-details {
+  text-align: center;
+}
+
+.score-rating {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  margin-bottom: var(--spacing-xs);
+}
+
+.score-description {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-sm);
+}
+
+.score-confidence {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.confidence-dots {
+  display: flex;
+  gap: 3px;
+}
+
+.confidence-dots .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-border);
+  transition: background-color 0.2s;
+}
+
+.confidence-dots .dot.filled {
+  background: var(--color-primary);
+}
+
+.score-confidence.confidence-high .confidence-label {
+  color: var(--color-success);
+}
+
+.score-confidence.confidence-medium .confidence-label {
+  color: var(--color-primary);
+}
+
+.score-confidence.confidence-low .confidence-label {
+  color: var(--color-warning);
+}

@@ -1,0 +1,2442 @@
+// src/services/portfolio/investorService.js
+// Service for managing famous investors and fetching 13F filings from SEC EDGAR
+
+const db = require('../../database').db;
+const { SEC_13F_CONFIG, HOLDING_CHANGE_TYPES } = require('../../constants/portfolio');
+
+// Rate limiting for SEC requests
+let lastRequestTime = 0;
+const rateLimitedFetch = async (url, options = {}) => {
+  const now = Date.now();
+  const timeSinceLastRequest = now - lastRequestTime;
+  if (timeSinceLastRequest < SEC_13F_CONFIG.RATE_LIMIT_MS) {
+    await new Promise(resolve => setTimeout(resolve, SEC_13F_CONFIG.RATE_LIMIT_MS - timeSinceLastRequest));
+  }
+  lastRequestTime = Date.now();
+
+  const headers = {
+    'User-Agent': SEC_13F_CONFIG.USER_AGENT,
+    'Accept': 'application/json, application/xml, text/xml, */*',
+    ...options.headers
+  };
+
+  const response = await fetch(url, { ...options, headers });
+  if (!response.ok) {
+    throw new Error(`SEC request failed: ${response.status} ${response.statusText}`);
+  }
+  return response;
+};
+
+// ============================================
+// Investor CRUD Operations
+// ============================================
+
+/**
+ * Get all famous investors
+ */
+function getAllInvestors() {
+  const stmt = db.prepare(`
+    SELECT
+      fi.*,
+      (SELECT COUNT(*) FROM investor_holdings ih WHERE ih.investor_id = fi.id AND ih.filing_date = fi.latest_filing_date) as current_positions
+    FROM famous_investors fi
+    WHERE fi.is_active = 1
+    ORDER BY fi.display_order ASC
+  `);
+  return stmt.all();
+}
+
+/**
+ * Get single investor by ID with stats
+ */
+function getInvestor(id) {
+  const investor = db.prepare(`
+    SELECT * FROM famous_investors WHERE id = ?
+  `).get(id);
+
+  if (!investor) return null;
+
+  // Get filing history
+  const filings = db.prepare(`
+    SELECT * FROM investor_filings
+    WHERE investor_id = ?
+    ORDER BY filing_date DESC
+    LIMIT 8
+  `).all(id);
+
+  // Get change summary from latest filing
+  const changeSummary = db.prepare(`
+    SELECT
+      change_type,
+      COUNT(*) as count,
+      SUM(market_value) as total_value
+    FROM investor_holdings
+    WHERE investor_id = ? AND filing_date = ?
+    GROUP BY change_type
+  `).all(id, investor.latest_filing_date);
+
+  return {
+    ...investor,
+    filings,
+    changeSummary
+  };
+}
+
+/**
+ * Get investor by CIK
+ */
+function getInvestorByCik(cik) {
+  return db.prepare('SELECT * FROM famous_investors WHERE cik = ?').get(cik);
+}
+
+// ============================================
+// Holdings Operations
+// ============================================
+
+/**
+ * Get latest holdings for an investor
+ * Consolidates multiple entries for the same CUSIP (voting authority splits)
+ * Includes current price and performance since filing
+ * Enhanced with first appearance date tracking for entry point analysis
+ *
+ * OPTIMIZED: Uses batch queries instead of correlated subqueries to avoid N+1 problem
+ */
+function getLatestHoldings(investorId, { limit = 100, sortBy = 'market_value', sortOrder = 'DESC', includePerformance = true } = {}) {
+  const investor = db.prepare('SELECT latest_filing_date FROM famous_investors WHERE id = ?').get(investorId);
+  if (!investor || !investor.latest_filing_date) {
+    return { holdings: [], filingDate: null, totalValue: 0 };
+  }
+
+  const validSortColumns = ['market_value', 'shares', 'portfolio_weight', 'shares_change_pct', 'security_name', 'gain_loss_pct', 'entry_gain_loss_pct'];
+  const sortColumn = validSortColumns.includes(sortBy) ? sortBy : 'market_value';
+  const order = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+  // STEP 1: Get base holdings without price subqueries (eliminates N+1)
+  const holdings = db.prepare(`
+    SELECT
+      MIN(ih.id) as id,
+      ih.investor_id,
+      ih.company_id,
+      ih.filing_date,
+      ih.report_date,
+      ih.cusip,
+      MAX(ih.security_name) as security_name,
+      ih.option_type,
+      MAX(ih.title_of_class) as title_of_class,
+      SUM(ih.shares) as shares,
+      SUM(ih.market_value) as market_value,
+      SUM(ih.portfolio_weight) as portfolio_weight,
+      SUM(ih.prev_shares) as prev_shares,
+      SUM(ih.shares_change) as shares_change,
+      CASE
+        WHEN SUM(ih.prev_shares) > 0 THEN (SUM(ih.shares_change) * 100.0 / SUM(ih.prev_shares))
+        ELSE 0
+      END as shares_change_pct,
+      SUM(ih.value_change) as value_change,
+      MAX(ih.change_type) as change_type,
+      MAX(ih.created_at) as created_at,
+      c.symbol,
+      c.name as company_name,
+      c.sector,
+      c.industry,
+      c.market_cap
+    FROM investor_holdings ih
+    LEFT JOIN companies c ON ih.company_id = c.id
+    WHERE ih.investor_id = ? AND ih.filing_date = ?
+    GROUP BY ih.cusip, ih.option_type
+    HAVING SUM(ih.shares) > 0
+    ORDER BY ${sortColumn} ${order}
+    LIMIT ?
+  `).all(investorId, investor.latest_filing_date, limit);
+
+  if (holdings.length === 0) {
+    return { holdings: [], filingDate: investor.latest_filing_date, totalValue: 0 };
+  }
+
+  // STEP 2: Batch fetch latest prices for all companies (single query)
+  const companyIds = [...new Set(holdings.filter(h => h.company_id).map(h => h.company_id))];
+  const latestPricesMap = {};
+  if (companyIds.length > 0) {
+    const placeholders = companyIds.map(() => '?').join(',');
+    const latestPrices = db.prepare(`
+      SELECT company_id, close as current_price, date as price_date
+      FROM daily_prices
+      WHERE id IN (
+        SELECT MAX(id) FROM daily_prices
+        WHERE company_id IN (${placeholders})
+        GROUP BY company_id
+      )
+    `).all(...companyIds);
+    latestPrices.forEach(p => {
+      latestPricesMap[p.company_id] = { current_price: p.current_price, price_date: p.price_date };
+    });
+  }
+
+  // STEP 3: Batch fetch filing date prices (single query)
+  const filingPricesMap = {};
+  if (companyIds.length > 0) {
+    const placeholders = companyIds.map(() => '?').join(',');
+    const filingPrices = db.prepare(`
+      SELECT dp.company_id, dp.close as filing_price
+      FROM daily_prices dp
+      INNER JOIN (
+        SELECT company_id, MAX(date) as max_date
+        FROM daily_prices
+        WHERE company_id IN (${placeholders}) AND date <= ?
+        GROUP BY company_id
+      ) sub ON dp.company_id = sub.company_id AND dp.date = sub.max_date
+    `).all(...companyIds, investor.latest_filing_date);
+    filingPrices.forEach(p => {
+      filingPricesMap[p.company_id] = p.filing_price;
+    });
+  }
+
+  // STEP 4: Batch fetch first filing dates for all holdings
+  const firstFilingMap = {};
+  const cusipKeys = holdings.map(h => `${h.cusip}|${h.option_type || ''}`);
+  if (cusipKeys.length > 0) {
+    const firstFilings = db.prepare(`
+      SELECT cusip, COALESCE(option_type, '') as opt, MIN(filing_date) as first_filing_date
+      FROM investor_holdings
+      WHERE investor_id = ?
+      GROUP BY cusip, COALESCE(option_type, '')
+    `).all(investorId);
+    firstFilings.forEach(f => {
+      firstFilingMap[`${f.cusip}|${f.opt}`] = f.first_filing_date;
+    });
+  }
+
+  // STEP 5: Batch fetch entry prices (prices at first filing date)
+  // Collect unique (company_id, first_filing_date) pairs
+  const entryPriceQueries = new Map();
+  holdings.forEach(h => {
+    if (h.company_id) {
+      const firstDate = firstFilingMap[`${h.cusip}|${h.option_type || ''}`];
+      if (firstDate) {
+        const key = `${h.company_id}|${firstDate}`;
+        if (!entryPriceQueries.has(key)) {
+          entryPriceQueries.set(key, { company_id: h.company_id, date: firstDate });
+        }
+      }
+    }
+  });
+
+  const entryPricesMap = {};
+  if (entryPriceQueries.size > 0) {
+    // Batch fetch entry prices - use a single query with UNION for efficiency
+    const entryPriceResults = [];
+    for (const [key, { company_id, date }] of entryPriceQueries) {
+      const result = db.prepare(`
+        SELECT ? as lookup_key, close as entry_price
+        FROM daily_prices
+        WHERE company_id = ? AND date <= ?
+        ORDER BY date DESC
+        LIMIT 1
+      `).get(key, company_id, date);
+      if (result) {
+        entryPricesMap[result.lookup_key] = result.entry_price;
+      }
+    }
+  }
+
+  // STEP 6: Merge all data into holdings
+  const holdingsWithPrices = holdings.map(h => {
+    const priceData = h.company_id ? latestPricesMap[h.company_id] : null;
+    const filingPrice = h.company_id ? filingPricesMap[h.company_id] : null;
+    const firstFilingDate = firstFilingMap[`${h.cusip}|${h.option_type || ''}`];
+    const entryPriceKey = h.company_id && firstFilingDate ? `${h.company_id}|${firstFilingDate}` : null;
+    const entryPrice = entryPriceKey ? entryPricesMap[entryPriceKey] : null;
+
+    return {
+      ...h,
+      current_price: priceData?.current_price || null,
+      price_date: priceData?.price_date || null,
+      filing_price: filingPrice,
+      first_filing_date: firstFilingDate,
+      entry_price: entryPrice
+    };
+  });
+
+  // Calculate performance metrics for each holding
+  // Now includes both filing-based and entry-point-based performance
+  const holdingsWithPerformance = holdingsWithPrices.map(h => {
+    let gain_loss_pct = null;
+    let gain_loss_value = null;
+    let current_value = null;
+    let entry_gain_loss_pct = null;
+    let entry_gain_loss_value = null;
+    let holding_period_days = null;
+
+    // Performance since latest filing
+    if (h.current_price && h.filing_price && h.filing_price > 0) {
+      gain_loss_pct = ((h.current_price - h.filing_price) / h.filing_price) * 100;
+      current_value = h.shares * h.current_price;
+      gain_loss_value = current_value - h.market_value;
+    }
+
+    // Performance since first appearance (entry point tracking)
+    if (h.current_price && h.entry_price && h.entry_price > 0) {
+      entry_gain_loss_pct = ((h.current_price - h.entry_price) / h.entry_price) * 100;
+      entry_gain_loss_value = current_value ? (current_value - (h.shares * h.entry_price)) : null;
+    }
+
+    // Calculate holding period in days
+    if (h.first_filing_date) {
+      const firstDate = new Date(h.first_filing_date);
+      const today = new Date();
+      holding_period_days = Math.floor((today - firstDate) / (1000 * 60 * 60 * 24));
+    }
+
+    return {
+      ...h,
+      gain_loss_pct,
+      gain_loss_value,
+      current_value,
+      entry_gain_loss_pct,
+      entry_gain_loss_value,
+      holding_period_days
+    };
+  });
+
+  // Re-sort if sorting by performance columns (not handled by SQL)
+  if (sortBy === 'gain_loss_pct') {
+    holdingsWithPerformance.sort((a, b) => {
+      const aVal = a.gain_loss_pct ?? -Infinity;
+      const bVal = b.gain_loss_pct ?? -Infinity;
+      return order === 'DESC' ? bVal - aVal : aVal - bVal;
+    });
+  } else if (sortBy === 'entry_gain_loss_pct') {
+    holdingsWithPerformance.sort((a, b) => {
+      const aVal = a.entry_gain_loss_pct ?? -Infinity;
+      const bVal = b.entry_gain_loss_pct ?? -Infinity;
+      return order === 'DESC' ? bVal - aVal : aVal - bVal;
+    });
+  }
+
+  const totalValue = holdingsWithPrices.reduce((sum, h) => sum + (h.market_value || 0), 0);
+  const totalCurrentValue = holdingsWithPerformance.reduce((sum, h) => sum + (h.current_value || 0), 0);
+  const totalGainLoss = totalCurrentValue - totalValue;
+  const totalGainLossPct = totalValue > 0 ? (totalGainLoss / totalValue) * 100 : 0;
+
+  return {
+    holdings: holdingsWithPerformance,
+    filingDate: investor.latest_filing_date,
+    totalValue,
+    totalCurrentValue: totalCurrentValue || null,
+    totalGainLoss: totalGainLoss || null,
+    totalGainLossPct: totalGainLossPct || null,
+    positionsCount: holdingsWithPrices.length
+  };
+}
+
+/**
+ * Get holding changes from latest filing
+ * Consolidates by CUSIP for accurate change tracking
+ */
+function getHoldingChanges(investorId) {
+  const investor = db.prepare('SELECT latest_filing_date FROM famous_investors WHERE id = ?').get(investorId);
+  if (!investor || !investor.latest_filing_date) {
+    return { new: [], increased: [], decreased: [], sold: [], unchanged: [] };
+  }
+
+  // Consolidate by CUSIP to get accurate totals
+  const holdings = db.prepare(`
+    SELECT
+      ih.cusip,
+      MAX(ih.security_name) as security_name,
+      ih.company_id,
+      SUM(ih.shares) as shares,
+      SUM(ih.market_value) as market_value,
+      SUM(ih.portfolio_weight) as portfolio_weight,
+      SUM(ih.prev_shares) as prev_shares,
+      SUM(ih.shares_change) as shares_change,
+      CASE
+        WHEN SUM(ih.prev_shares) > 0 THEN (SUM(ih.shares_change) * 100.0 / SUM(ih.prev_shares))
+        ELSE 0
+      END as shares_change_pct,
+      SUM(ih.value_change) as value_change,
+      MAX(ih.change_type) as change_type,
+      c.symbol,
+      c.name as company_name,
+      c.sector
+    FROM investor_holdings ih
+    LEFT JOIN companies c ON ih.company_id = c.id
+    WHERE ih.investor_id = ? AND ih.filing_date = ?
+    GROUP BY ih.cusip
+    ORDER BY SUM(ih.market_value) DESC
+  `).all(investorId, investor.latest_filing_date);
+
+  return {
+    new: holdings.filter(h => h.change_type === HOLDING_CHANGE_TYPES.NEW),
+    increased: holdings.filter(h => h.change_type === HOLDING_CHANGE_TYPES.INCREASED),
+    decreased: holdings.filter(h => h.change_type === HOLDING_CHANGE_TYPES.DECREASED),
+    sold: holdings.filter(h => h.change_type === HOLDING_CHANGE_TYPES.SOLD),
+    unchanged: holdings.filter(h => h.change_type === HOLDING_CHANGE_TYPES.UNCHANGED)
+  };
+}
+
+/**
+ * Get investors who own a specific stock
+ * Consolidates multiple holdings per investor (13F filings report separate entries for voting authority)
+ */
+function getInvestorsByStock(companyId) {
+  return db.prepare(`
+    SELECT
+      fi.id,
+      fi.name as investor_name,
+      fi.fund_name as manager_name,
+      fi.investment_style,
+      SUM(ih.shares) as shares,
+      SUM(ih.market_value) as market_value,
+      SUM(ih.portfolio_weight) as portfolio_weight,
+      MAX(ih.change_type) as change_type,
+      CASE
+        WHEN SUM(ih.prev_shares) > 0 THEN (SUM(ih.shares_change) * 100.0 / SUM(ih.prev_shares))
+        ELSE MAX(ih.shares_change_pct)
+      END as shares_change_pct,
+      MAX(ih.filing_date) as filing_date
+    FROM investor_holdings ih
+    JOIN famous_investors fi ON ih.investor_id = fi.id
+    WHERE ih.company_id = ?
+      AND ih.filing_date = fi.latest_filing_date
+      AND fi.is_active = 1
+    GROUP BY fi.id
+    HAVING SUM(ih.shares) > 0
+    ORDER BY SUM(ih.market_value) DESC
+  `).all(companyId);
+}
+
+/**
+ * Get investors by stock symbol
+ */
+function getInvestorsBySymbol(symbol) {
+  const company = db.prepare('SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)').get(symbol);
+  if (!company) return [];
+  return getInvestorsByStock(company.id);
+}
+
+/**
+ * Get holdings history for an investor
+ */
+function getHoldingsHistory(investorId, { periods = 4 } = {}) {
+  const filings = db.prepare(`
+    SELECT DISTINCT filing_date
+    FROM investor_holdings
+    WHERE investor_id = ?
+    ORDER BY filing_date DESC
+    LIMIT ?
+  `).all(investorId, periods);
+
+  const history = filings.map(f => {
+    const holdings = db.prepare(`
+      SELECT
+        ih.*,
+        c.symbol,
+        c.name as company_name
+      FROM investor_holdings ih
+      LEFT JOIN companies c ON ih.company_id = c.id
+      WHERE ih.investor_id = ? AND ih.filing_date = ?
+      ORDER BY ih.market_value DESC
+    `).all(investorId, f.filing_date);
+
+    return {
+      filingDate: f.filing_date,
+      holdings,
+      totalValue: holdings.reduce((sum, h) => sum + (h.market_value || 0), 0),
+      positionsCount: holdings.length
+    };
+  });
+
+  return history;
+}
+
+/**
+ * Get portfolio performance based on actual stock price changes
+ * This calculates weighted returns for each quarter using holdings and price data
+ * Also includes S&P 500 comparison for alpha calculation
+ */
+function getPortfolioReturns(investorId, { limit = 50 } = {}) {
+  // Get all report dates for this investor
+  const dates = db.prepare(`
+    SELECT DISTINCT report_date
+    FROM investor_holdings
+    WHERE investor_id = ?
+    ORDER BY report_date ASC
+    LIMIT ?
+  `).all(investorId, limit);
+
+  if (dates.length < 2) {
+    return { returns: [], summary: null, benchmark: null };
+  }
+
+  // OPTIMIZED: Batch fetch all holdings and prices upfront
+  const allDates = dates.map(d => d.report_date);
+  const minDate = allDates[0];
+  const maxDate = allDates[allDates.length - 1];
+
+  // Get all holdings for all periods in one query
+  // Exclude preferred stocks - they have price discontinuities from corporate actions
+  // (conversions, redemptions) that corrupt return calculations
+  // Patterns: USB-PQ, BK-PK (dash-P), BACRP (5+ chars ending in P), but NOT AXP, RPRX
+  const allHoldings = db.prepare(`
+    SELECT
+      h.report_date,
+      c.id as company_id,
+      c.symbol,
+      SUM(h.market_value) as position_value
+    FROM investor_holdings h
+    JOIN companies c ON h.company_id = c.id
+    WHERE h.investor_id = ?
+      AND h.report_date IN (${allDates.map(() => '?').join(',')})
+      AND c.symbol IS NOT NULL
+      AND c.symbol NOT LIKE '%-P%'
+      AND c.symbol NOT LIKE '%.P%'
+      AND NOT (LENGTH(c.symbol) >= 5 AND c.symbol LIKE '%P')
+    GROUP BY h.report_date, c.id
+  `).all(investorId, ...allDates);
+
+  // Build map of holdings by date
+  const holdingsByDate = {};
+  allHoldings.forEach(h => {
+    if (!holdingsByDate[h.report_date]) holdingsByDate[h.report_date] = [];
+    holdingsByDate[h.report_date].push(h);
+  });
+
+  // Get all unique company IDs
+  const companyIds = [...new Set(allHoldings.map(h => h.company_id))];
+
+  // Fetch prices for each company efficiently using the existing index
+  // This is O(n) queries but each is fast due to covering index on (company_id, date)
+  const pricesByCompanyDate = {};
+  if (companyIds.length > 0) {
+    const priceQuery = db.prepare(`
+      SELECT date, close
+      FROM daily_prices
+      WHERE company_id = ?
+        AND date >= date(?, '-30 days')
+        AND date <= ?
+      ORDER BY date ASC
+    `);
+
+    for (const companyId of companyIds) {
+      // Fetch all prices for this company in the date range
+      const prices = priceQuery.all(companyId, minDate, maxDate);
+
+      // Build a map of date -> price for quick lookup
+      const priceMap = {};
+      prices.forEach(p => {
+        priceMap[p.date] = p.close;
+      });
+
+      // For each target date, find the closest price on or before that date
+      for (const targetDate of allDates) {
+        // Find price on or before target date
+        let bestPrice = null;
+        let bestDate = null;
+        for (const p of prices) {
+          if (p.date <= targetDate) {
+            bestDate = p.date;
+            bestPrice = p.close;
+          } else {
+            break; // prices are sorted ASC, so we can stop here
+          }
+        }
+        if (bestPrice !== null) {
+          pricesByCompanyDate[`${companyId}_${targetDate}`] = bestPrice;
+        }
+      }
+    }
+  }
+
+  const quarterlyReturns = [];
+
+  for (let i = 0; i < dates.length - 1; i++) {
+    const startDate = dates[i].report_date;
+    const endDate = dates[i + 1].report_date;
+
+    const holdings = holdingsByDate[startDate] || [];
+    if (holdings.length === 0) continue;
+
+    const totalValue = holdings.reduce((sum, h) => sum + h.position_value, 0);
+
+    // Calculate weighted return for this quarter using pre-fetched prices
+    let weightedReturn = 0;
+    let matchedWeight = 0;
+
+    for (const holding of holdings) {
+      const weight = holding.position_value / totalValue;
+
+      const startPrice = pricesByCompanyDate[`${holding.company_id}_${startDate}`];
+      const endPrice = pricesByCompanyDate[`${holding.company_id}_${endDate}`];
+
+      if (startPrice && endPrice && startPrice > 0) {
+        const rawReturn = (endPrice - startPrice) / startPrice;
+        // Cap individual stock returns to filter out corporate actions (splits, conversions)
+        // Returns > 200% or < -80% in a quarter are almost certainly data issues
+        const stockReturn = Math.max(-0.8, Math.min(2.0, rawReturn));
+        weightedReturn += weight * stockReturn;
+        matchedWeight += weight;
+      }
+    }
+
+    // Normalize if we didn't match all holdings
+    if (matchedWeight > 0 && matchedWeight < 0.5) {
+      // Skip quarters where we couldn't match at least 50% of holdings
+      continue;
+    }
+
+    quarterlyReturns.push({
+      startDate,
+      endDate,
+      return: weightedReturn * 100,
+      positions: holdings.length
+    });
+  }
+
+  // OPTIMIZED: Batch fetch S&P 500 returns for all periods
+  const benchmarkReturns = [];
+  const spyReturnsCache = {};
+  for (const qtr of quarterlyReturns) {
+    const cacheKey = `${qtr.startDate}_${qtr.endDate}`;
+    if (!spyReturnsCache[cacheKey]) {
+      spyReturnsCache[cacheKey] = getSpyReturn(qtr.startDate, qtr.endDate);
+    }
+    benchmarkReturns.push({
+      startDate: qtr.startDate,
+      endDate: qtr.endDate,
+      return: spyReturnsCache[cacheKey]
+    });
+  }
+
+  // Calculate summary statistics
+  if (quarterlyReturns.length === 0) {
+    return { returns: [], summary: null, benchmark: null };
+  }
+
+  // Calculate cumulative returns
+  let portfolioCumulative = 1.0;
+  let benchmarkCumulative = 1.0;
+
+  const returnsWithBenchmark = quarterlyReturns.map((qtr, i) => {
+    portfolioCumulative *= (1 + qtr.return / 100);
+    const benchReturn = benchmarkReturns[i]?.return || 0;
+    benchmarkCumulative *= (1 + benchReturn / 100);
+
+    return {
+      ...qtr,
+      benchmarkReturn: benchReturn,
+      alpha: qtr.return - benchReturn,
+      cumulativeReturn: (portfolioCumulative - 1) * 100,
+      cumulativeBenchmark: (benchmarkCumulative - 1) * 100
+    };
+  });
+
+  const avgQuarterlyReturn = quarterlyReturns.reduce((sum, q) => sum + q.return, 0) / quarterlyReturns.length;
+  const avgBenchmarkReturn = benchmarkReturns.reduce((sum, q) => sum + (q.return || 0), 0) / benchmarkReturns.length;
+  const annualizedReturn = (Math.pow(1 + avgQuarterlyReturn / 100, 4) - 1) * 100;
+  const annualizedBenchmark = (Math.pow(1 + avgBenchmarkReturn / 100, 4) - 1) * 100;
+
+  const summary = {
+    periodCount: quarterlyReturns.length,
+    startDate: quarterlyReturns[0].startDate,
+    endDate: quarterlyReturns[quarterlyReturns.length - 1].endDate,
+    totalReturn: (portfolioCumulative - 1) * 100,
+    benchmarkTotalReturn: (benchmarkCumulative - 1) * 100,
+    avgQuarterlyReturn,
+    avgBenchmarkReturn,
+    annualizedReturn,
+    annualizedBenchmark,
+    alpha: annualizedReturn - annualizedBenchmark,
+    positiveQuarters: quarterlyReturns.filter(q => q.return > 0).length,
+    negativeQuarters: quarterlyReturns.filter(q => q.return < 0).length,
+    bestQuarter: Math.max(...quarterlyReturns.map(q => q.return)),
+    worstQuarter: Math.min(...quarterlyReturns.map(q => q.return))
+  };
+
+  return {
+    returns: returnsWithBenchmark,
+    summary
+  };
+}
+
+/**
+ * Get portfolio returns summary for all investors (leaderboard)
+ * OPTIMIZED: Single batch query instead of N+1 pattern (Tier 3 optimization)
+ */
+function getAllInvestorReturnsSummary() {
+  // Step 1: Get all active investors
+  const investors = getAllInvestors();
+  if (investors.length === 0) return [];
+
+  const investorIds = investors.map(inv => inv.id);
+  const investorMap = new Map(investors.map(inv => [inv.id, inv]));
+
+  // Step 2: Batch fetch all report dates for all investors
+  const allDates = db.prepare(`
+    SELECT DISTINCT investor_id, report_date
+    FROM investor_holdings
+    WHERE investor_id IN (${investorIds.map(() => '?').join(',')})
+    ORDER BY investor_id, report_date ASC
+  `).all(...investorIds);
+
+  // Group dates by investor
+  const datesByInvestor = new Map();
+  for (const row of allDates) {
+    if (!datesByInvestor.has(row.investor_id)) {
+      datesByInvestor.set(row.investor_id, []);
+    }
+    datesByInvestor.get(row.investor_id).push(row.report_date);
+  }
+
+  // Step 3: Batch fetch all holdings for all investors (grouped by report_date)
+  const allHoldings = db.prepare(`
+    SELECT
+      h.investor_id,
+      h.report_date,
+      c.id as company_id,
+      c.symbol,
+      SUM(h.market_value) as position_value
+    FROM investor_holdings h
+    JOIN companies c ON h.company_id = c.id
+    WHERE h.investor_id IN (${investorIds.map(() => '?').join(',')})
+      AND c.symbol IS NOT NULL
+    GROUP BY h.investor_id, h.report_date, c.id
+  `).all(...investorIds);
+
+  // Build map: investor_id -> report_date -> holdings[]
+  const holdingsMap = new Map();
+  for (const h of allHoldings) {
+    const key = `${h.investor_id}_${h.report_date}`;
+    if (!holdingsMap.has(key)) {
+      holdingsMap.set(key, []);
+    }
+    holdingsMap.get(key).push(h);
+  }
+
+  // Step 4: Collect all unique (company_id, date) pairs we need prices for
+  const companyDatePairs = new Set();
+  for (const [invId, dates] of datesByInvestor) {
+    for (const date of dates) {
+      const key = `${invId}_${date}`;
+      const holdings = holdingsMap.get(key) || [];
+      for (const h of holdings) {
+        companyDatePairs.add(`${h.company_id}_${date}`);
+      }
+    }
+  }
+
+  // Step 5: Batch fetch all prices in one query using JSON
+  const allCompanyIds = [...new Set(allHoldings.map(h => h.company_id))];
+  const allUniqueDates = [...new Set(allDates.map(d => d.report_date))];
+
+  const pricesByCompanyDate = new Map();
+  if (allCompanyIds.length > 0 && allUniqueDates.length > 0) {
+    const prices = db.prepare(`
+      WITH target_dates AS (
+        SELECT value as target_date FROM json_each(?)
+      ),
+      target_companies AS (
+        SELECT value as company_id FROM json_each(?)
+      ),
+      price_lookup AS (
+        SELECT
+          dp.company_id,
+          td.target_date,
+          dp.close,
+          ROW_NUMBER() OVER (PARTITION BY dp.company_id, td.target_date ORDER BY dp.date DESC) as rn
+        FROM daily_prices dp
+        CROSS JOIN target_dates td
+        CROSS JOIN target_companies tc
+        WHERE dp.company_id = tc.company_id
+          AND dp.date <= td.target_date
+          AND dp.date >= date(td.target_date, '-30 days')
+      )
+      SELECT company_id, target_date, close
+      FROM price_lookup
+      WHERE rn = 1
+    `).all(JSON.stringify(allUniqueDates), JSON.stringify(allCompanyIds));
+
+    for (const p of prices) {
+      pricesByCompanyDate.set(`${p.company_id}_${p.target_date}`, p.close);
+    }
+  }
+
+  // Step 6: Calculate returns for each investor
+  const results = [];
+
+  for (const [invId, dates] of datesByInvestor) {
+    if (dates.length < 2) continue;
+
+    const investor = investorMap.get(invId);
+    const quarterlyReturns = [];
+
+    for (let i = 0; i < dates.length - 1; i++) {
+      const startDate = dates[i];
+      const endDate = dates[i + 1];
+
+      const holdings = holdingsMap.get(`${invId}_${startDate}`) || [];
+      if (holdings.length === 0) continue;
+
+      const totalValue = holdings.reduce((sum, h) => sum + h.position_value, 0);
+
+      let weightedReturn = 0;
+      let matchedWeight = 0;
+
+      for (const holding of holdings) {
+        const weight = holding.position_value / totalValue;
+        const startPrice = pricesByCompanyDate.get(`${holding.company_id}_${startDate}`);
+        const endPrice = pricesByCompanyDate.get(`${holding.company_id}_${endDate}`);
+
+        if (startPrice && endPrice && startPrice > 0) {
+          const stockReturn = (endPrice - startPrice) / startPrice;
+          weightedReturn += weight * stockReturn;
+          matchedWeight += weight;
+        }
+      }
+
+      // Skip quarters where we couldn't match at least 50% of holdings
+      if (matchedWeight >= 0.5) {
+        quarterlyReturns.push({
+          return: weightedReturn * 100
+        });
+      }
+    }
+
+    if (quarterlyReturns.length === 0) continue;
+
+    // Calculate summary
+    let portfolioCumulative = 1.0;
+    for (const qtr of quarterlyReturns) {
+      portfolioCumulative *= (1 + qtr.return / 100);
+    }
+
+    const avgQuarterlyReturn = quarterlyReturns.reduce((sum, q) => sum + q.return, 0) / quarterlyReturns.length;
+    const annualizedReturn = (Math.pow(1 + avgQuarterlyReturn / 100, 4) - 1) * 100;
+
+    results.push({
+      id: invId,
+      name: investor.name,
+      fundName: investor.fund_name,
+      periodCount: quarterlyReturns.length,
+      totalReturn: (portfolioCumulative - 1) * 100,
+      avgQuarterlyReturn,
+      annualizedReturn,
+      positiveQuarters: quarterlyReturns.filter(q => q.return > 0).length,
+      negativeQuarters: quarterlyReturns.filter(q => q.return < 0).length,
+      bestQuarter: Math.max(...quarterlyReturns.map(q => q.return)),
+      worstQuarter: Math.min(...quarterlyReturns.map(q => q.return))
+    });
+  }
+
+  // Sort by annualized return
+  results.sort((a, b) => (b.annualizedReturn || 0) - (a.annualizedReturn || 0));
+
+  return results;
+}
+
+/**
+ * Get S&P 500 (SPY) return between two dates
+ */
+function getSpyReturn(startDate, endDate) {
+  // Try to get SPY prices from daily_prices
+  const spyCompany = db.prepare('SELECT id FROM companies WHERE symbol = \'SPY\'').get();
+
+  if (!spyCompany) {
+    // Fallback to index_prices table
+    const startPrice = db.prepare(`
+      SELECT close FROM index_prices
+      WHERE symbol = 'SPY' AND date <= ?
+      ORDER BY date DESC LIMIT 1
+    `).get(startDate);
+
+    const endPrice = db.prepare(`
+      SELECT close FROM index_prices
+      WHERE symbol = 'SPY' AND date <= ?
+      ORDER BY date DESC LIMIT 1
+    `).get(endDate);
+
+    if (startPrice?.close && endPrice?.close && startPrice.close > 0) {
+      return ((endPrice.close - startPrice.close) / startPrice.close) * 100;
+    }
+    return null;
+  }
+
+  const startPrice = db.prepare(`
+    SELECT close FROM daily_prices
+    WHERE company_id = ? AND date <= ?
+    ORDER BY date DESC LIMIT 1
+  `).get(spyCompany.id, startDate);
+
+  const endPrice = db.prepare(`
+    SELECT close FROM daily_prices
+    WHERE company_id = ? AND date <= ?
+    ORDER BY date DESC LIMIT 1
+  `).get(spyCompany.id, endDate);
+
+  if (startPrice?.close && endPrice?.close && startPrice.close > 0) {
+    return ((endPrice.close - startPrice.close) / startPrice.close) * 100;
+  }
+  return null;
+}
+
+/**
+ * Get portfolio value history for performance charts
+ * Returns quarterly portfolio values over time with period-over-period returns
+ */
+function getPortfolioValueHistory(investorId, { limit = 40 } = {}) {
+  // Get filing-level summaries for performance chart
+  const filings = db.prepare(`
+    SELECT
+      if.filing_date,
+      if.report_date,
+      if.total_value,
+      if.positions_count,
+      if.new_positions,
+      if.increased_positions,
+      if.decreased_positions,
+      if.sold_positions,
+      if.unchanged_positions
+    FROM investor_filings if
+    WHERE if.investor_id = ?
+      AND if.total_value > 0
+      AND if.positions_count > 5
+    ORDER BY if.filing_date ASC
+    LIMIT ?
+  `).all(investorId, limit);
+
+  if (filings.length === 0) {
+    return { history: [], summary: null };
+  }
+
+  // Calculate period-over-period returns
+  const historyWithReturns = filings.map((f, index) => {
+    let qoq_return = null;
+    let qoq_value_change = null;
+
+    if (index > 0) {
+      const prevValue = filings[index - 1].total_value;
+      if (prevValue > 0) {
+        qoq_value_change = f.total_value - prevValue;
+        qoq_return = ((f.total_value - prevValue) / prevValue) * 100;
+      }
+    }
+
+    return {
+      date: f.filing_date,
+      reportDate: f.report_date,
+      value: f.total_value,
+      positionsCount: f.positions_count,
+      newPositions: f.new_positions,
+      increasedPositions: f.increased_positions,
+      decreasedPositions: f.decreased_positions,
+      soldPositions: f.sold_positions,
+      unchangedPositions: f.unchanged_positions,
+      qoqReturn: qoq_return,
+      qoqValueChange: qoq_value_change
+    };
+  });
+
+  // Calculate summary statistics
+  const returns = historyWithReturns
+    .filter(h => h.qoqReturn !== null)
+    .map(h => h.qoqReturn);
+
+  const summary = {
+    periodCount: filings.length,
+    startDate: filings[0].filing_date,
+    endDate: filings[filings.length - 1].filing_date,
+    startValue: filings[0].total_value,
+    endValue: filings[filings.length - 1].total_value,
+    totalReturn: filings[0].total_value > 0
+      ? ((filings[filings.length - 1].total_value - filings[0].total_value) / filings[0].total_value) * 100
+      : null,
+    avgQuarterlyReturn: returns.length > 0
+      ? returns.reduce((sum, r) => sum + r, 0) / returns.length
+      : null,
+    bestQuarter: returns.length > 0
+      ? { value: Math.max(...returns), index: returns.indexOf(Math.max(...returns)) }
+      : null,
+    worstQuarter: returns.length > 0
+      ? { value: Math.min(...returns), index: returns.indexOf(Math.min(...returns)) }
+      : null,
+    positiveQuarters: returns.filter(r => r > 0).length,
+    negativeQuarters: returns.filter(r => r < 0).length
+  };
+
+  // Add best/worst quarter dates
+  if (summary.bestQuarter) {
+    summary.bestQuarter.date = historyWithReturns[summary.bestQuarter.index + 1]?.date;
+  }
+  if (summary.worstQuarter) {
+    summary.worstQuarter.date = historyWithReturns[summary.worstQuarter.index + 1]?.date;
+  }
+
+  return { history: historyWithReturns, summary };
+}
+
+// ============================================
+// 13F Fetching and Parsing
+// ============================================
+
+/**
+ * Fetch latest 13F filing for an investor
+ */
+async function fetch13F(investorId) {
+  const investor = getInvestor(investorId);
+  if (!investor) {
+    throw new Error(`Investor not found: ${investorId}`);
+  }
+
+  console.log(`📄 Fetching 13F for ${investor.name} (CIK: ${investor.cik})`);
+
+  try {
+    // Get filing list from SEC EDGAR
+    const filings = await getFilingsList(investor.cik);
+    if (!filings || filings.length === 0) {
+      console.log(`⚠️ No 13F filings found for ${investor.name}`);
+      return { success: false, message: 'No filings found' };
+    }
+
+    const latestFiling = filings[0];
+    console.log(`📥 Found filing: ${latestFiling.filingDate}`);
+
+    // Check if we already have this filing
+    const existingFiling = db.prepare(`
+      SELECT id FROM investor_filings
+      WHERE investor_id = ? AND accession_number = ?
+    `).get(investorId, latestFiling.accessionNumber);
+
+    if (existingFiling) {
+      console.log('✅ Filing already processed');
+      return { success: true, message: 'Filing already exists', existing: true };
+    }
+
+    // Fetch and parse the filing
+    const holdings = await parseInfoTable(investor.cik, latestFiling.accessionNumber);
+    console.log(`📊 Parsed ${holdings.length} positions`);
+
+    // Get previous holdings for comparison
+    const previousHoldings = getPreviousHoldings(investorId);
+
+    // Match CUSIPs to companies and calculate changes
+    const processedHoldings = await processHoldings(holdings, previousHoldings);
+
+    // Store holdings
+    storeHoldings(investorId, latestFiling, processedHoldings);
+
+    // Invalidate performance cache since we have new data
+    invalidatePerformanceCache(investorId);
+    console.log(`🔄 Invalidated performance cache for ${investor.name}`);
+
+    // Count unique positions (CUSIP + option_type), not raw row count
+    const uniquePositions = new Set(
+      processedHoldings.map(h => `${h.cusip}|${h.optionType || ''}`)
+    ).size;
+
+    console.log(`✅ Stored ${processedHoldings.length} rows (${uniquePositions} unique positions) for ${investor.name}`);
+
+    return {
+      success: true,
+      filingDate: latestFiling.filingDate,
+      positionsCount: uniquePositions,
+      totalValue: processedHoldings.reduce((sum, h) => sum + h.value, 0)
+    };
+
+  } catch (error) {
+    console.error(`❌ Error fetching 13F for ${investor.name}:`, error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Get list of 13F filings for a CIK
+ */
+async function getFilingsList(cik) {
+  const cleanCik = cik.replace(/^0+/, '');
+  const url = `https://data.sec.gov/submissions/CIK${cik}.json`;
+
+  const response = await rateLimitedFetch(url);
+  const data = await response.json();
+
+  const filings = [];
+  const recent = data.filings?.recent || {};
+
+  if (recent.form && recent.accessionNumber && recent.filingDate) {
+    for (let i = 0; i < recent.form.length; i++) {
+      if (recent.form[i] === '13F-HR' || recent.form[i] === '13F-HR/A') {
+        filings.push({
+          form: recent.form[i],
+          accessionNumber: recent.accessionNumber[i],
+          filingDate: recent.filingDate[i],
+          reportDate: recent.reportDate?.[i] || recent.filingDate[i]
+        });
+      }
+    }
+  }
+
+  return filings;
+}
+
+/**
+ * Parse 13F infotable XML
+ */
+async function parseInfoTable(cik, accessionNumber) {
+  const cleanAccession = accessionNumber.replace(/-/g, '');
+  const baseUrl = `https://www.sec.gov/Archives/edgar/data/${cik.replace(/^0+/, '')}/${cleanAccession}`;
+
+  // First get the index to find the infotable file
+  const indexUrl = `${baseUrl}/index.json`;
+  const indexResponse = await rateLimitedFetch(indexUrl);
+  const indexData = await indexResponse.json();
+
+  const items = indexData.directory?.item || [];
+
+  // Find the infotable file - try multiple patterns
+  let infoTableFile = items.find(
+    item => item.name?.toLowerCase().includes('infotable') &&
+            (item.name?.endsWith('.xml') || item.name?.endsWith('.XML'))
+  );
+
+  // If no infotable named file, look for XML files that aren't primary_doc
+  if (!infoTableFile) {
+    infoTableFile = items.find(
+      item => item.name?.endsWith('.xml') &&
+              !item.name?.toLowerCase().includes('primary_doc') &&
+              !item.name?.includes('-index')
+    );
+  }
+
+  // Last resort: check primary_doc.xml
+  if (!infoTableFile) {
+    infoTableFile = items.find(
+      item => item.name?.toLowerCase() === 'primary_doc.xml'
+    );
+  }
+
+  if (!infoTableFile) {
+    throw new Error('Could not find infotable in filing');
+  }
+
+  console.log(`📑 Parsing ${infoTableFile.name}`);
+  const infoTableUrl = `${baseUrl}/${infoTableFile.name}`;
+  const xmlResponse = await rateLimitedFetch(infoTableUrl);
+  const xmlText = await xmlResponse.text();
+
+  // Parse XML to extract holdings
+  const holdings = parseInfoTableXml(xmlText);
+  return holdings;
+}
+
+/**
+ * Parse infotable XML text into holdings array
+ */
+function parseInfoTableXml(xmlText) {
+  const holdings = [];
+
+  // Extract infoTable entries using regex (simple XML parsing)
+  const entryRegex = /<infoTable[^>]*>([\s\S]*?)<\/infoTable>/gi;
+  const entries = xmlText.match(entryRegex) || [];
+
+  for (const entry of entries) {
+    const getValue = (tag) => {
+      const regex = new RegExp(`<${tag}[^>]*>([^<]*)<\/${tag}>`, 'i');
+      const match = entry.match(regex);
+      return match ? match[1].trim() : null;
+    };
+
+    const cusip = getValue('cusip');
+    const nameOfIssuer = getValue('nameOfIssuer');
+    const titleOfClass = getValue('titleOfClass');
+    const value = parseFloat(getValue('value')) * 1000; // Value is in thousands
+    const shares = parseFloat(getValue('sshPrnamt') || getValue('shrsOrPrnAmt>sshPrnamt'));
+    const putCall = getValue('putCall'); // NEW: Capture PUT/CALL option type
+
+    if (cusip && value) {
+      holdings.push({
+        cusip,
+        securityName: nameOfIssuer,
+        titleOfClass: titleOfClass || null,
+        value,
+        shares: shares || 0,
+        optionType: putCall || null // 'PUT', 'CALL', or null for common stock
+      });
+    }
+  }
+
+  // If regex parsing failed, try alternative format (namespaced XML)
+  if (holdings.length === 0) {
+    const altEntryRegex = /<ns1:infoTable[^>]*>([\s\S]*?)<\/ns1:infoTable>/gi;
+    const altEntries = xmlText.match(altEntryRegex) || [];
+
+    for (const entry of altEntries) {
+      const getValue = (tag) => {
+        const regex = new RegExp(`<ns1:${tag}[^>]*>([^<]*)<\/ns1:${tag}>`, 'i');
+        const match = entry.match(regex);
+        return match ? match[1].trim() : null;
+      };
+
+      const cusip = getValue('cusip');
+      const nameOfIssuer = getValue('nameOfIssuer');
+      const titleOfClass = getValue('titleOfClass');
+      const value = parseFloat(getValue('value')) * 1000;
+      const shares = parseFloat(getValue('sshPrnamt'));
+      const putCall = getValue('putCall'); // NEW: Capture PUT/CALL option type
+
+      if (cusip && value) {
+        holdings.push({
+          cusip,
+          securityName: nameOfIssuer,
+          titleOfClass: titleOfClass || null,
+          value,
+          shares: shares || 0,
+          optionType: putCall || null // 'PUT', 'CALL', or null for common stock
+        });
+      }
+    }
+  }
+
+  return holdings;
+}
+
+/**
+ * Get previous holdings for comparison
+ */
+function getPreviousHoldings(investorId) {
+  const investor = db.prepare('SELECT latest_filing_date FROM famous_investors WHERE id = ?').get(investorId);
+  if (!investor?.latest_filing_date) return new Map();
+
+  const holdings = db.prepare(`
+    SELECT cusip, shares, market_value, security_name, option_type, title_of_class
+    FROM investor_holdings
+    WHERE investor_id = ? AND filing_date = ?
+  `).all(investorId, investor.latest_filing_date);
+
+  return new Map(holdings.map(h => [h.cusip, h]));
+}
+
+/**
+ * Process holdings - match to companies and calculate changes
+ */
+async function processHoldings(holdings, previousHoldings) {
+  const processed = [];
+  const unmappedSecurities = [];
+  const totalValue = holdings.reduce((sum, h) => sum + h.value, 0);
+
+  for (const holding of holdings) {
+    // Try to find company by CUSIP
+    let companyId = null;
+    const cusipMapping = db.prepare('SELECT company_id, symbol FROM cusip_mapping WHERE cusip = ?').get(holding.cusip);
+
+    if (cusipMapping?.company_id) {
+      companyId = cusipMapping.company_id;
+    } else {
+      // Try to match by name
+      const company = findCompanyByName(holding.securityName);
+      if (company) {
+        companyId = company.id;
+        // Save mapping for future
+        db.prepare(`
+          INSERT OR REPLACE INTO cusip_mapping (cusip, symbol, company_id, security_name)
+          VALUES (?, ?, ?, ?)
+        `).run(holding.cusip, company.symbol, company.id, holding.securityName);
+      } else {
+        // Track unmapped security
+        unmappedSecurities.push({
+          cusip: holding.cusip,
+          securityName: holding.securityName,
+          value: holding.value,
+          shares: holding.shares
+        });
+      }
+    }
+
+    // Calculate change from previous period
+    const prev = previousHoldings.get(holding.cusip);
+    let changeType = HOLDING_CHANGE_TYPES.NEW;
+    let sharesChange = 0;
+    let sharesChangePct = 0;
+    let valueChange = 0;
+    let prevShares = null;
+
+    if (prev) {
+      prevShares = prev.shares;
+      sharesChange = holding.shares - prev.shares;
+      sharesChangePct = prev.shares > 0 ? (sharesChange / prev.shares) * 100 : 0;
+      valueChange = holding.value - prev.market_value;
+
+      if (Math.abs(sharesChangePct) < 1) {
+        changeType = HOLDING_CHANGE_TYPES.UNCHANGED;
+      } else if (sharesChange > 0) {
+        changeType = HOLDING_CHANGE_TYPES.INCREASED;
+      } else {
+        changeType = HOLDING_CHANGE_TYPES.DECREASED;
+      }
+    }
+
+    processed.push({
+      cusip: holding.cusip,
+      securityName: holding.securityName,
+      titleOfClass: holding.titleOfClass,
+      optionType: holding.optionType, // NEW: 'PUT', 'CALL', or null
+      companyId,
+      shares: holding.shares,
+      value: holding.value,
+      weight: totalValue > 0 ? (holding.value / totalValue) * 100 : 0,
+      prevShares,
+      sharesChange,
+      sharesChangePct,
+      valueChange,
+      changeType
+    });
+  }
+
+  // Add sold positions
+  for (const [cusip, prev] of previousHoldings) {
+    if (!holdings.find(h => h.cusip === cusip)) {
+      const cusipMapping = db.prepare('SELECT company_id FROM cusip_mapping WHERE cusip = ?').get(cusip);
+      processed.push({
+        cusip,
+        securityName: prev.security_name || 'Unknown',
+        titleOfClass: prev.title_of_class || null,
+        optionType: prev.option_type || null, // NEW: Preserve option type for sold positions
+        companyId: cusipMapping?.company_id,
+        shares: 0,
+        value: 0,
+        weight: 0,
+        prevShares: prev.shares,
+        sharesChange: -prev.shares,
+        sharesChangePct: -100,
+        valueChange: -prev.market_value,
+        changeType: HOLDING_CHANGE_TYPES.SOLD
+      });
+    }
+  }
+
+  // Log unmapped securities summary
+  if (unmappedSecurities.length > 0) {
+    const unmappedValue = unmappedSecurities.reduce((sum, u) => sum + u.value, 0);
+    console.log(`⚠️ ${unmappedSecurities.length} unmapped securities worth $${(unmappedValue / 1000000).toFixed(1)}M`);
+  }
+
+  // Store unmapped securities for tracking
+  storeUnmappedSecurities(unmappedSecurities);
+
+  return processed;
+}
+
+/**
+ * Store unmapped securities for later review/mapping
+ * Uses transaction for atomic batch insert
+ */
+function storeUnmappedSecurities(securities) {
+  if (securities.length === 0) return;
+
+  // Ensure table exists
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS unmapped_securities (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      cusip TEXT UNIQUE NOT NULL,
+      security_name TEXT,
+      last_value REAL,
+      last_shares REAL,
+      occurrence_count INTEGER DEFAULT 1,
+      first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      manually_reviewed INTEGER DEFAULT 0,
+      notes TEXT
+    )
+  `);
+
+  const upsert = db.prepare(`
+    INSERT INTO unmapped_securities (cusip, security_name, last_value, last_shares)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(cusip) DO UPDATE SET
+      security_name = excluded.security_name,
+      last_value = excluded.last_value,
+      last_shares = excluded.last_shares,
+      occurrence_count = occurrence_count + 1,
+      last_seen_at = CURRENT_TIMESTAMP
+  `);
+
+  // Wrap batch insert in transaction for atomicity and performance
+  const insertAll = db.transaction((items) => {
+    for (const security of items) {
+      upsert.run(security.cusip, security.securityName, security.value, security.shares);
+    }
+  });
+
+  insertAll(securities);
+}
+
+/**
+ * Find company by name (fuzzy match)
+ */
+function findCompanyByName(name) {
+  if (!name) return null;
+
+  // Clean up the name for matching
+  const cleanName = name.toUpperCase()
+    .replace(/\s+(INC|CORP|CO|LTD|LLC|PLC|CLASS\s+[A-Z]|CL\s+[A-Z]|COM|COMMON|NEW)\.?$/i, '')
+    .replace(/[^A-Z0-9\s]/g, '')
+    .trim();
+
+  // Try exact match first
+  let company = db.prepare(`
+    SELECT id, symbol FROM companies
+    WHERE UPPER(name) LIKE ?
+    LIMIT 1
+  `).get(`%${cleanName}%`);
+
+  if (!company) {
+    // Try matching on first word(s)
+    const firstWords = cleanName.split(/\s+/).slice(0, 2).join(' ');
+    company = db.prepare(`
+      SELECT id, symbol FROM companies
+      WHERE UPPER(name) LIKE ?
+      LIMIT 1
+    `).get(`${firstWords}%`);
+  }
+
+  return company;
+}
+
+/**
+ * Store holdings in database
+ */
+function storeHoldings(investorId, filing, holdings) {
+  const insertHolding = db.prepare(`
+    INSERT INTO investor_holdings (
+      investor_id, company_id, filing_date, report_date, cusip, security_name,
+      shares, market_value, portfolio_weight, prev_shares, shares_change,
+      shares_change_pct, value_change, change_type, option_type, title_of_class
+    ) VALUES (
+      @investorId, @companyId, @filingDate, @reportDate, @cusip, @securityName,
+      @shares, @value, @weight, @prevShares, @sharesChange,
+      @sharesChangePct, @valueChange, @changeType, @optionType, @titleOfClass
+    )
+  `);
+
+  const insertFiling = db.prepare(`
+    INSERT OR REPLACE INTO investor_filings (
+      investor_id, filing_date, report_date, accession_number, filing_url,
+      total_value, positions_count, new_positions, increased_positions,
+      decreased_positions, sold_positions, unchanged_positions
+    ) VALUES (
+      @investorId, @filingDate, @reportDate, @accessionNumber, @filingUrl,
+      @totalValue, @positionsCount, @newPositions, @increasedPositions,
+      @decreasedPositions, @soldPositions, @unchangedPositions
+    )
+  `);
+
+  const updateInvestor = db.prepare(`
+    UPDATE famous_investors SET
+      latest_filing_date = ?,
+      latest_filing_url = ?,
+      latest_portfolio_value = ?,
+      latest_positions_count = ?,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `);
+
+  const transaction = db.transaction(() => {
+    // Count change types
+    const counts = {
+      new: 0,
+      increased: 0,
+      decreased: 0,
+      sold: 0,
+      unchanged: 0
+    };
+
+    for (const h of holdings) {
+      insertHolding.run({
+        investorId,
+        companyId: h.companyId,
+        filingDate: filing.filingDate,
+        reportDate: filing.reportDate,
+        cusip: h.cusip,
+        securityName: h.securityName,
+        shares: h.shares,
+        value: h.value,
+        weight: h.weight,
+        prevShares: h.prevShares,
+        sharesChange: h.sharesChange,
+        sharesChangePct: h.sharesChangePct,
+        valueChange: h.valueChange,
+        changeType: h.changeType,
+        optionType: h.optionType || null,     // NEW: 'PUT', 'CALL', or null
+        titleOfClass: h.titleOfClass || null  // NEW: 'COM', 'CL A', 'PREF', etc.
+      });
+
+      if (h.changeType) counts[h.changeType]++;
+    }
+
+    const totalValue = holdings.reduce((sum, h) => sum + h.value, 0);
+    // Count unique positions by CUSIP + option_type (not raw row count)
+    // SEC filings may have multiple rows per security for different voting authorities
+    const uniquePositions = new Set(
+      holdings
+        .filter(h => h.changeType !== HOLDING_CHANGE_TYPES.SOLD)
+        .map(h => `${h.cusip}|${h.optionType || ''}`)
+    );
+    const activePositions = uniquePositions.size;
+
+    // Build proper SEC filing URL with accession number for direct access
+    const accessionFormatted = filing.accessionNumber?.replace(/-/g, '') || '';
+    const filingUrl = filing.accessionNumber
+      ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${filing.cik}&type=13F-HR&dateb=&owner=include&count=40&search_text=`
+      : `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${filing.cik}&type=13F-HR`;
+
+    insertFiling.run({
+      investorId,
+      filingDate: filing.filingDate,
+      reportDate: filing.reportDate,
+      accessionNumber: filing.accessionNumber,
+      filingUrl,
+      totalValue,
+      positionsCount: activePositions,
+      newPositions: counts.new,
+      increasedPositions: counts.increased,
+      decreasedPositions: counts.decreased,
+      soldPositions: counts.sold,
+      unchangedPositions: counts.unchanged
+    });
+
+    updateInvestor.run(
+      filing.filingDate,
+      `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${filing.cik}&type=13F-HR`,
+      totalValue,
+      activePositions,
+      investorId
+    );
+  });
+
+  transaction();
+}
+
+/**
+ * Fetch 13F for all active investors
+ */
+async function fetchAll13Fs() {
+  const investors = getAllInvestors();
+  const results = [];
+
+  for (const investor of investors) {
+    try {
+      const result = await fetch13F(investor.id);
+      results.push({ investor: investor.name, ...result });
+      // Add delay between investors
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    } catch (error) {
+      results.push({ investor: investor.name, success: false, error: error.message });
+    }
+  }
+
+  return results;
+}
+
+// ============================================
+// Historical Backfill Functions
+// ============================================
+
+/**
+ * Get historical filings for an investor (for backfill)
+ * Returns filings sorted oldest-first for chronological processing
+ * @param {number} investorId - Investor ID
+ * @param {number} yearsBack - How many years of history to fetch (default: 10)
+ * @returns {Promise<Array>} Array of filings to process
+ */
+async function getHistoricalFilingsToProcess(investorId, yearsBack = 10) {
+  const investor = getInvestor(investorId);
+  if (!investor || !investor.cik) {
+    throw new Error(`Investor not found or missing CIK: ${investorId}`);
+  }
+
+  // Get all filings from SEC EDGAR
+  const allFilings = await getFilingsList(investor.cik);
+  if (!allFilings || allFilings.length === 0) {
+    return [];
+  }
+
+  // Calculate cutoff date
+  const cutoffDate = new Date();
+  cutoffDate.setFullYear(cutoffDate.getFullYear() - yearsBack);
+  const cutoffStr = cutoffDate.toISOString().split('T')[0];
+
+  // Get already-processed accession numbers
+  const processedFilings = db.prepare(`
+    SELECT accession_number FROM investor_filings
+    WHERE investor_id = ?
+  `).all(investorId);
+  const processedSet = new Set(processedFilings.map(f => f.accession_number));
+
+  // Filter to unprocessed filings within date range
+  // Exclude amendments (13F-HR/A) to avoid duplicates - they replace original filings
+  const filingsToProcess = allFilings
+    .filter(f => {
+      const filingDate = f.filingDate;
+      const isInRange = filingDate >= cutoffStr;
+      const isNotProcessed = !processedSet.has(f.accessionNumber);
+      const isOriginal = f.form === '13F-HR'; // Skip amendments
+      return isInRange && isNotProcessed && isOriginal;
+    })
+    .sort((a, b) => a.filingDate.localeCompare(b.filingDate)); // Oldest first
+
+  return filingsToProcess;
+}
+
+/**
+ * Get holdings as a Map for a specific filing date (for change tracking during backfill)
+ * @param {number} investorId - Investor ID
+ * @param {string} filingDate - Filing date to get holdings for
+ * @returns {Map} Map of CUSIP -> holding data
+ */
+function getHoldingsMapForDate(investorId, filingDate) {
+  const holdings = db.prepare(`
+    SELECT cusip, shares, market_value, security_name, option_type, title_of_class
+    FROM investor_holdings
+    WHERE investor_id = ? AND filing_date = ?
+  `).all(investorId, filingDate);
+
+  return new Map(holdings.map(h => [h.cusip, h]));
+}
+
+/**
+ * Get the most recent filing date before a given date (for change comparison)
+ * @param {number} investorId - Investor ID
+ * @param {string} beforeDate - Date to look before
+ * @returns {string|null} Previous filing date or null
+ */
+function getPreviousFilingDate(investorId, beforeDate) {
+  const result = db.prepare(`
+    SELECT filing_date FROM investor_filings
+    WHERE investor_id = ? AND filing_date < ?
+    ORDER BY filing_date DESC
+    LIMIT 1
+  `).get(investorId, beforeDate);
+
+  return result?.filing_date || null;
+}
+
+/**
+ * Store holdings for a historical filing (does NOT update latest_filing_date)
+ * @param {number} investorId - Investor ID
+ * @param {Object} filing - Filing metadata
+ * @param {Array} holdings - Processed holdings
+ * @param {boolean} updateLatest - Whether to update famous_investors.latest_filing_date
+ */
+function storeHistoricalHoldings(investorId, filing, holdings, updateLatest = false) {
+  const insertHolding = db.prepare(`
+    INSERT INTO investor_holdings (
+      investor_id, company_id, filing_date, report_date, cusip, security_name,
+      shares, market_value, portfolio_weight, prev_shares, shares_change,
+      shares_change_pct, value_change, change_type, option_type, title_of_class
+    ) VALUES (
+      @investorId, @companyId, @filingDate, @reportDate, @cusip, @securityName,
+      @shares, @value, @weight, @prevShares, @sharesChange,
+      @sharesChangePct, @valueChange, @changeType, @optionType, @titleOfClass
+    )
+  `);
+
+  const insertFiling = db.prepare(`
+    INSERT OR REPLACE INTO investor_filings (
+      investor_id, filing_date, report_date, accession_number, filing_url,
+      total_value, positions_count, new_positions, increased_positions,
+      decreased_positions, sold_positions, unchanged_positions
+    ) VALUES (
+      @investorId, @filingDate, @reportDate, @accessionNumber, @filingUrl,
+      @totalValue, @positionsCount, @newPositions, @increasedPositions,
+      @decreasedPositions, @soldPositions, @unchangedPositions
+    )
+  `);
+
+  const updateInvestor = db.prepare(`
+    UPDATE famous_investors SET
+      latest_filing_date = ?,
+      latest_filing_url = ?,
+      latest_portfolio_value = ?,
+      latest_positions_count = ?,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `);
+
+  const transaction = db.transaction(() => {
+    // Consolidate by CUSIP+optionType before storing to prevent duplicates
+    // Some 13F filings have multiple entries for the same security (e.g., different share classes)
+    const consolidatedMap = new Map();
+    for (const h of holdings) {
+      const key = `${h.cusip}|${h.optionType || ''}`;
+      if (consolidatedMap.has(key)) {
+        const existing = consolidatedMap.get(key);
+        existing.shares += h.shares || 0;
+        existing.value += h.value || 0;
+        existing.prevShares = (existing.prevShares || 0) + (h.prevShares || 0);
+        existing.sharesChange = (existing.sharesChange || 0) + (h.sharesChange || 0);
+        existing.valueChange = (existing.valueChange || 0) + (h.valueChange || 0);
+        // Keep the first security name, company ID, etc.
+      } else {
+        consolidatedMap.set(key, { ...h });
+      }
+    }
+    const consolidatedHoldings = Array.from(consolidatedMap.values());
+
+    // Recalculate weights after consolidation
+    const consolidatedTotalValue = consolidatedHoldings.reduce((sum, h) => sum + (h.value || 0), 0);
+    if (consolidatedTotalValue > 0) {
+      for (const h of consolidatedHoldings) {
+        h.weight = ((h.value || 0) / consolidatedTotalValue) * 100;
+      }
+    }
+
+    // Count change types
+    const counts = {
+      new: 0,
+      increased: 0,
+      decreased: 0,
+      sold: 0,
+      unchanged: 0
+    };
+
+    for (const h of consolidatedHoldings) {
+      insertHolding.run({
+        investorId,
+        companyId: h.companyId,
+        filingDate: filing.filingDate,
+        reportDate: filing.reportDate,
+        cusip: h.cusip,
+        securityName: h.securityName,
+        shares: h.shares,
+        value: h.value,
+        weight: h.weight,
+        prevShares: h.prevShares,
+        sharesChange: h.sharesChange,
+        sharesChangePct: h.sharesChangePct,
+        valueChange: h.valueChange,
+        changeType: h.changeType,
+        optionType: h.optionType || null,
+        titleOfClass: h.titleOfClass || null
+      });
+
+      if (h.changeType) counts[h.changeType]++;
+    }
+
+    const totalValue = consolidatedHoldings.reduce((sum, h) => sum + h.value, 0);
+    const uniquePositions = new Set(
+      consolidatedHoldings
+        .filter(h => h.changeType !== HOLDING_CHANGE_TYPES.SOLD)
+        .map(h => `${h.cusip}|${h.optionType || ''}`)
+    );
+    const activePositions = uniquePositions.size;
+
+    const accessionFormatted = filing.accessionNumber?.replace(/-/g, '') || '';
+    const cik = db.prepare('SELECT cik FROM famous_investors WHERE id = ?').get(investorId)?.cik || '';
+    const filingUrl = filing.accessionNumber
+      ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${cik}&type=13F&dateb=&owner=include&count=40&search_text=`
+      : null;
+
+    insertFiling.run({
+      investorId,
+      filingDate: filing.filingDate,
+      reportDate: filing.reportDate,
+      accessionNumber: filing.accessionNumber,
+      filingUrl,
+      totalValue,
+      positionsCount: activePositions,
+      newPositions: counts.new,
+      increasedPositions: counts.increased,
+      decreasedPositions: counts.decreased,
+      soldPositions: counts.sold,
+      unchangedPositions: counts.unchanged
+    });
+
+    // Only update latest_filing_date if this is the most recent filing
+    if (updateLatest) {
+      updateInvestor.run(
+        filing.filingDate,
+        filingUrl,
+        totalValue,
+        activePositions,
+        investorId
+      );
+    }
+  });
+
+  transaction();
+}
+
+/**
+ * Process a single historical filing
+ * @param {number} investorId - Investor ID
+ * @param {Object} filing - Filing from SEC (accessionNumber, filingDate, reportDate)
+ * @param {Map} previousHoldingsMap - Holdings from previous period (for change calculation)
+ * @returns {Promise<Object>} Result with holdings map for next iteration
+ */
+async function processHistoricalFiling(investorId, filing, previousHoldingsMap = null) {
+  const investor = getInvestor(investorId);
+  if (!investor) {
+    throw new Error(`Investor not found: ${investorId}`);
+  }
+
+  // Check if filing already exists
+  const existingFiling = db.prepare(`
+    SELECT id FROM investor_filings
+    WHERE investor_id = ? AND accession_number = ?
+  `).get(investorId, filing.accessionNumber);
+
+  if (existingFiling) {
+    // Already processed, just return existing holdings as map
+    const existingHoldings = getHoldingsMapForDate(investorId, filing.filingDate);
+    return {
+      success: true,
+      skipped: true,
+      holdingsMap: existingHoldings,
+      message: 'Filing already processed'
+    };
+  }
+
+  // Parse the filing from SEC
+  const holdings = await parseInfoTable(investor.cik, filing.accessionNumber);
+
+  // If no previous holdings provided, try to get from DB
+  if (!previousHoldingsMap) {
+    const prevDate = getPreviousFilingDate(investorId, filing.filingDate);
+    previousHoldingsMap = prevDate ? getHoldingsMapForDate(investorId, prevDate) : new Map();
+  }
+
+  // Process holdings (match CUSIPs, calculate changes)
+  const processedHoldings = await processHoldings(holdings, previousHoldingsMap);
+
+  // Determine if this should update latest_filing_date
+  const currentLatest = investor.latest_filing_date;
+  const shouldUpdateLatest = !currentLatest || filing.filingDate > currentLatest;
+
+  // Store the holdings
+  storeHistoricalHoldings(investorId, filing, processedHoldings, shouldUpdateLatest);
+
+  // Build holdings map for next iteration
+  const newHoldingsMap = new Map();
+  for (const h of processedHoldings) {
+    newHoldingsMap.set(h.cusip, {
+      cusip: h.cusip,
+      shares: h.shares,
+      market_value: h.value,
+      security_name: h.securityName,
+      option_type: h.optionType,
+      title_of_class: h.titleOfClass
+    });
+  }
+
+  const uniquePositions = new Set(
+    processedHoldings.map(h => `${h.cusip}|${h.optionType || ''}`)
+  ).size;
+
+  return {
+    success: true,
+    skipped: false,
+    filingDate: filing.filingDate,
+    positionsCount: uniquePositions,
+    totalValue: processedHoldings.reduce((sum, h) => sum + h.value, 0),
+    holdingsMap: newHoldingsMap
+  };
+}
+
+/**
+ * Backfill all historical filings for an investor
+ * @param {number} investorId - Investor ID
+ * @param {Object} options - Options
+ * @param {number} options.yearsBack - Years of history (default: 10)
+ * @param {Function} options.onProgress - Progress callback (filingIndex, totalFilings, filing)
+ * @param {Function} options.onError - Error callback (filing, error)
+ * @returns {Promise<Object>} Backfill results
+ */
+async function backfillInvestorFilings(investorId, options = {}) {
+  const {
+    yearsBack = 10,
+    onProgress = null,
+    onError = null
+  } = options;
+
+  const investor = getInvestor(investorId);
+  if (!investor) {
+    throw new Error(`Investor not found: ${investorId}`);
+  }
+
+  console.log(`📜 Starting historical backfill for ${investor.name} (${yearsBack} years)`);
+
+  // Get filings to process
+  const filingsToProcess = await getHistoricalFilingsToProcess(investorId, yearsBack);
+  console.log(`📋 Found ${filingsToProcess.length} filings to process`);
+
+  if (filingsToProcess.length === 0) {
+    return {
+      success: true,
+      investorId,
+      investorName: investor.name,
+      filingsProcessed: 0,
+      message: 'No new filings to process'
+    };
+  }
+
+  const results = {
+    success: true,
+    investorId,
+    investorName: investor.name,
+    filingsProcessed: 0,
+    filingsSkipped: 0,
+    errors: []
+  };
+
+  let previousHoldingsMap = null;
+
+  for (let i = 0; i < filingsToProcess.length; i++) {
+    const filing = filingsToProcess[i];
+
+    try {
+      if (onProgress) {
+        onProgress(i + 1, filingsToProcess.length, filing);
+      }
+
+      console.log(`  📥 Processing ${i + 1}/${filingsToProcess.length}: ${filing.filingDate}`);
+
+      const result = await processHistoricalFiling(investorId, filing, previousHoldingsMap);
+
+      if (result.skipped) {
+        results.filingsSkipped++;
+      } else {
+        results.filingsProcessed++;
+      }
+
+      // Pass holdings to next iteration for change calculation
+      previousHoldingsMap = result.holdingsMap;
+
+    } catch (error) {
+      console.error(`  ❌ Error processing ${filing.filingDate}: ${error.message}`);
+      results.errors.push({
+        filingDate: filing.filingDate,
+        accessionNumber: filing.accessionNumber,
+        error: error.message
+      });
+
+      if (onError) {
+        onError(filing, error);
+      }
+
+      // Continue to next filing
+    }
+  }
+
+  console.log(`✅ Backfill complete for ${investor.name}: ${results.filingsProcessed} processed, ${results.filingsSkipped} skipped, ${results.errors.length} errors`);
+
+  return results;
+}
+
+// ============================================
+// Portfolio Cloning
+// ============================================
+
+/**
+ * Clone investor portfolio to a new portfolio
+ * Note: Actual portfolio creation is done by Agent 1's PortfolioService
+ * This function prepares the clone data
+ */
+function prepareClone(investorId, options = {}) {
+  const {
+    amount = 10000,
+    minWeight = 0,
+    maxPositions = null,
+    excludeSymbols = []
+  } = options;
+
+  const { holdings, filingDate, totalValue } = getLatestHoldings(investorId, { limit: 1000 });
+
+  if (!holdings.length) {
+    throw new Error('No holdings found for investor');
+  }
+
+  // Filter and sort holdings
+  let filteredHoldings = holdings
+    .filter(h => h.symbol && h.portfolio_weight >= minWeight)
+    .filter(h => !excludeSymbols.includes(h.symbol))
+    .sort((a, b) => b.portfolio_weight - a.portfolio_weight);
+
+  if (maxPositions) {
+    filteredHoldings = filteredHoldings.slice(0, maxPositions);
+  }
+
+  // Normalize weights
+  const totalWeight = filteredHoldings.reduce((sum, h) => sum + h.portfolio_weight, 0);
+
+  // Calculate trades
+  const trades = filteredHoldings.map(h => {
+    const normalizedWeight = h.portfolio_weight / totalWeight;
+    const tradeValue = amount * normalizedWeight;
+
+    return {
+      symbol: h.symbol,
+      companyId: h.company_id,
+      weight: normalizedWeight * 100,
+      targetValue: tradeValue,
+      originalWeight: h.portfolio_weight
+    };
+  });
+
+  // Increment follower count
+  db.prepare('UPDATE famous_investors SET followers_count = followers_count + 1 WHERE id = ?').run(investorId);
+
+  return {
+    investorId,
+    investorName: getInvestor(investorId).name,
+    filingDate,
+    amount,
+    trades,
+    positionsCount: trades.length,
+    excludedCount: holdings.length - filteredHoldings.length
+  };
+}
+
+// ============================================
+// Statistics and Analytics
+// ============================================
+
+/**
+ * Get investor statistics
+ * Consolidates by CUSIP for accurate sector allocation and top positions
+ */
+function getInvestorStats(investorId) {
+  const investor = getInvestor(investorId);
+  if (!investor) return null;
+
+  // Get sector allocation (consolidated by CUSIP first, then by sector)
+  const sectorAllocation = db.prepare(`
+    SELECT
+      sector,
+      SUM(total_value) as total_value,
+      SUM(total_weight) as total_weight,
+      COUNT(*) as positions
+    FROM (
+      SELECT
+        c.sector,
+        ih.cusip,
+        SUM(ih.market_value) as total_value,
+        SUM(ih.portfolio_weight) as total_weight
+      FROM investor_holdings ih
+      LEFT JOIN companies c ON ih.company_id = c.id
+      WHERE ih.investor_id = ? AND ih.filing_date = ?
+      GROUP BY ih.cusip, c.sector
+    )
+    GROUP BY sector
+    ORDER BY total_value DESC
+  `).all(investorId, investor.latest_filing_date);
+
+  // Get top positions (consolidated by CUSIP)
+  const topPositions = db.prepare(`
+    SELECT
+      ih.cusip,
+      MAX(ih.security_name) as security_name,
+      ih.company_id,
+      SUM(ih.shares) as shares,
+      SUM(ih.market_value) as market_value,
+      SUM(ih.portfolio_weight) as portfolio_weight,
+      c.symbol,
+      c.name as company_name
+    FROM investor_holdings ih
+    LEFT JOIN companies c ON ih.company_id = c.id
+    WHERE ih.investor_id = ? AND ih.filing_date = ?
+    GROUP BY ih.cusip
+    ORDER BY SUM(ih.portfolio_weight) DESC
+    LIMIT 10
+  `).all(investorId, investor.latest_filing_date);
+
+  return {
+    ...investor,
+    sectorAllocation,
+    topPositions
+  };
+}
+
+/**
+ * Get stocks most owned by famous investors
+ */
+function getMostOwnedStocks(limit = 20) {
+  return db.prepare(`
+    SELECT
+      c.id,
+      c.symbol,
+      c.name,
+      c.sector,
+      COUNT(DISTINCT ih.investor_id) as investor_count,
+      SUM(ih.market_value) as total_value,
+      AVG(ih.portfolio_weight) as avg_weight,
+      GROUP_CONCAT(DISTINCT fi.name) as investors
+    FROM investor_holdings ih
+    JOIN companies c ON ih.company_id = c.id
+    JOIN famous_investors fi ON ih.investor_id = fi.id
+    WHERE ih.filing_date = fi.latest_filing_date
+      AND ih.change_type != 'sold'
+    GROUP BY c.id
+    HAVING investor_count >= 2
+    ORDER BY investor_count DESC, total_value DESC
+    LIMIT ?
+  `).all(limit);
+}
+
+/**
+ * Get recent investor activity (new buys, sells)
+ */
+function getRecentActivity(limit = 50) {
+  return db.prepare(`
+    SELECT
+      ih.*,
+      c.symbol,
+      c.name as company_name,
+      fi.name as investor_name,
+      fi.fund_name
+    FROM investor_holdings ih
+    JOIN famous_investors fi ON ih.investor_id = fi.id
+    LEFT JOIN companies c ON ih.company_id = c.id
+    WHERE ih.filing_date = fi.latest_filing_date
+      AND ih.change_type IN ('new', 'increased', 'sold')
+    ORDER BY
+      CASE ih.change_type WHEN 'new' THEN 1 WHEN 'sold' THEN 2 ELSE 3 END,
+      ih.market_value DESC
+    LIMIT ?
+  `).all(limit);
+}
+
+// ============================================
+// Unmapped Securities Management
+// ============================================
+
+/**
+ * Get all unmapped securities
+ */
+function getUnmappedSecurities({ limit = 100, sortBy = 'last_value', onlyUnreviewed = false } = {}) {
+  const query = `
+    SELECT * FROM unmapped_securities
+    ${onlyUnreviewed ? 'WHERE manually_reviewed = 0' : ''}
+    ORDER BY ${sortBy === 'occurrence_count' ? 'occurrence_count' : 'last_value'} DESC
+    LIMIT ?
+  `;
+
+  try {
+    return db.prepare(query).all(limit);
+  } catch (e) {
+    // Table might not exist yet
+    return [];
+  }
+}
+
+/**
+ * Get unmapped securities summary
+ */
+function getUnmappedSecuritiesSummary() {
+  try {
+    const stats = db.prepare(`
+      SELECT
+        COUNT(*) as total_count,
+        SUM(last_value) as total_value,
+        SUM(CASE WHEN manually_reviewed = 0 THEN 1 ELSE 0 END) as unreviewed_count,
+        SUM(CASE WHEN manually_reviewed = 0 THEN last_value ELSE 0 END) as unreviewed_value,
+        MAX(last_seen_at) as last_updated
+      FROM unmapped_securities
+    `).get();
+    return stats || { total_count: 0, total_value: 0, unreviewed_count: 0, unreviewed_value: 0 };
+  } catch (e) {
+    return { total_count: 0, total_value: 0, unreviewed_count: 0, unreviewed_value: 0 };
+  }
+}
+
+/**
+ * Map an unmapped security to a company
+ * Uses transaction to ensure atomic mapping + review marking
+ */
+function mapSecurityToCompany(cusip, companyId, symbol) {
+  const mapTransaction = db.transaction(() => {
+    // Get security name for the mapping
+    const security = db.prepare('SELECT security_name FROM unmapped_securities WHERE cusip = ?').get(cusip);
+
+    // Add to cusip_mapping
+    db.prepare(`
+      INSERT OR REPLACE INTO cusip_mapping (cusip, symbol, company_id, security_name)
+      VALUES (?, ?, ?, ?)
+    `).run(cusip, symbol, companyId, security?.security_name);
+
+    // Mark as reviewed
+    db.prepare(`
+      UPDATE unmapped_securities SET manually_reviewed = 1, notes = 'Mapped to ' || ? WHERE cusip = ?
+    `).run(symbol, cusip);
+
+    return { success: true, cusip, mappedTo: symbol };
+  });
+
+  return mapTransaction();
+}
+
+/**
+ * Mark unmapped security as reviewed (skip)
+ */
+function markSecurityReviewed(cusip, notes = null) {
+  db.prepare(`
+    UPDATE unmapped_securities SET manually_reviewed = 1, notes = ? WHERE cusip = ?
+  `).run(notes || 'Manually skipped', cusip);
+
+  return { success: true, cusip };
+}
+
+/**
+ * Delete unmapped security entry
+ */
+function deleteUnmappedSecurity(cusip) {
+  const result = db.prepare('DELETE FROM unmapped_securities WHERE cusip = ?').run(cusip);
+  return { success: result.changes > 0, cusip };
+}
+
+// ============================================
+// Performance Caching Functions
+// Pre-calculate and cache investor returns to avoid runtime errors
+// ============================================
+
+/**
+ * Calculate performance for an investor and store in cache
+ * @param {number} investorId - Investor ID
+ * @returns {Object} - The calculated performance data
+ */
+function calculateAndCachePerformance(investorId) {
+  // Calculate performance using existing function
+  const data = getPortfolioReturns(investorId, { limit: 50 });
+
+  if (!data.returns || data.returns.length === 0) {
+    return { returns: [], summary: null, cached: false };
+  }
+
+  // Clear existing cache for this investor
+  db.prepare('DELETE FROM investor_performance_cache WHERE investor_id = ?').run(investorId);
+  db.prepare('DELETE FROM investor_performance_summary WHERE investor_id = ?').run(investorId);
+
+  // Insert each quarter's data
+  const insertQuarter = db.prepare(`
+    INSERT INTO investor_performance_cache
+    (investor_id, start_date, end_date, portfolio_return, benchmark_return, alpha,
+     cumulative_return, cumulative_benchmark, positions_count, calculated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+  `);
+
+  const insertMany = db.transaction((returns) => {
+    for (const qtr of returns) {
+      insertQuarter.run(
+        investorId,
+        qtr.startDate,
+        qtr.endDate,
+        qtr.return,
+        qtr.benchmarkReturn,
+        qtr.alpha,
+        qtr.cumulativeReturn,
+        qtr.cumulativeBenchmark,
+        qtr.positions
+      );
+    }
+  });
+
+  insertMany(data.returns);
+
+  // Insert summary
+  if (data.summary) {
+    db.prepare(`
+      INSERT OR REPLACE INTO investor_performance_summary
+      (investor_id, period_count, first_date, last_date, total_return, benchmark_total_return,
+       avg_quarterly_return, avg_benchmark_return, annualized_return, annualized_benchmark,
+       alpha, positive_quarters, negative_quarters, best_quarter, worst_quarter, calculated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).run(
+      investorId,
+      data.summary.periodCount,
+      data.summary.startDate,
+      data.summary.endDate,
+      data.summary.totalReturn,
+      data.summary.benchmarkTotalReturn,
+      data.summary.avgQuarterlyReturn,
+      data.summary.avgBenchmarkReturn,
+      data.summary.annualizedReturn,
+      data.summary.annualizedBenchmark,
+      data.summary.alpha,
+      data.summary.positiveQuarters,
+      data.summary.negativeQuarters,
+      data.summary.bestQuarter,
+      data.summary.worstQuarter
+    );
+  }
+
+  return { ...data, cached: true };
+}
+
+/**
+ * Get cached performance for an investor
+ * Falls back to calculateAndCachePerformance if cache miss
+ * @param {number} investorId - Investor ID
+ * @returns {Object} - Performance data from cache or freshly calculated
+ */
+function getCachedPerformance(investorId) {
+  // Check if cache exists
+  const cacheCheck = db.prepare(`
+    SELECT COUNT(*) as count FROM investor_performance_cache WHERE investor_id = ?
+  `).get(investorId);
+
+  if (cacheCheck.count === 0) {
+    // Cache miss - calculate and cache
+    return calculateAndCachePerformance(investorId);
+  }
+
+  // Read from cache
+  const cachedReturns = db.prepare(`
+    SELECT
+      start_date as startDate,
+      end_date as endDate,
+      portfolio_return as return,
+      benchmark_return as benchmarkReturn,
+      alpha,
+      cumulative_return as cumulativeReturn,
+      cumulative_benchmark as cumulativeBenchmark,
+      positions_count as positions
+    FROM investor_performance_cache
+    WHERE investor_id = ?
+    ORDER BY start_date ASC
+  `).all(investorId);
+
+  const cachedSummary = db.prepare(`
+    SELECT
+      period_count as periodCount,
+      first_date as startDate,
+      last_date as endDate,
+      total_return as totalReturn,
+      benchmark_total_return as benchmarkTotalReturn,
+      avg_quarterly_return as avgQuarterlyReturn,
+      avg_benchmark_return as avgBenchmarkReturn,
+      annualized_return as annualizedReturn,
+      annualized_benchmark as annualizedBenchmark,
+      alpha,
+      positive_quarters as positiveQuarters,
+      negative_quarters as negativeQuarters,
+      best_quarter as bestQuarter,
+      worst_quarter as worstQuarter
+    FROM investor_performance_summary
+    WHERE investor_id = ?
+  `).get(investorId);
+
+  return {
+    returns: cachedReturns,
+    summary: cachedSummary || null,
+    cached: true
+  };
+}
+
+/**
+ * Invalidate performance cache for an investor
+ * Call this when new filings are processed
+ * @param {number} investorId - Investor ID
+ */
+function invalidatePerformanceCache(investorId) {
+  db.prepare('DELETE FROM investor_performance_cache WHERE investor_id = ?').run(investorId);
+  db.prepare('DELETE FROM investor_performance_summary WHERE investor_id = ?').run(investorId);
+}
+
+/**
+ * Recalculate performance for all investors
+ * Used as batch job after backfill or for maintenance
+ * @returns {Object} - Summary of recalculation results
+ */
+function recalculateAllPerformance() {
+  const investors = getAllInvestors();
+  const results = {
+    total: investors.length,
+    success: 0,
+    failed: 0,
+    noData: 0,
+    errors: []
+  };
+
+  for (const investor of investors) {
+    try {
+      const data = calculateAndCachePerformance(investor.id);
+      if (data.returns && data.returns.length > 0) {
+        results.success++;
+      } else {
+        results.noData++;
+      }
+    } catch (err) {
+      results.failed++;
+      results.errors.push({ investorId: investor.id, name: investor.name, error: err.message });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Check cache status for all investors
+ * @returns {Array} - Cache status per investor
+ */
+function getPerformanceCacheStatus() {
+  return db.prepare(`
+    SELECT
+      fi.id,
+      fi.name,
+      COUNT(pc.id) as cached_quarters,
+      ps.calculated_at as summary_calculated_at,
+      ps.total_return,
+      ps.alpha
+    FROM famous_investors fi
+    LEFT JOIN investor_performance_cache pc ON pc.investor_id = fi.id
+    LEFT JOIN investor_performance_summary ps ON ps.investor_id = fi.id
+    GROUP BY fi.id
+    ORDER BY fi.name
+  `).all();
+}
+
+module.exports = {
+  // Investor operations
+  getAllInvestors,
+  getInvestor,
+  getInvestorByCik,
+
+  // Holdings operations
+  getLatestHoldings,
+  getHoldingChanges,
+  getInvestorsByStock,
+  getInvestorsBySymbol,
+  getHoldingsHistory,
+  getPortfolioValueHistory,
+  getPortfolioReturns,
+  getAllInvestorReturnsSummary,
+
+  // 13F fetching
+  fetch13F,
+  fetchAll13Fs,
+
+  // Historical backfill
+  getHistoricalFilingsToProcess,
+  processHistoricalFiling,
+  backfillInvestorFilings,
+  getHoldingsMapForDate,
+
+  // Portfolio cloning
+  prepareClone,
+
+  // Statistics
+  getInvestorStats,
+  getMostOwnedStocks,
+  getRecentActivity,
+
+  // Unmapped securities
+  getUnmappedSecurities,
+  getUnmappedSecuritiesSummary,
+  mapSecurityToCompany,
+  markSecurityReviewed,
+  deleteUnmappedSecurity,
+
+  // Performance caching
+  calculateAndCachePerformance,
+  getCachedPerformance,
+  invalidatePerformanceCache,
+  recalculateAllPerformance,
+  getPerformanceCacheStatus
+};

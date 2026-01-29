@@ -1,0 +1,154 @@
+/* components/onboarding/OnboardingProgress.css */
+/* Prism Design System Compliant */
+
+.onboarding-progress-widget {
+  background: var(--ai-gradient);
+  color: white;
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin-bottom: var(--space-6);
+  box-shadow: var(--shadow-gold);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.onboarding-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.onboarding-progress-title {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  margin: 0;
+}
+
+.onboarding-progress-dismiss {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-base);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--duration-200) ease;
+}
+
+.onboarding-progress-dismiss:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.05);
+}
+
+/* Progress Bar */
+.onboarding-progress-bar-container {
+  margin-bottom: var(--space-4);
+}
+
+.onboarding-progress-bar {
+  height: var(--space-2);
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-bottom: var(--space-2);
+}
+
+.onboarding-progress-fill {
+  height: 100%;
+  background: white;
+  border-radius: var(--radius-sm);
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+}
+
+.onboarding-progress-text {
+  font-size: var(--text-sm);
+  opacity: 0.9;
+}
+
+/* Tasks */
+.onboarding-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.onboarding-task {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2-5);
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-md);
+  color: white;
+  text-decoration: none;
+  font-size: var(--text-base);
+  transition: all var(--duration-200) ease;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.onboarding-task:hover {
+  background: rgba(255, 255, 255, 0.15);
+  transform: translateX(4px);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.onboarding-task.complete {
+  opacity: 0.7;
+}
+
+.onboarding-task-icon {
+  flex-shrink: 0;
+  color: white;
+}
+
+.onboarding-task-icon.complete {
+  color: var(--positive);
+}
+
+.onboarding-task-label {
+  flex: 1;
+}
+
+/* Complete Message */
+.onboarding-complete-message {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  text-align: center;
+}
+
+.celebration-emoji {
+  font-size: var(--text-3xl);
+  display: block;
+  margin-bottom: var(--space-2);
+  animation: bounce 0.6s ease-in-out;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.onboarding-complete-message p {
+  margin: 0;
+  font-weight: var(--font-semibold);
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .onboarding-progress-widget {
+    padding: var(--space-4);
+  }
+
+  .onboarding-progress-title {
+    font-size: var(--text-base);
+  }
+
+  .onboarding-task {
+    font-size: var(--text-sm);
+  }
+}

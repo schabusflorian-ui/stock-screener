@@ -1,0 +1,713 @@
+/* NotificationCenter.css - Unified notification styles - PRISM Design System */
+
+/* ============================================
+   CONTAINER STYLES
+   ============================================ */
+
+.notification-center {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+}
+
+.notification-center.full {
+  padding: var(--space-4);
+  gap: var(--space-4);
+}
+
+.notification-center.panel {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.notification-center.dropdown {
+  width: 420px;
+  max-height: 520px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+}
+
+/* ============================================
+   SUMMARY STATS
+   ============================================ */
+
+.notification-center .notification-summary {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-lg);
+  flex-wrap: wrap;
+}
+
+.notification-center .summary-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-surface);
+  border-radius: var(--radius-md);
+  min-width: 80px;
+}
+
+.notification-center .summary-stat .stat-value {
+  font-size: var(--text-xl);
+  font-weight: var(--font-bold);
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+.notification-center .summary-stat .stat-label {
+  font-size: var(--text-xs);
+  color: var(--color-gold-700);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-widest);
+}
+
+.notification-center .summary-stat.critical .stat-value { color: var(--negative); }
+.notification-center .summary-stat.warning .stat-value { color: var(--warning); }
+
+/* ============================================
+   FILTER BAR
+   ============================================ */
+
+.notification-center .notification-filter-bar {
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+}
+
+.notification-center .filter-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.notification-center .filter-tabs {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.notification-center .filter-tab {
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.notification-center .filter-tab:hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.notification-center .filter-tab.active {
+  background: var(--bg-surface);
+  color: var(--color-gold-500);
+  box-shadow: var(--shadow-sm);
+}
+
+.notification-center .filter-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.notification-center .btn-filter,
+.notification-center .btn-mark-all {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.notification-center .btn-filter:hover,
+.notification-center .btn-mark-all:hover {
+  border-color: var(--color-gold-500);
+  color: var(--color-gold-500);
+}
+
+.notification-center .btn-filter.active {
+  background: var(--color-navy-900);
+  color: white;
+  border-color: transparent;
+}
+
+.notification-center .filter-expanded {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-default);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.notification-center .filter-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.notification-center .filter-group label {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--color-gold-700);
+  min-width: 80px;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-widest);
+}
+
+.notification-center .filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.notification-center .filter-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.notification-center .filter-chip:hover {
+  border-color: var(--color-gold-500);
+}
+
+.notification-center .filter-chip.active {
+  background: var(--color-navy-900);
+  color: white;
+  border-color: transparent;
+}
+
+.notification-center .filter-chip.critical { border-color: var(--negative-pastel); }
+.notification-center .filter-chip.critical.active { background: var(--negative); }
+.notification-center .filter-chip.warning { border-color: var(--warning-pastel); }
+.notification-center .filter-chip.warning.active { background: var(--warning); }
+.notification-center .filter-chip.info { border-color: var(--info-pastel); }
+.notification-center .filter-chip.info.active { background: var(--info); }
+
+.notification-center .btn-clear-filters {
+  align-self: flex-start;
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.notification-center .btn-clear-filters:hover {
+  color: var(--color-gold-500);
+  text-decoration: underline;
+}
+
+/* ============================================
+   NOTIFICATION LIST
+   ============================================ */
+
+.notification-center .notification-list {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.notification-center.dropdown .notification-list {
+  max-height: 400px;
+}
+
+/* ============================================
+   NOTIFICATION CARD
+   ============================================ */
+
+.notification-center .notification-card {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-default);
+  cursor: default;
+  transition: background var(--duration-fast) var(--ease-out);
+  position: relative;
+}
+
+.notification-center .notification-card:hover {
+  background: rgba(212, 175, 55, 0.04);
+}
+
+.notification-center .notification-card.unread {
+  background: var(--color-gold-50);
+}
+
+.notification-center .notification-card.unread:hover {
+  background: var(--color-gold-100);
+}
+
+.notification-center .notification-card.compact {
+  padding: var(--space-2) var(--space-3);
+}
+
+/* Icon */
+.notification-center .notification-icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.notification-center .notification-card.compact .notification-icon {
+  width: 28px;
+  height: 28px;
+}
+
+.notification-center .notification-icon.critical {
+  background: var(--negative-pastel);
+  color: var(--negative);
+}
+
+.notification-center .notification-icon.warning {
+  background: var(--warning-pastel);
+  color: var(--warning);
+}
+
+.notification-center .notification-icon.info {
+  background: var(--info-pastel);
+  color: var(--info);
+}
+
+/* Content */
+.notification-center .notification-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.notification-center .notification-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.notification-center .notification-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* Category Badges - PRISM Semantic Colors */
+.notification-center .category-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-0-5) var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  border-radius: var(--radius-full);
+}
+
+.notification-center .category-badge.company {
+  background: var(--positive-pastel);
+  color: var(--positive-dark);
+}
+.notification-center .category-badge.portfolio {
+  background: var(--info-pastel);
+  color: var(--info-dark);
+}
+.notification-center .category-badge.watchlist {
+  background: rgba(124, 58, 237, 0.15);
+  color: var(--color-ai-violet);
+}
+.notification-center .category-badge.sentiment {
+  background: rgba(219, 39, 119, 0.1);
+  color: var(--chart-rose);
+}
+.notification-center .category-badge.ai {
+  background: rgba(8, 145, 178, 0.1);
+  color: var(--color-ai-cyan);
+}
+.notification-center .category-badge.system {
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+}
+.notification-center .category-badge.correlation {
+  background: var(--warning-pastel);
+  color: var(--warning-dark);
+}
+.notification-center .category-badge.alert {
+  background: var(--negative-pastel);
+  color: var(--negative-dark);
+}
+
+.notification-center .entity-label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-gold-500);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.notification-center .entity-label:hover {
+  color: var(--color-gold-600);
+  text-decoration: underline;
+}
+
+.notification-center .notification-time {
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  color: var(--text-tertiary);
+}
+
+.notification-center .notification-actions-quick {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.notification-center .notification-card .btn-icon {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.notification-center .notification-card .btn-icon:hover {
+  background: var(--bg-muted);
+  color: var(--text-primary);
+}
+
+.notification-center .notification-card .btn-icon svg.rotated {
+  transform: rotate(180deg);
+}
+
+.notification-center .notification-title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  line-height: var(--leading-snug);
+}
+
+.notification-center .notification-card.compact .notification-title {
+  font-size: var(--text-sm);
+}
+
+.notification-center .notification-body {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--leading-relaxed);
+}
+
+/* Actions dropdown */
+.notification-center .notification-actions-menu {
+  position: absolute;
+  right: var(--space-4);
+  top: 100%;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-dropdown);
+  overflow: hidden;
+}
+
+.notification-center .notification-actions-menu button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.notification-center .notification-actions-menu button:hover {
+  background: rgba(212, 175, 55, 0.04);
+}
+
+/* Action buttons */
+.notification-center .notification-action-buttons {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.notification-center .action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--color-gold-500);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.notification-center .action-btn:hover {
+  background: var(--color-gold-500);
+  color: var(--color-navy-900);
+  border-color: transparent;
+}
+
+/* Priority indicator */
+.notification-center .priority-indicator {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+}
+
+.notification-center .priority-indicator.priority-5 { background: var(--negative); }
+.notification-center .priority-indicator.priority-4 { background: var(--warning); }
+.notification-center .priority-indicator.priority-3 { background: var(--info); }
+.notification-center .priority-indicator.priority-2 { background: var(--color-navy-400); }
+.notification-center .priority-indicator.priority-1 { background: var(--border-default); }
+
+/* ============================================
+   PANEL MODE
+   ============================================ */
+
+.notification-center.panel .panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.notification-center .panel-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.notification-center .panel-title h3 {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.notification-center .unread-badge {
+  padding: var(--space-0-5) var(--space-2);
+  background: var(--color-gold-500);
+  color: var(--color-navy-900);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  border-radius: var(--radius-full);
+}
+
+.notification-center .panel-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* ============================================
+   DROPDOWN MODE
+   ============================================ */
+
+.notification-center.dropdown .dropdown-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-tertiary);
+}
+
+.notification-center .dropdown-title {
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.notification-center .dropdown-count {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.notification-center .dropdown-view-all {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-top: 1px solid var(--border-default);
+  color: var(--color-gold-500);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  text-decoration: none;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.notification-center .dropdown-view-all:hover {
+  background: rgba(212, 175, 55, 0.04);
+  color: var(--color-gold-600);
+}
+
+/* ============================================
+   EMPTY / LOADING / ERROR STATES
+   ============================================ */
+
+.notification-center .notification-loading,
+.notification-center .notification-empty,
+.notification-center .notification-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.notification-center .notification-loading svg.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.notification-center .notification-empty svg,
+.notification-center .notification-error svg {
+  margin-bottom: var(--space-3);
+  opacity: 0.5;
+  color: var(--color-navy-400);
+}
+
+.notification-center .notification-empty p,
+.notification-center .notification-error p {
+  margin: 0 0 var(--space-1);
+  font-weight: var(--font-semibold);
+}
+
+.notification-center .notification-empty span {
+  font-size: var(--text-sm);
+}
+
+.notification-center .notification-error button {
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.notification-center .notification-error button:hover {
+  background: rgba(212, 175, 55, 0.04);
+  border-color: var(--color-gold-500);
+}
+
+/* ============================================
+   LOAD MORE
+   ============================================ */
+
+.notification-center .notification-load-more {
+  padding: var(--space-3);
+  text-align: center;
+}
+
+.notification-center .notification-load-more button {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.notification-center .notification-load-more button:hover:not(:disabled) {
+  background: rgba(212, 175, 55, 0.04);
+  border-color: var(--color-gold-500);
+}
+
+.notification-center .notification-load-more button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
+
+@media (max-width: 768px) {
+  .notification-center.dropdown {
+    width: 100%;
+    max-width: 100vw;
+    border-radius: 0;
+  }
+
+  .notification-center .notification-summary {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .notification-center .summary-stat {
+    flex: 1;
+    min-width: 70px;
+    padding: var(--space-2);
+  }
+
+  .notification-center .filter-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .notification-center .filter-actions {
+    justify-content: flex-end;
+  }
+
+  .notification-center .filter-group {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

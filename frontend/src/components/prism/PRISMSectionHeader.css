@@ -1,0 +1,170 @@
+/* =============================================================================
+   PRISMSectionHeader - Unified Section Header Styling
+   Tier 1 Bank Report Design System
+   ============================================================================= */
+
+.prism-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: var(--space-4);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: var(--space-4);
+}
+
+.prism-section-header.collapsible {
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  margin-bottom: 0;
+}
+
+.prism-section-header.collapsible:hover {
+  background: var(--bg-hover);
+}
+
+/* Left side: Icon + Title + Subtitle */
+.prism-section-header .header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.prism-section-header .header-icon {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+}
+
+/* Icon color variants */
+.prism-section-header .header-icon.violet {
+  background: rgba(124, 58, 237, 0.1);
+  color: var(--color-ai-violet);
+}
+
+.prism-section-header .header-icon.emerald {
+  background: var(--positive-muted);
+  color: var(--positive);
+}
+
+.prism-section-header .header-icon.blue {
+  background: var(--info-muted);
+  color: var(--info);
+}
+
+.prism-section-header .header-icon.gold {
+  background: var(--color-gold-50);
+  color: var(--color-gold-600);
+}
+
+.prism-section-header .header-icon.warning {
+  background: var(--warning-muted);
+  color: var(--warning);
+}
+
+.prism-section-header .header-icon.info {
+  background: var(--info-muted);
+  color: var(--info);
+}
+
+.prism-section-header .header-icon.muted {
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+}
+
+/* Text content */
+.prism-section-header .header-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+}
+
+.prism-section-header .header-title {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin: 0;
+  text-align: left;
+}
+
+.prism-section-header .header-subtitle {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  text-align: left;
+}
+
+/* Right side: Badge + Toggle */
+.prism-section-header .header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.prism-section-header .header-badge {
+  display: flex;
+  align-items: center;
+}
+
+.prism-section-header .header-toggle {
+  color: var(--text-tertiary);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.prism-section-header.expanded .header-toggle {
+  color: var(--text-secondary);
+}
+
+/* =============================================================================
+   Section Wrapper (for collapsible sections)
+   ============================================================================= */
+
+.prism-section {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  margin-bottom: var(--space-5);
+  overflow: hidden;
+}
+
+.prism-section .prism-section-header {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.prism-section.expanded .prism-section-header {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.prism-section .section-content {
+  padding: var(--space-4);
+}
+
+/* =============================================================================
+   Responsive
+   ============================================================================= */
+
+@media (max-width: 768px) {
+  .prism-section-header {
+    padding: var(--space-3);
+  }
+
+  .prism-section-header .header-icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .prism-section-header .header-title {
+    font-size: var(--text-base);
+  }
+
+  .prism-section-header .header-subtitle {
+    font-size: var(--text-xs);
+  }
+}

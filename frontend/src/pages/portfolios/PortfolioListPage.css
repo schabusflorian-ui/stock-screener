@@ -1,0 +1,892 @@
+/* frontend/src/pages/portfolios/PortfolioListPage.css - PRISM Design System */
+
+.portfolio-list-page {
+  padding: var(--space-8) var(--space-6);
+  max-width: var(--max-content-width);
+  margin: 0 auto;
+  animation: fadeIn var(--duration-moderate) ease;
+  color: var(--text-primary);
+}
+
+@media (max-width: 1024px) {
+  .portfolio-list-page {
+    padding: var(--space-6) var(--space-4);
+  }
+}
+
+@media (max-width: 768px) {
+  .portfolio-list-page {
+    padding: var(--space-4);
+  }
+}
+
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  gap: var(--space-4);
+  color: var(--text-secondary);
+}
+
+.loading-spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.error-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  gap: var(--space-4);
+  color: var(--text-secondary);
+}
+
+.error-container p {
+  color: var(--negative);
+  font-weight: var(--font-medium);
+}
+
+.error-container .btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Header */
+.page-header {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--glass-border);
+  padding: var(--space-6) var(--space-8);
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.header-title > svg {
+  color: var(--accent-primary);
+  flex-shrink: 0;
+}
+
+.header-title h1 {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.header-subtitle {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin: var(--space-1) 0 0 0;
+}
+
+.portfolio-list-page .header-actions {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.portfolio-list-page .header-actions .btn {
+  height: 38px;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+}
+
+/* Summary Stats - Separate Row Below Header */
+.summary-stats {
+  display: flex;
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+  max-width: 1400px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.portfolio-list-page .summary-stat {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-direction: row;
+  padding: var(--space-3) var(--space-4);
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  min-width: auto;
+}
+
+.portfolio-list-page .summary-stat svg {
+  color: var(--brand-primary);
+}
+
+.portfolio-list-page .summary-stat.positive svg {
+  color: var(--positive);
+}
+
+.portfolio-list-page .summary-stat.negative svg {
+  color: var(--negative);
+}
+
+.portfolio-list-page .summary-stat .stat-label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  display: block;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.portfolio-list-page .summary-stat .stat-value {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+/* Page Content */
+.portfolio-list-page .page-content {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-8);
+}
+
+/* Empty State */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-20) var(--space-10);
+  text-align: center;
+}
+
+.empty-icon {
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-6);
+}
+
+.empty-state h2 {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin: 0 0 var(--space-2) 0;
+}
+
+.empty-state p {
+  font-size: var(--text-base);
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-8) 0;
+}
+
+.empty-actions {
+  display: flex;
+  gap: var(--space-4);
+}
+
+/* Portfolio Grid */
+.portfolios-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: var(--space-5);
+}
+
+/* Portfolio Card */
+.portfolio-card {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+  text-decoration: none;
+  transition: all var(--transition-fast);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  box-shadow: var(--glass-shadow);
+}
+
+.portfolio-card:hover {
+  border-color: var(--brand-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-gold);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Portfolio icon button inside card */
+.card-header .prism-icon-button-wrapper {
+  flex-shrink: 0;
+}
+
+.card-header .prism-icon-button {
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.card-header .prism-icon-button:hover {
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3) !important;
+  transform: translateY(-2px) !important;
+}
+
+.portfolio-icon {
+  width: var(--space-11);
+  height: var(--space-11);
+  border-radius: var(--radius-lg);
+  background: var(--brand-gradient);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+}
+
+.portfolio-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.portfolio-info h3 {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.portfolio-type {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* Portfolio Tags */
+.portfolio-tags {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-1);
+}
+
+.portfolio-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-0-5) var(--space-2);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-medium);
+  border-radius: var(--radius-full);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tag-manual {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.tag-etf {
+  background: var(--info-muted);
+  color: var(--info);
+}
+
+.tag-ai {
+  background: var(--color-ai-violet-muted);
+  color: var(--color-ai-violet);
+}
+
+.tag-famous {
+  background: var(--color-gold-100);
+  color: var(--color-gold-700);
+  border: 1px solid var(--color-gold-300);
+}
+
+.card-arrow {
+  color: var(--text-tertiary);
+  transition: transform var(--transition-fast);
+}
+
+.portfolio-card:hover .card-arrow {
+  transform: translateX(4px);
+  color: var(--brand-primary);
+}
+
+.card-value {
+  padding: var(--space-4);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-lg);
+}
+
+.value-label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  display: block;
+  margin-bottom: var(--space-1);
+}
+
+.value-amount {
+  font-size: var(--text-3xl);
+  font-weight: var(--font-bold);
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+.card-performance {
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--border-secondary);
+  margin-top: var(--space-2);
+}
+
+.performance-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 24px;
+}
+
+.performance-item.positive {
+  color: var(--positive);
+}
+
+.performance-item.negative {
+  color: var(--negative);
+}
+
+.performance-value {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  font-family: var(--font-mono);
+}
+
+.performance-amount {
+  font-size: var(--text-sm);
+  opacity: 0.8;
+}
+
+.card-stats {
+  display: flex;
+  gap: var(--space-5);
+}
+
+.card-stats .stat-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.card-stats .stat-item svg {
+  color: var(--text-tertiary);
+}
+
+.card-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-primary);
+}
+
+/* Add Card */
+.portfolio-card.add-card {
+  border-style: dashed;
+  border-width: 2px;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  cursor: pointer;
+  color: var(--text-tertiary);
+}
+
+.portfolio-card.add-card:hover {
+  border-color: var(--brand-primary);
+  color: var(--brand-primary);
+  background: var(--color-gold-50);
+}
+
+.portfolio-card.add-card svg {
+  margin-bottom: var(--space-2);
+}
+
+.portfolio-card.add-card span {
+  font-size: var(--text-base);
+  font-weight: var(--font-medium);
+}
+
+/* Buttons */
+.btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-md);
+  font-size: var(--text-base);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  border: none;
+  text-decoration: none;
+  transition: all var(--transition-fast);
+}
+
+.btn-primary {
+  background: var(--brand-primary);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: var(--brand-primary-hover);
+  box-shadow: var(--shadow-gold);
+}
+
+.btn-secondary {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
+}
+
+.btn-secondary:hover {
+  background: var(--color-gold-50);
+  border-color: var(--brand-primary);
+}
+
+/* ==========================================================================
+   Filters Bar
+   ========================================================================== */
+
+.portfolio-list-page .filters-bar {
+  display: flex;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  align-items: stretch;
+}
+
+.portfolio-list-page .search-box {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-3);
+  height: 36px;
+  flex: 1;
+}
+
+.portfolio-list-page .search-box svg {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.portfolio-list-page .search-box input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  outline: none;
+  height: 100%;
+}
+
+.portfolio-list-page .search-box input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.portfolio-list-page .filter-group {
+  display: inline-flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--space-1-5);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-2-5);
+  height: 32px;
+  flex-shrink: 0;
+}
+
+.portfolio-list-page .filter-group svg {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+}
+
+.portfolio-list-page .filter-group select {
+  background: transparent;
+  border: none;
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+  cursor: pointer;
+  outline: none;
+  height: 100%;
+  white-space: nowrap;
+  padding: 0;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* View Toggle */
+.portfolio-list-page .view-toggle {
+  display: flex;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: var(--space-1);
+  gap: var(--space-1);
+  height: 36px;
+  align-items: center;
+}
+
+.portfolio-list-page .view-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.portfolio-list-page .view-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.portfolio-list-page .view-btn.active {
+  background: var(--brand-primary);
+  color: white;
+}
+
+/* ==========================================================================
+   Table View
+   ========================================================================== */
+
+.portfolios-table-container {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+}
+
+.portfolios-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.portfolios-table thead {
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.portfolios-table th {
+  padding: var(--space-4);
+  text-align: left;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--color-gold-700);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.portfolios-table th.sortable {
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.portfolios-table th.sortable:hover {
+  color: var(--brand-primary);
+  background: var(--bg-hover);
+}
+
+.portfolios-table th.sortable span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.portfolios-table th.sortable svg {
+  opacity: 0.5;
+  transition: opacity var(--transition-fast);
+}
+
+.portfolios-table th.sortable:hover svg {
+  opacity: 1;
+}
+
+.portfolios-table th.right {
+  text-align: right;
+}
+
+.portfolios-table th.actions-col {
+  width: 60px;
+  text-align: center;
+}
+
+.portfolios-table tbody tr {
+  border-bottom: 1px solid var(--border-secondary);
+  transition: background var(--transition-fast);
+}
+
+.portfolios-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.portfolios-table tbody tr:hover {
+  background: var(--color-gold-50);
+}
+
+.portfolios-table td {
+  padding: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.portfolios-table td.right {
+  text-align: right;
+}
+
+.portfolios-table td.positive {
+  color: var(--positive);
+  font-weight: var(--font-semibold);
+}
+
+.portfolios-table td.negative {
+  color: var(--negative);
+  font-weight: var(--font-semibold);
+}
+
+.portfolios-table td.value-cell {
+  font-family: var(--font-mono);
+  font-weight: var(--font-semibold);
+}
+
+.portfolios-table td.date-cell {
+  color: var(--text-secondary);
+}
+
+/* Portfolio Link Cell */
+.portfolio-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  text-decoration: none;
+  color: inherit;
+}
+
+.portfolio-link:hover .portfolio-name {
+  color: var(--brand-primary);
+}
+
+.portfolio-avatar-sm {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-lg);
+  background: var(--brand-gradient);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+}
+
+.portfolio-link .portfolio-name {
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  transition: color var(--transition-fast);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 250px;
+}
+
+/* Small Tag for Table */
+.portfolio-tag-sm {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-0-5) var(--space-2);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-medium);
+  border-radius: var(--radius-full);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Action Button */
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-tertiary);
+  text-decoration: none;
+  transition: all var(--transition-fast);
+}
+
+.action-btn:hover {
+  background: var(--bg-hover);
+  color: var(--brand-primary);
+}
+
+.actions-cell {
+  text-align: center;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .page-header {
+    padding: var(--space-4);
+  }
+
+  .header-content {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-4);
+  }
+
+  .header-title {
+    gap: var(--space-3);
+  }
+
+  .header-title h1 {
+    font-size: var(--text-xl);
+  }
+
+  .portfolio-list-page .header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .portfolio-list-page .header-actions .btn {
+    flex: 1;
+    justify-content: center;
+    min-width: 140px;
+  }
+
+  .summary-stats {
+    flex-wrap: wrap;
+    gap: var(--space-4);
+  }
+
+  .summary-stat {
+    flex: 1;
+    min-width: 120px;
+  }
+
+  .page-content {
+    padding: var(--space-4);
+  }
+
+  .portfolios-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .empty-state {
+    padding: var(--space-8) var(--space-4);
+  }
+
+  .empty-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .empty-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .card-value .value-amount {
+    font-size: var(--text-2xl);
+  }
+
+  .portfolio-list-page .filters-bar {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .portfolio-list-page .search-box {
+    width: 100%;
+    order: 1;
+    height: 38px;
+  }
+
+  .portfolio-list-page .filter-group {
+    flex: 1;
+    order: 2;
+    height: 38px;
+  }
+
+  .portfolio-list-page .view-toggle {
+    order: 3;
+    height: 38px;
+  }
+
+  .portfolios-table-container {
+    overflow-x: auto;
+  }
+
+  .portfolios-table {
+    min-width: 700px;
+  }
+}
+
+@media (max-width: 480px) {
+  .portfolio-list-page .header-actions {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .portfolio-list-page .header-actions .btn {
+    min-width: auto;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-sm);
+  }
+
+  /* Keep "New Portfolio" text visible on primary button */
+  .portfolio-list-page .header-actions .btn-primary span {
+    display: inline;
+  }
+
+  /* Hide secondary button text on very small screens */
+  .portfolio-list-page .header-actions .btn-secondary span {
+    display: none;
+  }
+}

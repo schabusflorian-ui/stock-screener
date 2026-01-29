@@ -1,0 +1,429 @@
+/* MarketPulsePanel.css - Unified Market & Risk Indicators Panel */
+
+.market-pulse-panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin-bottom: var(--space-5);
+  box-shadow: var(--shadow-sm);
+}
+
+.market-pulse-panel.loading {
+  min-height: 280px;
+}
+
+/* Header */
+.pulse-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.pulse-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.pulse-header h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--navy);
+  margin: 0;
+}
+
+.pulse-header h3 svg {
+  color: var(--gold);
+}
+
+/* Main content grid - indices on left, risk on right */
+.pulse-content {
+  display: flex;
+  gap: var(--space-4);
+  align-items: stretch;
+}
+
+/* Indices Grid */
+.pulse-indices {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-3);
+  flex: 1;
+}
+
+/* Single Index Card - Enhanced */
+.pulse-index-card {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  text-decoration: none;
+  transition: all var(--duration-fast) ease;
+}
+
+.pulse-index-card:hover {
+  border-color: var(--gold);
+  box-shadow: var(--shadow-gold);
+  transform: translateY(-2px);
+}
+
+.pulse-index-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-1);
+}
+
+.pulse-index-name {
+  font-size: var(--text-xs);
+  font-weight: var(--font-bold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pulse-index-change {
+  font-size: var(--text-sm);
+  font-weight: var(--font-bold);
+  font-family: var(--font-mono);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.pulse-index-change.positive {
+  color: var(--positive);
+  background: rgba(5, 150, 105, 0.1);
+}
+
+.pulse-index-change.negative {
+  color: var(--negative);
+  background: rgba(220, 38, 38, 0.1);
+}
+
+.pulse-index-price {
+  font-size: var(--text-xl);
+  font-weight: var(--font-bold);
+  font-family: var(--font-mono);
+  color: var(--navy);
+  margin-bottom: var(--space-2);
+}
+
+/* Performance periods row */
+.pulse-index-periods {
+  display: flex;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.period-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.period-label {
+  font-size: 9px;
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.period-value {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  font-family: var(--font-mono);
+}
+
+.period-item.positive .period-value {
+  color: var(--positive);
+}
+
+.period-item.negative .period-value {
+  color: var(--negative);
+}
+
+.pulse-index-chart {
+  flex: 1;
+  min-height: 60px;
+}
+
+/* Divider between indices and risk */
+.pulse-divider {
+  width: 1px;
+  background: var(--border-default);
+  margin: 0 var(--space-2);
+  align-self: stretch;
+}
+
+/* Risk Indicators Grid */
+.pulse-risk {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-3);
+  flex: 0 0 260px;
+}
+
+/* Risk Link wrapper */
+.pulse-risk-link {
+  text-decoration: none;
+}
+
+.pulse-risk-link:hover .pulse-risk-item {
+  border-color: var(--gold);
+  background: var(--bg-tertiary);
+  transform: translateY(-1px);
+}
+
+/* Single Risk Item */
+.pulse-risk-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: var(--space-4);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all var(--duration-fast) ease;
+}
+
+.pulse-risk-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.pulse-risk-item.warning {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.pulse-risk-item.elevated {
+  background: rgba(245, 158, 11, 0.04);
+}
+
+.pulse-risk-label {
+  font-size: 10px;
+  font-weight: var(--font-bold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: var(--space-1);
+}
+
+.pulse-risk-value {
+  font-size: var(--text-lg);
+  font-weight: var(--font-bold);
+  font-family: var(--font-mono);
+  color: var(--navy);
+}
+
+.pulse-risk-status {
+  font-size: 10px;
+  font-weight: var(--font-medium);
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.pulse-risk-item.warning .pulse-risk-status {
+  color: var(--warning);
+}
+
+/* Treasury Yields Row - Centered with legend */
+.pulse-yields {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  margin-top: var(--space-4);
+  border-top: 1px solid var(--border-default);
+}
+
+.yields-legend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.yields-legend svg {
+  color: var(--gold);
+}
+
+.yields-legend-text {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-secondary);
+}
+
+.yields-items {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.yield-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  min-width: 65px;
+}
+
+.yield-label {
+  font-size: 10px;
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.yield-value {
+  font-size: var(--text-sm);
+  font-weight: var(--font-bold);
+  font-family: var(--font-mono);
+  color: var(--navy);
+}
+
+.yield-item.spread {
+  background: rgba(212, 175, 55, 0.1);
+  border: 1px solid rgba(212, 175, 55, 0.2);
+}
+
+.yield-item.spread .yield-label {
+  color: var(--gold-dark);
+}
+
+.yield-item.inverted {
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.2);
+}
+
+.yield-item.inverted .yield-value {
+  color: var(--negative);
+}
+
+/* Loading skeleton */
+.pulse-skeleton .skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-3);
+}
+
+.pulse-skeleton .skeleton-card {
+  height: 160px;
+  background: linear-gradient(90deg,
+    var(--navy-muted) 25%,
+    rgba(15, 23, 42, 0.08) 50%,
+    var(--navy-muted) 75%);
+  background-size: 200% 100%;
+  animation: prism-shimmer 1.5s infinite;
+  border-radius: var(--radius-lg);
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .pulse-content {
+    flex-direction: column;
+  }
+
+  .pulse-indices {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .pulse-divider {
+    width: 100%;
+    height: 1px;
+    margin: var(--space-3) 0;
+  }
+
+  .pulse-risk {
+    flex: unset;
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .pulse-indices {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .pulse-risk {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .pulse-index-periods {
+    gap: var(--space-2);
+  }
+
+  .yields-items {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    justify-content: flex-start;
+    width: 100%;
+    padding-bottom: var(--space-2);
+  }
+
+  .yields-items::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .pulse-indices {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .pulse-index-card {
+    padding: var(--space-3);
+  }
+
+  .pulse-index-price {
+    font-size: var(--text-lg);
+  }
+
+  .pulse-index-chart {
+    display: none;
+  }
+
+  .pulse-index-periods {
+    display: none;
+  }
+
+  .pulse-risk {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Dark theme */
+[data-theme="dark"] .market-pulse-panel {
+  background: var(--glass-bg);
+}
+
+[data-theme="dark"] .pulse-index-card,
+[data-theme="dark"] .pulse-risk-item,
+[data-theme="dark"] .yield-item {
+  background: rgba(30, 41, 59, 0.5);
+}
+
+[data-theme="dark"] .pulse-index-price,
+[data-theme="dark"] .pulse-risk-value,
+[data-theme="dark"] .yield-value {
+  color: var(--text-primary);
+}

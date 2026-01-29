@@ -1,0 +1,246 @@
+/* frontend/src/components/analyst/AnalystSelector.css */
+/* PRISM Design System - AI Analyst Selector */
+
+.analyst-selector {
+  width: 100%;
+}
+
+.analyst-selector-loading,
+.analyst-selector-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-12);
+  color: var(--text-secondary);
+}
+
+.analyst-selector-loading .loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border-primary);
+  border-top-color: var(--color-ai-violet);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: var(--space-4);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.analyst-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-6);
+}
+
+/* AI-styled analyst card with prismatic hover */
+.analyst-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  padding: var(--space-6);
+  background: var(--bg-surface);
+  border: 2px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all var(--duration-200) var(--ease-out);
+  position: relative;
+  overflow: hidden;
+  animation: cardFadeIn var(--duration-300) var(--ease-out) both;
+}
+
+/* Staggered entrance animation for cards */
+.analyst-card:nth-child(1) { animation-delay: 0ms; }
+.analyst-card:nth-child(2) { animation-delay: 50ms; }
+.analyst-card:nth-child(3) { animation-delay: 100ms; }
+.analyst-card:nth-child(4) { animation-delay: 150ms; }
+.analyst-card:nth-child(5) { animation-delay: 200ms; }
+.analyst-card:nth-child(6) { animation-delay: 250ms; }
+
+@keyframes cardFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Subtle AI gradient accent at top */
+.analyst-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg,
+    var(--analyst-color, var(--color-ai-violet)) 0%,
+    var(--color-ai-blue) 100%);
+  opacity: 0;
+  transition: opacity var(--duration-200) var(--ease-out);
+}
+
+.analyst-card:hover::before {
+  opacity: 1;
+}
+
+.analyst-card:hover {
+  border-color: var(--analyst-color, var(--color-ai-violet));
+  background: var(--analyst-color-light, var(--color-ai-violet-50));
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.analyst-card.selected {
+  border-color: var(--analyst-color, var(--color-ai-violet));
+  background: var(--analyst-color-light, var(--color-ai-violet-50));
+  box-shadow: 0 0 0 3px var(--analyst-color-light, rgba(124, 58, 237, 0.15));
+}
+
+.analyst-card.selected::before {
+  opacity: 1;
+  height: 3px;
+}
+
+.analyst-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  width: 100%;
+}
+
+/* AI-styled icon with unique gradient per analyst */
+.analyst-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-lg);
+  background: var(--analyst-icon-gradient, linear-gradient(135deg,
+    var(--color-ai-violet) 0%,
+    var(--color-ai-blue) 100%));
+  color: white;
+  font-size: var(--text-xl);
+  line-height: 1;
+  position: relative;
+  transition: transform var(--duration-200) var(--ease-out),
+              box-shadow var(--duration-200) var(--ease-out);
+}
+
+/* Glow effect behind icon */
+.analyst-icon::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: var(--radius-lg);
+  background: var(--analyst-icon-gradient, linear-gradient(135deg,
+    var(--color-ai-violet) 0%,
+    var(--color-ai-blue) 100%));
+  opacity: 0.25;
+  filter: blur(8px);
+  z-index: -1;
+  transition: opacity var(--duration-200) var(--ease-out);
+}
+
+.analyst-card:hover .analyst-icon {
+  transform: scale(1.05);
+}
+
+.analyst-card:hover .analyst-icon::before {
+  opacity: 0.4;
+}
+
+.analyst-info {
+  flex: 1;
+}
+
+.analyst-name {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin: 0 0 var(--space-0-5) 0;
+}
+
+.analyst-title {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.analyst-description {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--leading-relaxed);
+  margin: 0 0 var(--space-4) 0;
+  flex: 1;
+}
+
+.analyst-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.analyst-tag {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  transition: all var(--duration-150) var(--ease-out);
+}
+
+.analyst-card.selected .analyst-tag {
+  background: var(--analyst-color, var(--color-ai-violet));
+  color: white;
+}
+
+.analyst-influences {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  width: 100%;
+}
+
+.influences-label {
+  opacity: 0.7;
+}
+
+.influences-list {
+  font-style: italic;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .analyst-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .analyst-card {
+    padding: var(--space-5);
+  }
+}
+
+@media (max-width: 480px) {
+  .analyst-icon {
+    width: 40px;
+    height: 40px;
+    font-size: var(--text-lg);
+  }
+
+  .analyst-name {
+    font-size: var(--text-base);
+  }
+
+  .analyst-selector-loading,
+  .analyst-selector-empty {
+    padding: var(--space-8);
+  }
+}

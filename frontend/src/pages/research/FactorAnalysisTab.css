@@ -1,0 +1,401 @@
+/* frontend/src/pages/research/FactorAnalysisTab.css */
+
+.factor-analysis-tab {
+  animation: fadeIn var(--duration-200) var(--ease-out);
+}
+
+/* Controls Row */
+.factor-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.factor-toggles {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* Factor toggle wrapper for tooltip positioning */
+.factor-toggle-wrapper {
+  position: relative;
+}
+
+.factor-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-secondary);
+  border: 2px solid transparent;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.factor-toggle-info {
+  opacity: 0.4;
+  transition: opacity var(--transition-normal);
+}
+
+.factor-toggle:hover .factor-toggle-info {
+  opacity: 0.8;
+}
+
+.factor-toggle:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.factor-toggle.active {
+  background: var(--bg-tertiary);
+  font-weight: var(--font-semibold);
+}
+
+/* Factor toggle tooltip */
+.factor-toggle-tooltip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%);
+  width: 280px;
+  padding: var(--space-3);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 1000;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: all var(--transition-normal);
+}
+
+.factor-toggle-wrapper:hover .factor-toggle-tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Tooltip arrow */
+.factor-toggle-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: var(--bg-tertiary);
+}
+
+.factor-toggle-tooltip::before {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 7px solid transparent;
+  border-top-color: var(--border-primary);
+}
+
+.factor-toggle-tooltip strong {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-1);
+}
+
+.factor-toggle-tooltip em {
+  display: block;
+  font-size: var(--text-xs);
+  font-style: normal;
+  color: var(--accent-primary);
+  margin-bottom: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-secondary);
+}
+
+.factor-toggle-tooltip span {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.factor-analysis-tab .period-selector {
+  display: flex;
+  gap: 2px;
+  padding: var(--chart-selector-padding);
+  background: var(--chart-selector-bg);
+  border-radius: var(--chart-selector-radius);
+  border: var(--chart-selector-border);
+}
+
+.factor-analysis-tab .period-btn {
+  padding: var(--chart-selector-btn-padding);
+  background: transparent;
+  border: none;
+  border-radius: var(--chart-selector-btn-radius);
+  font-size: var(--chart-selector-btn-font-size);
+  font-weight: var(--chart-selector-btn-font-weight);
+  color: var(--chart-selector-btn-color);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.factor-analysis-tab .period-btn:hover {
+  color: var(--chart-selector-btn-color-hover);
+}
+
+.factor-analysis-tab .period-btn.active {
+  background: var(--chart-selector-btn-active-bg);
+  color: var(--chart-selector-btn-active-color);
+}
+
+/* Interpretation Banner */
+.factor-interpretation {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--info-muted);
+  border: 1px solid var(--info);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.factor-interpretation svg {
+  color: var(--info);
+  flex-shrink: 0;
+}
+
+/* Enhanced Factor Interpretation */
+.factor-interpretation-enhanced {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin-bottom: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.factor-interpretation-enhanced .interpretation-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  background: var(--info-muted);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border-left: 4px solid var(--info);
+}
+
+.factor-interpretation-enhanced .summary-icon {
+  font-size: var(--text-xl);
+  line-height: 1;
+}
+
+.factor-interpretation-enhanced .summary-text {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  font-weight: var(--font-medium);
+}
+
+.factor-interpretation-enhanced .interpretation-insight {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-gold-50);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.factor-interpretation-enhanced .interpretation-insight strong {
+  color: var(--text-primary);
+}
+
+.factor-interpretation-enhanced .insight-icon {
+  font-size: var(--text-lg);
+  line-height: 1;
+}
+
+.factor-interpretation-enhanced .interpretation-action {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--positive-muted);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.factor-interpretation-enhanced .interpretation-action strong {
+  color: var(--positive);
+}
+
+.factor-interpretation-enhanced .action-icon {
+  font-size: var(--text-lg);
+  line-height: 1;
+}
+
+.factor-interpretation-enhanced .interpretation-warning {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--warning-muted);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: var(--warning);
+}
+
+.factor-interpretation-enhanced .warning-icon {
+  font-size: var(--text-sm);
+}
+
+/* Period selector label */
+.period-label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-right: var(--space-2);
+  display: flex;
+  align-items: center;
+}
+
+/* Section Cards */
+.factor-section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.factor-section h3 {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin: 0 0 var(--space-1) 0;
+}
+
+.section-description {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  margin: 0 0 var(--space-4) 0;
+}
+
+/* Stats Table */
+.factor-stats-table {
+  overflow-x: auto;
+}
+
+.factor-stats-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.factor-stats-table th,
+.factor-stats-table td {
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.factor-stats-table td {
+  font-variant-numeric: tabular-nums;
+}
+
+.factor-stats-table th {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+}
+
+.factor-stats-table tbody tr:hover {
+  background: var(--bg-tertiary);
+}
+
+.factor-stats-table .quintile-cell {
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
+}
+
+.factor-stats-table td.positive {
+  color: var(--positive);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.factor-stats-table td.negative {
+  color: var(--negative);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Empty State */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-8);
+  text-align: center;
+  color: var(--text-tertiary);
+}
+
+.empty-state svg {
+  opacity: 0.5;
+}
+
+.empty-state span {
+  font-size: var(--text-lg);
+  font-weight: var(--font-medium);
+}
+
+.empty-state p {
+  font-size: var(--text-sm);
+  max-width: 400px;
+  margin: 0;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .factor-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .factor-toggles {
+    justify-content: center;
+  }
+
+  .factor-analysis-tab .period-selector {
+    justify-content: center;
+  }
+
+  .factor-stats-table th,
+  .factor-stats-table td {
+    padding: var(--space-2);
+  }
+}

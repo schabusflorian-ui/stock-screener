@@ -1,0 +1,98 @@
+/* frontend/src/components/icons/IconButton.css */
+/* Prism Design System - IconButton Styles */
+
+/* Base button styles */
+.prism-icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+
+  /* Smooth transitions */
+  transition:
+    background 0.25s ease,
+    color 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease,
+    transform 0.25s ease;
+}
+
+/* Focus state for accessibility */
+.prism-icon-button:focus {
+  outline: none;
+}
+
+.prism-icon-button:focus-visible {
+  outline: 2px solid #7C3AED;
+  outline-offset: 2px;
+}
+
+/* Active/pressed state */
+.prism-icon-button:active:not(:disabled) {
+  transform: translateY(-2px) scale(0.98) !important;
+}
+
+/* Label styles */
+.prism-icon-button-label {
+  display: block;
+  transition: color 0.2s ease;
+  white-space: nowrap;
+}
+
+/* Button group styles */
+.prism-icon-button-group {
+  padding: 16px 0;
+}
+
+/* ============================================ */
+/* VARIANT STYLES */
+/* ============================================ */
+
+/* Deep shadow variant - use with class "shadow-deep" */
+.prism-icon-button.shadow-deep:hover {
+  box-shadow:
+    0 20px 40px var(--icon-color, rgba(37, 99, 235, 0.5)),
+    0 8px 16px var(--icon-color, rgba(37, 99, 235, 0.3)) !important;
+}
+
+/* Gradient variant - use with class "gradient" */
+.prism-icon-button.gradient {
+  background: linear-gradient(135deg, var(--gradient-start, #3B82F6) 0%, var(--gradient-end, #1D4ED8) 100%);
+}
+
+/* Bounce animation variant */
+.prism-icon-button.bounce:hover {
+  animation: iconBounce 0.5s ease;
+}
+
+@keyframes iconBounce {
+  0%, 100% { transform: translateY(-4px); }
+  50% { transform: translateY(-8px); }
+}
+
+/* ============================================ */
+/* SIZE RESPONSIVE ADJUSTMENTS */
+/* ============================================ */
+
+@media (max-width: 640px) {
+  .prism-icon-button-group {
+    gap: 16px !important;
+  }
+}
+
+/* ============================================ */
+/* CARD INTEGRATION */
+/* ============================================ */
+
+/* Icon button inside a card */
+.card .prism-icon-button,
+.prism-card .prism-icon-button {
+  box-shadow: none;
+}
+
+.card .prism-icon-button:hover,
+.prism-card .prism-icon-button:hover {
+  box-shadow: 0 4px 12px var(--icon-color, rgba(37, 99, 235, 0.3));
+}

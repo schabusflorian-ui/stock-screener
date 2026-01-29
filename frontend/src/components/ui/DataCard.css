@@ -1,0 +1,97 @@
+/* frontend/src/components/ui/DataCard.css */
+/* Prism Design System - Stat Card Component */
+
+.ui-data-card,
+.stat-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3, 12px);
+  background: var(--bg-card, #FFFFFF);
+  border-radius: var(--radius-lg, 12px);
+  padding: var(--space-5, 20px);
+  border: 1px solid var(--border-default, #E2E8F0);
+}
+
+.ui-data-card__icon,
+.stat-card__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: var(--bg-secondary, #F8FAFC);
+  color: var(--text-secondary, #64748B);
+  border-radius: var(--radius-md, 8px);
+  flex-shrink: 0;
+}
+
+.ui-data-card__content,
+.stat-card__content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.ui-data-card__label,
+.stat-card__label {
+  font-size: 13px;
+  font-weight: var(--font-medium, 500);
+  color: var(--text-secondary, #64748B);
+  margin-bottom: var(--space-1, 4px);
+}
+
+.ui-data-card__value,
+.stat-card__value {
+  font-size: 28px;
+  font-weight: 600;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  color: var(--text-primary, #0F172A);
+  line-height: var(--leading-tight, 1.25);
+}
+
+.ui-data-card__change,
+.stat-card__change {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1, 4px);
+  margin-top: var(--space-1, 4px);
+  font-size: 13px;
+  font-weight: var(--font-medium, 500);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+}
+
+.ui-data-card__change--positive,
+.stat-card__change--positive {
+  color: var(--positive, #059669);
+}
+
+.ui-data-card__change--negative,
+.stat-card__change--negative {
+  color: var(--negative, #DC2626);
+}
+
+.ui-data-card__change--neutral,
+.stat-card__change--neutral {
+  color: var(--text-secondary, #64748B);
+}
+
+.ui-data-card__period,
+.stat-card__period {
+  color: var(--text-tertiary, #94A3B8);
+  margin-left: var(--space-1, 4px);
+  font-family: inherit;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .ui-data-card,
+  .stat-card {
+    padding: var(--space-4, 16px);
+  }
+
+  .ui-data-card__value,
+  .stat-card__value {
+    font-size: 24px;
+  }
+}

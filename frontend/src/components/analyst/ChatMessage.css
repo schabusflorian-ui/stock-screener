@@ -1,0 +1,221 @@
+/* frontend/src/components/analyst/ChatMessage.css */
+/* PRISM Design System - AI Visual Components */
+/* Uses global --ai-gradient from design-system.css */
+
+.chat-message {
+  display: flex;
+  gap: var(--space-3);
+  max-width: 100%;
+}
+
+.chat-message.user {
+  flex-direction: row-reverse;
+}
+
+.message-avatar {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-xl);
+}
+
+.message-content-wrapper {
+  max-width: 85%;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-message.user .message-content-wrapper {
+  align-items: flex-end;
+}
+
+.message-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+  font-size: var(--text-xs);
+}
+
+.message-author {
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.message-time {
+  color: var(--text-tertiary);
+}
+
+.message-content {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  line-height: var(--leading-relaxed);
+}
+
+.user-message {
+  background: var(--color-ai-violet);
+  color: white;
+  border-bottom-right-radius: var(--radius-sm);
+}
+
+.user-message p {
+  margin: 0;
+}
+
+/* Assistant message with AI prismatic gradient border */
+.assistant-message {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  border-bottom-left-radius: var(--radius-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Prismatic gradient top border for AI assistant messages */
+.assistant-message::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--ai-gradient);
+}
+
+/* Markdown content styles */
+.markdown-content {
+  font-size: var(--text-base);
+}
+
+.markdown-content p {
+  margin: 0 0 var(--space-3) 0;
+}
+
+.markdown-content p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  margin: var(--space-2) 0;
+  padding-left: var(--space-6);
+}
+
+.markdown-content li {
+  margin-bottom: var(--space-1);
+}
+
+.markdown-content .md-h1 {
+  font-size: var(--text-xl);
+  font-weight: var(--font-bold);
+  margin: var(--space-6) 0 var(--space-3) 0;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.markdown-content .md-h2 {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  margin: var(--space-5) 0 var(--space-2) 0;
+  color: var(--text-primary);
+}
+
+.markdown-content .md-h3 {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  margin: var(--space-4) 0 var(--space-2) 0;
+  color: var(--text-secondary);
+}
+
+.markdown-content .md-strong {
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+/* Tables */
+.markdown-content .table-wrapper {
+  overflow-x: auto;
+  margin: var(--space-3) 0;
+}
+
+.markdown-content .md-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.markdown-content .md-table th,
+.markdown-content .md-table td {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-primary);
+  text-align: left;
+}
+
+.markdown-content .md-table th {
+  background: var(--bg-secondary);
+  font-weight: var(--font-semibold);
+}
+
+.markdown-content .md-table tr:nth-child(even) {
+  background: var(--bg-secondary);
+}
+
+/* Code */
+.markdown-content .inline-code {
+  background: var(--bg-secondary);
+  padding: var(--space-0-5) var(--space-1-5);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+}
+
+.markdown-content .code-block {
+  background: var(--bg-secondary);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  margin: var(--space-3) 0;
+}
+
+.markdown-content .code-block code {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+}
+
+/* Metadata */
+.message-metadata {
+  display: flex;
+  gap: var(--space-4);
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.metadata-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .message-content-wrapper {
+    max-width: 90%;
+  }
+
+  .message-avatar {
+    width: 32px;
+    height: 32px;
+    font-size: var(--text-base);
+  }
+
+  .markdown-content {
+    font-size: var(--text-sm);
+  }
+}

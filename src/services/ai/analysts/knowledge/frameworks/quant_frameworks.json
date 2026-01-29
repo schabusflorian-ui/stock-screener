@@ -1,0 +1,130 @@
+{
+  "analyst": "quant",
+  "frameworks": [
+    {
+      "id": "factor_scoring",
+      "name": "Multi-Factor Scoring Framework",
+      "description": "Systematic approach to ranking stocks on proven factors",
+      "factors": {
+        "value": {
+          "metrics": ["P/E", "P/B", "EV/EBITDA", "FCF Yield"],
+          "weight": "20-30%"
+        },
+        "momentum": {
+          "metrics": ["12-month return (ex last month)", "6-month return", "52-week high proximity"],
+          "weight": "20-25%"
+        },
+        "quality": {
+          "metrics": ["ROE", "Profit Margin", "Debt/Equity", "Earnings Stability"],
+          "weight": "20-25%"
+        },
+        "size": {
+          "metrics": ["Market Cap"],
+          "weight": "5-10%"
+        },
+        "volatility": {
+          "metrics": ["Historical Volatility", "Beta", "Max Drawdown"],
+          "weight": "10-15%"
+        }
+      },
+      "keywords": ["factor", "systematic", "quantitative", "alpha"],
+      "sources": ["AQR Research", "O'Shaughnessy's What Works"]
+    },
+    {
+      "id": "sharpe_ratio",
+      "name": "Sharpe Ratio Analysis",
+      "description": "Risk-adjusted return measurement",
+      "formula": "Sharpe = (Portfolio Return - Risk-Free Rate) / Portfolio Std Dev",
+      "interpretation": {
+        "above_1": "Good risk-adjusted returns",
+        "above_2": "Excellent - hard to sustain",
+        "above_3": "Exceptional - verify data quality",
+        "below_0_5": "Poor risk-adjusted returns"
+      },
+      "limitations": [
+        "Assumes normal distribution (ignores fat tails)",
+        "Penalizes upside volatility equally",
+        "Sensitive to time period selected"
+      ],
+      "keywords": ["sharpe", "risk-adjusted", "volatility", "alpha"],
+      "sources": ["Modern Portfolio Theory", "AQR Analysis"]
+    },
+    {
+      "id": "position_sizing",
+      "name": "Systematic Position Sizing",
+      "description": "Volatility-targeted position sizing framework",
+      "methods": {
+        "volatility_parity": {
+          "formula": "Position Size = Target Vol / Stock Vol",
+          "example": "If target is 15% and stock vol is 30%, size at 50%"
+        },
+        "kelly_criterion": {
+          "formula": "Fraction = (bp - q) / b",
+          "description": "Optimal fraction based on edge and odds"
+        },
+        "max_loss": {
+          "formula": "Position Size = Max Loss Tolerance / Expected Loss",
+          "example": "2% portfolio risk, 10% stop loss = 20% position max"
+        }
+      },
+      "keywords": ["position sizing", "volatility", "systematic", "risk management"],
+      "sources": ["Ed Thorp", "AQR Portfolio Construction"]
+    },
+    {
+      "id": "correlation_analysis",
+      "name": "Correlation and Diversification",
+      "description": "Framework for building truly diversified portfolios",
+      "principles": [
+        "1. Diversification requires uncorrelated assets, not just more assets",
+        "2. Correlations increase during stress - plan for it",
+        "3. Factor correlation > stock correlation for diversification",
+        "4. International diversification less effective than factor diversification"
+      ],
+      "metrics": [
+        "Pairwise correlations",
+        "Factor exposures",
+        "Effective number of bets",
+        "Tracking error decomposition"
+      ],
+      "keywords": ["correlation", "diversification", "systematic", "portfolio construction"],
+      "sources": ["Ray Dalio Principles", "AQR Research"]
+    },
+    {
+      "id": "momentum_strategy",
+      "name": "Momentum Factor Implementation",
+      "description": "Systematic momentum investing framework",
+      "construction": [
+        "1. Calculate 12-month return excluding last month (avoid reversal)",
+        "2. Rank universe by momentum score",
+        "3. Go long top decile, short bottom decile",
+        "4. Rebalance monthly",
+        "5. Apply volatility targeting for position sizes"
+      ],
+      "enhancements": [
+        "Combine with value to reduce drawdowns",
+        "Exclude high-volatility momentum stocks",
+        "Use industry-relative momentum"
+      ],
+      "keywords": ["momentum", "factor", "systematic", "rebalancing"],
+      "sources": ["AQR Momentum Research", "O'Shaughnessy"]
+    },
+    {
+      "id": "information_ratio",
+      "name": "Information Ratio Framework",
+      "description": "Measure of skill in generating alpha",
+      "formula": "IR = Alpha / Tracking Error",
+      "interpretation": {
+        "above_0_5": "Good active management",
+        "above_1_0": "Excellent - top quartile manager",
+        "below_0_3": "Not worth the active fees"
+      },
+      "decomposition": [
+        "IR = IC x sqrt(Breadth)",
+        "IC = Information Coefficient (skill per trade)",
+        "Breadth = Number of independent bets"
+      ],
+      "keywords": ["information ratio", "alpha", "tracking error", "skill"],
+      "sources": ["Grinold's Fundamental Law", "AQR Active Management"]
+    }
+  ]
+}

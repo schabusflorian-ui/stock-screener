@@ -1,0 +1,122 @@
+/* frontend/src/components/ui/Card.css */
+/* Prism Design System - Card Component */
+
+/* Base card styles */
+.ui-card {
+  border-radius: var(--radius-lg, 12px);
+  transition: all var(--transition-fast, 150ms ease);
+}
+
+/* Variant: base - Standard card with border */
+.ui-card--base {
+  background: var(--bg-card, #FFFFFF);
+  border: 1px solid var(--border-default, #E2E8F0);
+}
+
+/* Variant: elevated - Card with shadow */
+.ui-card--elevated {
+  background: var(--bg-card, #FFFFFF);
+  border: 1px solid var(--border-default, #E2E8F0);
+  box-shadow: var(--shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
+}
+
+/* Variant: interactive - Hoverable card */
+.ui-card--interactive {
+  background: var(--bg-card, #FFFFFF);
+  border: 1px solid var(--border-default, #E2E8F0);
+  cursor: pointer;
+}
+
+.ui-card--interactive:hover {
+  border-color: var(--border-hover, #CBD5E1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
+}
+
+/* Variant: AI - Card with prismatic gradient accent */
+.ui-card--ai {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-card, #FFFFFF);
+  border: 1px solid var(--border-default, #E2E8F0);
+}
+
+.ui-card--ai::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--ai-gradient, linear-gradient(90deg, #6366F1, #8B5CF6));
+}
+
+.ui-card--ai:hover {
+  border-color: var(--border-hover, #CBD5E1);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.1);
+}
+
+/* Clickable card */
+.ui-card--clickable {
+  cursor: pointer;
+}
+
+/* Padding sizes - Prism uses --space-5 (20px) as standard */
+.ui-card--padding-sm {
+  padding: var(--space-3, 12px);
+}
+
+.ui-card--padding-md {
+  padding: var(--space-4, 16px);
+}
+
+.ui-card--padding-lg {
+  padding: var(--space-5, 20px);
+}
+
+/* Card Header */
+.ui-card__header {
+  padding-bottom: var(--space-4, 16px);
+  border-bottom: 1px solid var(--border-default, #E2E8F0);
+  margin-bottom: var(--space-4, 16px);
+}
+
+/* Card Title */
+.ui-card__title {
+  font-size: var(--text-lg, 18px);
+  font-weight: var(--font-semibold, 600);
+  color: var(--text-primary, #0F172A);
+  margin: 0;
+  line-height: var(--leading-tight, 1.25);
+}
+
+/* Card Description */
+.ui-card__description {
+  font-size: var(--text-sm, 14px);
+  color: var(--text-secondary, #64748B);
+  margin: var(--space-1, 4px) 0 0 0;
+  line-height: var(--leading-normal, 1.5);
+}
+
+/* Card Content */
+.ui-card__content {
+  /* Content takes remaining space */
+}
+
+/* Card Footer */
+.ui-card__footer {
+  padding-top: var(--space-4, 16px);
+  border-top: 1px solid var(--border-default, #E2E8F0);
+  margin-top: var(--space-4, 16px);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .ui-card--padding-lg {
+    padding: var(--space-4, 16px);
+  }
+
+  .ui-card--padding-md {
+    padding: var(--space-3, 12px);
+  }
+}

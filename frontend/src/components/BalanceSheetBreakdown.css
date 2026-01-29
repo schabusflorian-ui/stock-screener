@@ -1,0 +1,506 @@
+/* BalanceSheetBreakdown.css - Liquid Glass Theme */
+
+.balance-sheet-breakdown {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  padding: var(--space-6);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
+.bs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-6);
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.bs-header h3 {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.bs-controls {
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+}
+
+.bs-loading,
+.bs-empty {
+  padding: var(--space-12);
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+/* View Toggle - Liquid Glass */
+.balance-sheet-breakdown .view-toggle {
+  display: flex;
+  background: var(--glass-bg-light, rgba(255, 255, 255, 0.5));
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: var(--space-1);
+}
+
+.balance-sheet-breakdown .view-toggle button {
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: var(--radius-base);
+  cursor: pointer;
+  font-size: var(--text-base);
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.balance-sheet-breakdown .view-toggle button:hover {
+  color: var(--text-primary);
+}
+
+.balance-sheet-breakdown .view-toggle button.active {
+  background: var(--brand-primary);
+  color: white;
+}
+
+/* Period Selector - Liquid Glass */
+.balance-sheet-breakdown .period-selector {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.balance-sheet-breakdown .period-selector label {
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+}
+
+.balance-sheet-breakdown .period-selector select {
+  padding: var(--space-2) var(--space-4);
+  background: var(--glass-bg);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  cursor: pointer;
+}
+
+.balance-sheet-breakdown .period-selector select:focus {
+  outline: none;
+  border-color: var(--brand-primary);
+}
+
+/* Data Quality Warning Banner */
+.bs-data-quality-warning {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
+  font-size: var(--text-sm);
+}
+
+.bs-data-quality-warning.minor {
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  color: var(--warning-color, #b45309);
+}
+
+.bs-data-quality-warning.severe {
+  background: rgba(249, 115, 22, 0.1);
+  border: 1px solid rgba(249, 115, 22, 0.3);
+  color: var(--warning-color, #c2410c);
+}
+
+.bs-data-quality-warning.critical {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: var(--danger-color, #dc2626);
+}
+
+.bs-data-quality-warning .warning-icon {
+  font-size: var(--text-base);
+}
+
+.bs-data-quality-warning .warning-text {
+  flex: 1;
+}
+
+.bs-data-quality-warning .warning-detail {
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+/* Summary Cards - Liquid Glass */
+.bs-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.bs-summary-card {
+  background: var(--glass-bg-light, rgba(255, 255, 255, 0.5));
+  padding: var(--space-5);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border-left: var(--space-1) solid var(--text-tertiary);
+}
+
+.bs-summary-card.assets {
+  border-left-color: var(--info);
+}
+
+.bs-summary-card.liabilities {
+  border-left-color: var(--negative);
+}
+
+.bs-summary-card.equity {
+  border-left-color: var(--positive);
+}
+
+.bs-summary-card .card-label {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.bs-summary-card .card-value {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+/* Balance Sheet Equation Visualization */
+.bs-equation-section {
+  background: var(--glass-bg-light, rgba(255, 255, 255, 0.5));
+  padding: var(--space-5);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-6);
+}
+
+.bs-equation-section h4 {
+  margin: 0 0 var(--space-4) 0;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+}
+
+.bs-visual {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+  padding: var(--space-4);
+}
+
+.bs-left-side,
+.bs-right-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.bs-bar {
+  width: 100px;
+  height: 200px;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.bs-segment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity var(--duration-normal) var(--ease-out);
+  cursor: pointer;
+  min-height: 20px;
+}
+
+.bs-segment:hover {
+  opacity: 0.8;
+}
+
+.bs-segment span {
+  font-size: var(--text-2xs);
+  color: white;
+  font-weight: var(--font-medium);
+  text-align: center;
+  padding: var(--space-1);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+
+.current-assets { background: var(--info-light); }
+.noncurrent-assets { background: var(--info); }
+.current-liab { background: var(--negative-light); }
+.noncurrent-liab { background: var(--negative); }
+.equity-segment { background: var(--positive); }
+
+.bar-label {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-weight: var(--font-medium);
+}
+
+.bar-total {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+.bs-equals {
+  font-size: var(--text-3xl);
+  color: var(--text-tertiary);
+  font-weight: var(--font-light);
+}
+
+/* Ratios Section - Liquid Glass */
+.bs-ratios-section {
+  background: var(--glass-bg-light, rgba(255, 255, 255, 0.5));
+  padding: var(--space-5);
+  border-radius: var(--radius-md);
+}
+
+.bs-ratios-section h4 {
+  margin: 0 0 var(--space-4) 0;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+}
+
+.ratios-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-4);
+}
+
+.ratio-card {
+  background: var(--glass-bg-light, rgba(255, 255, 255, 0.5));
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  border-left: var(--space-1) solid var(--text-tertiary);
+}
+
+.ratio-card.healthy {
+  border-left-color: var(--positive);
+}
+
+.ratio-card.warning {
+  border-left-color: var(--warning);
+}
+
+.ratio-card.danger {
+  border-left-color: var(--negative);
+}
+
+.ratio-name {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-weight: var(--font-medium);
+}
+
+.ratio-value {
+  font-size: var(--text-xl);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.ratio-desc {
+  font-size: var(--text-2xs);
+  color: var(--text-tertiary);
+}
+
+/* Detail View */
+.bs-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-6);
+}
+
+.bs-section {
+  background: var(--glass-bg-light, rgba(255, 255, 255, 0.5));
+  padding: var(--space-5);
+  border-radius: var(--radius-md);
+}
+
+.bs-section h4 {
+  margin: 0 0 var(--space-4) 0;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-primary);
+  font-size: var(--text-md);
+}
+
+.assets-section h4 {
+  color: var(--info);
+}
+
+.liabilities-section h4 {
+  color: var(--negative);
+}
+
+.bs-subsection {
+  margin-bottom: var(--space-4);
+}
+
+.bs-subsection h5 {
+  margin: 0 0 var(--space-2) 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.bs-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.bs-table td {
+  padding: var(--space-2) 0;
+  font-size: var(--text-base);
+}
+
+.bs-table td:first-child {
+  color: var(--text-secondary);
+}
+
+.bs-table td:last-child {
+  text-align: right;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.bs-table .subtotal-row td {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-primary);
+  font-weight: var(--font-semibold);
+}
+
+.bs-table .subtotal-row td:first-child {
+  color: var(--text-primary);
+}
+
+.bs-table td.negative {
+  color: var(--negative);
+}
+
+.bs-total {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--space-4);
+  margin-top: var(--space-4);
+  background: var(--info-muted);
+  border-radius: var(--radius-md);
+  font-weight: var(--font-semibold);
+}
+
+.bs-total span:first-child {
+  color: var(--info);
+}
+
+.bs-total span:last-child {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.bs-subtotal {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--space-3);
+  margin: var(--space-4) 0;
+  background: var(--glass-bg-light, rgba(255, 255, 255, 0.5));
+  border-radius: var(--radius-base);
+  font-weight: var(--font-medium);
+}
+
+.bs-subtotal.liab-subtotal {
+  background: var(--negative-muted);
+}
+
+.bs-subtotal.liab-subtotal span:first-child {
+  color: var(--negative);
+}
+
+.bs-subtotal.equity-subtotal {
+  background: var(--positive-muted);
+}
+
+.bs-subtotal.equity-subtotal span:first-child {
+  color: var(--positive);
+}
+
+.bs-subtotal span:last-child {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+/* Trends View */
+.bs-trends {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.balance-sheet-breakdown .chart-container {
+  background: var(--glass-bg-light, rgba(255, 255, 255, 0.5));
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+}
+
+.balance-sheet-breakdown .chart-container h4 {
+  margin: 0 0 var(--space-4) 0;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .bs-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ratios-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .bs-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ratios-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bs-visual {
+    flex-direction: column;
+  }
+
+  .bs-bar {
+    width: 150px;
+    height: 80px;
+    flex-direction: row;
+  }
+
+  .bs-equals {
+    transform: rotate(90deg);
+  }
+
+  .bs-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

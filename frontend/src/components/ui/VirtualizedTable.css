@@ -1,0 +1,195 @@
+/* frontend/src/components/ui/VirtualizedTable.css */
+/* Styles for virtualized table component */
+
+.virtualized-table {
+  width: 100%;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+/* Header row - fixed at top */
+.vt-header-row {
+  display: flex;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-primary);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  color: var(--text-secondary);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.vt-header-cell {
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.vt-header-cell.sortable {
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.vt-header-cell.sortable:hover {
+  color: var(--text-primary);
+}
+
+.vt-header-cell.left {
+  justify-content: flex-start;
+}
+
+.vt-header-cell.center {
+  justify-content: center;
+}
+
+.vt-header-cell.right {
+  justify-content: flex-end;
+}
+
+/* Body container */
+.vt-body {
+  overflow: hidden;
+}
+
+.vt-simple-body {
+  overflow-y: auto;
+}
+
+/* Data rows */
+.vt-row {
+  display: flex;
+  border-bottom: 1px solid var(--border-secondary);
+  transition: background var(--transition-fast);
+  cursor: default;
+}
+
+.vt-row:hover {
+  background: var(--bg-hover);
+}
+
+.vt-row.even {
+  background: var(--bg-primary);
+}
+
+.vt-row.odd {
+  background: var(--bg-secondary-subtle, rgba(var(--bg-secondary-rgb), 0.3));
+}
+
+.vt-row.even:hover,
+.vt-row.odd:hover {
+  background: var(--bg-hover);
+}
+
+/* Cells */
+.vt-cell {
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vt-cell.left {
+  justify-content: flex-start;
+}
+
+.vt-cell.center {
+  justify-content: center;
+}
+
+.vt-cell.right {
+  justify-content: flex-end;
+}
+
+/* Empty state */
+.vt-empty {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+
+.vt-empty p {
+  margin: 0;
+}
+
+/* Footer */
+.vt-footer {
+  padding: 8px 16px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-primary);
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+.vt-row-count {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Value styling helpers */
+.vt-cell .positive {
+  color: var(--positive);
+}
+
+.vt-cell .negative {
+  color: var(--negative);
+}
+
+.vt-cell .muted {
+  color: var(--text-tertiary);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .vt-header-cell,
+  .vt-cell {
+    padding: 8px 12px;
+    font-size: 0.8125rem;
+  }
+
+  .vt-header-row {
+    font-size: 0.6875rem;
+  }
+}
+
+/* Scrollbar styling for the virtualized list */
+.virtualized-table ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.virtualized-table ::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+.virtualized-table ::-webkit-scrollbar-thumb {
+  background: var(--border-primary);
+  border-radius: 4px;
+}
+
+.virtualized-table ::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+
+/* Animation for loading states */
+@keyframes vt-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.vt-loading {
+  animation: vt-pulse 1.5s ease-in-out infinite;
+}

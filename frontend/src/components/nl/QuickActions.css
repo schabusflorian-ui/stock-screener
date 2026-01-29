@@ -1,0 +1,57 @@
+/* QuickActions.css - Styles for contextual action buttons */
+/* PRISM Design System - AI Visual Components */
+
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-default);
+}
+
+.quick-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.quick-action-btn:hover {
+  background: var(--ai-gradient-diagonal);
+  border-color: transparent;
+  color: white;
+  transform: translateY(-1px);
+}
+
+.quick-action-btn:active {
+  transform: translateY(0);
+}
+
+.quick-action-btn svg {
+  opacity: 0.8;
+}
+
+.quick-action-btn:hover svg {
+  opacity: 1;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .quick-actions {
+    gap: var(--space-1);
+  }
+
+  .quick-action-btn {
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--text-xs);
+  }
+}

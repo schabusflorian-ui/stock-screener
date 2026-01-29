@@ -1,0 +1,640 @@
+/* frontend/src/pages/WatchlistPage.css - PRISM Design System */
+
+/* ============================================
+   PRISM DESIGN TOKENS - Reference
+   ------------------------------------------
+   Table:
+     thead: background var(--bg-tertiary)
+     th: color var(--color-gold-700), font-size var(--text-xs), uppercase
+     td: color var(--text-primary), font-size var(--text-base)
+     row hover: rgba(212, 175, 55, 0.04)
+     numeric: font-family var(--font-mono), text-align right
+
+   Cards:
+     background: var(--bg-surface)
+     border: 1px solid var(--border-default)
+     border-radius: var(--radius-lg)
+
+   Buttons:
+     Primary: bg var(--color-navy-900)
+     Gold/CTA: bg linear-gradient(135deg, var(--color-gold-500), var(--color-gold-600))
+   ============================================ */
+
+.watchlist-page {
+  padding: var(--space-8) var(--space-6);
+  max-width: var(--max-content-width);
+  margin: 0 auto;
+  animation: fadeIn 0.3s ease;
+}
+
+/* Section spacing */
+.watchlist-page .ui-section {
+  margin-bottom: var(--space-8);
+}
+
+.watchlist-page .ui-section:last-child {
+  margin-bottom: 0;
+}
+
+/* Summary cards grid spacing */
+.watchlist-page .ui-grid {
+  gap: var(--space-5);
+}
+
+/* NL Query Section */
+.watchlist-page .nl-query-section {
+  margin-bottom: var(--space-6);
+}
+
+.watchlist-page .watchlist-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: var(--space-8);
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.watchlist-page .watchlist-header h1 {
+  margin-bottom: var(--space-1);
+  font-size: var(--text-3xl);
+  font-weight: var(--font-bold);
+  color: var(--color-navy-900);
+  letter-spacing: var(--tracking-tight);
+}
+
+.watchlist-page .watchlist-header p {
+  color: var(--color-navy-500);
+  font-size: var(--text-base);
+}
+
+.watchlist-page .watchlist-actions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+/* Primary Button - Navy */
+.watchlist-page .export-btn {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-navy-900);
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--bg-surface);
+  font-size: var(--text-base);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.watchlist-page .export-btn:hover {
+  background: var(--color-navy-800);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-navy);
+}
+
+/* Ghost/Secondary Button */
+.watchlist-page .clear-btn {
+  padding: var(--space-3) var(--space-4);
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--color-navy-500);
+  font-size: var(--text-base);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.watchlist-page .clear-btn:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--color-navy-300);
+  color: var(--color-navy-900);
+}
+
+/* Empty State - Prism Card */
+.watchlist-page .empty-state {
+  text-align: center;
+  padding: var(--space-16) var(--space-8);
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-xs);
+}
+
+.watchlist-page .empty-icon {
+  font-size: var(--text-6xl);
+  margin-bottom: var(--space-4);
+  color: var(--color-navy-400);
+}
+
+.watchlist-page .empty-state h3 {
+  margin-bottom: var(--space-3);
+  font-size: var(--text-xl);
+  font-weight: var(--font-semibold);
+  color: var(--color-navy-900);
+}
+
+.watchlist-page .empty-state p {
+  color: var(--color-navy-500);
+  margin-bottom: var(--space-6);
+  font-size: var(--text-base);
+}
+
+/* CTA Button - Gold Gradient */
+.watchlist-page .cta-button {
+  display: inline-block;
+  padding: var(--space-4) var(--space-6);
+  background: linear-gradient(135deg, var(--color-gold-500), var(--color-gold-600));
+  border-radius: var(--radius-md);
+  color: var(--bg-surface);
+  text-decoration: none;
+  font-weight: var(--font-medium);
+  font-size: var(--text-base);
+  transition: all var(--duration-fast) var(--ease-out);
+  box-shadow: var(--shadow-gold-sm);
+}
+
+.watchlist-page .cta-button:hover {
+  background: linear-gradient(135deg, var(--color-gold-600), var(--color-gold-700));
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-gold);
+}
+
+/* Table Section - Prism Card */
+.watchlist-page .watchlist-table-section {
+  background: var(--bg-surface);
+  padding: var(--space-6);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-xs);
+  margin-bottom: var(--space-8);
+}
+
+.watchlist-page .table-wrapper {
+  overflow-x: auto;
+}
+
+/* ============================================
+   PRISM TABLE STYLES
+   ============================================ */
+.watchlist-page .watchlist-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+/* Table Header - Prism Spec */
+.watchlist-page .watchlist-table thead {
+  background: var(--bg-tertiary);
+}
+
+.watchlist-page .watchlist-table th {
+  padding: var(--space-4);
+  text-align: left;
+  color: var(--color-gold-700);
+  font-weight: var(--font-semibold);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-widest);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border-default);
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.watchlist-page .watchlist-table th:hover {
+  color: var(--color-navy-900);
+}
+
+.watchlist-page .watchlist-table th[align="right"] {
+  text-align: right;
+}
+
+/* Table Body - Prism Spec */
+.watchlist-page .watchlist-table td {
+  padding: var(--space-4);
+  color: var(--color-navy-900);
+  font-size: var(--text-base);
+  border-bottom: 1px solid var(--border-default);
+}
+
+/* Row Hover - Gold Tint */
+.watchlist-page .watchlist-table tbody tr {
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.watchlist-page .watchlist-table tbody tr:hover {
+  background: rgba(212, 175, 55, 0.04);
+}
+
+.watchlist-page .watchlist-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Sort Icon */
+.watchlist-page .sort-icon {
+  margin-left: var(--space-1);
+  opacity: 0.4;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.watchlist-page .sort-icon.active {
+  opacity: 1;
+  color: var(--color-gold-500);
+}
+
+/* Sortable Header */
+.watchlist-page .sortable-header {
+  cursor: pointer;
+}
+
+.watchlist-page .sortable-header:hover {
+  color: var(--color-navy-900);
+}
+
+/* Symbol Link - Gold Accent */
+.watchlist-page .symbol-link {
+  font-weight: var(--font-bold);
+  font-size: var(--text-md);
+  color: var(--color-gold-500);
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.watchlist-page .symbol-link:hover {
+  color: var(--color-gold-600);
+  text-decoration: underline;
+}
+
+/* Name Cell */
+.watchlist-page .name-cell {
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-navy-900);
+}
+
+/* Sector Cell */
+.watchlist-page .sector-cell {
+  color: var(--color-navy-500);
+  font-size: var(--text-base);
+}
+
+/* Date Cell */
+.watchlist-page .date-cell {
+  color: var(--color-navy-400);
+  font-size: var(--text-base);
+  font-family: var(--font-mono);
+}
+
+/* Numeric Cells - Monospace */
+.watchlist-page .price-cell {
+  font-weight: var(--font-semibold);
+  font-family: var(--font-mono);
+  color: var(--color-navy-900);
+  text-align: right;
+}
+
+.watchlist-page .change-cell {
+  font-weight: var(--font-medium);
+  font-size: var(--text-base);
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+/* Alpha Cell - Monospace */
+.watchlist-page .alpha-cell {
+  font-weight: var(--font-medium);
+  font-size: var(--text-base);
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+.watchlist-page .alpha-cell .alpha-value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.watchlist-page .alpha-cell svg {
+  flex-shrink: 0;
+}
+
+/* Positive/Negative Colors */
+.watchlist-page .positive {
+  color: var(--positive);
+}
+
+.watchlist-page .negative {
+  color: var(--negative);
+}
+
+.watchlist-page .alpha-cell.outperform {
+  color: var(--positive);
+}
+
+.watchlist-page .alpha-cell.underperform {
+  color: var(--negative);
+}
+
+/* Action Buttons */
+.watchlist-page .action-buttons {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.watchlist-page .view-btn {
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-base);
+  color: var(--color-navy-500);
+  text-decoration: none;
+  font-size: var(--text-xs);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.watchlist-page .view-btn:hover {
+  background: rgba(212, 175, 55, 0.08);
+  border-color: var(--color-gold-500);
+  color: var(--color-gold-600);
+}
+
+.watchlist-page .remove-btn {
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-base);
+  color: var(--color-navy-500);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.watchlist-page .remove-btn:hover {
+  background: var(--negative-pastel);
+  border-color: var(--negative-pastel);
+  color: var(--negative);
+}
+
+/* ============================================
+   SUMMARY SECTION - Prism Card
+   ============================================ */
+.watchlist-page .watchlist-summary {
+  background: var(--bg-surface);
+  padding: var(--space-6);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-xs);
+}
+
+.watchlist-page .watchlist-summary h3 {
+  margin-bottom: var(--space-4);
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--color-navy-900);
+}
+
+.watchlist-page .summary-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-4);
+}
+
+/* Summary Card - Prism Style */
+.watchlist-page .summary-card {
+  background: var(--bg-tertiary);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.watchlist-page .summary-card:hover {
+  border-color: rgba(212, 175, 55, 0.3);
+  box-shadow: var(--shadow-gold-sm);
+}
+
+.watchlist-page .summary-card .label {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--color-gold-700);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-widest);
+}
+
+.watchlist-page .summary-card .value {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-semibold);
+  font-family: var(--font-mono);
+  color: var(--color-navy-900);
+}
+
+/* ============================================
+   SELECTION STYLES
+   ============================================ */
+.watchlist-page .checkbox-col {
+  width: 36px;
+  padding: var(--space-3) var(--space-4) !important;
+  text-align: center;
+}
+
+.watchlist-page .checkbox-col input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--color-gold-500);
+  border-radius: var(--radius-sm);
+}
+
+/* Selected Row - Gold Tint */
+.watchlist-page tr.selected {
+  background: rgba(212, 175, 55, 0.08) !important;
+}
+
+.watchlist-page tr.selected:hover {
+  background: rgba(212, 175, 55, 0.12) !important;
+}
+
+/* ============================================
+   TAGS/BADGES - Prism Style
+   ============================================ */
+.watchlist-page .watchlist-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-muted);
+  color: var(--color-navy-500);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  border-radius: var(--radius-sm);
+}
+
+/* ============================================
+   RESPONSIVE STYLES
+   ============================================ */
+@media (max-width: 1024px) {
+  .watchlist-page {
+    padding: var(--space-6) var(--space-4);
+  }
+}
+
+@media (max-width: 768px) {
+  .watchlist-page {
+    padding: var(--space-4);
+  }
+
+  .watchlist-page .watchlist-header {
+    flex-direction: column;
+  }
+
+  .watchlist-page .watchlist-header h1 {
+    font-size: var(--text-2xl);
+  }
+
+  .watchlist-page .watchlist-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .watchlist-page .watchlist-actions button {
+    flex: 1;
+    min-width: 120px;
+  }
+
+  .watchlist-page .summary-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .watchlist-page .summary-card .value {
+    font-size: var(--text-xl);
+  }
+
+  /* Table responsive adjustments */
+  .watchlist-page .watchlist-table th,
+  .watchlist-page .watchlist-table td {
+    padding: var(--space-3);
+  }
+}
+
+@media (max-width: 480px) {
+  .watchlist-page .summary-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================
+   UI TABLE COMPONENT OVERRIDES
+   ============================================ */
+
+/* Override UI Table component styles with Prism tokens */
+.watchlist-page [class*="table"] thead,
+.watchlist-page .ui-table thead {
+  background: var(--bg-tertiary);
+}
+
+.watchlist-page [class*="table"] th,
+.watchlist-page .ui-table th {
+  color: var(--color-gold-700);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-widest);
+  padding: var(--space-4);
+  font-weight: var(--font-semibold);
+}
+
+.watchlist-page [class*="table"] td,
+.watchlist-page .ui-table td {
+  color: var(--color-navy-900);
+  font-size: var(--text-base);
+  padding: var(--space-4);
+}
+
+.watchlist-page [class*="table"] tbody tr:hover,
+.watchlist-page .ui-table tbody tr:hover {
+  background: rgba(212, 175, 55, 0.04);
+}
+
+/* Ensure all numeric table cells use monospace */
+.watchlist-page td[align="right"],
+.watchlist-page .numeric-cell {
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+/* Numeric cell base styling */
+.watchlist-page .numeric-cell {
+  font-family: var(--font-mono);
+  text-align: right;
+  font-size: var(--text-base);
+}
+
+/* ===== PRISM Score Badge ===== */
+.watchlist-page .prism-cell {
+  text-align: center;
+}
+
+.watchlist-page .prism-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.watchlist-page .prism-badge.excellent {
+  background: linear-gradient(135deg, var(--color-ai-violet-100), var(--color-ai-violet-50));
+  color: var(--color-ai-violet);
+  border: 1px solid var(--color-ai-violet-200);
+}
+
+.watchlist-page .prism-badge.good {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(34, 197, 94, 0.05));
+  color: var(--positive);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.watchlist-page .prism-badge.fair {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(245, 158, 11, 0.05));
+  color: var(--warning);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.watchlist-page .prism-badge.poor {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.05));
+  color: var(--negative);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.watchlist-page .prism-badge.none {
+  background: var(--bg-muted);
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-subtle);
+}
+
+[data-theme="dark"] .watchlist-page .prism-badge.excellent {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(139, 92, 246, 0.1));
+  border-color: var(--color-ai-violet-600);
+}
+
+[data-theme="dark"] .watchlist-page .prism-badge.good {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.25), rgba(34, 197, 94, 0.1));
+}
+
+[data-theme="dark"] .watchlist-page .prism-badge.fair {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.25), rgba(245, 158, 11, 0.1));
+}
+
+[data-theme="dark"] .watchlist-page .prism-badge.poor {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(239, 68, 68, 0.1));
+}

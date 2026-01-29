@@ -1,0 +1,90 @@
+{
+  "author": "Howard Marks",
+  "analyst": "contrarian",
+  "quotes": [
+    {
+      "id": "marks_second_level",
+      "text": "First-level thinking says, 'It's a good company; let's buy the stock.' Second-level thinking says, 'It's a good company, but everyone thinks it's a great company, and it's not. So the stock's overrated and overpriced; let's sell.'",
+      "source": "The Most Important Thing",
+      "topics": ["second-level thinking", "contrarian", "sentiment"]
+    },
+    {
+      "id": "marks_cycle",
+      "text": "Rule number one: Most things will prove to be cyclical. Rule number two: Some of the greatest opportunities for gain and loss come when other people forget rule number one.",
+      "source": "The Most Important Thing",
+      "topics": ["cycle", "mean reversion", "contrarian"]
+    },
+    {
+      "id": "marks_consensus",
+      "text": "To achieve superior results, you have to hold non-consensus views regarding value, and they have to be accurate.",
+      "source": "The Most Important Thing",
+      "topics": ["contrarian", "non-consensus", "value"]
+    },
+    {
+      "id": "marks_risk",
+      "text": "Risk means more things can happen than will happen.",
+      "source": "The Most Important Thing",
+      "topics": ["risk", "uncertainty", "probability"]
+    },
+    {
+      "id": "marks_pendulum",
+      "text": "The mood swings of the securities markets resemble the movement of a pendulum. Although the midpoint of its arc best describes the location of the pendulum 'on average,' it actually spends very little of its time there.",
+      "source": "Mastering the Market Cycle",
+      "topics": ["sentiment", "cycle", "extremes"]
+    },
+    {
+      "id": "marks_price_value",
+      "text": "What the wise man does in the beginning, the fool does in the end.",
+      "source": "The Most Important Thing",
+      "topics": ["contrarian", "timing", "sentiment"]
+    },
+    {
+      "id": "marks_asymmetry",
+      "text": "The goal is to win more when you're right than you lose when you're wrong. It's about asymmetry.",
+      "source": "Memo",
+      "topics": ["asymmetric", "risk/reward", "contrarian"]
+    },
+    {
+      "id": "marks_pessimism",
+      "text": "The best opportunities come in times of maximum pessimism.",
+      "source": "The Most Important Thing",
+      "topics": ["pessimism", "contrarian", "opportunity"]
+    }
+  ],
+  "coAuthors": [
+    {
+      "name": "Michael Burry",
+      "quotes": [
+        {
+          "id": "burry_research",
+          "text": "My approach is to look for asymmetric investments where the downside is limited but the upside is significant.",
+          "source": "Interview",
+          "topics": ["asymmetric", "research", "value"]
+        },
+        {
+          "id": "burry_contrarian",
+          "text": "I was convinced the world was wrong, and I was right. That's not arrogance, that's just what I believed based on the data.",
+          "source": "The Big Short",
+          "topics": ["contrarian", "conviction", "research"]
+        }
+      ]
+    },
+    {
+      "name": "John Templeton",
+      "quotes": [
+        {
+          "id": "templeton_pessimism",
+          "text": "Bull markets are born on pessimism, grow on skepticism, mature on optimism, and die on euphoria.",
+          "source": "Interview",
+          "topics": ["cycle", "sentiment", "contrarian"]
+        },
+        {
+          "id": "templeton_diversify",
+          "text": "The only way to avoid mistakes is to not invest, which is the biggest mistake of all.",
+          "source": "Interview",
+          "topics": ["risk", "long term", "patience"]
+        }
+      ]
+    }
+  ]
+}

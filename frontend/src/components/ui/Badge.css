@@ -1,0 +1,65 @@
+/* frontend/src/components/ui/Badge.css */
+/* Prism Design System - Badge Component */
+
+.ui-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-full, 20px);
+  font-weight: 500;
+  font-size: 12px;
+}
+
+/* Sizes */
+.ui-badge--sm {
+  padding: 2px 8px;
+  font-size: 10px;
+}
+
+.ui-badge--md {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+/* Variants - Prism Spec */
+
+/* Neutral (default) */
+.ui-badge--neutral {
+  background: var(--bg-muted);
+  color: var(--color-navy-500);
+}
+
+/* Success - Green */
+.ui-badge--success {
+  background: var(--positive-pastel);
+  color: var(--positive);
+}
+
+/* Warning - Yellow/Amber */
+.ui-badge--warning {
+  background: var(--warning-pastel);
+  color: var(--warning-dark);
+}
+
+/* Danger - Red */
+.ui-badge--danger {
+  background: var(--negative-pastel);
+  color: var(--negative);
+}
+
+/* Info - Blue */
+.ui-badge--info {
+  background: var(--info-pastel);
+  color: var(--info);
+}
+
+/* Gold - Premium accent */
+.ui-badge--gold {
+  background: rgba(212, 175, 55, 0.15);
+  color: var(--color-gold-600);
+}
+
+/* Navy - Primary brand */
+.ui-badge--navy {
+  background: rgba(15, 23, 42, 0.1);
+  color: var(--color-navy-900);
+}

@@ -1,0 +1,428 @@
+/* frontend/src/pages/agent/AITradingPage.css */
+/* PRISM Design System - AI Visual Components */
+
+.ai-trading-page {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: var(--space-6);
+  position: relative;
+}
+
+/* Ambient AI glow in background */
+.ai-trading-page::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle at center,
+    rgba(124, 58, 237, 0.04) 0%,
+    rgba(37, 99, 235, 0.02) 40%,
+    transparent 70%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.ai-trading-page__skeleton-header {
+  height: 80px;
+  margin-bottom: var(--space-6);
+}
+
+.ai-trading-page__skeleton-tabs {
+  height: 48px;
+  margin-bottom: var(--space-6);
+}
+
+.ai-trading-page__skeleton-content {
+  height: 600px;
+}
+
+.ai-trading-page__error {
+  text-align: center;
+  padding: var(--space-12);
+}
+
+.ai-trading-page__link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  color: var(--brand-primary);
+  text-decoration: none;
+}
+
+.ai-trading-page__link:hover {
+  text-decoration: underline;
+}
+
+/* Header */
+.ai-trading-page__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: var(--space-6);
+  padding-bottom: var(--space-6);
+  position: relative;
+}
+
+/* Gradient border under header */
+.ai-trading-page__header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(124, 58, 237, 0.2) 20%,
+    rgba(37, 99, 235, 0.15) 50%,
+    rgba(124, 58, 237, 0.2) 80%,
+    transparent 100%);
+}
+
+.ai-trading-page__title-section {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.ai-trading-page__back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  transition: all 0.2s;
+}
+
+.ai-trading-page__back:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+/* Title with AI icon */
+.ai-trading-page__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  color: var(--text-primary);
+}
+
+/* AI icon in title with breathing animation */
+.ai-trading-page__title-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg,
+    var(--color-ai-violet) 0%,
+    var(--color-ai-blue) 50%,
+    var(--color-ai-cyan) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  animation: prism-breathe 4s ease-in-out infinite;
+  position: relative;
+}
+
+.ai-trading-page__title-icon::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg,
+    rgba(124, 58, 237, 0.25) 0%,
+    rgba(37, 99, 235, 0.15) 50%,
+    rgba(8, 145, 178, 0.25) 100%);
+  z-index: -1;
+  animation: prism-glow 4s ease-in-out infinite;
+}
+
+.ai-trading-page__title svg {
+  color: var(--brand-primary);
+}
+
+.ai-trading-page__subtitle {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.ai-trading-page__portfolio-value {
+  text-align: right;
+}
+
+.ai-trading-page__value-label {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ai-trading-page__value {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  color: var(--text-primary);
+}
+
+/* Tabs - AI-styled with gradient accents */
+.ai-trading-page__tabs {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+  padding: var(--space-1);
+  background: linear-gradient(180deg, rgba(124, 58, 237, 0.02) 0%, var(--bg-tertiary) 100%);
+  border: 1px solid rgba(124, 58, 237, 0.06);
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+}
+
+.ai-trading-page__tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2-5) var(--space-4);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.ai-trading-page__tab:hover {
+  background: rgba(124, 58, 237, 0.06);
+  color: var(--text-primary);
+}
+
+/* Active tab with gradient background */
+.ai-trading-page__tab.active {
+  background: linear-gradient(135deg,
+    rgba(124, 58, 237, 0.12) 0%,
+    rgba(37, 99, 235, 0.08) 100%);
+  color: var(--color-ai-violet);
+  box-shadow:
+    0 2px 8px rgba(124, 58, 237, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.ai-trading-page__tab.active svg {
+  color: var(--color-ai-violet);
+}
+
+.ai-trading-page__tab svg {
+  flex-shrink: 0;
+}
+
+/* Content */
+.ai-trading-page__content {
+  min-height: 500px;
+}
+
+/* Performance Tab */
+.ai-trading-page__performance {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.ai-trading-page__performance-note h4 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-base);
+  color: var(--text-primary);
+}
+
+.ai-trading-page__performance-note p {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.ai-trading-page__performance-note ul {
+  margin: 0;
+  padding-left: var(--space-5);
+}
+
+.ai-trading-page__performance-note li {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-1-5);
+}
+
+.ai-trading-page__performance-note li strong {
+  color: var(--text-primary);
+}
+
+/* Portfolio Selector */
+.ai-trading-page__selector {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: var(--space-12) var(--space-6);
+}
+
+.ai-trading-page__selector-header {
+  text-align: center;
+  margin-bottom: var(--space-8);
+}
+
+.ai-trading-page__selector-header svg {
+  color: var(--color-primary);
+  margin-bottom: var(--space-4);
+}
+
+.ai-trading-page__selector-header h1 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  color: var(--text-primary);
+}
+
+.ai-trading-page__selector-header p {
+  margin: 0;
+  font-size: var(--text-base);
+  color: var(--text-secondary);
+}
+
+.ai-trading-page__selector-loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ai-trading-page__selector-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-12);
+  text-align: center;
+}
+
+.ai-trading-page__selector-empty svg {
+  color: var(--text-tertiary);
+}
+
+.ai-trading-page__selector-empty p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.ai-trading-page__selector-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* Portfolio card with AI hover effect */
+.ai-trading-page__portfolio-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: var(--space-5) var(--space-6);
+  background: var(--bg-secondary);
+  border: 1px solid rgba(124, 58, 237, 0.08);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Gradient hover effect */
+.ai-trading-page__portfolio-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg,
+    var(--color-ai-violet) 0%,
+    var(--color-ai-blue) 50%,
+    var(--color-ai-cyan) 100%);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.ai-trading-page__portfolio-card:hover {
+  background: linear-gradient(135deg,
+    rgba(124, 58, 237, 0.04) 0%,
+    var(--bg-tertiary) 100%);
+  border-color: rgba(124, 58, 237, 0.2);
+  transform: translateY(-2px);
+  box-shadow:
+    0 8px 24px rgba(124, 58, 237, 0.1),
+    0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.ai-trading-page__portfolio-card:hover::before {
+  opacity: 1;
+}
+
+.ai-trading-page__portfolio-card svg {
+  color: var(--text-tertiary);
+  transition: transform 0.2s ease;
+}
+
+.ai-trading-page__portfolio-card:hover svg {
+  color: var(--color-primary);
+  transform: translateX(4px);
+}
+
+.ai-trading-page__portfolio-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+.ai-trading-page__portfolio-name {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.ai-trading-page__portfolio-value {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .ai-trading-page {
+    padding: var(--space-4);
+  }
+
+  .ai-trading-page__header {
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  .ai-trading-page__portfolio-value {
+    text-align: left;
+  }
+
+  .ai-trading-page__tabs {
+    margin: 0 calc(-1 * var(--space-4)) var(--space-6);
+    padding: var(--space-1) var(--space-4);
+    border-radius: 0;
+  }
+
+  .ai-trading-page__selector {
+    padding: var(--space-6) var(--space-4);
+  }
+}

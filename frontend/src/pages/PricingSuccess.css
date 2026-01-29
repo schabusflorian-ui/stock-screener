@@ -1,0 +1,216 @@
+/* PricingSuccess.css */
+
+.pricing-success {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6, 24px);
+  background: var(--color-bg-primary, #111);
+  position: relative;
+  overflow: hidden;
+}
+
+.pricing-success--loading {
+  flex-direction: column;
+  gap: var(--space-4, 16px);
+  color: var(--color-text-secondary, #888);
+}
+
+.pricing-success__spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--color-border, #333);
+  border-top-color: var(--color-primary, #3b82f6);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.pricing-success__card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 480px;
+  text-align: center;
+  background: var(--color-bg-secondary, #1a1a1a);
+  border: 1px solid var(--color-border, #333);
+  border-radius: var(--radius-xl, 16px);
+  padding: var(--space-8, 32px);
+  animation: slideUp 0.5s ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.pricing-success__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  margin: 0 auto var(--space-5, 20px);
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--color-success, #22c55e) 20%, transparent),
+    color-mix(in srgb, var(--color-primary, #3b82f6) 20%, transparent)
+  );
+  border-radius: 50%;
+  color: var(--color-success, #22c55e);
+}
+
+.pricing-success h1 {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--color-text-primary, #fff);
+  margin: 0 0 var(--space-3, 12px);
+}
+
+.pricing-success__message {
+  font-size: 16px;
+  color: var(--color-text-secondary, #888);
+  line-height: 1.6;
+  margin: 0 0 var(--space-6, 24px);
+}
+
+.pricing-success__features {
+  text-align: left;
+  padding: var(--space-4, 16px);
+  background: var(--color-bg-tertiary, #252525);
+  border-radius: var(--radius-md, 8px);
+  margin-bottom: var(--space-6, 24px);
+}
+
+.pricing-success__features h3 {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-tertiary, #666);
+  margin: 0 0 var(--space-3, 12px);
+}
+
+.pricing-success__features ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.pricing-success__features li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  padding: var(--space-2, 8px) 0;
+  font-size: 14px;
+  color: var(--color-text-primary, #fff);
+}
+
+.pricing-success__features li svg {
+  color: var(--color-success, #22c55e);
+  flex-shrink: 0;
+}
+
+.pricing-success__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+}
+
+.pricing-success__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2, 8px);
+  padding: 14px 24px;
+  font-size: 15px;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius-md, 8px);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pricing-success__btn--primary {
+  color: white;
+  background: var(--color-primary, #3b82f6);
+}
+
+.pricing-success__btn--primary:hover {
+  filter: brightness(1.1);
+}
+
+.pricing-success__btn--secondary {
+  color: var(--color-text-secondary, #888);
+  background: transparent;
+}
+
+.pricing-success__btn--secondary:hover {
+  color: var(--color-text-primary, #fff);
+}
+
+.pricing-success__help {
+  font-size: 13px;
+  color: var(--color-text-tertiary, #666);
+  margin: var(--space-5, 20px) 0 0;
+}
+
+.pricing-success__help a {
+  color: var(--color-primary, #3b82f6);
+  text-decoration: none;
+}
+
+.pricing-success__help a:hover {
+  text-decoration: underline;
+}
+
+/* Confetti */
+.pricing-success__confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.pricing-success__confetti-piece {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: var(--color);
+  left: calc(var(--x) * 100%);
+  top: -20px;
+  opacity: 0;
+  transform: rotate(calc(var(--rotation) * 1deg));
+  animation: confetti-fall 3s ease-out calc(var(--delay) * 1s) forwards;
+}
+
+@keyframes confetti-fall {
+  0% {
+    opacity: 1;
+    transform: translateY(0) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(calc(100vh + 20px)) rotate(720deg);
+  }
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .pricing-success__card {
+    padding: var(--space-5, 20px);
+  }
+
+  .pricing-success h1 {
+    font-size: 24px;
+  }
+}

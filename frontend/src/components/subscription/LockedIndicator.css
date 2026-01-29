@@ -1,0 +1,239 @@
+/* LockedIndicator.css - PRISM Design System Styled */
+
+/* Base styles */
+.locked-indicator {
+  cursor: pointer;
+  user-select: none;
+}
+
+/* ============================================
+   Badge Variant (default) - PRISM sparkle icon
+   ============================================ */
+.locked-indicator--badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  /* Default PRISM gradient */
+  background: linear-gradient(135deg, #7C3AED 0%, #3B82F6 100%);
+  border-radius: 6px;
+  color: white;
+  transition: all 0.2s ease;
+  box-shadow: 0 0 8px rgba(124, 58, 237, 0.3);
+}
+
+/* Pro tier badge */
+.locked-indicator--badge.locked-indicator--pro {
+  background: linear-gradient(135deg, #3B82F6 0%, #7C3AED 100%);
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
+}
+
+/* Ultra tier badge */
+.locked-indicator--badge.locked-indicator--ultra {
+  background: linear-gradient(135deg, #7C3AED 0%, #D4AF37 100%);
+  box-shadow: 0 0 8px rgba(212, 175, 55, 0.3);
+}
+
+.locked-indicator--badge:hover {
+  transform: scale(1.08);
+  box-shadow: 0 0 16px rgba(124, 58, 237, 0.4);
+}
+
+.locked-indicator--badge.locked-indicator--pro:hover {
+  box-shadow: 0 0 16px rgba(59, 130, 246, 0.4);
+}
+
+.locked-indicator--badge.locked-indicator--ultra:hover {
+  box-shadow: 0 0 16px rgba(212, 175, 55, 0.4);
+}
+
+/* Shimmer animation for badge */
+@keyframes badge-shimmer {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.locked-indicator--badge {
+  background-size: 200% 200%;
+  animation: badge-shimmer 3s ease-in-out infinite;
+}
+
+/* ============================================
+   Card Variant - For card-sized locked areas
+   ============================================ */
+.locked-indicator--card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  padding: var(--space-4, 16px);
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.locked-indicator--card:hover {
+  transform: translateY(-1px);
+}
+
+.locked-indicator--card .locked-indicator__blur {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(15, 23, 42, 0.7) 0%,
+    rgba(2, 6, 23, 0.85) 100%
+  );
+  backdrop-filter: blur(8px) saturate(120%);
+  -webkit-backdrop-filter: blur(8px) saturate(120%);
+  border: 1px solid rgba(124, 58, 237, 0.2);
+  border-radius: inherit;
+}
+
+.locked-indicator--card .locked-indicator__content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  text-align: center;
+}
+
+.locked-indicator--card .locked-indicator__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  /* Default PRISM gradient */
+  background: linear-gradient(135deg, #7C3AED 0%, #3B82F6 100%);
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  color: white;
+  box-shadow:
+    0 0 16px rgba(124, 58, 237, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* Pro tier icon */
+.locked-indicator--card .locked-indicator__icon--pro {
+  background: linear-gradient(135deg, #3B82F6 0%, #7C3AED 100%);
+  box-shadow:
+    0 0 16px rgba(59, 130, 246, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* Ultra tier icon */
+.locked-indicator--card .locked-indicator__icon--ultra {
+  background: linear-gradient(135deg, #7C3AED 0%, #D4AF37 100%);
+  box-shadow:
+    0 0 16px rgba(212, 175, 55, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.locked-indicator--card .locked-indicator__tier {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 100px;
+}
+
+/* Pro tier badge */
+.locked-indicator--card .locked-indicator__tier--pro {
+  background: linear-gradient(135deg, #3B82F6, #7C3AED);
+}
+
+/* Ultra tier badge */
+.locked-indicator--card .locked-indicator__tier--ultra {
+  background: linear-gradient(135deg, #7C3AED, #D4AF37);
+}
+
+.locked-indicator--card .locked-indicator__text {
+  font-size: 12px;
+  color: var(--color-text-secondary, #94A3B8);
+}
+
+.locked-indicator--card:hover .locked-indicator__icon {
+  box-shadow: 0 0 16px rgba(124, 58, 237, 0.4);
+}
+
+/* ============================================
+   Inline Variant - Minimal PRISM sparkle with text
+   ============================================ */
+.locked-indicator--inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: white;
+  /* Default gradient */
+  background: linear-gradient(135deg, #7C3AED, #3B82F6);
+  border: none;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  box-shadow: 0 0 6px rgba(124, 58, 237, 0.25);
+}
+
+/* Pro inline */
+.locked-indicator--inline.locked-indicator--pro {
+  background: linear-gradient(135deg, #3B82F6, #7C3AED);
+  box-shadow: 0 0 6px rgba(59, 130, 246, 0.25);
+}
+
+/* Ultra inline */
+.locked-indicator--inline.locked-indicator--ultra {
+  background: linear-gradient(135deg, #7C3AED, #D4AF37);
+  box-shadow: 0 0 6px rgba(212, 175, 55, 0.25);
+}
+
+.locked-indicator--inline:hover {
+  transform: scale(1.02);
+  box-shadow: 0 0 10px rgba(124, 58, 237, 0.35);
+}
+
+.locked-indicator--inline.locked-indicator--pro:hover {
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.35);
+}
+
+.locked-indicator--inline.locked-indicator--ultra:hover {
+  box-shadow: 0 0 10px rgba(212, 175, 55, 0.35);
+}
+
+/* ============================================
+   Size Variants
+   ============================================ */
+.locked-indicator--small.locked-indicator--badge {
+  width: 22px;
+  height: 22px;
+}
+
+.locked-indicator--small.locked-indicator--badge svg:first-child {
+  width: 10px;
+  height: 10px;
+}
+
+.locked-indicator--large.locked-indicator--badge {
+  width: 36px;
+  height: 36px;
+}
+
+.locked-indicator--large.locked-indicator--badge svg:first-child {
+  width: 16px;
+  height: 16px;
+}

@@ -1,0 +1,221 @@
+/* frontend/src/components/icons/Icon.css */
+
+/* Base icon styles */
+.prism-icon {
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+  color: inherit;
+}
+
+/* Ensure SVG children inherit color from parent */
+/* Only apply stroke to path/line/circle elements that use stroke (not filled shapes) */
+.prism-icon path:not([fill="currentColor"]),
+.prism-icon line,
+.prism-icon circle:not([fill="currentColor"]),
+.prism-icon rect:not([fill="currentColor"]),
+.prism-icon polyline {
+  stroke: currentColor;
+}
+
+.prism-icon [fill="currentColor"] {
+  fill: currentColor;
+}
+
+/* ============================================ */
+/* AI Icon Animations - Per Design System */
+/* ============================================ */
+
+/* Prismatic Shimmer - AI processing state */
+@keyframes prism-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Prism Pulse - AI active/listening state */
+@keyframes prism-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(0.95);
+  }
+}
+
+/* Sparkle Pulse Glow - Breathing with soft halo (no rotation) */
+@keyframes sparkle-pulse-glow {
+  0%, 100% {
+    transform: scale(0.8);
+    filter: drop-shadow(0 0 0px currentColor);
+  }
+  50% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 4px currentColor);
+  }
+}
+
+/* Spinner rotation - Loading states */
+@keyframes prism-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Typing dots bounce - AI composing */
+@keyframes prism-bounce {
+  0%, 80%, 100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-6px);
+  }
+}
+
+/* ============================================ */
+/* Animation Classes */
+/* ============================================ */
+
+.prism-icon--shimmer {
+  background: linear-gradient(90deg, #7C3AED 0%, #2563EB 25%, #0891B2 50%, #059669 75%, #D4AF37 100%);
+  background-size: 200% 100%;
+  animation: prism-shimmer 3s ease-in-out infinite;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.prism-icon--pulse {
+  animation: prism-pulse 2s ease-in-out infinite;
+}
+
+/* Sparkle class - pulse glow animation */
+.prism-icon--sparkle {
+  animation: sparkle-pulse-glow 3s ease-in-out infinite;
+  transform-origin: center;
+}
+
+/* ============================================ */
+/* Sparkle Icon Animations (PrismSparkle & Sparkles) */
+/* ============================================ */
+
+/* Apply pulse glow animation to sparkle icons in AI containers */
+.nl-ai-icon svg,
+.bubble-ai-icon svg,
+.ai-icon-container svg {
+  animation: sparkle-pulse-glow 3s ease-in-out infinite;
+  transform-origin: center;
+}
+
+/* Faster animation on hover */
+.nl-ai-icon:hover svg,
+.bubble-ai-icon:hover svg,
+.ai-icon-container:hover svg {
+  animation-duration: 1.5s;
+}
+
+.prism-icon--spin {
+  animation: prism-spin 1s linear infinite;
+}
+
+/* ============================================ */
+/* Icon Color Variants - Per Design System */
+/* ============================================ */
+
+/* AI/Violet */
+.prism-icon--ai {
+  color: #7C3AED;
+}
+
+/* Success/Positive */
+.prism-icon--success {
+  color: #059669;
+}
+
+/* Warning */
+.prism-icon--warning {
+  color: #D97706;
+}
+
+/* Danger/Negative */
+.prism-icon--danger {
+  color: #DC2626;
+}
+
+/* Info */
+.prism-icon--info {
+  color: #2563EB;
+}
+
+/* Gold/Premium - uses brand-primary for consistency */
+.prism-icon--gold {
+  color: var(--brand-primary, #D4AF37);
+}
+
+/* Brand Primary - default accent color */
+.prism-icon--brand {
+  color: var(--brand-primary, #D4AF37);
+}
+
+/* Muted */
+.prism-icon--muted {
+  color: #94A3B8;
+}
+
+/* ============================================ */
+/* Navigation/Inline Icon Variant */
+/* ============================================ */
+
+/* Light variant for header buttons - lighter base color */
+.prism-icon--light {
+  color: #94A3B8; /* Slate 400 - lighter for header */
+  transition: color 0.15s ease;
+}
+
+/* Header buttons: lighter → darker on hover */
+.header-btn:hover .prism-icon--light,
+.search-trigger:hover .prism-icon--light {
+  color: #475569; /* Slate 600 - darker on hover */
+}
+
+/* ============================================ */
+/* Size Presets */
+/* ============================================ */
+
+.prism-icon--xs {
+  width: 12px;
+  height: 12px;
+}
+
+.prism-icon--sm {
+  width: 16px;
+  height: 16px;
+}
+
+.prism-icon--base {
+  width: 20px;
+  height: 20px;
+}
+
+.prism-icon--md {
+  width: 24px;
+  height: 24px;
+}
+
+.prism-icon--lg {
+  width: 32px;
+  height: 32px;
+}
+
+.prism-icon--xl {
+  width: 48px;
+  height: 48px;
+}

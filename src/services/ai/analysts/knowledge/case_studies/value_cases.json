@@ -1,0 +1,64 @@
+{
+  "analyst": "value",
+  "case_studies": [
+    {
+      "id": "buffett_cocacola",
+      "title": "Buffett's Coca-Cola Investment (1988)",
+      "company": "Coca-Cola (KO)",
+      "investor": "Warren Buffett",
+      "thesis": {
+        "moat": "World's strongest brand, global distribution network, customer loyalty",
+        "valuation": "Bought at 15x earnings when market feared saturation",
+        "management": "Roberto Goizueta focused on shareholder returns",
+        "outcome": "Position grew to $23B, 15x return over decades"
+      },
+      "lessons": [
+        "Great brands can command pricing power for decades",
+        "Global distribution is a durable competitive advantage",
+        "Don't sell wonderful companies even when 'fully valued'",
+        "Patience with high-quality businesses pays off"
+      ],
+      "keywords": ["moat", "brand", "wonderful company", "long term", "pricing power"],
+      "sources": ["Berkshire Letters", "The Warren Buffett Way"]
+    },
+    {
+      "id": "buffett_sees_candies",
+      "title": "Buffett's See's Candies (1972)",
+      "company": "See's Candies",
+      "investor": "Warren Buffett",
+      "thesis": {
+        "moat": "Regional brand loyalty, premium positioning, gift-giving tradition",
+        "valuation": "Paid $25M for business earning $2M (12.5x earnings)",
+        "key_insight": "Discovered that customers would pay more each year",
+        "outcome": "Generated $2B in cumulative profits on $25M investment"
+      },
+      "lessons": [
+        "Pricing power is the ultimate test of a moat",
+        "Business with pricing power can compound without capital reinvestment",
+        "Owner earnings matter more than reported earnings",
+        "Regional brands can have durable moats"
+      ],
+      "keywords": ["pricing power", "moat", "owner earnings", "capital allocation"],
+      "sources": ["Berkshire Letters", "Poor Charlie's Almanack"]
+    },
+    {
+      "id": "klarman_distressed",
+      "title": "Klarman's Distressed Investing Approach",
+      "investor": "Seth Klarman",
+      "thesis": {
+        "strategy": "Buy assets at deep discounts during market panic",
+        "margin_of_safety": "Requires 40-50% discount to intrinsic value",
+        "catalyst": "Wait for mean reversion or corporate action",
+        "example": "Bought distressed mortgage securities in 2008-2009"
+      },
+      "lessons": [
+        "Maximum pessimism creates maximum opportunity",
+        "Asset value provides floor, even in worst case",
+        "Patience is required - positions may take years to work",
+        "Cash is a strategic asset for opportunistic deployment"
+      ],
+      "keywords": ["margin of safety", "distressed", "intrinsic value", "patience"],
+      "sources": ["Margin of Safety book", "Baupost Letters"]
+    }
+  ]
+}

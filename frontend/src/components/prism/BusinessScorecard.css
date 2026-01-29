@@ -1,0 +1,274 @@
+/* frontend/src/components/prism/BusinessScorecard.css */
+
+.business-scorecard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.business-scorecard.empty {
+  padding: var(--spacing-xl);
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+/* Summary Section */
+.scorecard-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xl);
+  padding: var(--spacing-lg);
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+}
+
+.overall-score {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-right: var(--spacing-xl);
+  border-right: 1px solid var(--color-border);
+}
+
+.overall-score .label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.overall-score .value {
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--color-primary);
+  font-family: var(--font-mono);
+}
+
+.overall-score .max {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.category-averages {
+  display: flex;
+  gap: var(--spacing-lg);
+  flex: 1;
+}
+
+.category-avg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  flex: 1;
+}
+
+.category-avg .cat-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.category-avg .cat-score {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+/* Category Colors */
+.category-avg.market .cat-label { color: var(--color-info); }
+.category-avg.competitive .cat-label { color: var(--color-primary); }
+.category-avg.financial .cat-label { color: var(--color-success); }
+.category-avg.management .cat-label { color: var(--color-warning); }
+
+/* Detailed Factors */
+.scorecard-details {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--spacing-md);
+}
+
+.scorecard-category {
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.category-header {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.category-header h4 {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.scorecard-category.market .category-header { background: rgba(var(--color-info-rgb), 0.1); }
+.scorecard-category.competitive .category-header { background: rgba(var(--color-primary-rgb), 0.1); }
+.scorecard-category.financial .category-header { background: rgba(var(--color-success-rgb), 0.1); }
+.scorecard-category.management .category-header { background: rgba(var(--color-warning-rgb), 0.1); }
+
+.category-factors {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Factor Row */
+.factor-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.factor-row:last-child {
+  border-bottom: none;
+}
+
+.factor-icon {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+}
+
+.factor-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.factor-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.factor-label {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.factor-description {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.factor-score {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-shrink: 0;
+}
+
+.score-value {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  font-family: var(--font-mono);
+  min-width: 35px;
+  text-align: right;
+}
+
+/* Score Bar */
+.score-bar {
+  width: 80px;
+}
+
+.score-bar.small {
+  width: 60px;
+}
+
+.score-bar-track {
+  height: 6px;
+  background: var(--color-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.score-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease-out;
+}
+
+/* Confidence Dots */
+.confidence-dots {
+  display: flex;
+  gap: 2px;
+}
+
+.confidence-dots .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-border);
+}
+
+.confidence-dots .dot.filled {
+  background: var(--color-primary);
+}
+
+/* Confidence Legend */
+.confidence-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-lg);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-border);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .scorecard-summary {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .overall-score {
+    padding-right: 0;
+    padding-bottom: var(--spacing-md);
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .category-averages {
+    flex-wrap: wrap;
+  }
+
+  .category-avg {
+    min-width: calc(50% - var(--spacing-md));
+  }
+
+  .scorecard-details {
+    grid-template-columns: 1fr;
+  }
+
+  .factor-row {
+    flex-wrap: wrap;
+  }
+
+  .factor-score {
+    width: 100%;
+    margin-top: var(--spacing-xs);
+    padding-left: 36px;
+  }
+}

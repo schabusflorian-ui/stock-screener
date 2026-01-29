@@ -1,0 +1,376 @@
+/* UpgradeModal.css - PRISM Design System Styled */
+
+.upgrade-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* PRISM Navy-950 with high opacity */
+  background: rgba(2, 6, 23, 0.85);
+  backdrop-filter: blur(8px) saturate(120%);
+  -webkit-backdrop-filter: blur(8px) saturate(120%);
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.upgrade-modal {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+  max-height: 90vh;
+  overflow-y: auto;
+  /* PRISM Navy-900 background */
+  background: linear-gradient(180deg, #0F172A 0%, #020617 100%);
+  /* Violet border accent */
+  border: 1px solid rgba(124, 58, 237, 0.3);
+  border-radius: var(--radius-xl, 16px);
+  /* Gold accent glow */
+  box-shadow:
+    0 0 40px rgba(212, 175, 55, 0.1),
+    0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.upgrade-modal__close {
+  position: absolute;
+  top: var(--space-3, 12px);
+  right: var(--space-3, 12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  color: var(--color-text-secondary, #94A3B8);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  z-index: 1;
+}
+
+.upgrade-modal__close:hover {
+  background: rgba(124, 58, 237, 0.1);
+  color: var(--color-text-primary, #fff);
+}
+
+.upgrade-modal__header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: var(--space-6, 24px) var(--space-6, 24px) 0;
+  /* Subtle gradient accent at top */
+  background: linear-gradient(180deg, rgba(124, 58, 237, 0.08) 0%, transparent 100%);
+}
+
+.upgrade-modal__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  /* Default PRISM AI gradient */
+  background: linear-gradient(135deg, #7C3AED 0%, #2563EB 50%, #D4AF37 100%);
+  background-size: 200% 200%;
+  border-radius: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  color: white;
+  margin-bottom: var(--space-4, 16px);
+  /* Premium glow effect */
+  box-shadow:
+    0 0 32px rgba(124, 58, 237, 0.5),
+    0 0 64px rgba(212, 175, 55, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  animation: modal-icon-shimmer 4s ease-in-out infinite;
+}
+
+@keyframes modal-icon-shimmer {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Pro tier icon */
+.upgrade-modal__icon--pro {
+  background: linear-gradient(135deg, #3B82F6 0%, #7C3AED 100%);
+  box-shadow:
+    0 0 32px rgba(59, 130, 246, 0.5),
+    0 0 64px rgba(124, 58, 237, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* Ultra tier icon */
+.upgrade-modal__icon--ultra {
+  background: linear-gradient(135deg, #7C3AED 0%, #D4AF37 100%);
+  box-shadow:
+    0 0 32px rgba(124, 58, 237, 0.5),
+    0 0 64px rgba(212, 175, 55, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.upgrade-modal__title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--color-text-primary, #fff);
+  margin: 0 0 var(--space-2, 8px);
+}
+
+.upgrade-modal__reason {
+  font-size: 14px;
+  color: var(--color-text-secondary, #94A3B8);
+  margin: 0;
+}
+
+.upgrade-modal__content {
+  padding: var(--space-5, 20px) var(--space-6, 24px);
+}
+
+.upgrade-modal__description {
+  font-size: 14px;
+  color: var(--color-text-secondary, #94A3B8);
+  line-height: 1.6;
+  text-align: center;
+  margin: 0 0 var(--space-5, 20px);
+}
+
+.upgrade-modal__benefits {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--space-5, 20px);
+  /* Glass card with violet tint */
+  background: rgba(124, 58, 237, 0.08);
+  border: 1px solid rgba(124, 58, 237, 0.15);
+  border-radius: var(--radius-md, 8px);
+  padding: var(--space-4, 16px);
+}
+
+.upgrade-modal__benefits li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2, 8px);
+  padding: var(--space-2, 8px) 0;
+  font-size: 13px;
+  color: var(--color-text-primary, #fff);
+}
+
+.upgrade-modal__benefits li:first-child {
+  padding-top: 0;
+}
+
+.upgrade-modal__benefits li:last-child {
+  padding-bottom: 0;
+}
+
+.upgrade-modal__benefits li svg {
+  /* PRISM emerald for checkmarks */
+  color: var(--color-ai-emerald, #059669);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.upgrade-modal__pricing {
+  text-align: center;
+  padding: var(--space-4, 16px);
+  /* Darker background with subtle gradient */
+  background: linear-gradient(135deg, rgba(2, 6, 23, 0.8) 0%, rgba(15, 23, 42, 0.6) 100%);
+  border: 1px solid rgba(212, 175, 55, 0.15);
+  border-radius: var(--radius-md, 8px);
+  margin-bottom: var(--space-4, 16px);
+}
+
+.upgrade-modal__price {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 2px;
+}
+
+.upgrade-modal__price-amount {
+  font-size: 36px;
+  font-weight: 700;
+  /* Gold accent for price */
+  background: linear-gradient(135deg, #D4AF37 0%, #F7D794 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.upgrade-modal__price-period {
+  font-size: 14px;
+  color: var(--color-text-secondary, #94A3B8);
+}
+
+.upgrade-modal__price-note {
+  font-size: 12px;
+  color: var(--color-text-tertiary, #64748B);
+  margin: var(--space-1, 4px) 0 0;
+}
+
+.upgrade-modal__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  padding: 0 var(--space-6, 24px);
+}
+
+.upgrade-modal__cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2, 8px);
+  padding: 14px 28px;
+  font-size: 15px;
+  font-weight: 600;
+  color: white;
+  /* PRISM AI gradient button */
+  background: linear-gradient(135deg, #7C3AED 0%, #3B82F6 50%, #D4AF37 100%);
+  background-size: 200% 200%;
+  border: none;
+  border-radius: var(--radius-md, 8px);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  /* Button glow */
+  box-shadow: 0 4px 20px rgba(124, 58, 237, 0.35);
+}
+
+.upgrade-modal__cta:hover {
+  background-position: 100% 0;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 28px rgba(124, 58, 237, 0.45);
+}
+
+.upgrade-modal__cta:active {
+  transform: translateY(0);
+}
+
+.upgrade-modal__dismiss {
+  padding: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #94A3B8);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.upgrade-modal__dismiss:hover {
+  color: var(--color-text-primary, #fff);
+}
+
+.upgrade-modal__current {
+  font-size: 12px;
+  color: var(--color-text-tertiary, #64748B);
+  text-align: center;
+  padding: var(--space-4, 16px) var(--space-6, 24px) var(--space-5, 20px);
+  margin: 0;
+  border-top: 1px solid rgba(124, 58, 237, 0.1);
+}
+
+.upgrade-modal__current span {
+  font-weight: 500;
+}
+
+/* Current tier color indicators */
+.upgrade-modal__current-tier--free {
+  color: #6B7280;
+}
+
+.upgrade-modal__current-tier--pro {
+  color: #3B82F6;
+}
+
+.upgrade-modal__current-tier--ultra {
+  color: #8B5CF6;
+}
+
+/* CTA tier-specific styling */
+.upgrade-modal__cta--pro {
+  background: linear-gradient(135deg, #3B82F6 0%, #7C3AED 100%);
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.35);
+}
+
+.upgrade-modal__cta--pro:hover {
+  box-shadow: 0 6px 28px rgba(59, 130, 246, 0.45);
+}
+
+.upgrade-modal__cta--ultra {
+  background: linear-gradient(135deg, #7C3AED 0%, #D4AF37 100%);
+  box-shadow: 0 4px 20px rgba(212, 175, 55, 0.3);
+}
+
+.upgrade-modal__cta--ultra:hover {
+  box-shadow: 0 6px 28px rgba(212, 175, 55, 0.4);
+}
+
+/* Tier-specific styling for PRO */
+.upgrade-modal--pro .upgrade-modal__icon {
+  background: linear-gradient(135deg, #3B82F6 0%, #7C3AED 100%);
+}
+
+.upgrade-modal--pro .upgrade-modal__cta {
+  background: linear-gradient(135deg, #3B82F6 0%, #7C3AED 100%);
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.35);
+}
+
+.upgrade-modal--pro .upgrade-modal__cta:hover {
+  box-shadow: 0 6px 28px rgba(59, 130, 246, 0.45);
+}
+
+/* Tier-specific styling for ULTRA */
+.upgrade-modal--ultra .upgrade-modal__icon {
+  background: linear-gradient(135deg, #7C3AED 0%, #D4AF37 100%);
+}
+
+.upgrade-modal--ultra .upgrade-modal__cta {
+  background: linear-gradient(135deg, #7C3AED 0%, #D4AF37 100%);
+  box-shadow: 0 4px 20px rgba(212, 175, 55, 0.3);
+}
+
+.upgrade-modal--ultra .upgrade-modal__cta:hover {
+  box-shadow: 0 6px 28px rgba(212, 175, 55, 0.4);
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .upgrade-modal {
+    max-width: calc(100% - 32px);
+    margin: 16px;
+  }
+
+  .upgrade-modal__title {
+    font-size: 20px;
+  }
+
+  .upgrade-modal__price-amount {
+    font-size: 28px;
+  }
+
+  .upgrade-modal__icon {
+    width: 56px;
+    height: 56px;
+  }
+}

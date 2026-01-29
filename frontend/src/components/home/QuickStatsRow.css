@@ -1,0 +1,248 @@
+/* QuickStatsRow.css - PRISM Design System */
+
+.quick-stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.quick-stat-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 20px;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+/* Gold border on hover */
+.quick-stat-card:hover {
+  background: rgba(212, 175, 55, 0.04);
+  border-color: #D4AF37;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-gold);
+}
+
+.quick-stat-card.skeleton {
+  cursor: default;
+  pointer-events: none;
+}
+
+/* Old stat-card-icon styles (kept for backwards compatibility) */
+.stat-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+/* Portfolio icon - Navy */
+.stat-card-icon.portfolio {
+  background: rgba(15, 23, 42, 0.08);
+  color: #0F172A;
+}
+
+/* Agents icon - Navy */
+.stat-card-icon.agents {
+  background: rgba(15, 23, 42, 0.08);
+  color: #0F172A;
+}
+
+/* Alerts icon - Gold */
+.stat-card-icon.alerts {
+  background: rgba(212, 175, 55, 0.1);
+  color: #D4AF37;
+}
+
+/* New IconButton integration */
+.stat-card-icon-btn {
+  flex-shrink: 0;
+}
+
+/* Prevent nested hover effects when card is hovered */
+.quick-stat-card .stat-card-icon-btn .prism-icon-button {
+  pointer-events: none;
+}
+
+.stat-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.stat-card-label {
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #A67C3D;
+}
+
+/* Values - text is sans, numbers are mono */
+.stat-card-value {
+  font-size: 18px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  color: #0F172A;
+  white-space: nowrap;
+}
+
+/* Numbers within values should be monospace */
+.stat-card-value .number {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.stat-card-value.empty {
+  font-size: 14px;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  color: #64748B;
+}
+
+.stat-card-sub {
+  font-size: 14px;
+  font-weight: 400;
+  font-family: var(--font-sans);
+  color: #64748B;
+}
+
+.stat-card-change {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-sans);
+}
+
+/* Numbers in change indicator should be monospace */
+.stat-card-change .number {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.stat-card-change.positive {
+  color: #059669;
+}
+
+.stat-card-change.negative {
+  color: #DC2626;
+}
+
+.stat-card-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  padding: 2px 8px;
+  border-radius: 4px;
+  width: fit-content;
+}
+
+.stat-card-badge.warning {
+  background: rgba(245, 158, 11, 0.1);
+  color: #F59E0B;
+}
+
+/* Numbers within badges should be monospace */
+.stat-card-badge .number {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.stat-card-meta {
+  font-size: 12px;
+  font-family: var(--font-sans);
+  color: #94A3B8;
+}
+
+/* Numbers within meta should be monospace */
+.stat-card-meta .number {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+/* Gold CTA link */
+.stat-card-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  color: #D4AF37;
+}
+
+/* Skeleton loading */
+.skeleton .skeleton-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.04) 25%, rgba(15, 23, 42, 0.08) 50%, rgba(15, 23, 42, 0.04) 75%);
+  background-size: 200% 100%;
+  animation: prism-shimmer 1.5s infinite;
+}
+
+.skeleton .skeleton-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.skeleton .skeleton-line {
+  height: 14px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.04) 25%, rgba(15, 23, 42, 0.08) 50%, rgba(15, 23, 42, 0.04) 75%);
+  background-size: 200% 100%;
+  animation: prism-shimmer 1.5s infinite;
+}
+
+.skeleton .skeleton-line.short {
+  width: 60px;
+}
+
+.skeleton .skeleton-line.wide {
+  width: 100px;
+}
+
+/* Dark theme */
+[data-theme="dark"] .quick-stat-card {
+  background: var(--glass-bg);
+}
+
+[data-theme="dark"] .quick-stat-card:hover {
+  background: rgba(212, 175, 55, 0.08);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] .stat-card-value,
+[data-theme="dark"] .stat-card-icon.portfolio {
+  color: var(--text-primary);
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .quick-stats-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1200px) and (min-width: 901px) {
+  .quick-stats-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .quick-stat-card:last-child {
+    grid-column: span 2;
+  }
+}

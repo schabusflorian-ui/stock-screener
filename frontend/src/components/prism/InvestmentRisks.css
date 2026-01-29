@@ -1,0 +1,140 @@
+/* frontend/src/components/prism/InvestmentRisks.css */
+
+.investment-risks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.investment-risks.empty {
+  padding: var(--spacing-xl);
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.risk-card {
+  display: flex;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: rgba(var(--color-danger-rgb), 0.03);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(var(--color-danger-rgb), 0.1);
+}
+
+.risk-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex-shrink: 0;
+}
+
+.risk-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(var(--color-danger-rgb), 0.1);
+  color: var(--color-danger);
+  border-radius: 50%;
+}
+
+.risk-number {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-danger);
+}
+
+.risk-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.risk-thesis {
+  margin: 0 0 var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text);
+  line-height: 1.4;
+}
+
+.risk-evidence {
+  margin: 0 0 var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.severity-badge {
+  display: inline-block;
+  padding: 2px var(--spacing-sm);
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-radius: var(--radius-sm);
+}
+
+.severity-badge.high {
+  background: rgba(var(--color-danger-rgb), 0.1);
+  color: var(--color-danger);
+}
+
+.severity-badge.medium {
+  background: rgba(var(--color-warning-rgb), 0.1);
+  color: var(--color-warning);
+}
+
+.severity-badge.low {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-muted);
+}
+
+.risk-probability {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-sm);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.risk-mitigation {
+  padding: var(--spacing-sm);
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
+  border-left: 2px solid var(--color-success);
+}
+
+.mitigation-label {
+  display: block;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-success);
+  margin-bottom: var(--spacing-xs);
+}
+
+.risk-mitigation p {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .risk-card {
+    flex-direction: column;
+  }
+
+  .risk-header {
+    flex-direction: row;
+    justify-content: flex-start;
+  }
+
+  .severity-badge {
+    order: 3;
+    margin-left: auto;
+  }
+}

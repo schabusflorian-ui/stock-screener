@@ -1,0 +1,298 @@
+/* frontend/src/components/portfolio/PerformanceChart.css */
+/* PRISM Design System - Clean Line Chart Style */
+
+.performance-chart {
+  background: var(--bg-surface);
+  border: var(--chart-card-border, 1px solid var(--border-subtle));
+  border-radius: var(--chart-card-radius, var(--radius-xl));
+  padding: var(--space-6);
+  box-shadow: var(--chart-card-shadow, var(--shadow-sm));
+}
+
+.performance-chart.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+
+.empty-state {
+  text-align: center;
+  color: var(--text-tertiary);
+}
+
+.empty-state p {
+  font-size: var(--text-base);
+  font-weight: var(--font-medium);
+  margin: 0 0 var(--space-1) 0;
+}
+
+.empty-state span {
+  font-size: var(--text-sm);
+}
+
+.chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.chart-stats {
+  display: flex;
+  gap: var(--space-6);
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0);
+}
+
+.stat-label {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.stat-value {
+  font-size: var(--text-lg);
+  font-weight: var(--font-bold);
+}
+
+.stat-value.positive {
+  color: var(--chart-positive);
+}
+
+.stat-value.negative {
+  color: var(--chart-negative);
+}
+
+/* Period selector - FT-style pill */
+.performance-chart .period-selector {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-0-5);
+  background: var(--chart-selector-bg);
+  border-radius: var(--chart-selector-radius);
+  padding: var(--chart-selector-padding);
+  border: var(--chart-selector-border);
+}
+
+.performance-chart .period-btn {
+  padding: var(--chart-selector-btn-padding);
+  font-size: var(--chart-selector-btn-font-size);
+  font-weight: var(--chart-selector-btn-font-weight);
+  color: var(--chart-selector-btn-color);
+  background: transparent;
+  border: none;
+  border-radius: var(--chart-selector-btn-radius);
+  cursor: pointer;
+  transition: all var(--duration-fast) ease;
+  white-space: nowrap;
+}
+
+.performance-chart .period-btn:hover {
+  color: var(--chart-selector-btn-color-hover);
+}
+
+.performance-chart .period-btn.active {
+  background: var(--chart-selector-btn-active-bg);
+  color: var(--chart-selector-btn-active-color);
+}
+
+.chart-container {
+  margin: 0 calc(-1 * var(--space-2-5));
+}
+
+.performance-tooltip {
+  background: var(--chart-tooltip-bg);
+  border: 1px solid var(--chart-tooltip-border);
+  border-radius: var(--chart-tooltip-radius);
+  padding: var(--chart-tooltip-padding);
+  box-shadow: var(--chart-tooltip-shadow);
+}
+
+.tooltip-date {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-1);
+}
+
+.tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: var(--text-sm);
+  padding: var(--space-0) 0;
+}
+
+.tooltip-label {
+  font-weight: var(--font-medium);
+}
+
+.tooltip-value {
+  font-weight: var(--font-semibold);
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+
+/* Alpha row in tooltip */
+.tooltip-row.alpha-row {
+  margin-top: var(--space-1);
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--border-primary);
+}
+
+.tooltip-row.alpha-row.outperform {
+  color: var(--chart-positive);
+}
+
+.tooltip-row.alpha-row.underperform {
+  color: var(--chart-negative);
+}
+
+/* Chart controls container */
+.chart-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Alpha stat styling */
+.stat-item.alpha-stat {
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--info-muted);
+}
+
+.stat-value.alpha-positive {
+  color: var(--chart-positive);
+}
+
+.stat-value.alpha-negative {
+  color: var(--chart-negative);
+}
+
+/* Overlay toggles row */
+.overlay-toggles {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  margin-bottom: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.overlay-label {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--text-tertiary);
+  margin-right: var(--space-1);
+}
+
+.overlay-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: all var(--duration-fast) ease;
+}
+
+.overlay-toggle:hover:not(.disabled) {
+  border-color: var(--toggle-color, var(--text-tertiary));
+  color: var(--text-primary);
+}
+
+.overlay-toggle.active {
+  background: color-mix(in srgb, var(--toggle-color) 15%, transparent);
+  border-color: var(--toggle-color);
+  color: var(--toggle-color);
+}
+
+.overlay-toggle.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.overlay-toggle.alpha-toggle.active {
+  background: var(--info-muted);
+  border-color: var(--chart-1);
+  color: var(--chart-1);
+}
+
+.overlay-indicator {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: 50%;
+  border: 1px solid var(--toggle-color, var(--border-default));
+  transition: background-color var(--duration-fast) ease;
+}
+
+.chart-footer {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-6);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-default);
+}
+
+.footer-stat {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.footer-stat strong {
+  color: var(--text-primary);
+}
+
+/* Recharts overrides */
+.recharts-legend-wrapper {
+  padding-top: var(--space-2) !important;
+}
+
+.recharts-legend-item-text {
+  font-size: var(--text-xs) !important;
+  color: var(--text-secondary) !important;
+}
+
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+  stroke: var(--border-default);
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .chart-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .chart-stats {
+    flex-wrap: wrap;
+    gap: var(--space-4);
+  }
+
+  .stat-value {
+    font-size: var(--text-md);
+  }
+
+  .chart-footer {
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+}

@@ -1,0 +1,292 @@
+/* frontend/src/components/alerts/DigestPreferences.css */
+
+.digest-preferences-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: var(--space-4);
+}
+
+.digest-preferences {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  max-width: 600px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.digest-preferences.modal {
+  box-shadow: var(--shadow-xl);
+}
+
+.digest-preferences.inline {
+  margin-bottom: var(--space-6);
+}
+
+.digest-preferences .loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-8);
+  color: var(--text-secondary);
+}
+
+.digest-preferences .preferences-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.digest-preferences .header-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.digest-preferences .header-title svg {
+  color: var(--color-gold-500);
+}
+
+.digest-preferences .header-title h3 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+}
+
+.digest-preferences .close-btn {
+  padding: var(--space-2);
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: var(--radius-md);
+}
+
+.digest-preferences .close-btn:hover {
+  background: var(--bg-muted);
+  color: var(--text-primary);
+}
+
+.digest-preferences .error-banner {
+  margin: var(--space-3) var(--space-5);
+  padding: var(--space-3);
+  background: var(--negative-muted);
+  border: 1px solid var(--negative);
+  border-radius: var(--radius-md);
+  color: var(--negative);
+  font-size: var(--text-sm);
+}
+
+.digest-preferences .preferences-content {
+  padding: var(--space-5);
+}
+
+.digest-preferences .preference-section {
+  margin-bottom: var(--space-6);
+}
+
+.digest-preferences .preference-section h4 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-1) 0;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+}
+
+.digest-preferences .preference-section h4 svg {
+  color: var(--color-gold-500);
+}
+
+.digest-preferences .section-description {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-3) 0;
+}
+
+.digest-preferences .mode-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.digest-preferences .mode-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.digest-preferences .mode-option:hover {
+  border-color: var(--color-gold-300);
+  background: var(--bg-tertiary);
+}
+
+.digest-preferences .mode-option.selected {
+  border-color: var(--color-gold-500);
+  background: rgba(212, 175, 55, 0.05);
+}
+
+.digest-preferences .mode-option input[type="radio"] {
+  margin-top: 4px;
+  accent-color: var(--color-gold-500);
+}
+
+.digest-preferences .mode-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.digest-preferences .mode-name {
+  font-weight: var(--font-semibold);
+}
+
+.digest-preferences .mode-description {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.digest-preferences .mode-breakdown {
+  display: flex;
+  gap: var(--space-4);
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.digest-preferences .check-icon {
+  color: var(--color-gold-500);
+}
+
+.digest-preferences .timing-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.digest-preferences .timing-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.digest-preferences .timing-field label {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.digest-preferences .timing-field input,
+.digest-preferences .timing-field select {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  font-size: var(--text-sm);
+}
+
+.digest-preferences .filter-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.digest-preferences .toggle-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--bg-muted);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.digest-preferences .toggle-option input[type="checkbox"] {
+  margin-top: 4px;
+  accent-color: var(--color-gold-500);
+}
+
+.digest-preferences .toggle-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.digest-preferences .toggle-label span {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.digest-preferences .priority-threshold {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.digest-preferences .priority-threshold label {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.digest-preferences .priority-threshold select {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  max-width: 300px;
+}
+
+.digest-preferences .preferences-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--border-default);
+  background: var(--bg-muted);
+}
+
+.digest-preferences .unsaved-indicator {
+  font-size: var(--text-sm);
+  color: var(--warning);
+}
+
+.digest-preferences .save-btn {
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-navy-900);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+}
+
+.digest-preferences .save-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

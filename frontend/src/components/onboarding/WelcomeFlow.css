@@ -1,0 +1,469 @@
+/* components/onboarding/WelcomeFlow.css */
+/* Prism Design System Compliant */
+
+.welcome-flow-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-page);
+  backdrop-filter: var(--glass-blur);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  z-index: var(--z-modal);
+  overflow-y: auto;
+}
+
+.welcome-flow-card {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--glass-shadow);
+  max-width: 42rem;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: var(--space-8);
+}
+
+.welcome-flow-progress {
+  position: fixed;
+  bottom: var(--space-8);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: var(--space-2);
+  z-index: calc(var(--z-modal) + 1);
+}
+
+.progress-dot {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: 50%;
+  background: var(--border-default);
+  transition: all var(--duration-300) ease;
+}
+
+.progress-dot.active {
+  background: var(--color-gold-500);
+  width: var(--space-6);
+  border-radius: var(--radius-sm);
+}
+
+/* Welcome Step */
+.welcome-step {
+  text-align: center;
+  padding: var(--space-8) 0;
+}
+
+.welcome-icon {
+  width: 5rem;
+  height: 5rem;
+  background: var(--ai-gradient);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto var(--space-6);
+  font-size: var(--text-4xl);
+  box-shadow: var(--shadow-gold);
+}
+
+.welcome-title {
+  font-size: var(--text-3xl);
+  font-weight: var(--font-semibold);
+  margin-bottom: var(--space-2);
+  color: var(--text-primary);
+}
+
+.welcome-description {
+  color: var(--text-secondary);
+  margin-bottom: var(--space-8);
+  line-height: 1.6;
+  max-width: 28rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.welcome-time {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-top: var(--space-4);
+}
+
+/* Interests Step */
+.interests-step,
+.risk-profile-step,
+.watchlist-step,
+.tour-offer-step {
+  padding: var(--space-4) 0;
+}
+
+.step-title {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-semibold);
+  margin-bottom: var(--space-2);
+  color: var(--text-primary);
+}
+
+.step-description {
+  color: var(--text-secondary);
+  margin-bottom: var(--space-6);
+  line-height: 1.6;
+}
+
+.interests-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+@media (max-width: 640px) {
+  .interests-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.interest-card {
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  text-align: left;
+  background: var(--glass-bg);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  transition: all var(--duration-200) ease;
+}
+
+.interest-card:hover {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: var(--color-ai-violet);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-gold-sm);
+}
+
+.interest-card.selected {
+  border-color: var(--color-ai-violet);
+  background: rgba(212, 175, 55, 0.08);
+  box-shadow: 0 0 0 1px var(--color-ai-violet);
+}
+
+.interest-icon {
+  font-size: var(--text-2xl);
+  display: block;
+  margin-bottom: var(--space-2);
+}
+
+.interest-label {
+  font-weight: var(--font-medium);
+  margin-bottom: var(--space-1);
+  color: var(--text-primary);
+}
+
+.interest-description {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* Risk Profile Step */
+.risk-profiles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.risk-profile-card {
+  width: 100%;
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  text-align: left;
+  background: var(--glass-bg);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  transition: all var(--duration-200) ease;
+}
+
+.risk-profile-card:hover {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: var(--color-ai-violet);
+  box-shadow: var(--shadow-gold-sm);
+}
+
+.risk-profile-card.selected {
+  border-color: var(--color-ai-violet);
+  background: rgba(212, 175, 55, 0.08);
+  box-shadow: 0 0 0 1px var(--color-ai-violet);
+}
+
+.risk-profile-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.risk-profile-icon {
+  font-size: var(--text-2xl);
+}
+
+.risk-profile-label {
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.risk-profile-description {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.risk-profile-details {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-default);
+}
+
+.allocation-bar {
+  display: flex;
+  height: var(--space-2);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-bottom: var(--space-2);
+}
+
+.allocation-segment {
+  transition: width var(--duration-300) ease;
+}
+
+.allocation-segment.stocks {
+  background: var(--color-ai-violet);
+}
+
+.allocation-segment.bonds {
+  background: var(--positive);
+}
+
+.allocation-segment.cash {
+  background: var(--warning);
+}
+
+.allocation-legend {
+  display: flex;
+  gap: var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-2);
+}
+
+.risk-meta {
+  display: flex;
+  gap: var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+/* Watchlist Step */
+.watchlist-name-input {
+  width: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  font-size: var(--text-base);
+  margin-bottom: var(--space-4);
+  background: var(--glass-bg);
+  backdrop-filter: blur(10px);
+  transition: all var(--duration-200) ease;
+  color: var(--text-primary);
+}
+
+.watchlist-name-input:focus {
+  outline: none;
+  border-color: var(--color-ai-violet);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.selected-stocks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.selected-stock-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--ai-gradient);
+  color: white;
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  box-shadow: var(--shadow-ai-sm);
+}
+
+.remove-stock {
+  background: none;
+  border: none;
+  color: white;
+  font-size: var(--text-xl);
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  margin-left: var(--space-1);
+  opacity: 0.8;
+  transition: opacity var(--duration-200) ease;
+}
+
+.remove-stock:hover {
+  opacity: 1;
+}
+
+.suggested-stocks-section {
+  margin-bottom: var(--space-6);
+}
+
+.suggested-label {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-2);
+}
+
+.suggested-stocks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.suggested-stock-btn {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  background: var(--glass-bg);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  transition: all var(--duration-200) ease;
+  color: var(--text-primary);
+}
+
+.suggested-stock-btn:hover:not(:disabled) {
+  border-color: var(--color-ai-violet);
+  background: rgba(212, 175, 55, 0.08);
+  transform: translateY(-1px);
+}
+
+.suggested-stock-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Tour Offer Step */
+.tour-offer-step {
+  text-align: center;
+  padding: var(--space-8) 0;
+}
+
+.celebration-icon {
+  width: 5rem;
+  height: 5rem;
+  background: var(--positive);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto var(--space-6);
+  font-size: var(--text-4xl);
+  box-shadow: 0 8px 32px rgba(5, 150, 105, 0.3);
+}
+
+/* Step Actions */
+.step-actions {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+}
+
+/* Button Styles */
+.btn-primary,
+.btn-secondary,
+.btn-text {
+  padding: var(--space-3) var(--space-6);
+  border-radius: var(--radius-md);
+  font-weight: var(--font-medium);
+  font-size: var(--text-base);
+  cursor: pointer;
+  transition: all var(--duration-200) ease;
+  border: none;
+}
+
+.btn-primary {
+  flex: 1;
+  background: var(--ai-gradient);
+  color: white;
+  box-shadow: var(--shadow-ai-sm);
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-ai);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary.btn-large {
+  width: 100%;
+  padding: var(--space-4) var(--space-8);
+  font-size: var(--text-lg);
+}
+
+.btn-secondary {
+  flex: 1;
+  background: var(--glass-bg);
+  backdrop-filter: blur(10px);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: var(--color-ai-violet);
+}
+
+.btn-text {
+  width: 100%;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: var(--space-3);
+}
+
+.btn-text:hover {
+  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+/* Scrollbar Styling */
+.welcome-flow-card::-webkit-scrollbar {
+  width: 8px;
+}
+
+.welcome-flow-card::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: var(--radius-sm);
+}
+
+.welcome-flow-card::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: var(--radius-sm);
+}
+
+.welcome-flow-card::-webkit-scrollbar-thumb:hover {
+  background: var(--color-navy-300);
+}

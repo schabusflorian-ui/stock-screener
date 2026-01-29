@@ -1,0 +1,101 @@
+{
+  "analyst": "growth",
+  "frameworks": [
+    {
+      "id": "tam_analysis",
+      "name": "Total Addressable Market Analysis",
+      "description": "Framework for sizing the market opportunity",
+      "steps": [
+        "1. Define the market - what problem is being solved?",
+        "2. Calculate top-down TAM - total potential customers x average revenue per customer",
+        "3. Validate with bottom-up - build from current customers and expand",
+        "4. Identify SAM (Serviceable) - realistic portion they can address",
+        "5. Project SOM (Obtainable) - what they can realistically capture"
+      ],
+      "red_flags": [
+        "TAM calculated on overly broad market definitions",
+        "No clear path from current position to TAM capture",
+        "Ignoring competition in TAM calculations"
+      ],
+      "keywords": ["tam", "total addressable market", "market opportunity", "growth"],
+      "sources": ["a16z on TAM", "ARK Invest Methodology"]
+    },
+    {
+      "id": "peg_ratio",
+      "name": "PEG Ratio Framework",
+      "description": "Peter Lynch's approach to valuing growth stocks",
+      "formula": "PEG = P/E Ratio / Earnings Growth Rate",
+      "interpretation": {
+        "peg_below_1": "Potentially undervalued relative to growth",
+        "peg_around_1": "Fairly valued - growth matches multiple",
+        "peg_above_2": "Expensive - paying premium for growth"
+      },
+      "caveats": [
+        "Works best for consistent growers (15-25% range)",
+        "Less useful for hyper-growth or declining companies",
+        "Should be combined with quality assessment"
+      ],
+      "keywords": ["peg ratio", "growth", "valuation", "earnings growth"],
+      "sources": ["Peter Lynch's One Up on Wall Street"]
+    },
+    {
+      "id": "ten_bagger_criteria",
+      "name": "Ten-Bagger Identification",
+      "description": "Lynch's criteria for stocks that could return 10x",
+      "characteristics": [
+        "Small to mid-cap with room to grow (market cap < $10B ideal)",
+        "Earnings growing 20-25%+ annually",
+        "Dominant position in niche market",
+        "Expandable business model (geographic, product line)",
+        "Management with significant stock ownership",
+        "Low institutional ownership (undiscovered)",
+        "Simple, understandable business"
+      ],
+      "red_flags": [
+        "Already widely followed by analysts",
+        "Growth slowing in core business",
+        "Diversifying into unrelated areas"
+      ],
+      "keywords": ["ten-bagger", "growth", "multi-bagger", "compounding"],
+      "sources": ["Peter Lynch", "Philip Fisher"]
+    },
+    {
+      "id": "network_effects",
+      "name": "Network Effects Assessment",
+      "description": "Evaluate the strength and type of network effects",
+      "types": [
+        "Direct network effects: More users = more value per user (social networks)",
+        "Indirect network effects: More of one type attracts another (platforms)",
+        "Data network effects: More usage = better product (AI, recommendations)",
+        "Marketplace network effects: Buyers attract sellers and vice versa"
+      ],
+      "strength_indicators": [
+        "User engagement increasing over time",
+        "Organic user growth from referrals",
+        "Switching costs rising with usage",
+        "Winner-take-most market dynamics"
+      ],
+      "keywords": ["network effects", "scalable", "flywheel", "platform"],
+      "sources": ["a16z on Network Effects", "NFX Framework"]
+    },
+    {
+      "id": "revenue_quality",
+      "name": "Revenue Quality Assessment",
+      "description": "Evaluate the sustainability and predictability of revenue growth",
+      "hierarchy": {
+        "highest_quality": "Recurring subscription revenue with high retention (>90% NRR)",
+        "high_quality": "Consumption-based revenue with predictable usage patterns",
+        "medium_quality": "Repeat transactional revenue from loyal customers",
+        "lower_quality": "One-time project revenue or lumpy deals"
+      },
+      "metrics": [
+        "Net Revenue Retention (NRR) - should be >100%",
+        "Customer Acquisition Cost (CAC) payback",
+        "Lifetime Value to CAC ratio (LTV/CAC > 3x)",
+        "Cohort analysis - do older customers spend more?"
+      ],
+      "keywords": ["revenue growth", "recurring revenue", "retention", "unit economics"],
+      "sources": ["SaaS Metrics", "ARK Invest"]
+    }
+  ]
+}

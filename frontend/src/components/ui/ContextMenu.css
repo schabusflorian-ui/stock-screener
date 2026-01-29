@@ -1,0 +1,318 @@
+/* ContextMenu - Right-click "Ask AI" floating menu */
+/* PRISM Design System - AI Visual Components */
+
+/* ==========================================================================
+   HOVER INDICATOR FOR ASK AI ENABLED ELEMENTS
+   ========================================================================== */
+
+/* Elements with Ask AI support - custom PRISM cursor (24x24 sparkle-only) */
+[data-ask-ai="true"] {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%237c3aed'/%3E%3Cstop offset='50%25' stop-color='%232563eb'/%3E%3Cstop offset='100%25' stop-color='%230891b2'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath fill='url(%23g)' d='M12 2L14 9L21 12L14 15L12 22L10 15L3 12L10 9Z'/%3E%3Cpath fill='white' fill-opacity='0.4' d='M12 5L13.2 9.8L18 12L13.2 14.2L12 19L10.8 14.2L6 12L10.8 9.8Z'/%3E%3C/svg%3E") 12 12, pointer;
+}
+
+/* General hover effect for Ask AI elements - subtle background tint (not overlays or table rows) */
+[data-ask-ai="true"]:not(.chart-ask-ai-overlay):not(tr):hover {
+  background-color: rgba(124, 58, 237, 0.02);
+  transition: background-color 0.2s ease;
+}
+
+/* Table rows get a colored left border indicator */
+tr[data-ask-ai="true"] {
+  position: relative;
+  transition: background-color 0.15s ease;
+}
+
+tr[data-ask-ai="true"]:hover {
+  background-color: rgba(124, 58, 237, 0.03);
+}
+
+tr[data-ask-ai="true"]:hover td:first-child {
+  position: relative;
+}
+
+tr[data-ask-ai="true"]:hover td:first-child::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  background: linear-gradient(180deg, #7c3aed 0%, #2563eb 100%);
+  border-radius: 0 2px 2px 0;
+}
+
+/* ==========================================================================
+   CONTEXT MENU
+   ========================================================================== */
+
+.context-menu {
+  position: fixed;
+  z-index: 10000;
+  width: 300px;
+  background: var(--bg-surface, #ffffff);
+  border: 1px solid rgba(124, 58, 237, 0.2);
+  border-radius: 16px;
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.2),
+    0 8px 24px rgba(124, 58, 237, 0.12),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  overflow: hidden;
+  animation: contextMenuEnter 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  backdrop-filter: blur(8px);
+}
+
+@keyframes contextMenuEnter {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Header with AI gradient */
+.context-menu-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: linear-gradient(135deg,
+    rgba(124, 58, 237, 0.1) 0%,
+    rgba(37, 99, 235, 0.05) 100%);
+  border-bottom: 1px solid rgba(124, 58, 237, 0.12);
+}
+
+.context-menu-header-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #7c3aed 0%, #2563eb 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
+}
+
+.context-menu-header-icon svg {
+  animation: sparkle-pulse 3s ease-in-out infinite;
+}
+
+@keyframes sparkle-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.1); }
+}
+
+.context-menu-header-content {
+  flex: 1;
+}
+
+.context-menu-header-title {
+  font-size: 16px;
+  font-weight: 600;
+  background: linear-gradient(90deg, #7c3aed, #2563eb);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 2px;
+}
+
+.context-menu-header-hint {
+  font-size: 11px;
+  color: var(--text-muted, #6b7280);
+  opacity: 0.8;
+}
+
+/* Context label */
+.context-menu-context {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border-default, rgba(0,0,0,0.1));
+}
+
+.context-menu-context-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted, #6b7280);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Suggestions list */
+.context-menu-suggestions {
+  padding: 8px;
+}
+
+.context-menu-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 2px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.context-menu-suggestion:last-child {
+  margin-bottom: 0;
+}
+
+.context-menu-suggestion:hover {
+  background: rgba(124, 58, 237, 0.08);
+}
+
+.context-menu-suggestion:active {
+  background: rgba(124, 58, 237, 0.12);
+  transform: scale(0.98);
+}
+
+.context-menu-suggestion-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(124, 58, 237, 0.1);
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.context-menu-suggestion-icon svg {
+  color: #7c3aed;
+  opacity: 0.7;
+}
+
+.context-menu-suggestion:hover .context-menu-suggestion-icon {
+  background: rgba(124, 58, 237, 0.15);
+}
+
+.context-menu-suggestion:hover .context-menu-suggestion-icon svg {
+  opacity: 1;
+}
+
+.context-menu-suggestion-text {
+  flex: 1;
+  font-size: 14px;
+  color: var(--text-primary, #1f2937);
+  line-height: 1.4;
+}
+
+.context-menu-suggestion:hover .context-menu-suggestion-text {
+  color: #7c3aed;
+}
+
+/* Arrow indicator on hover */
+.context-menu-suggestion-arrow {
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: all 0.15s ease;
+  color: #7c3aed;
+}
+
+.context-menu-suggestion:hover .context-menu-suggestion-arrow {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.context-menu-no-suggestions {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-muted, #6b7280);
+  font-size: 14px;
+}
+
+/* Divider */
+.context-menu-divider {
+  height: 1px;
+  background: var(--border-default, rgba(0,0,0,0.1));
+  margin: 0 8px;
+}
+
+/* Footer with custom question */
+.context-menu-footer {
+  padding: 8px;
+}
+
+/* Custom question button */
+.context-menu-custom {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-muted, #6b7280);
+  transition: all 0.15s ease;
+}
+
+.context-menu-custom:hover {
+  background: var(--bg-hover, rgba(0,0,0,0.04));
+  color: var(--text-primary, #1f2937);
+}
+
+.context-menu-custom-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--bg-muted, rgba(0, 0, 0, 0.04));
+  transition: all 0.15s ease;
+}
+
+.context-menu-custom-icon svg {
+  color: var(--text-muted, #6b7280);
+}
+
+.context-menu-custom:hover .context-menu-custom-icon {
+  background: var(--bg-hover, rgba(0,0,0,0.06));
+}
+
+.context-menu-custom:hover .context-menu-custom-icon svg {
+  color: #7c3aed;
+}
+
+/* Keyboard shortcut hint */
+.context-menu-shortcut {
+  margin-left: auto;
+  padding: 2px 6px;
+  background: var(--bg-muted, rgba(0, 0, 0, 0.04));
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted, #6b7280);
+  font-family: ui-monospace, monospace;
+}
+
+/* Dark mode adjustments */
+@media (prefers-color-scheme: dark) {
+  .context-menu {
+    background: var(--bg-elevated, #1e1e2e);
+    border-color: rgba(124, 58, 237, 0.25);
+    box-shadow:
+      0 12px 40px rgba(0, 0, 0, 0.4),
+      0 4px 16px rgba(124, 58, 237, 0.15);
+  }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .context-menu {
+    width: calc(100vw - 32px);
+    max-width: 320px;
+  }
+}

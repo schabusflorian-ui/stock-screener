@@ -1,0 +1,55 @@
+/* frontend/src/pages/ResearchLabPage.css */
+/* Factor Analysis page styles */
+
+.research-lab-page.factor-analysis-page {
+  animation: fadeIn 0.3s ease;
+}
+
+/* Market regime indicator */
+.regime-indicator {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+  font-size: var(--text-sm);
+  cursor: default;
+}
+
+.regime-label {
+  font-weight: var(--font-semibold);
+}
+
+.regime-confidence {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+/* Content area */
+.factor-analysis-content {
+  padding: var(--space-4);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  min-height: 400px;
+}
+
+/* Animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .factor-analysis-content {
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+  }
+}

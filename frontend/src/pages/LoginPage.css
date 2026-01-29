@@ -1,0 +1,569 @@
+/* frontend/src/pages/LoginPage.css - PRISM Flagship Design */
+
+/* ============================================
+   Page Container
+   ============================================ */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+  padding: var(--space-4);
+  position: relative;
+  overflow: hidden;
+}
+
+/* ============================================
+   Background Layer - Prismatic Orbs & Light Rays
+   ============================================ */
+.login-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Rotating light rays - subtle conic gradient */
+.login-light-rays {
+  position: absolute;
+  inset: -50%;
+  width: 200%;
+  height: 200%;
+  background: conic-gradient(from 0deg at 50% 50%,
+    transparent 0deg,
+    rgba(212, 175, 55, 0.03) 30deg,
+    transparent 60deg,
+    rgba(124, 58, 237, 0.025) 120deg,
+    transparent 150deg,
+    rgba(8, 145, 178, 0.02) 210deg,
+    transparent 240deg,
+    rgba(5, 150, 105, 0.02) 300deg,
+    transparent 330deg,
+    transparent 360deg
+  );
+  animation: slow-rotate 120s linear infinite;
+}
+
+@keyframes slow-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Prismatic orbs with drift animation */
+.login-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.6;
+  will-change: transform;
+}
+
+.login-orb-1 {
+  width: 500px;
+  height: 500px;
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.25), rgba(37, 99, 235, 0.18));
+  top: -15%;
+  right: -10%;
+  animation: orb-drift-1 25s ease-in-out infinite;
+}
+
+.login-orb-2 {
+  width: 400px;
+  height: 400px;
+  background: linear-gradient(135deg, rgba(8, 145, 178, 0.18), rgba(5, 150, 105, 0.15));
+  bottom: -10%;
+  left: -5%;
+  animation: orb-drift-2 30s ease-in-out infinite;
+}
+
+.login-orb-3 {
+  width: 300px;
+  height: 300px;
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.18), rgba(124, 58, 237, 0.12));
+  top: 35%;
+  left: 10%;
+  animation: orb-drift-3 20s ease-in-out infinite;
+}
+
+.login-orb-4 {
+  width: 200px;
+  height: 200px;
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.12), rgba(245, 158, 11, 0.1));
+  top: 15%;
+  right: 20%;
+  animation: orb-drift-4 22s ease-in-out infinite;
+}
+
+@keyframes orb-drift-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(20px, -25px) scale(1.03); }
+  50% { transform: translate(-15px, 15px) scale(0.97); }
+  75% { transform: translate(-20px, -10px) scale(1.02); }
+}
+
+@keyframes orb-drift-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-20px, -15px) scale(1.04); }
+  66% { transform: translate(15px, 20px) scale(0.96); }
+}
+
+@keyframes orb-drift-3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(25px, -20px) scale(1.05); }
+}
+
+@keyframes orb-drift-4 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-15px, 10px) scale(0.95); }
+  66% { transform: translate(10px, -15px) scale(1.05); }
+}
+
+/* ============================================
+   Loading State
+   ============================================ */
+.login-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+
+.login-loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid var(--glass-border);
+  border-top-color: var(--color-ai-violet);
+  border-radius: 50%;
+  animation: spin var(--duration-slower) linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ============================================
+   Content Container
+   ============================================ */
+.login-container {
+  max-width: 440px;
+  width: 100%;
+  position: relative;
+  z-index: 1;
+  animation: fade-in-up var(--duration-slow) var(--ease-out);
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ============================================
+   Brand Section - Logo & Title
+   ============================================ */
+.login-brand {
+  text-align: center;
+  margin-bottom: var(--space-6);
+}
+
+.login-logo-wrapper {
+  position: relative;
+  display: inline-block;
+  margin-bottom: var(--space-5);
+}
+
+.login-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  background: linear-gradient(135deg,
+    var(--color-ai-violet) 0%,
+    var(--color-ai-blue) 50%,
+    var(--color-ai-cyan) 100%);
+  border-radius: var(--radius-xl);
+  color: white;
+  position: relative;
+  z-index: 1;
+  box-shadow:
+    0 4px 12px rgba(124, 58, 237, 0.3),
+    0 2px 6px rgba(37, 99, 235, 0.2);
+  overflow: hidden;
+}
+
+/* Animated prismatic shimmer on logo */
+.login-logo::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent);
+  animation: login-logo-shimmer 3s ease-in-out infinite;
+}
+
+@keyframes login-logo-shimmer {
+  0%, 100% { left: -100%; }
+  50% { left: 100%; }
+}
+
+/* Breathing animation for the sparkle icon */
+.login-logo .prism-icon {
+  animation: login-prism-breathe 4s ease-in-out infinite;
+}
+
+@keyframes login-prism-breathe {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.9;
+  }
+}
+
+.login-logo-glow {
+  position: absolute;
+  inset: -16px;
+  background: linear-gradient(135deg,
+    var(--color-ai-violet) 0%,
+    var(--color-ai-blue) 50%,
+    var(--color-ai-cyan) 100%);
+  border-radius: var(--radius-2xl);
+  filter: blur(28px);
+  opacity: 0.4;
+  animation: logo-glow 4s ease-in-out infinite;
+  z-index: 0;
+}
+
+@keyframes logo-glow {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.08);
+  }
+}
+
+.login-title {
+  font-size: var(--text-4xl);
+  font-weight: var(--font-bold);
+  color: var(--color-navy-900);
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+/* ============================================
+   Feature Pills
+   ============================================ */
+.login-features {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+  flex-wrap: wrap;
+}
+
+.login-feature {
+  padding: var(--space-2) var(--space-4);
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  border: 1px solid var(--glass-border);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+/* Hover effects disabled per design */
+
+/* ============================================
+   Error Message
+   ============================================ */
+.login-error {
+  background: var(--negative-muted);
+  border: 1px solid var(--negative-border);
+  color: var(--negative);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-4);
+  text-align: center;
+  font-size: var(--text-sm);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* ============================================
+   Login Card - Premium Glass Effect
+   ============================================ */
+.login-card {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+  position: relative;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+/* Prismatic top border accent */
+.login-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--space-6);
+  right: var(--space-6);
+  height: 3px;
+  background: var(--ai-gradient);
+  border-radius: 0 0 var(--radius-full) var(--radius-full);
+}
+
+/* ============================================
+   Beta Version Label
+   ============================================ */
+.login-beta {
+  margin-top: var(--space-5);
+  text-align: center;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-tertiary);
+}
+
+/* ============================================
+   Google Button
+   ============================================ */
+.login-google-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-lg);
+  background: white;
+  color: var(--text-primary);
+  font-weight: var(--font-medium);
+  font-size: var(--text-base);
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+/* Hover effects disabled per design */
+
+.login-google-btn:focus {
+  outline: none;
+  border-color: var(--color-gold-500);
+  box-shadow: 0 0 0 3px var(--gold-glow-medium);
+}
+
+.login-google-btn:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
+
+.google-icon {
+  flex-shrink: 0;
+}
+
+/* ============================================
+   Divider
+   ============================================ */
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-5) 0;
+}
+
+.login-divider::before,
+.login-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-primary);
+}
+
+.login-divider span {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* ============================================
+   Admin Access
+   ============================================ */
+.login-admin-toggle {
+  width: 100%;
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+/* Hover effects disabled per design */
+
+.login-admin-form {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.login-admin-input {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  transition: border-color var(--duration-fast), box-shadow var(--duration-fast);
+}
+
+.login-admin-input:focus {
+  outline: none;
+  border-color: var(--color-ai-violet);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
+}
+
+.login-admin-input::placeholder {
+  color: var(--text-muted);
+}
+
+.login-admin-submit {
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--ai-gradient);
+  color: white;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: opacity var(--duration-fast), transform var(--duration-fast), box-shadow var(--duration-fast);
+}
+
+/* Hover effects disabled per design */
+
+.login-admin-submit:active {
+  transform: scale(0.98);
+}
+
+/* ============================================
+   Responsive Design
+   ============================================ */
+
+/* Tablet */
+@media (max-width: 768px) {
+  .login-logo {
+    width: 72px;
+    height: 72px;
+  }
+
+  .login-orb-4 {
+    display: none;
+  }
+
+  .login-title {
+    font-size: var(--text-3xl);
+  }
+}
+
+/* Mobile */
+@media (max-width: 480px) {
+  .login-page {
+    padding: var(--space-4) var(--space-3);
+  }
+
+  .login-features {
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .login-feature {
+    width: 100%;
+    max-width: 200px;
+    justify-content: center;
+  }
+
+  .login-card {
+    padding: var(--space-5);
+  }
+
+  .login-card::before {
+    left: var(--space-5);
+    right: var(--space-5);
+  }
+
+  .login-logo {
+    width: 64px;
+    height: 64px;
+  }
+
+  .login-logo-glow {
+    inset: -8px;
+    filter: blur(20px);
+  }
+
+  .login-title {
+    font-size: var(--text-2xl);
+  }
+
+  .login-orb-3,
+  .login-orb-4 {
+    display: none;
+  }
+
+  .login-orb-1 {
+    width: 350px;
+    height: 350px;
+    top: -20%;
+    right: -20%;
+  }
+
+  .login-orb-2 {
+    width: 280px;
+    height: 280px;
+    bottom: -15%;
+    left: -15%;
+  }
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .login-light-rays,
+  .login-orb,
+  .login-logo-glow {
+    animation: none;
+  }
+
+  .login-container {
+    animation: none;
+  }
+
+  .login-feature:hover,
+  .login-google-btn:hover {
+    transform: none;
+  }
+}

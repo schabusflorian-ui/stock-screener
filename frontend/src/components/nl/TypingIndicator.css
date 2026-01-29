@@ -1,0 +1,190 @@
+/* TypingIndicator.css - Enhanced animated typing indicator */
+/* PRISM Design System - AI Visual Components */
+
+.typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: linear-gradient(135deg,
+    rgba(124, 58, 237, 0.06) 0%,
+    rgba(37, 99, 235, 0.04) 100%);
+  border: 1px solid rgba(124, 58, 237, 0.12);
+  border-radius: var(--radius-lg);
+  border-bottom-left-radius: var(--radius-sm);
+  align-self: flex-start;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  position: relative;
+  overflow: hidden;
+  max-width: 280px;
+}
+
+/* Prismatic gradient top border - animated */
+.typing-indicator::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg,
+    var(--color-ai-violet) 0%,
+    var(--color-ai-blue) 25%,
+    var(--color-ai-cyan) 50%,
+    var(--color-ai-blue) 75%,
+    var(--color-ai-violet) 100%);
+  background-size: 200% 100%;
+  animation: prism-gradient-flow 2s linear infinite;
+}
+
+/* Tool icon container with breathing animation */
+.typing-tool-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg,
+    var(--color-ai-violet) 0%,
+    var(--color-ai-blue) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+  animation: prism-breathe 2s ease-in-out infinite;
+  position: relative;
+}
+
+/* Outer glow for tool icon */
+.typing-tool-icon::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg,
+    rgba(124, 58, 237, 0.4) 0%,
+    rgba(37, 99, 235, 0.3) 100%);
+  z-index: -1;
+  animation: prism-pulse 2s ease-in-out infinite;
+}
+
+.typing-text {
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* When showing tool, adjust text color */
+.typing-indicator.has-tool .typing-text {
+  background: linear-gradient(90deg, var(--color-ai-violet), var(--color-ai-blue));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.typing-dots {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: var(--space-1);
+}
+
+/* Typing dots with prismatic gradient colors */
+.typing-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  animation: typingBounce 1.4s ease-in-out infinite;
+}
+
+.typing-dots span:nth-child(1) {
+  background: var(--color-ai-violet);
+  animation-delay: 0s;
+}
+
+.typing-dots span:nth-child(2) {
+  background: var(--color-ai-blue);
+  animation-delay: 0.16s;
+}
+
+.typing-dots span:nth-child(3) {
+  background: var(--color-ai-cyan);
+  animation-delay: 0.32s;
+}
+
+@keyframes typingBounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+/* Prism gradient flow animation */
+@keyframes prism-gradient-flow {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Prism breathe animation */
+@keyframes prism-breathe {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 rgba(124, 58, 237, 0);
+  }
+  50% {
+    transform: scale(1.02);
+    box-shadow: 0 0 12px rgba(124, 58, 237, 0.3);
+  }
+}
+
+/* Prism pulse animation */
+@keyframes prism-pulse {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.1);
+  }
+}
+
+/* Alternative pulse animation */
+@keyframes typingPulse {
+  0%, 100% {
+    transform: scale(0.8);
+    opacity: 0.3;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Add a variant with pulse if preferred */
+.typing-indicator.pulse .typing-dots span {
+  animation: typingPulse 1.2s ease-in-out infinite;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .typing-indicator {
+    max-width: 220px;
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .typing-tool-icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .typing-text {
+    font-size: var(--text-xs);
+  }
+}

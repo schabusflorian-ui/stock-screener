@@ -1,0 +1,89 @@
+{
+  "author": "Marc Andreessen",
+  "analyst": "tech",
+  "quotes": [
+    {
+      "id": "andreessen_software",
+      "text": "Software is eating the world.",
+      "source": "WSJ Essay, 2011",
+      "topics": ["disruption", "platform", "technology"]
+    },
+    {
+      "id": "andreessen_pmf",
+      "text": "The only thing that matters is getting to product/market fit.",
+      "source": "Blog",
+      "topics": ["product-market fit", "startups", "growth"]
+    },
+    {
+      "id": "andreessen_network",
+      "text": "The power of a network is proportional to the square of the number of participants. This is Metcalfe's law, and it creates winner-take-all dynamics.",
+      "source": "Interview",
+      "topics": ["network effects", "winner-take-all", "platform"]
+    },
+    {
+      "id": "andreessen_moat",
+      "text": "Technology is deflationary and competitive moats in tech come from network effects, not from traditional barriers to entry.",
+      "source": "a16z Podcast",
+      "topics": ["moat", "network effects", "defensibility"]
+    }
+  ],
+  "coAuthors": [
+    {
+      "name": "Ben Evans",
+      "quotes": [
+        {
+          "id": "evans_platform",
+          "text": "A platform is when the economic value of everyone that uses it exceeds the value of the company that creates it.",
+          "source": "Blog",
+          "topics": ["platform", "network effects", "flywheel"]
+        },
+        {
+          "id": "evans_disruption",
+          "text": "The trouble with disruption is that everyone knows what should be disrupted, but very few know how or when.",
+          "source": "Newsletter",
+          "topics": ["disruption", "timing", "innovation"]
+        }
+      ]
+    },
+    {
+      "name": "Cathie Wood (ARK)",
+      "quotes": [
+        {
+          "id": "wood_innovation",
+          "text": "Innovation solves problems. The bigger the problem, the bigger the opportunity.",
+          "source": "ARK Invest",
+          "topics": ["disruption", "tam", "market opportunity"]
+        },
+        {
+          "id": "wood_scurve",
+          "text": "We're looking for companies on the steep part of the S-curve of adoption.",
+          "source": "ARK Invest",
+          "topics": ["s-curve", "adoption", "growth"]
+        },
+        {
+          "id": "wood_tam",
+          "text": "The total addressable market for transformative technologies is often dramatically underestimated.",
+          "source": "ARK Invest",
+          "topics": ["tam", "total addressable market", "market opportunity"]
+        }
+      ]
+    },
+    {
+      "name": "Peter Thiel",
+      "quotes": [
+        {
+          "id": "thiel_monopoly",
+          "text": "Competition is for losers. Monopoly is the condition of every successful business.",
+          "source": "Zero to One",
+          "topics": ["winner-take-all", "monopoly", "defensibility"]
+        },
+        {
+          "id": "thiel_contrarian",
+          "text": "What important truth do very few people agree with you on?",
+          "source": "Zero to One",
+          "topics": ["contrarian", "non-consensus", "innovation"]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,286 @@
+/* frontend/src/components/agent/SignalStrengthChart.css */
+/* PRISM Design System - AI Agent Component */
+
+.signal-strength-chart {
+  position: relative;
+  min-height: 400px;
+}
+
+/* Gradient top border */
+.signal-strength-chart::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg,
+    var(--color-ai-violet, #7C3AED) 0%,
+    var(--color-ai-blue, #2563EB) 50%,
+    var(--color-ai-cyan, #0891B2) 100%);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.signal-strength-chart__skeleton {
+  height: 400px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(90deg,
+    rgba(124, 58, 237, 0.05) 0%,
+    rgba(37, 99, 235, 0.08) 50%,
+    rgba(124, 58, 237, 0.05) 100%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Error state */
+.signal-strength-chart--error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.signal-strength-chart__error {
+  color: var(--negative);
+  text-align: center;
+  padding: var(--space-6);
+}
+
+/* Empty state */
+.signal-strength-chart__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: var(--text-tertiary);
+}
+
+.signal-strength-chart__empty svg {
+  color: var(--color-ai-violet);
+  opacity: 0.5;
+  margin-right: var(--space-2);
+}
+
+/* Header */
+.signal-strength-chart .ui-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid rgba(124, 58, 237, 0.1);
+}
+
+.signal-strength-chart .ui-card__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* AI indicator dot in title */
+.signal-strength-chart .ui-card__title::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: linear-gradient(135deg,
+    var(--color-ai-violet) 0%,
+    var(--color-ai-blue) 100%);
+  animation: prism-breathe 4s ease-in-out infinite;
+}
+
+@keyframes prism-breathe {
+  0%, 100% {
+    opacity: 0.7;
+    transform: scale(1);
+    box-shadow: 0 0 0 rgba(124, 58, 237, 0);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+    box-shadow: 0 0 8px rgba(124, 58, 237, 0.4);
+  }
+}
+
+.signal-strength-chart__overall {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding: var(--space-2) var(--space-3);
+  background: linear-gradient(135deg,
+    rgba(124, 58, 237, 0.08) 0%,
+    rgba(37, 99, 235, 0.04) 100%);
+  border: 1px solid rgba(124, 58, 237, 0.15);
+  border-radius: var(--radius-md);
+}
+
+.signal-strength-chart__overall-label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.signal-strength-chart__overall-value {
+  font-size: 1.5rem;
+  font-weight: var(--font-bold);
+  background: linear-gradient(90deg, var(--color-ai-violet), var(--color-ai-blue));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Radar chart */
+.signal-strength-chart__radar {
+  margin-bottom: var(--space-6);
+  padding: var(--space-4);
+  background: linear-gradient(135deg,
+    rgba(124, 58, 237, 0.02) 0%,
+    transparent 100%);
+  border-radius: var(--radius-md);
+}
+
+/* Tooltip */
+.signal-strength-chart__tooltip {
+  padding: var(--space-3);
+  background: var(--glass-bg, rgba(15, 23, 42, 0.95));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(124, 58, 237, 0.2);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.3),
+    0 0 15px rgba(124, 58, 237, 0.1);
+}
+
+.signal-strength-chart__tooltip-title {
+  font-weight: var(--font-semibold);
+  color: var(--color-ai-violet);
+  margin-bottom: 6px;
+}
+
+.signal-strength-chart__tooltip-item {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* Breakdown */
+.signal-strength-chart__breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid rgba(124, 58, 237, 0.1);
+}
+
+.signal-strength-chart__factor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--space-3);
+  background: linear-gradient(135deg,
+    rgba(124, 58, 237, 0.03) 0%,
+    transparent 100%);
+  border: 1px solid rgba(124, 58, 237, 0.06);
+  border-radius: var(--radius-md);
+  transition: all 0.2s ease;
+}
+
+.signal-strength-chart__factor:hover {
+  border-color: rgba(124, 58, 237, 0.15);
+  background: linear-gradient(135deg,
+    rgba(124, 58, 237, 0.06) 0%,
+    transparent 100%);
+  transform: translateX(4px);
+}
+
+.signal-strength-chart__factor-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.signal-strength-chart__factor-label {
+  flex: 1;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
+}
+
+.signal-strength-chart__factor-value {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+}
+
+/* Color-coded values */
+.signal-strength-chart__factor-value.positive {
+  color: var(--positive);
+}
+
+.signal-strength-chart__factor-value.negative {
+  color: var(--negative);
+}
+
+.signal-strength-chart__factor-value.neutral {
+  color: var(--color-ai-violet);
+}
+
+.signal-strength-chart__factor-bar {
+  height: 6px;
+  background: rgba(124, 58, 237, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.signal-strength-chart__factor-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  background: linear-gradient(90deg,
+    var(--color-ai-violet) 0%,
+    var(--color-ai-blue) 100%);
+}
+
+/* High strength fills have glow */
+.signal-strength-chart__factor-fill.high-strength {
+  box-shadow: 0 0 8px rgba(124, 58, 237, 0.4);
+}
+
+.signal-strength-chart__factor-signal {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-style: italic;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.signal-strength-chart__factor-signal::before {
+  content: '';
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--color-ai-violet);
+  opacity: 0.5;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .signal-strength-chart .ui-card__header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+
+  .signal-strength-chart__overall {
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  .signal-strength-chart__factor {
+    padding: var(--space-2);
+  }
+}

@@ -1,0 +1,83 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Databases (only root-level data directory)
+/data/*.db
+/data/sec-bulk/
+/data/backups/
+*.db-shm
+*.db-wal
+*.db-journal
+*.db.corrupted*
+*.db.pre_fix_backup
+*.db.backup*
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Generated reports (not source code)
+docs/reports/
+
+# Temporary files
+*.json.bak
+*.db.bak
+*.INVALID
+
+# Test coverage
+.coverage
+coverage/
+htmlcov/
+coverage_report/
+
+# ML Checkpoints (keep only production/final)
+python/checkpoints/*.pkl
+python/checkpoints/training_results_*.json
+!python/checkpoints/*production*
+!python/checkpoints/*final*
+
+# Python
+**/__pycache__/
+**/*.pyc
+**/venv/
+*.egg-info/
+
+# Playwright test artifacts
+.playwright-mcp/
+
+# Test outputs at root
+BENCHMARK_RESULTS.json
+validation-results-*.json
+fmp-validation-*.json
+*_PRISM_REPORT*.json
+*_AUDIT_*.md
+
+# Build artifacts
+frontend/build/
+dist/
+*.tgz
+
+# IDE
+.idea/
+*.swp
+*.swo
+.vscode/settings.json
+
+# Misc generated files
+synthetic_test_results/
+benchmark_results/
+
+# Python virtual environments (should never be committed)
+python-services/venv/
+**/venv/
+**/__pycache__/

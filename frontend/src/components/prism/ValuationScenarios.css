@@ -1,0 +1,1793 @@
+/* =============================================================================
+   ValuationScenarios.css - Unified Valuation Panel with Integrated Range Bar
+   PRISM Design System Aligned
+   ============================================================================= */
+
+/* =============================================================================
+   Root Container - Unified Design
+   ============================================================================= */
+
+.valuation-scenarios.unified {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  position: relative;
+  /* Note: Container styling comes from parent .prism-section */
+}
+
+/* PRISM AI Visual Identity - Prismatic gradient top border */
+.valuation-scenarios.unified::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg,
+    #7C3AED 0%,   /* Violet */
+    #2563EB 25%,  /* Blue */
+    #0891B2 50%,  /* Cyan */
+    #059669 75%,  /* Emerald */
+    #D4AF37 100%  /* Gold */
+  );
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+/* =============================================================================
+   Header Section: Probability-Weighted Target
+   ============================================================================= */
+
+.valuation-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-3) 0;
+}
+
+.valuation-header .header-label {
+  font-size: var(--text-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  font-weight: var(--font-medium);
+}
+
+.valuation-header .header-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.valuation-header .header-price {
+  font-size: var(--text-4xl);
+  font-weight: var(--font-semibold);
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.valuation-header .header-change {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+}
+
+.valuation-header .header-change.positive {
+  color: var(--positive);
+}
+
+.valuation-header .header-change.negative {
+  color: var(--negative);
+}
+
+/* =============================================================================
+   Side-by-Side Comparison (Pure DCF vs Triangulated)
+   ============================================================================= */
+
+.valuation-comparison {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.valuation-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--bg-muted);
+  border-radius: var(--radius-md);
+}
+
+.valuation-column.dcf {
+  border-top: 2px solid var(--info);
+}
+
+.valuation-column.triangulated {
+  border-top: 2px solid var(--color-ai-violet);
+}
+
+.valuation-column .column-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  font-weight: var(--font-medium);
+}
+
+.valuation-column.dcf .column-label {
+  color: var(--info);
+}
+
+.valuation-column.triangulated .column-label {
+  color: var(--color-ai-violet);
+}
+
+.valuation-column .column-target {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.valuation-column .column-change {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+}
+
+.valuation-column .column-change.positive {
+  color: var(--positive);
+}
+
+.valuation-column .column-change.negative {
+  color: var(--negative);
+}
+
+.valuation-column .column-probabilities {
+  font-size: var(--text-2xs);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+/* Responsive - Comparison */
+@media (max-width: 640px) {
+  .valuation-comparison {
+    grid-template-columns: 1fr;
+  }
+
+  .valuation-column .column-target {
+    font-size: var(--text-xl);
+  }
+}
+
+/* =============================================================================
+   Unified Range Bar with Integrated Scenarios
+   ============================================================================= */
+
+.unified-range {
+  position: relative;
+  background: var(--bg-muted);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5) var(--space-4);
+  border: 1px solid var(--border-subtle);
+}
+
+/* Scenario Labels - Positioned Above Bar */
+.scenario-labels {
+  position: relative;
+  height: 48px;
+  margin-bottom: var(--space-2);
+}
+
+.scenario-label {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.scenario-label.bear {
+  left: 0;
+  transform: translateX(0);
+  text-align: left;
+}
+
+.scenario-label.base {
+  transform: translateX(-50%);
+  text-align: center;
+}
+
+.scenario-label.bull {
+  transform: translateX(-100%);
+  text-align: right;
+}
+
+.scenario-label .scenario-case {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.scenario-label .scenario-case svg {
+  flex-shrink: 0;
+}
+
+.scenario-label.bear .scenario-case {
+  color: var(--negative);
+}
+
+.scenario-label.base .scenario-case {
+  color: var(--text-tertiary);
+  justify-content: center;
+}
+
+.scenario-label.bull .scenario-case {
+  color: var(--positive);
+  justify-content: flex-end;
+}
+
+.scenario-label .scenario-price {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  font-family: var(--font-mono);
+  font-weight: var(--font-bold);
+  color: var(--text-primary);
+}
+
+.scenario-label.base .scenario-price {
+  justify-content: center;
+}
+
+.scenario-label.bull .scenario-price {
+  justify-content: flex-end;
+}
+
+.scenario-label .scenario-change {
+  font-size: var(--text-2xs);
+  font-weight: var(--font-medium);
+}
+
+.scenario-label .scenario-change.positive {
+  color: var(--positive);
+}
+
+.scenario-label .scenario-change.negative {
+  color: var(--negative);
+}
+
+/* Range Track - Unified Version */
+.range-track.unified {
+  position: relative;
+  height: 6px;
+  background: var(--bg-surface);
+  border-radius: var(--radius-full);
+  margin: var(--space-4) 0 var(--space-6);
+  overflow: visible;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.range-track.unified .zone {
+  position: absolute;
+  top: 0;
+  height: 100%;
+}
+
+.range-track.unified .zone.bear {
+  left: 0;
+  width: 50%;
+  background: linear-gradient(90deg, rgba(220, 38, 38, 0.12) 0%, transparent 100%);
+  border-radius: var(--radius-full) 0 0 var(--radius-full);
+}
+
+.range-track.unified .zone.bull {
+  right: 0;
+  width: 50%;
+  background: linear-gradient(90deg, transparent 0%, rgba(5, 150, 105, 0.12) 100%);
+  border-radius: 0 var(--radius-full) var(--radius-full) 0;
+}
+
+/* Scenario Markers (vertical lines at bear/base/bull) */
+.scenario-marker {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  transform: translateX(-50%);
+  border-radius: 1px;
+}
+
+.scenario-marker.bear {
+  background: var(--negative);
+  opacity: 0.25;
+}
+
+.scenario-marker.base {
+  background: var(--text-muted);
+  opacity: 0.35;
+  width: 2px;
+}
+
+.scenario-marker.bull {
+  background: var(--positive);
+  opacity: 0.25;
+}
+
+/* Current Price Marker - Unified */
+.current-marker-unified {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+}
+
+.current-marker-unified .marker-dot {
+  width: 12px;
+  height: 12px;
+  background: var(--color-ai-violet);
+  border: 2px solid white;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(124, 58, 237, 0.4);
+}
+
+.current-marker-unified .marker-label {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  font-size: var(--text-2xs);
+  font-weight: var(--font-medium);
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.current-marker-unified .marker-label.below {
+  top: 20px;
+  color: var(--color-ai-violet);
+}
+
+/* Weighted Target Marker - Diamond Shape */
+.target-marker-unified {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+}
+
+.target-marker-unified .marker-diamond {
+  width: 10px;
+  height: 10px;
+  background: var(--color-gold-500);
+  transform: rotate(45deg);
+  border: 2px solid white;
+  box-shadow: 0 1px 3px rgba(212, 175, 55, 0.4);
+}
+
+.target-marker-unified .marker-label {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  font-size: var(--text-2xs);
+  font-weight: var(--font-medium);
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.target-marker-unified .marker-label.above {
+  bottom: 20px;
+  color: var(--color-gold-600);
+}
+
+/* Legend - PRISM Aligned */
+.valuation-scenarios .range-legend {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-6);
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+}
+
+.valuation-scenarios .range-legend .legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.valuation-scenarios .range-legend .legend-text {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.valuation-scenarios .range-legend .legend-marker {
+  flex-shrink: 0;
+}
+
+.valuation-scenarios .range-legend .legend-marker.current {
+  width: 10px;
+  height: 10px;
+  background: var(--color-ai-violet);
+  border-radius: 50%;
+}
+
+.valuation-scenarios .range-legend .legend-marker-svg {
+  flex-shrink: 0;
+  display: block;
+}
+
+/* =============================================================================
+   Legacy: Redesigned Container (for backward compat)
+   ============================================================================= */
+
+.valuation-scenarios.redesigned {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  padding: var(--space-4);
+}
+
+/* Legacy Hero Section (keep for backward compat) */
+.valuation-hero {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-6);
+  align-items: center;
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.hero-target {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.hero-target .target-label {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  font-weight: var(--font-medium);
+}
+
+.hero-target .target-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.hero-target .target-price {
+  font-size: var(--text-3xl);
+  font-weight: var(--font-bold);
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.hero-target .target-change {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+}
+
+.hero-target .target-change.positive {
+  color: var(--positive);
+}
+
+.hero-target .target-change.negative {
+  color: var(--negative);
+}
+
+/* Legacy Hero Range Bar */
+.hero-range {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.range-endpoints {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+}
+
+.range-endpoints .endpoint {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.range-endpoints .endpoint.bear {
+  color: var(--negative);
+}
+
+.range-endpoints .endpoint.current {
+  color: var(--color-ai-violet);
+  font-weight: var(--font-semibold);
+}
+
+.range-endpoints .endpoint.bull {
+  color: var(--positive);
+}
+
+.range-track {
+  position: relative;
+  height: 8px;
+  background: var(--bg-muted);
+  border-radius: var(--radius-full);
+  overflow: visible;
+}
+
+.range-track .zone {
+  position: absolute;
+  top: 0;
+  height: 100%;
+}
+
+.range-track .zone.bear {
+  left: 0;
+  background: linear-gradient(90deg, rgba(220, 38, 38, 0.15) 0%, transparent 100%);
+  border-radius: var(--radius-full) 0 0 var(--radius-full);
+}
+
+.range-track .zone.bull {
+  right: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(5, 150, 105, 0.15) 100%);
+  border-radius: 0 var(--radius-full) var(--radius-full) 0;
+}
+
+.range-track .current-marker {
+  position: absolute;
+  top: -4px;
+  width: 16px;
+  height: 16px;
+  background: var(--color-ai-violet);
+  border: 2px solid var(--bg-surface);
+  border-radius: 50%;
+  transform: translateX(-50%);
+  box-shadow: 0 2px 6px rgba(124, 58, 237, 0.3);
+  z-index: 2;
+}
+
+.range-track .weighted-marker {
+  position: absolute;
+  top: 50%;
+  width: 2px;
+  height: 16px;
+  background: var(--color-gold-500);
+  transform: translate(-50%, -50%);
+  border-radius: var(--radius-full);
+  z-index: 1;
+}
+
+/* =============================================================================
+   Legacy Compact Scenario Cards (for backward compat)
+   ============================================================================= */
+
+.scenario-compact-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+}
+
+.scenario-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--bg-muted);
+  border-radius: var(--radius-md);
+  border-left: 3px solid transparent;
+  transition: background var(--duration-fast);
+}
+
+.scenario-cell:hover {
+  background: var(--bg-hover);
+}
+
+.scenario-cell.bear {
+  border-left-color: var(--negative);
+}
+
+.scenario-cell.base {
+  border-left-color: var(--text-tertiary);
+}
+
+.scenario-cell.bull {
+  border-left-color: var(--positive);
+}
+
+.scenario-cell .scenario-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+
+.scenario-cell .scenario-header svg {
+  width: 14px;
+  height: 14px;
+}
+
+.scenario-cell.bear .scenario-header svg {
+  color: var(--negative);
+}
+
+.scenario-cell.base .scenario-header svg {
+  color: var(--text-tertiary);
+}
+
+.scenario-cell.bull .scenario-header svg {
+  color: var(--positive);
+}
+
+.scenario-cell .case-name {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+.scenario-cell .probability {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  color: var(--text-tertiary);
+}
+
+.scenario-cell .scenario-price {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1-5);
+}
+
+.scenario-cell .price {
+  font-size: var(--text-lg);
+  font-weight: var(--font-bold);
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+.scenario-cell .change {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+}
+
+.scenario-cell .change.positive {
+  color: var(--positive);
+}
+
+.scenario-cell .change.negative {
+  color: var(--negative);
+}
+
+/* =============================================================================
+   Triangulation - Horizontal Row with Dividers
+   ============================================================================= */
+
+.triangulation-connected {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.triangulation-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.triangulation-header .section-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+}
+
+/* PRISM AI Visual Identity - Sparkle icon for AI sections */
+.triangulation-header .section-label .ai-sparkle-icon {
+  width: 12px;
+  height: 12px;
+  color: var(--color-ai-violet);
+  flex-shrink: 0;
+}
+
+/* Compact Alignment Badge */
+.alignment-badge-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 3px var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+  line-height: 1;
+}
+
+.alignment-badge-compact.positive {
+  background: var(--positive-muted);
+  color: var(--positive);
+}
+
+.alignment-badge-compact.warning {
+  background: var(--warning-muted);
+  color: var(--warning);
+}
+
+.alignment-badge-compact.negative {
+  background: var(--negative-muted);
+  color: var(--negative);
+}
+
+.alignment-badge-compact .score {
+  opacity: 0.7;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+
+/* Perspectives Row */
+.perspectives-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: stretch;
+}
+
+.perspective-divider {
+  width: 1px;
+  background: var(--border-subtle);
+  margin: var(--space-3) 0;
+  flex-shrink: 0;
+}
+
+/* Compact Perspective Card - PRISM Design System compliant */
+.perspective-compact {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--bg-surface, #FFFFFF);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  border-top: 2px solid var(--border-default);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+  transition:
+    background var(--duration-fast),
+    box-shadow var(--duration-fast),
+    transform var(--duration-fast);
+}
+
+.perspective-compact:hover {
+  background: var(--bg-hover);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
+}
+
+.perspective-compact.blue {
+  border-top-color: var(--info);
+}
+
+.perspective-compact.violet {
+  border-top-color: var(--color-ai-violet);
+}
+
+.perspective-compact.gold {
+  border-top-color: var(--color-gold-500);
+}
+
+.perspective-compact .perspective-top {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.perspective-compact .perspective-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+}
+
+.perspective-compact .perspective-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.perspective-compact.blue .perspective-icon {
+  background: var(--info-muted);
+  color: var(--info);
+}
+
+.perspective-compact.violet .perspective-icon {
+  background: rgba(124, 58, 237, 0.1);
+  color: var(--color-ai-violet);
+}
+
+.perspective-compact.gold .perspective-icon {
+  background: var(--color-gold-50);
+  color: var(--color-gold-600);
+}
+
+.perspective-compact .perspective-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.perspective-compact .perspective-info .title {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.perspective-compact .perspective-info .subtitle {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.perspective-compact .confidence-tag {
+  font-size: 10px;
+  font-weight: var(--font-medium);
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.perspective-compact .confidence-tag.high {
+  background: var(--positive-muted);
+  color: var(--positive);
+}
+
+.perspective-compact .confidence-tag.medium {
+  background: var(--warning-muted);
+  color: var(--warning);
+}
+
+.perspective-compact .confidence-tag.low {
+  background: var(--negative-muted);
+  color: var(--negative);
+}
+
+/* Perspective Bottom - Value Display */
+.perspective-compact .perspective-bottom {
+  margin-top: auto;
+}
+
+.perspective-compact .value-data {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-1-5);
+}
+
+.perspective-compact .value-data .value {
+  font-size: var(--text-xl);
+  font-weight: var(--font-bold);
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+.perspective-compact .value-data .upside {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+}
+
+.perspective-compact .value-data .upside.positive {
+  color: var(--positive);
+}
+
+.perspective-compact .value-data .upside.negative {
+  color: var(--negative);
+}
+
+.perspective-compact .value-data .analyst-count {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.perspective-compact .value-data .warning-indicator {
+  color: var(--warning);
+  display: flex;
+  align-items: center;
+}
+
+/* Implied Data (Reverse DCF) */
+.perspective-compact .implied-data {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.perspective-compact .implied-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.perspective-compact .implied-row.muted {
+  opacity: 0.7;
+}
+
+.perspective-compact .metric-label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.perspective-compact .metric-value {
+  font-family: var(--font-mono);
+  font-weight: var(--font-bold);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.perspective-compact .sentiment-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  margin-top: var(--space-1);
+}
+
+.perspective-compact .sentiment-tag.optimistic {
+  background: var(--warning-muted);
+  color: var(--warning);
+}
+
+.perspective-compact .sentiment-tag.pessimistic {
+  background: var(--info-muted);
+  color: var(--info);
+}
+
+.perspective-compact .sentiment-tag.aligned {
+  background: var(--positive-muted);
+  color: var(--positive);
+}
+
+/* Review Flags - For negative growth / manual review required */
+.perspective-compact.requires-review {
+  border-color: var(--warning);
+  border-width: 2px;
+}
+
+.perspective-compact .review-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px 8px;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  background: var(--warning-muted);
+  color: var(--warning);
+  border-radius: var(--radius-sm);
+}
+
+.perspective-compact .implied-row.negative-growth .metric-value {
+  color: var(--warning);
+  font-weight: var(--font-bold);
+}
+
+.perspective-compact .metric-value.warning {
+  color: var(--warning);
+}
+
+.perspective-compact .growth-disconnect-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: var(--font-medium);
+  background: var(--warning-muted);
+  color: var(--warning);
+  border-radius: var(--radius-sm);
+}
+
+/* Extreme valuation warning (hit bounds) */
+.perspective-compact .bounds-warning-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: var(--font-semibold);
+  background: var(--negative-muted);
+  color: var(--negative);
+  border-radius: var(--radius-sm);
+}
+
+.perspective-compact .metric-value.extreme {
+  color: var(--negative);
+  font-weight: var(--font-bold);
+}
+
+.perspective-compact .implied-row.hit-bounds {
+  border-left: 2px solid var(--negative);
+  padding-left: var(--space-1);
+  margin-left: calc(-1 * var(--space-1));
+}
+
+/* Key Insight Inline */
+.key-insight-inline {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.6;
+  padding: var(--space-2) var(--space-3);
+  background: rgba(124, 58, 237, 0.03);
+  border-radius: var(--radius-md);
+  margin: 0;
+}
+
+/* =============================================================================
+   Slim Backward Reasoning Bar
+   ============================================================================= */
+
+.backward-reasoning-slim {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-muted);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+}
+
+.backward-reasoning-slim .reasoning-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.backward-reasoning-slim .reasoning-icon {
+  color: var(--color-ai-violet);
+}
+
+.backward-reasoning-slim .reasoning-label {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.backward-reasoning-slim .reasoning-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.backward-reasoning-slim .reasoning-headline {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.backward-reasoning-slim .sanity-inline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.backward-reasoning-slim .sanity-inline.low {
+  background: var(--positive-muted);
+  color: var(--positive);
+}
+
+.backward-reasoning-slim .sanity-inline.medium {
+  background: var(--warning-muted);
+  color: var(--warning);
+}
+
+.backward-reasoning-slim .sanity-inline.high {
+  background: var(--negative-muted);
+  color: var(--negative);
+}
+
+.backward-reasoning-slim .sanity-text {
+  font-weight: var(--font-semibold);
+}
+
+/* =============================================================================
+   Responsive Design
+   ============================================================================= */
+
+/* Unified Range Responsive */
+@media (max-width: 1024px) {
+  .unified-range {
+    padding: var(--space-3);
+  }
+
+  .scenario-labels {
+    height: auto;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    margin-bottom: var(--space-3);
+  }
+
+  .scenario-label {
+    position: relative;
+    left: auto !important;
+    transform: none !important;
+  }
+
+  .scenario-label.bear {
+    text-align: left;
+  }
+
+  .scenario-label.base {
+    text-align: center;
+  }
+
+  .scenario-label.bull {
+    text-align: right;
+  }
+
+  .valuation-scenarios .range-legend {
+    gap: var(--space-3);
+  }
+
+  .perspectives-row {
+    flex-wrap: wrap;
+  }
+
+  .perspective-compact {
+    flex: 1 1 calc(50% - var(--space-2));
+    min-width: 180px;
+  }
+
+  .perspective-divider {
+    display: none;
+  }
+
+  .backward-reasoning-slim {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+
+  .backward-reasoning-slim .reasoning-content {
+    width: 100%;
+  }
+
+  .backward-reasoning-slim .sanity-inline {
+    align-self: flex-start;
+  }
+}
+
+/* Legacy Hero Responsive */
+@media (max-width: 1024px) {
+  .valuation-hero {
+    grid-template-columns: 1fr;
+    gap: var(--space-4);
+  }
+
+  .hero-target {
+    text-align: center;
+    align-items: center;
+  }
+
+  .hero-target .target-value-row {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 768px) {
+  .valuation-scenarios.unified {
+    padding: var(--space-3);
+  }
+
+  .valuation-header .header-price {
+    font-size: var(--text-2xl);
+  }
+
+  .unified-range {
+    padding: var(--space-3);
+  }
+
+  .scenario-labels {
+    flex-direction: column;
+    gap: var(--space-2);
+    align-items: stretch;
+  }
+
+  .scenario-label {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-2);
+    background: var(--bg-surface);
+    border-radius: var(--radius-sm);
+  }
+
+  .scenario-label.bear,
+  .scenario-label.base,
+  .scenario-label.bull {
+    text-align: left;
+  }
+
+  .scenario-label .scenario-case {
+    justify-content: flex-start !important;
+  }
+
+  .scenario-label .scenario-price {
+    justify-content: flex-end !important;
+  }
+
+  .range-track.unified {
+    margin: var(--space-3) 0 var(--space-4);
+  }
+
+  .valuation-scenarios .range-legend {
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  /* Legacy styles */
+  .valuation-scenarios.redesigned {
+    padding: var(--space-3);
+  }
+
+  .hero-target .target-price {
+    font-size: var(--text-2xl);
+  }
+
+  .scenario-compact-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .perspective-compact {
+    flex: 1 1 100%;
+  }
+
+  .range-endpoints {
+    flex-direction: column;
+    gap: var(--space-1);
+    align-items: stretch;
+  }
+
+  .range-endpoints .endpoint {
+    justify-content: space-between;
+    padding: var(--space-1) var(--space-2);
+    background: var(--bg-muted);
+    border-radius: var(--radius-sm);
+  }
+
+  .range-track {
+    margin-top: var(--space-2);
+  }
+}
+
+/* =============================================================================
+   Reverse DCF Section - Interpretation + Sensitivity Table
+   ============================================================================= */
+
+.reverse-dcf-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* Interpretation Section */
+.reverse-dcf-interpretation {
+  padding: var(--space-4);
+  background: var(--bg-muted);
+  border-radius: var(--radius-lg);
+  border-left: 3px solid var(--color-ai-violet);
+}
+
+.interpretation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.interpretation-header .section-label {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+}
+
+.interpretation-summary {
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.interpretation-details {
+  margin: var(--space-2) 0 0 0;
+  padding-left: var(--space-4);
+  list-style: disc;
+}
+
+.interpretation-details li {
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-1);
+}
+
+.interpretation-flags {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.interpretation-flags .flag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.interpretation-flags .flag.high {
+  background: var(--negative-muted);
+  color: var(--negative);
+}
+
+.interpretation-flags .flag.medium {
+  background: var(--warning-muted);
+  color: var(--warning);
+}
+
+.interpretation-flags .flag.low {
+  background: var(--positive-muted);
+  color: var(--positive);
+}
+
+.risk-badge {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.risk-badge.high {
+  background: var(--negative);
+  color: white;
+}
+
+.risk-badge.medium {
+  background: var(--warning);
+  color: var(--text-primary);
+}
+
+/* Sensitivity Table */
+.reverse-dcf-sensitivity {
+  background: var(--bg-muted);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+}
+
+.sensitivity-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sensitivity-header .section-label {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+}
+
+.sensitivity-header .section-hint {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.sensitivity-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.sensitivity-table th {
+  text-align: left;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-default);
+  font-weight: 500;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* PRISM Standard: Right-align numeric columns (all except first) */
+.sensitivity-table th:not(:first-child) {
+  text-align: right;
+}
+
+.sensitivity-table td:not(:first-child) {
+  text-align: right;
+}
+
+.sensitivity-table td {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sensitivity-table tr:last-child td {
+  border-bottom: none;
+}
+
+.sensitivity-table tr.is-implied {
+  background: rgba(124, 58, 237, 0.08);
+}
+
+.sensitivity-table tr.is-base:not(.is-implied) {
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.sensitivity-table tr.is-implied td,
+.sensitivity-table tr.is-base td {
+  font-weight: 600;
+}
+
+.sensitivity-table .growth-rate {
+  font-family: var(--font-mono);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sensitivity-table .marker {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.sensitivity-table .marker.implied {
+  background: var(--color-ai-violet);
+  color: white;
+}
+
+.sensitivity-table .marker.base {
+  background: var(--info-muted);
+  color: var(--info);
+}
+
+.sensitivity-table .dcf-value {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.sensitivity-table .upside {
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+.sensitivity-table .upside.positive {
+  color: var(--positive);
+}
+
+.sensitivity-table .upside.negative {
+  color: var(--negative);
+}
+
+/* Responsive - Reverse DCF */
+@media (max-width: 768px) {
+  .reverse-dcf-interpretation {
+    padding: var(--space-3);
+  }
+
+  .interpretation-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+
+  .sensitivity-table {
+    font-size: var(--text-xs);
+  }
+
+  .sensitivity-table th,
+  .sensitivity-table td {
+    padding: var(--space-1-5);
+  }
+
+  .sensitivity-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
+  }
+}
+
+/* =============================================================================
+   Market Expectations Section (Merged Reverse DCF + Backward Reasoning)
+   ============================================================================= */
+
+.market-expectations-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--bg-muted);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+}
+
+.expectations-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.expectations-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.expectations-icon {
+  color: var(--color-ai-violet);
+  flex-shrink: 0;
+}
+
+.expectations-title span {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.sanity-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: var(--space-1) var(--space-2-5);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  flex-shrink: 0;
+}
+
+.sanity-badge.low {
+  background: var(--positive-muted);
+  color: var(--positive);
+}
+
+.sanity-badge.medium {
+  background: var(--warning-muted);
+  color: var(--warning);
+}
+
+.sanity-badge.high {
+  background: var(--negative-muted);
+  color: var(--negative);
+}
+
+.expectations-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.expectations-headline {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+.expectations-detail {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.expectations-flags {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-1);
+}
+
+.expectations-flags .flag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.expectations-flags .flag.high {
+  background: var(--negative-muted);
+  color: var(--negative);
+}
+
+.expectations-flags .flag.medium {
+  background: var(--warning-muted);
+  color: var(--warning);
+}
+
+.expectations-flags .flag.low {
+  background: var(--positive-muted);
+  color: var(--positive);
+}
+
+/* Sensitivity Toggle Section */
+.sensitivity-section {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-3);
+  margin-top: var(--space-1);
+}
+
+.sensitivity-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sensitivity-toggle:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-default);
+}
+
+.sensitivity-toggle span {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+}
+
+.toggle-icon {
+  color: var(--text-tertiary);
+  transition: transform 0.2s ease;
+}
+
+.toggle-icon.rotated {
+  transform: rotate(180deg);
+}
+
+.sensitivity-content {
+  margin-top: var(--space-3);
+}
+
+/* Responsive - Market Expectations */
+@media (max-width: 768px) {
+  .market-expectations-section {
+    padding: var(--space-3);
+  }
+
+  .expectations-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+
+  .sensitivity-toggle {
+    padding: var(--space-2);
+  }
+}
+
+/* =============================================================================
+   View Full DCF Link
+   ============================================================================= */
+
+.view-dcf-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  margin-top: var(--space-2);
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  align-self: flex-start;
+}
+
+.view-dcf-link:hover {
+  background: var(--bg-muted);
+  border-color: var(--color-ai-violet);
+  color: var(--color-ai-violet);
+}
+
+.view-dcf-link svg {
+  transition: transform 0.15s ease;
+}
+
+.view-dcf-link:hover svg {
+  transform: translateX(2px);
+}
+
+/* =============================================================================
+   Legacy Classes (for backward compatibility - can be removed later)
+   ============================================================================= */
+
+/* Keep old container class working */
+.valuation-scenarios:not(.redesigned) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}

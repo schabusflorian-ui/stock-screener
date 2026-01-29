@@ -1,0 +1,79 @@
+{
+  "analyst": "value",
+  "frameworks": [
+    {
+      "id": "moat_analysis",
+      "name": "Competitive Moat Analysis",
+      "description": "Framework for assessing the durability of a company's competitive advantage",
+      "steps": [
+        "1. Identify moat type: brand, network effects, switching costs, patents, cost advantage, or scale",
+        "2. Apply the '$10 billion test' - could a well-funded competitor replicate this in 10 years?",
+        "3. Look for pricing power evidence - can they raise prices without losing customers?",
+        "4. Check returns on capital trend - stable or growing ROIC above 15%?",
+        "5. Evaluate management's track record of capital allocation decisions"
+      ],
+      "keywords": ["moat", "competitive advantage", "durable", "pricing power", "ROIC"],
+      "sources": ["Buffett Letters", "Munger on Moats"]
+    },
+    {
+      "id": "margin_of_safety",
+      "name": "Margin of Safety Calculation",
+      "description": "Framework for determining if a stock is priced with adequate downside protection",
+      "steps": [
+        "1. Calculate intrinsic value using owner earnings or DCF with 10-12% discount rate",
+        "2. Determine 'normalized' earnings - what the company can earn in average conditions",
+        "3. Apply conservative growth assumptions (GDP growth or lower for mature businesses)",
+        "4. Calculate margin of safety = (Intrinsic Value - Current Price) / Intrinsic Value",
+        "5. Require minimum 30-40% margin of safety before investing"
+      ],
+      "keywords": ["margin of safety", "intrinsic value", "owner earnings", "discount rate"],
+      "sources": ["Graham's Intelligent Investor", "Buffett Letters"]
+    },
+    {
+      "id": "owner_earnings",
+      "name": "Owner Earnings Calculation",
+      "description": "True economic earnings available to owners, as defined by Buffett",
+      "formula": "Owner Earnings = Net Income + Depreciation/Amortization - Maintenance CapEx - Working Capital Changes",
+      "steps": [
+        "1. Start with reported net income",
+        "2. Add back depreciation and amortization (non-cash charges)",
+        "3. Subtract maintenance capital expenditures (estimate 50-80% of total CapEx for mature businesses)",
+        "4. Adjust for working capital changes",
+        "5. Compare to reported free cash flow and reconcile differences"
+      ],
+      "keywords": ["owner earnings", "cash flow", "maintenance capex", "capital allocation"],
+      "sources": ["1986 Berkshire Letter"]
+    },
+    {
+      "id": "circle_of_competence",
+      "name": "Circle of Competence Assessment",
+      "description": "Framework for determining if an investment is within your area of expertise",
+      "steps": [
+        "1. Can you explain the business model in simple terms?",
+        "2. Do you understand how the company makes money today?",
+        "3. Can you predict where the business will be in 10 years?",
+        "4. Do you understand the competitive dynamics?",
+        "5. If you can't answer yes to all, stay away - there are plenty of other opportunities"
+      ],
+      "keywords": ["circle of competence", "understanding", "simplicity", "discipline"],
+      "sources": ["Buffett Letters", "Munger on Knowing Limits"]
+    },
+    {
+      "id": "wonderful_company",
+      "name": "Wonderful Company Checklist",
+      "description": "Characteristics that define a 'wonderful company' worth paying fair price for",
+      "criteria": [
+        "Consistent high returns on equity (>15% over 10 years)",
+        "Durable competitive advantage (moat)",
+        "Honest and capable management",
+        "Simple, understandable business model",
+        "Consistent earnings growth",
+        "Low debt or no debt",
+        "Pricing power",
+        "History of disciplined capital allocation"
+      ],
+      "keywords": ["wonderful company", "quality", "return on equity", "moat", "management"],
+      "sources": ["Buffett on Quality", "See's Candies Case Study"]
+    }
+  ]
+}

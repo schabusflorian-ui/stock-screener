@@ -1,0 +1,40 @@
+# railway.toml
+# Railway deployment configuration for PostgreSQL production environment
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "npm run start:production"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 60
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+numReplicas = 1
+
+# Environment variables to set in Railway dashboard:
+#
+# REQUIRED:
+# - DATABASE_URL        (auto-set by Railway PostgreSQL addon)
+# - REDIS_URL           (auto-set by Railway Redis addon)
+# - SESSION_SECRET      (generate: openssl rand -hex 32)
+# - NODE_ENV=production
+#
+# API KEYS:
+# - ALPHA_VANTAGE_KEY   (for stock data)
+# - ANTHROPIC_API_KEY   (for AI features)
+# - FMP_API_KEY         (for financial data)
+#
+# OAUTH (optional):
+# - GOOGLE_CLIENT_ID
+# - GOOGLE_CLIENT_SECRET
+#
+# MONITORING (optional):
+# - SENTRY_DSN
+#
+# ADMIN:
+# - ADMIN_EMAILS        (comma-separated list)
+#
+# DO NOT SET:
+# - ALLOW_DEV_AUTH (blocked in production)
+# - FORCE_HTTP1 (blocked in production)

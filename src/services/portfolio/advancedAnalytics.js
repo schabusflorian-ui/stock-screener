@@ -1,0 +1,2036 @@
+// src/services/portfolio/advancedAnalytics.js
+// Advanced Portfolio Analytics - Correlation, Factors, Diversification (Agent 2)
+// Enhanced with Taleb/Spitznagel risk philosophy: tail dependence, crisis correlation, antifragility
+
+const db = require('../../database');
+
+const TRADING_DAYS_PER_YEAR = 252;
+
+// Taleb/Spitznagel constants
+const TAIL_PERCENTILE = 0.05; // 5th percentile for tail analysis
+const CRISIS_THRESHOLD = -0.02; // -2% daily return defines crisis day
+const MAX_SAFE_KELLY = 0.25; // Maximum safe Kelly fraction (never more than 1/4)
+const CORRELATION_BREAKDOWN_THRESHOLD = 0.8; // Correlation above this in crisis is dangerous
+
+class AdvancedAnalytics {
+  constructor() {
+    this.db = db.getDatabase();
+    console.log('📊 Advanced Analytics Engine initialized');
+  }
+
+  // ============================================
+  // Correlation Matrix
+  // ============================================
+  getCorrelationMatrix(portfolioId, period = '1y') {
+    const positions = this._getPortfolioPositions(portfolioId);
+    if (positions.length < 2) {
+      return {
+        error: 'Need at least 2 positions for correlation analysis',
+        positionCount: positions.length
+      };
+    }
+
+    const { startDate } = this._getPeriodDates(period);
+    const returns = this._loadReturnsForPositions(positions, startDate);
+    const missingData = returns._missingData || [];
+
+    // Check if we have enough data
+    const positionsWithData = Object.keys(returns).filter(k => k !== '_missingData').length;
+    if (positionsWithData < 2) {
+      const errorMsg = missingData.length > 0
+        ? `Missing price data for: ${missingData.join(', ')}. Load historical prices for these securities.`
+        : 'Insufficient return data for correlation analysis';
+      return {
+        error: errorMsg,
+        positionCount: positions.length,
+        missingData
+      };
+    }
+
+    const symbols = positions.map(p => p.symbol);
+    const matrix = [];
+    const highlyCorrelated = [];
+
+    // Calculate correlation matrix
+    for (let i = 0; i < symbols.length; i++) {
+      const row = [];
+      for (let j = 0; j < symbols.length; j++) {
+        if (i === j) {
+          row.push(1.0);
+        } else if (j < i) {
+          // Use symmetry
+          row.push(matrix[j][i]);
+        } else {
+          const corr = this._calculateCorrelation(
+            returns[positions[i].company_id] || [],
+            returns[positions[j].company_id] || []
+          );
+          row.push(corr);
+
+          // Track highly correlated pairs
+          if (corr !== null && Math.abs(corr) > 0.7) {
+            highlyCorrelated.push({
+              pair: [symbols[i], symbols[j]],
+              correlation: corr,
+              level: Math.abs(corr) > 0.9 ? 'very_high' : 'high'
+            });
+          }
+        }
+      }
+      matrix.push(row);
+    }
+
+    // Calculate average correlation (excluding diagonal)
+    let totalCorr = 0;
+    let count = 0;
+    for (let i = 0; i < matrix.length; i++) {
+      for (let j = i + 1; j < matrix[i].length; j++) {
+        if (matrix[i][j] !== null) {
+          totalCorr += matrix[i][j];
+          count++;
+        }
+      }
+    }
+    const avgCorrelation = count > 0 ? totalCorr / count : null;
+
+    return {
+      portfolioId,
+      period,
+      symbols,
+      matrix,
+      avgCorrelation,
+      highlyCorrelated: highlyCorrelated.sort((a, b) => Math.abs(b.correlation) - Math.abs(a.correlation)),
+      diversificationBenefit: avgCorrelation !== null ? (1 - avgCorrelation) * 100 : null
+    };
+  }
+
+  // ============================================
+  // Diversification Score
+  // ============================================
+  getDiversificationScore(portfolioId) {
+    const positions = this._getPortfolioPositions(portfolioId);
+    if (positions.length === 0) {
+      return { error: 'Portfolio has no positions' };
+    }
+
+    // Calculate weights
+    const totalValue = positions.reduce((sum, p) => sum + (p.value || 0), 0);
+    const weights = positions.map(p => ({
+      ...p,
+      weight: totalValue > 0 ? (p.value || 0) / totalValue : 1 / positions.length
+    }));
+
+    // 1. Position concentration score (0-100)
+    const hhi = weights.reduce((sum, w) => sum + Math.pow(w.weight, 2), 0);
+    const positionScore = Math.max(0, (1 - hhi) * 100);
+
+    // 2. Sector concentration score
+    const sectorWeights = {};
+    for (const pos of weights) {
+      const sector = pos.sector || 'Unknown';
+      sectorWeights[sector] = (sectorWeights[sector] || 0) + pos.weight;
+    }
+    const sectorHHI = Object.values(sectorWeights).reduce((sum, w) => sum + Math.pow(w, 2), 0);
+    const sectorScore = Math.max(0, (1 - sectorHHI) * 100);
+
+    // 3. Correlation score (if we have enough data)
+    let correlationScore = 50; // Default to neutral
+    try {
+      const corrMatrix = this.getCorrelationMatrix(portfolioId, '1y');
+      if (corrMatrix.avgCorrelation !== null) {
+        // Lower correlation = better diversification
+        correlationScore = (1 - corrMatrix.avgCorrelation) * 100;
+      }
+    } catch (e) {
+      // Keep default
+    }
+
+    // 4. Market cap diversification
+    const marketCapBuckets = { large: 0, mid: 0, small: 0, micro: 0 };
+    for (const pos of weights) {
+      const mc = pos.market_cap || 0;
+      if (mc >= 10e9) marketCapBuckets.large += pos.weight;
+      else if (mc >= 2e9) marketCapBuckets.mid += pos.weight;
+      else if (mc >= 300e6) marketCapBuckets.small += pos.weight;
+      else marketCapBuckets.micro += pos.weight;
+    }
+    const capHHI = Object.values(marketCapBuckets).reduce((sum, w) => sum + Math.pow(w, 2), 0);
+    const marketCapScore = Math.max(0, (1 - capHHI) * 100);
+
+    // Weighted overall score
+    const overallScore = (
+      positionScore * 0.30 +
+      sectorScore * 0.30 +
+      correlationScore * 0.25 +
+      marketCapScore * 0.15
+    );
+
+    return {
+      portfolioId,
+      overallScore: Math.round(overallScore),
+      components: {
+        positionConcentration: {
+          score: Math.round(positionScore),
+          hhi: hhi,
+          topPosition: weights.length > 0 ? weights.reduce((max, w) => w.weight > max.weight ? w : max).symbol : null,
+          topWeight: weights.length > 0 ? Math.max(...weights.map(w => w.weight)) * 100 : 0
+        },
+        sectorConcentration: {
+          score: Math.round(sectorScore),
+          hhi: sectorHHI,
+          sectors: Object.entries(sectorWeights).map(([sector, weight]) => ({
+            sector,
+            weight: weight * 100
+          })).sort((a, b) => b.weight - a.weight)
+        },
+        correlation: {
+          score: Math.round(correlationScore),
+          avgCorrelation: (100 - correlationScore) / 100
+        },
+        marketCap: {
+          score: Math.round(marketCapScore),
+          buckets: Object.entries(marketCapBuckets).map(([bucket, weight]) => ({
+            bucket,
+            weight: weight * 100
+          })).filter(b => b.weight > 0)
+        }
+      },
+      rating: this._getDiversificationRating(overallScore),
+      suggestions: this._getDiversificationSuggestions(overallScore, sectorWeights, weights)
+    };
+  }
+
+  // ============================================
+  // Factor Exposure Analysis
+  // ============================================
+  getFactorExposure(portfolioId) {
+    const positions = this._getPortfolioPositions(portfolioId);
+    if (positions.length === 0) {
+      return { error: 'Portfolio has no positions' };
+    }
+
+    // Get additional data for each position
+    const positionsWithData = this._enrichPositionsWithFactorData(positions);
+
+    // Calculate weights
+    const totalValue = positionsWithData.reduce((sum, p) => sum + (p.value || 0), 0);
+    const weights = positionsWithData.map(p => ({
+      ...p,
+      weight: totalValue > 0 ? (p.value || 0) / totalValue : 1 / positionsWithData.length
+    }));
+
+    // Calculate factor exposures
+
+    // 1. Market Beta (weighted average of individual betas)
+    let marketBeta = 0;
+    let betaCount = 0;
+    for (const pos of weights) {
+      if (pos.beta !== null && pos.beta !== undefined) {
+        marketBeta += pos.beta * pos.weight;
+        betaCount++;
+      }
+    }
+    marketBeta = betaCount > 0 ? marketBeta : 1.0; // Default to 1 if no data
+
+    // 2. Size Tilt (based on market cap distribution)
+    let sizeTilt = 0; // -1 = small cap, +1 = large cap
+    for (const pos of weights) {
+      const mc = pos.market_cap || 0;
+      if (mc >= 200e9) sizeTilt += pos.weight * 1.0; // Mega cap
+      else if (mc >= 10e9) sizeTilt += pos.weight * 0.5; // Large cap
+      else if (mc >= 2e9) sizeTilt += pos.weight * 0.0; // Mid cap
+      else if (mc >= 300e6) sizeTilt += pos.weight * -0.5; // Small cap
+      else sizeTilt += pos.weight * -1.0; // Micro cap
+    }
+
+    // 3. Value Tilt (based on P/E ratios)
+    let valueTilt = 0; // -1 = growth, +1 = value
+    let peCount = 0;
+    for (const pos of weights) {
+      if (pos.pe_ratio !== null && pos.pe_ratio !== undefined && pos.pe_ratio > 0) {
+        // Low P/E = value, High P/E = growth
+        if (pos.pe_ratio < 15) valueTilt += pos.weight * 1.0;
+        else if (pos.pe_ratio < 20) valueTilt += pos.weight * 0.5;
+        else if (pos.pe_ratio < 30) valueTilt += pos.weight * -0.3;
+        else valueTilt += pos.weight * -1.0;
+        peCount++;
+      }
+    }
+
+    // 4. Momentum Exposure (based on recent price performance)
+    let momentumExposure = 0;
+    for (const pos of weights) {
+      if (pos.change_1y !== null && pos.change_1y !== undefined) {
+        // Normalize momentum to -1 to +1 range
+        const normMomentum = Math.max(-1, Math.min(1, pos.change_1y / 50)); // 50% = full momentum
+        momentumExposure += normMomentum * pos.weight;
+      }
+    }
+
+    // 5. Quality Exposure (based on ROE and margins)
+    let qualityExposure = 0;
+    let qualityCount = 0;
+    for (const pos of weights) {
+      let qualityScore = 0;
+      let factors = 0;
+
+      if (pos.roe !== null && pos.roe !== undefined) {
+        qualityScore += pos.roe > 20 ? 1 : pos.roe > 10 ? 0.5 : pos.roe > 0 ? 0 : -0.5;
+        factors++;
+      }
+      if (pos.operating_margin !== null && pos.operating_margin !== undefined) {
+        qualityScore += pos.operating_margin > 20 ? 1 : pos.operating_margin > 10 ? 0.5 : pos.operating_margin > 0 ? 0 : -0.5;
+        factors++;
+      }
+
+      if (factors > 0) {
+        qualityExposure += (qualityScore / factors) * pos.weight;
+        qualityCount++;
+      }
+    }
+
+    // 6. Volatility (weighted average)
+    let volatility = 0;
+    for (const pos of weights) {
+      if (pos.volatility !== null && pos.volatility !== undefined) {
+        volatility += pos.volatility * pos.weight;
+      }
+    }
+
+    return {
+      portfolioId,
+      factors: {
+        marketBeta: {
+          value: Math.round(marketBeta * 100) / 100,
+          interpretation: marketBeta > 1.2 ? 'aggressive' : marketBeta < 0.8 ? 'defensive' : 'neutral'
+        },
+        sizeTilt: {
+          value: Math.round(sizeTilt * 100) / 100,
+          interpretation: sizeTilt > 0.3 ? 'large_cap' : sizeTilt < -0.3 ? 'small_cap' : 'balanced'
+        },
+        valueTilt: {
+          value: Math.round(valueTilt * 100) / 100,
+          interpretation: valueTilt > 0.3 ? 'value' : valueTilt < -0.3 ? 'growth' : 'blend'
+        },
+        momentumExposure: {
+          value: Math.round(momentumExposure * 100) / 100,
+          interpretation: momentumExposure > 0.3 ? 'high_momentum' : momentumExposure < -0.3 ? 'low_momentum' : 'neutral'
+        },
+        qualityExposure: {
+          value: Math.round(qualityExposure * 100) / 100,
+          interpretation: qualityExposure > 0.3 ? 'high_quality' : qualityExposure < -0.3 ? 'low_quality' : 'average'
+        },
+        volatility: {
+          value: Math.round(volatility * 100) / 100,
+          interpretation: volatility > 30 ? 'high' : volatility < 15 ? 'low' : 'moderate'
+        }
+      },
+      style: this._getStyleBox(sizeTilt, valueTilt),
+      summary: this._getFactorSummary(marketBeta, sizeTilt, valueTilt, qualityExposure)
+    };
+  }
+
+  // ============================================
+  // Covariance Matrix & Portfolio Variance
+  // ============================================
+  getCovarianceMatrix(portfolioId, period = '1y') {
+    const positions = this._getPortfolioPositions(portfolioId);
+    if (positions.length < 2) {
+      return {
+        error: 'Need at least 2 positions for covariance analysis',
+        positionCount: positions.length
+      };
+    }
+
+    const { startDate } = this._getPeriodDates(period);
+    const returns = this._loadReturnsForPositions(positions, startDate);
+    const symbols = positions.map(p => p.symbol);
+
+    // Calculate weights
+    const totalValue = positions.reduce((sum, p) => sum + (p.value || 0), 0);
+    const weights = positions.map(p => totalValue > 0 ? (p.value || 0) / totalValue : 1 / positions.length);
+
+    // Calculate covariance matrix
+    const covMatrix = [];
+    const annualizationFactor = TRADING_DAYS_PER_YEAR;
+
+    for (let i = 0; i < positions.length; i++) {
+      const row = [];
+      for (let j = 0; j < positions.length; j++) {
+        const cov = this._calculateCovariance(
+          returns[positions[i].company_id] || [],
+          returns[positions[j].company_id] || []
+        );
+        // Annualize covariance
+        row.push(cov !== null ? cov * annualizationFactor : null);
+      }
+      covMatrix.push(row);
+    }
+
+    // Calculate portfolio variance: w' * Σ * w
+    let portfolioVariance = 0;
+    for (let i = 0; i < positions.length; i++) {
+      for (let j = 0; j < positions.length; j++) {
+        if (covMatrix[i][j] !== null) {
+          portfolioVariance += weights[i] * weights[j] * covMatrix[i][j];
+        }
+      }
+    }
+
+    const portfolioVolatility = Math.sqrt(portfolioVariance) * 100;
+
+    // Calculate individual volatilities
+    const individualVolatilities = positions.map((pos, i) => ({
+      symbol: pos.symbol,
+      weight: weights[i] * 100,
+      volatility: covMatrix[i][i] !== null ? Math.sqrt(covMatrix[i][i]) * 100 : null
+    }));
+
+    // Calculate weighted average volatility (for diversification benefit)
+    const weightedAvgVol = individualVolatilities.reduce((sum, v) => {
+      return sum + (v.volatility || 0) * (v.weight / 100);
+    }, 0);
+
+    const diversificationBenefit = weightedAvgVol > 0
+      ? ((weightedAvgVol - portfolioVolatility) / weightedAvgVol) * 100
+      : 0;
+
+    return {
+      portfolioId,
+      period,
+      symbols,
+      covarianceMatrix: covMatrix,
+      portfolioVariance,
+      portfolioVolatility: Math.round(portfolioVolatility * 100) / 100,
+      weightedAvgVolatility: Math.round(weightedAvgVol * 100) / 100,
+      diversificationBenefit: Math.round(diversificationBenefit * 100) / 100,
+      individualVolatilities,
+      weights: weights.map((w, i) => ({ symbol: symbols[i], weight: w * 100 }))
+    };
+  }
+
+  // ============================================
+  // Marginal Risk Contribution
+  // ============================================
+  getMarginalRiskContribution(portfolioId, period = '1y') {
+    const positions = this._getPortfolioPositions(portfolioId);
+    if (positions.length < 2) {
+      return {
+        error: 'Need at least 2 positions for risk contribution analysis',
+        positionCount: positions.length
+      };
+    }
+
+    const covResult = this.getCovarianceMatrix(portfolioId, period);
+    if (covResult.error) return covResult;
+
+    const { covarianceMatrix, portfolioVolatility, symbols } = covResult;
+    const totalValue = positions.reduce((sum, p) => sum + (p.value || 0), 0);
+    const weights = positions.map(p => totalValue > 0 ? (p.value || 0) / totalValue : 1 / positions.length);
+
+    const portfolioVariance = Math.pow(portfolioVolatility / 100, 2);
+    const portfolioStdDev = portfolioVolatility / 100;
+
+    // Marginal contribution to risk (MCR) = d(σp)/d(wi) = (Σ * w)i / σp
+    // Risk contribution = wi * MCRi
+    const riskContributions = [];
+
+    for (let i = 0; i < positions.length; i++) {
+      // Calculate (Σ * w)i
+      let sigmaW = 0;
+      for (let j = 0; j < positions.length; j++) {
+        if (covarianceMatrix[i][j] !== null) {
+          sigmaW += covarianceMatrix[i][j] * weights[j];
+        }
+      }
+
+      const mcr = portfolioStdDev > 0 ? sigmaW / portfolioStdDev : 0;
+      const riskContribution = weights[i] * mcr;
+      const percentContribution = portfolioVariance > 0
+        ? (riskContribution / portfolioStdDev) * 100
+        : 0;
+
+      riskContributions.push({
+        symbol: symbols[i],
+        weight: weights[i] * 100,
+        value: positions[i].value,
+        marginalContribution: mcr * 100,
+        riskContribution: riskContribution * 100,
+        percentOfTotalRisk: percentContribution,
+        riskEfficiency: weights[i] > 0 ? percentContribution / (weights[i] * 100) : 0
+      });
+    }
+
+    // Sort by risk contribution descending
+    riskContributions.sort((a, b) => b.percentOfTotalRisk - a.percentOfTotalRisk);
+
+    // Calculate concentration metrics
+    const top3RiskConcentration = riskContributions
+      .slice(0, 3)
+      .reduce((sum, r) => sum + r.percentOfTotalRisk, 0);
+
+    // Find over/under riskers
+    const overRiskers = riskContributions.filter(r => r.riskEfficiency > 1.2);
+    const underRiskers = riskContributions.filter(r => r.riskEfficiency < 0.8);
+
+    return {
+      portfolioId,
+      period,
+      portfolioVolatility,
+      riskContributions,
+      top3RiskConcentration: Math.round(top3RiskConcentration * 100) / 100,
+      overRiskers: overRiskers.map(r => r.symbol),
+      underRiskers: underRiskers.map(r => r.symbol),
+      riskBalanceScore: this._calculateRiskBalanceScore(riskContributions),
+      suggestions: this._getRiskContributionSuggestions(riskContributions, weights)
+    };
+  }
+
+  // ============================================
+  // Rolling Correlation
+  // ============================================
+  getRollingCorrelation(portfolioId, period = '1y', windowDays = 60) {
+    const positions = this._getPortfolioPositions(portfolioId);
+    if (positions.length < 2) {
+      return {
+        error: 'Need at least 2 positions for rolling correlation',
+        positionCount: positions.length
+      };
+    }
+
+    const { startDate } = this._getPeriodDates(period);
+    const returns = this._loadReturnsForPositions(positions, startDate);
+    const symbols = positions.map(p => p.symbol);
+
+    // Get aligned dates
+    const allDates = this._getAlignedDates(positions, startDate);
+    if (allDates.length < windowDays + 10) {
+      return {
+        error: 'Insufficient data for rolling correlation',
+        daysAvailable: allDates.length,
+        windowDays
+      };
+    }
+
+    // Calculate rolling average correlation
+    const rollingData = [];
+
+    for (let d = windowDays; d < allDates.length; d++) {
+      const windowReturns = {};
+
+      // Get returns for this window
+      for (const pos of positions) {
+        const posReturns = returns[pos.company_id] || [];
+        windowReturns[pos.company_id] = posReturns.slice(d - windowDays, d);
+      }
+
+      // Calculate average pairwise correlation for this window
+      let totalCorr = 0;
+      let pairCount = 0;
+
+      for (let i = 0; i < positions.length; i++) {
+        for (let j = i + 1; j < positions.length; j++) {
+          const corr = this._calculateCorrelation(
+            windowReturns[positions[i].company_id] || [],
+            windowReturns[positions[j].company_id] || []
+          );
+          if (corr !== null) {
+            totalCorr += corr;
+            pairCount++;
+          }
+        }
+      }
+
+      if (pairCount > 0) {
+        rollingData.push({
+          date: allDates[d],
+          avgCorrelation: Math.round((totalCorr / pairCount) * 100) / 100,
+          pairsAnalyzed: pairCount
+        });
+      }
+    }
+
+    // Calculate statistics
+    const correlations = rollingData.map(d => d.avgCorrelation);
+    const avgCorr = correlations.reduce((a, b) => a + b, 0) / correlations.length;
+    const maxCorr = Math.max(...correlations);
+    const minCorr = Math.min(...correlations);
+    const currentCorr = correlations[correlations.length - 1];
+
+    // Find correlation spikes (crisis periods)
+    const spikes = rollingData.filter(d => d.avgCorrelation > avgCorr + 0.15);
+
+    return {
+      portfolioId,
+      period,
+      windowDays,
+      symbols,
+      rollingData: rollingData.slice(-90), // Last 90 data points for charting
+      statistics: {
+        average: Math.round(avgCorr * 100) / 100,
+        current: Math.round(currentCorr * 100) / 100,
+        max: Math.round(maxCorr * 100) / 100,
+        min: Math.round(minCorr * 100) / 100,
+        range: Math.round((maxCorr - minCorr) * 100) / 100
+      },
+      correlationSpikes: spikes.slice(-5).map(s => ({
+        date: s.date,
+        correlation: s.avgCorrelation
+      })),
+      trend: currentCorr > avgCorr ? 'increasing' : 'decreasing',
+      warning: currentCorr > 0.7 ? 'High correlation - diversification benefit reduced' : null
+    };
+  }
+
+  // ============================================
+  // Cluster Analysis (Hierarchical)
+  // ============================================
+  getClusterAnalysis(portfolioId, period = '1y') {
+    const positions = this._getPortfolioPositions(portfolioId);
+    if (positions.length < 3) {
+      return {
+        error: 'Need at least 3 positions for cluster analysis',
+        positionCount: positions.length
+      };
+    }
+
+    const corrResult = this.getCorrelationMatrix(portfolioId, period);
+    if (corrResult.error) return corrResult;
+
+    const { matrix, symbols } = corrResult;
+    const n = symbols.length;
+
+    // Convert correlation to distance (1 - correlation)
+    const distanceMatrix = matrix.map(row =>
+      row.map(corr => corr !== null ? 1 - corr : 2)
+    );
+
+    // Simple hierarchical clustering (agglomerative, single linkage)
+    const clusters = this._hierarchicalClustering(symbols, distanceMatrix);
+
+    // Calculate total portfolio weight in each cluster
+    const totalValue = positions.reduce((sum, p) => sum + (p.value || 0), 0);
+    const weights = {};
+    positions.forEach(p => {
+      weights[p.symbol] = totalValue > 0 ? (p.value || 0) / totalValue * 100 : 100 / n;
+    });
+
+    // Enrich clusters with weights and sector info
+    const enrichedClusters = clusters.map((cluster, i) => {
+      const clusterWeight = cluster.members.reduce((sum, sym) => sum + (weights[sym] || 0), 0);
+      const sectors = {};
+
+      cluster.members.forEach(sym => {
+        const pos = positions.find(p => p.symbol === sym);
+        const sector = pos?.sector || 'Unknown';
+        sectors[sector] = (sectors[sector] || 0) + 1;
+      });
+
+      return {
+        id: i + 1,
+        name: cluster.name || `Cluster ${i + 1}`,
+        members: cluster.members,
+        memberCount: cluster.members.length,
+        combinedWeight: Math.round(clusterWeight * 100) / 100,
+        avgIntraCorrelation: cluster.avgCorrelation,
+        sectors: Object.entries(sectors)
+          .map(([sector, count]) => ({ sector, count }))
+          .sort((a, b) => b.count - a.count),
+        riskLevel: clusterWeight > 40 ? 'high' : clusterWeight > 25 ? 'medium' : 'low'
+      };
+    });
+
+    // Calculate cluster concentration risk
+    const maxClusterWeight = Math.max(...enrichedClusters.map(c => c.combinedWeight));
+    const clusterHHI = enrichedClusters.reduce((sum, c) =>
+      sum + Math.pow(c.combinedWeight / 100, 2), 0
+    );
+
+    return {
+      portfolioId,
+      period,
+      positionCount: n,
+      clusterCount: enrichedClusters.length,
+      clusters: enrichedClusters,
+      concentrationRisk: {
+        maxClusterWeight: Math.round(maxClusterWeight * 100) / 100,
+        clusterHHI: Math.round(clusterHHI * 10000) / 10000,
+        effectiveClusters: clusterHHI > 0 ? Math.round(1 / clusterHHI * 10) / 10 : n
+      },
+      hiddenRisks: this._identifyHiddenClusterRisks(enrichedClusters, positions),
+      recommendations: this._getClusterRecommendations(enrichedClusters, maxClusterWeight)
+    };
+  }
+
+  // ============================================
+  // Tail Dependence Analysis (Taleb/Spitznagel)
+  // Measures how correlations behave in extreme events
+  // ============================================
+  getTailDependence(portfolioId, period = '3y') {
+    const positions = this._getPortfolioPositions(portfolioId);
+    if (positions.length < 2) {
+      return {
+        error: 'Need at least 2 positions for tail dependence analysis',
+        positionCount: positions.length
+      };
+    }
+
+    const { startDate } = this._getPeriodDates(period);
+    const returns = this._loadReturnsForPositions(positions, startDate);
+    const missingData = returns._missingData || [];
+
+    const positionsWithData = Object.keys(returns).filter(k => k !== '_missingData').length;
+    if (positionsWithData < 2) {
+      return { error: 'Insufficient return data for tail dependence analysis', missingData };
+    }
+
+    const symbols = positions.map(p => p.symbol);
+    const tailDependenceMatrix = [];
+    const dangerousPairs = [];
+
+    // Calculate tail dependence coefficient for each pair
+    for (let i = 0; i < symbols.length; i++) {
+      const row = [];
+      for (let j = 0; j < symbols.length; j++) {
+        if (i === j) {
+          row.push(1.0);
+        } else if (j < i) {
+          row.push(tailDependenceMatrix[j][i]);
+        } else {
+          const { lowerTail, upperTail, crisisCorrelation } = this._calculateTailDependence(
+            returns[positions[i].company_id] || [],
+            returns[positions[j].company_id] || []
+          );
+
+          // Lower tail dependence is what matters for risk (both crash together)
+          row.push(lowerTail);
+
+          // Flag dangerous pairs: high tail dependence means "diversification fails when needed"
+          if (lowerTail > 0.5) {
+            dangerousPairs.push({
+              pair: [symbols[i], symbols[j]],
+              lowerTailDependence: lowerTail,
+              upperTailDependence: upperTail,
+              crisisCorrelation,
+              warning: lowerTail > 0.7
+                ? 'CRITICAL: These assets crash together - illusory diversification'
+                : 'HIGH: Correlation increases during market stress'
+            });
+          }
+        }
+      }
+      tailDependenceMatrix.push(row);
+    }
+
+    // Calculate regular correlation for comparison
+    const regularCorr = this.getCorrelationMatrix(portfolioId, period);
+
+    // Compare average tail vs regular correlation
+    let totalTail = 0, totalRegular = 0, count = 0;
+    for (let i = 0; i < symbols.length; i++) {
+      for (let j = i + 1; j < symbols.length; j++) {
+        if (tailDependenceMatrix[i][j] !== null) {
+          totalTail += tailDependenceMatrix[i][j];
+          totalRegular += regularCorr.matrix[i][j] || 0;
+          count++;
+        }
+      }
+    }
+
+    const avgTailDependence = count > 0 ? totalTail / count : null;
+    const avgRegularCorrelation = count > 0 ? totalRegular / count : null;
+    const correlationBreakdownRisk = avgTailDependence && avgRegularCorrelation
+      ? avgTailDependence - avgRegularCorrelation
+      : null;
+
+    return {
+      portfolioId,
+      period,
+      symbols,
+      tailDependenceMatrix,
+      regularCorrelationMatrix: regularCorr.matrix,
+      statistics: {
+        avgTailDependence: avgTailDependence ? Math.round(avgTailDependence * 100) / 100 : null,
+        avgRegularCorrelation: avgRegularCorrelation ? Math.round(avgRegularCorrelation * 100) / 100 : null,
+        correlationBreakdownRisk: correlationBreakdownRisk ? Math.round(correlationBreakdownRisk * 100) / 100 : null
+      },
+      dangerousPairs: dangerousPairs.sort((a, b) => b.lowerTailDependence - a.lowerTailDependence),
+      talebWarning: correlationBreakdownRisk > 0.2
+        ? 'DANGER: Correlations spike during crisis - your diversification is an illusion'
+        : correlationBreakdownRisk > 0.1
+        ? 'CAUTION: Some correlation breakdown risk detected'
+        : 'Tail dependence appears manageable',
+      recommendation: this._getTailDependenceRecommendation(avgTailDependence, dangerousPairs)
+    };
+  }
+
+  // ============================================
+  // Crisis Correlation Analysis (Taleb/Spitznagel)
+  // How do correlations behave specifically during market crashes?
+  // ============================================
+  getCrisisCorrelation(portfolioId, period = '5y') {
+    const positions = this._getPortfolioPositions(portfolioId);
+    if (positions.length < 2) {
+      return { error: 'Need at least 2 positions for crisis correlation analysis' };
+    }
+
+    const { startDate } = this._getPeriodDates(period);
+    const returns = this._loadReturnsForPositions(positions, startDate);
+    const symbols = positions.map(p => p.symbol);
+
+    // Identify crisis days (market-wide negative returns > threshold)
+    const crisisDays = this._identifyCrisisDays(positions, returns, startDate);
+    const normalDays = this._identifyNormalDays(positions, returns, startDate);
+
+    if (crisisDays.length < 20) {
+      return {
+        error: 'Insufficient crisis days for analysis',
+        crisisDaysFound: crisisDays.length,
+        note: 'Need at least 20 crisis days. Consider extending the analysis period.'
+      };
+    }
+
+    // Calculate correlation during crisis vs normal periods
+    const crisisMatrix = this._calculateCorrelationForDays(positions, returns, crisisDays);
+    const normalMatrix = this._calculateCorrelationForDays(positions, returns, normalDays);
+
+    // Find pairs where correlation explodes during crisis
+    const correlationBreakdown = [];
+    let avgCrisisCorr = 0, avgNormalCorr = 0, pairCount = 0;
+
+    for (let i = 0; i < symbols.length; i++) {
+      for (let j = i + 1; j < symbols.length; j++) {
+        const crisisCorr = crisisMatrix[i][j];
+        const normalCorr = normalMatrix[i][j];
+
+        if (crisisCorr !== null && normalCorr !== null) {
+          avgCrisisCorr += crisisCorr;
+          avgNormalCorr += normalCorr;
+          pairCount++;
+
+          const breakdown = crisisCorr - normalCorr;
+          if (breakdown > 0.2) { // Correlation increased by 0.2+ during crisis
+            correlationBreakdown.push({
+              pair: [symbols[i], symbols[j]],
+              normalCorrelation: Math.round(normalCorr * 100) / 100,
+              crisisCorrelation: Math.round(crisisCorr * 100) / 100,
+              breakdown: Math.round(breakdown * 100) / 100,
+              severity: breakdown > 0.4 ? 'severe' : breakdown > 0.3 ? 'high' : 'moderate'
+            });
+          }
+        }
+      }
+    }
+
+    avgCrisisCorr = pairCount > 0 ? avgCrisisCorr / pairCount : null;
+    avgNormalCorr = pairCount > 0 ? avgNormalCorr / pairCount : null;
+
+    return {
+      portfolioId,
+      period,
+      symbols,
+      crisisDaysAnalyzed: crisisDays.length,
+      normalDaysAnalyzed: normalDays.length,
+      crisisCorrelationMatrix: crisisMatrix,
+      normalCorrelationMatrix: normalMatrix,
+      statistics: {
+        avgCrisisCorrelation: avgCrisisCorr ? Math.round(avgCrisisCorr * 100) / 100 : null,
+        avgNormalCorrelation: avgNormalCorr ? Math.round(avgNormalCorr * 100) / 100 : null,
+        correlationIncrease: avgCrisisCorr && avgNormalCorr
+          ? Math.round((avgCrisisCorr - avgNormalCorr) * 100) / 100
+          : null
+      },
+      correlationBreakdown: correlationBreakdown.sort((a, b) => b.breakdown - a.breakdown),
+      worstCrisisDays: crisisDays.slice(0, 10).map(d => ({
+        date: d.date,
+        avgReturn: Math.round(d.avgReturn * 100 * 100) / 100
+      })),
+      talebInsight: this._getCrisisInsight(avgCrisisCorr, avgNormalCorr, correlationBreakdown),
+      recommendations: this._getCrisisRecommendations(correlationBreakdown, avgCrisisCorr)
+    };
+  }
+
+  // ============================================
+  // Antifragility Score (Taleb/Spitznagel)
+  // Does the portfolio benefit from volatility?
+  // ============================================
+  getAntifragilityScore(portfolioId, period = '3y') {
+    const positions = this._getPortfolioPositions(portfolioId);
+    if (positions.length === 0) {
+      return { error: 'Portfolio has no positions' };
+    }
+
+    const { startDate } = this._getPeriodDates(period);
+    const returns = this._loadReturnsForPositions(positions, startDate);
+
+    // Calculate weights
+    const totalValue = positions.reduce((sum, p) => sum + (p.value || 0), 0);
+    const weights = positions.map(p => totalValue > 0 ? (p.value || 0) / totalValue : 1 / positions.length);
+
+    // Analyze each position's convexity
+    const positionAnalysis = [];
+    let portfolioAntifragility = 0;
+
+    for (let i = 0; i < positions.length; i++) {
+      const pos = positions[i];
+      const posReturns = returns[pos.company_id] || [];
+
+      if (posReturns.length < 100) {
+        positionAnalysis.push({
+          symbol: pos.symbol,
+          weight: weights[i] * 100,
+          antifragility: null,
+          classification: 'insufficient_data'
+        });
+        continue;
+      }
+
+      const analysis = this._analyzePositionAntifragility(posReturns);
+
+      positionAnalysis.push({
+        symbol: pos.symbol,
+        weight: weights[i] * 100,
+        antifragility: analysis.score,
+        classification: analysis.classification,
+        convexity: analysis.convexity,
+        tailBehavior: analysis.tailBehavior,
+        volatilityResponse: analysis.volatilityResponse
+      });
+
+      portfolioAntifragility += weights[i] * analysis.score;
+    }
+
+    // Check for barbell structure (antifragile + extremely safe)
+    const hasBarbell = this._detectBarbellStructure(positionAnalysis, weights);
+
+    return {
+      portfolioId,
+      period,
+      overallScore: Math.round(portfolioAntifragility * 100) / 100,
+      classification: this._classifyAntifragility(portfolioAntifragility),
+      positions: positionAnalysis,
+      barbellAnalysis: hasBarbell,
+      talebInterpretation: this._getTalebInterpretation(portfolioAntifragility, hasBarbell),
+      improvements: this._getAntifragilityImprovements(positionAnalysis, portfolioAntifragility)
+    };
+  }
+
+  // ============================================
+  // Barbell Strategy Analysis (Spitznagel)
+  // Analyze if portfolio follows barbell principle
+  // ============================================
+  getBarbellAnalysis(portfolioId) {
+    const positions = this._getPortfolioPositions(portfolioId);
+    if (positions.length === 0) {
+      return { error: 'Portfolio has no positions' };
+    }
+
+    const { startDate } = this._getPeriodDates('3y');
+    const returns = this._loadReturnsForPositions(positions, startDate);
+
+    // Classify each position
+    const classified = positions.map(pos => {
+      const posReturns = returns[pos.company_id] || [];
+      const volatility = this._calculateVolatility(posReturns);
+      const beta = pos.beta || 1;
+      const skewness = this._calculateSkewness(posReturns);
+
+      let category;
+      if (volatility < 0.15 && beta < 0.5) {
+        category = 'safe'; // Cash-like, bonds, low-vol
+      } else if (skewness > 0.5 || (volatility > 0.4 && beta > 1.5)) {
+        category = 'speculative'; // Positive skew, high vol
+      } else {
+        category = 'middle'; // Regular stocks - the "forbidden middle"
+      }
+
+      return {
+        symbol: pos.symbol,
+        value: pos.value,
+        volatility: Math.round(volatility * 100 * 100) / 100,
+        beta,
+        skewness: Math.round(skewness * 100) / 100,
+        category
+      };
+    });
+
+    // Calculate allocations to each category
+    const totalValue = positions.reduce((sum, p) => sum + (p.value || 0), 0);
+    const allocations = {
+      safe: 0,
+      middle: 0,
+      speculative: 0
+    };
+
+    for (const pos of classified) {
+      allocations[pos.category] += pos.value / totalValue;
+    }
+
+    // Ideal barbell: 80-90% safe, 10-20% speculative, 0% middle
+    const isBarbellCompliant = allocations.safe > 0.7 && allocations.speculative > 0.05 && allocations.middle < 0.1;
+    const middleRisk = allocations.middle * 100;
+
+    return {
+      portfolioId,
+      positions: classified,
+      allocations: {
+        safe: Math.round(allocations.safe * 100 * 10) / 10,
+        middle: Math.round(allocations.middle * 100 * 10) / 10,
+        speculative: Math.round(allocations.speculative * 100 * 10) / 10
+      },
+      isBarbellCompliant,
+      spitznagelScore: this._calculateSpitznagelScore(allocations),
+      forbiddenMiddle: {
+        percentage: Math.round(middleRisk * 10) / 10,
+        positions: classified.filter(p => p.category === 'middle').map(p => p.symbol),
+        warning: middleRisk > 50
+          ? 'DANGER: Majority in "forbidden middle" - maximum fragility'
+          : middleRisk > 25
+          ? 'CAUTION: Significant middle exposure - consider barbell restructure'
+          : 'Middle exposure acceptable'
+      },
+      recommendations: this._getBarbellRecommendations(allocations, classified),
+      talebQuote: middleRisk > 50
+        ? '"Medium risk" is the riskiest category - you get volatility without the upside'
+        : isBarbellCompliant
+        ? 'Portfolio follows barbell principle - robust to Black Swans'
+        : 'Consider restructuring toward barbell for antifragility'
+    };
+  }
+
+  // ============================================
+  // Income Projection
+  // ============================================
+  projectDividendIncome(portfolioId, years = 5, growthRate = 0.05) {
+    const positions = this._getPortfolioPositions(portfolioId);
+    if (positions.length === 0) {
+      return { error: 'Portfolio has no positions' };
+    }
+
+    // Get dividend data for each position
+    const positionsWithDividends = [];
+    let totalCurrentIncome = 0;
+    let totalValue = 0;
+
+    for (const pos of positions) {
+      // Get latest dividend data from dividend_metrics table
+      const dividend = this.db.prepare(`
+        SELECT dividend_yield, current_annual_dividend
+        FROM dividend_metrics
+        WHERE company_id = ?
+      `).get(pos.company_id);
+
+      // current_annual_dividend is already the annual amount per share
+      const annualDividend = dividend?.current_annual_dividend
+        ? dividend.current_annual_dividend * pos.shares
+        : 0;
+
+      totalCurrentIncome += annualDividend;
+      totalValue += pos.value || 0;
+
+      if (annualDividend > 0) {
+        positionsWithDividends.push({
+          symbol: pos.symbol,
+          shares: pos.shares,
+          value: pos.value,
+          dividendYield: dividend?.dividend_yield || 0,
+          annualDividend,
+          quarterlyDividend: annualDividend / 4
+        });
+      }
+    }
+
+    // Project income for each year
+    const annualIncome = [];
+    let projectedIncome = totalCurrentIncome;
+
+    for (let year = 0; year <= years; year++) {
+      annualIncome.push({
+        year,
+        income: Math.round(projectedIncome * 100) / 100,
+        monthlyIncome: Math.round(projectedIncome / 12 * 100) / 100
+      });
+      projectedIncome *= (1 + growthRate);
+    }
+
+    // Calculate yields
+    const currentYield = totalValue > 0 ? (totalCurrentIncome / totalValue) * 100 : 0;
+
+    // Get cost basis for yield on cost
+    const costBasis = this.db.prepare(`
+      SELECT SUM(cost_basis) as total_cost
+      FROM portfolio_positions
+      WHERE portfolio_id = ?
+    `).get(portfolioId)?.total_cost || totalValue;
+
+    const yieldOnCost = costBasis > 0 ? (totalCurrentIncome / costBasis) * 100 : 0;
+
+    return {
+      portfolioId,
+      projectionYears: years,
+      dividendGrowthRate: growthRate * 100,
+      currentAnnualIncome: Math.round(totalCurrentIncome * 100) / 100,
+      currentMonthlyIncome: Math.round(totalCurrentIncome / 12 * 100) / 100,
+      currentYield: Math.round(currentYield * 100) / 100,
+      yieldOnCost: Math.round(yieldOnCost * 100) / 100,
+      projectedFinalIncome: Math.round(annualIncome[years].income * 100) / 100,
+      projectedFinalYield: totalValue > 0
+        ? Math.round((annualIncome[years].income / totalValue) * 100 * 100) / 100
+        : 0,
+      annualProjection: annualIncome,
+      dividendPayers: positionsWithDividends.length,
+      nonDividendPayers: positions.length - positionsWithDividends.length,
+      topDividendPayers: positionsWithDividends
+        .sort((a, b) => b.annualDividend - a.annualDividend)
+        .slice(0, 5)
+        .map(p => ({
+          symbol: p.symbol,
+          annualDividend: Math.round(p.annualDividend * 100) / 100,
+          yield: Math.round(p.dividendYield * 100) / 100
+        }))
+    };
+  }
+
+  // ============================================
+  // Private Helper Methods
+  // ============================================
+
+  _getPortfolioPositions(portfolioId) {
+    return this.db.prepare(`
+      SELECT
+        pp.company_id,
+        pp.shares,
+        pp.cost_basis,
+        c.symbol,
+        c.name,
+        c.sector,
+        c.market_cap,
+        pm.last_price,
+        pm.volatility_30d as volatility,
+        pm.beta,
+        pm.change_1y
+      FROM portfolio_positions pp
+      JOIN companies c ON pp.company_id = c.id
+      LEFT JOIN price_metrics pm ON c.id = pm.company_id
+      WHERE pp.portfolio_id = ?
+    `).all(portfolioId).map(pos => ({
+      ...pos,
+      value: pos.shares * (pos.last_price || 0)
+    }));
+  }
+
+  _enrichPositionsWithFactorData(positions) {
+    return positions.map(pos => {
+      const metrics = this.db.prepare(`
+        SELECT roe, operating_margin, pe_ratio
+        FROM calculated_metrics
+        WHERE company_id = ?
+        ORDER BY fiscal_period DESC
+        LIMIT 1
+      `).get(pos.company_id);
+
+      return {
+        ...pos,
+        roe: metrics?.roe,
+        operating_margin: metrics?.operating_margin,
+        pe_ratio: metrics?.pe_ratio
+      };
+    });
+  }
+
+  _getPeriodDates(period) {
+    const now = new Date();
+    const periodDays = {
+      '1m': 30,
+      '3m': 90,
+      '6m': 180,
+      '1y': 365,
+      '3y': 1095,
+      '5y': 1825
+    };
+
+    const days = periodDays[period] || 365;
+    const startDate = new Date(now);
+    startDate.setDate(startDate.getDate() - days);
+
+    return {
+      startDate: startDate.toISOString().split('T')[0],
+      endDate: now.toISOString().split('T')[0]
+    };
+  }
+
+  _loadReturnsForPositions(positions, startDate) {
+    const returns = {};
+    const missingData = [];
+
+    for (const pos of positions) {
+      const prices = this.db.prepare(`
+        SELECT date, adjusted_close, close
+        FROM daily_prices
+        WHERE company_id = ? AND date >= ?
+        ORDER BY date ASC
+      `).all(pos.company_id, startDate);
+
+      if (prices.length < 2) {
+        missingData.push(pos.symbol);
+      }
+
+      const dailyReturns = [];
+      for (let i = 1; i < prices.length; i++) {
+        const prev = prices[i - 1].adjusted_close || prices[i - 1].close;
+        const curr = prices[i].adjusted_close || prices[i].close;
+        if (prev && curr) {
+          dailyReturns.push((curr - prev) / prev);
+        }
+      }
+
+      returns[pos.company_id] = dailyReturns;
+    }
+
+    // Attach missing data info for error reporting
+    returns._missingData = missingData;
+
+    return returns;
+  }
+
+  _calculateCorrelation(returns1, returns2) {
+    // Align arrays to same length
+    const minLen = Math.min(returns1.length, returns2.length);
+    if (minLen < 20) return null; // Not enough data
+
+    const r1 = returns1.slice(-minLen);
+    const r2 = returns2.slice(-minLen);
+
+    // Calculate means
+    const mean1 = r1.reduce((a, b) => a + b, 0) / minLen;
+    const mean2 = r2.reduce((a, b) => a + b, 0) / minLen;
+
+    // Calculate covariance and standard deviations
+    let covariance = 0;
+    let var1 = 0;
+    let var2 = 0;
+
+    for (let i = 0; i < minLen; i++) {
+      const d1 = r1[i] - mean1;
+      const d2 = r2[i] - mean2;
+      covariance += d1 * d2;
+      var1 += d1 * d1;
+      var2 += d2 * d2;
+    }
+
+    const std1 = Math.sqrt(var1 / minLen);
+    const std2 = Math.sqrt(var2 / minLen);
+
+    if (std1 === 0 || std2 === 0) return null;
+
+    return Math.round((covariance / minLen) / (std1 * std2) * 100) / 100;
+  }
+
+  _getDiversificationRating(score) {
+    if (score >= 80) return { rating: 'Excellent', description: 'Well-diversified portfolio' };
+    if (score >= 60) return { rating: 'Good', description: 'Reasonably diversified' };
+    if (score >= 40) return { rating: 'Fair', description: 'Moderate diversification' };
+    if (score >= 20) return { rating: 'Poor', description: 'Limited diversification' };
+    return { rating: 'Very Poor', description: 'Highly concentrated' };
+  }
+
+  _getDiversificationSuggestions(score, sectorWeights, weights) {
+    const suggestions = [];
+
+    // Check sector concentration
+    const topSector = Object.entries(sectorWeights)
+      .sort((a, b) => b[1] - a[1])[0];
+    if (topSector && topSector[1] > 0.4) {
+      suggestions.push({
+        type: 'sector',
+        severity: 'high',
+        message: `${topSector[0]} sector is ${Math.round(topSector[1] * 100)}% of portfolio. Consider diversifying into other sectors.`
+      });
+    }
+
+    // Check position concentration
+    const topPosition = weights.length > 0
+      ? weights.reduce((max, w) => w.weight > max.weight ? w : max)
+      : null;
+    if (topPosition && topPosition.weight > 0.2) {
+      suggestions.push({
+        type: 'position',
+        severity: 'medium',
+        message: `${topPosition.symbol} is ${Math.round(topPosition.weight * 100)}% of portfolio. Consider reducing concentration.`
+      });
+    }
+
+    // Check number of positions
+    if (weights.length < 10) {
+      suggestions.push({
+        type: 'count',
+        severity: 'low',
+        message: `Only ${weights.length} positions. Consider adding more to reduce single-stock risk.`
+      });
+    }
+
+    return suggestions;
+  }
+
+  _getStyleBox(sizeTilt, valueTilt) {
+    // 3x3 style box
+    let size, style;
+
+    if (sizeTilt > 0.3) size = 'Large';
+    else if (sizeTilt < -0.3) size = 'Small';
+    else size = 'Mid';
+
+    if (valueTilt > 0.3) style = 'Value';
+    else if (valueTilt < -0.3) style = 'Growth';
+    else style = 'Blend';
+
+    return {
+      size,
+      style,
+      label: `${size} ${style}`
+    };
+  }
+
+  _getFactorSummary(beta, size, value, quality) {
+    const traits = [];
+
+    if (beta > 1.2) traits.push('high-beta');
+    else if (beta < 0.8) traits.push('low-beta');
+
+    if (size > 0.3) traits.push('large-cap');
+    else if (size < -0.3) traits.push('small-cap');
+
+    if (value > 0.3) traits.push('value-oriented');
+    else if (value < -0.3) traits.push('growth-oriented');
+
+    if (quality > 0.3) traits.push('quality-focused');
+
+    return traits.length > 0 ? traits.join(', ') : 'balanced';
+  }
+
+  // ============================================
+  // Additional Helper Methods for New Analytics
+  // ============================================
+
+  _calculateCovariance(returns1, returns2) {
+    const minLen = Math.min(returns1.length, returns2.length);
+    if (minLen < 20) return null;
+
+    const r1 = returns1.slice(-minLen);
+    const r2 = returns2.slice(-minLen);
+
+    const mean1 = r1.reduce((a, b) => a + b, 0) / minLen;
+    const mean2 = r2.reduce((a, b) => a + b, 0) / minLen;
+
+    let covariance = 0;
+    for (let i = 0; i < minLen; i++) {
+      covariance += (r1[i] - mean1) * (r2[i] - mean2);
+    }
+
+    return covariance / (minLen - 1); // Sample covariance
+  }
+
+  _getAlignedDates(positions, startDate) {
+    // Get all unique dates from the first position
+    if (positions.length === 0) return [];
+
+    const dates = this.db.prepare(`
+      SELECT DISTINCT date
+      FROM daily_prices
+      WHERE company_id = ? AND date >= ?
+      ORDER BY date ASC
+    `).all(positions[0].company_id, startDate).map(d => d.date);
+
+    return dates;
+  }
+
+  _calculateRiskBalanceScore(riskContributions) {
+    // Perfect risk balance = each position contributes proportionally to its weight
+    // Score 0-100, higher = more balanced
+    if (riskContributions.length === 0) return 0;
+
+    let totalDeviation = 0;
+    for (const rc of riskContributions) {
+      const deviation = Math.abs(rc.riskEfficiency - 1);
+      totalDeviation += deviation;
+    }
+
+    const avgDeviation = totalDeviation / riskContributions.length;
+    // Convert to 0-100 score (0 deviation = 100 score)
+    return Math.round(Math.max(0, (1 - avgDeviation) * 100));
+  }
+
+  _getRiskContributionSuggestions(riskContributions, weights) {
+    const suggestions = [];
+
+    // Find positions that contribute disproportionately high risk
+    const overRiskers = riskContributions.filter(r => r.riskEfficiency > 1.5);
+    for (const or of overRiskers.slice(0, 3)) {
+      suggestions.push({
+        type: 'reduce',
+        symbol: or.symbol,
+        message: `${or.symbol} contributes ${or.percentOfTotalRisk.toFixed(1)}% of risk but only ${or.weight.toFixed(1)}% of value. Consider reducing.`
+      });
+    }
+
+    // Find positions that could be increased
+    const underRiskers = riskContributions.filter(r => r.riskEfficiency < 0.5 && r.weight > 3);
+    for (const ur of underRiskers.slice(0, 2)) {
+      suggestions.push({
+        type: 'increase',
+        symbol: ur.symbol,
+        message: `${ur.symbol} has low risk contribution relative to weight. Could increase for better risk-adjusted returns.`
+      });
+    }
+
+    return suggestions;
+  }
+
+  _hierarchicalClustering(symbols, distanceMatrix) {
+    const n = symbols.length;
+
+    // Start with each symbol as its own cluster
+    const clusters = symbols.map((sym, i) => ({
+      members: [sym],
+      indices: [i]
+    }));
+
+    // Track which clusters have been merged
+    const merged = new Array(n).fill(false);
+
+    // Keep merging until we have reasonable number of clusters (or distance threshold)
+    const targetClusters = Math.max(2, Math.ceil(n / 3));
+    const maxDistance = 0.5; // Correlation > 0.5 to be in same cluster
+
+    while (clusters.filter((_, i) => !merged[i]).length > targetClusters) {
+      // Find closest pair of clusters
+      let minDist = Infinity;
+      let minI = -1, minJ = -1;
+
+      for (let i = 0; i < clusters.length; i++) {
+        if (merged[i]) continue;
+        for (let j = i + 1; j < clusters.length; j++) {
+          if (merged[j]) continue;
+
+          // Single linkage: min distance between any members
+          let dist = Infinity;
+          for (const ii of clusters[i].indices) {
+            for (const jj of clusters[j].indices) {
+              if (distanceMatrix[ii][jj] < dist) {
+                dist = distanceMatrix[ii][jj];
+              }
+            }
+          }
+
+          if (dist < minDist) {
+            minDist = dist;
+            minI = i;
+            minJ = j;
+          }
+        }
+      }
+
+      // Stop if minimum distance exceeds threshold
+      if (minDist > maxDistance) break;
+
+      // Merge clusters
+      if (minI >= 0 && minJ >= 0) {
+        clusters[minI] = {
+          members: [...clusters[minI].members, ...clusters[minJ].members],
+          indices: [...clusters[minI].indices, ...clusters[minJ].indices]
+        };
+        merged[minJ] = true;
+      } else {
+        break;
+      }
+    }
+
+    // Calculate average intra-cluster correlation
+    const finalClusters = clusters
+      .filter((_, i) => !merged[i])
+      .map(cluster => {
+        let totalCorr = 0;
+        let pairCount = 0;
+
+        for (let i = 0; i < cluster.indices.length; i++) {
+          for (let j = i + 1; j < cluster.indices.length; j++) {
+            const corr = 1 - distanceMatrix[cluster.indices[i]][cluster.indices[j]];
+            totalCorr += corr;
+            pairCount++;
+          }
+        }
+
+        return {
+          members: cluster.members,
+          avgCorrelation: pairCount > 0
+            ? Math.round((totalCorr / pairCount) * 100) / 100
+            : 1.0
+        };
+      });
+
+    return finalClusters;
+  }
+
+  _identifyHiddenClusterRisks(clusters, positions) {
+    const risks = [];
+
+    for (const cluster of clusters) {
+      if (cluster.memberCount > 1 && cluster.combinedWeight > 30) {
+        // Check if stocks in same cluster are from different sectors
+        // (hidden correlation not explained by sector)
+        const uniqueSectors = new Set(cluster.sectors.map(s => s.sector));
+        if (uniqueSectors.size > 1 && cluster.avgIntraCorrelation > 0.6) {
+          risks.push({
+            type: 'hidden_correlation',
+            severity: cluster.combinedWeight > 50 ? 'high' : 'medium',
+            cluster: cluster.id,
+            message: `Cluster ${cluster.id} (${cluster.members.join(', ')}) shows high correlation (${cluster.avgIntraCorrelation}) across different sectors. Hidden risk factor may exist.`
+          });
+        }
+      }
+
+      // Check for sector-based cluster that's too concentrated
+      if (cluster.sectors.length === 1 && cluster.combinedWeight > 25) {
+        risks.push({
+          type: 'sector_concentration',
+          severity: cluster.combinedWeight > 40 ? 'high' : 'medium',
+          cluster: cluster.id,
+          sector: cluster.sectors[0].sector,
+          message: `All ${cluster.memberCount} stocks in Cluster ${cluster.id} are in ${cluster.sectors[0].sector} sector, totaling ${cluster.combinedWeight.toFixed(1)}% of portfolio.`
+        });
+      }
+    }
+
+    return risks;
+  }
+
+  _getClusterRecommendations(clusters, maxClusterWeight) {
+    const recommendations = [];
+
+    if (maxClusterWeight > 50) {
+      recommendations.push({
+        priority: 'high',
+        message: 'One cluster dominates the portfolio. Consider diversifying with uncorrelated assets.'
+      });
+    } else if (maxClusterWeight > 35) {
+      recommendations.push({
+        priority: 'medium',
+        message: 'Largest cluster is significant. Monitor for increased correlation during market stress.'
+      });
+    }
+
+    // Check for single-stock clusters (truly uncorrelated positions)
+    const singletons = clusters.filter(c => c.memberCount === 1);
+    if (singletons.length === 0 && clusters.length > 0) {
+      recommendations.push({
+        priority: 'low',
+        message: 'All positions are correlated with at least one other. Consider adding a truly uncorrelated asset class.'
+      });
+    }
+
+    if (clusters.length <= 2) {
+      recommendations.push({
+        priority: 'medium',
+        message: 'Portfolio groups into only 2 clusters. True diversification may be limited.'
+      });
+    }
+
+    return recommendations;
+  }
+
+  // ============================================
+  // Taleb/Spitznagel Helper Methods
+  // ============================================
+
+  _calculateTailDependence(returns1, returns2) {
+    const minLen = Math.min(returns1.length, returns2.length);
+    if (minLen < 50) return { lowerTail: null, upperTail: null, crisisCorrelation: null };
+
+    const r1 = returns1.slice(-minLen);
+    const r2 = returns2.slice(-minLen);
+
+    // Sort returns to find tail percentiles
+    const sorted1 = [...r1].sort((a, b) => a - b);
+    const sorted2 = [...r2].sort((a, b) => a - b);
+
+    const tailIdx = Math.floor(minLen * TAIL_PERCENTILE);
+    const threshold1Lower = sorted1[tailIdx];
+    const threshold2Lower = sorted2[tailIdx];
+    const threshold1Upper = sorted1[minLen - 1 - tailIdx];
+    const threshold2Upper = sorted2[minLen - 1 - tailIdx];
+
+    // Count joint tail events
+    let lowerJoint = 0, upperJoint = 0;
+    let lower1 = 0, lower2 = 0, upper1 = 0, upper2 = 0;
+
+    for (let i = 0; i < minLen; i++) {
+      const isLower1 = r1[i] <= threshold1Lower;
+      const isLower2 = r2[i] <= threshold2Lower;
+      const isUpper1 = r1[i] >= threshold1Upper;
+      const isUpper2 = r2[i] >= threshold2Upper;
+
+      if (isLower1) lower1++;
+      if (isLower2) lower2++;
+      if (isUpper1) upper1++;
+      if (isUpper2) upper2++;
+      if (isLower1 && isLower2) lowerJoint++;
+      if (isUpper1 && isUpper2) upperJoint++;
+    }
+
+    // Tail dependence coefficient: P(Y in tail | X in tail)
+    const lowerTail = lower1 > 0 ? lowerJoint / lower1 : 0;
+    const upperTail = upper1 > 0 ? upperJoint / upper1 : 0;
+
+    // Crisis correlation: correlation only during negative tail events
+    const crisisReturns1 = [], crisisReturns2 = [];
+    for (let i = 0; i < minLen; i++) {
+      if (r1[i] <= threshold1Lower || r2[i] <= threshold2Lower) {
+        crisisReturns1.push(r1[i]);
+        crisisReturns2.push(r2[i]);
+      }
+    }
+    const crisisCorrelation = crisisReturns1.length >= 10
+      ? this._calculateCorrelation(crisisReturns1, crisisReturns2)
+      : null;
+
+    return {
+      lowerTail: Math.round(lowerTail * 100) / 100,
+      upperTail: Math.round(upperTail * 100) / 100,
+      crisisCorrelation
+    };
+  }
+
+  _identifyCrisisDays(positions, returns, startDate) {
+    // Get all unique dates and calculate portfolio return for each
+    const dateReturns = {};
+
+    for (const pos of positions) {
+      const posReturns = returns[pos.company_id] || [];
+      const dates = this._getPositionDates(pos, startDate);
+
+      for (let i = 0; i < posReturns.length && i < dates.length; i++) {
+        if (!dateReturns[dates[i]]) {
+          dateReturns[dates[i]] = [];
+        }
+        dateReturns[dates[i]].push(posReturns[i]);
+      }
+    }
+
+    // Calculate average return per day and filter crisis days
+    const crisisDays = [];
+    for (const [date, rets] of Object.entries(dateReturns)) {
+      const avgReturn = rets.reduce((a, b) => a + b, 0) / rets.length;
+      if (avgReturn < CRISIS_THRESHOLD) {
+        crisisDays.push({ date, avgReturn, returns: rets });
+      }
+    }
+
+    return crisisDays.sort((a, b) => a.avgReturn - b.avgReturn);
+  }
+
+  _identifyNormalDays(positions, returns, startDate) {
+    const dateReturns = {};
+
+    for (const pos of positions) {
+      const posReturns = returns[pos.company_id] || [];
+      const dates = this._getPositionDates(pos, startDate);
+
+      for (let i = 0; i < posReturns.length && i < dates.length; i++) {
+        if (!dateReturns[dates[i]]) {
+          dateReturns[dates[i]] = [];
+        }
+        dateReturns[dates[i]].push(posReturns[i]);
+      }
+    }
+
+    const normalDays = [];
+    for (const [date, rets] of Object.entries(dateReturns)) {
+      const avgReturn = rets.reduce((a, b) => a + b, 0) / rets.length;
+      // Normal days: not crisis, not extreme positive
+      if (avgReturn >= CRISIS_THRESHOLD && avgReturn < 0.02) {
+        normalDays.push({ date, avgReturn, returns: rets });
+      }
+    }
+
+    return normalDays;
+  }
+
+  _getPositionDates(pos, startDate) {
+    return this.db.prepare(`
+      SELECT date FROM daily_prices
+      WHERE company_id = ? AND date >= ?
+      ORDER BY date ASC
+    `).all(pos.company_id, startDate).map(d => d.date);
+  }
+
+  _calculateCorrelationForDays(positions, returns, days) {
+    const n = positions.length;
+    const matrix = [];
+
+    // Extract returns for the specific days
+    const daySet = new Set(days.map(d => d.date));
+    const filteredReturns = {};
+
+    for (const pos of positions) {
+      const posReturns = returns[pos.company_id] || [];
+      const dates = this._getPositionDates(pos, days[0]?.date || '2000-01-01');
+
+      filteredReturns[pos.company_id] = [];
+      for (let i = 0; i < posReturns.length && i < dates.length; i++) {
+        if (daySet.has(dates[i])) {
+          filteredReturns[pos.company_id].push(posReturns[i]);
+        }
+      }
+    }
+
+    // Calculate correlation matrix
+    for (let i = 0; i < n; i++) {
+      const row = [];
+      for (let j = 0; j < n; j++) {
+        if (i === j) {
+          row.push(1.0);
+        } else if (j < i) {
+          row.push(matrix[j][i]);
+        } else {
+          row.push(this._calculateCorrelation(
+            filteredReturns[positions[i].company_id] || [],
+            filteredReturns[positions[j].company_id] || []
+          ));
+        }
+      }
+      matrix.push(row);
+    }
+
+    return matrix;
+  }
+
+  _analyzePositionAntifragility(returns) {
+    if (returns.length < 100) {
+      return { score: 0, classification: 'insufficient_data', convexity: null, tailBehavior: null, volatilityResponse: null };
+    }
+
+    // 1. Calculate skewness (positive skew = antifragile potential)
+    const skewness = this._calculateSkewness(returns);
+
+    // 2. Calculate kurtosis (fat tails)
+    const kurtosis = this._calculateKurtosis(returns);
+
+    // 3. Analyze volatility response: does the asset perform better in high vol periods?
+    const volResponse = this._analyzeVolatilityResponse(returns);
+
+    // 4. Analyze tail behavior: how does asset perform in extreme markets?
+    const tailBehavior = this._analyzeTailBehavior(returns);
+
+    // Calculate antifragility score (-100 to +100)
+    // Positive = antifragile (benefits from volatility)
+    // Negative = fragile (harmed by volatility)
+    // Zero = robust (neutral to volatility)
+    let score = 0;
+
+    // Positive skewness is antifragile
+    score += Math.min(30, Math.max(-30, skewness * 20));
+
+    // High kurtosis with positive skew is antifragile
+    if (kurtosis > 3 && skewness > 0) {
+      score += 15;
+    } else if (kurtosis > 3 && skewness < 0) {
+      score -= 20; // Fat tails with negative skew is very fragile
+    }
+
+    // Positive vol response is antifragile
+    score += Math.min(25, Math.max(-25, volResponse * 50));
+
+    // Positive tail behavior is antifragile
+    score += tailBehavior.score;
+
+    let classification;
+    if (score > 25) classification = 'antifragile';
+    else if (score > 5) classification = 'robust';
+    else if (score > -15) classification = 'neutral';
+    else if (score > -40) classification = 'fragile';
+    else classification = 'very_fragile';
+
+    return {
+      score: Math.round(score),
+      classification,
+      convexity: skewness > 0.3 ? 'positive' : skewness < -0.3 ? 'negative' : 'neutral',
+      tailBehavior: tailBehavior.description,
+      volatilityResponse: volResponse > 0.1 ? 'benefits' : volResponse < -0.1 ? 'suffers' : 'neutral'
+    };
+  }
+
+  _calculateVolatility(returns) {
+    if (returns.length < 2) return 0;
+    const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+    const variance = returns.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / returns.length;
+    return Math.sqrt(variance * TRADING_DAYS_PER_YEAR);
+  }
+
+  _calculateSkewness(returns) {
+    if (returns.length < 30) return 0;
+    const n = returns.length;
+    const mean = returns.reduce((a, b) => a + b, 0) / n;
+    const stdDev = Math.sqrt(returns.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / n);
+    if (stdDev === 0) return 0;
+
+    const skewSum = returns.reduce((s, r) => s + Math.pow((r - mean) / stdDev, 3), 0);
+    return skewSum / n;
+  }
+
+  _calculateKurtosis(returns) {
+    if (returns.length < 30) return 3; // Normal distribution
+    const n = returns.length;
+    const mean = returns.reduce((a, b) => a + b, 0) / n;
+    const stdDev = Math.sqrt(returns.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / n);
+    if (stdDev === 0) return 3;
+
+    const kurtSum = returns.reduce((s, r) => s + Math.pow((r - mean) / stdDev, 4), 0);
+    return kurtSum / n;
+  }
+
+  _analyzeVolatilityResponse(returns) {
+    // Compare returns during high vol vs low vol periods
+    const windowSize = 20;
+    const volPeriods = [];
+
+    for (let i = windowSize; i < returns.length; i++) {
+      const window = returns.slice(i - windowSize, i);
+      const vol = this._calculateVolatility(window);
+      volPeriods.push({ vol, return: returns[i] });
+    }
+
+    if (volPeriods.length < 50) return 0;
+
+    // Sort by volatility and compare top/bottom quintiles
+    volPeriods.sort((a, b) => a.vol - b.vol);
+    const quintile = Math.floor(volPeriods.length / 5);
+
+    const lowVolReturns = volPeriods.slice(0, quintile).map(p => p.return);
+    const highVolReturns = volPeriods.slice(-quintile).map(p => p.return);
+
+    const avgLowVol = lowVolReturns.reduce((a, b) => a + b, 0) / lowVolReturns.length;
+    const avgHighVol = highVolReturns.reduce((a, b) => a + b, 0) / highVolReturns.length;
+
+    return avgHighVol - avgLowVol; // Positive = benefits from volatility
+  }
+
+  _analyzeTailBehavior(returns) {
+    const sorted = [...returns].sort((a, b) => a - b);
+    const n = returns.length;
+    const tailSize = Math.floor(n * 0.05);
+
+    const leftTail = sorted.slice(0, tailSize);
+    const rightTail = sorted.slice(-tailSize);
+
+    const avgLeftTail = leftTail.reduce((a, b) => a + b, 0) / tailSize;
+    const avgRightTail = rightTail.reduce((a, b) => a + b, 0) / tailSize;
+
+    // Asymmetry: how much bigger are right tail gains vs left tail losses?
+    const asymmetry = Math.abs(avgRightTail) - Math.abs(avgLeftTail);
+
+    let description, score;
+    if (asymmetry > 0.01) {
+      description = 'Gains exceed losses in tails (positive asymmetry)';
+      score = 20;
+    } else if (asymmetry < -0.01) {
+      description = 'Losses exceed gains in tails (negative asymmetry)';
+      score = -25;
+    } else {
+      description = 'Symmetric tail behavior';
+      score = 0;
+    }
+
+    return { asymmetry, description, score };
+  }
+
+  _detectBarbellStructure(positionAnalysis, weights) {
+    const antifragile = positionAnalysis.filter(p => p.classification === 'antifragile');
+    const fragile = positionAnalysis.filter(p => p.classification === 'fragile' || p.classification === 'very_fragile');
+    const robust = positionAnalysis.filter(p => p.classification === 'robust');
+
+    const antifragileWeight = antifragile.reduce((s, p) => s + (p.weight || 0), 0);
+    const fragileWeight = fragile.reduce((s, p) => s + (p.weight || 0), 0);
+    const robustWeight = robust.reduce((s, p) => s + (p.weight || 0), 0);
+
+    const hasBarbell = (antifragileWeight > 5 && robustWeight > 60) ||
+                       (antifragileWeight > 10 && fragileWeight < 20);
+
+    return {
+      hasBarbell,
+      antifragileAllocation: Math.round(antifragileWeight * 10) / 10,
+      robustAllocation: Math.round(robustWeight * 10) / 10,
+      fragileAllocation: Math.round(fragileWeight * 10) / 10,
+      recommendation: hasBarbell
+        ? 'Portfolio has barbell characteristics'
+        : fragileWeight > 30
+        ? 'Reduce fragile positions, add antifragile/robust assets'
+        : 'Consider adding small antifragile positions for upside capture'
+    };
+  }
+
+  _classifyAntifragility(score) {
+    if (score > 25) return { level: 'Antifragile', description: 'Portfolio benefits from volatility and disorder' };
+    if (score > 5) return { level: 'Robust', description: 'Portfolio is resilient to shocks' };
+    if (score > -15) return { level: 'Neutral', description: 'Portfolio has mixed characteristics' };
+    if (score > -40) return { level: 'Fragile', description: 'Portfolio is vulnerable to volatility' };
+    return { level: 'Very Fragile', description: 'Portfolio is highly exposed to tail risks' };
+  }
+
+  _getTalebInterpretation(score, barbellAnalysis) {
+    if (score > 20 && barbellAnalysis.hasBarbell) {
+      return 'Excellent: Portfolio exhibits antifragility with proper barbell structure. You have limited downside with unlimited upside potential.';
+    } else if (score > 0) {
+      return 'Good: Portfolio shows some antifragile characteristics. Consider strengthening the barbell by adding asymmetric payoff positions.';
+    } else if (score > -20) {
+      return 'Neutral: Portfolio is neither fragile nor antifragile. This is acceptable but misses opportunity for convexity.';
+    } else {
+      return 'Warning: Portfolio is fragile and will suffer disproportionately from large negative events. Restructure toward robustness.';
+    }
+  }
+
+  _getAntifragilityImprovements(positions, score) {
+    const improvements = [];
+
+    const fragilePositions = positions.filter(p => p.classification === 'fragile' || p.classification === 'very_fragile');
+    if (fragilePositions.length > 0) {
+      improvements.push({
+        priority: 'high',
+        action: 'reduce_fragile',
+        positions: fragilePositions.map(p => p.symbol),
+        suggestion: 'Reduce or eliminate fragile positions that have negative convexity'
+      });
+    }
+
+    if (score < 0) {
+      improvements.push({
+        priority: 'medium',
+        action: 'add_optionality',
+        suggestion: 'Add positions with positive skew (options, venture-style investments, or assets that benefit from volatility)'
+      });
+    }
+
+    if (!positions.some(p => p.classification === 'antifragile')) {
+      improvements.push({
+        priority: 'medium',
+        action: 'barbell',
+        suggestion: 'Allocate 5-15% to high-convexity positions (small bets with unlimited upside)'
+      });
+    }
+
+    return improvements;
+  }
+
+  _calculateSpitznagelScore(allocations) {
+    // Spitznagel score: higher is better
+    // Ideal: ~90% safe, ~10% speculative, ~0% middle
+    const idealSafe = 0.85;
+    const idealSpec = 0.10;
+    const idealMiddle = 0.05;
+
+    const safeDeviation = Math.abs(allocations.safe - idealSafe);
+    const specDeviation = Math.abs(allocations.speculative - idealSpec);
+    const middlePenalty = Math.max(0, allocations.middle - idealMiddle) * 2; // Double penalty for middle
+
+    const score = 100 - (safeDeviation * 50 + specDeviation * 30 + middlePenalty * 100);
+    return Math.max(0, Math.round(score));
+  }
+
+  _getBarbellRecommendations(allocations, classified) {
+    const recommendations = [];
+
+    if (allocations.middle > 0.25) {
+      const middlePositions = classified.filter(p => p.category === 'middle');
+      recommendations.push({
+        priority: 'high',
+        action: 'Reduce "forbidden middle" exposure',
+        current: `${Math.round(allocations.middle * 100)}%`,
+        target: '<10%',
+        positions: middlePositions.slice(0, 5).map(p => p.symbol)
+      });
+    }
+
+    if (allocations.safe < 0.7) {
+      recommendations.push({
+        priority: 'medium',
+        action: 'Increase safe allocation',
+        current: `${Math.round(allocations.safe * 100)}%`,
+        target: '70-90%',
+        suggestion: 'Add treasury bills, high-grade bonds, or cash equivalents'
+      });
+    }
+
+    if (allocations.speculative < 0.05) {
+      recommendations.push({
+        priority: 'low',
+        action: 'Add speculative allocation for convexity',
+        current: `${Math.round(allocations.speculative * 100)}%`,
+        target: '5-15%',
+        suggestion: 'Small positions in high-asymmetry opportunities (venture, deep OTM options, etc.)'
+      });
+    }
+
+    return recommendations;
+  }
+
+  _getTailDependenceRecommendation(avgTail, dangerousPairs) {
+    if (dangerousPairs.length === 0) {
+      return 'Tail dependence is low - diversification should hold during crises';
+    }
+
+    if (dangerousPairs.length > 3 || avgTail > 0.6) {
+      return 'URGENT: Multiple position pairs have high tail dependence. Your diversification is illusory - consider adding truly uncorrelated assets (gold, commodities, volatility-linked positions)';
+    }
+
+    return `Monitor these pairs: ${dangerousPairs.slice(0, 3).map(p => p.pair.join('-')).join(', ')}. Consider hedging or reducing one side of each pair.`;
+  }
+
+  _getCrisisInsight(avgCrisisCorr, avgNormalCorr, breakdowns) {
+    if (!avgCrisisCorr || !avgNormalCorr) {
+      return 'Insufficient data for crisis insight';
+    }
+
+    const increase = avgCrisisCorr - avgNormalCorr;
+
+    if (increase > 0.3) {
+      return 'CRITICAL: Correlations explode during crisis (+' + Math.round(increase * 100) + '%). This is the classic "all correlations go to 1" scenario. Your diversification disappears exactly when you need it most.';
+    } else if (increase > 0.15) {
+      return 'WARNING: Significant correlation increase during stress (+' + Math.round(increase * 100) + '%). Consider adding crisis-alpha strategies or tail hedges.';
+    } else if (increase > 0) {
+      return 'Moderate correlation increase during crisis (+' + Math.round(increase * 100) + '%). This is normal market behavior but monitor closely.';
+    } else {
+      return 'Good: Correlations are stable or decrease during crisis. Your diversification may actually improve when needed.';
+    }
+  }
+
+  _getCrisisRecommendations(breakdowns, avgCrisisCorr) {
+    const recommendations = [];
+
+    if (breakdowns.length > 0) {
+      recommendations.push({
+        priority: 'high',
+        action: 'Address correlation breakdown pairs',
+        details: `${breakdowns.length} pairs show dangerous correlation increases during crisis`,
+        suggestion: 'Reduce position in one side of each pair, or add explicit tail hedges'
+      });
+    }
+
+    if (avgCrisisCorr > 0.7) {
+      recommendations.push({
+        priority: 'high',
+        action: 'Add crisis-alpha strategies',
+        suggestion: 'Include assets that profit during crashes: long volatility, put options, trend-following'
+      });
+    }
+
+    recommendations.push({
+      priority: 'medium',
+      action: 'Consider tail risk hedging',
+      suggestion: 'Allocate 1-3% to explicit tail hedges (OTM puts, VIX calls) as insurance'
+    });
+
+    return recommendations;
+  }
+}
+
+// Export singleton instance
+module.exports = new AdvancedAnalytics();

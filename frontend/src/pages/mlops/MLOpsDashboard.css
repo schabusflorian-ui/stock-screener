@@ -1,0 +1,1137 @@
+/* =============================================================================
+   MLOps Dashboard - Prism Design System
+   Model Lifecycle Management & Monitoring Interface
+   ============================================================================= */
+
+/* ==========================================================================
+   PAGE LAYOUT
+   ========================================================================== */
+
+.mlops-dashboard {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: var(--space-6);
+}
+
+.mlops-dashboard.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  color: var(--text-secondary);
+}
+
+/* ==========================================================================
+   LOADING STATE
+   ========================================================================== */
+
+.mlops-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-16);
+  gap: var(--space-4);
+  color: var(--text-secondary);
+}
+
+.mlops-loading svg {
+  color: var(--color-ai-violet);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+/* ==========================================================================
+   ERROR STATE
+   ========================================================================== */
+
+.mlops-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--negative-muted);
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-6);
+  color: var(--negative);
+  font-size: var(--text-sm);
+}
+
+.mlops-error svg {
+  flex-shrink: 0;
+}
+
+.mlops-error button {
+  margin-left: auto;
+  padding: var(--space-2) var(--space-4);
+  background: var(--negative);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.mlops-error button:hover {
+  background: var(--negative-dark);
+}
+
+/* ==========================================================================
+   SUMMARY METRICS ROW
+   ========================================================================== */
+
+.mlops-metrics-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+@media (max-width: 1024px) {
+  .mlops-metrics-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .mlops-metrics-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Metric Card */
+.mlops-metric-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xl);
+  transition: all 0.2s ease;
+  box-shadow: var(--glass-shadow);
+}
+
+.mlops-metric-card:hover {
+  border-color: var(--border-secondary);
+  box-shadow: var(--glass-shadow-hover);
+}
+
+.mlops-metric-card--success {
+  border-left: 3px solid var(--positive);
+}
+
+.mlops-metric-card--warning {
+  border-left: 3px solid var(--warning);
+}
+
+.mlops-metric-card--critical {
+  border-left: 3px solid var(--negative);
+}
+
+.mlops-metric-card__icon-btn {
+  flex-shrink: 0;
+}
+
+.mlops-metric-card__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+  min-width: 0;
+}
+
+.mlops-metric-card__value {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  line-height: var(--leading-tight);
+}
+
+.mlops-metric-card__title {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  font-weight: var(--font-medium);
+}
+
+.mlops-metric-card__subtitle {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.mlops-metric-card__trend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+}
+
+.mlops-metric-card__trend.positive {
+  color: var(--positive);
+}
+
+.mlops-metric-card__trend.negative {
+  color: var(--negative);
+}
+
+/* ==========================================================================
+   MAIN GRID LAYOUT
+   ========================================================================== */
+
+.mlops-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-6);
+  margin-bottom: var(--space-6);
+}
+
+@media (max-width: 1024px) {
+  .mlops-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.mlops-grid__left,
+.mlops-grid__right {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* ==========================================================================
+   PANEL BASE STYLES
+   ========================================================================== */
+
+.mlops-panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xl);
+  padding: var(--space-5);
+  box-shadow: var(--glass-shadow);
+}
+
+.mlops-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.mlops-panel__header h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.mlops-panel__header h3 svg {
+  color: var(--color-ai-violet);
+}
+
+/* Refresh Button */
+.mlops-refresh-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-muted);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mlops-refresh-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-secondary);
+  color: var(--text-primary);
+}
+
+.mlops-refresh-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Primary Action Button */
+.mlops-action-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2-5) var(--space-4);
+  background: var(--color-ai-violet);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mlops-action-btn:hover:not(:disabled) {
+  background: var(--color-ai-violet-dark);
+  transform: translateY(-1px);
+}
+
+.mlops-action-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ==========================================================================
+   STATUS BADGES
+   ========================================================================== */
+
+.mlops-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2-5);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+
+.mlops-status-badge svg {
+  width: 12px;
+  height: 12px;
+}
+
+.status--production {
+  background: var(--positive-muted);
+  color: var(--positive);
+}
+
+.status--staged {
+  background: var(--warning-muted);
+  color: var(--warning);
+}
+
+.status--deprecated {
+  background: var(--negative-muted);
+  color: var(--negative);
+}
+
+.status--training {
+  background: var(--info-muted);
+  color: var(--info);
+}
+
+.status--ok {
+  background: var(--positive-muted);
+  color: var(--positive);
+}
+
+.status--warning {
+  background: var(--warning-muted);
+  color: var(--warning);
+}
+
+.status--critical {
+  background: var(--negative-muted);
+  color: var(--negative);
+}
+
+/* ==========================================================================
+   EMPTY STATE
+   ========================================================================== */
+
+.mlops-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-10);
+  text-align: center;
+  color: var(--text-tertiary);
+}
+
+.mlops-empty-state svg {
+  color: var(--color-ai-violet);
+  opacity: 0.4;
+  margin-bottom: var(--space-4);
+}
+
+.mlops-empty-state p {
+  margin: 0 0 var(--space-1) 0;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-secondary);
+}
+
+.mlops-empty-state span {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+/* ==========================================================================
+   MODEL REGISTRY PANEL
+   ========================================================================== */
+
+.mlops-model-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.mlops-model-item {
+  background: var(--bg-muted);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.mlops-model-item:hover {
+  border-color: var(--border-secondary);
+}
+
+.mlops-model-item__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+}
+
+.mlops-model-item__info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+}
+
+.mlops-model-item__name {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.mlops-model-item__type {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+.mlops-model-item__status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.mlops-model-item__versions {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.mlops-model-item__versions-list {
+  border-top: 1px solid var(--border-default);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-surface);
+}
+
+.mlops-version-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.mlops-version-row:not(:last-child) {
+  border-bottom: 1px solid var(--border-default);
+}
+
+.mlops-version-row__version {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  min-width: 80px;
+}
+
+.mlops-version-row__metrics {
+  display: flex;
+  gap: var(--space-3);
+  flex: 1;
+}
+
+.mlops-version-row__metrics span {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-muted);
+  border-radius: var(--radius-sm);
+}
+
+.mlops-promote-btn {
+  padding: var(--space-1-5) var(--space-3);
+  background: var(--color-ai-violet);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mlops-promote-btn:hover {
+  background: var(--color-ai-violet-dark);
+}
+
+/* ==========================================================================
+   TRAINING PANEL
+   ========================================================================== */
+
+.mlops-training-config {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.mlops-training-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.mlops-training-row label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.mlops-training-row select,
+.mlops-training-row input[type="number"] {
+  padding: var(--space-2-5) var(--space-3);
+  background: var(--bg-muted);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  transition: all 0.2s ease;
+}
+
+.mlops-training-row select:focus,
+.mlops-training-row input:focus {
+  outline: none;
+  border-color: var(--color-ai-violet);
+  box-shadow: 0 0 0 3px var(--color-ai-violet-light);
+}
+
+.mlops-training-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.mlops-training-options label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.mlops-training-options input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-ai-violet);
+}
+
+.mlops-training-actions {
+  margin-top: var(--space-2);
+  display: flex;
+  gap: var(--space-2);
+}
+
+.mlops-action-btn--primary {
+  background: linear-gradient(135deg, var(--color-ai-violet), var(--color-ai-violet-dark));
+  color: white;
+}
+
+.mlops-action-btn--primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--color-ai-violet-dark), var(--color-ai-violet));
+}
+
+.mlops-action-btn--secondary {
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+}
+
+.mlops-action-btn--secondary:hover:not(:disabled) {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+/* Training row full width variant */
+.mlops-training-row--full {
+  grid-template-columns: 1fr;
+}
+
+.mlops-training-row--full input[type="text"] {
+  padding: var(--space-2-5) var(--space-3);
+  background: var(--bg-muted);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  transition: border-color 0.2s ease;
+}
+
+.mlops-training-row--full input[type="text"]::placeholder {
+  color: var(--text-muted);
+}
+
+.mlops-training-row--full input[type="text"]:focus {
+  outline: none;
+  border-color: var(--color-ai-violet);
+}
+
+/* Training status messages */
+.mlops-training-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  margin-top: var(--space-3);
+}
+
+.mlops-training-status--starting {
+  background: var(--info-muted);
+  color: var(--info);
+}
+
+.mlops-training-status--running {
+  background: var(--positive-muted);
+  color: var(--positive);
+}
+
+.mlops-training-status--error {
+  background: var(--negative-muted);
+  color: var(--negative);
+}
+
+.mlops-training-info {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--info-muted);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  margin-top: var(--space-3);
+}
+
+.mlops-training-info svg {
+  flex-shrink: 0;
+  color: var(--color-ai-violet);
+  margin-top: 1px;
+}
+
+/* ==========================================================================
+   DRIFT SUMMARY PANEL
+   ========================================================================== */
+
+.mlops-drift-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.mlops-drift-summary span {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.mlops-drift-summary span strong {
+  color: var(--text-primary);
+  font-weight: var(--font-semibold);
+}
+
+.mlops-health-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.mlops-health-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-muted);
+  border-radius: var(--radius-lg);
+  transition: all 0.2s ease;
+}
+
+.mlops-health-item:hover {
+  background: var(--bg-hover);
+}
+
+.mlops-health-item__info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.mlops-health-item__name {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
+}
+
+.mlops-health-item__metrics {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.mlops-health-item__metrics span {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+.mlops-drift-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--color-ai-violet);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.mlops-drift-link:hover {
+  color: var(--color-ai-violet-dark);
+}
+
+.mlops-drift-link svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ==========================================================================
+   PREDICTIONS PANEL
+   ========================================================================== */
+
+.mlops-predictions-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.mlops-prediction-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-muted);
+  border-radius: var(--radius-lg);
+}
+
+.mlops-prediction-item__info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+}
+
+.mlops-prediction-item__model {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
+}
+
+.mlops-prediction-item__count {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.mlops-prediction-item__metrics {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.mlops-prediction-item__metrics span {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-surface);
+  border-radius: var(--radius-sm);
+}
+
+.mlops-prediction-item__metrics span.positive {
+  color: var(--positive);
+  background: var(--positive-muted);
+}
+
+.mlops-prediction-item__metrics span.negative {
+  color: var(--negative);
+  background: var(--negative-muted);
+}
+
+/* ==========================================================================
+   MODEL COMPARISON PANEL
+   ========================================================================== */
+
+.mlops-comparison-panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xl);
+  padding: var(--space-5);
+  box-shadow: var(--glass-shadow);
+}
+
+.mlops-comparison-panel h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4) 0;
+  font-size: var(--text-md);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.mlops-comparison-panel h3 svg {
+  color: var(--color-ai-violet);
+}
+
+.mlops-comparison-selector {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.mlops-comparison-selector label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 1;
+}
+
+.mlops-comparison-selector label span {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.mlops-comparison-selector select {
+  padding: var(--space-2-5) var(--space-3);
+  background: var(--bg-muted);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.mlops-comparison-selector select:focus {
+  outline: none;
+  border-color: var(--color-ai-violet);
+}
+
+.mlops-comparison-vs {
+  font-size: var(--text-sm);
+  font-weight: var(--font-bold);
+  color: var(--text-tertiary);
+  padding-top: var(--space-6);
+}
+
+.mlops-compare-btn {
+  padding: var(--space-2-5) var(--space-5);
+  background: var(--color-ai-violet);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: var(--space-6);
+}
+
+.mlops-compare-btn:hover:not(:disabled) {
+  background: var(--color-ai-violet-dark);
+}
+
+.mlops-compare-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mlops-comparison-empty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--bg-muted);
+  border-radius: var(--radius-lg);
+  color: var(--text-tertiary);
+}
+
+.mlops-comparison-empty svg {
+  color: var(--color-ai-violet);
+  opacity: 0.5;
+}
+
+.mlops-comparison-empty p {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+/* Comparison Results */
+.mlops-comparison-results {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-6);
+  margin-top: var(--space-4);
+}
+
+.mlops-comparison-model {
+  padding: var(--space-4);
+  background: var(--bg-muted);
+  border-radius: var(--radius-lg);
+}
+
+.mlops-comparison-model h4 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3) 0;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.mlops-comparison-model h4 .mlops-status-badge {
+  margin-left: auto;
+}
+
+.mlops-comparison-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.mlops-comparison-metric {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-2);
+  background: var(--bg-surface);
+  border-radius: var(--radius-md);
+}
+
+.mlops-comparison-metric span:first-child {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.mlops-comparison-metric span:last-child {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.mlops-comparison-metric span.better {
+  color: var(--positive);
+}
+
+.mlops-comparison-metric span.worse {
+  color: var(--negative);
+}
+
+/* ==========================================================================
+   SCROLLBAR STYLING
+   ========================================================================== */
+
+.mlops-model-list::-webkit-scrollbar,
+.mlops-health-list::-webkit-scrollbar,
+.mlops-predictions-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.mlops-model-list::-webkit-scrollbar-track,
+.mlops-health-list::-webkit-scrollbar-track,
+.mlops-predictions-list::-webkit-scrollbar-track {
+  background: var(--bg-muted);
+  border-radius: 3px;
+}
+
+.mlops-model-list::-webkit-scrollbar-thumb,
+.mlops-health-list::-webkit-scrollbar-thumb,
+.mlops-predictions-list::-webkit-scrollbar-thumb {
+  background: var(--border-secondary);
+  border-radius: 3px;
+}
+
+.mlops-model-list::-webkit-scrollbar-thumb:hover,
+.mlops-health-list::-webkit-scrollbar-thumb:hover,
+.mlops-predictions-list::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+
+/* ==========================================================================
+   RESPONSIVE ADJUSTMENTS
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  .mlops-dashboard {
+    padding: var(--space-4);
+  }
+
+  .mlops-training-row {
+    grid-template-columns: 1fr;
+  }
+
+  .mlops-comparison-selector {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .mlops-comparison-vs {
+    text-align: center;
+    padding: var(--space-2) 0;
+  }
+
+  .mlops-comparison-results {
+    grid-template-columns: 1fr;
+  }
+
+  .mlops-training-options {
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+}
+
+/* ==========================================================================
+   ANIMATION UTILITIES
+   ========================================================================== */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mlops-panel {
+  animation: fadeIn 0.3s ease;
+}
+
+/* Stagger animations */
+.mlops-grid__left .mlops-panel:nth-child(1) { animation-delay: 0.1s; }
+.mlops-grid__left .mlops-panel:nth-child(2) { animation-delay: 0.2s; }
+.mlops-grid__right .mlops-panel:nth-child(1) { animation-delay: 0.15s; }
+.mlops-grid__right .mlops-panel:nth-child(2) { animation-delay: 0.25s; }
+.mlops-comparison-panel { animation-delay: 0.3s; }
+
+/* ==========================================================================
+   INFO PANEL - MLOps & AI Agents Relationship
+   ========================================================================== */
+
+.mlops-info-panel {
+  margin-top: var(--space-6);
+  animation-delay: 0.35s;
+}
+
+.mlops-info-content {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.mlops-info-content p {
+  margin-bottom: var(--space-3);
+}
+
+.mlops-info-content ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--space-4) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.mlops-info-content li {
+  padding-left: var(--space-4);
+  position: relative;
+}
+
+.mlops-info-content li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: var(--color-ai-violet);
+  font-weight: bold;
+}
+
+.mlops-info-content li strong {
+  color: var(--text-primary);
+  font-weight: var(--font-medium);
+}
+
+.mlops-info-links {
+  display: flex;
+  gap: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-default);
+}
+
+.mlops-info-links a {
+  color: var(--color-ai-violet);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  text-decoration: none;
+  transition: opacity 0.2s ease;
+}
+
+.mlops-info-links a:hover {
+  opacity: 0.8;
+  text-decoration: underline;
+}

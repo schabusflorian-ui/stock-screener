@@ -1,0 +1,57 @@
+/* WatchlistButton.css - Prism Design System */
+
+.watchlist-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+}
+
+.watchlist-btn:hover {
+  border-color: var(--color-gold-400);
+  color: var(--color-gold-600);
+  background: var(--color-gold-50);
+}
+
+.watchlist-btn.active {
+  background: var(--color-gold-50);
+  border-color: var(--color-gold-400);
+  color: var(--color-gold-600);
+}
+
+.watchlist-btn .star {
+  font-size: var(--text-md);
+  line-height: 1;
+}
+
+.watchlist-btn.active .star {
+  color: var(--color-gold-500);
+}
+
+/* Small variant */
+.watchlist-btn.small {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+}
+
+.watchlist-btn.small .star {
+  font-size: var(--text-sm);
+}
+
+/* Large variant */
+.watchlist-btn.large {
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-md);
+}
+
+.watchlist-btn.large .star {
+  font-size: var(--text-lg);
+}

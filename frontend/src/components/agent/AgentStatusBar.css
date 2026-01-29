@@ -1,0 +1,286 @@
+/* frontend/src/components/agent/AgentStatusBar.css */
+/* PRISM Design System - AI Visual Components */
+/* Agent status header showing running state, mode, and controls */
+
+.agent-status-bar {
+  background: linear-gradient(180deg,
+    rgba(124, 58, 237, 0.02) 0%,
+    var(--bg-secondary) 100%);
+  border: 1px solid rgba(124, 58, 237, 0.1);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Animated gradient top border */
+.agent-status-bar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg,
+    var(--color-ai-violet) 0%,
+    var(--color-ai-blue) 25%,
+    var(--color-ai-cyan) 50%,
+    var(--color-ai-blue) 75%,
+    var(--color-ai-violet) 100%);
+  background-size: 200% 100%;
+  animation: prism-gradient-flow 4s ease infinite;
+}
+
+/* Subtle corner glow */
+.agent-status-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 150px;
+  height: 150px;
+  background: radial-gradient(circle at top right,
+    rgba(124, 58, 237, 0.04) 0%,
+    transparent 70%);
+  pointer-events: none;
+}
+
+.agent-status-bar__content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  flex-wrap: wrap;
+}
+
+/* Indicators section */
+.agent-status-bar__indicators {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-lg);
+  flex-wrap: wrap;
+}
+
+.agent-status-bar__indicator {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+}
+
+/* Running status indicator - AI enhanced */
+.agent-status-bar__indicator--running {
+  background: linear-gradient(135deg,
+    rgba(124, 58, 237, 0.12) 0%,
+    rgba(37, 99, 235, 0.08) 100%);
+  color: var(--color-ai-violet);
+  border: 1px solid rgba(124, 58, 237, 0.2);
+  position: relative;
+}
+
+/* Glow effect when running */
+.agent-status-bar__indicator--running::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg,
+    rgba(124, 58, 237, 0.15) 0%,
+    rgba(37, 99, 235, 0.1) 100%);
+  z-index: -1;
+  animation: prism-glow 3s ease-in-out infinite;
+}
+
+.agent-status-bar__indicator--stopped {
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+}
+
+/* Pulse animation for running indicator - using prism-pulse */
+.agent-status-bar__indicator--running .pulse {
+  animation: prism-pulse 2s ease-in-out infinite;
+}
+
+/* Mode indicator */
+.agent-status-bar__indicator--mode {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.agent-status-bar__indicator--paper {
+  background: rgba(var(--warning-rgb), 0.1);
+  color: var(--color-warning);
+}
+
+.agent-status-bar__indicator--live {
+  background: rgba(var(--success-rgb), 0.15);
+  color: var(--color-success);
+}
+
+.agent-status-bar__indicator--paused {
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+}
+
+.agent-status-bar__indicator-label {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+/* Time indicators */
+.agent-status-bar__indicator--time {
+  background: transparent;
+  padding: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.agent-status-bar__indicator-title {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.agent-status-bar__indicator-value {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Controls section */
+.agent-status-bar__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.agent-status-bar__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.agent-status-bar__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Pause button */
+.agent-status-bar__btn--pause {
+  background: rgba(var(--warning-rgb), 0.1);
+  color: var(--color-warning);
+  border: 1px solid rgba(var(--warning-rgb), 0.2);
+}
+
+.agent-status-bar__btn--pause:hover:not(:disabled) {
+  background: rgba(var(--warning-rgb), 0.2);
+  border-color: var(--color-warning);
+}
+
+/* Resume button - AI styled */
+.agent-status-bar__btn--resume {
+  background: linear-gradient(135deg,
+    var(--color-ai-violet) 0%,
+    var(--color-ai-blue) 100%);
+  color: white;
+  position: relative;
+  overflow: hidden;
+}
+
+.agent-status-bar__btn--resume:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow:
+    0 4px 12px rgba(124, 58, 237, 0.3),
+    0 2px 4px rgba(124, 58, 237, 0.2);
+}
+
+/* Run now button - AI styled */
+.agent-status-bar__btn--run {
+  background: linear-gradient(135deg,
+    var(--color-ai-violet) 0%,
+    var(--color-ai-blue) 100%);
+  color: white;
+  position: relative;
+}
+
+.agent-status-bar__btn--run:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow:
+    0 4px 12px rgba(124, 58, 237, 0.3),
+    0 2px 4px rgba(124, 58, 237, 0.2);
+}
+
+.agent-status-bar__btn--run:disabled {
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  box-shadow: none;
+}
+
+/* Secondary buttons */
+.agent-status-bar__btn--secondary {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-primary);
+}
+
+.agent-status-bar__btn--secondary:hover:not(:disabled) {
+  background: var(--bg-primary);
+  border-color: var(--border-secondary);
+  color: var(--text-primary);
+}
+
+/* Spinning animation */
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .agent-status-bar__content {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .agent-status-bar__indicators {
+    justify-content: center;
+  }
+
+  .agent-status-bar__controls {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 640px) {
+  .agent-status-bar__indicators {
+    gap: var(--spacing-sm);
+  }
+
+  .agent-status-bar__btn span {
+    display: none;
+  }
+
+  .agent-status-bar__btn {
+    padding: var(--spacing-sm);
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "analyst": "contrarian",
+  "case_studies": [
+    {
+      "id": "burry_housing",
+      "title": "Michael Burry's Housing Short (2005-2008)",
+      "investor": "Michael Burry",
+      "thesis": {
+        "contrarian_insight": "Subprime mortgages would default en masse, bringing down the housing market",
+        "research": "Analyzed thousands of individual mortgage pools",
+        "position": "Bought credit default swaps on subprime MBS",
+        "outcome": "Made $750M for his fund, ~100x return on premium paid"
+      },
+      "timeline": {
+        "2005": "Identified bubble, began building position",
+        "2006-2007": "Faced investor redemptions and margin calls",
+        "2008": "Thesis validated, massive payoff"
+      },
+      "lessons": [
+        "Contrarian positions require conviction to hold through adversity",
+        "Deep research can uncover what consensus misses",
+        "Asymmetric bets can deliver extraordinary returns",
+        "Being early is painful but can be worth it"
+      ],
+      "keywords": ["contrarian", "asymmetric", "research", "conviction"],
+      "sources": ["The Big Short", "Burry Interviews"]
+    },
+    {
+      "id": "templeton_wwii",
+      "title": "Templeton's WWII Buying Spree (1939)",
+      "investor": "John Templeton",
+      "thesis": {
+        "contrarian_insight": "War would boost industrial production and end Depression",
+        "position": "Bought $100 of every NYSE stock trading under $1 (104 companies)",
+        "timing": "Started buying days after Germany invaded Poland",
+        "outcome": "Made 5x return, establishing his reputation"
+      },
+      "lessons": [
+        "Maximum pessimism creates maximum opportunity",
+        "Diversification reduces individual stock risk",
+        "Buying when others are panic selling",
+        "Long-term economic growth overcomes short-term crises"
+      ],
+      "keywords": ["pessimism", "contrarian", "crisis investing", "diversification"],
+      "sources": ["Templeton Biography", "Investing the Templeton Way"]
+    },
+    {
+      "id": "marks_distressed_2008",
+      "title": "Oaktree's 2008-2009 Distressed Buying",
+      "investor": "Howard Marks / Oaktree",
+      "thesis": {
+        "contrarian_insight": "Market panic created unprecedented distressed opportunities",
+        "action": "Deployed $3.5B in distressed debt at 50-60 cents on dollar",
+        "memos": "'Now It's Time to Buy' memo went out September 2008",
+        "outcome": "Returned 55% in 2009, significant alpha vs. market"
+      },
+      "lessons": [
+        "Keep 'dry powder' for extraordinary opportunities",
+        "Act decisively when sentiment reaches extremes",
+        "Second-level thinking: 'Everyone knows it's bad, but is it priced in?'",
+        "Discipline to buy when everything feels wrong"
+      ],
+      "keywords": ["distressed", "second-level thinking", "sentiment", "timing"],
+      "sources": ["Howard Marks Memos", "Oaktree Letters"]
+    }
+  ]
+}

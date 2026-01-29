@@ -1,0 +1,219 @@
+/* frontend/src/components/portfolio/FatTailWarningBanner.css */
+/* Redesigned to match Liquid Glass design system */
+
+.fat-tail-banner {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-start;
+  margin-bottom: var(--space-4);
+  transition: all var(--transition-normal);
+}
+
+.fat-tail-banner:hover {
+  box-shadow: var(--shadow-lg);
+  background: var(--glass-bg-hover);
+}
+
+/* Severity-based left border accent */
+.fat-tail-banner.severity-moderate {
+  border-left: 3px solid var(--warning);
+}
+
+.fat-tail-banner.severity-high {
+  border-left: 3px solid var(--negative);
+}
+
+.fat-tail-banner.severity-critical {
+  border-left: 3px solid var(--negative);
+  background: rgba(239, 68, 68, 0.03);
+}
+
+/* Icon */
+.banner-icon {
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+.severity-moderate .banner-icon {
+  color: var(--warning);
+}
+
+.severity-high .banner-icon {
+  color: var(--negative);
+}
+
+.severity-critical .banner-icon {
+  color: var(--negative);
+}
+
+/* Content */
+.banner-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.banner-title {
+  font-size: var(--text-md);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin: 0;
+  line-height: var(--leading-tight);
+}
+
+.banner-message {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--leading-relaxed);
+  margin: 0;
+}
+
+/* Metrics Row */
+.banner-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border-primary);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.metric-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.metric-label {
+  color: var(--text-tertiary);
+  font-weight: var(--font-medium);
+}
+
+.metric-value {
+  font-weight: var(--font-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.metric-hint {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+/* Insight Box */
+.taleb-insight {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+}
+
+.taleb-insight svg {
+  flex-shrink: 0;
+  color: var(--brand-primary);
+  margin-top: 2px;
+}
+
+.insight-content {
+  flex: 1;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--leading-relaxed);
+  min-width: 0;
+}
+
+.insight-content strong {
+  color: var(--text-primary);
+  font-weight: var(--font-semibold);
+}
+
+/* Recommendations */
+.banner-recommendations {
+  font-size: var(--text-sm);
+}
+
+.banner-recommendations strong {
+  display: block;
+  color: var(--text-primary);
+  font-weight: var(--font-semibold);
+  margin-bottom: var(--space-2);
+}
+
+.banner-recommendations ul {
+  margin: 0;
+  padding-left: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.banner-recommendations li {
+  color: var(--text-secondary);
+  line-height: var(--leading-relaxed);
+}
+
+/* Footer */
+.banner-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-primary);
+  font-size: var(--text-xs);
+}
+
+.footer-label {
+  color: var(--text-tertiary);
+  font-weight: var(--font-medium);
+}
+
+.footer-value {
+  color: var(--text-primary);
+  font-weight: var(--font-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.footer-separator {
+  color: var(--text-muted);
+}
+
+.footer-hint {
+  color: var(--text-tertiary);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .fat-tail-banner {
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-3);
+  }
+
+  .banner-metrics {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .metric-item {
+    white-space: normal;
+  }
+
+  .banner-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+}

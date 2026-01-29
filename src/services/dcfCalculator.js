@@ -1,0 +1,2685 @@
+/**
+ * Professional DCF Calculator
+ *
+ * PE/Banking-grade valuation with multi-stage growth, dual terminal methods,
+ * automatic scenarios, and sanity checks.
+ *
+ * Features:
+ * - Multi-stage growth model (3 stages + terminal)
+ * - Dual terminal value methods (Gordon Growth + Exit Multiple)
+ * - Auto-generated bull/base/bear scenarios
+ * - WACC calculation via CAPM with dynamic risk-free rate from FRED
+ * - Comprehensive sanity checks
+ * - Margin of safety buy targets
+ */
+
+const { FREDService } = require('./data/fredService');
+
+class DCFCalculator {
+  constructor(db) {
+    this.db = db;
+    this.fredService = new FREDService(db);
+
+    // Cache for dynamic risk-free rate (refresh every hour)
+    this._riskFreeRateCache = {
+      value: null,
+      fetchedAt: null,
+      ttl: 60 * 60 * 1000 // 1 hour
+    };
+
+    // Default assumptions (can be overridden)
+    this.defaults = {
+      riskFreeRate: 0.043,       // Fallback: 10-year Treasury (if FRED unavailable)
+      equityRiskPremium: 0.05,   // Historical average
+      terminalGrowth: 0.025,     // Max 2.5%, typically GDP growth
+      maxGrowthRate: 0.30,       // Cap any growth rate at 30%
+      minGrowthRate: -0.10,      // Floor at -10%
+      defaultBeta: 1.0,
+
+      // Scenario adjustments
+      bullAdjustments: {
+        growthDelta: 0.02,       // +2% growth
+        discountDelta: -0.01,    // -1% discount rate
+        marginDelta: 0.02        // +2% margin
+      },
+      bearAdjustments: {
+        growthDelta: -0.03,      // -3% growth
+        discountDelta: 0.015,    // +1.5% discount rate
+        marginDelta: -0.02       // -2% margin
+      },
+
+      // Probability weights for scenarios
+      scenarioWeights: {
+        bull: 0.25,
+        base: 0.50,
+        bear: 0.25
+      }
+    };
+  }
+
+  /**
+   * Get current risk-free rate from FRED (10Y Treasury)
+   * Cached for 1 hour to avoid excessive API calls
+   */
+  async getRiskFreeRate() {
+    const cache = this._riskFreeRateCache;
+    const now = Date.now();
+
+    // Return cached value if fresh
+    if (cache.value !== null && cache.fetchedAt && (now - cache.fetchedAt) < cache.ttl) {
+      return cache.value;
+    }
+
+    try {
+      // Fetch 10Y Treasury yield from FRED (DGS10)
+      const treasury = await this.fredService.getLatestValue('DGS10');
+
+      if (treasury && treasury.value !== null && !isNaN(treasury.value)) {
+        // Convert from percentage (e.g., 4.5) to decimal (0.045)
+        const rate = parseFloat(treasury.value) / 100;
+
+        // Sanity check: reasonable range for risk-free rate (0.5% to 15%)
+        if (rate >= 0.005 && rate <= 0.15) {
+          cache.value = rate;
+          cache.fetchedAt = now;
+          console.log(`[DCF] Dynamic risk-free rate: ${(rate * 100).toFixed(2)}% from FRED DGS10`);
+          return rate;
+        }
+      }
+    } catch (error) {
+      console.warn('[DCF] Failed to fetch risk-free rate from FRED:', error.message);
+    }
+
+    // Fallback to default
+    console.log(`[DCF] Using fallback risk-free rate: ${(this.defaults.riskFreeRate * 100).toFixed(2)}%`);
+    return this.defaults.riskFreeRate;
+  }
+
+  /**
+   * Main DCF calculation entry point
+   */
+  async calculateDCF(companyId, overrides = {}) {
+    try {
+      // 1. Gather all required data
+      const inputs = await this.gatherInputs(companyId, overrides);
+
+      // 2. Validate inputs
+      const validation = this.validateInputs(inputs);
+      if (!validation.valid) {
+        return { success: false, errors: validation.errors, inputs };
+      }
+
+      // 3. Calculate base case
+      const baseCase = this.calculateScenario(inputs, 'base');
+
+      // 4. Calculate bull/bear scenarios
+      const bullCase = this.calculateScenario(inputs, 'bull');
+      const bearCase = this.calculateScenario(inputs, 'bear');
+
+      // 5. Calculate probability-weighted value
+      const weightedValue = this.calculateWeightedValue(baseCase, bullCase, bearCase, inputs.scenarioWeights);
+
+      // 6. Run sanity checks
+      const sanityChecks = this.runSanityChecks(inputs, baseCase);
+
+      // 7. Calculate buy targets
+      const buyTargets = this.calculateBuyTargets(baseCase.intrinsicValuePerShare);
+
+      // 8. Compile results
+      const results = {
+        success: true,
+        company: inputs.company,
+
+        // Core valuation
+        intrinsicValue: baseCase.intrinsicValuePerShare,
+        currentPrice: inputs.currentPrice,
+        upside: inputs.currentPrice > 0
+          ? ((baseCase.intrinsicValuePerShare / inputs.currentPrice) - 1) * 100
+          : null,
+
+        // Scenarios
+        scenarios: {
+          base: baseCase,
+          bull: bullCase,
+          bear: bearCase,
+          weighted: weightedValue
+        },
+
+        // Terminal value comparison
+        terminalAnalysis: {
+          gordonGrowth: baseCase.terminalValueGordon,
+          exitMultiple: baseCase.terminalValueExitMultiple,
+          divergence: baseCase.terminalDivergence,
+          methodUsed: baseCase.terminalDivergence < 20 ? 'average' : 'gordon'
+        },
+
+        // Sanity checks
+        sanityChecks: sanityChecks,
+
+        // Buy targets
+        buyTargets: buyTargets,
+
+        // Inputs used (for transparency)
+        assumptions: {
+          // Base financials
+          fcf: inputs.normalizedFCF,
+          ebitda: inputs.ebitda,
+          revenue: inputs.revenue,
+          operatingCashFlow: inputs.operatingCashFlow,
+          capex: inputs.capex,
+          depreciation: inputs.depreciation,
+          workingCapital: inputs.workingCapitalChange,
+          cash: inputs.cash,
+          totalDebt: inputs.totalDebt,
+          sharesOutstanding: inputs.sharesOutstanding,
+          netDebt: inputs.netDebt,
+          // FCF Normalization details (CapEx normalization)
+          fcfNormalization: inputs.fcfNormalizationDetails ? {
+            method: inputs.fcfNormalizationDetails.normalizationMethod,
+            actualFCF: inputs.fcfNormalizationDetails.actualFCF,
+            normalizedFCF: inputs.fcfNormalizationDetails.normalizedFCF,
+            capexAdjustment: inputs.fcfNormalizationDetails.capexAdjustment,
+            maintenanceCapex: inputs.fcfNormalizationDetails.inputs.maintenanceCapex,
+            actualCapex: inputs.fcfNormalizationDetails.inputs.actualCapex,
+            isHighCapex: inputs.fcfNormalizationDetails.metrics.isHighCapex
+          } : null,
+          // Growth assumptions
+          growth: {
+            stage1: inputs.growthStage1,
+            stage2: inputs.growthStage2,
+            stage3: inputs.growthStage3,
+            terminal: inputs.terminalGrowth
+          },
+          // Margin-based inputs (Excel-style)
+          margins: {
+            ebitdaMargin: inputs.ebitdaMargin,
+            targetEbitdaMargin: inputs.targetEbitdaMargin,
+            fcfConversion: inputs.fcfConversion,
+            capexPctRevenue: inputs.capexPctRevenue,
+            daPctRevenue: inputs.daPctRevenue,
+            nwcPctRevenueChange: inputs.nwcPctRevenueChange,
+            taxRate: inputs.taxRate,
+            marginImprovementYears: inputs.marginImprovementYears
+          },
+          // Margin expansion modeling details
+          marginExpansionDetails: inputs.marginExpansionDetails || null,
+          // Legacy margin fields for compatibility
+          currentMargin: inputs.currentMargin,
+          targetMargin: inputs.targetMargin,
+          // Discount rate
+          wacc: inputs.wacc,
+          riskFreeRate: inputs.riskFreeRate,
+          equityRiskPremium: this.defaults.equityRiskPremium,
+          beta: inputs.beta,
+          costOfEquity: inputs.riskFreeRate + inputs.beta * this.defaults.equityRiskPremium,
+          exitMultiple: inputs.exitMultiple,
+          // Scenario probabilities (editable)
+          scenarioWeights: inputs.scenarioWeights || this.defaults.scenarioWeights,
+          // Historical context
+          historicalGrowth: inputs.historicalGrowth
+        },
+
+        // Warnings
+        warnings: sanityChecks.warnings,
+
+        calculatedAt: new Date().toISOString()
+      };
+
+      // 9. Save to database
+      await this.saveValuation(companyId, results);
+
+      return results;
+    } catch (error) {
+      console.error('DCF calculation error:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Gather all inputs from database and apply smart defaults
+   */
+  async gatherInputs(companyId, overrides) {
+    // Get company info
+    const company = this.db.prepare(`
+      SELECT c.*, c.market_cap
+      FROM companies c
+      WHERE c.id = ?
+    `).get(companyId);
+
+    if (!company) {
+      throw new Error(`Company not found: ${companyId}`);
+    }
+
+    // Get financial data (last 5 years, annual)
+    const financials = this.db.prepare(`
+      SELECT
+        statement_type,
+        fiscal_date_ending,
+        period_type,
+        total_revenue,
+        net_income,
+        operating_income,
+        gross_profit,
+        operating_cashflow,
+        capital_expenditures,
+        total_assets,
+        total_liabilities,
+        shareholder_equity,
+        current_assets,
+        current_liabilities,
+        cash_and_equivalents,
+        long_term_debt,
+        short_term_debt,
+        data
+      FROM financial_data
+      WHERE company_id = ?
+        AND period_type = 'annual'
+      ORDER BY fiscal_date_ending DESC
+    `).all(companyId);
+
+    // Parse and organize financials
+    const parsed = this.parseFinancials(financials);
+
+    // Get industry benchmarks
+    const industry = company.industry || company.sector || 'Default';
+    const benchmarks = this.db.prepare(`
+      SELECT * FROM industry_benchmarks
+      WHERE industry = ?
+         OR industry LIKE ?
+         OR sector = ?
+         OR industry = 'Default'
+      ORDER BY
+        CASE WHEN industry = ? THEN 0
+             WHEN industry LIKE ? THEN 1
+             WHEN sector = ? THEN 2
+             ELSE 3 END
+      LIMIT 1
+    `).get(industry, `%${industry}%`, company.sector, industry, `%${industry}%`, company.sector);
+
+    // Calculate normalized FCF with optional CapEx normalization
+    // CapEx normalization assumes CapEx drops to maintenance level for mature companies
+    const useCapexNormalization = overrides.useCapexNormalization ?? true;
+    let normalizedFCF;
+    let fcfNormalizationDetails = null;
+
+    if (overrides.fcf) {
+      // Use override if provided
+      normalizedFCF = overrides.fcf;
+    } else if (useCapexNormalization) {
+      // Use CapEx normalization (better for high-capex companies like AMZN, TSLA)
+      const normResult = this.calculateNormalizedFCFWithCapexNormalization(parsed, {
+        maintenanceCapexMethod: overrides.maintenanceCapexMethod || 'da-based',
+        daMultiplier: overrides.daMultiplier || 1.1,
+        maintenanceCapexPctRevenue: overrides.maintenanceCapexPctRevenue || 0.03
+      });
+      normalizedFCF = normResult.normalizedFCF;
+      fcfNormalizationDetails = normResult;
+
+      if (normResult.metrics.isHighCapex) {
+        // Log meaningful message based on the type of change
+        if (normResult.metrics.fcfUpliftType === 'sign-reversal') {
+          const improvement = normResult.metrics.fcfImprovement / 1e9;
+          console.log(`[DCF] ${company.symbol}: CapEx normalization - FCF improved by $${improvement.toFixed(1)}B (negative to positive)`);
+        } else if (normResult.metrics.fcfUplift !== null) {
+          console.log(`[DCF] ${company.symbol}: Using CapEx normalization - FCF uplift ${normResult.metrics.fcfUplift.toFixed(1)}%`);
+        }
+      }
+    } else {
+      // Fallback to simple 3-year average
+      normalizedFCF = this.calculateNormalizedFCF(parsed);
+    }
+
+    // Calculate EBITDA
+    const ebitda = overrides.ebitda || parsed.latestEbitda;
+
+    // Calculate historical growth rates
+    const historicalGrowth = this.calculateHistoricalGrowth(parsed);
+
+    // Get dynamic risk-free rate from FRED (or use override/fallback)
+    const riskFreeRate = overrides.riskFreeRate || await this.getRiskFreeRate();
+
+    // Calculate WACC using detailed method (company-specific capital structure + synthetic rating)
+    // Falls back to simple method if detailed calculation fails
+    let wacc, waccBuildUp;
+    if (overrides.wacc) {
+      wacc = overrides.wacc;
+    } else {
+      try {
+        const detailedWACC = this.calculateWACCDetailed(company, parsed, benchmarks, riskFreeRate);
+        wacc = detailedWACC.wacc;
+        waccBuildUp = detailedWACC.buildUp;
+        console.log(`[DCF] Using detailed WACC: ${(wacc * 100).toFixed(2)}% (${waccBuildUp.syntheticRating} rating)`);
+      } catch (error) {
+        console.warn('[DCF] Detailed WACC failed, using simple method:', error.message);
+        wacc = this.calculateWACC(company, benchmarks, riskFreeRate);
+      }
+    }
+
+    // Estimate shares outstanding from market cap and price if not available
+    let sharesOutstanding = overrides.sharesOutstanding || parsed.sharesOutstanding;
+
+    // Get current price from override or fetch from database
+    let currentPrice = overrides.currentPrice;
+    if (!currentPrice || currentPrice <= 0) {
+      const priceData = this.db.prepare(`
+        SELECT pm.last_price FROM price_metrics pm
+        WHERE pm.company_id = ?
+      `).get(companyId);
+      currentPrice = priceData?.last_price || 0;
+    }
+
+    // If we have market cap but no shares/price, estimate
+    if (company.market_cap && !sharesOutstanding) {
+      // Try to get shares from most recent balance sheet equity / book value per share
+      // For now, use a reasonable estimate based on market cap
+      if (currentPrice) {
+        sharesOutstanding = company.market_cap / currentPrice;
+      }
+    }
+
+    // Calculate margin-based metrics from historical data
+    const latestRevenue = parsed.latestRevenue || 0;
+    let calcEbitdaMargin = latestRevenue > 0 && ebitda ? ebitda / latestRevenue : (benchmarks?.margin_median || 0.20);
+
+    // Margin sanity checks with industry-appropriate bounds
+    // Prevents unrealistic valuations from data quality issues
+    const marginBounds = {
+      'Technology': { min: 0.08, max: 0.55 },           // Software can have high margins
+      'Communication Services': { min: 0.10, max: 0.50 },
+      'Healthcare': { min: 0.06, max: 0.45 },           // Pharma high, services lower
+      'Consumer Cyclical': { min: 0.04, max: 0.35 },    // Retail has thin margins
+      'Consumer Defensive': { min: 0.05, max: 0.30 },
+      'Industrials': { min: 0.06, max: 0.30 },
+      'Financial Services': { min: 0.15, max: 0.60 },   // Banks have high margins
+      'Energy': { min: 0.05, max: 0.35 },
+      'Basic Materials': { min: 0.08, max: 0.35 },
+      'Utilities': { min: 0.15, max: 0.45 },
+      'Real Estate': { min: 0.20, max: 0.70 },
+      'default': { min: 0.05, max: 0.45 }
+    };
+
+    const sectorBounds = marginBounds[company.sector] || marginBounds['default'];
+
+    if (calcEbitdaMargin > sectorBounds.max) {
+      console.warn(`[DCF] ${company.symbol}: EBITDA margin ${(calcEbitdaMargin * 100).toFixed(1)}% capped to ${(sectorBounds.max * 100)}% (${company.sector} max)`);
+      calcEbitdaMargin = sectorBounds.max;
+    } else if (calcEbitdaMargin < sectorBounds.min && calcEbitdaMargin > 0) {
+      // Don't floor too aggressively for genuinely low-margin businesses
+      // Just warn if it seems unusually low
+      console.warn(`[DCF] ${company.symbol}: Low EBITDA margin ${(calcEbitdaMargin * 100).toFixed(1)}% (${company.sector} typical: ${(sectorBounds.min * 100)}%-${(sectorBounds.max * 100)}%)`);
+    }
+
+    const calcFCFMargin = latestRevenue > 0 && normalizedFCF ? normalizedFCF / latestRevenue : calcEbitdaMargin * 0.6;
+    const calcFCFConversion = ebitda > 0 && normalizedFCF ? normalizedFCF / ebitda : 0.6;
+
+    // For CapEx %, use maintenance CapEx when normalization is enabled (assumes CapEx drops to maintenance level)
+    let calcCapexPct;
+    if (useCapexNormalization && fcfNormalizationDetails && fcfNormalizationDetails.inputs.maintenanceCapex > 0) {
+      // Use maintenance CapEx % for projections (assumes company matures to maintenance level)
+      calcCapexPct = fcfNormalizationDetails.inputs.maintenanceCapex / latestRevenue;
+    } else if (latestRevenue > 0 && parsed.latestCapex) {
+      calcCapexPct = parsed.latestCapex / latestRevenue;
+    } else {
+      calcCapexPct = 0.05;
+    }
+
+    const calcDAPct = latestRevenue > 0 && parsed.latestDepreciation ? parsed.latestDepreciation / latestRevenue : calcCapexPct * 0.8;
+    const calcNWCPct = 0.10; // Default: 10% of revenue change goes to working capital
+
+    // Calculate margin trend and target margin for margin expansion modeling
+    const marginTrend = this.calculateHistoricalMarginTrend(parsed.ebitdaMarginHistory);
+    const targetMarginCalc = this.calculateTargetMargin(
+      calcEbitdaMargin,
+      benchmarks,
+      marginTrend,
+      company.sector
+    );
+
+    // Build inputs object with smart defaults
+    const inputs = {
+      company: {
+        id: companyId,
+        symbol: company.symbol,
+        name: company.name,
+        industry: industry,
+        sector: company.sector
+      },
+
+      // Current market data
+      currentPrice: currentPrice || 0,
+      sharesOutstanding: sharesOutstanding,
+      marketCap: company.market_cap,
+
+      // Base financials (actuals)
+      revenue: overrides.revenue ?? latestRevenue,
+      ebitda: overrides.ebitda ?? ebitda,
+      ebitdaSource: parsed.ebitdaSource || (overrides.ebitda ? 'override' : null), // Track data quality
+      normalizedFCF: normalizedFCF,
+      fcfNormalizationDetails: fcfNormalizationDetails, // CapEx normalization details
+      useCapexNormalization: useCapexNormalization,
+      operatingCashFlow: overrides.operatingCashFlow ?? parsed.latestOperatingCashFlow,
+      capex: overrides.capex ?? parsed.latestCapex,
+      depreciation: overrides.depreciation ?? parsed.latestDepreciation,
+      workingCapitalChange: overrides.workingCapital ?? parsed.latestWorkingCapitalChange,
+      cash: overrides.cash ?? parsed.latestCash,
+      totalDebt: overrides.totalDebt ?? ((parsed.latestShortTermDebt || 0) + (parsed.latestLongTermDebt || 0)),
+      netDebt: overrides.netDebt ?? this.calculateNetDebt(parsed),
+
+      // Revenue growth assumptions (multi-stage, declining over time)
+      // Stage 1 (Years 1-3): Higher of recent growth or industry median - company momentum
+      // Stage 2 (Years 4-7): Fade toward long-term sustainable rate
+      // Stage 3 (Years 8-10): Approach terminal growth rate
+      growthStage1: this.capGrowth(overrides.growthStage1 ?? Math.max(
+        historicalGrowth.recent || 0.05,
+        benchmarks?.revenue_growth_median || 0.05
+      )),
+      growthStage2: this.capGrowth(overrides.growthStage2 ?? (
+        (Math.max(historicalGrowth.recent || 0.05, benchmarks?.revenue_growth_median || 0.05) + 0.04) / 2
+      )),
+      growthStage3: this.capGrowth(overrides.growthStage3 ?? 0.04), // Converge toward terminal
+      terminalGrowth: Math.min(overrides.terminalGrowth ?? this.defaults.terminalGrowth, 0.03),
+
+      // Margin-based inputs (Excel-style) with margin expansion modeling
+      ebitdaMargin: overrides.ebitdaMargin ?? calcEbitdaMargin,
+      targetEbitdaMargin: overrides.targetEbitdaMargin ?? targetMarginCalc.targetMargin,
+      fcfConversion: overrides.fcfConversion ?? calcFCFConversion,
+      capexPctRevenue: overrides.capexPctRevenue ?? calcCapexPct,
+      daPctRevenue: overrides.daPctRevenue ?? calcDAPct,
+      nwcPctRevenueChange: overrides.nwcPctRevenueChange ?? calcNWCPct,
+      taxRate: overrides.taxRate ?? 0.21,
+      marginImprovementYears: overrides.marginImprovementYears ?? 5,
+
+      // Margin expansion details (for transparency in output)
+      marginExpansionDetails: {
+        currentMargin: targetMarginCalc.currentMargin,
+        targetMargin: targetMarginCalc.targetMargin,
+        marginExpansion: targetMarginCalc.marginExpansion,
+        marginExpansionPct: targetMarginCalc.marginExpansionPct,
+        targetSource: targetMarginCalc.targetSource,
+        marginTrend: marginTrend.direction,
+        industryCap: targetMarginCalc.industryCap,
+        industryMedian: targetMarginCalc.industryMedian
+      },
+
+      // Legacy margin for compatibility
+      currentMargin: parsed.latestFCFMargin,
+      targetMargin: overrides.targetMargin ?? Math.max(parsed.latestFCFMargin || 0, targetMarginCalc.targetMargin),
+
+      // Discount rate (using dynamic risk-free rate from FRED)
+      wacc: wacc,
+      waccBuildUp: waccBuildUp || null,  // Detailed breakdown if available
+      riskFreeRate: riskFreeRate,  // Use fetched/dynamic rate
+      beta: overrides.beta ?? waccBuildUp?.beta ?? benchmarks?.beta_median ?? this.defaults.defaultBeta,
+
+      // Terminal value
+      exitMultiple: overrides.exitMultiple ?? (benchmarks?.ev_ebitda_median || 12),
+
+      // Scenario probabilities (allow override)
+      scenarioWeights: overrides.scenarioWeights ?? this.defaults.scenarioWeights,
+
+      // Benchmarks for comparison
+      benchmarks: benchmarks,
+
+      // Historical data for reference
+      historicalGrowth: historicalGrowth
+    };
+
+    return inputs;
+  }
+
+  /**
+   * Calculate a single scenario (base/bull/bear)
+   * Uses revenue-driven model with margin-based FCF calculation
+   */
+  calculateScenario(inputs, scenarioType) {
+    // Apply scenario adjustments
+    let growth1, growth2, growth3, terminalGrowth, wacc, marginAdj;
+
+    if (scenarioType === 'bull') {
+      const adj = this.defaults.bullAdjustments;
+      growth1 = inputs.growthStage1 + adj.growthDelta;
+      growth2 = inputs.growthStage2 + adj.growthDelta * 0.7;
+      growth3 = inputs.growthStage3 + adj.growthDelta * 0.5;
+      terminalGrowth = Math.min(inputs.terminalGrowth + 0.005, 0.03);
+      wacc = Math.max(inputs.wacc + adj.discountDelta, 0.05);
+      marginAdj = adj.marginDelta;
+    } else if (scenarioType === 'bear') {
+      const adj = this.defaults.bearAdjustments;
+      growth1 = Math.max(inputs.growthStage1 + adj.growthDelta, -0.1);
+      growth2 = Math.max(inputs.growthStage2 + adj.growthDelta * 0.7, 0);
+      growth3 = Math.max(inputs.growthStage3 + adj.growthDelta * 0.5, 0.01);
+      terminalGrowth = Math.max(inputs.terminalGrowth - 0.005, 0.015);
+      wacc = inputs.wacc + adj.discountDelta;
+      marginAdj = adj.marginDelta;
+    } else {
+      // Base case
+      growth1 = inputs.growthStage1;
+      growth2 = inputs.growthStage2;
+      growth3 = inputs.growthStage3;
+      terminalGrowth = inputs.terminalGrowth;
+      wacc = inputs.wacc;
+      marginAdj = 0;
+    }
+
+    // Revenue-driven projections
+    const projections = [];
+    let revenue = inputs.revenue || 0;
+    let prevRevenue = revenue;
+    let ebitdaMargin = inputs.ebitdaMargin || 0.20;
+    const targetEbitdaMargin = (inputs.targetEbitdaMargin || 0.25) + marginAdj;
+    const marginStep = (targetEbitdaMargin - ebitdaMargin) / (inputs.marginImprovementYears || 5);
+    const fcfConversion = inputs.fcfConversion || 0.60;
+    const capexPct = inputs.capexPctRevenue || 0.05;
+    const daPct = inputs.daPctRevenue || 0.04;
+    const nwcPct = inputs.nwcPctRevenueChange || 0.10;
+    const taxRate = inputs.taxRate || 0.21;
+
+    for (let year = 1; year <= 10; year++) {
+      // Determine revenue growth rate for this year
+      let growthRate;
+      if (year <= 3) {
+        growthRate = growth1;
+      } else if (year <= 7) {
+        // Linear fade from stage2 to stage3
+        const fadeProgress = (year - 3) / 4;
+        growthRate = growth2 * (1 - fadeProgress) + growth3 * fadeProgress;
+      } else {
+        growthRate = growth3;
+      }
+
+      // Project revenue
+      prevRevenue = revenue;
+      revenue = revenue * (1 + growthRate);
+
+      // Apply margin improvement over first N years
+      if (year <= (inputs.marginImprovementYears || 5)) {
+        ebitdaMargin = Math.min(ebitdaMargin + marginStep, targetEbitdaMargin);
+      }
+
+      // Calculate EBITDA = Revenue × EBITDA Margin
+      const ebitda = revenue * ebitdaMargin;
+
+      // Calculate D&A
+      const da = revenue * daPct;
+
+      // EBIT = EBITDA - D&A
+      const ebit = ebitda - da;
+
+      // Tax
+      const tax = Math.max(ebit * taxRate, 0);
+
+      // NOPAT (Net Operating Profit After Tax)
+      const nopat = ebit - tax;
+
+      // CapEx
+      const capex = revenue * capexPct;
+
+      // Change in NWC (as % of revenue change)
+      const revenueChange = revenue - prevRevenue;
+      const nwcChange = revenueChange * nwcPct;
+
+      // Free Cash Flow = NOPAT + D&A - CapEx - ΔNWC
+      // Alternative: FCF = EBITDA × FCF Conversion (simpler)
+      const fcf = nopat + da - capex - nwcChange;
+
+      // Discount factor
+      const discountFactor = Math.pow(1 + wacc, year);
+      const presentValue = fcf / discountFactor;
+
+      projections.push({
+        year,
+        revenue,
+        revenueGrowth: growthRate,
+        ebitda,
+        ebitdaMargin,
+        da,
+        ebit,
+        tax,
+        nopat,
+        capex,
+        nwcChange,
+        fcf,
+        discountFactor,
+        presentValue
+      });
+    }
+
+    // Calculate terminal values (both methods)
+    const year10FCF = projections[9].fcf;
+    const year10EBITDA = projections[9].ebitda;
+    const year10Revenue = projections[9].revenue;
+
+    // Gordon Growth Model
+    const terminalValueGordon = (year10FCF * (1 + terminalGrowth)) / (wacc - terminalGrowth);
+    const terminalPVGordon = terminalValueGordon / Math.pow(1 + wacc, 10);
+
+    // Exit Multiple Method (EV/EBITDA)
+    const terminalValueExitMultiple = year10EBITDA * inputs.exitMultiple;
+    const terminalPVExitMultiple = terminalValueExitMultiple / Math.pow(1 + wacc, 10);
+
+    // Check divergence
+    const avgTerminal = (terminalPVGordon + terminalPVExitMultiple) / 2;
+    const terminalDivergence = avgTerminal > 0
+      ? Math.abs(terminalPVGordon - terminalPVExitMultiple) / avgTerminal * 100
+      : 0;
+
+    // Use average if close, otherwise Gordon (more conservative typically)
+    const terminalPV = terminalDivergence < 20
+      ? avgTerminal
+      : terminalPVGordon;
+
+    // Sum of discounted FCFs
+    const pvOfFCFs = projections.reduce((sum, p) => sum + p.presentValue, 0);
+
+    // Enterprise Value
+    const enterpriseValue = pvOfFCFs + terminalPV;
+
+    // Equity Value
+    const equityValue = enterpriseValue - (inputs.netDebt || 0);
+
+    // Per share value
+    const intrinsicValuePerShare = inputs.sharesOutstanding > 0
+      ? equityValue / inputs.sharesOutstanding
+      : equityValue / 1e9; // Fallback: show in billions
+
+    // Terminal value as % of total (important sanity check)
+    const terminalPct = enterpriseValue > 0 ? (terminalPV / enterpriseValue) * 100 : 0;
+
+    return {
+      scenarioType,
+      intrinsicValuePerShare,
+      enterpriseValue,
+      equityValue,
+      pvOfFCFs,
+      terminalValueGordon: terminalPVGordon,
+      terminalValueExitMultiple: terminalPVExitMultiple,
+      terminalPV,
+      terminalDivergence,
+      terminalPct,
+      projections,
+      year10Summary: {
+        revenue: year10Revenue,
+        ebitda: year10EBITDA,
+        fcf: year10FCF,
+        ebitdaMargin: projections[9].ebitdaMargin
+      },
+      assumptions: {
+        growth: [growth1, growth2, growth3],
+        terminalGrowth,
+        wacc,
+        exitMultiple: inputs.exitMultiple,
+        ebitdaMargin: inputs.ebitdaMargin,
+        targetEbitdaMargin,
+        fcfConversion,
+        capexPct,
+        daPct,
+        nwcPct,
+        taxRate
+      }
+    };
+  }
+
+  /**
+   * Calculate probability-weighted value
+   */
+  calculateWeightedValue(baseCase, bullCase, bearCase, customWeights = null) {
+    const weights = customWeights || this.defaults.scenarioWeights;
+
+    const weightedValue =
+      baseCase.intrinsicValuePerShare * weights.base +
+      bullCase.intrinsicValuePerShare * weights.bull +
+      bearCase.intrinsicValuePerShare * weights.bear;
+
+    return {
+      value: weightedValue,
+      weights: weights,
+      range: {
+        low: bearCase.intrinsicValuePerShare,
+        mid: baseCase.intrinsicValuePerShare,
+        high: bullCase.intrinsicValuePerShare
+      }
+    };
+  }
+
+  /**
+   * Run sanity checks and generate warnings
+   */
+  runSanityChecks(inputs, baseCase) {
+    const warnings = [];
+    const checks = {};
+
+    // 1. Terminal value too high?
+    checks.terminalPct = baseCase.terminalPct;
+    if (baseCase.terminalPct > 75) {
+      warnings.push(`Terminal value = ${baseCase.terminalPct.toFixed(0)}% of total (high - value sensitive to terminal assumptions)`);
+    } else if (baseCase.terminalPct > 60) {
+      warnings.push(`Terminal value = ${baseCase.terminalPct.toFixed(0)}% of total (moderate)`);
+    }
+
+    // 2. Growth rate vs historical
+    checks.growthVsHistorical = {
+      assumed: inputs.growthStage1,
+      historical: inputs.historicalGrowth?.recent
+    };
+    if (inputs.historicalGrowth?.recent && inputs.growthStage1 > inputs.historicalGrowth.recent * 1.5) {
+      warnings.push(`Growth assumption (${(inputs.growthStage1 * 100).toFixed(1)}%) exceeds historical (${(inputs.historicalGrowth.recent * 100).toFixed(1)}%)`);
+    }
+
+    // 3. Implied multiples vs industry
+    const impliedEVEBITDA = inputs.ebitda > 0 ? baseCase.enterpriseValue / inputs.ebitda : null;
+    const impliedPFCF = inputs.normalizedFCF > 0 ? baseCase.equityValue / inputs.normalizedFCF : null;
+
+    checks.impliedMultiples = {
+      evEbitda: impliedEVEBITDA,
+      pfcf: impliedPFCF
+    };
+
+    checks.industryMultiples = {
+      evEbitda: inputs.benchmarks?.ev_ebitda_median,
+      pe: inputs.benchmarks?.pe_median
+    };
+
+    if (impliedEVEBITDA && inputs.benchmarks?.ev_ebitda_median &&
+        impliedEVEBITDA > inputs.benchmarks.ev_ebitda_median * 1.5) {
+      warnings.push(`Implied EV/EBITDA (${impliedEVEBITDA.toFixed(1)}x) significantly above industry (${inputs.benchmarks.ev_ebitda_median}x)`);
+    }
+
+    // 4. Terminal methods divergence
+    checks.terminalDivergence = baseCase.terminalDivergence;
+    if (baseCase.terminalDivergence > 30) {
+      warnings.push(`Terminal value methods diverge by ${baseCase.terminalDivergence.toFixed(0)}% - review assumptions`);
+    }
+
+    // 5. Negative FCF
+    if (inputs.normalizedFCF <= 0) {
+      warnings.push('Negative or zero FCF - DCF may not be appropriate valuation method');
+    }
+
+    // 6. WACC sanity
+    if (inputs.wacc < 0.06) {
+      warnings.push(`WACC (${(inputs.wacc * 100).toFixed(1)}%) seems low - verify discount rate`);
+    } else if (inputs.wacc > 0.15) {
+      warnings.push(`WACC (${(inputs.wacc * 100).toFixed(1)}%) seems high - verify discount rate`);
+    }
+
+    // 7. Missing shares outstanding
+    if (!inputs.sharesOutstanding || inputs.sharesOutstanding <= 0) {
+      warnings.push('Shares outstanding unknown - per-share value may be inaccurate');
+    }
+
+    return {
+      checks,
+      warnings,
+      warningCount: warnings.length,
+      overallHealth: warnings.length === 0 ? 'good' : warnings.length <= 2 ? 'caution' : 'review'
+    };
+  }
+
+  /**
+   * Calculate buy targets with margin of safety
+   */
+  calculateBuyTargets(intrinsicValue) {
+    return {
+      intrinsicValue,
+      marginOfSafety25: intrinsicValue * 0.75,
+      marginOfSafety33: intrinsicValue * 0.67,
+      marginOfSafety50: intrinsicValue * 0.50
+    };
+  }
+
+  /**
+   * Calculate WACC (Weighted Average Cost of Capital)
+   */
+  calculateWACC(company, benchmarks, riskFreeRate = null) {
+    // Use provided rate or fall back to default
+    const rfRate = riskFreeRate ?? this.defaults.riskFreeRate;
+    const equityRiskPremium = this.defaults.equityRiskPremium;
+    const beta = benchmarks?.beta_median || this.defaults.defaultBeta;
+
+    // Cost of equity (CAPM)
+    const costOfEquity = rfRate + beta * equityRiskPremium;
+
+    // Cost of debt (simplified - use risk-free + spread based on industry)
+    const debtSpread = 0.02; // Assume 2% spread
+    const costOfDebt = rfRate + debtSpread;
+    const taxRate = 0.21; // US corporate tax rate
+    const afterTaxCostOfDebt = costOfDebt * (1 - taxRate);
+
+    // Capital structure (simplified - assume from benchmarks or 80/20)
+    const equityWeight = 0.80;
+    const debtWeight = 0.20;
+
+    const wacc = (costOfEquity * equityWeight) + (afterTaxCostOfDebt * debtWeight);
+
+    return Math.max(0.05, Math.min(wacc, 0.20)); // Bound between 5% and 20%
+  }
+
+  /**
+   * Calculate normalized FCF (3-year average) with floor for high-capex companies
+   */
+  calculateNormalizedFCF(parsed) {
+    if (!parsed.fcfHistory || parsed.fcfHistory.length === 0) {
+      return null;
+    }
+
+    // Get last 3 years of FCF
+    const recentFCFs = parsed.fcfHistory
+      .slice(0, 3)
+      .filter(fcf => fcf !== null && !isNaN(fcf));
+
+    if (recentFCFs.length === 0) return null;
+
+    // Calculate raw average
+    let normalizedFCF = recentFCFs.reduce((sum, fcf) => sum + fcf, 0) / recentFCFs.length;
+
+    // Floor for high-capex companies in growth/investment phase
+    // This prevents structurally negative FCF (like INTC fab buildout) from
+    // producing unrealistic negative DCF values
+    if (normalizedFCF < 0 && parsed.latestEbitda && parsed.latestEbitda > 0) {
+      // Minimum FCF = -10% of EBITDA (allows some capex-driven negative FCF but caps it)
+      const minFCF = -parsed.latestEbitda * 0.10;
+
+      if (normalizedFCF < minFCF) {
+        // Log warning for tracking
+        console.warn(`[DCF] FCF floored from ${(normalizedFCF / 1e9).toFixed(1)}B to ${(minFCF / 1e9).toFixed(1)}B (high-capex adjustment)`);
+        normalizedFCF = minFCF;
+      }
+    }
+
+    // Also provide a revenue-based floor for companies with positive EBITDA
+    // This assumes even high-capex companies will eventually generate some FCF
+    if (normalizedFCF < 0 && parsed.latestRevenue && parsed.latestRevenue > 0) {
+      // Absolute floor: -2% of revenue (very conservative)
+      const absoluteFloor = -parsed.latestRevenue * 0.02;
+      if (normalizedFCF < absoluteFloor) {
+        normalizedFCF = absoluteFloor;
+      }
+    }
+
+    return normalizedFCF;
+  }
+
+  /**
+   * Calculate normalized FCF using CapEx normalization
+   * Assumes CapEx drops to maintenance level for mature companies
+   *
+   * For high-capex companies like AMZN, TSLA, INTC, current CapEx is elevated
+   * due to growth investments. This method normalizes FCF by replacing actual
+   * CapEx with estimated maintenance CapEx.
+   */
+  calculateNormalizedFCFWithCapexNormalization(parsed, options = {}) {
+    const {
+      maintenanceCapexMethod = 'da-based', // 'da-based' | 'revenue-based' | 'hybrid'
+      daMultiplier = 1.1,  // Maintenance CapEx = D&A × 1.1 (typical range: 1.0-1.2)
+      maintenanceCapexPctRevenue = 0.03  // Industry average for mature companies
+    } = options;
+
+    const ocf = parsed.latestOperatingCashFlow || 0;
+    const actualCapex = parsed.latestCapex || 0;
+    const depreciation = parsed.latestDepreciation || 0;
+    const revenue = parsed.latestRevenue || 0;
+
+    // Calculate maintenance CapEx using selected method
+    let maintenanceCapex;
+    let normalizationMethod;
+
+    if (maintenanceCapexMethod === 'da-based' && depreciation > 0) {
+      // Method 1: D&A-based (assumes maintenance CapEx ≈ D&A)
+      maintenanceCapex = depreciation * daMultiplier;
+      normalizationMethod = 'da-based';
+    } else if (maintenanceCapexMethod === 'revenue-based' && revenue > 0) {
+      // Method 2: Revenue-based (industry-specific %)
+      maintenanceCapex = revenue * maintenanceCapexPctRevenue;
+      normalizationMethod = 'revenue-based';
+    } else if (maintenanceCapexMethod === 'hybrid') {
+      // Method 3: Average of both methods
+      const daBased = depreciation > 0 ? depreciation * daMultiplier : actualCapex;
+      const revenueBased = revenue > 0 ? revenue * maintenanceCapexPctRevenue : actualCapex;
+      maintenanceCapex = (daBased + revenueBased) / 2;
+      normalizationMethod = 'hybrid';
+    } else {
+      // Fallback: use actual capex (no normalization)
+      maintenanceCapex = actualCapex;
+      normalizationMethod = 'none';
+    }
+
+    // Calculate normalized FCF
+    const normalizedFCF = ocf - maintenanceCapex;
+    const actualFCF = ocf - actualCapex;
+    const capexAdjustment = actualCapex - maintenanceCapex;
+
+    // Determine if company is in high-investment phase
+    const capexIntensity = revenue > 0 ? actualCapex / revenue : 0;
+    const isHighCapex = capexIntensity > 0.08;  // >8% of revenue = high capex
+    const normalizedCapexIntensity = revenue > 0 ? maintenanceCapex / revenue : 0;
+
+    return {
+      normalizedFCF,
+      actualFCF,
+      capexAdjustment,
+      capexAdjustmentPct: actualCapex > 0 ? (capexAdjustment / actualCapex) * 100 : 0,
+      normalizationMethod,
+      inputs: {
+        operatingCashFlow: ocf,
+        actualCapex,
+        maintenanceCapex,
+        depreciation,
+        revenue
+      },
+      metrics: {
+        actualCapexPctRevenue: capexIntensity * 100,
+        normalizedCapexPctRevenue: normalizedCapexIntensity * 100,
+        isHighCapex,
+        // FCF uplift with edge case handling for negative-to-positive transitions
+        fcfUplift: this.calculateFCFUpliftPct(actualFCF, normalizedFCF),
+        fcfUpliftType: actualFCF < 0 && normalizedFCF > 0 ? 'sign-reversal' : 'percentage',
+        fcfImprovement: normalizedFCF - actualFCF // Absolute dollar improvement
+      }
+    };
+  }
+
+  /**
+   * Calculate FCF uplift percentage with edge case handling
+   */
+  calculateFCFUpliftPct(actualFCF, normalizedFCF) {
+    // Handle edge cases
+    if (actualFCF === 0) return null;
+
+    // When both have same sign, use standard percentage
+    if ((actualFCF > 0 && normalizedFCF > 0) || (actualFCF < 0 && normalizedFCF < 0)) {
+      return ((normalizedFCF / actualFCF) - 1) * 100;
+    }
+
+    // When sign changes (negative to positive), percentage is misleading
+    // Return null and rely on fcfImprovement for meaningful comparison
+    if (actualFCF < 0 && normalizedFCF > 0) {
+      return null; // Sign reversal - use absolute improvement instead
+    }
+
+    // Positive to negative (shouldn't happen with normalization but handle gracefully)
+    return ((normalizedFCF / actualFCF) - 1) * 100;
+  }
+
+  /**
+   * Calculate net debt
+   */
+  calculateNetDebt(parsed) {
+    const totalDebt = (parsed.latestShortTermDebt || 0) + (parsed.latestLongTermDebt || 0);
+    const cash = parsed.latestCash || 0;
+    return totalDebt - cash;
+  }
+
+  /**
+   * Calculate historical growth rates
+   */
+  calculateHistoricalGrowth(parsed) {
+    if (!parsed.revenues || parsed.revenues.length < 2) {
+      return { recent: 0.05, threeYearCAGR: 0.05, average: 0.05 };
+    }
+
+    const revenues = parsed.revenues.filter(r => r !== null && r > 0);
+
+    if (revenues.length < 2) {
+      return { recent: 0.05, threeYearCAGR: 0.05, average: 0.05 };
+    }
+
+    // Recent growth (YoY)
+    const recentGrowth = (revenues[0] - revenues[1]) / Math.abs(revenues[1]);
+
+    // 3-year CAGR
+    const threeYearCAGR = revenues.length >= 4
+      ? Math.pow(revenues[0] / revenues[3], 1 / 3) - 1
+      : recentGrowth;
+
+    return {
+      recent: this.capGrowth(recentGrowth),
+      threeYearCAGR: this.capGrowth(threeYearCAGR),
+      average: this.capGrowth((recentGrowth + threeYearCAGR) / 2)
+    };
+  }
+
+  /**
+   * Cap growth rate at maximum/minimum
+   */
+  capGrowth(rate) {
+    if (rate === null || isNaN(rate)) return 0.05;
+    return Math.min(Math.max(rate, this.defaults.minGrowthRate), this.defaults.maxGrowthRate);
+  }
+
+  /**
+   * Parse financial data from database format
+   */
+  parseFinancials(financials) {
+    const result = {
+      revenues: [],
+      fcfHistory: [],
+      ebitdaHistory: [],         // Track historical EBITDA values
+      ebitdaMarginHistory: [],   // Track historical EBITDA margins for trend analysis
+      latestEbitda: null,
+      ebitdaSource: null, // 'actual' | 'estimated' | 'fallback' - track data quality
+      latestRevenue: null,
+      latestFCFMargin: null,
+      latestCash: null,
+      latestLongTermDebt: null,
+      latestShortTermDebt: null,
+      latestOperatingCashFlow: null,
+      latestCapex: null,
+      latestDepreciation: null,
+      latestWorkingCapitalChange: null,
+      sharesOutstanding: null,
+      latestOperatingIncome: null,
+      latestEBIT: null,
+      latestInterestExpense: null
+    };
+
+    // Group by fiscal date
+    const byDate = {};
+    for (const row of financials) {
+      const date = row.fiscal_date_ending;
+      if (!byDate[date]) byDate[date] = {};
+      byDate[date][row.statement_type] = row;
+    }
+
+    // Process each period
+    const sortedDates = Object.keys(byDate).sort().reverse();
+
+    for (const date of sortedDates) {
+      const period = byDate[date];
+
+      // Revenue
+      if (period.income_statement?.total_revenue) {
+        result.revenues.push(period.income_statement.total_revenue);
+      }
+
+      // FCF = Operating Cash Flow - CapEx
+      if (period.cash_flow) {
+        const ocf = period.cash_flow.operating_cashflow || 0;
+        const capex = Math.abs(period.cash_flow.capital_expenditures || 0);
+        const fcf = ocf - capex;
+        result.fcfHistory.push(fcf);
+
+        // FCF margin
+        if (period.income_statement?.total_revenue && !result.latestFCFMargin) {
+          result.latestFCFMargin = fcf / period.income_statement.total_revenue;
+        }
+
+        // Latest cash flow components
+        if (!result.latestOperatingCashFlow) result.latestOperatingCashFlow = ocf;
+        if (!result.latestCapex) result.latestCapex = capex;
+        if (!result.latestDepreciation) {
+          // Try multiple sources for D&A: direct column, or JSON data field
+          let da = period.cash_flow.depreciation_amortization || 0;
+
+          // If not found in direct column, check JSON data field
+          if (!da && period.cash_flow.data) {
+            try {
+              const jsonData = typeof period.cash_flow.data === 'string'
+                ? JSON.parse(period.cash_flow.data)
+                : period.cash_flow.data;
+              // Check various possible keys for D&A
+              da = jsonData.depreciation ||
+                   jsonData.depreciationAndAmortization ||
+                   jsonData.DepreciationDepletionAndAmortization ||
+                   jsonData.depreciation_and_amortization ||
+                   0;
+            } catch (e) {
+              // Ignore JSON parse errors
+            }
+          }
+          result.latestDepreciation = da;
+        }
+      }
+
+      // Latest values - check both income_statement and 'all' statement types
+      const incomeData = period.income_statement || period.all;
+      const cashFlowData = period.cash_flow || period.all;
+
+      if (!result.latestRevenue && incomeData?.total_revenue) {
+        result.latestRevenue = incomeData.total_revenue;
+      }
+
+      // Calculate EBITDA for this period (track for all periods, not just latest)
+      if (incomeData) {
+        const is = incomeData;
+        const operatingIncome = is.operating_income || 0;
+        const periodRevenue = is.total_revenue || 0;
+
+        // Capture operating income and EBIT for WACC calculation (latest only)
+        if (!result.latestOperatingIncome && operatingIncome > 0) {
+          result.latestOperatingIncome = operatingIncome;
+          result.latestEBIT = operatingIncome; // EBIT ≈ Operating Income
+        }
+
+        // Capture interest expense for credit rating estimation
+        if (!result.latestInterestExpense && is.interest_expense) {
+          result.latestInterestExpense = Math.abs(is.interest_expense);
+        }
+
+        // EBITDA calculation priority:
+        // 1. Use actual D&A from cash flow statement (best)
+        // 2. Revenue-based estimate for capital-intensive companies
+        // 3. Operating income percentage fallback
+        // 4. Last resort: 50% of gross profit
+
+        let periodEbitda = null;
+        let periodEbitdaSource = null;
+
+        if (operatingIncome > 0) {
+          const capex = Math.abs(cashFlowData?.capital_expenditures || 0);
+          const actualDA = cashFlowData?.depreciation_amortization || 0;
+
+          let estimatedDA = 0;
+
+          // Method 1: Use actual D&A if available (preferred)
+          if (actualDA > 0) {
+            estimatedDA = actualDA;
+            periodEbitda = operatingIncome + estimatedDA;
+            periodEbitdaSource = 'actual';
+          }
+          // Method 2: Revenue-based estimate for capital-intensive companies
+          else if (periodRevenue > 0) {
+            // Capital intensity = CapEx / Revenue
+            const capitalIntensity = capex / periodRevenue;
+
+            if (capitalIntensity > 0.08) {
+              // High capex companies (AMZN, INTC): D&A typically 5-8% of revenue
+              estimatedDA = periodRevenue * 0.06;
+              periodEbitdaSource = 'revenue-based-high-capex';
+            } else if (capitalIntensity > 0.04) {
+              // Medium capex: D&A typically 3-5% of revenue
+              estimatedDA = periodRevenue * 0.04;
+              periodEbitdaSource = 'revenue-based-medium-capex';
+            } else {
+              // Low capex (asset-light): D&A typically 2-3% of revenue
+              estimatedDA = periodRevenue * 0.025;
+              periodEbitdaSource = 'revenue-based-low-capex';
+            }
+            periodEbitda = operatingIncome + estimatedDA;
+          }
+          // Method 3: Operating income percentage fallback
+          else {
+            estimatedDA = operatingIncome * 0.10; // 10% of OI as conservative estimate
+            periodEbitda = operatingIncome + estimatedDA;
+            periodEbitdaSource = 'estimated';
+          }
+        } else if (is.gross_profit > 0) {
+          // Fallback: estimate from gross profit (very rough)
+          periodEbitda = is.gross_profit * 0.5;
+          periodEbitdaSource = 'fallback';
+        }
+
+        // Track historical EBITDA and margins
+        if (periodEbitda !== null) {
+          result.ebitdaHistory.push(periodEbitda);
+
+          // Calculate and track EBITDA margin
+          if (periodRevenue > 0) {
+            const ebitdaMargin = periodEbitda / periodRevenue;
+            result.ebitdaMarginHistory.push(ebitdaMargin);
+          }
+        }
+
+        // Set latest values (first period processed = most recent)
+        if (!result.latestEbitda && periodEbitda !== null) {
+          result.latestEbitda = periodEbitda;
+          result.ebitdaSource = periodEbitdaSource;
+        }
+      }
+
+      if (period.balance_sheet) {
+        const bs = period.balance_sheet;
+        if (!result.latestCash) result.latestCash = bs.cash_and_equivalents;
+        if (!result.latestLongTermDebt) result.latestLongTermDebt = bs.long_term_debt;
+        if (!result.latestShortTermDebt) result.latestShortTermDebt = bs.short_term_debt;
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Calculate historical margin trend (is the company improving margins?)
+   * Returns trend data including direction, slope, and expected future margin
+   * Only uses recent years (5 max) to focus on current trajectory
+   */
+  calculateHistoricalMarginTrend(ebitdaMarginHistory) {
+    // Need at least 2 years of data to calculate trend
+    if (!ebitdaMarginHistory || ebitdaMarginHistory.length < 2) {
+      return {
+        hasTrend: false,
+        direction: 'stable',
+        annualChange: 0,
+        latestMargin: ebitdaMarginHistory?.[0] || 0,
+        projectedMargin5Y: ebitdaMarginHistory?.[0] || 0
+      };
+    }
+
+    // Only use the most recent 5 years to focus on current trajectory
+    // Older data is less relevant for projecting future margins
+    const recentMargins = ebitdaMarginHistory.slice(0, 5);
+
+    // Margins are ordered most recent first, so reverse for chronological order
+    const chronological = [...recentMargins].reverse();
+    const n = chronological.length;
+
+    // Calculate year-over-year changes
+    const yoyChanges = [];
+    for (let i = 1; i < n; i++) {
+      const change = chronological[i] - chronological[i - 1];
+      yoyChanges.push(change);
+    }
+
+    // Average annual margin change
+    const avgAnnualChange = yoyChanges.reduce((a, b) => a + b, 0) / yoyChanges.length;
+
+    // Determine trend direction
+    let direction;
+    if (avgAnnualChange > 0.01) {
+      direction = 'expanding';
+    } else if (avgAnnualChange < -0.01) {
+      direction = 'contracting';
+    } else {
+      direction = 'stable';
+    }
+
+    // Calculate linear regression slope for more robust trend
+    // x = year index (0, 1, 2, ...), y = margin
+    const xMean = (n - 1) / 2;
+    const yMean = chronological.reduce((a, b) => a + b, 0) / n;
+
+    let numerator = 0;
+    let denominator = 0;
+    for (let i = 0; i < n; i++) {
+      numerator += (i - xMean) * (chronological[i] - yMean);
+      denominator += (i - xMean) ** 2;
+    }
+    const slope = denominator !== 0 ? numerator / denominator : 0;
+
+    // Latest margin (most recent)
+    const latestMargin = ebitdaMarginHistory[0];
+
+    // Project margin 5 years forward based on trend
+    // Use dampened slope (don't extrapolate forever at same rate)
+    const dampenedSlope = slope * 0.6; // Assume trend slows by 40%
+    const projectedMargin5Y = latestMargin + (dampenedSlope * 5);
+
+    // Calculate confidence based on trend consistency
+    // Higher confidence if YoY changes are mostly in the same direction
+    const positiveChanges = yoyChanges.filter(c => c > 0).length;
+    const trendConsistency = Math.max(positiveChanges, yoyChanges.length - positiveChanges) / yoyChanges.length;
+
+    return {
+      hasTrend: true,
+      direction,
+      annualChange: avgAnnualChange,
+      slope,
+      dampenedSlope,
+      latestMargin,
+      projectedMargin5Y,
+      trendConsistency,
+      dataPoints: n,
+      marginHistory: ebitdaMarginHistory.map(m => (m * 100).toFixed(1) + '%')
+    };
+  }
+
+  /**
+   * Calculate target EBITDA margin for DCF projections
+   * Uses historical trend, industry benchmarks, and company-specific factors
+   */
+  calculateTargetMargin(currentMargin, benchmarks, marginTrend, sector) {
+    // Industry-specific margin caps (upper bounds for mature companies)
+    // Based on typical S&P 500 top-quartile margins by sector
+    // Includes common sector name variations
+    const industryMarginCaps = {
+      // Technology
+      'Technology': 0.35,
+      'Software': 0.40,
+      'Internet Content & Information': 0.40,
+      'Semiconductors': 0.45,
+      'Information Technology': 0.35,
+      'Communication Services': 0.35,
+      // Healthcare
+      'Healthcare': 0.30,
+      'Pharmaceuticals': 0.35,
+      'Biotechnology': 0.25,
+      'Health Care': 0.30,
+      // Consumer
+      'Consumer Discretionary': 0.20,
+      'Consumer Staples': 0.25,
+      'Consumer Cyclical': 0.20,
+      'Consumer Defensive': 0.25,
+      // Retail - with special handling for e-commerce/tech-retail hybrids
+      'Retail': 0.15,
+      'Retail Trade': 0.30,        // Higher cap for diversified retailers (like AMZN with AWS)
+      'Catalog & Mail-Order': 0.30, // E-commerce + cloud companies have higher margin potential
+      'Internet Retail': 0.35,      // Pure e-commerce/tech can achieve higher margins
+      'Specialty Retail': 0.18,
+      // Industrial
+      'Industrials': 0.20,
+      'Industrial': 0.20,
+      'Manufacturing': 0.18,
+      'Aerospace & Defense': 0.20,
+      // Financial
+      'Financial Services': 0.40,
+      'Finance': 0.40,
+      'Banks': 0.35,
+      'Insurance': 0.25,
+      // Energy & Utilities
+      'Energy': 0.25,
+      'Oil & Gas': 0.25,
+      'Utilities': 0.25,
+      // Real Estate
+      'Real Estate': 0.50,
+      'REITs': 0.55,
+      // Materials
+      'Materials': 0.22,
+      'Basic Materials': 0.22,
+      'default': 0.25
+    };
+
+    // Get industry cap - try sector first, then normalize common variations
+    let industryCap = industryMarginCaps[sector];
+    if (!industryCap) {
+      // Try to find partial match
+      const normalizedSector = sector?.toLowerCase() || '';
+      for (const [key, value] of Object.entries(industryMarginCaps)) {
+        if (key.toLowerCase().includes(normalizedSector) ||
+            normalizedSector.includes(key.toLowerCase())) {
+          industryCap = value;
+          break;
+        }
+      }
+    }
+    industryCap = industryCap || industryMarginCaps['default'];
+
+    // Get industry median as floor
+    const industryMedian = benchmarks?.margin_median || 0.15;
+
+    // Calculate target margin using multiple approaches and take weighted average
+    let targetMargin;
+    let targetSource;
+
+    // Approach 1: Trend extrapolation (if margins are expanding)
+    if (marginTrend?.hasTrend && marginTrend.direction === 'expanding') {
+      // For strong expanding trends, use less dampening
+      // If annual change > 2pp, the company is showing rapid margin improvement
+      const isRapidExpansion = marginTrend.annualChange > 0.02;
+
+      // Calculate projected margin with adjustable dampening
+      // Rapid expansion: use 80% of slope, Normal: use 60%
+      const dampeningFactor = isRapidExpansion ? 0.8 : 0.6;
+      const adjustedSlope = marginTrend.slope * dampeningFactor;
+      const adjustedProjection = currentMargin + (adjustedSlope * 5);
+
+      // Cap at industry ceiling
+      const trendTarget = Math.min(adjustedProjection, industryCap);
+
+      // Industry upper quartile - use higher multiplier for industries with high caps
+      // This assumes companies in high-cap industries can reach higher targets
+      const upperQuartileMultiplier = industryCap > 0.25 ? 1.6 : 1.4;
+      const industryUpperQuartile = Math.min(industryMedian * upperQuartileMultiplier, industryCap);
+
+      // Weight by trend consistency - but ensure minimum 0.6 for rapid expansion
+      let trendWeight = marginTrend.trendConsistency || 0.5;
+      if (isRapidExpansion) {
+        trendWeight = Math.max(trendWeight, 0.6);
+      }
+
+      // Weighted blend: more weight to trend if consistent
+      // Take the HIGHER of trend target and upper quartile as floor
+      const baseTarget = trendTarget * trendWeight + industryUpperQuartile * (1 - trendWeight);
+      targetMargin = Math.max(baseTarget, Math.min(industryUpperQuartile, industryCap));
+
+      targetSource = isRapidExpansion ? 'rapid-expansion' : 'trend-extrapolation';
+    }
+    // Approach 2: If margins are stable or contracting, use industry benchmark
+    else if (currentMargin < industryMedian) {
+      // Below industry median - target mean reversion toward median
+      targetMargin = (currentMargin + industryMedian) / 2 + 0.02; // Slight improvement
+      targetSource = 'mean-reversion';
+    }
+    else {
+      // At or above median with stable/contracting trend
+      // Target slight improvement to upper quartile range
+      const industryUpperQuartile = Math.min(industryMedian * 1.3, industryCap);
+      targetMargin = Math.max(currentMargin, industryUpperQuartile);
+      targetSource = 'industry-upper-quartile';
+    }
+
+    // Apply minimum expansion rule for growth companies
+    // Ensure at least some margin expansion potential
+    const minimumExpansion = 0.03; // At least 3pp improvement potential
+    if (targetMargin < currentMargin + minimumExpansion && currentMargin < industryCap - 0.05) {
+      targetMargin = Math.min(currentMargin + minimumExpansion, industryCap);
+      targetSource += '+minimum-expansion';
+    }
+
+    // Final sanity checks
+    // 1. Don't exceed industry cap
+    targetMargin = Math.min(targetMargin, industryCap);
+
+    // 2. Don't go below current margin (no planned deterioration in base case)
+    targetMargin = Math.max(targetMargin, currentMargin);
+
+    // 3. Cap total expansion at reasonable level (+15pp max over 5 years)
+    const maxExpansion = 0.15;
+    if (targetMargin - currentMargin > maxExpansion) {
+      targetMargin = currentMargin + maxExpansion;
+      targetSource += '+capped';
+    }
+
+    return {
+      targetMargin,
+      currentMargin,
+      marginExpansion: targetMargin - currentMargin,
+      marginExpansionPct: ((targetMargin - currentMargin) * 100).toFixed(1) + 'pp',
+      industryCap,
+      industryMedian,
+      targetSource,
+      marginTrend: marginTrend?.direction || 'unknown'
+    };
+  }
+
+  /**
+   * Validate inputs before calculation
+   */
+  validateInputs(inputs) {
+    const errors = [];
+
+    if (!inputs.normalizedFCF || inputs.normalizedFCF === 0) {
+      errors.push('Missing or zero Free Cash Flow');
+    }
+
+    if (!inputs.sharesOutstanding || inputs.sharesOutstanding <= 0) {
+      // Warning but not blocking - we can still calculate EV
+    }
+
+    if (!inputs.wacc || inputs.wacc <= 0) {
+      errors.push('Invalid WACC');
+    }
+
+    if (inputs.terminalGrowth >= inputs.wacc) {
+      errors.push('Terminal growth must be less than WACC');
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors
+    };
+  }
+
+  /**
+   * Save valuation to database
+   */
+  async saveValuation(companyId, results) {
+    try {
+      const stmt = this.db.prepare(`
+        INSERT INTO dcf_valuations (
+          company_id, base_fcf, base_ebitda, base_revenue, shares_outstanding, net_debt,
+          growth_stage1, growth_stage2, growth_stage3, terminal_growth,
+          current_margin, target_margin, wacc,
+          terminal_value_gordon, terminal_value_exit_multiple, exit_multiple_used,
+          terminal_method_divergence,
+          enterprise_value, equity_value, intrinsic_value_per_share,
+          bull_case_value, bear_case_value, weighted_value,
+          implied_ev_ebitda, terminal_value_pct,
+          margin_of_safety_25, margin_of_safety_50,
+          warning_flags
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      stmt.run(
+        companyId,
+        results.assumptions.fcf,
+        results.assumptions.ebitda,
+        results.assumptions.revenue,
+        results.assumptions.sharesOutstanding,
+        results.assumptions.netDebt,
+        results.assumptions.growth.stage1,
+        results.assumptions.growth.stage2,
+        results.assumptions.growth.stage3,
+        results.assumptions.growth.terminal,
+        results.assumptions.currentMargin,
+        results.assumptions.targetMargin,
+        results.assumptions.wacc,
+        results.terminalAnalysis.gordonGrowth,
+        results.terminalAnalysis.exitMultiple,
+        results.assumptions.exitMultiple,
+        results.terminalAnalysis.divergence,
+        results.scenarios.base.enterpriseValue,
+        results.scenarios.base.equityValue,
+        results.intrinsicValue,
+        results.scenarios.bull.intrinsicValuePerShare,
+        results.scenarios.bear.intrinsicValuePerShare,
+        results.scenarios.weighted.value,
+        results.sanityChecks.checks.impliedMultiples?.evEbitda,
+        results.scenarios.base.terminalPct,
+        results.buyTargets.marginOfSafety25,
+        results.buyTargets.marginOfSafety50,
+        JSON.stringify(results.warnings)
+      );
+    } catch (error) {
+      console.error('Error saving DCF valuation:', error);
+      // Don't throw - saving is optional
+    }
+  }
+
+  /**
+   * Get historical DCF valuations for a company
+   */
+  getHistoricalValuations(companyId, limit = 10) {
+    return this.db.prepare(`
+      SELECT * FROM dcf_valuations
+      WHERE company_id = ?
+      ORDER BY calculated_at DESC
+      LIMIT ?
+    `).all(companyId, limit);
+  }
+
+  /**
+   * Get sensitivity matrix with custom intervals
+   */
+  async calculateSensitivity(companyId, baseWACC, baseGrowth, options = {}) {
+    // Support custom intervals or use defaults
+    const {
+      rowVariable = 'wacc',
+      colVariable = 'growthStage1',
+      rowMin,
+      rowMax,
+      rowStep,
+      colMin,
+      colMax,
+      colStep,
+      baseInputs = {}
+    } = options;
+
+    // Default ranges if not specified
+    let rowValues, colValues;
+
+    if (rowMin !== undefined && rowMax !== undefined && rowStep !== undefined) {
+      // Custom row range
+      rowValues = [];
+      for (let v = rowMin; v <= rowMax + 0.0001; v += rowStep) {
+        rowValues.push(Math.round(v * 10000) / 10000); // Avoid floating point issues
+      }
+    } else {
+      // Default: use deltas from base value
+      const baseRowValue = rowVariable === 'wacc' ? baseWACC : baseGrowth;
+      const defaultDeltas = [-0.02, -0.01, 0, 0.01, 0.02];
+      rowValues = defaultDeltas.map(d => baseRowValue + d);
+    }
+
+    if (colMin !== undefined && colMax !== undefined && colStep !== undefined) {
+      // Custom column range
+      colValues = [];
+      for (let v = colMin; v <= colMax + 0.0001; v += colStep) {
+        colValues.push(Math.round(v * 10000) / 10000);
+      }
+    } else {
+      // Default: use deltas from base value
+      const baseColValue = colVariable === 'wacc' ? baseWACC : baseGrowth;
+      const defaultDeltas = [-0.03, -0.015, 0, 0.015, 0.03];
+      colValues = defaultDeltas.map(d => baseColValue + d);
+    }
+
+    const matrix = [];
+
+    for (const rowVal of rowValues) {
+      const row = [];
+      for (const colVal of colValues) {
+        const overrides = {
+          ...baseInputs,
+          [rowVariable]: rowVal,
+          [colVariable]: colVal
+        };
+        const result = await this.calculateDCF(companyId, overrides);
+        row.push(result.success ? result.intrinsicValue : null);
+      }
+      matrix.push(row);
+    }
+
+    return {
+      rowVariable,
+      colVariable,
+      rowValues,
+      colValues,
+      matrix,
+      gridSize: `${rowValues.length}x${colValues.length}`
+    };
+  }
+
+  /**
+   * Reverse DCF: Calculate implied growth rate given a target price
+   * Uses binary search to find the growth rate that produces the target intrinsic value
+   */
+  async calculateImpliedGrowth(companyId, targetPrice, options = {}) {
+    const {
+      baseInputs = {},
+      tolerance = 0.01, // Stop when within 1% of target
+      maxIterations = 50,
+      growthVariable = 'growthStage1' // Which growth rate to solve for
+    } = options;
+
+    // Get current price if target not specified
+    if (!targetPrice || targetPrice <= 0) {
+      const priceData = this.db.prepare(`
+        SELECT pm.last_price FROM price_metrics pm
+        JOIN companies c ON c.id = pm.company_id
+        WHERE c.id = ?
+      `).get(companyId);
+      targetPrice = priceData?.last_price || 0;
+    }
+
+    if (targetPrice <= 0) {
+      return { success: false, error: 'No valid target price' };
+    }
+
+    // Binary search bounds
+    let lowGrowth = -0.10; // -10%
+    let highGrowth = 0.50;  // 50%
+    let iterations = 0;
+
+    // Get base case to understand starting point
+    const baseCase = await this.calculateDCF(companyId, baseInputs);
+    if (!baseCase.success) {
+      return { success: false, error: 'Cannot calculate base case' };
+    }
+
+    // Calculate DCF at 0% growth to check if negative growth would be required
+    const dcfAt0Pct = await this.calculateDCF(companyId, {
+      ...baseInputs,
+      growthStage1: 0,
+      growthStage2: 0,
+      growthStage3: 0
+    });
+    const intrinsicAt0Pct = dcfAt0Pct.success ? dcfAt0Pct.intrinsicValue : null;
+
+    while (iterations < maxIterations) {
+      const midGrowth = (lowGrowth + highGrowth) / 2;
+
+      const result = await this.calculateDCF(companyId, {
+        ...baseInputs,
+        [growthVariable]: midGrowth
+      });
+
+      if (!result.success) {
+        iterations++;
+        continue;
+      }
+
+      const pctDiff = Math.abs(result.intrinsicValue - targetPrice) / targetPrice;
+
+      if (pctDiff < tolerance) {
+        // Log warning for negative implied growth
+        if (midGrowth < 0) {
+          console.warn(`[DCF] Negative implied growth (${(midGrowth * 100).toFixed(1)}%) for company ${companyId} - review assumptions`);
+        }
+
+        return {
+          success: true,
+          impliedGrowth: midGrowth,
+          impliedGrowthPct: midGrowth * 100,
+          targetPrice,
+          calculatedValue: result.intrinsicValue,
+          iterations,
+          baseGrowth: baseCase.assumptions.growth.stage1,
+          baseGrowthPct: baseCase.assumptions.growth.stage1 * 100,
+          growthGap: midGrowth - baseCase.assumptions.growth.stage1,
+          growthGapPct: (midGrowth - baseCase.assumptions.growth.stage1) * 100,
+          interpretation: this.interpretGrowthGap(midGrowth, baseCase.assumptions),
+          // Reference values for debugging
+          _diagnostic: {
+            dcfAt0PctGrowth: intrinsicAt0Pct,
+            baseCaseDCF: baseCase.intrinsicValue,
+            isNegativeGrowthRequired: intrinsicAt0Pct && intrinsicAt0Pct > targetPrice
+          }
+        };
+      }
+
+      // Adjust bounds: higher growth = higher value (usually)
+      if (result.intrinsicValue < targetPrice) {
+        lowGrowth = midGrowth;
+      } else {
+        highGrowth = midGrowth;
+      }
+
+      iterations++;
+    }
+
+    // Return best guess after max iterations
+    const finalGrowth = (lowGrowth + highGrowth) / 2;
+
+    // Log warning for non-convergence and negative growth
+    console.warn(`[DCF] Implied growth did not converge after ${iterations} iterations for company ${companyId}`);
+    if (finalGrowth < 0) {
+      console.warn(`[DCF] Negative implied growth (${(finalGrowth * 100).toFixed(1)}%) - review assumptions`);
+    }
+
+    return {
+      success: true,
+      impliedGrowth: finalGrowth,
+      impliedGrowthPct: finalGrowth * 100,
+      targetPrice,
+      approximation: true,
+      iterations,
+      baseGrowth: baseCase.assumptions.growth.stage1,
+      baseGrowthPct: baseCase.assumptions.growth.stage1 * 100,
+      growthGap: finalGrowth - baseCase.assumptions.growth.stage1,
+      growthGapPct: (finalGrowth - baseCase.assumptions.growth.stage1) * 100,
+      interpretation: this.interpretGrowthGap(finalGrowth, baseCase.assumptions),
+      // Reference values for debugging
+      _diagnostic: {
+        dcfAt0PctGrowth: intrinsicAt0Pct,
+        baseCaseDCF: baseCase.intrinsicValue,
+        isNegativeGrowthRequired: intrinsicAt0Pct && intrinsicAt0Pct > targetPrice
+      }
+    };
+  }
+
+  /**
+   * Reverse DCF: Calculate implied WACC given a target price
+   */
+  async calculateImpliedWACC(companyId, targetPrice, options = {}) {
+    const {
+      baseInputs = {},
+      tolerance = 0.01,
+      maxIterations = 50
+    } = options;
+
+    // Get current price if target not specified
+    if (!targetPrice || targetPrice <= 0) {
+      const priceData = this.db.prepare(`
+        SELECT pm.last_price FROM price_metrics pm
+        JOIN companies c ON c.id = pm.company_id
+        WHERE c.id = ?
+      `).get(companyId);
+      targetPrice = priceData?.last_price || 0;
+    }
+
+    if (targetPrice <= 0) {
+      return { success: false, error: 'No valid target price' };
+    }
+
+    // Binary search bounds for WACC
+    let lowWACC = 0.03;  // 3%
+    let highWACC = 0.25; // 25%
+    let iterations = 0;
+
+    const baseCase = await this.calculateDCF(companyId, baseInputs);
+    if (!baseCase.success) {
+      return { success: false, error: 'Cannot calculate base case' };
+    }
+
+    while (iterations < maxIterations) {
+      const midWACC = (lowWACC + highWACC) / 2;
+
+      const result = await this.calculateDCF(companyId, {
+        ...baseInputs,
+        wacc: midWACC
+      });
+
+      if (!result.success) {
+        iterations++;
+        continue;
+      }
+
+      const pctDiff = Math.abs(result.intrinsicValue - targetPrice) / targetPrice;
+
+      if (pctDiff < tolerance) {
+        return {
+          success: true,
+          impliedWACC: midWACC,
+          impliedWACCPct: midWACC * 100,
+          targetPrice,
+          calculatedValue: result.intrinsicValue,
+          iterations,
+          baseWACC: baseCase.assumptions.wacc,
+          baseWACCPct: baseCase.assumptions.wacc * 100,
+          waccGap: midWACC - baseCase.assumptions.wacc,
+          waccGapPct: (midWACC - baseCase.assumptions.wacc) * 100,
+          interpretation: this.interpretWACCGap(midWACC, baseCase.assumptions.wacc)
+        };
+      }
+
+      // Higher WACC = lower value (inverse relationship)
+      if (result.intrinsicValue > targetPrice) {
+        lowWACC = midWACC;
+      } else {
+        highWACC = midWACC;
+      }
+
+      iterations++;
+    }
+
+    const finalWACC = (lowWACC + highWACC) / 2;
+    return {
+      success: true,
+      impliedWACC: finalWACC,
+      impliedWACCPct: finalWACC * 100,
+      targetPrice,
+      approximation: true,
+      iterations,
+      baseWACC: baseCase.assumptions.wacc,
+      baseWACCPct: baseCase.assumptions.wacc * 100,
+      waccGap: finalWACC - baseCase.assumptions.wacc,
+      waccGapPct: (finalWACC - baseCase.assumptions.wacc) * 100,
+      interpretation: this.interpretWACCGap(finalWACC, baseCase.assumptions.wacc)
+    };
+  }
+
+  /**
+   * Interpret growth gap between implied and base assumptions
+   */
+  interpretGrowthGap(impliedGrowth, baseAssumptions) {
+    const baseGrowth = baseAssumptions.growth.stage1;
+    const historical = baseAssumptions.historicalGrowth?.threeYearCAGR || baseGrowth;
+    const gap = impliedGrowth - baseGrowth;
+    const gapPct = gap * 100;
+
+    if (Math.abs(gap) < 0.01) {
+      return 'Market pricing is aligned with your growth assumptions';
+    } else if (gap > 0.10) {
+      return `Market expects ${gapPct.toFixed(1)}pp higher growth than your estimate - stock may be overvalued`;
+    } else if (gap > 0.03) {
+      return `Market expects moderately higher growth (+${gapPct.toFixed(1)}pp) - verify if justified`;
+    } else if (gap > 0) {
+      return `Market expects slightly higher growth (+${gapPct.toFixed(1)}pp)`;
+    } else if (gap < -0.10) {
+      return `Market expects ${Math.abs(gapPct).toFixed(1)}pp lower growth - potential undervaluation`;
+    } else if (gap < -0.03) {
+      return `Market expects moderately lower growth (${gapPct.toFixed(1)}pp) - possible opportunity`;
+    } else {
+      return `Market expects slightly lower growth (${gapPct.toFixed(1)}pp)`;
+    }
+  }
+
+  /**
+   * Interpret WACC gap
+   */
+  interpretWACCGap(impliedWACC, baseWACC) {
+    const gap = impliedWACC - baseWACC;
+    const gapBps = gap * 10000;
+
+    if (Math.abs(gapBps) < 50) {
+      return 'Market risk assessment aligns with your WACC';
+    } else if (gapBps > 200) {
+      return `Market demands ${gapBps.toFixed(0)}bps higher return - stock may be undervalued or riskier`;
+    } else if (gapBps > 0) {
+      return `Market demands slightly higher return (+${gapBps.toFixed(0)}bps)`;
+    } else if (gapBps < -200) {
+      return `Market accepts ${Math.abs(gapBps).toFixed(0)}bps lower return - stock may be overvalued`;
+    } else {
+      return `Market accepts slightly lower return (${gapBps.toFixed(0)}bps)`;
+    }
+  }
+
+  /**
+   * Enhanced Reverse DCF with interpretation and sensitivity analysis
+   *
+   * This method provides:
+   * 1. Implied growth rate (what growth makes DCF = current stock price)
+   * 2. Human-readable interpretation of what the market is pricing in
+   * 3. Sensitivity table showing DCF at different growth rates vs current price
+   */
+  async calculateEnhancedReverseDCF(companyId, targetPrice, options = {}) {
+    const {
+      baseInputs = {},
+      sensitivityGrowthRates = [-0.10, -0.05, 0, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30],
+      includeInterpretation = true,
+      includeSensitivity = true
+    } = options;
+
+    // Get current price if target not specified
+    if (!targetPrice || targetPrice <= 0) {
+      const priceData = this.db.prepare(`
+        SELECT pm.last_price FROM price_metrics pm
+        WHERE pm.company_id = ?
+      `).get(companyId);
+      targetPrice = priceData?.last_price || 0;
+    }
+
+    if (targetPrice <= 0) {
+      return { success: false, error: 'No valid target price' };
+    }
+
+    // 1. Calculate implied growth rate
+    const impliedResult = await this.calculateImpliedGrowth(companyId, targetPrice, { baseInputs });
+
+    if (!impliedResult.success) {
+      return { success: false, error: impliedResult.error };
+    }
+
+    // 2. Get base case for reference
+    const baseCase = await this.calculateDCF(companyId, baseInputs);
+
+    // 3. Calculate sensitivity table (DCF at different growth rates)
+    let sensitivityTable = null;
+    if (includeSensitivity) {
+      sensitivityTable = [];
+
+      for (const growthRate of sensitivityGrowthRates) {
+        const result = await this.calculateDCF(companyId, {
+          ...baseInputs,
+          growthStage1: growthRate
+        });
+
+        const upside = targetPrice > 0 && result.success
+          ? ((result.intrinsicValue / targetPrice) - 1) * 100
+          : null;
+
+        sensitivityTable.push({
+          growthRate: growthRate,
+          growthRatePct: (growthRate * 100).toFixed(1) + '%',
+          dcfValue: result.success ? result.intrinsicValue : null,
+          dcfValueFormatted: result.success ? '$' + result.intrinsicValue.toFixed(2) : '—',
+          upside: upside,
+          upsideFormatted: upside !== null ? (upside >= 0 ? '+' : '') + upside.toFixed(1) + '%' : '—',
+          isImplied: Math.abs(growthRate - impliedResult.impliedGrowth) < 0.015,
+          isBase: Math.abs(growthRate - baseCase.assumptions.growth.stage1) < 0.015
+        });
+      }
+    }
+
+    // 4. Generate interpretation text
+    let interpretation = null;
+    if (includeInterpretation) {
+      interpretation = this.generateReverseDCFInterpretation(
+        impliedResult,
+        baseCase,
+        targetPrice
+      );
+    }
+
+    return {
+      success: true,
+      impliedGrowth: impliedResult.impliedGrowth,
+      impliedGrowthPct: impliedResult.impliedGrowthPct,
+      baseGrowth: impliedResult.baseGrowth,
+      baseGrowthPct: impliedResult.baseGrowthPct,
+      growthGap: impliedResult.growthGap,
+      growthGapPct: impliedResult.growthGapPct,
+      targetPrice,
+      baseCaseDCF: baseCase.intrinsicValue,
+      interpretation,
+      sensitivityTable,
+      // Flags for UI
+      flags: this.generateReverseDCFFlags(impliedResult, baseCase, targetPrice)
+    };
+  }
+
+  /**
+   * Generate human-readable interpretation of reverse DCF results
+   */
+  generateReverseDCFInterpretation(impliedResult, baseCase, targetPrice) {
+    const implied = impliedResult.impliedGrowth;
+    const base = impliedResult.baseGrowth;
+    const historical = baseCase.assumptions?.historicalGrowth?.threeYearCAGR || base;
+    const gap = implied - base;
+
+    const interpretations = [];
+    let sentiment = 'neutral'; // 'bullish' | 'bearish' | 'neutral' | 'cautious'
+    let riskLevel = 'LOW';
+
+    // 1. Main valuation stance based on implied growth
+    if (implied < -0.05) {
+      interpretations.push(
+        `Market is pricing in **revenue decline** of ${Math.abs(implied * 100).toFixed(1)}% annually. ` +
+        `This suggests either severe pessimism or fundamental concerns about the business.`
+      );
+      sentiment = 'bearish';
+      riskLevel = 'HIGH';
+    } else if (implied < 0) {
+      interpretations.push(
+        `Market expects **flat to declining** revenue (${(implied * 100).toFixed(1)}% growth). ` +
+        `If you believe growth will be higher, the stock may be undervalued.`
+      );
+      sentiment = 'cautious';
+      riskLevel = 'MEDIUM';
+    } else if (implied > 0.25) {
+      interpretations.push(
+        `Market is pricing in **exceptional growth** of ${(implied * 100).toFixed(1)}% annually. ` +
+        `This is difficult to sustain long-term—consider whether such optimism is justified.`
+      );
+      sentiment = 'bullish';
+      riskLevel = 'MEDIUM';
+    } else if (implied > 0.15) {
+      interpretations.push(
+        `Market expects **strong growth** of ${(implied * 100).toFixed(1)}% annually. ` +
+        `This implies confidence in the company's competitive position.`
+      );
+      sentiment = 'bullish';
+      riskLevel = 'LOW';
+    } else if (implied > 0.05) {
+      interpretations.push(
+        `Market expects **moderate growth** of ${(implied * 100).toFixed(1)}% annually. ` +
+        `This is a reasonable expectation for a mature business.`
+      );
+      sentiment = 'neutral';
+      riskLevel = 'LOW';
+    } else {
+      interpretations.push(
+        `Market expects **low single-digit growth** of ${(implied * 100).toFixed(1)}% annually. ` +
+        `If you expect higher growth, there may be upside potential.`
+      );
+      sentiment = 'cautious';
+      riskLevel = 'LOW';
+    }
+
+    // 2. Compare to historical growth
+    if (historical > 0) {
+      if (implied < historical - 0.10) {
+        interpretations.push(
+          `Implied growth (${(implied * 100).toFixed(1)}%) is **significantly below** historical (${(historical * 100).toFixed(1)}%). ` +
+          `Market may be too pessimistic, or growth is genuinely slowing.`
+        );
+      } else if (implied > historical + 0.10) {
+        interpretations.push(
+          `Implied growth (${(implied * 100).toFixed(1)}%) is **significantly above** historical (${(historical * 100).toFixed(1)}%). ` +
+          `Market expects acceleration—verify if catalysts support this.`
+        );
+      }
+    }
+
+    // 3. Compare to our model assumptions
+    if (Math.abs(gap) > 0.05) {
+      if (gap > 0) {
+        interpretations.push(
+          `Market expects ${(gap * 100).toFixed(1)}pp **higher** growth than our DCF model assumes. ` +
+          `Our model suggests the stock may be **overvalued**.`
+        );
+      } else {
+        interpretations.push(
+          `Market expects ${Math.abs(gap * 100).toFixed(1)}pp **lower** growth than our DCF model assumes. ` +
+          `Our model suggests the stock may be **undervalued**.`
+        );
+      }
+    }
+
+    return {
+      summary: interpretations[0],
+      details: interpretations,
+      sentiment,
+      riskLevel,
+      metrics: {
+        impliedGrowth: implied,
+        historicalGrowth: historical,
+        modelGrowth: base,
+        gapVsModel: gap,
+        gapVsHistorical: implied - historical
+      }
+    };
+  }
+
+  /**
+   * Generate flags for UI display
+   */
+  generateReverseDCFFlags(impliedResult, baseCase, targetPrice) {
+    const flags = [];
+    const implied = impliedResult.impliedGrowth;
+    const base = impliedResult.baseGrowth;
+    const historical = baseCase.assumptions?.historicalGrowth?.threeYearCAGR || base;
+
+    // Flag: Negative implied growth
+    if (implied < 0) {
+      flags.push({
+        type: 'NEGATIVE_GROWTH',
+        severity: implied < -0.05 ? 'HIGH' : 'MEDIUM',
+        message: 'Market pricing in decline',
+        icon: '⚠️'
+      });
+    }
+
+    // Flag: Growth exceeds 25%
+    if (implied > 0.25) {
+      flags.push({
+        type: 'HIGH_GROWTH_EXPECTATION',
+        severity: 'MEDIUM',
+        message: 'Very high growth priced in',
+        icon: '📈'
+      });
+    }
+
+    // Flag: Large gap vs historical
+    if (Math.abs(implied - historical) > 0.15) {
+      flags.push({
+        type: 'GROWTH_DISCONNECT',
+        severity: 'MEDIUM',
+        message: `${Math.abs((implied - historical) * 100).toFixed(0)}pp gap vs historical`,
+        icon: '↔️'
+      });
+    }
+
+    // Flag: Stock below model bear case
+    if (baseCase.scenarios?.bear && targetPrice < baseCase.scenarios.bear.intrinsicValuePerShare) {
+      flags.push({
+        type: 'BELOW_BEAR_CASE',
+        severity: 'HIGH',
+        message: 'Price below bear case DCF',
+        icon: '🔻'
+      });
+    }
+
+    return flags;
+  }
+
+  /**
+   * Calculate break-even points for key variables
+   */
+  async calculateBreakeven(companyId, currentPrice, options = {}) {
+    const { baseInputs = {} } = options;
+
+    // Calculate implied values for multiple variables
+    const [impliedGrowth, impliedWACC] = await Promise.all([
+      this.calculateImpliedGrowth(companyId, currentPrice, { baseInputs }),
+      this.calculateImpliedWACC(companyId, currentPrice, { baseInputs })
+    ]);
+
+    // Get base case for comparison
+    const baseCase = await this.calculateDCF(companyId, baseInputs);
+
+    return {
+      success: true,
+      currentPrice,
+      baseIntrinsicValue: baseCase.success ? baseCase.intrinsicValue : null,
+      breakeven: {
+        growth: impliedGrowth.success ? {
+          value: impliedGrowth.impliedGrowth,
+          valuePct: impliedGrowth.impliedGrowthPct,
+          baseValue: impliedGrowth.baseGrowth,
+          baseValuePct: impliedGrowth.baseGrowthPct,
+          gap: impliedGrowth.growthGap,
+          gapPct: impliedGrowth.growthGapPct,
+          interpretation: impliedGrowth.interpretation
+        } : null,
+        wacc: impliedWACC.success ? {
+          value: impliedWACC.impliedWACC,
+          valuePct: impliedWACC.impliedWACCPct,
+          baseValue: impliedWACC.baseWACC,
+          baseValuePct: impliedWACC.baseWACCPct,
+          gap: impliedWACC.waccGap,
+          gapPct: impliedWACC.waccGapPct,
+          interpretation: impliedWACC.interpretation
+        } : null
+      }
+    };
+  }
+
+  /**
+   * Calculate tornado chart data - sensitivity of each variable
+   */
+  async calculateTornadoChart(companyId, options = {}) {
+    const {
+      baseInputs = {},
+      variationPct = 0.20 // ±20% variation by default
+    } = options;
+
+    // Get base case
+    const baseCase = await this.calculateDCF(companyId, baseInputs);
+    if (!baseCase.success) {
+      return { success: false, error: 'Cannot calculate base case' };
+    }
+
+    const baseValue = baseCase.intrinsicValue;
+    const currentPrice = baseCase.currentPrice;
+
+    // Variables to test (removed targetEbitdaMargin as it's similar to ebitdaMargin)
+    const variables = [
+      { key: 'wacc', label: 'WACC', base: baseCase.assumptions.wacc, isInverse: true },
+      { key: 'growthStage1', label: 'Growth (Yr 1-3)', base: baseCase.assumptions.growth.stage1 },
+      { key: 'growthStage2', label: 'Growth (Yr 4-7)', base: baseCase.assumptions.growth.stage2 },
+      { key: 'growthStage3', label: 'Growth (Yr 8-10)', base: baseCase.assumptions.growth.stage3 },
+      { key: 'terminalGrowth', label: 'Terminal Growth', base: baseCase.assumptions.growth.terminal },
+      { key: 'exitMultiple', label: 'Exit Multiple', base: baseCase.assumptions.exitMultiple },
+      { key: 'ebitdaMargin', label: 'EBITDA Margin', base: baseCase.assumptions.margins?.ebitdaMargin || 0.20 }
+    ];
+
+    const results = [];
+
+    for (const variable of variables) {
+      const lowInput = variable.base * (1 - variationPct);
+      const highInput = variable.base * (1 + variationPct);
+
+      // Calculate at low and high values
+      const [lowResult, highResult] = await Promise.all([
+        this.calculateDCF(companyId, { ...baseInputs, [variable.key]: lowInput }),
+        this.calculateDCF(companyId, { ...baseInputs, [variable.key]: highInput })
+      ]);
+
+      const lowValue = lowResult.success ? lowResult.intrinsicValue : baseValue;
+      const highValue = highResult.success ? highResult.intrinsicValue : baseValue;
+
+      // For inverse variables (like WACC), low input = high value
+      const actualLow = variable.isInverse ? highValue : lowValue;
+      const actualHigh = variable.isInverse ? lowValue : highValue;
+
+      const range = actualHigh - actualLow;
+      const rangeVsBase = range / baseValue * 100;
+
+      results.push({
+        variable: variable.key,
+        label: variable.label,
+        baseValue: variable.base,
+        lowInput,
+        highInput,
+        lowValue: actualLow,
+        highValue: actualHigh,
+        range,
+        rangeVsBase,
+        rangePct: rangeVsBase,
+        impact: Math.abs(rangeVsBase)
+      });
+    }
+
+    // Sort by absolute impact (largest first)
+    results.sort((a, b) => b.impact - a.impact);
+
+    return {
+      success: true,
+      baseIntrinsicValue: baseValue,
+      currentPrice,
+      variationPct: variationPct * 100,
+      variables: results,
+      topDrivers: results.slice(0, 3).map(r => r.label)
+    };
+  }
+
+  /**
+   * Calculate WACC with detailed build-up (improved version)
+   * Uses company-specific capital structure, synthetic credit rating, and size premium
+   */
+  calculateWACCDetailed(company, financials, benchmarks, riskFreeRate = null) {
+    // Use provided rate or fall back to default
+    const rfRate = riskFreeRate ?? this.defaults.riskFreeRate;
+    const equityRiskPremium = this.defaults.equityRiskPremium;
+
+    // Get beta from benchmarks or company data
+    const beta = company.beta || benchmarks?.beta_median || this.defaults.defaultBeta;
+
+    // Cost of equity (CAPM)
+    const costOfEquity = rfRate + beta * equityRiskPremium;
+
+    // Calculate actual capital structure from balance sheet
+    const totalDebt = (financials.latestShortTermDebt || 0) + (financials.latestLongTermDebt || 0);
+    const cash = financials.latestCash || 0;
+    const netDebt = totalDebt - cash;
+    const marketCap = company.market_cap || 0;
+
+    // Enterprise value proxy
+    const evProxy = marketCap + netDebt;
+
+    // Capital structure weights (market-based)
+    let equityWeight, debtWeight;
+    if (evProxy > 0 && marketCap > 0) {
+      equityWeight = marketCap / evProxy;
+      debtWeight = Math.max(0, netDebt / evProxy);
+    } else {
+      // Fallback to industry average or 80/20
+      equityWeight = 0.80;
+      debtWeight = 0.20;
+    }
+
+    // Cost of debt based on interest coverage
+    const interestExpense = financials.latestInterestExpense || 0;
+    const ebit = financials.latestEBIT || financials.latestOperatingIncome || 0;
+    const interestCoverage = interestExpense > 0 ? ebit / interestExpense : 10;
+
+    // Synthetic credit rating based on interest coverage
+    let creditSpread;
+    if (interestCoverage > 8.5) {
+      creditSpread = 0.0063; // AAA: 63bps
+    } else if (interestCoverage > 6.5) {
+      creditSpread = 0.0078; // AA: 78bps
+    } else if (interestCoverage > 5.5) {
+      creditSpread = 0.0098; // A+: 98bps
+    } else if (interestCoverage > 4.25) {
+      creditSpread = 0.0108; // A: 108bps
+    } else if (interestCoverage > 3) {
+      creditSpread = 0.0122; // A-: 122bps
+    } else if (interestCoverage > 2.5) {
+      creditSpread = 0.0156; // BBB: 156bps
+    } else if (interestCoverage > 2) {
+      creditSpread = 0.0200; // BB+: 200bps
+    } else if (interestCoverage > 1.5) {
+      creditSpread = 0.0300; // BB: 300bps
+    } else {
+      creditSpread = 0.0450; // B or below: 450bps
+    }
+
+    const costOfDebt = rfRate + creditSpread;
+    const taxRate = 0.21; // US corporate tax rate
+    const afterTaxCostOfDebt = costOfDebt * (1 - taxRate);
+
+    // Size premium (simplified - based on market cap)
+    let sizePremium = 0;
+    if (marketCap > 0) {
+      if (marketCap < 250e6) {
+        sizePremium = 0.05; // Micro cap: +5%
+      } else if (marketCap < 1e9) {
+        sizePremium = 0.03; // Small cap: +3%
+      } else if (marketCap < 5e9) {
+        sizePremium = 0.015; // Mid cap: +1.5%
+      }
+      // Large cap: no premium
+    }
+
+    // Final WACC calculation
+    const wacc = (costOfEquity + sizePremium) * equityWeight + afterTaxCostOfDebt * debtWeight;
+
+    return {
+      wacc: Math.max(0.05, Math.min(wacc, 0.20)),
+      buildUp: {
+        riskFreeRate: rfRate,
+        beta,
+        equityRiskPremium,
+        costOfEquity,
+        sizePremium,
+        costOfEquityWithSize: costOfEquity + sizePremium,
+        interestCoverage,
+        syntheticRating: this.getSyntheticRating(interestCoverage),
+        creditSpread,
+        costOfDebt,
+        taxRate,
+        afterTaxCostOfDebt,
+        equityWeight,
+        debtWeight,
+        marketCap,
+        totalDebt,
+        netDebt
+      }
+    };
+  }
+
+  /**
+   * Get synthetic credit rating from interest coverage
+   */
+  getSyntheticRating(coverage) {
+    if (coverage > 8.5) return 'AAA';
+    if (coverage > 6.5) return 'AA';
+    if (coverage > 5.5) return 'A+';
+    if (coverage > 4.25) return 'A';
+    if (coverage > 3) return 'A-';
+    if (coverage > 2.5) return 'BBB';
+    if (coverage > 2) return 'BB+';
+    if (coverage > 1.5) return 'BB';
+    return 'B';
+  }
+
+  /**
+   * Calculate probabilistic valuation using Monte Carlo with parametric distributions
+   *
+   * This method runs Monte Carlo simulations on DCF inputs, sampling from
+   * parametric distributions (with fat tails if detected) rather than
+   * simple point estimates.
+   *
+   * @param {number} companyId - Company ID
+   * @param {object} options - Simulation options
+   * @returns {object} Probabilistic valuation results with percentiles
+   */
+  async calculateParametricValuation(companyId, options = {}) {
+    const {
+      simulations = 10000,
+      baseInputs = {},
+      growthUncertainty = 0.03,    // Std dev of growth rate
+      marginUncertainty = 0.02,    // Std dev of margin
+      waccUncertainty = 0.01,      // Std dev of WACC
+      multipleUncertainty = 2,     // Std dev of exit multiple
+      distributionType = 'studentT' // 'normal', 'studentT', 'skewedT'
+    } = options;
+
+    // Import parametric distributions
+    const { ParametricDistributions } = require('./statistics');
+    const distLib = new ParametricDistributions();
+
+    // Get base DCF to establish central estimates
+    const baseCase = await this.calculateDCF(companyId, baseInputs);
+    if (!baseCase.success) {
+      return { success: false, error: 'Cannot calculate base case DCF' };
+    }
+
+    // Define input distributions
+    const baseGrowth1 = baseCase.assumptions.growth.stage1;
+    const baseGrowth2 = baseCase.assumptions.growth.stage2;
+    const baseGrowth3 = baseCase.assumptions.growth.stage3;
+    const baseMargin = baseCase.assumptions.margins?.targetEbitdaMargin || 0.20;
+    const baseWACC = baseCase.assumptions.wacc;
+    const baseMultiple = baseCase.assumptions.exitMultiple;
+
+    // Degrees of freedom for Student's t (lower = fatter tails)
+    const df = distributionType === 'studentT' ? 5 : 1000;
+
+    // Run simulations
+    const valuations = [];
+    const simulationDetails = [];
+
+    for (let i = 0; i < simulations; i++) {
+      // Sample inputs from distributions
+      let growth1, growth2, growth3, margin, wacc, exitMultiple;
+
+      if (distributionType === 'normal') {
+        growth1 = distLib.sample(1, { mean: baseGrowth1, std: growthUncertainty }, 'normal')[0];
+        growth2 = distLib.sample(1, { mean: baseGrowth2, std: growthUncertainty * 0.8 }, 'normal')[0];
+        growth3 = distLib.sample(1, { mean: baseGrowth3, std: growthUncertainty * 0.6 }, 'normal')[0];
+        margin = distLib.sample(1, { mean: baseMargin, std: marginUncertainty }, 'normal')[0];
+        wacc = distLib.sample(1, { mean: baseWACC, std: waccUncertainty }, 'normal')[0];
+        exitMultiple = distLib.sample(1, { mean: baseMultiple, std: multipleUncertainty }, 'normal')[0];
+      } else {
+        // Student's t for fat tails (uses mean, scale, df params)
+        growth1 = distLib.sample(1, { mean: baseGrowth1, scale: growthUncertainty, df }, 'studentT')[0];
+        growth2 = distLib.sample(1, { mean: baseGrowth2, scale: growthUncertainty * 0.8, df }, 'studentT')[0];
+        growth3 = distLib.sample(1, { mean: baseGrowth3, scale: growthUncertainty * 0.6, df }, 'studentT')[0];
+        margin = distLib.sample(1, { mean: baseMargin, scale: marginUncertainty, df }, 'studentT')[0];
+        wacc = distLib.sample(1, { mean: baseWACC, scale: waccUncertainty, df }, 'studentT')[0];
+        exitMultiple = distLib.sample(1, { mean: baseMultiple, scale: multipleUncertainty, df }, 'studentT')[0];
+      }
+
+      // Apply bounds to prevent unrealistic values
+      growth1 = Math.max(-0.20, Math.min(0.50, growth1));
+      growth2 = Math.max(-0.10, Math.min(0.40, growth2));
+      growth3 = Math.max(-0.05, Math.min(0.30, growth3));
+      margin = Math.max(0.01, Math.min(0.60, margin));
+      wacc = Math.max(0.04, Math.min(0.25, wacc));
+      exitMultiple = Math.max(3, Math.min(30, exitMultiple));
+
+      // Ensure terminal growth < wacc
+      const terminalGrowth = Math.min(baseCase.assumptions.growth.terminal, wacc - 0.02);
+
+      // Run DCF with sampled inputs (simplified calculation for speed)
+      const simValue = this._quickDCF({
+        fcf: baseCase.assumptions.fcf,
+        revenue: baseCase.assumptions.revenue,
+        ebitdaMargin: margin,
+        growth: [growth1, growth2, growth3],
+        terminalGrowth,
+        wacc,
+        exitMultiple,
+        netDebt: baseCase.assumptions.netDebt || 0,
+        sharesOutstanding: baseCase.assumptions.sharesOutstanding
+      });
+
+      if (simValue > 0 && isFinite(simValue)) {
+        valuations.push(simValue);
+        if (i < 100) {
+          // Store first 100 for debugging
+          simulationDetails.push({ growth1, growth2, growth3, margin, wacc, exitMultiple, value: simValue });
+        }
+      }
+    }
+
+    if (valuations.length < simulations * 0.5) {
+      return {
+        success: false,
+        error: 'Too many invalid simulations - check input distributions'
+      };
+    }
+
+    // Sort valuations for percentile calculation
+    valuations.sort((a, b) => a - b);
+    const n = valuations.length;
+
+    // Calculate percentiles
+    const percentile = (p) => {
+      const idx = Math.floor(n * p);
+      return valuations[Math.min(idx, n - 1)];
+    };
+
+    const currentPrice = baseCase.currentPrice;
+    const expectedValue = valuations.reduce((a, b) => a + b, 0) / n;
+    const variance = valuations.reduce((s, v) => s + Math.pow(v - expectedValue, 2), 0) / n;
+    const stdDev = Math.sqrt(variance);
+
+    // Calculate probability metrics
+    const pUndervalued10 = valuations.filter(v => v > currentPrice * 1.10).length / n;
+    const pUndervalued20 = valuations.filter(v => v > currentPrice * 1.20).length / n;
+    const pUndervalued50 = valuations.filter(v => v > currentPrice * 1.50).length / n;
+    const pOvervalued = currentPrice > 0 ? valuations.filter(v => v < currentPrice).length / n : 0;
+
+    // Calculate moments of the distribution
+    const moments = distLib.calculateMoments(valuations);
+
+    return {
+      success: true,
+      baseIntrinsicValue: baseCase.intrinsicValue,
+      currentPrice,
+      probabilisticValuation: {
+        simulations: n,
+        distributionType,
+        expectedValue,
+        standardDeviation: stdDev,
+        coefficientOfVariation: (stdDev / expectedValue) * 100, // CV as %
+        percentiles: {
+          p1: percentile(0.01),
+          p5: percentile(0.05),
+          p10: percentile(0.10),
+          p25: percentile(0.25),
+          p50: percentile(0.50), // Median
+          p75: percentile(0.75),
+          p90: percentile(0.90),
+          p95: percentile(0.95),
+          p99: percentile(0.99)
+        },
+        interquartileRange: percentile(0.75) - percentile(0.25),
+        range90: percentile(0.95) - percentile(0.05),
+        moments: {
+          mean: moments.mean,
+          skewness: moments.skewness,
+          kurtosis: moments.kurtosis
+        },
+        probabilities: {
+          undervalued10pct: pUndervalued10 * 100,  // P(IV > price * 1.10)
+          undervalued20pct: pUndervalued20 * 100,  // P(IV > price * 1.20)
+          undervalued50pct: pUndervalued50 * 100,  // P(IV > price * 1.50)
+          overvalued: pOvervalued * 100            // P(IV < price)
+        }
+      },
+      inputDistributions: {
+        growth: {
+          stage1: { mean: baseGrowth1, std: growthUncertainty },
+          stage2: { mean: baseGrowth2, std: growthUncertainty * 0.8 },
+          stage3: { mean: baseGrowth3, std: growthUncertainty * 0.6 }
+        },
+        margin: { mean: baseMargin, std: marginUncertainty },
+        wacc: { mean: baseWACC, std: waccUncertainty },
+        exitMultiple: { mean: baseMultiple, std: multipleUncertainty }
+      },
+      interpretation: this._interpretProbabilisticValuation({
+        expectedValue,
+        currentPrice,
+        pUndervalued20,
+        pOvervalued,
+        skewness: moments.skewness,
+        cv: (stdDev / expectedValue) * 100
+      }),
+      sampleSimulations: simulationDetails.slice(0, 10)
+    };
+  }
+
+  /**
+   * Quick DCF calculation for Monte Carlo (simplified for performance)
+   */
+  _quickDCF(inputs) {
+    const { fcf, revenue, ebitdaMargin, growth, terminalGrowth, wacc, exitMultiple, netDebt, sharesOutstanding } = inputs;
+
+    // Project FCF over 10 years
+    let projectedRevenue = revenue;
+    let totalPV = 0;
+
+    for (let year = 1; year <= 10; year++) {
+      // Determine growth rate
+      let growthRate;
+      if (year <= 3) growthRate = growth[0];
+      else if (year <= 7) growthRate = growth[1];
+      else growthRate = growth[2];
+
+      projectedRevenue *= (1 + growthRate);
+
+      // FCF = Revenue * EBITDA Margin * FCF Conversion (assume 60%)
+      const projectedFCF = projectedRevenue * ebitdaMargin * 0.6;
+      const discountFactor = Math.pow(1 + wacc, year);
+      totalPV += projectedFCF / discountFactor;
+    }
+
+    // Terminal value (average of Gordon Growth and Exit Multiple)
+    const year10FCF = projectedRevenue * ebitdaMargin * 0.6;
+    const year10EBITDA = projectedRevenue * ebitdaMargin;
+
+    const tvGordon = (year10FCF * (1 + terminalGrowth)) / (wacc - terminalGrowth);
+    const tvMultiple = year10EBITDA * exitMultiple;
+    const terminalValue = (tvGordon + tvMultiple) / 2;
+    const terminalPV = terminalValue / Math.pow(1 + wacc, 10);
+
+    // Enterprise to equity value
+    const enterpriseValue = totalPV + terminalPV;
+    const equityValue = enterpriseValue - netDebt;
+
+    // Per share
+    return sharesOutstanding > 0 ? equityValue / sharesOutstanding : equityValue / 1e9;
+  }
+
+  /**
+   * Interpret probabilistic valuation results
+   */
+  _interpretProbabilisticValuation({ expectedValue, currentPrice, pUndervalued20, pOvervalued, skewness, cv }) {
+    const interpretations = [];
+
+    // Valuation stance
+    if (pUndervalued20 > 0.7) {
+      interpretations.push('STRONG BUY: 70%+ probability of 20%+ upside');
+    } else if (pUndervalued20 > 0.5) {
+      interpretations.push('BUY: More than 50% chance of 20%+ upside');
+    } else if (pOvervalued > 0.6) {
+      interpretations.push('CAUTION: 60%+ probability stock is overvalued');
+    } else if (pOvervalued > 0.4 && pUndervalued20 < 0.3) {
+      interpretations.push('HOLD: Balanced risk/reward at current price');
+    }
+
+    // Uncertainty assessment
+    if (cv > 50) {
+      interpretations.push('HIGH UNCERTAINTY: Wide valuation range (CV > 50%)');
+    } else if (cv > 30) {
+      interpretations.push('MODERATE UNCERTAINTY: Significant valuation spread');
+    } else {
+      interpretations.push('LOW UNCERTAINTY: Relatively tight valuation range');
+    }
+
+    // Distribution shape
+    if (skewness > 0.5) {
+      interpretations.push('Positively skewed: More upside scenarios than downside');
+    } else if (skewness < -0.5) {
+      interpretations.push('Negatively skewed: More downside scenarios than upside');
+    }
+
+    // Price vs expected value
+    if (currentPrice > 0) {
+      const discount = ((expectedValue / currentPrice) - 1) * 100;
+      if (discount > 30) {
+        interpretations.push(`Expected value ${discount.toFixed(0)}% above current price`);
+      } else if (discount < -20) {
+        interpretations.push(`Expected value ${Math.abs(discount).toFixed(0)}% below current price`);
+      }
+    }
+
+    return interpretations;
+  }
+}
+
+module.exports = DCFCalculator;

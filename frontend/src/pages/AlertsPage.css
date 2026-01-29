@@ -1,0 +1,479 @@
+/* frontend/src/pages/AlertsPage.css - PRISM Design System */
+
+.alerts-page {
+  padding: var(--space-8) var(--space-6);
+  max-width: var(--max-content-width);
+  margin: 0 auto;
+}
+
+@media (max-width: 1024px) {
+  .alerts-page {
+    padding: var(--space-6) var(--space-4);
+  }
+}
+
+@media (max-width: 768px) {
+  .alerts-page {
+    padding: var(--space-4);
+  }
+}
+
+/* Header Actions */
+.alerts-page .alerts-page__header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.alerts-page .alerts-page__header-actions a {
+  text-decoration: none;
+}
+
+/* Summary Card */
+.alerts-page .summary-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin-bottom: var(--space-6);
+}
+
+.alerts-page .summary-stats {
+  display: flex;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+}
+
+.alerts-page .summary-stats .stat-item {
+  text-align: center;
+  min-width: 80px;
+}
+
+.alerts-page .summary-stats .stat-value {
+  display: block;
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+.alerts-page .summary-stats .stat-label {
+  font-size: var(--text-xs);
+  color: var(--color-gold-700);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-widest);
+}
+
+.alerts-page .summary-stats .stat-item.strong-buy .stat-value {
+  color: var(--positive);
+}
+
+.alerts-page .summary-stats .stat-item.buy .stat-value {
+  color: var(--positive-light);
+}
+
+.alerts-page .summary-stats .stat-item.warning .stat-value {
+  color: var(--warning);
+}
+
+.alerts-page .summary-stats .stat-item.total .stat-value {
+  color: var(--color-navy-900);
+}
+
+/* Filter Bar */
+.alerts-page .filter-bar {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.alerts-page .filter-group {
+  margin-bottom: var(--space-3);
+}
+
+.alerts-page .filter-group:last-child {
+  margin-bottom: 0;
+}
+
+.alerts-page .filter-group label {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--color-gold-700);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-widest);
+  margin-bottom: var(--space-2);
+}
+
+.alerts-page .filter-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.alerts-page .filter-btn {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  text-transform: capitalize;
+}
+
+.alerts-page .filter-btn:hover {
+  border-color: var(--color-navy-900);
+  color: var(--color-navy-900);
+}
+
+.alerts-page .filter-btn.active {
+  background: var(--color-navy-900);
+  border-color: var(--color-navy-900);
+  color: white;
+}
+
+.alerts-page .filter-actions {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-default);
+}
+
+/* Alert Card */
+.alerts-page .alert-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-3);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.alerts-page .alert-card:hover {
+  box-shadow: var(--shadow-md);
+  background: rgba(212, 175, 55, 0.02);
+}
+
+.alerts-page .alert-card.unread {
+  background: var(--color-gold-50);
+}
+
+/* Alert Type Left Border Colors */
+.alerts-page .alert-card.alert-type-price {
+  border-left-color: var(--info);
+}
+
+.alerts-page .alert-card.alert-type-portfolio {
+  border-left-color: var(--warning);
+}
+
+.alerts-page .alert-card.alert-type-agent {
+  border-left-color: var(--color-ai-violet);
+}
+
+.alerts-page .alert-card.alert-type-insider {
+  border-left-color: var(--color-navy-700);
+}
+
+.alerts-page .alert-card.alert-type-earnings {
+  border-left-color: var(--positive);
+}
+
+.alerts-page .alert-card.alert-type-news {
+  border-left-color: var(--color-gold-500);
+}
+
+.alerts-page .alert-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-3);
+}
+
+.alerts-page .alert-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.alerts-page .alert-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Icon color inherited from inline styles based on signal type */
+}
+
+.alerts-page .alert-symbol {
+  font-weight: var(--font-bold);
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.alerts-page .alert-symbol:hover {
+  color: var(--color-gold-500);
+}
+
+.alerts-page .alert-price {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.alerts-page .alert-price .price-change {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  padding: var(--space-0-5) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+.alerts-page .alert-price .price-change.up {
+  color: var(--positive);
+  background: var(--positive-muted);
+}
+
+.alerts-page .alert-price .price-change.down {
+  color: var(--negative);
+  background: var(--negative-muted);
+}
+
+.alerts-page .alert-signal {
+  padding: var(--space-0-5) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+}
+
+.alerts-page .alert-type {
+  padding: var(--space-0-5) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  text-transform: capitalize;
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+}
+
+.alerts-page .watchlist-badge {
+  color: var(--warning);
+  font-size: var(--text-base);
+}
+
+.alerts-page .alert-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.alerts-page .alert-time {
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  color: var(--text-tertiary);
+}
+
+.alerts-page .btn-icon {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.alerts-page .btn-icon:hover {
+  background: var(--bg-muted);
+  color: var(--text-primary);
+}
+
+.alerts-page .alert-content {
+  margin-bottom: var(--space-3);
+}
+
+.alerts-page .alert-title {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin: 0 0 var(--space-1) 0;
+}
+
+.alerts-page .alert-description {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: var(--leading-relaxed);
+}
+
+.alerts-page .alert-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-default);
+}
+
+.alerts-page .alert-priority {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.alerts-page .btn-link {
+  font-size: var(--text-sm);
+  color: var(--color-gold-500);
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.alerts-page .btn-link:hover {
+  color: var(--color-gold-600);
+  text-decoration: underline;
+}
+
+/* Alerts List */
+.alerts-page .alerts-list {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Load More */
+.alerts-page .load-more {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-6);
+}
+
+/* Empty State */
+.alerts-page .empty-state {
+  text-align: center;
+  padding: var(--space-12);
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+}
+
+.alerts-page .empty-state .hint {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  margin-top: var(--space-2);
+}
+
+/* Error Banner */
+.alerts-page .error-banner {
+  background: var(--negative-muted);
+  border: 1px solid var(--negative);
+  color: var(--negative);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
+  font-size: var(--text-sm);
+}
+
+/* Loading */
+.alerts-page .loading {
+  text-align: center;
+  padding: var(--space-12);
+  color: var(--text-secondary);
+}
+
+/* Buttons */
+.alerts-page .btn-primary {
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-navy-900);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.alerts-page .btn-primary:hover:not(:disabled) {
+  background: var(--color-navy-800);
+}
+
+.alerts-page .btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.alerts-page .btn-secondary {
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.alerts-page .btn-secondary:hover {
+  background: var(--bg-tertiary);
+}
+
+/* Smart Alerts Mode */
+.alerts-page.smart-alerts {
+  /* Enhanced styling for smart alerts mode */
+}
+
+.alerts-page.smart-alerts .alerts-page__header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Ensure proper spacing for smart alert components */
+.alerts-page.smart-alerts > .what-matters-card,
+.alerts-page.smart-alerts > .market-context-card,
+.alerts-page.smart-alerts > .actionability-filter {
+  margin-bottom: var(--space-4);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .alerts-page .page-header {
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  .alerts-page .summary-stats {
+    justify-content: space-around;
+  }
+
+  .alerts-page .filter-buttons {
+    flex-wrap: wrap;
+  }
+
+  .alerts-page .alert-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+
+  .alerts-page .alert-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .alerts-page.smart-alerts .alerts-page__header-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}

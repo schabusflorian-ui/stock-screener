@@ -1,0 +1,113 @@
+{
+  "analyst": "contrarian",
+  "frameworks": [
+    {
+      "id": "second_level_thinking",
+      "name": "Second-Level Thinking Framework",
+      "description": "Howard Marks' approach to finding non-consensus opportunities",
+      "process": [
+        "1. First-level thinking: What is the consensus view?",
+        "2. Why does consensus believe this?",
+        "3. What would have to happen for consensus to be wrong?",
+        "4. What is the probability of the non-consensus scenario?",
+        "5. Is the non-consensus view priced into the stock?"
+      ],
+      "example": {
+        "first_level": "It's a good company, let's buy the stock",
+        "second_level": "It's a good company, but everyone thinks it's great. It's overrated and overpriced - let's sell"
+      },
+      "keywords": ["second-level thinking", "contrarian", "non-consensus", "sentiment"],
+      "sources": ["Howard Marks - The Most Important Thing"]
+    },
+    {
+      "id": "sentiment_analysis",
+      "name": "Sentiment Extreme Detection",
+      "description": "Identify when sentiment has reached actionable extremes",
+      "bullish_extremes": {
+        "indicators": [
+          "Euphoria in media coverage",
+          "Retail options activity surging",
+          "Analysts unanimously positive",
+          "IPO frenzy in sector",
+          "Valuations at historical highs"
+        ],
+        "action": "Consider reducing exposure or hedging"
+      },
+      "bearish_extremes": {
+        "indicators": [
+          "Maximum pessimism in headlines",
+          "Heavy short interest",
+          "Analysts abandoning coverage",
+          "Insider buying increasing",
+          "Valuations at historical lows"
+        ],
+        "action": "Consider building position"
+      },
+      "keywords": ["sentiment", "pessimism", "extreme", "contrarian"],
+      "sources": ["Howard Marks on Cycles", "Templeton Investing"]
+    },
+    {
+      "id": "mean_reversion",
+      "name": "Mean Reversion Framework",
+      "description": "Identify candidates for mean reversion trades",
+      "criteria": [
+        "1. Stock down 40%+ from recent high",
+        "2. Business fundamentals intact (not structural decline)",
+        "3. Catalyst identified that could change narrative",
+        "4. Insider buying or buybacks occurring",
+        "5. Valuation metrics at historical trough"
+      ],
+      "red_flags": [
+        "Structural industry decline",
+        "Balance sheet deteriorating",
+        "Management selling shares",
+        "Competitive position weakening",
+        "No clear path to improvement"
+      ],
+      "keywords": ["mean reversion", "beaten-down", "catalyst", "recovery"],
+      "sources": ["David Dreman", "John Templeton"]
+    },
+    {
+      "id": "value_trap_identification",
+      "name": "Value Trap vs Opportunity Assessment",
+      "description": "Distinguish cheap stocks from value traps",
+      "value_trap_signs": [
+        "Declining industry with secular headwinds",
+        "Competitive position eroding over time",
+        "Management without credible turnaround plan",
+        "Balance sheet deteriorating (rising debt)",
+        "Dividend at risk of cut",
+        "Insider selling despite low valuation"
+      ],
+      "opportunity_signs": [
+        "Cyclical downturn in otherwise healthy industry",
+        "Self-help opportunity (cost cuts, asset sales)",
+        "New management with track record",
+        "Strong balance sheet to weather storm",
+        "Insider buying at current levels"
+      ],
+      "keywords": ["value trap", "contrarian", "catalyst", "turnaround"],
+      "sources": ["Howard Marks Memos", "Michael Burry Analysis"]
+    },
+    {
+      "id": "cycle_positioning",
+      "name": "Market Cycle Positioning",
+      "description": "Templeton's framework for understanding where we are in the cycle",
+      "stages": {
+        "pessimism": "Bear markets end here. Time to buy aggressively.",
+        "skepticism": "Recovery begins but few believe it. Continue buying.",
+        "optimism": "Broad participation and rising prices. Hold positions.",
+        "euphoria": "Everyone bullish, excessive valuations. Time to sell."
+      },
+      "indicators": [
+        "Investor sentiment surveys",
+        "Fund flows data",
+        "Valuation spreads",
+        "Credit spreads",
+        "IPO and M&A activity"
+      ],
+      "keywords": ["cycle", "sentiment", "pessimism", "euphoria"],
+      "sources": ["John Templeton", "Howard Marks on Cycles"]
+    }
+  ]
+}

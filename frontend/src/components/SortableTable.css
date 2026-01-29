@@ -1,0 +1,180 @@
+/* SortableTable.css */
+
+.sortable-table-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sortable-table-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.sortable-table-search .search-input {
+  flex: 1;
+  max-width: 300px;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  transition: all 0.2s ease;
+}
+
+.sortable-table-search .search-input:focus {
+  outline: none;
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.1);
+}
+
+.sortable-table-search .search-results-count {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.sortable-table-wrapper {
+  overflow-x: auto;
+  background: var(--bg-secondary);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-primary);
+  box-shadow: var(--shadow-md);
+  border-radius: var(--radius-lg);
+}
+
+.sortable-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 600px;
+}
+
+.sortable-table th,
+.sortable-table td {
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+}
+
+.sortable-table td {
+  padding: 14px var(--space-4);
+  font-size: 14px;
+  border-top: 1px solid var(--bg-muted, #F1F5F9);
+  color: var(--text-primary);
+}
+
+/* Numeric columns - right align, monospace */
+.sortable-table td.numeric,
+.sortable-table .numeric {
+  text-align: right;
+  font-family: var(--font-mono, ui-monospace);
+  font-variant-numeric: tabular-nums;
+}
+
+.sortable-table th {
+  background: var(--bg-tertiary, #F8FAFC);
+  color: var(--text-secondary, #64748B);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--space-3, 12px) var(--space-4, 16px);
+  border-bottom: 1px solid var(--bg-muted, #F1F5F9);
+}
+
+.sortable-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s ease;
+}
+
+.sortable-table th.sortable:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.sortable-table th .th-content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sortable-table .sort-indicator {
+  font-size: 0.625rem;
+  opacity: 0.3;
+  transition: opacity 0.2s ease;
+}
+
+.sortable-table .sort-indicator.active {
+  opacity: 1;
+  color: var(--brand-primary);
+}
+
+.sortable-table tbody tr {
+  transition: background 0.2s ease;
+}
+
+.sortable-table tbody tr:hover {
+  background: var(--bg-hover, rgba(212, 175, 55, 0.04));
+}
+
+.sortable-table tbody tr.clickable {
+  cursor: pointer;
+}
+
+.sortable-table tbody tr.clickable:hover {
+  background: rgba(212, 175, 55, 0.08);
+}
+
+/* Right-aligned numeric header */
+.sortable-table th.numeric {
+  text-align: right;
+}
+
+/* Value classes */
+.sortable-table .positive {
+  color: var(--positive) !important;
+}
+
+.sortable-table .negative {
+  color: var(--negative) !important;
+}
+
+/* Links */
+.sortable-table .table-link {
+  color: var(--brand-primary);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.sortable-table .table-link:hover {
+  text-decoration: underline;
+}
+
+/* Text truncation */
+.sortable-table .truncate {
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Empty state */
+.sortable-table-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+  background: var(--bg-secondary);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+}

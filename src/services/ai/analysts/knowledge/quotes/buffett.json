@@ -1,0 +1,97 @@
+{
+  "author": "Warren Buffett",
+  "analyst": "value",
+  "quotes": [
+    {
+      "id": "buffett_price_value",
+      "text": "Price is what you pay, value is what you get.",
+      "source": "2008 Berkshire Letter",
+      "topics": ["intrinsic value", "valuation", "margin of safety"]
+    },
+    {
+      "id": "buffett_wonderful_company",
+      "text": "It's far better to buy a wonderful company at a fair price than a fair company at a wonderful price.",
+      "source": "1989 Berkshire Letter",
+      "topics": ["wonderful company", "fair price", "quality", "moat"]
+    },
+    {
+      "id": "buffett_moat",
+      "text": "The key to investing is determining the competitive advantage of any given company and, above all, the durability of that advantage.",
+      "source": "1999 Berkshire Letter",
+      "topics": ["moat", "competitive advantage", "durable"]
+    },
+    {
+      "id": "buffett_circle_competence",
+      "text": "What counts for most people in investing is not how much they know, but rather how realistically they define what they don't know.",
+      "source": "1999 Berkshire Letter",
+      "topics": ["circle of competence", "discipline", "risk"]
+    },
+    {
+      "id": "buffett_margin_safety",
+      "text": "The three most important words in investing are margin of safety.",
+      "source": "Interview",
+      "topics": ["margin of safety", "risk", "valuation"]
+    },
+    {
+      "id": "buffett_owner_earnings",
+      "text": "Owner earnings represent (a) reported earnings plus (b) depreciation, depletion, amortization, and certain other non-cash charges less (c) the average annual amount of capitalized expenditures for plant and equipment.",
+      "source": "1986 Berkshire Letter",
+      "topics": ["owner earnings", "cash flow", "valuation"]
+    },
+    {
+      "id": "buffett_capital_allocation",
+      "text": "The most important thing to do if you find yourself in a hole is to stop digging.",
+      "source": "Berkshire Meeting",
+      "topics": ["capital allocation", "mistakes", "discipline"]
+    },
+    {
+      "id": "buffett_holding_period",
+      "text": "Our favorite holding period is forever.",
+      "source": "1988 Berkshire Letter",
+      "topics": ["long term", "patience", "compounding"]
+    },
+    {
+      "id": "buffett_return_equity",
+      "text": "We look for businesses that are run by able and honest managers and that have earned good returns on equity while employing either no debt or very little debt.",
+      "source": "Berkshire Letter",
+      "topics": ["return on equity", "management", "debt"]
+    },
+    {
+      "id": "buffett_business_ownership",
+      "text": "When we own portions of outstanding businesses with outstanding managements, our favorite holding period is forever.",
+      "source": "1988 Berkshire Letter",
+      "topics": ["business ownership", "management quality", "long term"]
+    }
+  ],
+  "coAuthors": [
+    {
+      "name": "Charlie Munger",
+      "quotes": [
+        {
+          "id": "munger_invert",
+          "text": "Invert, always invert. Turn a situation or problem upside down. Look at it backward.",
+          "source": "Poor Charlie's Almanack",
+          "topics": ["mental models", "second-level thinking", "analysis"]
+        },
+        {
+          "id": "munger_simple",
+          "text": "Simplicity has a way of improving performance through enabling us to better understand what we are doing.",
+          "source": "USC Law School Commencement",
+          "topics": ["simplicity", "understanding", "discipline"]
+        },
+        {
+          "id": "munger_moat",
+          "text": "How do you compete against a true fanatic? You can only try to build the best possible moat and continuously attempt to widen it.",
+          "source": "Poor Charlie's Almanack",
+          "topics": ["moat", "competitive advantage", "durable"]
+        },
+        {
+          "id": "munger_circle",
+          "text": "Knowing what you don't know is more useful than being brilliant.",
+          "source": "Poor Charlie's Almanack",
+          "topics": ["circle of competence", "humility", "risk"]
+        }
+      ]
+    }
+  ]
+}

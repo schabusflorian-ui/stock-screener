@@ -1,0 +1,130 @@
+{
+  "analyst": "tech",
+  "frameworks": [
+    {
+      "id": "platform_economics",
+      "name": "Platform Economics Assessment",
+      "description": "Framework for evaluating platform businesses",
+      "characteristics": [
+        "Multi-sided: Connects different user groups (buyers/sellers, creators/consumers)",
+        "Network effects: Value increases with more participants",
+        "Data flywheel: Usage generates data that improves the product",
+        "Zero marginal cost: Adding users costs nearly nothing"
+      ],
+      "metrics": [
+        "Take rate (% of GMV)",
+        "Network density",
+        "User engagement trends",
+        "Cross-side network strength"
+      ],
+      "keywords": ["platform", "network effects", "flywheel", "ecosystem"],
+      "sources": ["a16z on Platforms", "Ben Evans Analysis"]
+    },
+    {
+      "id": "winner_take_all",
+      "name": "Winner-Take-All Assessment",
+      "description": "Determine if market dynamics favor monopoly outcomes",
+      "indicators": {
+        "strong_winner_take_all": [
+          "Strong network effects (direct or data)",
+          "High switching costs",
+          "Returns to scale",
+          "Standard setting (de facto or de jure)"
+        ],
+        "weak_winner_take_all": [
+          "Product differentiation opportunities",
+          "Local or vertical niches",
+          "Low switching costs",
+          "Regulatory fragmentation"
+        ]
+      },
+      "keywords": ["winner-take-all", "monopoly", "network effects", "defensibility"],
+      "sources": ["Peter Thiel Zero to One", "a16z Analysis"]
+    },
+    {
+      "id": "disruption_analysis",
+      "name": "Disruption Assessment Framework",
+      "description": "Christensen's framework for identifying disruptive threats and opportunities",
+      "types": {
+        "low_end": "Starts with overserved customers who don't need full features",
+        "new_market": "Creates new consumption where none existed before"
+      },
+      "assessment": [
+        "1. Is incumbent's product 'good enough' for most customers?",
+        "2. Is there a simpler/cheaper alternative emerging?",
+        "3. Are incumbents fleeing upmarket?",
+        "4. Is new entrant improving faster than customer needs evolve?"
+      ],
+      "keywords": ["disruption", "innovation", "s-curve", "incumbent"],
+      "sources": ["Clayton Christensen", "ARK Invest"]
+    },
+    {
+      "id": "unit_economics",
+      "name": "Unit Economics Framework",
+      "description": "Evaluate the fundamental economics of each customer",
+      "metrics": {
+        "ltv_cac": {
+          "formula": "LTV/CAC = (ARPU x Gross Margin x Lifetime) / CAC",
+          "benchmark": ">3x for healthy business",
+          "interpretation": "Below 1x = losing money on each customer"
+        },
+        "cac_payback": {
+          "formula": "CAC / (ARPU x Gross Margin)",
+          "benchmark": "<12 months for SaaS",
+          "interpretation": "How long to recover customer acquisition cost"
+        },
+        "net_revenue_retention": {
+          "formula": "(Starting MRR + Expansion - Churn) / Starting MRR",
+          "benchmark": ">100% for best SaaS",
+          "interpretation": "Growing revenue from existing customers"
+        }
+      },
+      "keywords": ["unit economics", "ltv", "cac", "saas metrics", "cohort analysis"],
+      "sources": ["SaaS Metrics", "a16z Operating Metrics"]
+    },
+    {
+      "id": "s_curve_adoption",
+      "name": "S-Curve Adoption Analysis",
+      "description": "Determine where technology is on adoption curve",
+      "phases": {
+        "early_innovators": "0-2.5% adoption - high risk, high reward",
+        "early_adopters": "2.5-16% - growth accelerating, still early",
+        "early_majority": "16-50% - mainstream adoption, growth visible",
+        "late_majority": "50-84% - growth slowing, competition intense",
+        "laggards": "84-100% - market saturated"
+      },
+      "signals": {
+        "inflection_point": [
+          "Unit economics turning positive",
+          "Organic growth exceeding paid",
+          "Enterprise adoption beginning",
+          "Regulatory clarity emerging"
+        ]
+      },
+      "keywords": ["s-curve", "adoption", "market penetration", "growth"],
+      "sources": ["ARK Invest", "Bass Diffusion Model"]
+    },
+    {
+      "id": "product_market_fit",
+      "name": "Product-Market Fit Assessment",
+      "description": "Evaluate if product has achieved true product-market fit",
+      "indicators": {
+        "strong_pmf": [
+          "Organic growth > 50% of new users",
+          "Net Promoter Score > 50",
+          "Users would be 'very disappointed' if product disappeared (>40%)",
+          "Usage increasing over time per cohort",
+          "Low CAC payback period (<6 months)"
+        ],
+        "weak_pmf": [
+          "Heavy reliance on paid acquisition",
+          "High churn in early cohorts",
+          "Feature requests scattered (no clear direction)",
+          "Customers need heavy hand-holding"
+        ]
+      },
+      "keywords": ["product-market fit", "growth", "retention", "pmf"],
+      "sources": ["Marc Andreessen", "a16z PMF Framework"]
+    }
+  ]
+}

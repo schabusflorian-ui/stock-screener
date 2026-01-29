@@ -1,0 +1,166 @@
+/* frontend/src/components/ui/Button.css */
+/* Prism Design System - Button Component */
+
+.ui-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  font-family: var(--font-sans);
+  font-weight: var(--font-medium);
+  border-radius: var(--radius-md);
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.ui-button:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+/* Sizes - Prism Spec */
+.ui-button--sm,
+.ui-button--small {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  border-radius: var(--radius-md);
+}
+
+.ui-button--md,
+.ui-button--medium {
+  padding: var(--space-2-5) var(--space-4);
+  font-size: var(--text-sm);
+}
+
+.ui-button--lg,
+.ui-button--large {
+  padding: var(--space-3) var(--space-6);
+  font-size: var(--text-base);
+}
+
+/* Variant: Primary - Brand Gold */
+.ui-button--primary {
+  background: var(--brand-primary);
+  color: white;
+  box-shadow: var(--shadow-sm);
+}
+
+.ui-button--primary:hover:not(:disabled) {
+  background: var(--brand-secondary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.ui-button--primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* Variant: Secondary - Outlined */
+.ui-button--secondary {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
+}
+
+.ui-button--secondary:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+  border-color: var(--brand-primary);
+  color: var(--text-primary);
+}
+
+/* Variant: Gold/Premium - Gradient */
+.ui-button--gold {
+  background: linear-gradient(135deg, var(--color-gold-500) 0%, var(--color-gold-600) 100%);
+  color: var(--bg-surface);
+  box-shadow: var(--shadow-gold-sm);
+}
+
+.ui-button--gold:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-gold);
+  filter: brightness(1.05);
+}
+
+.ui-button--gold:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* Variant: Ghost - Transparent */
+.ui-button--ghost {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.ui-button--ghost:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Variant: Danger - Red */
+.ui-button--danger {
+  background: var(--negative);
+  color: var(--bg-surface);
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25);
+}
+
+.ui-button--danger:hover:not(:disabled) {
+  background: var(--negative-dark);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-red);
+}
+
+.ui-button--danger:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* States */
+.ui-button--disabled,
+.ui-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.ui-button--loading {
+  cursor: wait;
+}
+
+/* Icon and spinner */
+.ui-button__icon {
+  flex-shrink: 0;
+}
+
+.ui-button__spinner {
+  flex-shrink: 0;
+  animation: button-spin 1s linear infinite;
+}
+
+@keyframes button-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ui-button__text {
+  /* Text container */
+}
+
+/* Icon-only button */
+.ui-button:not(:has(.ui-button__text)) {
+  padding: var(--space-2-5);
+}
+
+.ui-button--sm:not(:has(.ui-button__text)),
+.ui-button--small:not(:has(.ui-button__text)) {
+  padding: var(--space-2);
+}
+
+.ui-button--lg:not(:has(.ui-button__text)),
+.ui-button--large:not(:has(.ui-button__text)) {
+  padding: var(--space-3);
+}

@@ -1,0 +1,85 @@
+{
+  "author": "Peter Lynch",
+  "analyst": "growth",
+  "quotes": [
+    {
+      "id": "lynch_ten_bagger",
+      "text": "Go for a business that any idiot can run - because sooner or later, any idiot probably is going to run it.",
+      "source": "One Up on Wall Street",
+      "topics": ["quality", "simplicity", "moat"]
+    },
+    {
+      "id": "lynch_know_own",
+      "text": "Know what you own, and know why you own it.",
+      "source": "One Up on Wall Street",
+      "topics": ["research", "conviction", "understanding"]
+    },
+    {
+      "id": "lynch_peg",
+      "text": "The P/E ratio of any company that's fairly priced will equal its growth rate.",
+      "source": "One Up on Wall Street",
+      "topics": ["peg ratio", "growth", "valuation"]
+    },
+    {
+      "id": "lynch_boring",
+      "text": "The best stock to buy may be the one you already own.",
+      "source": "One Up on Wall Street",
+      "topics": ["patience", "conviction", "compounding"]
+    },
+    {
+      "id": "lynch_amateur",
+      "text": "The amateur investor has advantages over professional investors because they're not constrained by benchmark thinking.",
+      "source": "Beating the Street",
+      "topics": ["edge", "independent thinking", "research"]
+    },
+    {
+      "id": "lynch_earnings",
+      "text": "In the long run, a stock's performance is tied to company earnings. Nothing else matters as much.",
+      "source": "One Up on Wall Street",
+      "topics": ["earnings", "growth", "fundamentals"]
+    },
+    {
+      "id": "lynch_story",
+      "text": "Behind every stock is a company. Find out what it's doing.",
+      "source": "One Up on Wall Street",
+      "topics": ["research", "business model", "understanding"]
+    },
+    {
+      "id": "lynch_multibagger",
+      "text": "If you can find a company that can grow earnings 20-25% a year, you might have found a ten-bagger over a decade.",
+      "source": "One Up on Wall Street",
+      "topics": ["ten-bagger", "growth", "compounding"]
+    }
+  ],
+  "coAuthors": [
+    {
+      "name": "Philip Fisher",
+      "quotes": [
+        {
+          "id": "fisher_scuttlebutt",
+          "text": "Go to five companies in an industry, ask each of them intelligent questions about the other four, and you'll get a good understanding of all five.",
+          "source": "Common Stocks and Uncommon Profits",
+          "topics": ["scuttlebutt", "research", "competitive analysis"]
+        },
+        {
+          "id": "fisher_growth",
+          "text": "The greatest investment reward comes to those who by good luck or good sense find the occasional company that over the years can grow in sales and profits far more than industry as a whole.",
+          "source": "Common Stocks and Uncommon Profits",
+          "topics": ["growth", "competitive advantage", "long term"]
+        },
+        {
+          "id": "fisher_management",
+          "text": "A good management will be alert to new products, new processes, new services that can create new profit centers, new sources of growth.",
+          "source": "Common Stocks and Uncommon Profits",
+          "topics": ["management", "innovation", "growth"]
+        },
+        {
+          "id": "fisher_hold",
+          "text": "If the job has been correctly done when a common stock is purchased, the time to sell it is almost never.",
+          "source": "Common Stocks and Uncommon Profits",
+          "topics": ["long term", "patience", "conviction"]
+        }
+      ]
+    }
+  ]
+}

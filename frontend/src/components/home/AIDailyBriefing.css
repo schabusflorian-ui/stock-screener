@@ -1,0 +1,351 @@
+/* AIDailyBriefing.css - PRISM Design System */
+
+/* AI Icon Container with prismatic gradient - static background
+   Note: Uses global .ai-icon-container from design-system.css
+   Sparkle animations handled by PrismSparkle icon layers via Icon.css */
+
+/* Briefing AI icon - static gradient, animated sparkle inside */
+.ai-briefing-card .ai-icon-container,
+.ai-briefing-onboarding .ai-icon-container {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg,
+    var(--color-ai-violet, #7C3AED) 0%,
+    var(--color-ai-blue, #2563EB) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: var(--shadow-ai);
+  flex-shrink: 0;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+/* Hover state - glow intensifies */
+.ai-icon-container:hover {
+  box-shadow: 0 4px 16px rgba(124, 58, 237, 0.4);
+  transform: scale(1.05);
+}
+
+/* AI Briefing Card with gold accent */
+.ai-briefing-card {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6) var(--space-7);
+  margin-bottom: var(--space-6);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Gold gradient top bar */
+.ai-briefing-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--gold-gradient);
+}
+
+.ai-briefing-card.loading {
+  min-height: 120px;
+}
+
+.briefing-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* Loading skeleton with Navy shimmer */
+.skeleton-line {
+  height: 16px;
+  background: linear-gradient(90deg,
+    var(--navy-muted) 25%,
+    rgba(15, 23, 42, 0.08) 50%,
+    var(--navy-muted) 75%);
+  background-size: 200% 100%;
+  animation: prism-shimmer 1.5s infinite;
+  border-radius: var(--radius-sm);
+}
+
+.skeleton-line.wide {
+  width: 80%;
+}
+
+.skeleton-line.medium {
+  width: 60%;
+}
+
+.briefing-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.briefing-greeting {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.briefing-greeting h2 {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-semibold);
+  color: var(--navy);
+  margin: 0;
+}
+
+.briefing-icon {
+  color: var(--gold);
+}
+
+.briefing-date {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/* Text styling with left border gold accent */
+.briefing-text {
+  position: relative;
+  padding-left: var(--space-4);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-4);
+}
+
+.briefing-text::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: var(--space-1);
+  bottom: var(--space-1);
+  width: 3px;
+  background: var(--gold-gradient);
+  border-radius: 2px;
+}
+
+.briefing-quick-stats {
+  display: flex;
+  gap: var(--space-6);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
+  margin-bottom: var(--space-3);
+}
+
+.quick-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.quick-stat-label {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--gold-dark);
+}
+
+/* Monospace for financial values */
+.quick-stat-value {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  font-family: var(--font-mono);
+  color: var(--navy);
+}
+
+.quick-stat-change {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  font-family: var(--font-mono);
+}
+
+.quick-stat-change.positive {
+  color: var(--positive);
+}
+
+.quick-stat-change.negative {
+  color: var(--negative);
+}
+
+.quick-stat-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--warning);
+  font-weight: var(--font-medium);
+}
+
+.quick-stat-link {
+  font-size: var(--text-xs);
+  color: var(--gold);
+  text-decoration: none;
+  font-weight: var(--font-medium);
+}
+
+.quick-stat-link:hover {
+  color: var(--gold-dark);
+  text-decoration: underline;
+}
+
+.briefing-actions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+/* Action buttons with gold hover */
+.briefing-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-secondary);
+  background: var(--gold-muted);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.briefing-action:hover {
+  background: rgba(212, 175, 55, 0.15);
+  color: var(--gold-dark);
+}
+
+/* Onboarding CTAs */
+.ai-briefing-onboarding {
+  position: relative;
+  background: linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-secondary) 50%, var(--gold-muted) 100%);
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  margin-bottom: var(--space-5);
+  box-shadow: 0 2px 8px rgba(212, 175, 55, 0.1);
+  overflow: hidden;
+}
+
+/* Gold gradient accent bar at top */
+.ai-briefing-onboarding::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--gold-gradient);
+}
+
+.onboarding-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.onboarding-header svg {
+  color: var(--gold);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.onboarding-header h3 {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--navy);
+  margin: 0 0 var(--space-1);
+}
+
+.onboarding-header p {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.onboarding-actions {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.onboarding-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--navy);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.onboarding-cta:hover {
+  border-color: var(--gold);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(212, 175, 55, 0.15);
+}
+
+/* Primary CTA - same style as others */
+.onboarding-cta.primary {
+  background: var(--bg-surface);
+  color: var(--navy);
+  border: 1px solid var(--border-default);
+}
+
+.onboarding-cta.primary:hover {
+  border-color: var(--gold);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(212, 175, 55, 0.15);
+}
+
+/* Dark theme */
+[data-theme="dark"] .ai-briefing-card {
+  background: var(--glass-bg);
+}
+
+[data-theme="dark"] .ai-briefing-onboarding {
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.15) 0%, rgba(212, 175, 55, 0.08) 100%);
+  border-color: rgba(212, 175, 55, 0.25);
+}
+
+[data-theme="dark"] .onboarding-cta:not(.primary) {
+  background: rgba(30, 41, 59, 0.7);
+}
+
+[data-theme="dark"] .briefing-greeting h2,
+[data-theme="dark"] .quick-stat-value,
+[data-theme="dark"] .onboarding-header h3 {
+  color: var(--text-primary);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .briefing-quick-stats {
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .onboarding-actions {
+    flex-direction: column;
+  }
+
+  .onboarding-cta {
+    justify-content: center;
+  }
+}

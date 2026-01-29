@@ -1,0 +1,351 @@
+/* frontend/src/components/sentiment/InsiderActivityPanel.css */
+
+.insider-activity-panel {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  box-shadow: var(--glass-shadow);
+}
+
+.insider-activity-panel .panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.insider-activity-panel .panel-header h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-md);
+  color: var(--text-primary);
+}
+
+.insider-activity-panel .period-badge {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+}
+
+/* Overview Stats */
+.insider-activity-panel .insider-overview {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.insider-activity-panel .overview-stat {
+  text-align: center;
+}
+
+.insider-activity-panel .overview-stat .stat-value {
+  display: block;
+  font-size: var(--text-xl);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.insider-activity-panel .overview-stat .stat-value.positive {
+  color: var(--positive);
+}
+
+.insider-activity-panel .overview-stat .stat-value.negative {
+  color: var(--negative);
+}
+
+.insider-activity-panel .overview-stat .stat-label {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+
+/* Section Headers */
+.insider-activity-panel .section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.insider-activity-panel .section-header.clickable {
+  cursor: pointer;
+  padding: var(--space-2);
+  margin: calc(-1 * var(--space-2));
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast);
+}
+
+.insider-activity-panel .section-header.clickable:hover {
+  background: var(--bg-tertiary);
+}
+
+.insider-activity-panel .section-header h4 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* Net Flow Section */
+.insider-activity-panel .net-flow-section {
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.insider-activity-panel .net-flow-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.insider-activity-panel .flow-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.insider-activity-panel .column-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  margin-bottom: var(--space-1);
+}
+
+.insider-activity-panel .column-label.positive {
+  color: var(--positive);
+}
+
+.insider-activity-panel .column-label.negative {
+  color: var(--negative);
+}
+
+/* Net Flow Cards */
+.insider-activity-panel .net-flow-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  transition: transform var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.insider-activity-panel .net-flow-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+}
+
+.insider-activity-panel .net-flow-card.bullish {
+  border-left: 3px solid var(--positive);
+}
+
+.insider-activity-panel .net-flow-card.bearish {
+  border-left: 3px solid var(--negative);
+}
+
+.insider-activity-panel .flow-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-1);
+}
+
+.insider-activity-panel .flow-symbol {
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.insider-activity-panel .flow-symbol:hover {
+  color: var(--brand-primary);
+}
+
+.insider-activity-panel .net-flow-card.bullish .flow-header svg {
+  color: var(--positive);
+}
+
+.insider-activity-panel .net-flow-card.bearish .flow-header svg {
+  color: var(--negative);
+}
+
+.insider-activity-panel .flow-value {
+  font-size: var(--text-md);
+  font-weight: var(--font-semibold);
+  margin-bottom: var(--space-1);
+}
+
+.insider-activity-panel .net-flow-card.bullish .flow-value {
+  color: var(--positive);
+}
+
+.insider-activity-panel .net-flow-card.bearish .flow-value {
+  color: var(--negative);
+}
+
+.insider-activity-panel .flow-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.insider-activity-panel .flow-insiders {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Transactions Section */
+.insider-activity-panel .transactions-section {
+  margin-bottom: var(--space-2);
+}
+
+.insider-activity-panel .transactions-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.insider-activity-panel .transactions-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.insider-activity-panel .transactions-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+/* Insider Rows */
+.insider-activity-panel .insider-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2);
+  background: var(--bg-primary);
+  border-radius: var(--radius-sm);
+  border-left: 2px solid transparent;
+}
+
+.insider-activity-panel .insider-row.buy {
+  border-left-color: var(--positive);
+}
+
+.insider-activity-panel .insider-row.sell {
+  border-left-color: var(--negative);
+}
+
+.insider-activity-panel .insider-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+  min-width: 0;
+}
+
+.insider-activity-panel .insider-symbol {
+  font-weight: var(--font-semibold);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.insider-activity-panel .insider-symbol:hover {
+  color: var(--brand-primary);
+}
+
+.insider-activity-panel .insider-name {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100px;
+}
+
+.insider-activity-panel .insider-details {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-0-5);
+}
+
+.insider-activity-panel .insider-value {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+}
+
+.insider-activity-panel .insider-value.positive {
+  color: var(--positive);
+}
+
+.insider-activity-panel .insider-value.negative {
+  color: var(--negative);
+}
+
+.insider-activity-panel .insider-date {
+  font-size: var(--text-2xs);
+  color: var(--text-tertiary);
+}
+
+/* Loading and Error States */
+.insider-activity-panel.loading,
+.insider-activity-panel.error {
+  min-height: 200px;
+}
+
+.insider-activity-panel .loading-state,
+.insider-activity-panel .error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-8);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+/* Uses global .spinning class from design-system.css */
+
+.insider-activity-panel .no-data {
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .insider-activity-panel .insider-overview {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .insider-activity-panel .net-flow-grid,
+  .insider-activity-panel .transactions-grid {
+    grid-template-columns: 1fr;
+  }
+}

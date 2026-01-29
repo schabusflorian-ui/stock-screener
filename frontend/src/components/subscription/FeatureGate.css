@@ -1,0 +1,23 @@
+/* FeatureGate.css */
+
+.feature-gate {
+  position: relative;
+  width: 100%;
+}
+
+.feature-gate--preview {
+  overflow: hidden;
+  border-radius: var(--radius-lg, 12px);
+}
+
+.feature-gate__preview-content {
+  position: relative;
+  overflow: hidden;
+  /* Content is visible but interaction blocked by overlay */
+  pointer-events: none;
+  user-select: none;
+}
+
+.feature-gate--locked {
+  /* Locked state with no preview */
+}

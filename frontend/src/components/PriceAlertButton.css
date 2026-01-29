@@ -1,0 +1,321 @@
+/* frontend/src/components/PriceAlertButton.css */
+/* PRISM Design System Compliant */
+
+.price-alert-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.price-alert-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-base);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.price-alert-btn:hover {
+  border-color: var(--color-gold-500);
+  color: var(--color-gold-500);
+}
+
+.price-alert-btn.has-alerts {
+  background: var(--color-gold-500);
+  color: var(--color-navy-900);
+  border-color: var(--color-gold-500);
+}
+
+.price-alert-btn.has-alerts:hover {
+  background: var(--color-gold-600);
+  border-color: var(--color-gold-600);
+}
+
+.price-alert-wrapper .alert-count {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+}
+
+/* Dropdown */
+.price-alert-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: var(--space-2);
+  width: var(--container-xs);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-dropdown);
+}
+
+.price-alert-dropdown .dropdown-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-primary);
+  font-weight: var(--font-medium);
+}
+
+.price-alert-dropdown .dropdown-header svg {
+  color: var(--color-gold-500);
+}
+
+.price-alert-dropdown .dropdown-header .close-btn {
+  margin-left: auto;
+  padding: var(--space-1);
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.price-alert-dropdown .dropdown-header .close-btn:hover {
+  background: var(--bg-muted);
+  color: var(--text-primary);
+}
+
+.price-alert-dropdown .current-price {
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.price-alert-dropdown .current-price strong {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+/* Add Alert Form */
+.price-alert-dropdown .add-alert-form {
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.price-alert-dropdown .alert-type-selector {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.price-alert-dropdown .type-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-base);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  font-size: var(--text-sm);
+}
+
+.price-alert-dropdown .type-btn:hover {
+  border-color: var(--color-navy-400);
+}
+
+.price-alert-dropdown .type-btn.active {
+  background: var(--color-gold-500);
+  color: var(--color-navy-900);
+  border-color: var(--color-gold-500);
+}
+
+.price-alert-dropdown .price-input-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: var(--space-3);
+}
+
+.price-alert-dropdown .currency-prefix {
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-right: none;
+  border-radius: var(--radius-base) 0 0 var(--radius-base);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.price-alert-dropdown .price-input-row input {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 0 var(--radius-base) var(--radius-base) 0;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-family: var(--font-mono);
+}
+
+.price-alert-dropdown .price-input-row input:focus {
+  outline: none;
+  border-color: var(--color-gold-500);
+}
+
+.price-alert-dropdown .note-input {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-base);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.price-alert-dropdown .note-input:focus {
+  outline: none;
+  border-color: var(--color-gold-500);
+}
+
+.price-alert-dropdown .note-input::placeholder {
+  color: var(--text-muted);
+}
+
+.price-alert-dropdown .add-alert-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--color-gold-500);
+  color: var(--color-navy-900);
+  border: none;
+  border-radius: var(--radius-base);
+  font-weight: var(--font-semibold);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.price-alert-dropdown .add-alert-btn:hover {
+  background: var(--color-gold-600);
+  box-shadow: var(--shadow-gold-sm);
+}
+
+/* Alerts List */
+.price-alert-dropdown .alerts-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.price-alert-dropdown .alerts-header {
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-widest);
+  color: var(--color-gold-700);
+  background: var(--bg-tertiary);
+  font-weight: var(--font-semibold);
+}
+
+.price-alert-dropdown .alert-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-default);
+  position: relative;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.price-alert-dropdown .alert-item:hover {
+  background: rgba(212, 175, 55, 0.04);
+}
+
+.price-alert-dropdown .alert-item:last-child {
+  border-bottom: none;
+}
+
+.price-alert-dropdown .alert-item.triggered {
+  background: var(--positive-muted);
+}
+
+.price-alert-dropdown .alert-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+}
+
+.price-alert-dropdown .alert-type {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-0-5) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+}
+
+.price-alert-dropdown .alert-type.above {
+  background: var(--positive-muted);
+  color: var(--positive);
+}
+
+.price-alert-dropdown .alert-type.below {
+  background: var(--negative-muted);
+  color: var(--negative);
+}
+
+.price-alert-dropdown .alert-target {
+  font-weight: var(--font-semibold);
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+.price-alert-dropdown .triggered-badge {
+  padding: var(--space-0-5) var(--space-2);
+  background: var(--positive);
+  color: white;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+}
+
+.price-alert-dropdown .alert-note {
+  width: 100%;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-style: italic;
+  margin-top: var(--space-1);
+}
+
+.price-alert-dropdown .delete-alert-btn {
+  padding: var(--space-1);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.price-alert-dropdown .delete-alert-btn:hover {
+  background: var(--negative-muted);
+  color: var(--negative);
+}
+
+.price-alert-dropdown .no-alerts {
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}

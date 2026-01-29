@@ -1,0 +1,454 @@
+/* frontend/src/components/agent/RecommendationHistory.css */
+/* PRISM Design System - AI Agent Component */
+
+.recommendation-history {
+  position: relative;
+}
+
+/* Gradient top border */
+.recommendation-history::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg,
+    var(--color-ai-violet, #7C3AED) 0%,
+    var(--color-ai-blue, #2563EB) 50%,
+    var(--color-ai-cyan, #0891B2) 100%);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.recommendation-history__filters {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+}
+
+.recommendation-history__filters select {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid rgba(124, 58, 237, 0.15);
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg,
+    rgba(124, 58, 237, 0.05) 0%,
+    var(--bg-secondary) 100%);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.recommendation-history__filters select:hover {
+  border-color: rgba(124, 58, 237, 0.3);
+  background: linear-gradient(135deg,
+    rgba(124, 58, 237, 0.08) 0%,
+    var(--bg-secondary) 100%);
+}
+
+.recommendation-history__filters select:focus {
+  outline: none;
+  border-color: var(--color-ai-violet);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.15);
+}
+
+.recommendation-history__skeleton-row {
+  height: 56px;
+  margin-bottom: var(--space-2);
+  border-radius: var(--radius-md);
+  background: linear-gradient(90deg,
+    rgba(124, 58, 237, 0.05) 0%,
+    rgba(37, 99, 235, 0.08) 50%,
+    rgba(124, 58, 237, 0.05) 100%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.recommendation-history--error {
+  padding: var(--space-6);
+  text-align: center;
+}
+
+.recommendation-history__error {
+  color: var(--negative);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.recommendation-history__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 48px;
+  color: var(--text-tertiary);
+}
+
+.recommendation-history__empty svg {
+  color: var(--color-ai-violet);
+  opacity: 0.5;
+}
+
+.recommendation-history__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Recommendation Row */
+.recommendation-row {
+  position: relative;
+  background: linear-gradient(135deg,
+    rgba(124, 58, 237, 0.02) 0%,
+    var(--bg-secondary) 100%);
+  border: 1px solid rgba(124, 58, 237, 0.08);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+/* Hidden gradient border that appears on hover */
+.recommendation-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg,
+    var(--color-ai-violet) 0%,
+    var(--color-ai-blue) 100%);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.recommendation-row:hover {
+  border-color: rgba(124, 58, 237, 0.2);
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.08);
+}
+
+.recommendation-row:hover::before {
+  opacity: 1;
+}
+
+.recommendation-row.expanded {
+  border-color: rgba(124, 58, 237, 0.3);
+  box-shadow:
+    0 4px 20px rgba(124, 58, 237, 0.12),
+    0 0 0 1px rgba(124, 58, 237, 0.1);
+}
+
+.recommendation-row.expanded::before {
+  opacity: 1;
+  background: linear-gradient(90deg,
+    var(--color-ai-violet) 0%,
+    var(--color-ai-blue) 50%,
+    var(--color-ai-cyan) 100%);
+}
+
+.recommendation-row__header {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto auto auto;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.recommendation-row__header:hover {
+  background: rgba(124, 58, 237, 0.03);
+}
+
+.recommendation-row__symbol {
+  display: flex;
+  flex-direction: column;
+}
+
+.recommendation-row__symbol-text {
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  transition: color 0.2s ease;
+}
+
+.recommendation-row:hover .recommendation-row__symbol-text {
+  color: var(--color-ai-violet);
+}
+
+.recommendation-row__company {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Action badges with AI styling */
+.recommendation-row__action .ui-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.recommendation-row__action .ui-badge.success {
+  background: linear-gradient(135deg,
+    rgba(34, 197, 94, 0.15) 0%,
+    rgba(34, 197, 94, 0.08) 100%);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+}
+
+.recommendation-row__action .ui-badge.error {
+  background: linear-gradient(135deg,
+    rgba(239, 68, 68, 0.15) 0%,
+    rgba(239, 68, 68, 0.08) 100%);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.recommendation-row__score {
+  text-align: center;
+}
+
+.recommendation-row__score-value {
+  display: block;
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  background: linear-gradient(90deg, var(--color-ai-violet), var(--color-ai-blue));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.recommendation-row__confidence {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.recommendation-row__status {
+  font-size: var(--text-sm);
+}
+
+.recommendation-row__executed {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--positive);
+}
+
+.recommendation-row__executed svg {
+  animation: pulse-check 2s ease-in-out infinite;
+}
+
+@keyframes pulse-check {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.recommendation-row__pending {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-ai-violet);
+}
+
+.recommendation-row__pending svg {
+  animation: prism-pulse 2s ease-in-out infinite;
+}
+
+@keyframes prism-pulse {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+.recommendation-row__date {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.recommendation-row__expand {
+  color: var(--text-tertiary);
+  transition: all 0.2s ease;
+}
+
+.recommendation-row:hover .recommendation-row__expand {
+  color: var(--color-ai-violet);
+}
+
+.recommendation-row.expanded .recommendation-row__expand {
+  color: var(--color-ai-violet);
+  transform: rotate(180deg);
+}
+
+/* Details Panel */
+.recommendation-row__details {
+  padding: var(--space-4);
+  border-top: 1px solid rgba(124, 58, 237, 0.1);
+  background: linear-gradient(180deg,
+    rgba(124, 58, 237, 0.03) 0%,
+    var(--bg-tertiary) 100%);
+  animation: slideDown 0.2s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.recommendation-row__detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.recommendation-row__detail {
+  text-align: center;
+  padding: var(--space-3);
+  background: linear-gradient(135deg,
+    rgba(124, 58, 237, 0.05) 0%,
+    transparent 100%);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(124, 58, 237, 0.06);
+  transition: all 0.2s ease;
+}
+
+.recommendation-row__detail:hover {
+  border-color: rgba(124, 58, 237, 0.15);
+  background: linear-gradient(135deg,
+    rgba(124, 58, 237, 0.08) 0%,
+    transparent 100%);
+}
+
+.recommendation-row__detail-label {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-1);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.recommendation-row__detail-value {
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+/* Reasoning Section */
+.recommendation-row__reasoning {
+  position: relative;
+  padding: var(--space-4);
+  background: linear-gradient(135deg,
+    rgba(124, 58, 237, 0.04) 0%,
+    rgba(37, 99, 235, 0.02) 100%);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(124, 58, 237, 0.08);
+}
+
+.recommendation-row__reasoning h5 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--color-ai-violet);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* AI sparkle icon for reasoning */
+.recommendation-row__reasoning h5::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: linear-gradient(135deg,
+    var(--color-ai-violet) 0%,
+    var(--color-ai-blue) 100%);
+  animation: prism-pulse 3s ease-in-out infinite;
+}
+
+.recommendation-row__reasons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.recommendation-row__reason {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  transition: background 0.2s ease;
+}
+
+.recommendation-row__reason:hover {
+  background: rgba(124, 58, 237, 0.05);
+}
+
+.recommendation-row__reason-indicator {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+}
+
+.recommendation-row__reason--bullish .recommendation-row__reason-indicator {
+  color: var(--positive);
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.recommendation-row__reason--bearish .recommendation-row__reason-indicator {
+  color: var(--negative);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.recommendation-row__reason-factor {
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
+  text-transform: capitalize;
+}
+
+.recommendation-row__reason-details {
+  color: var(--text-secondary);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .recommendation-row__header {
+    grid-template-columns: 1fr auto auto;
+    gap: var(--space-3);
+  }
+
+  .recommendation-row__score,
+  .recommendation-row__date {
+    display: none;
+  }
+
+  .recommendation-row__detail-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

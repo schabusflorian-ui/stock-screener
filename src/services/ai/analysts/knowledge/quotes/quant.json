@@ -1,0 +1,78 @@
+{
+  "author": "James O'Shaughnessy",
+  "analyst": "quant",
+  "quotes": [
+    {
+      "id": "oshaughnessy_systematic",
+      "text": "Successful investors approach the market with a consistent, systematic methodology, not with hunches or market timing.",
+      "source": "What Works on Wall Street",
+      "topics": ["systematic", "quantitative", "discipline"]
+    },
+    {
+      "id": "oshaughnessy_factors",
+      "text": "Value and momentum are the two most robust factors that have worked over the longest periods of time.",
+      "source": "What Works on Wall Street",
+      "topics": ["factor", "momentum", "value factor"]
+    },
+    {
+      "id": "oshaughnessy_consistency",
+      "text": "The key to successful investing is the ability to consistently apply a time-tested strategy.",
+      "source": "What Works on Wall Street",
+      "topics": ["systematic", "discipline", "long term"]
+    },
+    {
+      "id": "oshaughnessy_quality",
+      "text": "Stocks with high quality characteristics - strong balance sheets, high profitability, consistent earnings - outperform over time.",
+      "source": "What Works on Wall Street",
+      "topics": ["quality factor", "fundamentals", "alpha"]
+    }
+  ],
+  "coAuthors": [
+    {
+      "name": "Cliff Asness (AQR)",
+      "quotes": [
+        {
+          "id": "asness_factors",
+          "text": "Value and momentum are the most robust anomalies in asset pricing. They work everywhere you look.",
+          "source": "AQR Research",
+          "topics": ["factor", "momentum", "value factor", "systematic"]
+        },
+        {
+          "id": "asness_diversification",
+          "text": "True diversification means owning things that behave differently from one another, not just having more things.",
+          "source": "AQR Research",
+          "topics": ["correlation", "diversification", "portfolio construction"]
+        },
+        {
+          "id": "asness_risk_adjusted",
+          "text": "Always think in risk-adjusted terms. A strategy that returns 10% with 20% volatility is no better than one that returns 5% with 10% volatility.",
+          "source": "AQR Research",
+          "topics": ["sharpe", "risk-adjusted", "volatility"]
+        },
+        {
+          "id": "asness_systematic",
+          "text": "Systematic approaches remove the emotional element that destroys most investors' returns.",
+          "source": "Interview",
+          "topics": ["systematic", "quantitative", "discipline"]
+        }
+      ]
+    },
+    {
+      "name": "Ray Dalio",
+      "quotes": [
+        {
+          "id": "dalio_principles",
+          "text": "If you can think for yourself while being open-minded in a clearheaded way to find out what is best for you to do, and if you can summon up the courage to do it, you will make the most of your life.",
+          "source": "Principles",
+          "topics": ["systematic", "decision-making", "discipline"]
+        },
+        {
+          "id": "dalio_correlation",
+          "text": "By diversifying well, you can increase your returns without increasing risk. The Holy Grail of investing.",
+          "source": "Principles",
+          "topics": ["correlation", "diversification", "risk-adjusted"]
+        }
+      ]
+    }
+  ]
+}

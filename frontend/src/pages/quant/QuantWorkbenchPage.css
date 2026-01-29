@@ -1,0 +1,33 @@
+/* frontend/src/pages/quant/QuantWorkbenchPage.css */
+/* Page-level styling for the Quant Workbench standalone page */
+
+.quant-workbench-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  background: var(--bg-primary, #ffffff);
+}
+
+.quant-workbench-content {
+  flex: 1;
+  padding: var(--space-4, 1rem);
+  padding-top: 0;
+}
+
+/* Standalone mode removes redundant header from component */
+.quant-workbench-content .quant-workbench.standalone {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.quant-workbench-content .quant-workbench.standalone .quant-workbench-header {
+  display: none;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .quant-workbench-content {
+    padding: var(--space-3, 0.75rem);
+  }
+}

@@ -1,0 +1,222 @@
+/* frontend/src/components/agent/RegimeHistory.css */
+
+.regime-history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* Skeleton loading states */
+.regime-history__skeleton-current {
+  height: 120px;
+  border-radius: var(--radius-lg);
+}
+
+.regime-history__skeleton-chart {
+  height: 350px;
+  border-radius: var(--radius-lg);
+}
+
+.regime-history__skeleton-stats {
+  height: 250px;
+  border-radius: var(--radius-lg);
+}
+
+/* Error state */
+.regime-history--error {
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.regime-history__error {
+  color: var(--negative);
+  text-align: center;
+}
+
+/* Chart card */
+.regime-history__chart-card .ui-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.regime-history__chart-card .ui-card__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.regime-history__period-select {
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.regime-history__period-select:hover {
+  border-color: var(--brand-primary);
+}
+
+.regime-history__period-select:focus {
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 2px rgba(var(--brand-primary-rgb), 0.2);
+}
+
+/* Chart area */
+.regime-history__chart {
+  margin-top: var(--space-4);
+}
+
+.regime-history__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 250px;
+  color: var(--text-tertiary);
+  font-size: 0.9rem;
+}
+
+/* Tooltip */
+.regime-history__tooltip {
+  padding: var(--space-3);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+
+.regime-history__tooltip-date {
+  font-size: 0.8rem;
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-2);
+}
+
+.regime-history__tooltip-regime {
+  font-weight: var(--font-semibold);
+  font-size: 0.9rem;
+  margin-bottom: var(--space-1);
+}
+
+.regime-history__tooltip-metric {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+/* Stats card */
+.regime-history__stats-card .ui-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.regime-history__stats-period {
+  font-size: 0.8rem;
+  color: var(--text-tertiary);
+}
+
+/* Distribution */
+.regime-history__distribution {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.regime-history__dist-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.regime-history__dist-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.regime-history__dist-label {
+  font-size: 0.85rem;
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
+}
+
+.regime-history__dist-bar {
+  height: 8px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.regime-history__dist-fill {
+  height: 100%;
+  border-radius: var(--radius-sm);
+  transition: width 0.3s ease;
+}
+
+.regime-history__dist-value {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+/* Changes card */
+.regime-history__changes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.regime-history__change {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+}
+
+.regime-history__change-date {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.regime-history__change-arrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.regime-history__change-arrow span {
+  color: var(--text-tertiary);
+}
+
+.regime-history__no-changes {
+  text-align: center;
+  padding: var(--space-6);
+  color: var(--text-tertiary);
+  font-size: 0.9rem;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .regime-history__chart-card .ui-card__header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+
+  .regime-history__period-select {
+    width: 100%;
+  }
+
+  .regime-history__change {
+    flex-direction: column;
+    gap: var(--space-2);
+    align-items: flex-start;
+  }
+}
