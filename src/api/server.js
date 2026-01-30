@@ -613,8 +613,8 @@ app.use(express.static(frontendBuildPath));
 // This enables client-side routing (React Router)
 // Placed before error handlers so it catches unmatched routes
 app.use((req, res, next) => {
-  // Only handle GET requests for non-API routes
-  if (req.method !== 'GET' || req.path.startsWith('/api/')) {
+  // Skip API routes and health check endpoint
+  if (req.method !== 'GET' || req.path.startsWith('/api/') || req.path === '/health') {
     return next();
   }
 
