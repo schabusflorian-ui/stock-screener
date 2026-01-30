@@ -542,64 +542,8 @@ app.get('/api/health/detailed', async (req, res) => {
   });
 });
 
-// Root
-app.get('/', (req, res) => {
-  res.json({
-    message: 'Stock Analysis API',
-    version: '1.0.0',
-    endpoints: {
-      auth: '/api/auth',
-      companies: '/api/companies',
-      metrics: '/api/metrics',
-      screening: '/api/screening',
-      trends: '/api/trends',
-      sectors: '/api/sectors',
-      classifications: '/api/classifications',
-      ipo: '/api/ipo',
-      updates: '/api/updates',
-      insiders: '/api/insiders',
-      capital: '/api/capital',
-      sentiment: '/api/sentiment',
-      validation: '/api/validation',
-      stats: '/api/stats',
-      prices: '/api/prices',
-      dcf: '/api/dcf',
-      earnings: '/api/earnings',
-      priceUpdates: '/api/price-updates',
-      alerts: '/api/alerts',
-      indices: '/api/indices',
-      investors: '/api/investors',
-      portfolios: '/api/portfolios',
-      simulate: '/api/simulate',
-      knowledge: '/api/knowledge',
-      analyst: '/api/analyst',
-      ai: '/api/ai',
-      nl: '/api/nl',
-      notes: '/api/notes',
-      theses: '/api/theses',
-      historical: '/api/historical',
-      factors: '/api/factors',
-      updateSystem: '/api/update-system',
-      settings: '/api/settings',
-      trading: '/api/trading',
-      macro: '/api/macro',
-      agent: '/api/agent',
-      orchestrator: '/api/orchestrator',
-      transcripts: '/api/transcripts',
-      recommendations: '/api/recommendations',
-      execution: '/api/execution',
-      backtesting: '/api/backtesting',
-      xbrl: '/api/xbrl',
-      data: '/api/data',
-      onboarding: '/api/onboarding',
-      watchlist: '/api/watchlist',
-      analytics: '/api/analytics',
-      feedback: '/api/feedback',
-      help: '/api/help',
-      health: '/api/health'
-    }
-  });
-});
+// Root route removed - frontend middleware serves React app at /
+// API documentation available at /api/health or individual endpoints
 
 // ============================================
 // FRONTEND SERVING (Production)
