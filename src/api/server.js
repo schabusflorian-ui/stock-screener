@@ -87,6 +87,30 @@ function createSessionStore() {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ============================================
+// CRITICAL: Health check registered at ROOT LEVEL to bypass all middleware
+// This MUST be the first route registered, before ANY middleware or configuration
+// Railway's internal healthcheck cannot handle:
+// - HTTPS redirects (healthcheck uses HTTP internally)
+// - CORS checks (no Origin header)
+// - Rate limiting
+// - Session middleware
+// ============================================
+app.get('/health', (req, res) => {
+  console.log('[Health Check] Request received from:', req.ip || req.connection.remoteAddress);
+  res.status(200).send('OK');
+  console.log('[Health Check] Response sent: 200 OK');
+});
+
+// Also keep /api/health for backward compatibility
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
 // Make database available to routes via req.app.get('db')
 app.set('db', db.getDatabase());
 
@@ -95,22 +119,6 @@ let passport = null;
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
   passport = configurePassport(db.getDatabase());
 }
-
-// ============================================
-// CRITICAL: Health check MUST be registered BEFORE middleware
-// Railway's internal healthcheck needs to bypass:
-// - HTTPS redirects (healthcheck uses HTTP internally)
-// - CORS checks (no Origin header)
-// - Rate limiting (shouldn't count against quotas)
-// - Session middleware (no session needed)
-// ============================================
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  });
-});
 
 // Middleware
 // Security headers - comprehensive protection
@@ -620,7 +628,7 @@ const HOST = '0.0.0.0';
 server.listen(PORT, HOST, async () => {
   const protocol = serverInfo.protocol === 'HTTP/2' ? 'https' : 'http';
   logger.info(`API Server running on ${protocol}://${HOST}:${PORT} (${serverInfo.protocol})`);
-  logger.info(`Health check: ${protocol}://localhost:${PORT}/api/health`);
+  logger.info(`Health check: ${protocol}://localhost:${PORT}/health (bypasses middleware)`);
 
   if (passport) {
     logger.info('Auth enabled (Google OAuth)');
