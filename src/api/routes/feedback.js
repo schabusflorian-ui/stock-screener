@@ -8,6 +8,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
+const { getDatabaseAsync, isPostgres } = require('../../database');
 
 // Middleware imports
 const { optionalAuth, requireAdmin, attachUserId } = require('../../middleware/auth');
@@ -29,7 +30,7 @@ function generateTicketNumber() {
  */
 router.post('/quick', optionalAuth, attachUserId, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
     const {
       type,
       feature,
@@ -57,9 +58,10 @@ router.post('/quick', optionalAuth, attachUserId, async (req, res) => {
 
     // Check if user has opted out of feedback prompts
     if (req.userId) {
-      const prefs = db.prepare(`
+      const prefsResult = await database.query(`
         SELECT feedback_prompts_enabled FROM user_preferences WHERE user_id = ?
-      `).get(req.userId);
+      `, [req.userId]);
+      const prefs = prefsResult.rows[0];
 
       if (prefs && prefs.feedback_prompts_enabled === 0) {
         return res.json({ success: true, recorded: false });
@@ -67,13 +69,11 @@ router.post('/quick', optionalAuth, attachUserId, async (req, res) => {
     }
 
     // Insert quick feedback
-    const stmt = db.prepare(`
+    const result = await database.query(`
       INSERT INTO quick_feedback (
         user_id, session_id, feedback_type, feature, content_id, response, page
       ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const result = stmt.run(
+    `, [
       req.userId || null,
       sessionId,
       type,
@@ -81,7 +81,7 @@ router.post('/quick', optionalAuth, attachUserId, async (req, res) => {
       contentId || null,
       response,
       page || null
-    );
+    ]);
 
     res.json({
       success: true,
@@ -104,7 +104,7 @@ router.post('/quick', optionalAuth, attachUserId, async (req, res) => {
  */
 router.post('/', optionalAuth, attachUserId, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
     const {
       type,
       category,
@@ -141,14 +141,12 @@ router.post('/', optionalAuth, attachUserId, async (req, res) => {
     }
 
     // Insert feedback
-    const stmt = db.prepare(`
+    const result = await database.query(`
       INSERT INTO user_feedback (
         user_id, session_id, feedback_type, category, rating, sentiment,
         message, feature, page, metadata
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const result = stmt.run(
+    `, [
       req.userId || null,
       sessionId || null,
       type,
@@ -159,20 +157,20 @@ router.post('/', optionalAuth, attachUserId, async (req, res) => {
       feature || null,
       page || null,
       JSON.stringify(metadata)
-    );
+    ]);
 
     // Update user's last feedback prompt time
     if (req.userId) {
-      db.prepare(`
-        UPDATE user_preferences
+      await database.query(`UPDATE user_preferences
         SET last_feedback_prompt_at = CURRENT_TIMESTAMP
-        WHERE user_id = ?
-      `).run(req.userId);
+        WHERE user_id = ?`, [
+        req.userId,
+      ]);
     }
 
     res.json({
       success: true,
-      id: result.lastInsertRowid
+      id: result.insertId || result.lastInsertRowid || result.rowCount
     });
   } catch (error) {
     console.error('Error submitting feedback:', error);
@@ -181,51 +179,12 @@ router.post('/', optionalAuth, attachUserId, async (req, res) => {
 });
 
 /**
- * GET /api/feedback/mine
- * Get user's own feedback history
- */
-router.get('/mine', optionalAuth, attachUserId, async (req, res) => {
-  try {
-    const db = req.app.get('db');
-
-    if (!req.userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required'
-      });
-    }
-
-    const feedback = db.prepare(`
-      SELECT
-        id, feedback_type, category, rating, sentiment,
-        message, feature, page, status, created_at
-      FROM user_feedback
-      WHERE user_id = ?
-      ORDER BY created_at DESC
-      LIMIT 50
-    `).all(req.userId);
-
-    res.json({
-      success: true,
-      data: feedback
-    });
-  } catch (error) {
-    console.error('Error fetching user feedback:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch feedback' });
-  }
-});
-
-// ============================================
-// SUPPORT REQUEST ENDPOINTS
-// ============================================
-
-/**
  * POST /api/feedback/support
  * Submit a support request
  */
 router.post('/support', optionalAuth, attachUserId, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
     const {
       requestType,
       subject,
@@ -265,15 +224,13 @@ router.post('/support', optionalAuth, attachUserId, async (req, res) => {
     if (requestType === 'bug') priority = 2; // Higher priority for bugs
 
     // Insert support request
-    const stmt = db.prepare(`
+    const result = await database.query(`
       INSERT INTO support_requests (
         ticket_number, user_id, email, session_id, request_type,
         subject, description, page, browser, device, os,
         debug_info, include_screenshot, priority
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const result = stmt.run(
+    `, [
       ticketNumber,
       req.userId || null,
       email || null,
@@ -288,12 +245,12 @@ router.post('/support', optionalAuth, attachUserId, async (req, res) => {
       includeDebugInfo ? JSON.stringify(debugInfo || {}) : null,
       includeScreenshot ? 1 : 0,
       priority
-    );
+    ]);
 
     res.json({
       success: true,
       ticketNumber,
-      id: result.lastInsertRowid
+      id: result.insertId || result.lastInsertRowid || result.rowCount
     });
   } catch (error) {
     console.error('Error submitting support request:', error);
@@ -307,7 +264,7 @@ router.post('/support', optionalAuth, attachUserId, async (req, res) => {
  */
 router.get('/support/mine', optionalAuth, attachUserId, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
 
     if (!req.userId) {
       return res.status(401).json({
@@ -316,14 +273,15 @@ router.get('/support/mine', optionalAuth, attachUserId, async (req, res) => {
       });
     }
 
-    const requests = db.prepare(`
+    const requestsResult = await database.query(`
       SELECT
         id, ticket_number, request_type, subject, description,
         status, priority, created_at, resolved_at, resolution
       FROM support_requests
       WHERE user_id = ?
       ORDER BY created_at DESC
-    `).all(req.userId);
+    `, [req.userId]);
+    const requests = requestsResult.rows;
 
     res.json({
       success: true,
@@ -341,12 +299,13 @@ router.get('/support/mine', optionalAuth, attachUserId, async (req, res) => {
  */
 router.get('/support/:ticketNumber', optionalAuth, attachUserId, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
     const { ticketNumber } = req.params;
 
-    const request = db.prepare(`
+    const requestResult = await database.query(`
       SELECT * FROM support_requests WHERE ticket_number = ?
-    `).get(ticketNumber);
+    `, [ticketNumber]);
+    const request = requestResult.rows[0];
 
     if (!request) {
       return res.status(404).json({
@@ -364,13 +323,14 @@ router.get('/support/:ticketNumber', optionalAuth, attachUserId, async (req, res
     }
 
     // Get responses
-    const responses = db.prepare(`
+    const responsesResult = await database.query(`
       SELECT
         id, responder_type, message, is_internal, created_at
       FROM support_responses
       WHERE request_id = ? AND is_internal = 0
       ORDER BY created_at ASC
-    `).all(request.id);
+    `, [request.id]);
+    const responses = responsesResult.rows;
 
     res.json({
       success: true,
@@ -397,7 +357,7 @@ router.get('/support/:ticketNumber', optionalAuth, attachUserId, async (req, res
  */
 router.post('/prompt/shown', optionalAuth, attachUserId, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
     const { promptType, trigger, sessionId, page } = req.body;
 
     if (!promptType || !sessionId) {
@@ -407,19 +367,17 @@ router.post('/prompt/shown', optionalAuth, attachUserId, async (req, res) => {
       });
     }
 
-    const stmt = db.prepare(`
+    const result = await database.query(`
       INSERT INTO feedback_prompts_shown (
         user_id, session_id, prompt_type, prompt_trigger, page
       ) VALUES (?, ?, ?, ?, ?)
-    `);
-
-    const result = stmt.run(
+    `, [
       req.userId || null,
       sessionId,
       promptType,
       trigger || null,
       page || null
-    );
+    ]);
 
     res.json({
       success: true,
@@ -437,7 +395,7 @@ router.post('/prompt/shown', optionalAuth, attachUserId, async (req, res) => {
  */
 router.post('/prompt/response', optionalAuth, attachUserId, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
     const { promptId, response, dismissed } = req.body;
 
     if (!promptId) {
@@ -447,13 +405,15 @@ router.post('/prompt/response', optionalAuth, attachUserId, async (req, res) => 
       });
     }
 
-    db.prepare(`
-      UPDATE feedback_prompts_shown
+    await database.query(`UPDATE feedback_prompts_shown
       SET response = ?,
           dismissed = ?,
           responded_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(response || null, dismissed ? 1 : 0, promptId);
+      WHERE id = ?`, [
+      response || null,
+      dismissed ? 1 : 0,
+      promptId,
+    ]);
 
     res.json({ success: true });
   } catch (error) {
@@ -461,385 +421,3 @@ router.post('/prompt/response', optionalAuth, attachUserId, async (req, res) => 
     res.status(500).json({ success: false, error: 'Failed to record response' });
   }
 });
-
-/**
- * GET /api/feedback/prompt/should-show
- * Check if a feedback prompt should be shown
- */
-router.get('/prompt/should-show', optionalAuth, attachUserId, async (req, res) => {
-  try {
-    const db = req.app.get('db');
-    const { promptType, sessionId } = req.query;
-
-    if (!promptType || !sessionId) {
-      return res.status(400).json({
-        success: false,
-        error: 'promptType and sessionId are required'
-      });
-    }
-
-    // Check if user has opted out
-    if (req.userId) {
-      const prefs = db.prepare(`
-        SELECT feedback_prompts_enabled, last_feedback_prompt_at, feedback_prompt_cooldown_days
-        FROM user_preferences
-        WHERE user_id = ?
-      `).get(req.userId);
-
-      if (prefs && prefs.feedback_prompts_enabled === 0) {
-        return res.json({ success: true, shouldShow: false, reason: 'opted_out' });
-      }
-
-      // Check cooldown
-      if (prefs && prefs.last_feedback_prompt_at) {
-        const lastPrompt = new Date(prefs.last_feedback_prompt_at);
-        const cooldownMs = (prefs.feedback_prompt_cooldown_days || 7) * 24 * 60 * 60 * 1000;
-        if (Date.now() - lastPrompt.getTime() < cooldownMs) {
-          return res.json({ success: true, shouldShow: false, reason: 'cooldown' });
-        }
-      }
-    }
-
-    // Check if prompt was already shown in this session
-    const shownInSession = db.prepare(`
-      SELECT id FROM feedback_prompts_shown
-      WHERE session_id = ? AND prompt_type = ?
-    `).get(sessionId, promptType);
-
-    if (shownInSession) {
-      return res.json({ success: true, shouldShow: false, reason: 'shown_in_session' });
-    }
-
-    // Check if prompt type has been shown before (for one-time prompts)
-    const oneTimePrompts = ['first_analysis', 'welcome', 'first_week'];
-    if (oneTimePrompts.includes(promptType) && req.userId) {
-      const everShown = db.prepare(`
-        SELECT id FROM feedback_prompts_shown
-        WHERE user_id = ? AND prompt_type = ? AND (response IS NOT NULL OR dismissed = 1)
-      `).get(req.userId, promptType);
-
-      if (everShown) {
-        return res.json({ success: true, shouldShow: false, reason: 'already_responded' });
-      }
-    }
-
-    res.json({ success: true, shouldShow: true });
-  } catch (error) {
-    console.error('Error checking prompt eligibility:', error);
-    res.status(500).json({ success: false, error: 'Failed to check prompt eligibility' });
-  }
-});
-
-// ============================================
-// ADMIN FEEDBACK MANAGEMENT
-// ============================================
-
-/**
- * GET /api/feedback/admin/list
- * Get all feedback (admin)
- */
-router.get('/admin/list', requireAdmin, async (req, res) => {
-  try {
-    const db = req.app.get('db');
-    const {
-      status = 'all',
-      category,
-      limit = 50,
-      offset = 0
-    } = req.query;
-
-    let query = `
-      SELECT
-        f.*,
-        u.name as user_name,
-        u.email as user_email
-      FROM user_feedback f
-      LEFT JOIN users u ON f.user_id = u.id
-      WHERE 1=1
-    `;
-    const params = [];
-
-    if (status !== 'all') {
-      query += ' AND f.status = ?';
-      params.push(status);
-    }
-
-    if (category) {
-      query += ' AND f.category = ?';
-      params.push(category);
-    }
-
-    query += ' ORDER BY f.created_at DESC LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), parseInt(offset));
-
-    const feedback = db.prepare(query).all(...params);
-
-    // Get total count
-    let countQuery = 'SELECT COUNT(*) as total FROM user_feedback WHERE 1=1';
-    const countParams = [];
-
-    if (status !== 'all') {
-      countQuery += ' AND status = ?';
-      countParams.push(status);
-    }
-
-    if (category) {
-      countQuery += ' AND category = ?';
-      countParams.push(category);
-    }
-
-    const total = db.prepare(countQuery).get(...countParams);
-
-    res.json({
-      success: true,
-      data: {
-        feedback: feedback.map(f => ({
-          ...f,
-          metadata: f.metadata ? JSON.parse(f.metadata) : {},
-          tags: f.tags ? JSON.parse(f.tags) : []
-        })),
-        total: total.total,
-        limit: parseInt(limit),
-        offset: parseInt(offset)
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching feedback list:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch feedback' });
-  }
-});
-
-/**
- * PATCH /api/feedback/admin/:id
- * Update feedback status (admin)
- */
-router.patch('/admin/:id', requireAdmin, async (req, res) => {
-  try {
-    const db = req.app.get('db');
-    const { id } = req.params;
-    const { status, priority, internalNotes, resolutionNotes, tags } = req.body;
-
-    const updates = [];
-    const params = [];
-
-    if (status !== undefined) {
-      updates.push('status = ?');
-      params.push(status);
-
-      if (status === 'resolved') {
-        updates.push('resolved_at = CURRENT_TIMESTAMP');
-        updates.push('resolved_by = ?');
-        params.push(req.userId);
-      }
-    }
-
-    if (priority !== undefined) {
-      updates.push('priority = ?');
-      params.push(priority);
-    }
-
-    if (internalNotes !== undefined) {
-      updates.push('internal_notes = ?');
-      params.push(internalNotes);
-    }
-
-    if (resolutionNotes !== undefined) {
-      updates.push('resolution_notes = ?');
-      params.push(resolutionNotes);
-    }
-
-    if (tags !== undefined) {
-      updates.push('tags = ?');
-      params.push(JSON.stringify(tags));
-    }
-
-    if (updates.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'No updates provided'
-      });
-    }
-
-    updates.push('updated_at = CURRENT_TIMESTAMP');
-    params.push(id);
-
-    db.prepare(`
-      UPDATE user_feedback
-      SET ${updates.join(', ')}
-      WHERE id = ?
-    `).run(...params);
-
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error updating feedback:', error);
-    res.status(500).json({ success: false, error: 'Failed to update feedback' });
-  }
-});
-
-/**
- * GET /api/feedback/admin/support
- * Get all support requests (admin)
- */
-router.get('/admin/support', requireAdmin, async (req, res) => {
-  try {
-    const db = req.app.get('db');
-    const {
-      status = 'all',
-      type,
-      limit = 50,
-      offset = 0
-    } = req.query;
-
-    let query = `
-      SELECT
-        sr.*,
-        u.name as user_name,
-        u.email as user_email
-      FROM support_requests sr
-      LEFT JOIN users u ON sr.user_id = u.id
-      WHERE 1=1
-    `;
-    const params = [];
-
-    if (status !== 'all') {
-      query += ' AND sr.status = ?';
-      params.push(status);
-    }
-
-    if (type) {
-      query += ' AND sr.request_type = ?';
-      params.push(type);
-    }
-
-    query += ' ORDER BY sr.priority ASC, sr.created_at DESC LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), parseInt(offset));
-
-    const requests = db.prepare(query).all(...params);
-
-    res.json({
-      success: true,
-      data: {
-        requests: requests.map(r => ({
-          ...r,
-          attachments: r.attachments ? JSON.parse(r.attachments) : [],
-          tags: r.tags ? JSON.parse(r.tags) : []
-        }))
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching support requests:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch support requests' });
-  }
-});
-
-/**
- * PATCH /api/feedback/admin/support/:id
- * Update support request (admin)
- */
-router.patch('/admin/support/:id', requireAdmin, async (req, res) => {
-  try {
-    const db = req.app.get('db');
-    const { id } = req.params;
-    const { status, priority, assignedTo, resolution, tags } = req.body;
-
-    const updates = [];
-    const params = [];
-
-    if (status !== undefined) {
-      updates.push('status = ?');
-      params.push(status);
-
-      if (status === 'resolved') {
-        updates.push('resolved_at = CURRENT_TIMESTAMP');
-        updates.push('resolved_by = ?');
-        params.push(req.userId);
-      }
-    }
-
-    if (priority !== undefined) {
-      updates.push('priority = ?');
-      params.push(priority);
-    }
-
-    if (assignedTo !== undefined) {
-      updates.push('assigned_to = ?');
-      updates.push('assigned_at = CURRENT_TIMESTAMP');
-      params.push(assignedTo);
-    }
-
-    if (resolution !== undefined) {
-      updates.push('resolution = ?');
-      params.push(resolution);
-    }
-
-    if (tags !== undefined) {
-      updates.push('tags = ?');
-      params.push(JSON.stringify(tags));
-    }
-
-    if (updates.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'No updates provided'
-      });
-    }
-
-    updates.push('updated_at = CURRENT_TIMESTAMP');
-    params.push(id);
-
-    db.prepare(`
-      UPDATE support_requests
-      SET ${updates.join(', ')}
-      WHERE id = ?
-    `).run(...params);
-
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error updating support request:', error);
-    res.status(500).json({ success: false, error: 'Failed to update support request' });
-  }
-});
-
-/**
- * POST /api/feedback/admin/support/:id/respond
- * Add response to support request (admin)
- */
-router.post('/admin/support/:id/respond', requireAdmin, async (req, res) => {
-  try {
-    const db = req.app.get('db');
-    const { id } = req.params;
-    const { message, isInternal = false } = req.body;
-
-    if (!message) {
-      return res.status(400).json({
-        success: false,
-        error: 'Message is required'
-      });
-    }
-
-    // Insert response
-    const stmt = db.prepare(`
-      INSERT INTO support_responses (
-        request_id, responder_id, responder_type, message, is_internal
-      ) VALUES (?, ?, 'admin', ?, ?)
-    `);
-
-    stmt.run(id, req.userId, message, isInternal ? 1 : 0);
-
-    // Update request
-    db.prepare(`
-      UPDATE support_requests
-      SET last_response_at = CURRENT_TIMESTAMP,
-          response_count = response_count + 1,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(id);
-
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error adding response:', error);
-    res.status(500).json({ success: false, error: 'Failed to add response' });
-  }
-});
-
-module.exports = router;

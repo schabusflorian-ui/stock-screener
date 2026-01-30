@@ -14,6 +14,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../../middleware/auth');
+const { getDatabaseAsync, isPostgres } = require('../../database');
 
 /**
  * GET /api/system/health
@@ -21,7 +22,7 @@ const { requireAuth } = require('../../middleware/auth');
  */
 router.get('/health', async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
     const config = require('../../config');
 
     // Overall status (will be downgraded if any check fails)
@@ -37,7 +38,7 @@ router.get('/health', async (req, res) => {
 
     try {
       const start = Date.now();
-      db.prepare('SELECT 1').get();
+      await database.query('SELECT 1');
       databaseHealth = {
         status: 'healthy',
         latency_ms: Date.now() - start
@@ -89,7 +90,7 @@ router.get('/health', async (req, res) => {
 
     try {
       // Get all jobs with their status
-      const jobs = db.prepare(`
+      const jobsResult = await database.query(`
         SELECT
           job_key,
           status,
@@ -101,7 +102,8 @@ router.get('/health', async (req, res) => {
           failed_runs
         FROM update_jobs
         WHERE is_enabled = 1
-      `).all();
+      `);
+      const jobs = jobsResult.rows;
 
       const now = new Date();
       const oneHourAgo = new Date(now - 60 * 60 * 1000);
@@ -166,27 +168,29 @@ router.get('/health', async (req, res) => {
     };
 
     try {
-      const queueStats = db.prepare(`
+      const queueStatsResult = await database.query(`
         SELECT
           status,
           COUNT(*) as count,
-          AVG(julianday('now') - julianday(scheduled_for)) * 86400 as avg_latency_sec
+          AVG(${isPostgres ? "EXTRACT(EPOCH FROM (NOW() - scheduled_for))" : "julianday('now') - julianday(scheduled_for)) * 86400"}) as avg_latency_sec
         FROM update_queue
         WHERE status IN ('pending', 'processing')
         GROUP BY status
-      `).all();
+      `);
+      const queueStats = queueStatsResult.rows;
 
       const pending = queueStats.find(s => s.status === 'pending')?.count || 0;
       const processing = queueStats.find(s => s.status === 'processing')?.count || 0;
       const avgLatency = queueStats.find(s => s.status === 'pending')?.avg_latency_sec || 0;
 
       // Check for stalled items (processing without recent heartbeat)
-      const stalled = db.prepare(`
+      const stalledResult = await database.query(`
         SELECT COUNT(*) as count
         FROM update_queue
         WHERE status = 'processing'
-          AND (last_heartbeat IS NULL OR last_heartbeat < datetime('now', '-10 minutes'))
-      `).get().count;
+          AND (last_heartbeat IS NULL OR last_heartbeat < ${isPostgres ? "NOW() - INTERVAL '10 minutes'" : "datetime('now', '-10 minutes')"})
+      `);
+      const stalled = stalledResult.rows[0].count;
 
       let queueStatus = 'healthy';
       if (stalled > 0) {
@@ -220,12 +224,13 @@ router.get('/health', async (req, res) => {
     };
 
     try {
-      const lockStats = db.prepare(`
+      const lockStatsResult = await database.query(`
         SELECT
           COUNT(*) as active_locks,
           SUM(CASE WHEN expires_at < CURRENT_TIMESTAMP THEN 1 ELSE 0 END) as expired_locks
         FROM update_locks
-      `).get();
+      `);
+      const lockStats = lockStatsResult.rows[0];
 
       const lockStatus = lockStats.expired_locks > 0 ? 'degraded' : 'healthy';
       if (lockStatus === 'degraded' && overallStatus === 'healthy') {
@@ -251,10 +256,13 @@ router.get('/health', async (req, res) => {
 
     try {
       // Check if api_usage_daily table exists
-      const tableExists = db.prepare(`
-        SELECT name FROM sqlite_master
-        WHERE type='table' AND name='api_usage_daily'
-      `).get();
+      const tableExistsResult = await database.query(
+        isPostgres
+          ? `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = $1) as exists`
+          : `SELECT name FROM sqlite_master WHERE type='table' AND name=?`,
+        ['api_usage_daily']
+      );
+      const tableExists = isPostgres ? tableExistsResult.rows[0]?.exists : tableExistsResult.rows[0];
 
       if (tableExists) {
         const { getCostTracker } = require('../../services/costs');
@@ -331,9 +339,9 @@ router.get('/health', async (req, res) => {
  */
 router.get('/jobs', requireAuth, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
 
-    const jobs = db.prepare(`
+    const jobsResult = await database.query(`
       SELECT
         j.job_key,
         j.name,
@@ -355,7 +363,8 @@ router.get('/jobs', requireAuth, async (req, res) => {
       FROM update_jobs j
       JOIN update_bundles b ON j.bundle_id = b.id
       ORDER BY b.priority, j.id
-    `).all();
+    `);
+    const jobs = jobsResult.rows;
 
     res.json({
       jobs,

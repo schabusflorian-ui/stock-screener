@@ -6,6 +6,7 @@
 
 const express = require('express');
 const router = express.Router();
+const { getDatabaseAsync, isPostgres } = require('../../database');
 
 // Middleware imports
 const { optionalAuth, requireAdmin, attachUserId } = require('../../middleware/auth');
@@ -20,7 +21,7 @@ const { optionalAuth, requireAdmin, attachUserId } = require('../../middleware/a
  */
 router.get('/articles', async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
     const { category, search, featured, limit = 20 } = req.query;
 
     let query = `
@@ -55,7 +56,8 @@ router.get('/articles', async (req, res) => {
     query += ' ORDER BY is_featured DESC, sort_order ASC, title ASC LIMIT ?';
     params.push(parseInt(limit));
 
-    const articles = db.prepare(query).all(...params);
+    const articlesResult = await database.query(query, [...params]);
+    const articles = articlesResult.rows;
 
     // Parse JSON fields
     const parsedArticles = articles.map(a => ({
@@ -81,13 +83,14 @@ router.get('/articles', async (req, res) => {
  */
 router.get('/articles/:slug', optionalAuth, attachUserId, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
     const { slug } = req.params;
     const { sessionId, fromPage, searchQuery } = req.query;
 
-    const article = db.prepare(`
+    const articleResult = await database.query(`
       SELECT * FROM help_articles WHERE slug = ? AND status = 'published'
-    `).get(slug);
+    `, [slug]);
+    const article = articleResult.rows[0];
 
     if (!article) {
       return res.status(404).json({
@@ -98,11 +101,11 @@ router.get('/articles/:slug', optionalAuth, attachUserId, async (req, res) => {
 
     // Track view
     if (sessionId) {
-      db.prepare(`
+      await database.query(`
         INSERT INTO help_article_views (
           article_id, user_id, session_id, from_page, search_query
         ) VALUES (?, ?, ?, ?, ?)
-      `).run(article.id, req.userId || null, sessionId, fromPage || null, searchQuery || null);
+      `, [article.id, req.userId || null, sessionId, fromPage || null, searchQuery || null]);
     }
 
     // Parse JSON fields
@@ -130,7 +133,7 @@ router.get('/articles/:slug', optionalAuth, attachUserId, async (req, res) => {
  */
 router.get('/contextual', async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
     const { page, feature } = req.query;
 
     if (!page && !feature) {
@@ -165,7 +168,8 @@ router.get('/contextual', async (req, res) => {
 
     query += ' ORDER BY sort_order ASC LIMIT 5';
 
-    const articles = db.prepare(query).all(...params);
+    const articlesResult = await database.query(query, [...params]);
+    const articles = articlesResult.rows;
 
     res.json({
       success: true,
@@ -183,9 +187,9 @@ router.get('/contextual', async (req, res) => {
  */
 router.get('/categories', async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
 
-    const categories = db.prepare(`
+    const categoriesResult = await database.query(`
       SELECT
         category,
         COUNT(*) as article_count
@@ -193,7 +197,8 @@ router.get('/categories', async (req, res) => {
       WHERE status = 'published'
       GROUP BY category
       ORDER BY category ASC
-    `).all();
+    `);
+    const categories = categoriesResult.rows;
 
     res.json({
       success: true,
@@ -211,22 +216,23 @@ router.get('/categories', async (req, res) => {
  */
 router.get('/popular', async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
     const { limit = 5 } = req.query;
 
     // Get articles with most views in last 30 days
-    const articles = db.prepare(`
+    const articlesResult = await database.query(`
       SELECT
         ha.id, ha.slug, ha.title, ha.summary, ha.category,
         COUNT(hav.id) as view_count
       FROM help_articles ha
       LEFT JOIN help_article_views hav ON ha.id = hav.article_id
-        AND hav.viewed_at >= datetime('now', '-30 days')
+        AND hav.viewed_at >= ${isPostgres ? "NOW() - INTERVAL '30 days'" : "datetime('now', '-30 days')"}
       WHERE ha.status = 'published'
       GROUP BY ha.id
       ORDER BY view_count DESC, ha.sort_order ASC
       LIMIT ?
-    `).all(parseInt(limit));
+    `, [parseInt(limit)]);
+    const articles = articlesResult.rows;
 
     res.json({
       success: true,
@@ -244,7 +250,7 @@ router.get('/popular', async (req, res) => {
  */
 router.post('/articles/:slug/helpful', optionalAuth, attachUserId, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
     const { slug } = req.params;
     const { helpful, sessionId } = req.body;
 
@@ -255,7 +261,8 @@ router.post('/articles/:slug/helpful', optionalAuth, attachUserId, async (req, r
       });
     }
 
-    const article = db.prepare('SELECT id FROM help_articles WHERE slug = ?').get(slug);
+    const articleResult = await database.query('SELECT id FROM help_articles WHERE slug = ?', [slug]);
+    const article = articleResult.rows[0];
 
     if (!article) {
       return res.status(404).json({
@@ -265,13 +272,13 @@ router.post('/articles/:slug/helpful', optionalAuth, attachUserId, async (req, r
     }
 
     // Update most recent view for this session
-    db.prepare(`
+    await database.query(`
       UPDATE help_article_views
       SET was_helpful = ?
       WHERE article_id = ? AND session_id = ?
       ORDER BY viewed_at DESC
       LIMIT 1
-    `).run(helpful ? 1 : 0, article.id, sessionId);
+    `, [helpful ? 1 : 0, article.id, sessionId]);
 
     res.json({ success: true });
   } catch (error) {
@@ -286,7 +293,7 @@ router.post('/articles/:slug/helpful', optionalAuth, attachUserId, async (req, r
  */
 router.get('/search', async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
     const { q, limit = 10 } = req.query;
 
     if (!q || q.length < 2) {
@@ -300,7 +307,7 @@ router.get('/search', async (req, res) => {
     // For production, consider FTS5 or external search service
     const searchTerm = `%${q}%`;
 
-    const articles = db.prepare(`
+    const articlesResult = await database.query(`
       SELECT
         id, slug, title, summary, category,
         CASE
@@ -319,11 +326,12 @@ router.get('/search', async (req, res) => {
         )
       ORDER BY relevance DESC, sort_order ASC
       LIMIT ?
-    `).all(
+    `, [
       searchTerm, searchTerm, searchTerm,
       searchTerm, searchTerm, searchTerm, searchTerm,
       parseInt(limit)
-    );
+    ]);
+    const articles = articlesResult.rows;
 
     res.json({
       success: true,
@@ -346,7 +354,7 @@ router.get('/search', async (req, res) => {
  */
 router.get('/admin/articles', requireAdmin, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
     const { status = 'all', limit = 50, offset = 0 } = req.query;
 
     let query = 'SELECT * FROM help_articles WHERE 1=1';
@@ -360,18 +368,20 @@ router.get('/admin/articles', requireAdmin, async (req, res) => {
     query += ' ORDER BY category ASC, sort_order ASC LIMIT ? OFFSET ?';
     params.push(parseInt(limit), parseInt(offset));
 
-    const articles = db.prepare(query).all(...params);
+    const articlesResult = await database.query(query, [...params]);
+    const articles = articlesResult.rows;
 
     // Get view stats for each article
-    const articlesWithStats = articles.map(article => {
-      const stats = db.prepare(`
+    const articlesWithStats = await Promise.all(articles.map(async (article) => {
+      const statsResult = await database.query(`
         SELECT
           COUNT(*) as total_views,
           SUM(CASE WHEN was_helpful = 1 THEN 1 ELSE 0 END) as helpful_count,
           SUM(CASE WHEN was_helpful = 0 THEN 1 ELSE 0 END) as not_helpful_count
         FROM help_article_views
         WHERE article_id = ?
-      `).get(article.id);
+      `, [article.id]);
+      const stats = statsResult.rows[0];
 
       return {
         ...article,
@@ -388,7 +398,7 @@ router.get('/admin/articles', requireAdmin, async (req, res) => {
             : null
         }
       };
-    });
+    }));
 
     res.json({
       success: true,
@@ -406,7 +416,7 @@ router.get('/admin/articles', requireAdmin, async (req, res) => {
  */
 router.post('/admin/articles', requireAdmin, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
     const {
       slug,
       title,
@@ -432,7 +442,8 @@ router.post('/admin/articles', requireAdmin, async (req, res) => {
     }
 
     // Check slug uniqueness
-    const existing = db.prepare('SELECT id FROM help_articles WHERE slug = ?').get(slug);
+    const existingResult = await database.query('SELECT id FROM help_articles WHERE slug = ?', [slug]);
+    const existing = existingResult.rows[0];
     if (existing) {
       return res.status(400).json({
         success: false,
@@ -440,15 +451,13 @@ router.post('/admin/articles', requireAdmin, async (req, res) => {
       });
     }
 
-    const stmt = db.prepare(`
+    const result = await database.query(`
       INSERT INTO help_articles (
         slug, title, summary, content, category, subcategory,
         tags, relevant_pages, relevant_features, search_keywords,
         sort_order, is_featured, status, created_by
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const result = stmt.run(
+    `, [
       slug,
       title,
       summary || null,
@@ -463,7 +472,7 @@ router.post('/admin/articles', requireAdmin, async (req, res) => {
       isFeatured ? 1 : 0,
       status,
       req.userId
-    );
+    ]);
 
     res.json({
       success: true,
@@ -481,7 +490,7 @@ router.post('/admin/articles', requireAdmin, async (req, res) => {
  */
 router.put('/admin/articles/:id', requireAdmin, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
     const { id } = req.params;
     const {
       slug,
@@ -504,7 +513,8 @@ router.put('/admin/articles/:id', requireAdmin, async (req, res) => {
 
     if (slug !== undefined) {
       // Check slug uniqueness (excluding current article)
-      const existing = db.prepare('SELECT id FROM help_articles WHERE slug = ? AND id != ?').get(slug, id);
+      const existingResult = await database.query('SELECT id FROM help_articles WHERE slug = ? AND id != ?', [slug, id]);
+    const existing = existingResult.rows[0];
       if (existing) {
         return res.status(400).json({
           success: false,
@@ -587,11 +597,11 @@ router.put('/admin/articles/:id', requireAdmin, async (req, res) => {
     params.push(req.userId);
     params.push(id);
 
-    db.prepare(`
+    await database.query(`
       UPDATE help_articles
       SET ${updates.join(', ')}
       WHERE id = ?
-    `).run(...params);
+    `, params);
 
     res.json({ success: true });
   } catch (error) {
@@ -606,11 +616,12 @@ router.put('/admin/articles/:id', requireAdmin, async (req, res) => {
  */
 router.delete('/admin/articles/:id', requireAdmin, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
     const { id } = req.params;
 
     // Check if article exists
-    const article = db.prepare('SELECT id FROM help_articles WHERE id = ?').get(id);
+    const articleResult = await database.query('SELECT id FROM help_articles WHERE id = ?', [id]);
+    const article = articleResult.rows[0];
     if (!article) {
       return res.status(404).json({
         success: false,
@@ -619,7 +630,7 @@ router.delete('/admin/articles/:id', requireAdmin, async (req, res) => {
     }
 
     // Delete article (views are cascaded)
-    db.prepare('DELETE FROM help_articles WHERE id = ?').run(id);
+    await database.query('DELETE FROM help_articles WHERE id = ?', [id]);
 
     res.json({ success: true });
   } catch (error) {
@@ -634,7 +645,7 @@ router.delete('/admin/articles/:id', requireAdmin, async (req, res) => {
  */
 router.get('/admin/analytics', requireAdmin, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
     const { period = '30d' } = req.query;
 
     const days = period === '7d' ? 7 : period === '90d' ? 90 : 30;
@@ -643,24 +654,26 @@ router.get('/admin/analytics', requireAdmin, async (req, res) => {
     const startDateStr = startDate.toISOString();
 
     // Total views
-    const totalViews = db.prepare(`
+    const totalViewsResult = await database.query(`
       SELECT COUNT(*) as count
       FROM help_article_views
       WHERE viewed_at >= ?
-    `).get(startDateStr);
+    `, [startDateStr]);
+    const totalViews = totalViewsResult.rows[0];
 
     // Helpfulness rate
-    const helpfulness = db.prepare(`
+    const helpfulnessResult = await database.query(`
       SELECT
         SUM(CASE WHEN was_helpful = 1 THEN 1 ELSE 0 END) as helpful,
         SUM(CASE WHEN was_helpful = 0 THEN 1 ELSE 0 END) as not_helpful,
         COUNT(was_helpful) as total_rated
       FROM help_article_views
       WHERE was_helpful IS NOT NULL AND viewed_at >= ?
-    `).get(startDateStr);
+    `, [startDateStr]);
+    const helpfulness = helpfulnessResult.rows[0];
 
     // Most viewed articles
-    const mostViewed = db.prepare(`
+    const mostViewedResult = await database.query(`
       SELECT
         ha.id, ha.slug, ha.title, ha.category,
         COUNT(hav.id) as view_count
@@ -670,10 +683,11 @@ router.get('/admin/analytics', requireAdmin, async (req, res) => {
       GROUP BY ha.id
       ORDER BY view_count DESC
       LIMIT 10
-    `).all(startDateStr);
+    `, [startDateStr]);
+    const mostViewed = mostViewedResult.rows;
 
     // Most searched queries
-    const searchQueries = db.prepare(`
+    const searchQueriesResult = await database.query(`
       SELECT
         search_query,
         COUNT(*) as count
@@ -682,10 +696,11 @@ router.get('/admin/analytics', requireAdmin, async (req, res) => {
       GROUP BY search_query
       ORDER BY count DESC
       LIMIT 10
-    `).all(startDateStr);
+    `, [startDateStr]);
+    const searchQueries = searchQueriesResult.rows;
 
     // Articles needing attention (low helpfulness)
-    const needsAttention = db.prepare(`
+    const needsAttentionResult = await database.query(`
       SELECT
         ha.id, ha.slug, ha.title,
         COUNT(hav.id) as view_count,
@@ -698,7 +713,8 @@ router.get('/admin/analytics', requireAdmin, async (req, res) => {
       GROUP BY ha.id
       HAVING not_helpful_count >= 3 AND not_helpful_rate > 30
       ORDER BY not_helpful_rate DESC
-    `).all(startDateStr);
+    `, [startDateStr]);
+    const needsAttention = needsAttentionResult.rows;
 
     res.json({
       success: true,
