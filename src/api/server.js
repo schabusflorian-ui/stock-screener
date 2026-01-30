@@ -609,15 +609,16 @@ app.get('/', (req, res) => {
 const frontendBuildPath = path.join(__dirname, '../../frontend/build');
 app.use(express.static(frontendBuildPath));
 
-// Catch-all route: Serve React app for all non-API routes
+// Catch-all handler: Serve React app for all non-API GET requests
 // This enables client-side routing (React Router)
-app.get('*', (req, res, next) => {
-  // Skip API routes - let them 404 normally
-  if (req.path.startsWith('/api/')) {
+// Placed before error handlers so it catches unmatched routes
+app.use((req, res, next) => {
+  // Only handle GET requests for non-API routes
+  if (req.method !== 'GET' || req.path.startsWith('/api/')) {
     return next();
   }
 
-  // Serve React index.html for all other routes
+  // Serve React index.html for all other GET requests
   res.sendFile(path.join(frontendBuildPath, 'index.html'), (err) => {
     if (err) {
       console.error('Error serving index.html:', err);
