@@ -10,6 +10,7 @@ if (dotenvResult.parsed) {
 }
 
 const express = require('express');
+const path = require('path');
 const compression = require('compression');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -600,10 +601,35 @@ app.get('/', (req, res) => {
   });
 });
 
+// ============================================
+// FRONTEND SERVING (Production)
+// ============================================
+
+// Serve static files from React build
+const frontendBuildPath = path.join(__dirname, '../../frontend/build');
+app.use(express.static(frontendBuildPath));
+
+// Catch-all route: Serve React app for all non-API routes
+// This enables client-side routing (React Router)
+app.get('*', (req, res, next) => {
+  // Skip API routes - let them 404 normally
+  if (req.path.startsWith('/api/')) {
+    return next();
+  }
+
+  // Serve React index.html for all other routes
+  res.sendFile(path.join(frontendBuildPath, 'index.html'), (err) => {
+    if (err) {
+      console.error('Error serving index.html:', err);
+      next(err);
+    }
+  });
+});
+
 // Import error handlers
 const { notFoundHandler, errorHandler } = require('../middleware/errorHandler');
 
-// 404 handler
+// 404 handler (only for API routes now)
 app.use(notFoundHandler);
 
 // Sentry error handler (captures errors to Sentry before main handler)
