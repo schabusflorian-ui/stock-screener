@@ -48,13 +48,23 @@ const getTextColor = (value) => {
   return 'var(--text-primary)';
 };
 
-export default function SectorFactorHeatmap({ onSectorClick, height = 400 }) {
+export default function SectorFactorHeatmap({ selectedFactor, onSectorClick, height = 400 }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedSector, setSelectedSector] = useState(null);
   const [sectorStocks, setSectorStocks] = useState([]);
   const [loadingStocks, setLoadingStocks] = useState(false);
+
+  // Determine if a factor should be highlighted (matches selectedFactor)
+  const highlightedFactor = useMemo(() => {
+    if (!selectedFactor?.name) return null;
+    // Match against standard factor names
+    return FACTORS.find(f =>
+      f.toLowerCase() === selectedFactor.name.toLowerCase() ||
+      selectedFactor.name.toLowerCase().includes(f.toLowerCase())
+    );
+  }, [selectedFactor]);
 
   // Fetch sector exposures
   const fetchData = async () => {
@@ -262,7 +272,10 @@ export default function SectorFactorHeatmap({ onSectorClick, height = 400 }) {
             <tr>
               <th className="sector-header">Sector</th>
               {FACTORS.map(factor => (
-                <th key={factor} className="factor-header">
+                <th
+                  key={factor}
+                  className={`factor-header ${highlightedFactor === factor ? 'highlighted' : ''}`}
+                >
                   {factor}
                 </th>
               ))}
@@ -285,10 +298,11 @@ export default function SectorFactorHeatmap({ onSectorClick, height = 400 }) {
                 </td>
                 {FACTORS.map(factor => {
                   const value = data?.exposures?.[sector]?.[factor];
+                  const isHighlighted = highlightedFactor === factor;
                   return (
                     <td
                       key={factor}
-                      className="heatmap-cell"
+                      className={`heatmap-cell ${isHighlighted ? 'highlighted' : ''}`}
                       style={{
                         backgroundColor: getHeatmapColor(value),
                         color: getTextColor(value)
@@ -321,7 +335,7 @@ export default function SectorFactorHeatmap({ onSectorClick, height = 400 }) {
               {FACTORS.map(factor => (
                 <td
                   key={factor}
-                  className="heatmap-cell"
+                  className={`heatmap-cell ${highlightedFactor === factor ? 'highlighted' : ''}`}
                   style={{
                     backgroundColor: getHeatmapColor(factorAverages[factor]),
                     color: getTextColor(factorAverages[factor])

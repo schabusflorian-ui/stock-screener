@@ -5,20 +5,19 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Calculator, Sliders, BookOpen, TrendingUp, Activity,
-  Target, FlaskConical, Cpu, Search, Settings, Play, Rocket, TestTube,
-  ChevronDown, ChevronUp, PrismSparkle
+  Calculator, TrendingUp, Activity, Target, Cpu,
+  Search, Settings, Play, Rocket, TestTube,
+  ChevronDown, ChevronUp, PrismSparkle, X, Edit3, Loader
 } from '../../icons';
 import { Skeleton } from '../../Skeleton';
 import FactorFormulaBuilder from './FactorFormulaBuilder';
 import ICDashboard from './ICDashboard';
-import FactorRepository from './FactorRepository';
+import FactorRepository, { STANDARD_FACTORS } from './FactorRepository';
+import FactorSelectorPanel from './FactorSelectorPanel';
 import SignalGenerator from './SignalGenerator';
 import SectorFactorHeatmap from './SectorFactorHeatmap';
 import WalkForwardVisualization from './WalkForwardVisualization';
-// Import Factor Lab components
-import FactorCombinationTester from '../FactorLab/FactorCombinationTester';
-import ScreeningBacktest from '../FactorLab/ScreeningBacktest';
+import FactorBacktest from './FactorBacktest';
 import './QuantWorkbench.css';
 
 // Lazy load heavier components
@@ -71,13 +70,6 @@ const WORKSPACES = {
   }
 };
 
-// Configure tab modes
-const CONFIGURE_MODES = [
-  { id: 'single', label: 'Single Factor', Icon: Calculator, description: 'Define a custom factor from metrics' },
-  { id: 'combination', label: 'Combination', Icon: Sliders, description: 'Combine multiple factors with weights' },
-  { id: 'screen', label: 'Screen', Icon: Target, description: 'Create a stock screening strategy' }
-];
-
 // Test tab sections
 const TEST_SECTIONS = [
   { id: 'ic', label: 'IC Analysis', Icon: TrendingUp, description: 'Statistical validation' },
@@ -104,15 +96,40 @@ export default function QuantWorkbench({ standalone = false }) {
     return ws.tabs ? Object.keys(ws.tabs)[0] : null;
   });
 
-  // Configure tab mode state
-  const [configureMode, setConfigureMode] = useState('single');
-
   // Test tab expanded sections
   const [expandedTestSections, setExpandedTestSections] = useState(['ic']);
+
+  // Factor selector expanded state - removed, always visible now
 
   // Factor selection state (flows through tabs)
   const [selectedFactor, setSelectedFactor] = useState(null);
   const [preloadedResults, setPreloadedResults] = useState(null);
+
+  // User factors for quick select in Test tab
+  const [userFactors, setUserFactors] = useState([]);
+  const [loadingUserFactors, setLoadingUserFactors] = useState(false);
+
+  // Trigger for running all tests centrally (incremented to trigger re-runs)
+  const [triggerAnalysis, setTriggerAnalysis] = useState(0);
+
+  // Fetch user factors for Test tab selector
+  useEffect(() => {
+    const fetchUserFactors = async () => {
+      setLoadingUserFactors(true);
+      try {
+        const response = await fetch('/api/factors/user');
+        const data = await response.json();
+        if (data.success) {
+          setUserFactors(data.data || []);
+        }
+      } catch (err) {
+        console.error('Failed to load user factors:', err);
+      } finally {
+        setLoadingUserFactors(false);
+      }
+    };
+    fetchUserFactors();
+  }, []);
 
   // Sync URL with state
   useEffect(() => {
@@ -174,10 +191,11 @@ export default function QuantWorkbench({ standalone = false }) {
     );
   };
 
-  // Run all tests
+  // Run all tests - expand sections AND trigger analyses
   const runAllTests = () => {
-    setExpandedTestSections(['ic', 'backtest', 'validation']);
-    // The individual components will detect they're expanded and run their analysis
+    setExpandedTestSections(['ic', 'walkforward', 'sectors']);
+    // Increment trigger to signal child components to run their analyses
+    setTriggerAnalysis(prev => prev + 1);
   };
 
   // Navigate to ML Ops from Deploy tab
@@ -219,68 +237,25 @@ export default function QuantWorkbench({ standalone = false }) {
 
         case 'configure':
           return (
-            <div className="configure-tab">
-              {/* Mode selector */}
-              <div className="configure-mode-selector">
-                {CONFIGURE_MODES.map(mode => (
-                  <button
-                    key={mode.id}
-                    className={`mode-btn ${configureMode === mode.id ? 'active' : ''}`}
-                    onClick={() => setConfigureMode(mode.id)}
-                    title={mode.description}
-                  >
-                    <mode.Icon size={16} className="mode-icon" />
-                    <span className="mode-label">{mode.label}</span>
-                  </button>
-                ))}
-              </div>
-
-              {/* Mode content */}
-              <div className="configure-content">
-                {configureMode === 'single' && (
-                  <FactorFormulaBuilder
-                    onFactorCreated={handleFactorCreated}
-                    onRunFullAnalysis={handleFullAnalysis}
-                    initialFactor={selectedFactor}
-                  />
-                )}
-                {configureMode === 'combination' && (
-                  <FactorCombinationTester />
-                )}
-                {configureMode === 'screen' && (
-                  <ScreeningBacktest />
-                )}
-              </div>
-            </div>
+            <FactorFormulaBuilder
+              onFactorCreated={handleFactorCreated}
+              onRunFullAnalysis={handleFullAnalysis}
+              initialFactor={selectedFactor}
+            />
           );
 
         case 'test':
           return (
             <div className="test-tab">
-              {/* Selected factor context */}
-              {selectedFactor && (
-                <div className="test-context">
-                  <div className="context-label">Testing:</div>
-                  <div className="context-factor">
-                    <strong>{selectedFactor.name}</strong>
-                    {selectedFactor.formula && (
-                      <code>{selectedFactor.formula}</code>
-                    )}
-                  </div>
-                  <button
-                    className="clear-factor-btn"
-                    onClick={() => setSelectedFactor(null)}
-                  >
-                    Clear
-                  </button>
-                </div>
-              )}
-
-              {/* Run All Tests button */}
-              <button className="run-all-tests-btn" onClick={runAllTests}>
-                <Play size={16} />
-                Run All Tests
-              </button>
+              {/* Factor Selector Panel - Reusable component */}
+              <FactorSelectorPanel
+                selectedFactor={selectedFactor}
+                onSelectFactor={setSelectedFactor}
+                userFactors={userFactors}
+                context="test"
+                onAction={runAllTests}
+                onCreateNew={() => setActiveTab('configure')}
+              />
 
               {/* Collapsible test sections */}
               <div className="test-sections">
@@ -309,24 +284,26 @@ export default function QuantWorkbench({ standalone = false }) {
                         {section.id === 'ic' && (
                           <ICDashboard
                             factor={selectedFactor}
-                            onFactorChange={(f) => {
-                              setSelectedFactor(f);
-                              setPreloadedResults(null);
-                            }}
                             preloadedResults={preloadedResults}
+                            triggerAnalysis={triggerAnalysis}
                           />
                         )}
                         {section.id === 'backtest' && (
-                          <ScreeningBacktest factor={selectedFactor} />
+                          <FactorBacktest
+                            factor={selectedFactor}
+                            triggerAnalysis={triggerAnalysis}
+                          />
                         )}
                         {section.id === 'walkforward' && (
                           <WalkForwardVisualization
-                            factorId={selectedFactor?.id}
-                            formula={selectedFactor?.formula}
+                            factor={selectedFactor}
+                            triggerAnalysis={triggerAnalysis}
                           />
                         )}
                         {section.id === 'sectors' && (
-                          <SectorFactorHeatmap />
+                          <SectorFactorHeatmap
+                            selectedFactor={selectedFactor}
+                          />
                         )}
                       </div>
                     )}
@@ -339,62 +316,64 @@ export default function QuantWorkbench({ standalone = false }) {
         case 'deploy':
           return (
             <div className="deploy-tab">
-              <div className="deploy-options">
-                {/* Generate Signals option */}
-                <div className="deploy-option signals-option">
-                  <div className="option-header">
-                    <Target size={24} className="option-icon" />
-                    <h4>Generate Signals</h4>
-                    <p>Create trading signals for today based on your factor</p>
-                  </div>
-                  <div className="option-content">
+              {/* Factor Selector Panel - Reusable component */}
+              <FactorSelectorPanel
+                selectedFactor={selectedFactor}
+                onSelectFactor={setSelectedFactor}
+                userFactors={userFactors}
+                context="deploy"
+                onCreateNew={() => setActiveTab('configure')}
+              />
+
+              {selectedFactor && (
+                <>
+                  {/* Primary Action: Generate Signals */}
+                  <div className="deploy-section primary">
                     <SignalGenerator factor={selectedFactor} />
                   </div>
-                </div>
 
-                {/* Export to ML option */}
-                <div className="deploy-option ml-option">
-                  <div className="option-header">
-                    <Cpu size={24} className="option-icon ai-icon" />
-                    <h4>Export to ML</h4>
-                    <p>Use this factor as input for machine learning models</p>
-                  </div>
-                  <div className="option-content">
-                    {selectedFactor ? (
-                      <div className="ml-export-form">
-                        <div className="export-preview">
-                          <label>Factor to export:</label>
-                          <div className="factor-preview">
-                            <strong>{selectedFactor.name}</strong>
-                            {selectedFactor.formula && (
-                              <code>{selectedFactor.formula}</code>
-                            )}
-                          </div>
-                        </div>
-                        <p className="export-description">
-                          This factor will be available as a feature in the ML Ops workspace
-                          for training models and generating predictions.
-                        </p>
-                        <button className="go-to-mlops-btn" onClick={goToMLOps}>
-                          <Cpu size={16} />
-                          Go to ML Ops
-                        </button>
+                  {/* Secondary Actions Grid */}
+                  <div className="deploy-actions-grid">
+                    {/* ML Export Card */}
+                    <div className="action-card ml-card">
+                      <div className="card-icon">
+                        <Cpu size={24} />
                       </div>
-                    ) : (
-                      <div className="no-factor-selected">
-                        <p>Select a factor from the Browse tab to export it to ML</p>
-                        <button
-                          className="go-browse-btn"
-                          onClick={() => setActiveTab('browse')}
-                        >
-                          <Search size={16} />
-                          Browse Factors
-                        </button>
+                      <div className="card-content">
+                        <h4>Export to ML</h4>
+                        <p>Use this factor as a feature in machine learning models</p>
                       </div>
-                    )}
+                      <button className="card-action" onClick={goToMLOps}>
+                        Go to ML Ops
+                      </button>
+                    </div>
+
+                    {/* Quick Links */}
+                    <div className="action-card links-card">
+                      <div className="card-icon">
+                        <Target size={24} />
+                      </div>
+                      <div className="card-content">
+                        <h4>Next Steps</h4>
+                        <ul className="quick-links">
+                          <li>
+                            <button onClick={() => setActiveTab('test')}>
+                              <TestTube size={14} />
+                              Run validation tests
+                            </button>
+                          </li>
+                          <li>
+                            <button onClick={() => setActiveTab('configure')}>
+                              <Settings size={14} />
+                              Modify factor formula
+                            </button>
+                          </li>
+                        </ul>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
+                </>
+              )}
             </div>
           );
 

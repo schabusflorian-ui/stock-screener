@@ -4,6 +4,56 @@
 import { useState, useEffect } from 'react';
 import { Loader, AlertTriangle, Check, Info, TrendingUp, TrendingDown, FileText } from '../../icons';
 
+// Default available metrics (fallback when API returns empty)
+const DEFAULT_METRICS = {
+  valuation: [
+    { metric_code: 'pe_ratio', metric_name: 'P/E Ratio', description: 'Price to earnings ratio', higher_is_better: 0 },
+    { metric_code: 'pb_ratio', metric_name: 'P/B Ratio', description: 'Price to book ratio', higher_is_better: 0 },
+    { metric_code: 'ps_ratio', metric_name: 'P/S Ratio', description: 'Price to sales ratio', higher_is_better: 0 },
+    { metric_code: 'ev_ebitda', metric_name: 'EV/EBITDA', description: 'Enterprise value to EBITDA', higher_is_better: 0 },
+    { metric_code: 'earnings_yield', metric_name: 'Earnings Yield', description: 'Earnings per share / price (inverse of P/E)', higher_is_better: 1 },
+    { metric_code: 'fcf_yield', metric_name: 'FCF Yield', description: 'Free cash flow yield', higher_is_better: 1 },
+    { metric_code: 'dividend_yield', metric_name: 'Dividend Yield', description: 'Annual dividend / price', higher_is_better: 1 },
+    { metric_code: 'enterprise_value', metric_name: 'Enterprise Value', description: 'Market cap + debt - cash', higher_is_better: 0 },
+    { metric_code: 'market_cap', metric_name: 'Market Cap', description: 'Market capitalization', higher_is_better: 0 },
+  ],
+  profitability: [
+    { metric_code: 'roe', metric_name: 'Return on Equity', description: 'Net income / shareholders equity', higher_is_better: 1 },
+    { metric_code: 'roic', metric_name: 'Return on Invested Capital', description: 'NOPAT / invested capital', higher_is_better: 1 },
+    { metric_code: 'roa', metric_name: 'Return on Assets', description: 'Net income / total assets', higher_is_better: 1 },
+    { metric_code: 'gross_margin', metric_name: 'Gross Margin', description: 'Gross profit / revenue', higher_is_better: 1 },
+    { metric_code: 'operating_margin', metric_name: 'Operating Margin', description: 'Operating income / revenue', higher_is_better: 1 },
+    { metric_code: 'net_margin', metric_name: 'Net Margin', description: 'Net income / revenue', higher_is_better: 1 },
+    { metric_code: 'asset_turnover', metric_name: 'Asset Turnover', description: 'Revenue / total assets', higher_is_better: 1 },
+  ],
+  growth: [
+    { metric_code: 'revenue_growth_yoy', metric_name: 'Revenue Growth (YoY)', description: 'Year-over-year revenue growth', higher_is_better: 1 },
+    { metric_code: 'earnings_growth_yoy', metric_name: 'Earnings Growth (YoY)', description: 'Year-over-year earnings growth', higher_is_better: 1 },
+    { metric_code: 'fcf_growth_yoy', metric_name: 'FCF Growth (YoY)', description: 'Year-over-year free cash flow growth', higher_is_better: 1 },
+  ],
+  quality: [
+    { metric_code: 'debt_to_equity', metric_name: 'Debt to Equity', description: 'Total debt / shareholders equity', higher_is_better: 0 },
+    { metric_code: 'current_ratio', metric_name: 'Current Ratio', description: 'Current assets / current liabilities', higher_is_better: 1 },
+    { metric_code: 'quick_ratio', metric_name: 'Quick Ratio', description: '(Current assets - inventory) / current liabilities', higher_is_better: 1 },
+    { metric_code: 'interest_coverage', metric_name: 'Interest Coverage', description: 'EBIT / interest expense', higher_is_better: 1 },
+    { metric_code: 'piotroski_f', metric_name: 'Piotroski F-Score', description: 'Financial strength score (0-9)', higher_is_better: 1 },
+  ],
+  technical: [
+    { metric_code: 'momentum_1m', metric_name: '1-Month Momentum', description: 'Price return over 1 month', higher_is_better: 1 },
+    { metric_code: 'momentum_3m', metric_name: '3-Month Momentum', description: 'Price return over 3 months', higher_is_better: 1 },
+    { metric_code: 'momentum_6m', metric_name: '6-Month Momentum', description: 'Price return over 6 months', higher_is_better: 1 },
+    { metric_code: 'momentum_12m', metric_name: '12-Month Momentum', description: 'Price return over 12 months', higher_is_better: 1 },
+    { metric_code: 'volatility', metric_name: 'Volatility', description: 'Price volatility (standard deviation)', higher_is_better: 0 },
+    { metric_code: 'beta', metric_name: 'Beta', description: 'Market beta', higher_is_better: 0 },
+  ],
+  alternative: [
+    { metric_code: 'congressional_signal', metric_name: 'Congressional Signal', description: 'Congressional trading activity signal', higher_is_better: 1 },
+    { metric_code: 'insider_signal', metric_name: 'Insider Signal', description: 'Insider trading activity signal', higher_is_better: 1 },
+    { metric_code: 'short_interest', metric_name: 'Short Interest', description: 'Short interest as % of float', higher_is_better: 0 },
+    { metric_code: 'sentiment_score', metric_name: 'Sentiment Score', description: 'Aggregated sentiment from news/social', higher_is_better: 1 },
+  ],
+};
+
 // Pre-built factor templates
 const FACTOR_TEMPLATES = [
   {
@@ -113,11 +163,19 @@ export default function FactorFormulaBuilder({ onFactorCreated, onRunFullAnalysi
     fetch('/api/factors/available-metrics')
       .then(res => res.json())
       .then(data => {
-        if (data.success) {
-          setAvailableMetrics(data.data.byCategory || {});
+        if (data.success && data.data.byCategory && Object.keys(data.data.byCategory).length > 0) {
+          setAvailableMetrics(data.data.byCategory);
+        } else {
+          // Use fallback metrics if API returns empty
+          console.log('Using fallback metrics (API returned empty)');
+          setAvailableMetrics(DEFAULT_METRICS);
         }
       })
-      .catch(err => console.error('Failed to load metrics:', err));
+      .catch(err => {
+        console.error('Failed to load metrics:', err);
+        // Use fallback metrics on error
+        setAvailableMetrics(DEFAULT_METRICS);
+      });
   }, []);
 
   // Initialize with existing factor if provided

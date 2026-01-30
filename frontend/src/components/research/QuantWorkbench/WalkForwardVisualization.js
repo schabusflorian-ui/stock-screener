@@ -7,8 +7,8 @@ import {
   ResponsiveContainer, ReferenceLine, Cell, Legend
 } from 'recharts';
 import {
-  Loader, RefreshCw, AlertTriangle, CheckCircle, XCircle,
-  TrendingUp, TrendingDown, Calendar, Target, Layers
+  Loader, AlertTriangle, CheckCircle, XCircle,
+  Calendar, Target, Layers
 } from '../../icons';
 
 // Default walk-forward configuration
@@ -21,15 +21,27 @@ const DEFAULT_CONFIG = {
 };
 
 export default function WalkForwardVisualization({
-  factorId,
-  formula,
-  onRunWalkForward
+  factor,
+  onRunWalkForward,
+  triggerAnalysis = 0
 }) {
+  // Extract factorId and formula from factor object
+  const factorId = factor?.id;
+  const formula = factor?.formula;
+
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [hasRun, setHasRun] = useState(false);
+
+  // Auto-run when triggered centrally
+  useEffect(() => {
+    if (triggerAnalysis > 0 && factor?.formula) {
+      runWalkForward();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [triggerAnalysis]);
 
   // Run walk-forward validation
   const runWalkForward = async () => {
@@ -240,12 +252,14 @@ export default function WalkForwardVisualization({
     );
   };
 
-  if (!formula) {
+  if (!factor) {
     return (
-      <div className="walk-forward-viz empty">
-        <Layers size={40} />
-        <h4>Walk-Forward Validation</h4>
-        <p>Select a factor to validate its out-of-sample performance</p>
+      <div className="walk-forward-viz">
+        <div className="test-empty-state">
+          <Layers size={32} className="empty-icon" />
+          <h4>Select a Factor</h4>
+          <p>Choose a factor from the panel above to validate its out-of-sample performance with walk-forward analysis.</p>
+        </div>
       </div>
     );
   }
@@ -257,37 +271,16 @@ export default function WalkForwardVisualization({
         <div className="header-title">
           <Layers size={20} />
           <h3>Walk-Forward Validation</h3>
-        </div>
-        <div className="header-actions">
-          {!hasRun ? (
-            <button
-              className="run-btn primary"
-              onClick={runWalkForward}
-              disabled={loading}
-            >
-              {loading ? (
-                <>
-                  <Loader size={16} className="spin" />
-                  Running...
-                </>
-              ) : (
-                <>
-                  <Target size={16} />
-                  Run Validation
-                </>
-              )}
-            </button>
-          ) : (
-            <button
-              className="refresh-btn"
-              onClick={runWalkForward}
-              disabled={loading}
-            >
-              <RefreshCw size={16} className={loading ? 'spin' : ''} />
-              Re-run
-            </button>
+          {factor && (
+            <span className="header-factor-name">— {factor.name}</span>
           )}
         </div>
+        {loading && (
+          <div className="header-status">
+            <Loader size={16} className="spin" />
+            <span>Running validation...</span>
+          </div>
+        )}
       </div>
 
       {/* Configuration */}

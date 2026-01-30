@@ -245,7 +245,7 @@ function FactorDetailPopup({ factor, onClose, onSelect }) {
         <div className="popup-actions">
           <button className="btn-primary" onClick={() => { onSelect(factor); onClose(); }}>
             <Eye size={16} />
-            Analyze Factor
+            Test Factor
           </button>
         </div>
       </div>
@@ -656,7 +656,7 @@ export default function FactorRepository({
                       <button
                         className="action-btn"
                         onClick={() => onFactorSelect(factor)}
-                        title="Analyze"
+                        title="Test"
                       >
                         <Eye size={14} />
                       </button>
@@ -712,6 +712,19 @@ export default function FactorRepository({
 
                 <p className="panel-description">{factor.description}</p>
 
+                {/* Formula preview */}
+                <div className="panel-formula">
+                  <code>{factor.formula?.length > 50 ? factor.formula.slice(0, 50) + '...' : factor.formula}</code>
+                </div>
+
+                {/* Academic basis for standard factors */}
+                {isStandard && factor.academicBasis && (
+                  <div className="panel-basis">
+                    <span className="basis-label">Basis:</span>
+                    <span className="basis-value">{factor.academicBasis}</span>
+                  </div>
+                )}
+
                 <div className="panel-stats">
                   <div className="panel-stat">
                     <span className="stat-label">IC</span>
@@ -739,25 +752,25 @@ export default function FactorRepository({
                     onClick={() => onFactorSelect(factor)}
                   >
                     <Eye size={14} />
-                    Analyze
+                    Test
+                  </button>
+                  <button
+                    className="panel-action-btn secondary"
+                    onClick={() => copyFormula(factor.formula)}
+                    title="Copy formula"
+                  >
+                    <Copy size={14} />
+                    Copy
                   </button>
                   {!isStandard && (
-                    <>
-                      <button
-                        className={`panel-action-btn toggle ${factor.isActive ? 'active' : ''}`}
-                        onClick={() => handleToggleActive(factor.id, factor.isActive)}
-                        title={factor.isActive ? 'Deactivate' : 'Activate'}
-                      >
-                        {factor.isActive ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
-                      </button>
-                      <button
-                        className="panel-action-btn delete"
-                        onClick={() => handleDelete(factor.id)}
-                        disabled={deleting === factor.id}
-                      >
-                        {deleting === factor.id ? <Loader size={14} className="spin" /> : <Trash2 size={14} />}
-                      </button>
-                    </>
+                    <button
+                      className="panel-action-btn delete"
+                      onClick={() => handleDelete(factor.id)}
+                      disabled={deleting === factor.id}
+                      title="Delete factor"
+                    >
+                      {deleting === factor.id ? <Loader size={14} className="spin" /> : <Trash2 size={14} />}
+                    </button>
                   )}
                 </div>
               </div>

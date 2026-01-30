@@ -3,16 +3,15 @@
 
 import { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { Loader, AlertTriangle, Info, TrendingUp, Check, X, Play, Clock } from '../../icons';
+import { Loader, AlertTriangle, Info, TrendingUp, Check, X, Clock } from '../../icons';
 import ICTimeSeriesChart from './ICTimeSeriesChart';
 
-export default function ICDashboard({ factor, onFactorChange, preloadedResults }) {
+export default function ICDashboard({ factor, preloadedResults, triggerAnalysis = 0 }) {
   const [formula, setFormula] = useState('');
   const [icResults, setICResults] = useState(null);
   const [correlations, setCorrelations] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [userFactors, setUserFactors] = useState([]);
 
   // Load preloaded results from one-click analysis
   useEffect(() => {
@@ -26,24 +25,20 @@ export default function ICDashboard({ factor, onFactorChange, preloadedResults }
     }
   }, [preloadedResults]);
 
-  // Load user factors for selection
-  useEffect(() => {
-    fetch('/api/factors/user')
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          setUserFactors(data.data || []);
-        }
-      })
-      .catch(err => console.error('Failed to load user factors:', err));
-  }, []);
-
   // Set formula when factor changes
   useEffect(() => {
     if (factor?.formula) {
       setFormula(factor.formula);
     }
   }, [factor]);
+
+  // Auto-run analysis when triggered centrally
+  useEffect(() => {
+    if (triggerAnalysis > 0 && factor?.formula) {
+      runFullAnalysis();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [triggerAnalysis]);
 
   // Run unified analysis (IC + Correlations together)
   const runFullAnalysis = async () => {
@@ -180,50 +175,34 @@ export default function ICDashboard({ factor, onFactorChange, preloadedResults }
   const signalQuality = getSignalQuality();
   const plainEnglish = getPlainEnglishSummary();
 
+  // Empty state when no factor selected
+  if (!factor) {
+    return (
+      <div className="ic-dashboard">
+        <div className="test-empty-state">
+          <TrendingUp size={32} className="empty-icon" />
+          <h4>Select a Factor</h4>
+          <p>Choose a factor from the panel above to analyze its Information Coefficient and predictive power.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="ic-dashboard">
-      {/* Factor Selection */}
+      {/* Factor Info Header */}
       <div className="ic-controls">
-        <div className="factor-selector">
-          <label>Select Factor</label>
-          <select
-            value={factor?.id || ''}
-            onChange={(e) => {
-              const selected = userFactors.find(f => f.id === e.target.value);
-              onFactorChange(selected || null);
-            }}
-          >
-            <option value="">-- Select a saved factor --</option>
-            {userFactors.map(f => (
-              <option key={f.id} value={f.id}>{f.name}</option>
-            ))}
-          </select>
+        <div className="factor-info">
+          <span className="factor-name">{factor.name}</span>
+          <code className="factor-formula">{formula}</code>
         </div>
 
-        <div className="formula-display">
-          <label>Formula</label>
-          <input
-            type="text"
-            value={formula}
-            onChange={(e) => setFormula(e.target.value)}
-            placeholder="Enter formula or select a factor above"
-            className="formula-input"
-          />
-        </div>
-
-        <div className="analysis-buttons">
-          <button
-            className="run-analysis-btn"
-            onClick={runFullAnalysis}
-            disabled={loading || !formula.trim()}
-          >
-            {loading ? (
-              <><Loader size={16} className="spin" /> Running Analysis...</>
-            ) : (
-              <><Play size={16} /> Run Analysis</>
-            )}
-          </button>
-        </div>
+        {loading && (
+          <div className="analysis-status">
+            <Loader size={16} className="spin" />
+            <span>Running IC Analysis...</span>
+          </div>
+        )}
       </div>
 
       {error && (
