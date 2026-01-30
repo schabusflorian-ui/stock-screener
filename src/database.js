@@ -92,7 +92,7 @@ function getDatabaseSafe() {
     }
     return db;
   }
-  return getDatabase();
+  return getDatabaseSync();
 }
 
 module.exports = {

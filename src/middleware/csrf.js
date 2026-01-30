@@ -54,11 +54,12 @@ const getCsrfToken = (req, res) => {
 };
 
 // Routes that should be excluded from CSRF protection
-// (webhooks, external API callbacks, etc.)
+// (webhooks, external API callbacks, analytics, etc.)
 const csrfExcludedPaths = [
   '/api/webhooks/',
   '/api/health',
-  '/api/health/detailed'
+  '/api/health/detailed',
+  '/api/analytics/'  // Analytics tracking endpoints
 ];
 
 // Conditional CSRF middleware that skips excluded paths

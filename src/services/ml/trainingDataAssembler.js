@@ -32,6 +32,63 @@ class TrainingDataAssembler {
   }
 
   /**
+   * Get available custom factors that can be used in ML training
+   * @returns {Array} List of custom factors with metadata
+   */
+  getAvailableCustomFactors() {
+    try {
+      const factors = this.db.prepare(`
+        SELECT
+          uf.id,
+          uf.name,
+          uf.formula,
+          uf.category,
+          uf.ic_mean,
+          uf.wfe,
+          COUNT(DISTINCT fvc.company_id) as coverage_companies,
+          COUNT(*) as total_values,
+          MIN(fvc.date) as min_date,
+          MAX(fvc.date) as max_date
+        FROM user_factors uf
+        LEFT JOIN factor_values_cache fvc ON fvc.factor_id = uf.id
+        GROUP BY uf.id
+        HAVING total_values > 0
+        ORDER BY uf.created_at DESC
+      `).all();
+
+      return factors;
+    } catch (err) {
+      console.warn('Could not fetch custom factors:', err.message);
+      return [];
+    }
+  }
+
+  /**
+   * Get metadata about a specific custom factor
+   * @param {number} factorId Factor ID
+   * @returns {Object} Factor metadata
+   */
+  getCustomFactorMetadata(factorId) {
+    try {
+      return this.db.prepare(`
+        SELECT
+          id,
+          name,
+          formula,
+          category,
+          ic_mean,
+          wfe,
+          higher_is_better
+        FROM user_factors
+        WHERE id = ?
+      `).get(factorId);
+    } catch (err) {
+      console.warn(`Could not fetch factor ${factorId}:`, err.message);
+      return null;
+    }
+  }
+
+  /**
    * Get training data status
    * @returns {Object} Status of available training data
    */
@@ -87,7 +144,8 @@ class TrainingDataAssembler {
       endDate = null,             // Leave room for forward returns
       horizons = [5, 21, 63],     // Return horizons in days
       maxRecords = 100000,        // Limit for memory
-      sampleRate = 1.0            // Subsample for faster training
+      sampleRate = 1.0,           // Subsample for faster training
+      customFactorIds = []        // NEW: Custom factor IDs to include
     } = options;
 
     // Calculate endDate leaving room for longest horizon
@@ -95,6 +153,9 @@ class TrainingDataAssembler {
     const effectiveEndDate = endDate || this._getDateDaysAgo(maxHorizon + 5);
 
     console.log(`📊 Assembling training data from ${startDate} to ${effectiveEndDate}`);
+    if (customFactorIds.length > 0) {
+      console.log(`   Including ${customFactorIds.length} custom factors: ${customFactorIds.join(', ')}`);
+    }
 
     // Build the query dynamically based on horizons
     const returnColumns = horizons.map(h => `
@@ -111,6 +172,17 @@ class TrainingDataAssembler {
       ) as return_${h}d`
     ).join(',');
 
+    // Build custom factor joins
+    const customFactorJoins = customFactorIds.map((factorId, idx) => `
+      LEFT JOIN factor_values_cache cf${idx} ON cf${idx}.company_id = f.company_id
+        AND cf${idx}.factor_id = ${factorId}
+        AND cf${idx}.date = f.score_date
+    `).join(' ');
+
+    const customFactorColumns = customFactorIds.map((factorId, idx) =>
+      `cf${idx}.zscoreValue as custom_factor_${factorId}`
+    ).join(', ');
+
     const query = `
       SELECT
         f.company_id,
@@ -125,11 +197,15 @@ class TrainingDataAssembler {
         -- Percentiles
         ${this.percentileColumns.map(col => `f.${col}`).join(', ')},
 
+        -- Custom factors (z-scores)
+        ${customFactorColumns ? customFactorColumns + ',' : ''}
+
         -- Forward returns
         ${returnColumns}
 
       FROM stock_factor_scores f
       JOIN companies c ON c.id = f.company_id
+      ${customFactorJoins}
       WHERE f.score_date >= ?
         AND f.score_date <= ?
         AND f.value_score IS NOT NULL
@@ -158,11 +234,13 @@ class TrainingDataAssembler {
     const {
       targetHorizon = 21,
       normalizeFeatures = true,
+      customFactorIds = [],
       ...assembleOptions
     } = options;
 
     const data = this.assembleTrainingData({
       horizons: [5, targetHorizon, 63],
+      customFactorIds,
       ...assembleOptions
     });
 
@@ -170,10 +248,21 @@ class TrainingDataAssembler {
       return { features: [], targets: [], featureNames: [], metadata: { sampleCount: 0 } };
     }
 
+    // Get custom factor metadata for feature names
+    const customFactorMetadata = customFactorIds.map(id => {
+      const meta = this.getCustomFactorMetadata(id);
+      return {
+        id,
+        name: meta ? meta.name : `custom_factor_${id}`,
+        columnKey: `custom_factor_${id}`
+      };
+    });
+
     // Define feature names
     const featureNames = [
       ...this.factorColumns,
       ...this.percentileColumns,
+      ...customFactorMetadata.map(cf => cf.columnKey),
       'regime_code',
       'sector_code',
       'market_cap_bucket'
@@ -183,10 +272,12 @@ class TrainingDataAssembler {
     const features = data.map(row => {
       const factorFeatures = this.factorColumns.map(col => row[col] || 0);
       const percentileFeatures = this.percentileColumns.map(col => row[col] || 50);
+      const customFeatures = customFactorMetadata.map(cf => row[cf.columnKey] || 0);
 
       return [
         ...factorFeatures,
         ...percentileFeatures,
+        ...customFeatures,
         this._inferRegime(row),
         this._encodeSector(row.sector),
         this._encodeMarketCap(row.market_cap)
@@ -215,7 +306,12 @@ class TrainingDataAssembler {
       },
       uniqueCompanies: new Set(data.map(d => d.company_id)).size,
       targetStats: this._calculateStats(targets),
-      featureStats
+      featureStats,
+      customFactors: customFactorMetadata.map(cf => ({
+        id: cf.id,
+        name: cf.name,
+        featureIndex: featureNames.indexOf(cf.columnKey)
+      }))
     };
 
     return {

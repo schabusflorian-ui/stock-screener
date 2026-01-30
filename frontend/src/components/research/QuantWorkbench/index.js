@@ -193,7 +193,7 @@ export default function QuantWorkbench({ standalone = false }) {
 
   // Run all tests - expand sections AND trigger analyses
   const runAllTests = () => {
-    setExpandedTestSections(['ic', 'walkforward', 'sectors']);
+    setExpandedTestSections(['ic', 'backtest', 'walkforward', 'sectors']);
     // Increment trigger to signal child components to run their analyses
     setTriggerAnalysis(prev => prev + 1);
   };

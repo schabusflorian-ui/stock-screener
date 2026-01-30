@@ -1187,6 +1187,16 @@ router.post('/ic-analysis', async (req, res) => {
       return res.status(503).json({ error: 'Custom factor calculator not available. Run migration first.' });
     }
 
+    // Validate formula before calculating
+    const validation = calc.validateFormula(formula.trim());
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: validation.error,
+        unknownMetrics: validation.unknownMetrics
+      });
+    }
+
     // Calculate factor values at the end date
     // If no endDate provided, use 3 months ago to allow for forward returns calculation
     let asOfDate;
@@ -1356,6 +1366,16 @@ router.post('/correlation', (req, res) => {
     const calc = getCustomFactorCalculator();
     if (!calc) {
       return res.status(503).json({ error: 'Custom factor calculator not available. Run migration first.' });
+    }
+
+    // Validate formula before calculating
+    const validation = calc.validateFormula(formula.trim());
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: validation.error,
+        unknownMetrics: validation.unknownMetrics
+      });
     }
 
     // Calculate custom factor values
@@ -2034,111 +2054,311 @@ router.post('/walk-forward', async (req, res) => {
   try {
     const { factorId, formula, config = {} } = req.body;
 
-    if (!formula) {
+    if (!formula || typeof formula !== 'string' || !formula.trim()) {
       return res.status(400).json({
         success: false,
-        error: 'Formula is required'
+        error: 'Formula is required and must be a non-empty string'
       });
     }
 
-    const {
-      trainYears = 3,
-      testYears = 1,
-      startYear = 2015,
-      endYear = 2026,
-      rollingWindow = true
-    } = config;
-
-    // In production, this would call the walkForwardEngine.js
-    // For now, generate realistic simulation results
-    const windows = [];
-    let currentYear = startYear;
-    let windowNum = 1;
-
-    while (currentYear + trainYears + testYears <= endYear) {
-      const trainStart = currentYear;
-      const trainEnd = currentYear + trainYears - 1;
-      const testStart = trainEnd + 1;
-      const testEnd = testStart + testYears - 1;
-
-      // Generate realistic IC values based on typical factor performance
-      // Standard factors typically have IC 0.02-0.05 with decay
-      const baseIC = 0.025 + (Math.random() * 0.03);
-      const decayFactor = 0.7 + (Math.random() * 0.4); // 70%-110% of IS performance
-      const isIC = baseIC + (Math.random() - 0.5) * 0.02;
-      const oosIC = isIC * decayFactor + (Math.random() - 0.5) * 0.01;
-
-      windows.push({
-        window: windowNum,
-        trainStart,
-        trainEnd,
-        testStart,
-        testEnd,
-        inSampleIC: Math.max(-0.02, Math.min(0.08, isIC)),
-        outOfSampleIC: Math.max(-0.03, Math.min(0.07, oosIC)),
-        wfe: oosIC > 0 && isIC > 0 ? oosIC / isIC : 0,
-        stockCount: 500 + Math.floor(Math.random() * 200)
+    // Validate formula
+    const calc = getCustomFactorCalculator();
+    if (!calc) {
+      return res.status(503).json({
+        success: false,
+        error: 'Factor calculator not available. Run migration first.'
       });
+    }
 
-      if (rollingWindow) {
-        currentYear += testYears;
-      } else {
-        currentYear = trainEnd + 1;
+    const validation = calc.validateFormula(formula.trim());
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid formula: ${validation.error}`
+      });
+    }
+
+    // Default configuration
+    const wfConfig = {
+      trainYears: config.trainYears || 3,
+      testYears: config.testYears || 1,
+      startYear: config.startYear || 2015,
+      endYear: config.endYear || 2026,
+      rollingWindow: config.rollingWindow !== false,
+      horizon: config.horizon || 21
+    };
+
+    // Run walk-forward analysis
+    const FactorWalkForwardAdapter = require('../../services/factors/factorWalkForwardAdapter');
+    const icAnalysis = require('../../services/backtesting/icAnalysis');
+    const adapter = new FactorWalkForwardAdapter(require('../../database').db, calc, icAnalysis);
+
+    const results = await adapter.runWalkForward(factorId, formula.trim(), wfConfig);
+
+    // Calculate verdict
+    const verdict = calculateWalkForwardVerdict(
+      results.summary.walkForwardEfficiency,
+      results.summary.oosHitRate
+    );
+
+    // Update factor WFE in database if factorId provided
+    if (factorId) {
+      const repo = getFactorRepository();
+      if (repo) {
+        try {
+          repo.updateFactorStats(factorId, {
+            wfe: results.summary.walkForwardEfficiency
+          });
+        } catch (err) {
+          console.warn('Could not update factor stats:', err.message);
+        }
       }
-      windowNum++;
-    }
-
-    // Calculate aggregate statistics
-    const validWindows = windows.filter(w => w.inSampleIC > 0);
-    const avgISIC = validWindows.reduce((s, w) => s + w.inSampleIC, 0) / validWindows.length;
-    const avgOOSIC = validWindows.reduce((s, w) => s + w.outOfSampleIC, 0) / validWindows.length;
-    const avgWFE = avgISIC > 0 ? avgOOSIC / avgISIC : 0;
-    const oosHitRate = windows.filter(w => w.outOfSampleIC > 0).length / windows.length;
-
-    // Determine verdict
-    let verdict;
-    if (avgWFE >= 0.8 && oosHitRate >= 0.7) {
-      verdict = { status: 'excellent', label: 'Excellent', description: 'Consistent out-of-sample performance' };
-    } else if (avgWFE >= 0.6 && oosHitRate >= 0.6) {
-      verdict = { status: 'good', label: 'Good', description: 'Reliable factor with some decay' };
-    } else if (avgWFE >= 0.4 && oosHitRate >= 0.5) {
-      verdict = { status: 'moderate', label: 'Moderate', description: 'Some overfitting detected' };
-    } else {
-      verdict = { status: 'poor', label: 'Poor', description: 'Significant overfitting risk' };
     }
 
     res.json({
       success: true,
       data: {
-        windows,
-        summary: {
-          avgInSampleIC: avgISIC,
-          avgOutOfSampleIC: avgOOSIC,
-          walkForwardEfficiency: avgWFE,
-          oosHitRate,
-          windowCount: windows.length,
-          verdict
-        },
-        config: {
-          trainYears,
-          testYears,
-          startYear,
-          endYear,
-          rollingWindow
-        },
+        windows: results.windows,
+        summary: { ...results.summary, verdict },
+        config: wfConfig,
         factorId,
-        formula,
+        formula: formula.trim(),
         runAt: new Date().toISOString()
       }
     });
 
   } catch (error) {
     console.error('Error running walk-forward validation:', error);
-    res.json({
+    res.status(500).json({
       success: false,
       error: error.message
     });
   }
 });
+
+// Helper function to calculate verdict
+function calculateWalkForwardVerdict(wfe, hitRate) {
+  if (wfe >= 0.8 && hitRate >= 0.7) {
+    return {
+      status: 'excellent',
+      label: 'Excellent',
+      description: 'Consistent out-of-sample performance'
+    };
+  } else if (wfe >= 0.6 && hitRate >= 0.6) {
+    return {
+      status: 'good',
+      label: 'Good',
+      description: 'Reliable factor with some decay'
+    };
+  } else if (wfe >= 0.4 && hitRate >= 0.5) {
+    return {
+      status: 'moderate',
+      label: 'Moderate',
+      description: 'Some overfitting detected'
+    };
+  } else {
+    return {
+      status: 'poor',
+      label: 'Poor',
+      description: 'Significant overfitting risk'
+    };
+  }
+}
+
+// ============================================
+// Factor Backtest - Long-Short Portfolio Simulation
+// ============================================
+
+// POST /api/factors/backtest - Run factor backtest with long-short portfolio
+router.post('/backtest', async (req, res) => {
+  try {
+    const { factorId, formula, config = {} } = req.body;
+
+    if (!formula || typeof formula !== 'string' || !formula.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Formula is required and must be a non-empty string'
+      });
+    }
+
+    // Validate formula
+    const calc = getCustomFactorCalculator();
+    if (!calc) {
+      return res.status(503).json({
+        success: false,
+        error: 'Factor calculator not available. Run migration first.'
+      });
+    }
+
+    const validation = calc.validateFormula(formula.trim());
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid formula: ${validation.error}`
+      });
+    }
+
+    // Default configuration
+    const backtestConfig = {
+      startDate: config.startDate || '2015-01-01',
+      endDate: config.endDate || new Date().toISOString().split('T')[0],
+      rebalanceFrequency: config.rebalanceFrequency || 'monthly',
+      longShortRatio: config.longShortRatio || { long: 20, short: 20 },
+      transactionCost: config.transactionCost || 0.001
+    };
+
+    // Run backtest
+    const FactorBacktestAdapter = require('../../services/factors/factorBacktestAdapter');
+    const adapter = new FactorBacktestAdapter(require('../../database').db, calc);
+    const results = await adapter.runFactorBacktest(factorId, formula.trim(), backtestConfig);
+
+    res.json({
+      success: true,
+      data: results
+    });
+
+  } catch (error) {
+    console.error('Error running factor backtest:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// ============================================
+// Historical Backfill for Custom Factors
+// ============================================
+
+// POST /api/factors/backfill - Calculate and store historical factor values for ML training
+router.post('/backfill', async (req, res) => {
+  try {
+    const { factorId, formula, startDate, endDate, frequency = 'monthly' } = req.body;
+
+    if (!factorId) {
+      return res.status(400).json({
+        success: false,
+        error: 'factorId is required'
+      });
+    }
+
+    if (!formula || typeof formula !== 'string' || !formula.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Formula is required and must be a non-empty string'
+      });
+    }
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        success: false,
+        error: 'startDate and endDate are required (format: YYYY-MM-DD)'
+      });
+    }
+
+    // Validate formula
+    const calc = getCustomFactorCalculator();
+    if (!calc) {
+      return res.status(503).json({
+        success: false,
+        error: 'Factor calculator not available. Run migration first.'
+      });
+    }
+
+    const validation = calc.validateFormula(formula.trim());
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid formula: ${validation.error}`
+      });
+    }
+
+    console.log(`Backfilling factor ${factorId} from ${startDate} to ${endDate} (${frequency})`);
+
+    // Generate date list based on frequency
+    const dates = generateDateList(startDate, endDate, frequency);
+
+    console.log(`  Generated ${dates.length} dates for backfill`);
+
+    let successCount = 0;
+    let errorCount = 0;
+    const errors = [];
+
+    // Calculate and store factor values for each date
+    for (const date of dates) {
+      try {
+        const result = calc.calculateFactorValues(factorId, formula.trim(), {
+          asOfDate: date,
+          storeResults: true  // Critical: store to factor_values_cache
+        });
+
+        if (result.values && result.values.length > 0) {
+          successCount++;
+          console.log(`    ${date}: ${result.values.length} values calculated`);
+        } else {
+          errorCount++;
+          errors.push({ date, error: 'No values calculated' });
+        }
+      } catch (err) {
+        errorCount++;
+        errors.push({ date, error: err.message });
+        console.error(`    ${date}: Error - ${err.message}`);
+      }
+    }
+
+    console.log(`Backfill complete: ${successCount} successful, ${errorCount} errors`);
+
+    res.json({
+      success: true,
+      data: {
+        factorId,
+        formula: formula.trim(),
+        dateRange: { startDate, endDate },
+        frequency,
+        totalDates: dates.length,
+        successCount,
+        errorCount,
+        errors: errors.length > 0 ? errors.slice(0, 10) : []  // First 10 errors
+      }
+    });
+
+  } catch (error) {
+    console.error('Error running historical backfill:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Generate list of dates for backfill based on frequency
+ */
+function generateDateList(startDate, endDate, frequency) {
+  const dates = [];
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+
+  let current = new Date(start);
+
+  while (current <= end) {
+    dates.push(current.toISOString().split('T')[0]);
+
+    if (frequency === 'daily') {
+      current.setDate(current.getDate() + 1);
+    } else if (frequency === 'weekly') {
+      current.setDate(current.getDate() + 7);
+    } else if (frequency === 'monthly') {
+      // Last trading day of month (approximate with last day)
+      current.setMonth(current.getMonth() + 1);
+      current.setDate(1);  // First day of next month
+      current.setDate(current.getDate() - 1);  // Last day of current month
+    } else if (frequency === 'quarterly') {
+      current.setMonth(current.getMonth() + 3);
+    }
+  }
+
+  return dates;
+}
 
 module.exports = router;

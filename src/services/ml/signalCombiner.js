@@ -488,6 +488,7 @@ class MLSignalCombiner {
    */
   train(options = {}) {
     const lookbackDays = options.lookbackDays || this.config.lookbackDays;
+    const customFactorIds = options.customFactorIds || [];
 
     // Use TrainingDataAssembler to get data from stock_factor_scores + daily_prices
     const assembler = new TrainingDataAssembler(this.db);
@@ -503,6 +504,23 @@ class MLSignalCombiner {
         error: `Insufficient factor data. Need at least 100 records with returns, have ${status.trainableRecords || 0}`,
         factorRecordsAvailable: status.factorRecords
       };
+    }
+
+    // If custom factors provided, validate they exist
+    if (customFactorIds.length > 0) {
+      const availableFactors = assembler.getAvailableCustomFactors();
+      const availableIds = new Set(availableFactors.map(f => f.id));
+      const invalidIds = customFactorIds.filter(id => !availableIds.has(id));
+
+      if (invalidIds.length > 0) {
+        return {
+          success: false,
+          error: `Custom factor IDs not found: ${invalidIds.join(', ')}`,
+          availableFactorIds: [...availableIds]
+        };
+      }
+
+      console.log(`📊 Including ${customFactorIds.length} custom factors in training`);
     }
 
     // Calculate appropriate date range based on lookbackDays
@@ -526,7 +544,8 @@ class MLSignalCombiner {
       targetHorizon: 21, // Primary horizon
       normalizeFeatures: true,
       maxRecords: 50000,  // Limit for memory
-      sampleRate: 1.0  // Use all available data
+      sampleRate: 1.0,  // Use all available data
+      customFactorIds  // NEW: Include custom factors
     });
 
     const { features, targets, featureNames, metadata, rawData } = trainingData;
@@ -559,7 +578,8 @@ class MLSignalCombiner {
         targetHorizon: horizon,
         normalizeFeatures: true,
         maxRecords: 50000,
-        sampleRate: 1.0
+        sampleRate: 1.0,
+        customFactorIds  // Include custom factors
       });
 
       const X = horizonData.features;
@@ -633,6 +653,7 @@ class MLSignalCombiner {
       uniqueCompanies: metadata.uniqueCompanies,
       dateRange: metadata.dateRange,
       targetStats: metadata.targetStats,
+      customFactors: metadata.customFactors || [],  // Include custom factor metadata
       results
     };
 

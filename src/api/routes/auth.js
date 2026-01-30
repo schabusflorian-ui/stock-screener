@@ -18,21 +18,28 @@ router.get('/dev-login', (req, res) => {
     return res.status(403).json({ error: 'Invalid secret' });
   }
 
-  // Create admin session without OAuth
-  req.session.userId = 'dev-admin';
-  req.session.isAdmin = true;
-
-  // Set user in session for passport compatibility
+  // Create admin session using Passport's login method
   req.login({
     id: 'dev-admin',
     email: 'admin@dev.local',
     name: 'Development Admin',
-    picture: null
+    picture: null,
+    isDevAdmin: true  // Flag to identify dev admin sessions
   }, (err) => {
     if (err) {
+      console.error('[DevLogin] Session creation failed:', err);
       return res.status(500).json({ error: 'Session creation failed' });
     }
-    res.redirect('/');
+
+    // CRITICAL: Save session before redirecting
+    req.session.save((saveErr) => {
+      if (saveErr) {
+        console.error('[DevLogin] Session save failed:', saveErr);
+        return res.status(500).json({ error: 'Session save failed' });
+      }
+      console.log('[DevLogin] Session saved successfully for dev-admin');
+      res.redirect('/');
+    });
   });
 });
 
@@ -66,29 +73,16 @@ router.get('/google/callback', (req, res, next) => {
 
 // GET /api/auth/me - Get current user
 router.get('/me', (req, res) => {
-  // Check for dev admin session (bypass mode)
-  if (req.session?.userId === 'dev-admin' && req.session?.isAdmin) {
-    return res.json({
-      success: true,
-      user: {
-        id: 'dev-admin',
-        email: 'admin@dev.local',
-        name: 'Development Admin',
-        picture: null,
-        isAdmin: true
-      }
-    });
-  }
-
-  // Regular OAuth authentication
-  if (req.isAuthenticated()) {
+  // Check authentication via Passport
+  if (req.isAuthenticated() && req.user) {
     res.json({
       success: true,
       user: {
         id: req.user.id,
         email: req.user.email,
         name: req.user.name,
-        picture: req.user.picture
+        picture: req.user.picture,
+        isAdmin: req.user.isDevAdmin || false  // Include dev admin flag if present
       }
     });
   } else {
@@ -117,18 +111,10 @@ router.post('/logout', (req, res) => {
 
 // GET /api/auth/status - Check auth status (lightweight)
 router.get('/status', (req, res) => {
-  // Check for dev admin session (bypass mode)
-  if (req.session?.userId === 'dev-admin' && req.session?.isAdmin) {
-    return res.json({
-      authenticated: true,
-      userId: 'dev-admin',
-      isAdmin: true
-    });
-  }
-
   res.json({
     authenticated: req.isAuthenticated(),
-    userId: req.user?.id || null
+    userId: req.user?.id || null,
+    isAdmin: req.user?.isDevAdmin || false
   });
 });
 

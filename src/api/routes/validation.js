@@ -653,6 +653,10 @@ router.get('/ml/status', (req, res) => {
 /**
  * POST /api/validation/ml/train
  * Train the ML signal combiner on historical data
+ *
+ * Body params:
+ * - lookbackDays: Number of days of historical data (default: 730)
+ * - customFactorIds: Array of custom factor IDs to include as features (optional)
  */
 router.post('/ml/train', (req, res) => {
   try {
@@ -664,9 +668,32 @@ router.post('/ml/train', (req, res) => {
       });
     }
 
-    const { lookbackDays = 730 } = req.body; // 2 years default
+    const {
+      lookbackDays = 730,
+      customFactorIds = []
+    } = req.body;
 
-    const results = combiner.train({ lookbackDays });
+    // Validate customFactorIds if provided
+    if (customFactorIds && !Array.isArray(customFactorIds)) {
+      return res.status(400).json({
+        success: false,
+        error: 'customFactorIds must be an array of factor IDs'
+      });
+    }
+
+    // Filter to valid integers
+    const validFactorIds = customFactorIds
+      .filter(id => Number.isInteger(id) && id > 0)
+      .map(id => parseInt(id));
+
+    if (validFactorIds.length > 0) {
+      console.log(`Training ML model with ${validFactorIds.length} custom factors: ${validFactorIds.join(', ')}`);
+    }
+
+    const results = combiner.train({
+      lookbackDays,
+      customFactorIds: validFactorIds
+    });
 
     // Check if training returned valid results
     if (!results) {
@@ -751,23 +778,67 @@ router.get('/ml/importance', (req, res) => {
 
     const importances = combiner._getFeatureImportanceMap(model);
 
+    // Get custom factor metadata for friendly names
+    const customFactorMetadata = {};
+    if (combiner.trainingStats && combiner.trainingStats.customFactors) {
+      combiner.trainingStats.customFactors.forEach(cf => {
+        customFactorMetadata[`custom_factor_${cf.id}`] = {
+          id: cf.id,
+          name: cf.name
+        };
+      });
+    }
+
     // Sort by importance
     const sorted = Object.entries(importances)
       .sort((a, b) => b[1] - a[1])
-      .map(([feature, importance]) => ({
-        feature,
-        importance,
-        percentContribution: (importance * 100).toFixed(2) + '%'
-      }));
+      .map(([feature, importance]) => {
+        const metadata = customFactorMetadata[feature];
+        return {
+          feature,
+          displayName: metadata ? `${metadata.name} (Custom)` : feature,
+          importance,
+          percentContribution: (importance * 100).toFixed(2) + '%',
+          isCustomFactor: !!metadata,
+          customFactorId: metadata ? metadata.id : null
+        };
+      });
 
     res.json({
       success: true,
       horizon: parseInt(horizon),
       data: sorted,
+      customFactorsUsed: combiner.trainingStats?.customFactors || []
     });
   } catch (error) {
     console.error('ML importance error:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/validation/ml/available-factors
+ * Get list of custom factors available for ML training
+ */
+router.get('/ml/available-factors', (req, res) => {
+  try {
+    const { TrainingDataAssembler } = require('../../services/ml/trainingDataAssembler');
+    const { db } = require('../../database');
+
+    const assembler = new TrainingDataAssembler(db);
+    const factors = assembler.getAvailableCustomFactors();
+
+    res.json({
+      success: true,
+      data: factors,
+      count: factors.length
+    });
+  } catch (error) {
+    console.error('Error getting available factors:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
   }
 });
 
