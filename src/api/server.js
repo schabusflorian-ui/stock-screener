@@ -88,6 +88,10 @@ function createSessionStore() {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust Railway proxy - enables secure cookies to work behind HTTPS proxy
+// Railway terminates SSL at edge, forwards HTTP internally with x-forwarded-proto header
+app.set('trust proxy', 1);
+
 // ============================================
 // CRITICAL: Health check registered at ROOT LEVEL to bypass all middleware
 // This MUST be the first route registered, before ANY middleware or configuration
