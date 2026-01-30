@@ -3,7 +3,6 @@
 // Supports Redis for distributed caching in production, falls back to memory
 
 const crypto = require('crypto');
-const { v4: uuidv4 } = require('uuid');
 const { api: logger } = require('../utils/logger');
 
 // Import unified cache (Redis + memory fallback)
@@ -356,7 +355,7 @@ function correlationIdMiddleware(req, res, next) {
   // Accept correlation ID from client or generate new one
   const correlationId = req.headers['x-correlation-id'] ||
                         req.headers['x-request-id'] ||
-                        uuidv4();
+                        crypto.randomUUID();
 
   // Attach to request for use in handlers
   req.correlationId = correlationId;

@@ -11,7 +11,7 @@ const db = getDb();
  * - subscription_events: Audit log for billing events
  */
 
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 
 const dbPath = process.env.DATABASE_PATH || path.join(__dirname, '../../data/stocks.db');
 

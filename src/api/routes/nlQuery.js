@@ -9,7 +9,7 @@ const express = require('express');
 const router = express.Router();
 const { spawn } = require('child_process');
 const path = require('path');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const db = require('../../database');
 const { routeQuery, shouldUseLLM } = require('../../services/nl/queryRouter');
 const { getLLMHandler, SSE_EVENTS } = require('../../services/nl/llmHandler');
@@ -954,7 +954,7 @@ function getOrCreateConversation(conversationId, sessionId) {
   }
 
   // Create new conversation
-  const newId = conversationId || uuidv4();
+  const newId = conversationId || crypto.randomUUID();
   database.prepare(`
     INSERT INTO nl_conversations (id, session_id, created_at, updated_at)
     VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)

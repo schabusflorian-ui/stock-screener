@@ -1,7 +1,7 @@
 // src/services/factors/factorRepository.js
 // CRUD operations for user-defined factors
 
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const { validateFormula } = require('./factorFormulaParser');
 
 /**
@@ -73,7 +73,7 @@ class FactorRepository {
       };
     }
 
-    const id = uuidv4();
+    const id = crypto.randomUUID();
 
     try {
       this.db.prepare(`
@@ -437,7 +437,7 @@ class FactorRepository {
       results
     } = data;
 
-    const id = uuidv4();
+    const id = crypto.randomUUID();
 
     try {
       this.db.prepare(`
