@@ -4,19 +4,42 @@
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const crypto = require('crypto');
+const { getDatabase, isPostgres } = require('../lib/db');
 
 function configurePassport(db) {
-  // Serialize user ID into session
+  // Serialize user into session
   passport.serializeUser((user, done) => {
+    // For dev-admin, store the whole user object (no database lookup needed)
+    if (user.isDevAdmin) {
+      return done(null, { devAdmin: true, user });
+    }
+    // For regular users, just store the ID
     done(null, user.id);
   });
 
   // Deserialize user from session
-  passport.deserializeUser((id, done) => {
+  passport.deserializeUser(async (data, done) => {
     try {
-      const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+      // Handle dev-admin sessions (bypass database lookup)
+      if (data && typeof data === 'object' && data.devAdmin) {
+        return done(null, data.user);
+      }
+
+      const userId = data;
+
+      // PostgreSQL mode - use async query
+      if (isPostgres()) {
+        const dbClient = getDatabase();
+        const result = await dbClient.query('SELECT * FROM users WHERE id = $1', [userId]);
+        const user = result.rows[0] || null;
+        return done(null, user);
+      }
+
+      // SQLite mode - use synchronous query
+      const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
       done(null, user || null);
     } catch (error) {
+      console.error('[Passport] deserializeUser error:', error);
       done(error, null);
     }
   });
