@@ -3,32 +3,31 @@
  * Supports S&P 500, Dow Jones, NASDAQ Composite, Russell 2000
  */
 
-const { getDatabase, isPostgres } = require('../database');
+const { getDatabaseAsync, isPostgres } = require('../database');
 
 class IndexService {
   constructor() {
     this.isPostgres = isPostgres;
+    this.dbCache = null;
+  }
 
-    // In SQLite mode, initialize synchronously
-    if (!isPostgres) {
-      try {
-        this.db = getDatabase();
-      } catch (err) {
-        console.warn('[IndexService] Database initialization failed:', err.message);
-        this.db = null;
-      }
-    } else {
-      // In PostgreSQL mode, db will be initialized when needed
-      this.db = null;
-      console.log('[IndexService] PostgreSQL mode - async initialization required');
+  /**
+   * Get database instance
+   * @returns {Promise<Object>} Database instance
+   */
+  async _getDb() {
+    if (!this.dbCache) {
+      this.dbCache = await getDatabaseAsync();
     }
+    return this.dbCache;
   }
 
   /**
    * Get all active indices with latest metrics
-   * @returns {Array} Array of index objects
+   * @returns {Promise<Array>} Array of index objects
    */
-  getAllIndices() {
+  async getAllIndices() {
+    const db = await this._getDb();
     const sql = `
       SELECT
         mi.id,
@@ -67,15 +66,17 @@ class IndexService {
       ORDER BY mi.display_order
     `;
 
-    return this.db.prepare(sql).all();
+    const result = await db.query(sql);
+    return result.rows;
   }
 
   /**
    * Get single index by symbol
    * @param {string} symbol - Index symbol (e.g., '^GSPC')
-   * @returns {Object} Index object
+   * @returns {Promise<Object>} Index object
    */
-  getIndexBySymbol(symbol) {
+  async getIndexBySymbol(symbol) {
+    const db = await this._getDb();
     const sql = `
       SELECT
         mi.*,
@@ -106,7 +107,8 @@ class IndexService {
       WHERE mi.symbol = ?
     `;
 
-    return this.db.prepare(sql).get(symbol);
+    const result = await db.query(sql, [symbol]);
+    return result.rows[0] || null;
   }
 
   /**
@@ -116,9 +118,10 @@ class IndexService {
    * @param {string} options.startDate - Start date (YYYY-MM-DD)
    * @param {string} options.endDate - End date (YYYY-MM-DD)
    * @param {number} options.limit - Max records to return
-   * @returns {Array} Array of price records
+   * @returns {Promise<Array>} Array of price records
    */
-  getHistoricalPrices(symbol, options = {}) {
+  async getHistoricalPrices(symbol, options = {}) {
+    const db = await this._getDb();
     // Use null to indicate no limit (for 'max' period)
     const { startDate, endDate } = options;
     const limit = options.limit === null ? null : (options.limit || 252);
@@ -156,15 +159,17 @@ class IndexService {
       params.push(limit);
     }
 
-    return this.db.prepare(sql).all(...params);
+    const result = await db.query(sql, params);
+    return result.rows;
   }
 
   /**
    * Get index returns for multiple periods
    * @param {string} symbol - Index symbol
-   * @returns {Object} Returns by period
+   * @returns {Promise<Object>} Returns by period
    */
-  getIndexReturns(symbol) {
+  async getIndexReturns(symbol) {
+    const db = await this._getDb();
     const sql = `
       SELECT
         change_1d_pct as day_1,
@@ -179,15 +184,16 @@ class IndexService {
       WHERE mi.symbol = ?
     `;
 
-    return this.db.prepare(sql).get(symbol);
+    const result = await db.query(sql, [symbol]);
+    return result.rows[0] || null;
   }
 
   /**
    * Get market summary with all indices
-   * @returns {Object} Market summary
+   * @returns {Promise<Object>} Market summary
    */
-  getMarketSummary() {
-    const indices = this.getAllIndices();
+  async getMarketSummary() {
+    const indices = await this.getAllIndices();
 
     // Calculate market breadth
     const advancing = indices.filter(i => i.change_1d_pct > 0).length;
@@ -225,11 +231,12 @@ class IndexService {
    * @param {number} companyId - Company ID
    * @param {string} indexSymbol - Index symbol to compare against
    * @param {string} period - Time period ('1m', '3m', '6m', '1y', 'ytd')
-   * @returns {Object} Comparison data
+   * @returns {Promise<Object>} Comparison data
    */
-  compareToIndex(companyId, indexSymbol = '^GSPC', period = '1y') {
+  async compareToIndex(companyId, indexSymbol = '^GSPC', period = '1y') {
+    const db = await this._getDb();
     // Get index data
-    const indexData = this.getIndexBySymbol(indexSymbol);
+    const indexData = await this.getIndexBySymbol(indexSymbol);
     if (!indexData) {
       throw new Error(`Index ${indexSymbol} not found`);
     }
@@ -245,11 +252,21 @@ class IndexService {
 
     const days = periodDays[period];
     let startCondition = '';
+    const stockParams = [companyId];
+    const indexParams = [indexSymbol];
 
     if (period === 'ytd') {
-      startCondition = 'AND p.date >= date(\'now\', \'start of year\')';
+      if (this.isPostgres) {
+        startCondition = 'AND p.date >= DATE_TRUNC(\'year\', CURRENT_DATE)';
+      } else {
+        startCondition = 'AND p.date >= date(\'now\', \'start of year\')';
+      }
     } else {
-      startCondition = `AND p.date >= date('now', '-${days} days')`;
+      if (this.isPostgres) {
+        startCondition = `AND p.date >= CURRENT_DATE - INTERVAL '${days} days'`;
+      } else {
+        startCondition = `AND p.date >= date('now', '-${days} days')`;
+      }
     }
 
     // Get stock prices
@@ -261,19 +278,22 @@ class IndexService {
       ORDER BY date ASC
     `;
 
-    const stockPrices = this.db.prepare(stockSql).all(companyId);
+    const stockResult = await db.query(stockSql, stockParams);
+    const stockPrices = stockResult.rows;
 
     // Get index prices for same period
+    const indexStartCondition = startCondition.replace('p.date', 'mip.date');
     const indexSql = `
       SELECT mip.date, mip.close
       FROM market_index_prices mip
       JOIN market_indices mi ON mip.index_id = mi.id
       WHERE mi.symbol = ?
-      ${startCondition.replace('p.date', 'mip.date')}
+      ${indexStartCondition}
       ORDER BY mip.date ASC
     `;
 
-    const indexPrices = this.db.prepare(indexSql).all(indexSymbol);
+    const indexResult = await db.query(indexSql, indexParams);
+    const indexPrices = indexResult.rows;
 
     // Calculate returns
     const calcReturn = (prices) => {
@@ -312,9 +332,10 @@ class IndexService {
    * @param {string} indexSymbol - Index symbol
    * @param {number} companyId - Company ID (optional)
    * @param {string} period - Time period
-   * @returns {Object} Normalized price series (base 100)
+   * @returns {Promise<Object>} Normalized price series (base 100)
    */
-  getNormalizedPrices(indexSymbol, companyId = null, period = '1y') {
+  async getNormalizedPrices(indexSymbol, companyId = null, period = '1y') {
+    const db = await this._getDb();
     const periodDays = {
       '1m': 21,
       '3m': 63,
@@ -336,7 +357,8 @@ class IndexService {
       LIMIT ?
     `;
 
-    const indexPrices = this.db.prepare(indexSql).all(indexSymbol, days);
+    const indexResult = await db.query(indexSql, [indexSymbol, days]);
+    const indexPrices = indexResult.rows;
 
     // Reverse to ascending order
     indexPrices.reverse();
@@ -368,7 +390,8 @@ class IndexService {
         LIMIT ?
       `;
 
-      const stockPrices = this.db.prepare(stockSql).all(companyId, days);
+      const stockResult = await db.query(stockSql, [companyId, days]);
+      const stockPrices = stockResult.rows;
       stockPrices.reverse();
       result.stock = {
         companyId,
@@ -381,9 +404,10 @@ class IndexService {
 
   /**
    * Get S&P 500 constituents
-   * @returns {Array} Array of S&P 500 companies
+   * @returns {Promise<Array>} Array of S&P 500 companies
    */
-  getSP500Constituents() {
+  async getSP500Constituents() {
+    const db = await this._getDb();
     const sql = `
       SELECT
         c.id,
@@ -405,14 +429,16 @@ class IndexService {
       ORDER BY c.market_cap DESC
     `;
 
-    return this.db.prepare(sql).all();
+    const result = await db.query(sql);
+    return result.rows;
   }
 
   /**
    * Get index price count for verification
-   * @returns {Array} Count of prices per index
+   * @returns {Promise<Array>} Count of prices per index
    */
-  getPriceStats() {
+  async getPriceStats() {
+    const db = await this._getDb();
     const sql = `
       SELECT
         mi.symbol,
@@ -426,24 +452,28 @@ class IndexService {
       ORDER BY mi.display_order
     `;
 
-    return this.db.prepare(sql).all();
+    const result = await db.query(sql);
+    return result.rows;
   }
 
   /**
    * Get constituents for any index by code
    * @param {string} indexCode - Index code (SPX, DJI, NDX, RUT, IXIC)
    * @param {Object} options - Query options
-   * @returns {Array} Array of constituent companies
+   * @returns {Promise<Array>} Array of constituent companies
    */
-  getConstituents(indexCode, options = {}) {
+  async getConstituents(indexCode, options = {}) {
+    const db = await this._getDb();
     const { limit, sortBy = 'market_cap' } = options;
 
     // First check index_constituents table
-    const indexCheck = this.db.prepare(`
+    const indexCheckResult = await db.query(`
       SELECT si.id, si.code, si.name
       FROM stock_indexes si
       WHERE si.code = ?
-    `).get(indexCode);
+    `, [indexCode]);
+
+    const indexCheck = indexCheckResult.rows[0];
 
     if (indexCheck) {
       // Use index_constituents table
@@ -472,12 +502,13 @@ class IndexService {
         sql += ` LIMIT ${parseInt(limit)}`;
       }
 
-      return this.db.prepare(sql).all(indexCheck.id);
+      const result = await db.query(sql, [indexCheck.id]);
+      return result.rows;
     }
 
     // Fallback: if it's SPX and index_constituents empty, use is_sp500 flag
     if (indexCode === 'SPX') {
-      return this.getSP500Constituents();
+      return await this.getSP500Constituents();
     }
 
     return null;
@@ -485,9 +516,10 @@ class IndexService {
 
   /**
    * Get all index summary with constituent counts
-   * @returns {Array} Array of indices with stats
+   * @returns {Promise<Array>} Array of indices with stats
    */
-  getIndicesWithStats() {
+  async getIndicesWithStats() {
+    const db = await this._getDb();
     const sql = `
       SELECT
         si.id,
@@ -501,7 +533,8 @@ class IndexService {
       ORDER BY si.code
     `;
 
-    return this.db.prepare(sql).all();
+    const result = await db.query(sql);
+    return result.rows;
   }
 }
 

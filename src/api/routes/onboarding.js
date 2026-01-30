@@ -1,7 +1,7 @@
 // src/api/routes/onboarding.js
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
+const { getDatabaseAsync, isPostgres } = require('../../database');
 
 /**
  * Save user's onboarding preferences
@@ -33,54 +33,76 @@ router.post('/preferences', async (req, res) => {
       });
     }
 
-    // Check if user preferences already exist
-    const existing = await db('user_preferences')
-      .where({ user_id: userId })
-      .first();
+    const database = await getDatabaseAsync();
 
-    const preferencesData = {
-      user_id: userId,
-      interests: JSON.stringify(interests),
-      risk_profile: riskProfile,
-      onboarding_completed_at: new Date(),
-      updated_at: new Date(),
-    };
+    // Check if user preferences already exist
+    const existingResult = await database.query(
+      'SELECT * FROM user_preferences WHERE user_id = ?',
+      [userId]
+    );
+    const existing = existingResult.rows[0];
+
+    const now = new Date().toISOString();
+    const interestsJson = JSON.stringify(interests);
 
     if (existing) {
       // Update existing preferences
-      await db('user_preferences')
-        .where({ user_id: userId })
-        .update(preferencesData);
+      await database.query(
+        `UPDATE user_preferences
+         SET interests = ?, risk_profile = ?, onboarding_completed_at = ?, updated_at = ?
+         WHERE user_id = ?`,
+        [interestsJson, riskProfile, now, now, userId]
+      );
     } else {
       // Insert new preferences
-      await db('user_preferences').insert({
-        ...preferencesData,
-        created_at: new Date(),
-      });
+      await database.query(
+        `INSERT INTO user_preferences (user_id, interests, risk_profile, onboarding_completed_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [userId, interestsJson, riskProfile, now, now, now]
+      );
     }
 
     // If user created a watchlist, save it using new user_watchlists table
     if (firstStocks && firstStocks.length > 0) {
-      const database = db.getDatabase();
+      if (isPostgres) {
+        // PostgreSQL transaction
+        await database.transaction(async (client) => {
+          for (const stock of firstStocks) {
+            // Find company by symbol
+            const companyResult = await client.query(
+              'SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)',
+              [stock.symbol]
+            );
 
-      const insertStmt = database.prepare(`
-        INSERT OR IGNORE INTO user_watchlists (user_id, company_id, added_at)
-        VALUES (?, ?, CURRENT_TIMESTAMP)
-      `);
-
-      const transaction = database.transaction(() => {
-        for (const stock of firstStocks) {
-          // Find company by symbol
-          const company = database.prepare('SELECT id FROM companies WHERE symbol = ?')
-            .get(stock.symbol);
-
-          if (company) {
-            insertStmt.run(userId, company.id);
+            if (companyResult.rows.length > 0) {
+              await client.query(
+                `INSERT INTO user_watchlists (user_id, company_id, added_at)
+                 VALUES ($1, $2, NOW())
+                 ON CONFLICT (user_id, company_id) DO NOTHING`,
+                [userId, companyResult.rows[0].id]
+              );
+            }
           }
-        }
-      });
+        });
+      } else {
+        // SQLite transaction
+        const transaction = database.raw.transaction(() => {
+          const insertStmt = database.raw.prepare(`
+            INSERT OR IGNORE INTO user_watchlists (user_id, company_id, added_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+          `);
 
-      transaction();
+          for (const stock of firstStocks) {
+            const company = database.raw.prepare('SELECT id FROM companies WHERE symbol = ?')
+              .get(stock.symbol);
+
+            if (company) {
+              insertStmt.run(userId, company.id);
+            }
+          }
+        });
+        transaction();
+      }
     }
 
     res.json({
@@ -112,9 +134,12 @@ router.get('/preferences', async (req, res) => {
       });
     }
 
-    const preferences = await db('user_preferences')
-      .where({ user_id: userId })
-      .first();
+    const database = await getDatabaseAsync();
+    const result = await database.query(
+      'SELECT * FROM user_preferences WHERE user_id = ?',
+      [userId]
+    );
+    const preferences = result.rows[0];
 
     if (!preferences) {
       return res.json({
@@ -158,9 +183,12 @@ router.get('/recommendations', async (req, res) => {
       });
     }
 
-    const preferences = await db('user_preferences')
-      .where({ user_id: userId })
-      .first();
+    const database = await getDatabaseAsync();
+    const result = await database.query(
+      'SELECT * FROM user_preferences WHERE user_id = ?',
+      [userId]
+    );
+    const preferences = result.rows[0];
 
     if (!preferences) {
       // Return default recommendations
