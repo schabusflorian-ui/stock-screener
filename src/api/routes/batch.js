@@ -4,6 +4,7 @@
 // Phase 3.3: Optimized with direct service layer access (5-10x faster)
 
 const express = require('express');
+const { getDatabaseAsync, isPostgres } = require('../../database');
 const router = express.Router();
 const { routeRequest } = require('./batchRouter');
 
@@ -172,7 +173,7 @@ router.get('/symbols', async (req, res) => {
     }
 
     const includeTypes = include.split(',').map(t => t.trim().toLowerCase());
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
 
     // Fetch data in parallel for all symbols
     const results = {};
@@ -228,7 +229,7 @@ router.get('/symbols', async (req, res) => {
  * Helper: Fetch price data for a symbol
  */
 function fetchPriceData(db, symbol) {
-  const stmt = db.prepare(`
+  const stmt = database.prepare(`
     SELECT last_price, change_1d, change_1w, change_1m, change_ytd,
            volume, avg_volume_20d, high_52w, low_52w
     FROM price_metrics
@@ -242,7 +243,7 @@ function fetchPriceData(db, symbol) {
  * Helper: Fetch metrics data for a symbol
  */
 function fetchMetricsData(db, symbol) {
-  const stmt = db.prepare(`
+  const stmt = database.prepare(`
     SELECT cm.*
     FROM calculated_metrics cm
     JOIN companies c ON cm.company_id = c.id
@@ -258,7 +259,7 @@ function fetchMetricsData(db, symbol) {
  * Helper: Fetch company info for a symbol
  */
 function fetchCompanyInfo(db, symbol) {
-  const stmt = db.prepare(`
+  const stmt = database.prepare(`
     SELECT id, symbol, name, sector, industry, country, market_cap, description
     FROM companies
     WHERE symbol = ?
