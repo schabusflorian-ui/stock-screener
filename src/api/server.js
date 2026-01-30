@@ -143,7 +143,7 @@ app.use(helmet({
       scriptSrc: ["'self'", "'unsafe-inline'"], // Allow inline for React
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'", "https://api.anthropic.com", "wss:"],
+      connectSrc: ["'self'", "https://api.anthropic.com", "wss:", "https://prism-invest.up.railway.app", "https://*.railway.app"],
       fontSrc: ["'self'", "https:", "data:"],
       frameSrc: ["'none'"],
       objectSrc: ["'none'"],
