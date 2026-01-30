@@ -2,13 +2,14 @@
 // API routes for recommendation tracking and performance analytics
 
 const express = require('express');
+const { getDatabaseAsync, isPostgres } = require('../../database');
 const router = express.Router();
 const { RecommendationTracker } = require('../../services/agent/recommendationTracker');
 
 // Middleware to get tracker service
-const getTracker = (req) => {
-  const db = req.app.get('db');
-  return new RecommendationTracker(db);
+const getTracker = async () => {
+  const database = await getDatabaseAsync();
+  return new RecommendationTracker(database.raw || database);
 };
 
 // ============================================
@@ -16,9 +17,9 @@ const getTracker = (req) => {
 // ============================================
 
 // GET /api/recommendations - List recent recommendations
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const tracker = getTracker(req);
+    const tracker = await getTracker();
     const {
       limit = 50,
       portfolioId,
@@ -49,13 +50,13 @@ router.get('/', (req, res) => {
 });
 
 // GET /api/recommendations/:id - Get single recommendation with outcome
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
-    const tracker = getTracker(req);
+    const tracker = await getTracker();
     const { id } = req.params;
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
 
-    const recommendation = db.prepare(`
+    const recommendationResult = await database.query(`
       SELECT
         ro.*,
         c.symbol,
@@ -63,7 +64,8 @@ router.get('/:id', (req, res) => {
       FROM recommendation_outcomes ro
       LEFT JOIN companies c ON ro.company_id = c.id
       WHERE ro.id = ?
-    `).get(parseInt(id));
+    `, [parseInt(id)]);
+    const recommendation = recommendationResult.rows[0];
 
     if (!recommendation) {
       return res.status(404).json({ error: 'Recommendation not found' });
