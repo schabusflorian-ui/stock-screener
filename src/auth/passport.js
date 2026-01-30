@@ -3,7 +3,7 @@
 
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 
 function configurePassport(db) {
   // Serialize user ID into session
@@ -48,7 +48,7 @@ function configurePassport(db) {
           user = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
         } else {
           // Create new user
-          const userId = uuidv4();
+          const userId = crypto.randomUUID();
           db.prepare(`
             INSERT INTO users (id, google_id, email, name, picture, last_login_at)
             VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
