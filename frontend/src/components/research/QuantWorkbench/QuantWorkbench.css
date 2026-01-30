@@ -4286,14 +4286,383 @@
   display: flex;
   justify-content: flex-start;
   gap: var(--space-4, 1rem);
-  padding: var(--space-2, 0.5rem) 0;
+  padding: var(--space-3, 0.75rem);
   font-size: var(--text-xs, 0.75rem);
   color: var(--text-tertiary, #94a3b8);
+  background: var(--bg-tertiary, #f8fafc);
+  border-radius: var(--radius-md, 8px);
+  margin-top: var(--space-3, 0.75rem);
+}
+
+.signal-stats span {
+  font-family: var(--font-mono, ui-monospace, monospace);
 }
 
 .signal-stats .watchlist-count {
   margin-left: auto;
   color: var(--positive, #059669);
+}
+
+/* ============================================================
+   Signal Generator - Table Controls & Column Selector
+   (Matching Screening page patterns)
+   ============================================================ */
+
+.signal-generator .table-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
+  background: var(--bg-tertiary, #f8fafc);
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  border-radius: var(--radius-md, 8px) var(--radius-md, 8px) 0 0;
+  border-bottom: none;
+  gap: var(--space-4, 1rem);
+}
+
+.signal-generator .table-controls-left,
+.signal-generator .table-controls-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 0.75rem);
+}
+
+.signal-generator .results-count {
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--text-secondary, #64748b);
+}
+
+.signal-generator .watchlist-status {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--positive, #059669);
+  padding: var(--space-1, 0.25rem) var(--space-2, 0.5rem);
+  background: var(--positive-muted, rgba(5, 150, 105, 0.1));
+  border-radius: var(--radius-sm, 4px);
+}
+
+.signal-generator .table-control-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+  padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
+  background: var(--bg-surface, #ffffff);
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  border-radius: var(--radius-base, 6px);
+  color: var(--text-secondary, #64748b);
+  font-size: var(--text-sm, 0.875rem);
+  cursor: pointer;
+  transition: all var(--transition-fast, 0.15s) ease;
+  position: relative;
+}
+
+.signal-generator .table-control-btn:hover {
+  background: rgba(212, 175, 55, 0.04);
+  color: var(--text-primary, #0f172a);
+  border-color: var(--color-gold-500, #d4af37);
+}
+
+.signal-generator .table-control-btn.active {
+  background: rgba(212, 175, 55, 0.08);
+  color: var(--color-gold-700, #a17f1a);
+  border-color: var(--color-gold-500, #d4af37);
+}
+
+.signal-generator .table-control-btn.refresh {
+  padding: var(--space-2, 0.5rem);
+  width: 36px;
+  height: 36px;
+  justify-content: center;
+}
+
+.signal-generator .table-control-btn.refresh:hover:not(:disabled) {
+  background: var(--brand-primary, #2563eb);
+  border-color: var(--brand-primary, #2563eb);
+  color: white;
+}
+
+.signal-generator .table-control-btn .rotated {
+  transform: rotate(180deg);
+}
+
+/* Column Selector Dropdown */
+.signal-generator .column-selector-wrapper {
+  position: relative;
+}
+
+.signal-generator .column-selector-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  width: 200px;
+  max-height: 360px;
+  background: var(--bg-surface, #ffffff);
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0, 0, 0, 0.1));
+  z-index: var(--z-dropdown, 100);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.signal-generator .column-selector-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-3, 0.75rem);
+  border-bottom: 1px solid var(--border-subtle, #e2e8f0);
+  font-weight: var(--font-semibold, 600);
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--text-primary, #0f172a);
+}
+
+.signal-generator .column-selector-header button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary, #94a3b8);
+  cursor: pointer;
+  border-radius: var(--radius-sm, 4px);
+  transition: all var(--transition-fast, 0.15s) ease;
+}
+
+.signal-generator .column-selector-header button:hover {
+  background: var(--bg-secondary, #f1f5f9);
+  color: var(--text-primary, #0f172a);
+}
+
+.signal-generator .column-selector-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-2, 0.5rem);
+}
+
+.signal-generator .column-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+  padding: var(--space-2, 0.5rem) var(--space-2, 0.5rem);
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--text-secondary, #64748b);
+  transition: background var(--transition-fast, 0.15s) ease;
+}
+
+.signal-generator .column-option:hover:not(.disabled) {
+  background: var(--bg-secondary, #f1f5f9);
+  color: var(--text-primary, #0f172a);
+}
+
+.signal-generator .column-option.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.signal-generator .column-option input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--color-gold-500, #d4af37);
+}
+
+.signal-generator .column-selector-footer {
+  padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
+  border-top: 1px solid var(--border-subtle, #e2e8f0);
+}
+
+.signal-generator .column-selector-footer button {
+  width: 100%;
+  padding: var(--space-2, 0.5rem);
+  background: transparent;
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  border-radius: var(--radius-sm, 4px);
+  color: var(--text-secondary, #64748b);
+  font-size: var(--text-xs, 0.75rem);
+  cursor: pointer;
+  transition: all var(--transition-fast, 0.15s) ease;
+}
+
+.signal-generator .column-selector-footer button:hover {
+  background: var(--bg-secondary, #f1f5f9);
+  color: var(--text-primary, #0f172a);
+}
+
+/* ============================================================
+   Signal Results Table (matching Screening page)
+   ============================================================ */
+
+.signal-results-table {
+  background: var(--bg-surface, #ffffff);
+  border-radius: 0 0 var(--radius-lg, 12px) var(--radius-lg, 12px);
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  overflow-x: auto;
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.05));
+}
+
+.signal-results-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.signal-results-table th,
+.signal-results-table td {
+  padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle, #e2e8f0);
+  white-space: nowrap;
+}
+
+.signal-results-table th {
+  background: var(--bg-tertiary, #f8fafc);
+  color: var(--text-secondary, #64748b);
+  font-weight: var(--font-semibold, 600);
+  font-size: var(--text-xs, 0.75rem);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider, 0.05em);
+}
+
+.signal-results-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: color var(--transition-fast, 0.15s) ease, background var(--transition-fast, 0.15s) ease;
+}
+
+.signal-results-table th.sortable:hover {
+  color: var(--brand-primary, #2563eb);
+  background: rgba(212, 175, 55, 0.08);
+}
+
+.signal-results-table th.sortable.sorted {
+  color: var(--color-gold-700, #a17f1a);
+}
+
+.signal-results-table th.sortable svg {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: var(--space-1, 0.25rem);
+  color: var(--color-gold-500, #d4af37);
+}
+
+.signal-results-table td {
+  font-size: var(--text-sm, 0.875rem);
+}
+
+.signal-results-table tbody tr {
+  transition: background var(--transition-fast, 0.15s) ease;
+}
+
+.signal-results-table tbody tr:hover {
+  background: rgba(212, 175, 55, 0.04);
+}
+
+.signal-results-table tbody tr.in-watchlist {
+  background: rgba(5, 150, 105, 0.04);
+}
+
+.signal-results-table tbody tr.in-watchlist:hover {
+  background: rgba(5, 150, 105, 0.08);
+}
+
+.signal-results-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Table Cell Styles */
+.signal-results-table .symbol-link {
+  color: var(--brand-primary, #2563eb);
+  text-decoration: none;
+  font-weight: var(--font-semibold, 600);
+}
+
+.signal-results-table .symbol-link:hover {
+  color: var(--color-gold-500, #d4af37);
+}
+
+.signal-results-table .company-name {
+  color: var(--text-secondary, #64748b);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.signal-results-table .sector-cell {
+  color: var(--text-tertiary, #94a3b8);
+  font-size: var(--text-xs, 0.75rem);
+}
+
+.signal-results-table .numeric-cell {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  text-align: right;
+}
+
+.signal-results-table .numeric-cell.positive {
+  color: var(--positive, #059669);
+  font-weight: var(--font-semibold, 600);
+}
+
+.signal-results-table .numeric-cell.negative {
+  color: var(--negative, #dc2626);
+}
+
+.signal-results-table .actions-col {
+  width: 100px;
+  min-width: 100px;
+  text-align: center;
+}
+
+.signal-results-table .action-cell {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.signal-results-table .action-cell .action-buttons {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-2, 0.5rem);
+}
+
+.signal-results-table .action-cell .action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--bg-secondary, #f1f5f9);
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  border-radius: var(--radius-sm, 4px);
+  color: var(--text-tertiary, #94a3b8);
+  text-decoration: none;
+  cursor: pointer;
+  transition: all var(--transition-fast, 0.15s) ease;
+}
+
+.signal-results-table .action-cell .action-btn:hover {
+  background: var(--brand-primary, #2563eb);
+  border-color: var(--brand-primary, #2563eb);
+  color: white;
+}
+
+/* Scrollbar for table */
+.signal-results-table::-webkit-scrollbar {
+  height: 6px;
+}
+
+.signal-results-table::-webkit-scrollbar-track {
+  background: var(--bg-tertiary, #f8fafc);
+}
+
+.signal-results-table::-webkit-scrollbar-thumb {
+  background: var(--border-subtle, #e2e8f0);
+  border-radius: 3px;
+}
+
+.signal-results-table::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary, #94a3b8);
 }
 
 /* Signal Bulk Actions */
