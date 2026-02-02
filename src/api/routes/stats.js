@@ -1,9 +1,7 @@
 // src/api/routes/stats.js
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
-
-const database = db.getDatabase();
+const { getDatabaseAsync } = require('../../database');
 
 // Cache for expensive queries (refresh every 5 minutes)
 let statsCache = null;
@@ -14,7 +12,7 @@ const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
  * GET /api/stats/dashboard
  * Get comprehensive dashboard statistics
  */
-router.get('/dashboard', (req, res) => {
+router.get('/dashboard', async (req, res) => {
   try {
     const now = Date.now();
 
@@ -23,8 +21,10 @@ router.get('/dashboard', (req, res) => {
       return res.json(statsCache);
     }
 
+    const database = await getDatabaseAsync();
+
     // Get company counts - count all companies with metrics data
-    const companyStats = database.prepare(`
+    const companyStatsResult = await database.query(`
       SELECT
         COUNT(DISTINCT c.id) as total_companies,
         COUNT(DISTINCT c.sector) as sectors,
@@ -32,10 +32,11 @@ router.get('/dashboard', (req, res) => {
       FROM companies c
       INNER JOIN calculated_metrics m ON c.id = m.company_id
       WHERE c.is_active = 1
-    `).get();
+    `);
+    const companyStats = companyStatsResult.rows[0];
 
     // Get year range from calculated_metrics - filter to reasonable years (2009+)
-    const dataSpan = database.prepare(`
+    const dataSpanResult = await database.query(`
       SELECT
         MIN(CAST(SUBSTR(fiscal_period, 1, 4) AS INTEGER)) as earliest_year,
         MAX(CAST(SUBSTR(fiscal_period, 1, 4) AS INTEGER)) as latest_year
@@ -43,24 +44,27 @@ router.get('/dashboard', (req, res) => {
       WHERE fiscal_period IS NOT NULL
         AND CAST(SUBSTR(fiscal_period, 1, 4) AS INTEGER) >= 2009
         AND CAST(SUBSTR(fiscal_period, 1, 4) AS INTEGER) <= 2025
-    `).get();
+    `);
+    const dataSpan = dataSpanResult.rows[0];
 
     // Get companies with data from calculated_metrics (faster)
-    const metricsStats = database.prepare(`
+    const metricsStatsResult = await database.query(`
       SELECT
         COUNT(DISTINCT company_id) as companies_with_metrics,
         COUNT(*) as total_metrics
       FROM calculated_metrics
-    `).get();
+    `);
+    const metricsStats = metricsStatsResult.rows[0];
 
     // Get latest filing date from calculated_metrics
-    const latestData = database.prepare(`
+    const latestDataResult = await database.query(`
       SELECT MAX(fiscal_period) as latest_filing
       FROM calculated_metrics
-    `).get();
+    `);
+    const latestData = latestDataResult.rows[0];
 
     // Get sector breakdown - only companies with metrics data
-    const sectorBreakdown = database.prepare(`
+    const sectorBreakdownResult = await database.query(`
       SELECT c.sector, COUNT(DISTINCT c.id) as count
       FROM companies c
       INNER JOIN calculated_metrics m ON c.id = m.company_id
@@ -68,10 +72,11 @@ router.get('/dashboard', (req, res) => {
       GROUP BY c.sector
       ORDER BY count DESC
       LIMIT 8
-    `).all();
+    `);
+    const sectorBreakdown = sectorBreakdownResult.rows;
 
     // Calculate market cap coverage - only companies with metrics data
-    const marketCapStats = database.prepare(`
+    const marketCapStatsResult = await database.query(`
       SELECT
         COUNT(DISTINCT CASE WHEN c.market_cap > 200000000000 THEN c.id END) as mega_cap,
         COUNT(DISTINCT CASE WHEN c.market_cap BETWEEN 10000000000 AND 200000000000 THEN c.id END) as large_cap,
@@ -81,7 +86,8 @@ router.get('/dashboard', (req, res) => {
       FROM companies c
       INNER JOIN calculated_metrics m ON c.id = m.company_id
       WHERE c.is_active = 1 AND c.market_cap IS NOT NULL
-    `).get();
+    `);
+    const marketCapStats = marketCapStatsResult.rows[0];
 
     const result = {
       companies: {
@@ -125,10 +131,12 @@ router.get('/dashboard', (req, res) => {
  * GET /api/stats/highlights
  * Get key highlights for the homepage
  */
-router.get('/highlights', (req, res) => {
+router.get('/highlights', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
+
     // Top ROIC companies - simplified query without correlated subquery
-    const topROIC = database.prepare(`
+    const topROICResult = await database.query(`
       SELECT c.symbol, c.name, c.sector, m.roic, m.roe, m.net_margin
       FROM companies c
       JOIN (
@@ -140,10 +148,11 @@ router.get('/highlights', (req, res) => {
       WHERE c.is_active = 1 AND c.symbol NOT LIKE 'CIK_%'
       ORDER BY m.roic DESC
       LIMIT 5
-    `).all();
+    `);
+    const topROIC = topROICResult.rows;
 
     // Best value (high earnings yield)
-    const bestValue = database.prepare(`
+    const bestValueResult = await database.query(`
       SELECT c.symbol, c.name, c.sector, m.earnings_yield, m.pe_ratio, m.pb_ratio
       FROM companies c
       JOIN (
@@ -155,10 +164,11 @@ router.get('/highlights', (req, res) => {
       WHERE c.is_active = 1 AND c.symbol NOT LIKE 'CIK_%'
       ORDER BY m.earnings_yield DESC
       LIMIT 5
-    `).all();
+    `);
+    const bestValue = bestValueResult.rows;
 
     // Highest growth (revenue growth YoY)
-    const highestGrowth = database.prepare(`
+    const highestGrowthResult = await database.query(`
       SELECT c.symbol, c.name, c.sector, m.revenue_growth_yoy, m.earnings_growth_yoy
       FROM companies c
       JOIN (
@@ -170,10 +180,11 @@ router.get('/highlights', (req, res) => {
       WHERE c.is_active = 1 AND c.symbol NOT LIKE 'CIK_%'
       ORDER BY m.revenue_growth_yoy DESC
       LIMIT 5
-    `).all();
+    `);
+    const highestGrowth = highestGrowthResult.rows;
 
     // Strongest balance sheets (low debt, high current ratio)
-    const strongBalance = database.prepare(`
+    const strongBalanceResult = await database.query(`
       SELECT c.symbol, c.name, c.sector, m.debt_to_equity, m.current_ratio
       FROM companies c
       JOIN (
@@ -185,10 +196,11 @@ router.get('/highlights', (req, res) => {
       WHERE c.is_active = 1 AND c.symbol NOT LIKE 'CIK_%'
       ORDER BY m.current_ratio DESC
       LIMIT 5
-    `).all();
+    `);
+    const strongBalance = strongBalanceResult.rows;
 
     // FCF Yield leaders (as proxy for dividend potential)
-    const dividendLeaders = database.prepare(`
+    const dividendLeadersResult = await database.query(`
       SELECT c.symbol, c.name, c.sector, m.fcf_yield as dividend_yield, m.fcf_margin as payout_ratio
       FROM companies c
       JOIN (
@@ -200,7 +212,8 @@ router.get('/highlights', (req, res) => {
       WHERE c.is_active = 1 AND c.symbol NOT LIKE 'CIK_%'
       ORDER BY m.fcf_yield DESC
       LIMIT 5
-    `).all();
+    `);
+    const dividendLeaders = dividendLeadersResult.rows;
 
     res.json({
       topROIC,

@@ -64,44 +64,39 @@ router.post('/preferences', async (req, res) => {
 
     // If user created a watchlist, save it using new user_watchlists table
     if (firstStocks && firstStocks.length > 0) {
-      if (isPostgres) {
-        // PostgreSQL transaction
-        await database.transaction(async (client) => {
-          for (const stock of firstStocks) {
-            // Find company by symbol
-            const companyResult = await client.query(
-              'SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)',
-              [stock.symbol]
-            );
+      for (const stock of firstStocks) {
+        try {
+          // Find company by symbol (case-insensitive)
+          const companyResult = await database.query(
+            isPostgres()
+              ? 'SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)'
+              : 'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)',
+            [stock.symbol]
+          );
 
-            if (companyResult.rows.length > 0) {
-              await client.query(
+          if (companyResult.rows.length > 0) {
+            const companyId = companyResult.rows[0].id;
+
+            // Insert into watchlist, ignore if already exists
+            if (isPostgres()) {
+              await database.query(
                 `INSERT INTO user_watchlists (user_id, company_id, added_at)
                  VALUES ($1, $2, NOW())
                  ON CONFLICT (user_id, company_id) DO NOTHING`,
-                [userId, companyResult.rows[0].id]
+                [userId, companyId]
+              );
+            } else {
+              await database.query(
+                `INSERT OR IGNORE INTO user_watchlists (user_id, company_id, added_at)
+                 VALUES (?, ?, CURRENT_TIMESTAMP)`,
+                [userId, companyId]
               );
             }
           }
-        });
-      } else {
-        // SQLite transaction
-        const transaction = database.raw.transaction(() => {
-          const insertStmt = database.raw.prepare(`
-            INSERT OR IGNORE INTO user_watchlists (user_id, company_id, added_at)
-            VALUES (?, ?, CURRENT_TIMESTAMP)
-          `);
-
-          for (const stock of firstStocks) {
-            const company = database.raw.prepare('SELECT id FROM companies WHERE symbol = ?')
-              .get(stock.symbol);
-
-            if (company) {
-              insertStmt.run(userId, company.id);
-            }
-          }
-        });
-        transaction();
+        } catch (error) {
+          console.error(`Error adding stock ${stock.symbol} to watchlist:`, error);
+          // Continue with other stocks even if one fails
+        }
       }
     }
 
