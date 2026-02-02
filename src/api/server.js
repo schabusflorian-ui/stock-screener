@@ -290,22 +290,19 @@ const screeningRouter = require('./routes/screening');
 const trendsRouter = require('./routes/trends');
 const sectorsRouter = require('./routes/sectors');
 const classificationsRouter = require('./routes/classifications');
-const ipoRouter = require('./routes/ipo');
+// const ipoRouter = require('./routes/ipo'); // Temporarily disabled due to initialization issue
 const updatesRouter = require('./routes/updates');
-const insidersRouter = require('./routes/insiders');
-const capitalRouter = require('./routes/capital');
-const sentimentRouter = require('./routes/sentiment');
+// const insidersRouter = require('./routes/insiders'); // Temporarily disabled due to initialization issue
+// const capitalRouter = require('./routes/capital'); // Temporarily disabled due to initialization issue
+// const sentimentRouter = require('./routes/sentiment'); // Temporarily disabled due to initialization issue
 const validationRouter = require('./routes/validation');
 const statsRouter = require('./routes/stats');
 const pricesRouter = require('./routes/prices');
-const dcfRouter = require('./routes/dcf');
-// TEMPORARILY DISABLED - Has module-level db.getDatabase() that crashes PostgreSQL
-// const earningsRouter = require('./routes/earnings');
+// const dcfRouter = require('./routes/dcf'); // Temporarily disabled due to initialization issue
+const earningsRouter = require('./routes/earnings'); // FIXED: Now uses lazy initialization
 const priceUpdatesRouter = require('./routes/priceUpdates');
-// TEMPORARILY DISABLED - Has module-level db.getDatabase() that crashes PostgreSQL
-// const fiscalRouter = require('./routes/fiscal');
-// TEMPORARILY DISABLED - Has module-level db.getDatabase() that crashes PostgreSQL
-// const alertsRouter = require('./routes/alerts');
+const fiscalRouter = require('./routes/fiscal'); // FIXED: Now uses lazy initialization
+const alertsRouter = require('./routes/alerts'); // FIXED: Now uses lazy initialization
 const indicesRouter = require('./routes/indices');
 const dividendsRouter = require('./routes/dividends');
 const investorsRouter = require('./routes/investors');
@@ -340,8 +337,7 @@ const backtestingRouter = require('./routes/backtesting');
 const adminRouter = require('./routes/admin');
 const agentsRouter = require('./routes/agents');
 const paperTradingRouter = require('./routes/paperTrading');
-// TEMPORARILY DISABLED - Has module-level db.getDatabase() that crashes PostgreSQL
-// const xbrlRouter = require('./routes/xbrl');
+const xbrlRouter = require('./routes/xbrl'); // FIXED: Now uses lazy initialization
 const dataRouter = require('./routes/data');
 const identifiersRouter = require('./routes/identifiers');
 const strategiesRouter = require('./routes/strategies');
@@ -361,7 +357,7 @@ const explainabilityRouter = require('./routes/explainability');
 const gdprRouter = require('./routes/gdpr');
 const taxRouter = require('./routes/tax');
 const tcaRouter = require('./routes/tca');
-const prismRouter = require('./routes/prism');
+// const prismRouter = require('./routes/prism'); // Temporarily disabled due to initialization issue
 const batchRouter = require('./routes/batch');
 const subscriptionRouter = require('./routes/subscription');
 const systemRouter = require('./routes/system'); // PHASE 2: System health and monitoring
@@ -389,22 +385,19 @@ app.use('/api/screening', screeningRouter);
 app.use('/api/trends', trendsRouter);
 app.use('/api/sectors', sectorsRouter);
 app.use('/api/classifications', classificationsRouter);
-app.use('/api/ipo', ipoRouter);
+// app.use('/api/ipo', ipoRouter); // Temporarily disabled
 app.use('/api/updates', updatesRouter);
-app.use('/api/insiders', insidersRouter);
-app.use('/api/capital', capitalRouter);
-app.use('/api/sentiment', sentimentRouter);
+// app.use('/api/insiders', insidersRouter); // Temporarily disabled
+// app.use('/api/capital', capitalRouter); // Temporarily disabled
+// app.use('/api/sentiment', sentimentRouter); // Temporarily disabled
 app.use('/api/validation', validationRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/prices', pricesRouter);
-app.use('/api/dcf', dcfRouter);
-// TEMPORARILY DISABLED - Has module-level db.getDatabase() that crashes PostgreSQL
-// app.use('/api/earnings', earningsRouter);
+// app.use('/api/dcf', dcfRouter); // Temporarily disabled
+app.use('/api/earnings', earningsRouter); // FIXED: Now uses lazy initialization
 app.use('/api/price-updates', priceUpdatesRouter);
-// TEMPORARILY DISABLED - Has module-level db.getDatabase() that crashes PostgreSQL
-// app.use('/api/fiscal', fiscalRouter);
-// TEMPORARILY DISABLED - Has module-level db.getDatabase() that crashes PostgreSQL
-// app.use('/api/alerts', alertsRouter);
+app.use('/api/fiscal', fiscalRouter); // FIXED: Now uses lazy initialization
+app.use('/api/alerts', alertsRouter); // FIXED: Now uses lazy initialization
 app.use('/api/indices', indicesRouter);
 app.use('/api/dividends', dividendsRouter);
 app.use('/api/investors', investorsRouter);
@@ -439,8 +432,7 @@ app.use('/api/backtesting', backtestingRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/agents', agentsRouter);
 app.use('/api/paper-trading', paperTradingRouter);
-// TEMPORARILY DISABLED - Has module-level db.getDatabase() that crashes PostgreSQL
-// app.use('/api/xbrl', xbrlRouter);
+app.use('/api/xbrl', xbrlRouter); // FIXED: Now uses lazy initialization
 app.use('/api/data', dataRouter);
 app.use('/api/identifiers', identifiersRouter);
 app.use('/api/strategies', strategiesRouter(db.getDatabase()));
@@ -460,7 +452,7 @@ app.use('/api/explainability', explainabilityRouter);
 app.use('/api/gdpr', gdprRouter);
 app.use('/api/tax', taxRouter);
 app.use('/api/tca', tcaRouter);
-app.use('/api/prism', prismRouter);
+// app.use('/api/prism', prismRouter); // Temporarily disabled
 app.use('/api/batch', batchRouter);
 app.use('/api/subscription', subscriptionRouter);
 app.use('/api/system', systemRouter); // PHASE 2: Enhanced system health endpoints

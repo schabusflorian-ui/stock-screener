@@ -3,27 +3,43 @@
 
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 const EarningsCalendarService = require('../../services/earningsCalendar');
 const { EUEarningsCalendarService } = require('../../services/euEarningsCalendar');
 
-const database = db.getDatabase();
-let earningsService;
-let euEarningsService;
+// Lazy initialization - services created on first request
+let servicesCache = null;
+let database, earningsService, euEarningsService;
 
-// Initialize services
-try {
-  earningsService = new EarningsCalendarService(database);
-  earningsService.createTable();
-} catch (error) {
-  console.error('Failed to initialize earnings service:', error.message);
+async function initializeServices() {
+  if (!servicesCache) {
+    database = await getDatabaseAsync();
+    try {
+      earningsService = new EarningsCalendarService(database);
+      await earningsService.createTable();
+    } catch (error) {
+      console.error('Failed to initialize earnings service:', error.message);
+    }
+    try {
+      euEarningsService = new EUEarningsCalendarService(database);
+    } catch (error) {
+      console.error('Failed to initialize EU earnings service:', error.message);
+    }
+    servicesCache = { database, earningsService, euEarningsService };
+  }
+  return servicesCache;
 }
 
-try {
-  euEarningsService = new EUEarningsCalendarService(database);
-} catch (error) {
-  console.error('Failed to initialize EU earnings service:', error.message);
-}
+// Middleware to ensure services are initialized before any route
+router.use(async (req, res, next) => {
+  try {
+    await initializeServices();
+    next();
+  } catch (error) {
+    console.error('Failed to initialize earnings services:', error);
+    res.status(500).json({ error: 'Service initialization failed' });
+  }
+});
 
 /**
  * GET /api/earnings/:symbol

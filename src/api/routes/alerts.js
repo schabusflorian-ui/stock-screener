@@ -3,7 +3,7 @@
 
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 const AlertService = require('../../services/alerts');
 const { SIGNAL_CONFIG, ALERT_TYPE_CONFIG } = require('../../services/alerts/alertDefinitions');
 const { DigestManager, DIGEST_MODES } = require('../../services/alerts/digestManager');
@@ -11,12 +11,53 @@ const { AlertAISummarizer } = require('../../services/alerts/aiSummarizer');
 const { ActionabilityScorer } = require('../../services/alerts/actionabilityScorer');
 const { getCurrentRegime } = require('../../services/alerts/regimeThresholds');
 
-// Initialize services
-const database = db.getDatabase();
-const alertService = new AlertService(database);
-const digestManager = new DigestManager(database);
-const aiSummarizer = new AlertAISummarizer(database);
-const actionabilityScorer = new ActionabilityScorer(database);
+// Lazy initialization - services created on first request
+let servicesCache = null;
+
+/**
+ * Get initialized services with database (lazy singleton pattern)
+ * Creates services on first call, reuses on subsequent calls
+ */
+async function getServicesLazy() {
+  if (!servicesCache) {
+    const database = await getDatabaseAsync();
+    servicesCache = {
+      database,
+      alertService: new AlertService(database),
+      digestManager: new DigestManager(database),
+      aiSummarizer: new AlertAISummarizer(database),
+      actionabilityScorer: new ActionabilityScorer(database)
+    };
+  }
+  return servicesCache;
+}
+
+// Export individual services with getters for backward compatibility
+Object.defineProperty(exports, 'alertService', {
+  get: () => {
+    if (!servicesCache) throw new Error('Services not initialized - call route handler first');
+    return servicesCache.alertService;
+  }
+});
+
+// For compatibility, create proxy objects that will be populated on first request
+let database, alertService, digestManager, aiSummarizer, actionabilityScorer;
+
+// Middleware to ensure services are initialized before any route
+router.use(async (req, res, next) => {
+  try {
+    const services = await getServicesLazy();
+    database = services.database;
+    alertService = services.alertService;
+    digestManager = services.digestManager;
+    aiSummarizer = services.aiSummarizer;
+    actionabilityScorer = services.actionabilityScorer;
+    next();
+  } catch (error) {
+    console.error('Failed to initialize alert services:', error);
+    res.status(500).json({ error: 'Service initialization failed' });
+  }
+});
 
 /**
  * GET /api/alerts
@@ -24,7 +65,7 @@ const actionabilityScorer = new ActionabilityScorer(database);
  */
 router.get('/', (req, res) => {
   try {
-    const {
+
       types,
       signals,
       companies,
@@ -40,7 +81,7 @@ router.get('/', (req, res) => {
     const filters = {
       alertTypes: types ? types.split(',') : null,
       signalTypes: signals ? signals.split(',') : null,
-      companyIds: companies ? companies.split(',').map(Number) : null,
+      companyIds: companies ? companies.split(',') : map(Number) : null,
       watchlistOnly: watchlistOnly === 'true',
       unreadOnly: unreadOnly === 'true',
       minPriority: minPriority ? parseInt(minPriority) : 1,
@@ -239,7 +280,7 @@ router.post('/:id/dismiss', (req, res) => {
  * POST /api/alerts/scan
  * Trigger a manual alert scan
  */
-router.post('/scan', async (req, res) => {
+router.post('/scan', (req, res) => {
   try {
     const { companyIds, trigger = 'manual' } = req.body;
 
@@ -262,7 +303,7 @@ router.post('/scan', async (req, res) => {
  * POST /api/alerts/scan/daily
  * Trigger daily alert scan for all companies
  */
-router.post('/scan/daily', async (req, res) => {
+router.post('/scan/daily', (req, res) => {
   try {
     const results = await alertService.runDetection('daily_scan');
 
@@ -303,7 +344,7 @@ router.get('/config', (req, res) => {
  * GET /api/alerts/summary/ai
  * Get AI-generated "What Matters Today" summary
  */
-router.get('/summary/ai', async (req, res) => {
+router.get('/summary/ai', (req, res) => {
   try {
     const userId = req.query.userId || 'default';
     const summary = await aiSummarizer.generateWhatMattersToday(userId);
@@ -390,7 +431,7 @@ router.get('/digest/pending', (req, res) => {
  * POST /api/alerts/digest/generate
  * Generate and preview a digest (without sending)
  */
-router.post('/digest/generate', async (req, res) => {
+router.post('/digest/generate', (req, res) => {
   try {
     const userId = req.body.userId || 'default';
     const digest = await digestManager.generateDailyDigest(userId);

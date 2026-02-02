@@ -223,8 +223,9 @@ async function migrateTableData(pgClient, sqliteDb, tableName) {
     const values = rows.flatMap(row =>
       columns.map(col => {
         const val = row[col.name];
-        // Convert SQLite booleans (0/1) to PostgreSQL booleans
-        if (col.type === 'BOOLEAN' || col.name.startsWith('is_')) {
+        // Only convert to boolean if the SQLite column type is explicitly BOOLEAN
+        // (not for INTEGER columns that happen to store 0/1)
+        if (col.type === 'BOOLEAN') {
           return val === 1 || val === true || val === 'true';
         }
         return val;

@@ -1,7 +1,7 @@
 // src/api/routes/xbrl.js
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 const {
   XBRLFilingsClient,
   CompaniesHouseClient,
@@ -11,24 +11,37 @@ const {
 } = require('../../services/xbrl');
 const { XBRLBulkImporter, EU_UK_COUNTRIES } = require('../../services/xbrl/xbrlBulkImporter');
 
-const database = db.getDatabase();
+// Lazy initialization - services created on first request
+let servicesCache = null;
+let database, store, syncService, filingsClient, companiesHouseClient, parser;
 
-// Initialize services
-let store;
-let syncService;
-let filingsClient;
-let companiesHouseClient;
-let parser;
-
-try {
-  store = new FundamentalStore(database);
-  filingsClient = new XBRLFilingsClient();
-  parser = new XBRLParser();
-  syncService = new DataSyncService(database);
-  console.log('✅ XBRL routes initialized');
-} catch (error) {
-  console.error('❌ Failed to initialize XBRL services:', error.message);
+async function initializeServices() {
+  if (!servicesCache) {
+    database = await getDatabaseAsync();
+    try {
+      store = new FundamentalStore(database);
+      filingsClient = new XBRLFilingsClient();
+      parser = new XBRLParser();
+      syncService = new DataSyncService(database);
+      console.log('✅ XBRL routes initialized');
+      servicesCache = { database, store, syncService, filingsClient, parser };
+    } catch (error) {
+      console.error('❌ Failed to initialize XBRL services:', error.message);
+    }
+  }
+  return servicesCache;
 }
+
+// Middleware to ensure services are initialized before any route
+router.use(async (req, res, next) => {
+  try {
+    await initializeServices();
+    next();
+  } catch (error) {
+    console.error('Failed to initialize XBRL services:', error);
+    res.status(500).json({ error: 'Service initialization failed' });
+  }
+});
 
 // ========================================
 // Company Identifiers

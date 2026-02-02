@@ -3,18 +3,36 @@
 
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 const FiscalCalendarService = require('../../services/fiscalCalendar');
 
-const database = db.getDatabase();
-let fiscalService;
+// Lazy initialization - service created on first request
+let servicesCache = null;
+let database, fiscalService;
 
-// Initialize service
-try {
-  fiscalService = new FiscalCalendarService(database);
-} catch (error) {
-  console.error('Failed to initialize fiscal calendar service:', error.message);
+async function initializeService() {
+  if (!servicesCache) {
+    database = await getDatabaseAsync();
+    try {
+      fiscalService = new FiscalCalendarService(database);
+    } catch (error) {
+      console.error('Failed to initialize fiscal calendar service:', error.message);
+    }
+    servicesCache = { database, fiscalService };
+  }
+  return servicesCache;
 }
+
+// Middleware to ensure service is initialized before any route
+router.use(async (req, res, next) => {
+  try {
+    await initializeService();
+    next();
+  } catch (error) {
+    console.error('Failed to initialize fiscal service:', error);
+    res.status(500).json({ error: 'Service initialization failed' });
+  }
+});
 
 /**
  * GET /api/fiscal/config/:symbol
