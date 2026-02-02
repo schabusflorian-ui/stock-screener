@@ -1,13 +1,11 @@
 // src/api/routes/companies.js
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
+const { getDatabaseAsync, isPostgres } = require('../../database');
 const newsService = require('../../services/newsService');
 const currencyService = require('../../services/currencyService');
 const indexMappingService = require('../../services/indexMappingService');
 const { responseCacheMiddleware } = require('../../middleware/apiOptimization');
-
-const database = db.getDatabase();
 
 // Cache configurations for different endpoints (Tier 3 optimization)
 const CACHE_SHORT = { ttl: 30000 };   // 30 seconds for frequently changing data
@@ -19,18 +17,19 @@ const CACHE_LONG = { ttl: 300000 };   // 5 minutes for stable data
  * Companies don't file 10-Q for Q4, only 10-K annual reports
  * This function fills in the missing Q4 quarters
  */
-function calculateMissingQ4Data(db, companyId, existingQuarterly, limit) {
+async function calculateMissingQ4Data(database, companyId, existingQuarterly, limit) {
   // Get fiscal config to know fiscal year end
-  const fiscalConfig = db.prepare(`
+  const fiscalConfigResult = await database.query(`
     SELECT fiscal_year_end_month FROM company_fiscal_config WHERE company_id = ?
-  `).get(companyId);
+  `, [companyId]);
+  const fiscalConfig = fiscalConfigResult.rows[0];
 
   if (!fiscalConfig) return existingQuarterly;
 
   const fyeMonth = fiscalConfig.fiscal_year_end_month;
 
   // Get annual data to calculate Q4s
-  const annualData = db.prepare(`
+  const annualDataResult = await database.query(`
     SELECT
       fiscal_date_ending,
       fiscal_year,
@@ -46,7 +45,8 @@ function calculateMissingQ4Data(db, companyId, existingQuarterly, limit) {
       AND period_type = 'annual'
     ORDER BY fiscal_date_ending DESC
     LIMIT 10
-  `).all(companyId);
+  `, [companyId]);
+  const annualData = annualDataResult.rows;
 
   // Build a map of existing quarters by date for O(1) lookups (optimization from O(n*m) to O(n+m))
   const existingDates = new Set(existingQuarterly.map(q => q.fiscal_date_ending));
@@ -155,8 +155,9 @@ function calculateMissingQ4Data(db, companyId, existingQuarterly, limit) {
  *   - include_cik: 'true' to include CIK-based symbols (default: false)
  *   - include_inactive: 'true' to include inactive/delisted companies (default: false)
  */
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { search, include_cik = 'false', include_inactive = 'false' } = req.query;
     const excludeCIK = include_cik !== 'true';
     const activeOnly = include_inactive !== 'true';
@@ -171,19 +172,20 @@ router.get('/', (req, res) => {
       const results = [];
 
       // 1. Exact symbol match (uses index, instant)
-      const exactMatch = database.prepare(`
+      const exactMatchResult = await database.query(`
         SELECT id, symbol, name, sector, industry
         FROM companies
         WHERE symbol = ?
           ${activeOnly ? 'AND is_active = 1' : ''}
-      `).get(searchUpper);
+      `, [searchUpper]);
+      const exactMatch = exactMatchResult.rows[0];
 
       if (exactMatch) {
         results.push(exactMatch);
       }
 
       // 2. Symbol prefix matches (uses index)
-      const prefixMatches = database.prepare(`
+      const prefixMatchesResult = await database.query(`
         SELECT id, symbol, name, sector, industry
         FROM companies
         WHERE symbol LIKE ? ESCAPE '\\'
@@ -192,7 +194,8 @@ router.get('/', (req, res) => {
           ${excludeCIK ? "AND symbol NOT LIKE 'CIK_%'" : ''}
         ORDER BY LENGTH(symbol), symbol
         LIMIT 8
-      `).all(searchUpper + '%', searchUpper);
+      `, [searchUpper + '%', searchUpper]);
+      const prefixMatches = prefixMatchesResult.rows;
 
       results.push(...prefixMatches);
 
@@ -206,7 +209,7 @@ router.get('/', (req, res) => {
 
         const queryParams = ['%' + searchLower + '%', ...existingSymbols, searchLower + '%', limit];
 
-        const nameMatches = database.prepare(`
+        const nameMatchesResult = await database.query(`
           SELECT id, symbol, name, sector, industry
           FROM companies
           WHERE LOWER(name) LIKE ? ESCAPE '\\'
@@ -218,7 +221,8 @@ router.get('/', (req, res) => {
             LENGTH(name),
             symbol
           LIMIT ?
-        `).all(...queryParams);
+        `, queryParams);
+        const nameMatches = nameMatchesResult.rows;
 
         results.push(...nameMatches);
       }
@@ -229,7 +233,7 @@ router.get('/', (req, res) => {
       });
     }
 
-    const companies = database.prepare(`
+    const companiesResult = await database.query(`
       SELECT
         c.*,
         COUNT(DISTINCT f.fiscal_date_ending) as years_of_data,
@@ -249,7 +253,8 @@ router.get('/', (req, res) => {
         ${excludeCIK ? "AND c.symbol NOT LIKE 'CIK_%'" : ''}
       GROUP BY c.id
       ORDER BY c.symbol
-    `).all();
+    `);
+    const companies = companiesResult.rows;
 
     res.json({
       count: companies.length,
@@ -264,13 +269,15 @@ router.get('/', (req, res) => {
  * GET /api/companies/:symbol
  * Get single company details
  */
-router.get('/:symbol', (req, res) => {
+router.get('/:symbol', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { symbol } = req.params;
 
-    const company = database.prepare(`
+    const companyResult = await database.query(`
       SELECT * FROM companies WHERE LOWER(symbol) = LOWER(?)
-    `).get(symbol.toUpperCase());
+    `, [symbol.toUpperCase()]);
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -280,28 +287,30 @@ router.get('/:symbol', (req, res) => {
     // TTM records may have incomplete data, so prefer annual/quarterly if they have more metrics
     // Strategy: Find the most recent record that has valuation metrics (pe_ratio, peg_ratio, ev_ebitda)
     // If none found, fall back to any record with basic metrics
-    let metrics = database.prepare(`
+    let metricsResult = await database.query(`
       SELECT * FROM calculated_metrics
       WHERE company_id = ?
         AND pe_ratio IS NOT NULL
         AND (peg_ratio IS NOT NULL OR ev_ebitda IS NOT NULL)
       ORDER BY fiscal_period DESC
       LIMIT 1
-    `).get(company.id);
+    `, [company.id]);
+    let metrics = metricsResult.rows[0];
 
     // Fallback: if no record with full valuation metrics, get any with basic metrics
     if (!metrics) {
-      metrics = database.prepare(`
+      metricsResult = await database.query(`
         SELECT * FROM calculated_metrics
         WHERE company_id = ?
           AND (roic IS NOT NULL OR roe IS NOT NULL OR net_margin IS NOT NULL OR fcf IS NOT NULL)
         ORDER BY fiscal_period DESC
         LIMIT 1
-      `).get(company.id);
+      `, [company.id]);
+      metrics = metricsResult.rows[0];
     }
 
     // Get current price metrics for live valuation and market data
-    const priceMetrics = database.prepare(`
+    const priceMetricsResult = await database.query(`
       SELECT
         last_price,
         market_cap,
@@ -349,7 +358,8 @@ router.get('/:symbol', (req, res) => {
         updated_at
       FROM price_metrics
       WHERE company_id = ?
-    `).get(company.id);
+    `, [company.id]);
+    const priceMetrics = priceMetricsResult.rows[0];
 
     // If we have current market cap, recalculate valuation metrics
     const enrichedMetrics = metrics ? { ...metrics } : null;
@@ -358,31 +368,34 @@ router.get('/:symbol', (req, res) => {
 
       // For valuation metrics (PE, PS), use annual/TTM data, not quarterly
       // Get the most recent annual data for valuation metrics
-      const annualFinancials = database.prepare(`
+      const annualFinancialsResult = await database.query(`
         SELECT net_income, total_revenue, fiscal_date_ending
         FROM financial_data
         WHERE company_id = ? AND statement_type = 'income_statement' AND period_type = 'annual'
         ORDER BY fiscal_date_ending DESC
         LIMIT 1
-      `).get(company.id);
+      `, [company.id]);
+      const annualFinancials = annualFinancialsResult.rows[0];
 
       // Get balance sheet for current period (for P/B ratio)
-      const balanceSheet = database.prepare(`
+      const balanceSheetResult = await database.query(`
         SELECT shareholder_equity
         FROM financial_data
         WHERE company_id = ? AND statement_type = 'balance_sheet'
         ORDER BY fiscal_date_ending DESC
         LIMIT 1
-      `).get(company.id);
+      `, [company.id]);
+      const balanceSheet = balanceSheetResult.rows[0];
 
       // Get annual FCF (for FCF yield)
-      const annualMetrics = database.prepare(`
+      const annualMetricsResult = await database.query(`
         SELECT fcf
         FROM calculated_metrics
         WHERE company_id = ? AND period_type = 'annual'
         ORDER BY fiscal_period DESC
         LIMIT 1
-      `).get(company.id);
+      `, [company.id]);
+      const annualMetrics = annualMetricsResult.rows[0];
 
       if (annualFinancials) {
         const netIncome = annualFinancials.net_income;
@@ -447,20 +460,23 @@ router.get('/:symbol', (req, res) => {
  * GET /api/companies/:symbol/financials
  * Get all financial statements
  */
-router.get('/:symbol/financials', (req, res) => {
+router.get('/:symbol/financials', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { symbol } = req.params;
 
-    const company = database.prepare(
-      'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)'
-    ).get(symbol.toUpperCase());
+    const companyResult = await database.query(
+      'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)',
+      [symbol.toUpperCase()]
+    );
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
     }
 
-    const financials = database.prepare(`
-      SELECT 
+    const financialsResult = await database.query(`
+      SELECT
         statement_type,
         fiscal_date_ending,
         fiscal_year,
@@ -469,7 +485,8 @@ router.get('/:symbol/financials', (req, res) => {
       FROM financial_data
       WHERE company_id = ?
       ORDER BY fiscal_date_ending DESC
-    `).all(company.id);
+    `, [company.id]);
+    const financials = financialsResult.rows;
 
     // Parse JSON data
     const parsed = financials.map(f => ({
@@ -498,14 +515,12 @@ router.get('/:symbol/financials', (req, res) => {
  *   - period_type: 'annual', 'quarterly', or 'all' (default 'annual')
  * Optimized: Batch queries instead of N+1 pattern
  */
-router.get('/:symbol/metrics', responseCacheMiddleware(CACHE_MEDIUM), (req, res) => {
+router.get('/:symbol/metrics', responseCacheMiddleware(CACHE_MEDIUM), async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { symbol } = req.params;
     const { limit = 20, period_type = 'annual' } = req.query;
 
-    const company = database.prepare(
-      'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)'
-    ).get(symbol.toUpperCase());
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -532,7 +547,8 @@ router.get('/:symbol/metrics', responseCacheMiddleware(CACHE_MEDIUM), (req, res)
       params = [company.id, period_type, parseInt(limit)];
     }
 
-    const metrics = database.prepare(query).all(...params);
+    const metricsResult = await database.query(query, params);
+    const metrics = metricsResult.rows;
 
     if (metrics.length === 0) {
       return res.json({
@@ -544,39 +560,43 @@ router.get('/:symbol/metrics', responseCacheMiddleware(CACHE_MEDIUM), (req, res)
     }
 
     // Get fiscal config for this company
-    const fiscalConfig = database.prepare(`
+    const fiscalConfigResult = await database.query(`
       SELECT fiscal_year_end, fiscal_year_end_month, fiscal_year_end_day
       FROM company_fiscal_config
       WHERE company_id = ?
-    `).get(company.id);
+    `, [company.id]);
+    const fiscalConfig = fiscalConfigResult.rows[0];
 
     // Get current market cap from price_metrics for live valuation metrics
-    const currentPriceMetrics = database.prepare(`
+    const currentPriceMetricsResult = await database.query(`
       SELECT last_price, market_cap, updated_at
       FROM price_metrics
       WHERE company_id = ?
-    `).get(company.id);
+    `, [company.id]);
+    const currentPriceMetrics = currentPriceMetricsResult.rows[0];
     const currentMarketCap = currentPriceMetrics?.market_cap;
 
     // OPTIMIZATION: Batch fetch all needed data upfront instead of N+1 queries
     const fiscalPeriods = metrics.map(m => m.fiscal_period);
 
     // Batch fetch income statement data for all periods
-    const incomeDataBatch = database.prepare(`
+    const incomeDataBatchResult = await database.query(`
       SELECT fiscal_date_ending, total_revenue, net_income, operating_income, gross_profit, data
       FROM financial_data
       WHERE company_id = ? AND statement_type = 'income_statement'
         AND fiscal_date_ending IN (${fiscalPeriods.map(() => '?').join(',')})
-    `).all(company.id, ...fiscalPeriods);
+    `, [company.id, ...fiscalPeriods]);
+    const incomeDataBatch = incomeDataBatchResult.rows;
     const incomeMap = new Map(incomeDataBatch.map(d => [d.fiscal_date_ending, d]));
 
     // Batch fetch balance sheet data for all periods
-    const balanceSheetBatch = database.prepare(`
+    const balanceSheetBatchResult = await database.query(`
       SELECT fiscal_date_ending, shareholder_equity
       FROM financial_data
       WHERE company_id = ? AND statement_type = 'balance_sheet'
         AND fiscal_date_ending IN (${fiscalPeriods.map(() => '?').join(',')})
-    `).all(company.id, ...fiscalPeriods);
+    `, [company.id, ...fiscalPeriods]);
+    const balanceSheetBatch = balanceSheetBatchResult.rows;
     const balanceSheetMap = new Map(balanceSheetBatch.map(d => [d.fiscal_date_ending, d]));
 
     // Batch fetch stock prices - get latest price <= each fiscal period
@@ -588,7 +608,7 @@ router.get('/:symbol/metrics', responseCacheMiddleware(CACHE_MEDIUM), (req, res)
         ? 'SELECT ? as period'
         : `SELECT ? as period${fiscalPeriods.slice(1).map(() => ' UNION ALL SELECT ?').join('')}`;
 
-      const priceDataBatch = database.prepare(`
+      const priceDataBatchResult = await database.query(`
         WITH period_prices AS (
           SELECT
             fp.period,
@@ -602,7 +622,8 @@ router.get('/:symbol/metrics', responseCacheMiddleware(CACHE_MEDIUM), (req, res)
         SELECT period, adjusted_close, close, date
         FROM period_prices
         WHERE rn = 1
-      `).all(...fiscalPeriods, company.id);
+      `, [...fiscalPeriods, company.id]);
+    const priceDataBatch = priceDataBatchResult.rows;
       priceMap = new Map(priceDataBatch.map(d => [d.period, d]));
     }
 
@@ -700,12 +721,13 @@ router.get('/:symbol/metrics', responseCacheMiddleware(CACHE_MEDIUM), (req, res)
     });
 
     // Get available period types for this company
-    const periodTypes = database.prepare(`
+    const periodTypesResult = await database.query(`
       SELECT DISTINCT period_type, COUNT(*) as count
       FROM calculated_metrics
       WHERE company_id = ?
       GROUP BY period_type
-    `).all(company.id);
+    `, [company.id]);
+    const periodTypes = periodTypesResult.rows;
 
     // Build fiscal year end info
     const fiscalYearEndInfo = fiscalConfig ? {
@@ -768,52 +790,32 @@ router.get('/:symbol/metrics', responseCacheMiddleware(CACHE_MEDIUM), (req, res)
  *   - period_type: 'annual' or 'quarterly' (default 'annual')
  *   - limit: number of periods (default 10)
  */
-router.get('/:symbol/breakdown', responseCacheMiddleware(CACHE_MEDIUM), (req, res) => {
+router.get('/:symbol/breakdown', responseCacheMiddleware(CACHE_MEDIUM), async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { symbol } = req.params;
     const { period_type = 'annual', limit = 10 } = req.query;
 
-    const company = database.prepare(
-      'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)'
-    ).get(symbol.toUpperCase());
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
     }
 
     // Get income statement data with extracted fields and full JSON
-    let incomeStatements = database.prepare(`
-      SELECT
-        fiscal_date_ending,
-        fiscal_year,
-        fiscal_period,
-        period_type,
-        total_revenue,
-        cost_of_revenue,
-        gross_profit,
-        operating_income,
-        net_income,
-        data
-      FROM financial_data
-      WHERE company_id = ?
-        AND statement_type = 'income_statement'
-        AND period_type = ?
-      ORDER BY fiscal_date_ending DESC
-      LIMIT ?
-    `).all(company.id, period_type, parseInt(limit));
 
     // For quarterly data, calculate Q4 from annual - (Q1+Q2+Q3) if missing
     // Companies don't file 10-Q for Q4, only 10-K annual reports
     if (period_type === 'quarterly') {
-      incomeStatements = calculateMissingQ4Data(database, company.id, incomeStatements, parseInt(limit));
+      incomeStatements = await calculateMissingQ4Data(database, company.id, incomeStatements, parseInt(limit));
     }
 
     // Get fiscal config for this company
-    const fiscalConfig = database.prepare(`
+    const fiscalConfigResult = await database.query(`
       SELECT fiscal_year_end, fiscal_year_end_month, fiscal_year_end_day
       FROM company_fiscal_config
       WHERE company_id = ?
-    `).get(company.id);
+    `, [company.id]);
+    const fiscalConfig = fiscalConfigResult.rows[0];
 
     // Process and enrich the data
     const breakdown = incomeStatements.map(stmt => {
@@ -940,12 +942,13 @@ router.get('/:symbol/breakdown', responseCacheMiddleware(CACHE_MEDIUM), (req, re
     });
 
     // Get available periods
-    const availablePeriods = database.prepare(`
+    const availablePeriodsResult = await database.query(`
       SELECT DISTINCT period_type, COUNT(*) as count
       FROM financial_data
       WHERE company_id = ? AND statement_type = 'income_statement'
       GROUP BY period_type
-    `).all(company.id);
+    `, [company.id]);
+    const availablePeriods = availablePeriodsResult.rows;
 
     // Build fiscal year end info
     const fiscalYearEndInfo = fiscalConfig ? {
@@ -1013,20 +1016,18 @@ router.get('/:symbol/breakdown', responseCacheMiddleware(CACHE_MEDIUM), (req, re
  *   - period_type: 'annual' or 'quarterly' (default 'annual')
  *   - limit: number of periods (default 10)
  */
-router.get('/:symbol/balance-sheet', (req, res) => {
+router.get('/:symbol/balance-sheet', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { symbol } = req.params;
     const { period_type = 'annual', limit = 10 } = req.query;
 
-    const company = database.prepare(
-      'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)'
-    ).get(symbol.toUpperCase());
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
     }
 
-    const balanceSheets = database.prepare(`
+    const balanceSheetsResult = await database.query(`
       SELECT
         fiscal_date_ending,
         fiscal_year,
@@ -1047,11 +1048,12 @@ router.get('/:symbol/balance-sheet', (req, res) => {
         AND period_type = ?
       ORDER BY fiscal_date_ending DESC
       LIMIT ?
-    `).all(company.id, period_type, parseInt(limit));
+    `, [company.id, period_type, parseInt(limit)]);
+    const balanceSheets = balanceSheetsResult.rows;
 
     // Also fetch 'all' statement type for reconciliation
     // When 'all' balances but 'balance_sheet' doesn't, use 'all' values
-    const allStatements = database.prepare(`
+    const allStatementsResult = await database.query(`
       SELECT
         fiscal_date_ending,
         total_assets,
@@ -1068,7 +1070,8 @@ router.get('/:symbol/balance-sheet', (req, res) => {
         AND period_type = ?
       ORDER BY fiscal_date_ending DESC
       LIMIT ?
-    `).all(company.id, period_type, parseInt(limit));
+    `, [company.id, period_type, parseInt(limit)]);
+    const allStatements = allStatementsResult.rows;
 
     // Create lookup map for 'all' data by period
     const allDataMap = new Map();
@@ -1300,21 +1303,19 @@ router.get('/:symbol/balance-sheet', (req, res) => {
  *   - period_type: 'annual' or 'quarterly' (default 'annual')
  *   - limit: number of periods (default 10)
  */
-router.get('/:symbol/cash-flow', (req, res) => {
+router.get('/:symbol/cash-flow', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { symbol } = req.params;
     const { period_type = 'annual', limit = 10 } = req.query;
 
-    const company = database.prepare(
-      'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)'
-    ).get(symbol.toUpperCase());
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
     }
 
     // Get cash flow statements
-    const cashFlows = database.prepare(`
+    const cashFlowsResult = await database.query(`
       SELECT
         fiscal_date_ending,
         fiscal_year,
@@ -1329,10 +1330,11 @@ router.get('/:symbol/cash-flow', (req, res) => {
         AND period_type = ?
       ORDER BY fiscal_date_ending DESC
       LIMIT ?
-    `).all(company.id, period_type, parseInt(limit));
+    `, [company.id, period_type, parseInt(limit)]);
+    const cashFlows = cashFlowsResult.rows;
 
     // Also get corresponding income statement data for context
-    const incomeData = database.prepare(`
+    const incomeDataResult = await database.query(`
       SELECT
         fiscal_date_ending,
         net_income,
@@ -1343,7 +1345,8 @@ router.get('/:symbol/cash-flow', (req, res) => {
         AND period_type = ?
       ORDER BY fiscal_date_ending DESC
       LIMIT ?
-    `).all(company.id, period_type, parseInt(limit));
+    `, [company.id, period_type, parseInt(limit)]);
+    const incomeData = incomeDataResult.rows;
 
     // Create a map for quick lookup
     const incomeMap = {};
@@ -1484,21 +1487,19 @@ router.get('/:symbol/cash-flow', (req, res) => {
  * Query params:
  *   - period_type: 'annual' or 'quarterly' (default 'annual')
  */
-router.get('/:symbol/analysis', responseCacheMiddleware(CACHE_MEDIUM), (req, res) => {
+router.get('/:symbol/analysis', responseCacheMiddleware(CACHE_MEDIUM), async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { symbol } = req.params;
     const { period_type = 'annual' } = req.query;
 
-    const company = database.prepare(
-      'SELECT * FROM companies WHERE LOWER(symbol) = LOWER(?)'
-    ).get(symbol.toUpperCase());
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
     }
 
     // Get all financial data in a single query (3 queries -> 1)
-    const allFinancials = database.prepare(`
+    const allFinancialsResult = await database.query(`
       SELECT statement_type, fiscal_date_ending, fiscal_year, data,
              total_assets, total_liabilities, shareholder_equity,
              current_assets, current_liabilities, long_term_debt,
@@ -1508,7 +1509,8 @@ router.get('/:symbol/analysis', responseCacheMiddleware(CACHE_MEDIUM), (req, res
       WHERE company_id = ? AND period_type = ?
         AND statement_type IN ('balance_sheet', 'income_statement', 'cash_flow')
       ORDER BY fiscal_date_ending DESC
-    `).all(company.id, period_type);
+    `, [company.id, period_type]);
+    const allFinancials = allFinancialsResult.rows;
 
     // Split by statement type and limit to 5 each
     const balanceSheets = allFinancials
@@ -1522,12 +1524,13 @@ router.get('/:symbol/analysis', responseCacheMiddleware(CACHE_MEDIUM), (req, res
       .slice(0, 5);
 
     // Get historical metrics for valuation history
-    const metricsHistory = database.prepare(`
+    const metricsHistoryResult = await database.query(`
       SELECT * FROM calculated_metrics
       WHERE company_id = ? AND period_type = ?
       ORDER BY fiscal_period DESC
       LIMIT 10
-    `).all(company.id, period_type);
+    `, [company.id, period_type]);
+    const metricsHistory = metricsHistoryResult.rows;
 
     // Calculate Piotroski F-Score (0-9 points)
     const piotroskiScore = calculatePiotroskiScore(balanceSheets, incomeStatements, cashFlows);
@@ -1538,7 +1541,7 @@ router.get('/:symbol/analysis', responseCacheMiddleware(CACHE_MEDIUM), (req, res
     // Get peer companies and sector averages in a single optimized query using CTE
     // This avoids the N+1 correlated subquery pattern
     // Uses market_cap_usd for cross-currency comparison
-    const peerAndSectorData = database.prepare(`
+    const peerAndSectorDataResult = await database.query(`
       WITH latest_metrics AS (
         SELECT company_id, MAX(fiscal_period) as max_period
         FROM calculated_metrics
@@ -1564,7 +1567,8 @@ router.get('/:symbol/analysis', responseCacheMiddleware(CACHE_MEDIUM), (req, res
         CASE WHEN cl.sector = ? THEN 1 ELSE 0 END as is_sector
       FROM company_latest cl
       WHERE cl.industry = ? OR cl.sector = ?
-    `).all(period_type, period_type, company.industry, symbol.toUpperCase(), company.sector, company.industry, company.sector);
+    `, [period_type, period_type, company.industry, symbol.toUpperCase(), company.sector, company.industry, company.sector]);
+    const peerAndSectorData = peerAndSectorDataResult.rows;
 
     // Split results into peers and calculate sector averages
     // Sort by USD-normalized market cap for fair cross-currency comparison
@@ -1833,11 +1837,9 @@ function calculateCapitalAllocation(cashFlows) {
  */
 router.get('/:symbol/news', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { symbol } = req.params;
 
-    const company = database.prepare(
-      'SELECT * FROM companies WHERE LOWER(symbol) = LOWER(?)'
-    ).get(symbol.toUpperCase());
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });

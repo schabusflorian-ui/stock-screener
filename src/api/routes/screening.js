@@ -684,9 +684,10 @@ router.get('/quality_momentum', (req, res) => {
  * GET /api/screening/factors
  * Screen stocks by factor percentiles
  */
-router.get('/factors', (req, res) => {
+router.get('/factors', async (req, res) => {
   try {
-    const db = require('../../database').db;
+    const { getDatabaseAsync } = require('../../database');
+    const database = await getDatabaseAsync();
     const {
       min_value, max_value,
       min_quality, max_quality,
@@ -746,7 +747,8 @@ router.get('/factors', (req, res) => {
     query += ' LIMIT ? OFFSET ?';
     params.push(parseInt(limit), parseInt(offset));
 
-    const stocks = db.prepare(query).all(...params);
+    const stocksResult = await database.query(query, params);
+    const stocks = stocksResult.rows;
 
     res.json({
       stocks,
@@ -763,9 +765,10 @@ router.get('/factors', (req, res) => {
  * GET /api/screening/factor-presets/:preset
  * Pre-defined factor screens
  */
-router.get('/factor-presets/:preset', (req, res) => {
+router.get('/factor-presets/:preset', async (req, res) => {
   try {
-    const db = require('../../database').db;
+    const { getDatabaseAsync } = require('../../database');
+    const database = await getDatabaseAsync();
     const { preset } = req.params;
     const { sector, limit = 20 } = req.query;
 
@@ -822,7 +825,8 @@ router.get('/factor-presets/:preset', (req, res) => {
       LIMIT ?
     `;
 
-    const stocks = db.prepare(query).all(parseInt(limit));
+    const stocksResult = await database.query(query, [parseInt(limit)]);
+    const stocks = stocksResult.rows;
 
     res.json({ preset, description: config.description, stocks, count: stocks.length });
   } catch (error) {
@@ -1107,10 +1111,11 @@ router.get('/macro/presets', (req, res) => {
  * GET /api/screening/sectors-by-factor
  * Get sector breakdown with factor averages
  */
-router.get('/sectors-by-factor', (req, res) => {
+router.get('/sectors-by-factor', async (req, res) => {
   try {
-    const db = require('../../database').db;
-    const sectors = db.prepare(`
+    const { getDatabaseAsync } = require('../../database');
+    const database = await getDatabaseAsync();
+    const sectorsResult = await database.query(`
       SELECT
         c.sector,
         COUNT(*) as stock_count,
@@ -1124,7 +1129,8 @@ router.get('/sectors-by-factor', (req, res) => {
         AND c.sector IS NOT NULL
       GROUP BY c.sector
       ORDER BY stock_count DESC
-    `).all();
+    `);
+    const sectors = sectorsResult.rows;
 
     res.json({ sectors });
   } catch (error) {

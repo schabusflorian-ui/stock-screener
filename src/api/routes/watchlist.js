@@ -1,7 +1,7 @@
 // src/api/routes/watchlist.js
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 const { requireAuth } = require('../../middleware/auth');
 const { checkResourceLimit } = require('../../middleware/subscription');
 
@@ -11,6 +11,7 @@ const { checkResourceLimit } = require('../../middleware/subscription');
  */
 router.get('/', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const userId = req.user?.id;
 
     if (!userId) {
@@ -19,10 +20,7 @@ router.get('/', async (req, res) => {
         error: 'User not authenticated'
       });
     }
-
-    const database = db.getDatabase();
-
-    const watchlist = database.prepare(`
+    const watchlistResult = await database.query(`
       SELECT
         uw.id,
         uw.company_id,
@@ -35,7 +33,8 @@ router.get('/', async (req, res) => {
       JOIN companies c ON c.id = uw.company_id
       WHERE uw.user_id = ?
       ORDER BY uw.added_at DESC
-    `).all(userId);
+    `, [userId]);
+    const watchlist = watchlistResult.rows;
 
     res.json({
       success: true,
@@ -66,6 +65,7 @@ router.get('/', async (req, res) => {
  */
 router.post('/', requireAuth, checkResourceLimit('watchlist_stocks'), async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const userId = req.user.id;
     const { symbol, name, sector, companyId, notes } = req.body;
 
@@ -75,13 +75,11 @@ router.post('/', requireAuth, checkResourceLimit('watchlist_stocks'), async (req
         error: 'Symbol is required'
       });
     }
-
-    const database = db.getDatabase();
-
     // Find company by symbol if companyId not provided
     let finalCompanyId = companyId;
     if (!finalCompanyId) {
-      const company = database.prepare('SELECT id FROM companies WHERE symbol = ?').get(symbol);
+      const companyResult = await database.query('SELECT id FROM companies WHERE symbol = ?', [symbol]);
+      const company = companyResult.rows[0];
       if (!company) {
         return res.status(404).json({
           success: false,
@@ -92,10 +90,10 @@ router.post('/', requireAuth, checkResourceLimit('watchlist_stocks'), async (req
     }
 
     // Insert into user_watchlists
-    const result = database.prepare(`
+    const result = await database.query(`
       INSERT OR IGNORE INTO user_watchlists (user_id, company_id, notes, added_at)
       VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-    `).run(userId, finalCompanyId, notes || null);
+    `, [userId, finalCompanyId, notes || null]);
 
     if (result.changes === 0) {
       return res.json({
@@ -106,7 +104,7 @@ router.post('/', requireAuth, checkResourceLimit('watchlist_stocks'), async (req
     }
 
     // Fetch the added item with company details
-    const added = database.prepare(`
+    const addedResult = await database.query(`
       SELECT
         uw.id,
         uw.company_id,
@@ -118,7 +116,8 @@ router.post('/', requireAuth, checkResourceLimit('watchlist_stocks'), async (req
       FROM user_watchlists uw
       JOIN companies c ON c.id = uw.company_id
       WHERE uw.user_id = ? AND uw.company_id = ?
-    `).get(userId, finalCompanyId);
+    `, [userId, finalCompanyId]);
+    const added = addedResult.rows[0];
 
     res.json({
       success: true,
@@ -149,6 +148,7 @@ router.post('/', requireAuth, checkResourceLimit('watchlist_stocks'), async (req
  */
 router.delete('/:symbol', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const userId = req.user?.id;
 
     if (!userId) {
@@ -159,10 +159,9 @@ router.delete('/:symbol', async (req, res) => {
     }
 
     const { symbol } = req.params;
-    const database = db.getDatabase();
-
     // Find company by symbol
-    const company = database.prepare('SELECT id FROM companies WHERE symbol = ?').get(symbol);
+    const companyResult = await database.query('SELECT id FROM companies WHERE symbol = ?', [symbol]);
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({
@@ -172,10 +171,10 @@ router.delete('/:symbol', async (req, res) => {
     }
 
     // Delete from user_watchlists
-    const result = database.prepare(`
+    const result = await database.query(`
       DELETE FROM user_watchlists
       WHERE user_id = ? AND company_id = ?
-    `).run(userId, company.id);
+    `, [userId, company.id]);
 
     if (result.changes === 0) {
       return res.status(404).json({
@@ -204,6 +203,7 @@ router.delete('/:symbol', async (req, res) => {
  */
 router.delete('/', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const userId = req.user?.id;
 
     if (!userId) {
@@ -212,12 +212,9 @@ router.delete('/', async (req, res) => {
         error: 'User not authenticated'
       });
     }
-
-    const database = db.getDatabase();
-
-    const result = database.prepare(`
+    const result = await database.query(`
       DELETE FROM user_watchlists WHERE user_id = ?
-    `).run(userId);
+    `, [userId]);
 
     res.json({
       success: true,
@@ -239,6 +236,7 @@ router.delete('/', async (req, res) => {
  */
 router.patch('/:symbol', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const userId = req.user?.id;
 
     if (!userId) {
@@ -250,10 +248,9 @@ router.patch('/:symbol', async (req, res) => {
 
     const { symbol } = req.params;
     const { notes } = req.body;
-    const database = db.getDatabase();
-
     // Find company
-    const company = database.prepare('SELECT id FROM companies WHERE symbol = ?').get(symbol);
+    const companyResult = await database.query('SELECT id FROM companies WHERE symbol = ?', [symbol]);
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({
@@ -263,11 +260,11 @@ router.patch('/:symbol', async (req, res) => {
     }
 
     // Update notes
-    const result = database.prepare(`
+    const result = await database.query(`
       UPDATE user_watchlists
       SET notes = ?
       WHERE user_id = ? AND company_id = ?
-    `).run(notes, userId, company.id);
+    `, [notes, userId, company.id]);
 
     if (result.changes === 0) {
       return res.status(404).json({
@@ -297,6 +294,7 @@ router.patch('/:symbol', async (req, res) => {
  */
 router.post('/bulk', requireAuth, async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const userId = req.user.id;
     const { stocks } = req.body; // Array of { symbol, name, sector }
 
@@ -307,41 +305,35 @@ router.post('/bulk', requireAuth, async (req, res) => {
       });
     }
 
-    const database = db.getDatabase();
     const added = [];
     const skipped = [];
 
-    const insertStmt = database.prepare(`
-      INSERT OR IGNORE INTO user_watchlists (user_id, company_id, added_at)
-      VALUES (?, ?, CURRENT_TIMESTAMP)
-    `);
+    // Process each stock
+    for (const stock of stocks) {
+      // Find company
+      const companyResult = await database.query('SELECT id, symbol, name FROM companies WHERE symbol = ?', [stock.symbol]);
+      const company = companyResult.rows[0];
 
-    const transaction = database.transaction(() => {
-      for (const stock of stocks) {
-        // Find company
-        const company = database.prepare('SELECT id, symbol, name FROM companies WHERE symbol = ?')
-          .get(stock.symbol);
-
-        if (!company) {
-          skipped.push({ symbol: stock.symbol, reason: 'Company not found' });
-          continue;
-        }
-
-        const result = insertStmt.run(userId, company.id);
-
-        if (result.changes > 0) {
-          added.push({
-            symbol: company.symbol,
-            name: company.name,
-            companyId: company.id
-          });
-        } else {
-          skipped.push({ symbol: stock.symbol, reason: 'Already in watchlist' });
-        }
+      if (!company) {
+        skipped.push({ symbol: stock.symbol, reason: 'Company not found' });
+        continue;
       }
-    });
 
-    transaction();
+      const result = await database.query(`
+        INSERT OR IGNORE INTO user_watchlists (user_id, company_id, added_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+      `, [userId, company.id]);
+
+      if (result.changes > 0 || result.rowCount > 0) {
+        added.push({
+          symbol: company.symbol,
+          name: company.name,
+          companyId: company.id
+        });
+      } else {
+        skipped.push({ symbol: stock.symbol, reason: 'Already in watchlist' });
+      }
+    }
 
     res.json({
       success: true,
