@@ -523,11 +523,14 @@ async function handlePaymentFailed(subscriptionService, invoice) {
 
   // Update status to past_due
   const db = subscriptionService.db;
-  db.prepare(`
+  const { getDatabaseAsync } = require('../../database');
+  const database = await getDatabaseAsync();
+
+  await database.query(`
     UPDATE user_subscriptions
     SET status = 'past_due', updated_at = CURRENT_TIMESTAMP
     WHERE user_id = ?
-  `).run(userId);
+  `, [userId]);
 
   subscriptionService.invalidateUserCache(userId);
 
@@ -544,12 +547,14 @@ async function handlePaymentSucceeded(subscriptionService, invoice) {
   if (!userId) return;
 
   // Clear past_due status
-  const db = subscriptionService.db;
-  db.prepare(`
+  const { getDatabaseAsync } = require('../../database');
+  const database = await getDatabaseAsync();
+
+  await database.query(`
     UPDATE user_subscriptions
     SET status = 'active', updated_at = CURRENT_TIMESTAMP
     WHERE user_id = ? AND status = 'past_due'
-  `).run(userId);
+  `, [userId]);
 
   subscriptionService.invalidateUserCache(userId);
 }

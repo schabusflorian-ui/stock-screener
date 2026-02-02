@@ -3,18 +3,18 @@ const express = require('express');
 const router = express.Router();
 const { spawn } = require('child_process');
 const path = require('path');
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 
 /**
  * GET /api/prices/status
  * Get price import status overview
  */
-router.get('/status', (req, res) => {
+router.get('/status', async (req, res) => {
   try {
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
     // Get import statistics
-    const stats = database.prepare(`
+    const statsResult = await database.query(`
       SELECT
         (SELECT COUNT(DISTINCT company_id) FROM daily_prices) as companies_with_prices,
         (SELECT COUNT(*) FROM daily_prices) as total_price_records,
@@ -23,10 +23,11 @@ router.get('/status', (req, res) => {
         (SELECT MIN(date) FROM daily_prices) as earliest_date,
         (SELECT MAX(date) FROM daily_prices) as latest_date,
         (SELECT COUNT(*) FROM companies WHERE is_active = 1) as total_companies
-    `).get();
+    `);
+    const stats = statsResult.rows[0];
 
     // Get recent import activity
-    const recentImports = database.prepare(`
+    const recentImportsResult = await database.query(`
       SELECT
         pil.symbol,
         pil.status,
@@ -38,17 +39,19 @@ router.get('/status', (req, res) => {
       FROM price_import_log pil
       ORDER BY pil.completed_at DESC
       LIMIT 20
-    `).all();
+    `);
+    const recentImports = recentImportsResult.rows;
 
     // Get companies missing price data
-    const missingCount = database.prepare(`
+    const missingResult = await database.query(`
       SELECT COUNT(*) as count
       FROM companies c
       LEFT JOIN daily_prices dp ON c.id = dp.company_id
       WHERE c.is_active = 1
       GROUP BY c.id
       HAVING COUNT(dp.id) = 0
-    `).all().length;
+    `);
+    const missingCount = missingResult.rows.length;
 
     res.json({
       success: true,
@@ -81,11 +84,11 @@ router.get('/status', (req, res) => {
  * GET /api/prices/metrics
  * Get price metrics for all companies or filtered set
  */
-router.get('/metrics', (req, res) => {
+router.get('/metrics', async (req, res) => {
   try {
     const { limit = 100, offset = 0, sort = 'last_price_date', order = 'DESC' } = req.query;
 
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
     // Validate sort column
     const validSorts = ['last_price', 'change_1d', 'change_1w', 'change_1m', 'change_ytd',
@@ -93,7 +96,7 @@ router.get('/metrics', (req, res) => {
     const sortCol = validSorts.includes(sort) ? sort : 'last_price_date';
     const sortOrder = order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
-    const metrics = database.prepare(`
+    const metricsResult = await database.query(`
       SELECT
         c.symbol,
         c.name,
@@ -104,13 +107,15 @@ router.get('/metrics', (req, res) => {
       WHERE c.is_active = 1
       ORDER BY pm.${sortCol} ${sortOrder}
       LIMIT ? OFFSET ?
-    `).all(parseInt(limit), parseInt(offset));
+    `, [parseInt(limit), parseInt(offset)]);
+    const metrics = metricsResult.rows;
 
-    const total = database.prepare(`
+    const totalResult = await database.query(`
       SELECT COUNT(*) as count FROM price_metrics pm
       JOIN companies c ON pm.company_id = c.id
       WHERE c.is_active = 1
-    `).get();
+    `);
+    const total = totalResult.rows[0];
 
     res.json({
       success: true,
@@ -133,7 +138,7 @@ router.get('/metrics', (req, res) => {
  * GET /api/prices/:symbol
  * Get historical prices for a specific company
  */
-router.get('/:symbol', (req, res) => {
+router.get('/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
     const {
@@ -143,10 +148,11 @@ router.get('/:symbol', (req, res) => {
       period // '1m', '3m', '6m', '1y', '5y', 'max'
     } = req.query;
 
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
     // Get company
-    const company = database.prepare('SELECT id, symbol, name, sector, industry FROM companies WHERE LOWER(symbol) = LOWER(?)').get(symbol);
+    const companyResult = await database.query('SELECT id, symbol, name, sector, industry FROM companies WHERE LOWER(symbol) = LOWER(?)', [symbol]);
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ success: false, error: 'Company not found' });
@@ -187,10 +193,12 @@ router.get('/:symbol', (req, res) => {
     sql += ' ORDER BY date DESC LIMIT ?';
     params.push(effectiveLimit);
 
-    const prices = database.prepare(sql).all(...params);
+    const pricesResult = await database.query(sql, params);
+    const prices = pricesResult.rows;
 
     // Get metrics
-    const metrics = database.prepare('SELECT * FROM price_metrics WHERE company_id = ?').get(company.id);
+    const metricsResult = await database.query('SELECT * FROM price_metrics WHERE company_id = ?', [company.id]);
+    const metrics = metricsResult.rows[0];
 
     res.json({
       success: true,
@@ -216,18 +224,20 @@ router.get('/:symbol', (req, res) => {
  * GET /api/prices/:symbol/metrics
  * Get just the price metrics for a company
  */
-router.get('/:symbol/metrics', (req, res) => {
+router.get('/:symbol/metrics', async (req, res) => {
   try {
     const { symbol } = req.params;
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
-    const company = database.prepare('SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)').get(symbol);
+    const companyResult = await database.query('SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)', [symbol]);
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ success: false, error: 'Company not found' });
     }
 
-    const metrics = database.prepare('SELECT * FROM price_metrics WHERE company_id = ?').get(company.id);
+    const metricsResult = await database.query('SELECT * FROM price_metrics WHERE company_id = ?', [company.id]);
+    const metrics = metricsResult.rows[0];
 
     res.json({
       success: true,
@@ -344,11 +354,11 @@ calculate_price_metrics('${dbPath}')
  * GET /api/prices/gainers
  * Get top gainers by various periods
  */
-router.get('/screen/gainers', (req, res) => {
+router.get('/screen/gainers', async (req, res) => {
   try {
     const { period = '1d', limit = 20 } = req.query;
 
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
     const periodColumn = {
       '1d': 'change_1d',
@@ -360,7 +370,7 @@ router.get('/screen/gainers', (req, res) => {
       'ytd': 'change_ytd'
     }[period] || 'change_1d';
 
-    const gainers = database.prepare(`
+    const gainersResult = await database.query(`
       SELECT
         c.symbol,
         c.name,
@@ -373,7 +383,8 @@ router.get('/screen/gainers', (req, res) => {
       WHERE c.is_active = 1 AND pm.${periodColumn} IS NOT NULL
       ORDER BY pm.${periodColumn} DESC
       LIMIT ?
-    `).all(parseInt(limit));
+    `, [parseInt(limit)]);
+    const gainers = gainersResult.rows;
 
     res.json({
       success: true,
@@ -392,11 +403,11 @@ router.get('/screen/gainers', (req, res) => {
  * GET /api/prices/losers
  * Get top losers by various periods
  */
-router.get('/screen/losers', (req, res) => {
+router.get('/screen/losers', async (req, res) => {
   try {
     const { period = '1d', limit = 20 } = req.query;
 
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
     const periodColumn = {
       '1d': 'change_1d',
@@ -408,7 +419,7 @@ router.get('/screen/losers', (req, res) => {
       'ytd': 'change_ytd'
     }[period] || 'change_1d';
 
-    const losers = database.prepare(`
+    const losersResult = await database.query(`
       SELECT
         c.symbol,
         c.name,
@@ -421,7 +432,8 @@ router.get('/screen/losers', (req, res) => {
       WHERE c.is_active = 1 AND pm.${periodColumn} IS NOT NULL
       ORDER BY pm.${periodColumn} ASC
       LIMIT ?
-    `).all(parseInt(limit));
+    `, [parseInt(limit)]);
+    const losers = losersResult.rows;
 
     res.json({
       success: true,
@@ -440,13 +452,13 @@ router.get('/screen/losers', (req, res) => {
  * GET /api/prices/52w-highs
  * Get stocks near 52-week highs
  */
-router.get('/screen/52w-highs', (req, res) => {
+router.get('/screen/52w-highs', async (req, res) => {
   try {
     const { threshold = 5, limit = 50 } = req.query;
 
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
-    const nearHighs = database.prepare(`
+    const nearHighsResult = await database.query(`
       SELECT
         c.symbol,
         c.name,
@@ -464,7 +476,8 @@ router.get('/screen/52w-highs', (req, res) => {
         AND ((pm.high_52w - pm.last_price) / pm.high_52w * 100) <= ?
       ORDER BY pct_from_high DESC
       LIMIT ?
-    `).all(parseFloat(threshold), parseInt(limit));
+    `, [parseFloat(threshold), parseInt(limit)]);
+    const nearHighs = nearHighsResult.rows;
 
     res.json({
       success: true,
@@ -484,13 +497,13 @@ router.get('/screen/52w-highs', (req, res) => {
  * GET /api/prices/52w-lows
  * Get stocks near 52-week lows
  */
-router.get('/screen/52w-lows', (req, res) => {
+router.get('/screen/52w-lows', async (req, res) => {
   try {
     const { threshold = 5, limit = 50 } = req.query;
 
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
-    const nearLows = database.prepare(`
+    const nearLowsResult = await database.query(`
       SELECT
         c.symbol,
         c.name,
@@ -508,7 +521,8 @@ router.get('/screen/52w-lows', (req, res) => {
         AND ((pm.last_price - pm.low_52w) / pm.low_52w * 100) <= ?
       ORDER BY pct_from_low ASC
       LIMIT ?
-    `).all(parseFloat(threshold), parseInt(limit));
+    `, [parseFloat(threshold), parseInt(limit)]);
+    const nearLows = nearLowsResult.rows;
 
     res.json({
       success: true,
@@ -528,13 +542,13 @@ router.get('/screen/52w-lows', (req, res) => {
  * GET /api/prices/oversold
  * Get oversold stocks (RSI < 30)
  */
-router.get('/screen/oversold', (req, res) => {
+router.get('/screen/oversold', async (req, res) => {
   try {
     const { threshold = 30, limit = 50 } = req.query;
 
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
-    const oversold = database.prepare(`
+    const oversoldResult = await database.query(`
       SELECT
         c.symbol,
         c.name,
@@ -550,7 +564,8 @@ router.get('/screen/oversold', (req, res) => {
         AND pm.rsi_14 < ?
       ORDER BY pm.rsi_14 ASC
       LIMIT ?
-    `).all(parseFloat(threshold), parseInt(limit));
+    `, [parseFloat(threshold), parseInt(limit)]);
+    const oversold = oversoldResult.rows;
 
     res.json({
       success: true,
@@ -570,13 +585,13 @@ router.get('/screen/oversold', (req, res) => {
  * GET /api/prices/overbought
  * Get overbought stocks (RSI > 70)
  */
-router.get('/screen/overbought', (req, res) => {
+router.get('/screen/overbought', async (req, res) => {
   try {
     const { threshold = 70, limit = 50 } = req.query;
 
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
-    const overbought = database.prepare(`
+    const overboughtResult = await database.query(`
       SELECT
         c.symbol,
         c.name,
@@ -592,7 +607,8 @@ router.get('/screen/overbought', (req, res) => {
         AND pm.rsi_14 > ?
       ORDER BY pm.rsi_14 DESC
       LIMIT ?
-    `).all(parseFloat(threshold), parseInt(limit));
+    `, [parseFloat(threshold), parseInt(limit)]);
+    const overbought = overboughtResult.rows;
 
     res.json({
       success: true,
@@ -612,11 +628,11 @@ router.get('/screen/overbought', (req, res) => {
  * GET /api/prices/screen/outperformers
  * Get stocks outperforming the market (positive alpha)
  */
-router.get('/screen/outperformers', (req, res) => {
+router.get('/screen/outperformers', async (req, res) => {
   try {
     const { period = 'ytd', limit = 50 } = req.query;
 
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
     const alphaColumn = {
       '1d': 'alpha_1d',
@@ -630,7 +646,7 @@ router.get('/screen/outperformers', (req, res) => {
 
     const changeColumn = alphaColumn.replace('alpha_', 'change_');
 
-    const outperformers = database.prepare(`
+    const outperformersResult = await database.query(`
       SELECT
         c.symbol,
         c.name,
@@ -646,13 +662,15 @@ router.get('/screen/outperformers', (req, res) => {
         AND pm.${alphaColumn} > 0
       ORDER BY pm.${alphaColumn} DESC
       LIMIT ?
-    `).all(parseInt(limit));
+    `, [parseInt(limit)]);
+    const outperformers = outperformersResult.rows;
 
     // Get benchmark performance for context
-    const benchmark = database.prepare(`
+    const benchmarkResult = await database.query(`
       SELECT symbol, ${changeColumn.replace('change_', 'change_')} as benchmark_change
       FROM index_prices WHERE is_primary = 1
-    `).get();
+    `);
+    const benchmark = benchmarkResult.rows[0];
 
     res.json({
       success: true,
@@ -673,11 +691,11 @@ router.get('/screen/outperformers', (req, res) => {
  * GET /api/prices/screen/underperformers
  * Get stocks underperforming the market (negative alpha)
  */
-router.get('/screen/underperformers', (req, res) => {
+router.get('/screen/underperformers', async (req, res) => {
   try {
     const { period = 'ytd', limit = 50 } = req.query;
 
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
     const alphaColumn = {
       '1d': 'alpha_1d',
@@ -691,7 +709,7 @@ router.get('/screen/underperformers', (req, res) => {
 
     const changeColumn = alphaColumn.replace('alpha_', 'change_');
 
-    const underperformers = database.prepare(`
+    const underperformersResult = await database.query(`
       SELECT
         c.symbol,
         c.name,
@@ -707,13 +725,15 @@ router.get('/screen/underperformers', (req, res) => {
         AND pm.${alphaColumn} < 0
       ORDER BY pm.${alphaColumn} ASC
       LIMIT ?
-    `).all(parseInt(limit));
+    `, [parseInt(limit)]);
+    const underperformers = underperformersResult.rows;
 
     // Get benchmark performance for context
-    const benchmark = database.prepare(`
+    const benchmarkResult = await database.query(`
       SELECT symbol, ${changeColumn.replace('change_', 'change_')} as benchmark_change
       FROM index_prices WHERE is_primary = 1
-    `).get();
+    `);
+    const benchmark = benchmarkResult.rows[0];
 
     res.json({
       success: true,
