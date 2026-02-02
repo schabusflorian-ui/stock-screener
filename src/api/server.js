@@ -299,10 +299,13 @@ const validationRouter = require('./routes/validation');
 const statsRouter = require('./routes/stats');
 const pricesRouter = require('./routes/prices');
 const dcfRouter = require('./routes/dcf');
-const earningsRouter = require('./routes/earnings');
+// TEMPORARILY DISABLED - Has module-level db.getDatabase() that crashes PostgreSQL
+// const earningsRouter = require('./routes/earnings');
 const priceUpdatesRouter = require('./routes/priceUpdates');
-const fiscalRouter = require('./routes/fiscal');
-const alertsRouter = require('./routes/alerts');
+// TEMPORARILY DISABLED - Has module-level db.getDatabase() that crashes PostgreSQL
+// const fiscalRouter = require('./routes/fiscal');
+// TEMPORARILY DISABLED - Has module-level db.getDatabase() that crashes PostgreSQL
+// const alertsRouter = require('./routes/alerts');
 const indicesRouter = require('./routes/indices');
 const dividendsRouter = require('./routes/dividends');
 const investorsRouter = require('./routes/investors');
@@ -337,7 +340,8 @@ const backtestingRouter = require('./routes/backtesting');
 const adminRouter = require('./routes/admin');
 const agentsRouter = require('./routes/agents');
 const paperTradingRouter = require('./routes/paperTrading');
-const xbrlRouter = require('./routes/xbrl');
+// TEMPORARILY DISABLED - Has module-level db.getDatabase() that crashes PostgreSQL
+// const xbrlRouter = require('./routes/xbrl');
 const dataRouter = require('./routes/data');
 const identifiersRouter = require('./routes/identifiers');
 const strategiesRouter = require('./routes/strategies');
@@ -394,10 +398,13 @@ app.use('/api/validation', validationRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/prices', pricesRouter);
 app.use('/api/dcf', dcfRouter);
-app.use('/api/earnings', earningsRouter);
+// TEMPORARILY DISABLED - Has module-level db.getDatabase() that crashes PostgreSQL
+// app.use('/api/earnings', earningsRouter);
 app.use('/api/price-updates', priceUpdatesRouter);
-app.use('/api/fiscal', fiscalRouter);
-app.use('/api/alerts', alertsRouter);
+// TEMPORARILY DISABLED - Has module-level db.getDatabase() that crashes PostgreSQL
+// app.use('/api/fiscal', fiscalRouter);
+// TEMPORARILY DISABLED - Has module-level db.getDatabase() that crashes PostgreSQL
+// app.use('/api/alerts', alertsRouter);
 app.use('/api/indices', indicesRouter);
 app.use('/api/dividends', dividendsRouter);
 app.use('/api/investors', investorsRouter);
@@ -432,7 +439,8 @@ app.use('/api/backtesting', backtestingRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/agents', agentsRouter);
 app.use('/api/paper-trading', paperTradingRouter);
-app.use('/api/xbrl', xbrlRouter);
+// TEMPORARILY DISABLED - Has module-level db.getDatabase() that crashes PostgreSQL
+// app.use('/api/xbrl', xbrlRouter);
 app.use('/api/data', dataRouter);
 app.use('/api/identifiers', identifiersRouter);
 app.use('/api/strategies', strategiesRouter(db.getDatabase()));
