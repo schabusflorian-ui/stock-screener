@@ -3,11 +3,11 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ComposedChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine, Cell, Legend, Area
 } from 'recharts';
 import {
-  Loader, AlertTriangle, CheckCircle, Activity, Calendar, Layers, TrendingUp
+  Loader, AlertTriangle, CheckCircle, Activity, Calendar, Layers, TrendingUp, RefreshCw, Database
 } from '../../icons';
 
 // Default backtest configuration
@@ -90,10 +90,21 @@ const generateMockBacktestResults = (config = DEFAULT_CONFIG) => {
   let cumReturn = 1.0;
   const tradingDays = (endYear - startYear) * 252;
 
-  // Generate daily equity curve with realistic characteristics
+  // Generate quality metric (simulates factor IC)
+  const factorQuality = Math.random();
+  const qualityTier = factorQuality > 0.7 ? 'strong' :
+                      factorQuality > 0.4 ? 'moderate' : 'weak';
+
+  // Quality determines return characteristics
+  const annualizedReturn = factorQuality > 0.7 ? 0.15 :
+                           factorQuality > 0.4 ? 0.10 : 0.05;
+  const volatility = factorQuality > 0.7 ? 0.12 :
+                     factorQuality > 0.4 ? 0.18 : 0.25;
+
+  // Generate daily equity curve with quality-based characteristics
   for (let i = 0; i < tradingDays; i++) {
-    const drift = 0.12 / 252; // 12% annualized
-    const vol = 0.15 / Math.sqrt(252);
+    const drift = annualizedReturn / 252;
+    const vol = volatility / Math.sqrt(252);
     const dailyReturn = drift + vol * (Math.random() - 0.5) * 2;
     cumReturn *= (1 + dailyReturn);
 
@@ -121,8 +132,8 @@ const generateMockBacktestResults = (config = DEFAULT_CONFIG) => {
   );
   const avgReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
   const variance = returns.reduce((a, b) => a + Math.pow(b - avgReturn, 2), 0) / returns.length;
-  const volatility = Math.sqrt(variance) * Math.sqrt(252);
-  const sharpe = (cagr - 0.02) / volatility; // Assuming 2% risk-free rate
+  const calculatedVolatility = Math.sqrt(variance) * Math.sqrt(252);
+  const sharpe = (cagr - 0.02) / calculatedVolatility; // Assuming 2% risk-free rate
   const maxDrawdown = Math.min(...equity.map(e => e.drawdown));
 
   // Win rate calculation
@@ -144,13 +155,17 @@ const generateMockBacktestResults = (config = DEFAULT_CONFIG) => {
       sharpe,
       maxDrawdown,
       winRate,
-      volatility,
+      volatility: calculatedVolatility,
       calmarRatio
     },
     periodReturns: {
       yearly: yearlyReturns,
       monthly: monthlyReturns.slice(-36) // Last 3 years
-    }
+    },
+    // Mock metadata
+    _mock: true,
+    _mockQuality: qualityTier,
+    _mockMessage: `Generated with ${qualityTier} factor characteristics for demonstration`
   };
 };
 
@@ -160,6 +175,8 @@ export default function FactorBacktest({ factor, triggerAnalysis = 0 }) {
   const [error, setError] = useState(null);
   const [config] = useState(DEFAULT_CONFIG);
   const [hasRun, setHasRun] = useState(false);
+  const [dataSource, setDataSource] = useState(null); // 'real' | 'mock' | null
+  const [apiError, setApiError] = useState(null);
 
   // Auto-run when triggered centrally
   useEffect(() => {
@@ -175,6 +192,8 @@ export default function FactorBacktest({ factor, triggerAnalysis = 0 }) {
 
     setLoading(true);
     setError(null);
+    setApiError(null);
+    setDataSource(null);
 
     try {
       const response = await fetch('/api/factors/backtest', {
@@ -188,16 +207,26 @@ export default function FactorBacktest({ factor, triggerAnalysis = 0 }) {
       });
 
       const data = await response.json();
-      if (!data.success) throw new Error(data.error || 'Backtest failed');
+
+      // Check standardized response format
+      if (!data.success) {
+        throw new Error(data.error || 'Backtest failed');
+      }
 
       setResults(data.data);
+      setDataSource('real');
       setHasRun(true);
+
     } catch (err) {
-      console.warn('Backtest API error, using mock data:', err.message);
-      // Fallback to mock results
+      console.error('Backtest API error:', err.message);
+      setApiError(err.message);
+
+      // Fallback to mock data with clear indication
       const mockResults = generateMockBacktestResults(config);
       setResults(mockResults);
+      setDataSource('mock');
       setHasRun(true);
+
     } finally {
       setLoading(false);
     }
@@ -252,20 +281,16 @@ export default function FactorBacktest({ factor, triggerAnalysis = 0 }) {
 
   return (
     <div className="factor-backtest">
-      {/* Header */}
-      <div className="bt-header">
-        <div className="header-title">
-          <Activity size={18} />
-          <h3>Factor Backtest</h3>
-          <span className="header-factor-name">{factor.name}</span>
-        </div>
-        {loading && (
-          <div className="header-status">
+      {/* Loading State */}
+      {loading && (
+        <div className="analysis-loading-bar">
+          <div className="loading-content">
             <Loader size={16} className="spin" />
             <span>Running backtest...</span>
           </div>
-        )}
-      </div>
+          <div className="loading-progress" />
+        </div>
+      )}
 
       {/* Error banner (if any) */}
       {error && (
@@ -275,11 +300,54 @@ export default function FactorBacktest({ factor, triggerAnalysis = 0 }) {
         </div>
       )}
 
+      {/* Mock Data Warning Banner */}
+      {dataSource === 'mock' && apiError && (
+        <div className="mock-data-warning">
+          <div className="warning-icon">
+            <AlertTriangle size={20} />
+          </div>
+          <div className="warning-content">
+            <div className="warning-title">Showing Simulated Results</div>
+            <div className="warning-message">
+              Unable to fetch real data: {apiError}
+            </div>
+            <div className="warning-note">
+              The results below are computer-generated for demonstration purposes only.
+              They do not represent actual factor performance.
+            </div>
+            <button onClick={runBacktest} className="warning-retry-btn">
+              <RefreshCw size={14} />
+              Retry with Real Data
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Data Source Badge */}
+      {dataSource && results && (
+        <div className={`data-source-badge badge-${dataSource}`}>
+          {dataSource === 'real' ? (
+            <>
+              <CheckCircle size={14} />
+              <span>Real Data</span>
+            </>
+          ) : (
+            <>
+              <AlertTriangle size={14} />
+              <span>Simulated Data</span>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Results */}
       {results && (
         <>
           {/* Summary Cards */}
           <SummaryCards summary={results.summary} />
+
+          {/* Universe Information */}
+          {results.universe && <UniverseInfo universe={results.universe} />}
 
           {/* Equity Curve Chart */}
           <EquityCurveChart equity={results.equity} />
@@ -349,15 +417,79 @@ function SummaryCards({ summary }) {
   );
 }
 
+// Universe Information Component
+function UniverseInfo({ universe }) {
+  const stats = [
+    {
+      label: 'Universe',
+      value: universe.filter || 'ALL',
+      description: 'Stock universe filter'
+    },
+    {
+      label: 'Avg Eligible',
+      value: universe.avgEligible?.toLocaleString() || '—',
+      description: 'Stocks with factor data'
+    },
+    {
+      label: 'Long Positions',
+      value: universe.avgLongPositions || '—',
+      description: `Top ${universe.longShortRatio?.long || 20}% by factor`
+    },
+    {
+      label: 'Short Positions',
+      value: universe.avgShortPositions || '—',
+      description: `Bottom ${universe.longShortRatio?.short || 20}% by factor`
+    },
+    {
+      label: 'Sectors',
+      value: universe.avgSectors || '—',
+      description: 'Avg sectors represented'
+    },
+    {
+      label: 'Rebalances',
+      value: universe.rebalanceCount || '—',
+      description: 'Total rebalance events'
+    }
+  ];
+
+  return (
+    <div className="bt-universe-info">
+      <h5>
+        <Database size={14} />
+        Backtest Universe
+      </h5>
+      <div className="universe-stats">
+        {stats.map((stat, idx) => (
+          <div key={idx} className="universe-stat">
+            <span className="stat-label">{stat.label}</span>
+            <span className="stat-value">{stat.value}</span>
+            <span className="stat-description">{stat.description}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Equity Curve Chart Component
 function EquityCurveChart({ equity }) {
   // Downsample for performance if needed
   const chartData = useMemo(() => {
+    if (!equity || equity.length === 0) return [];
+
     const maxPoints = 500;
     const step = Math.max(1, Math.floor(equity.length / maxPoints));
+
+    // Get initial value for normalization (handle both dollar amounts and multipliers)
+    const initialValue = equity[0].value;
+    const isNormalized = initialValue < 10; // If < 10, assume already normalized (multiplier form)
+
     return equity.filter((_, idx) => idx % step === 0).map(point => ({
       date: point.date,
-      cumReturn: (point.value - 1) * 100,
+      // Normalize: convert to percentage return from start
+      cumReturn: isNormalized
+        ? (point.value - 1) * 100           // Already normalized (1.0 = 0%)
+        : ((point.value / initialValue) - 1) * 100, // Dollar amounts (100000 -> 0%)
       drawdown: point.drawdown * 100
     }));
   }, [equity]);
@@ -399,7 +531,7 @@ function EquityCurveChart({ equity }) {
         Cumulative return from long-short portfolio rebalanced monthly
       </p>
       <ResponsiveContainer width="100%" height={300}>
-        <LineChart data={chartData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
+        <ComposedChart data={chartData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" vertical={false} />
           <XAxis
             dataKey="date"
@@ -410,26 +542,16 @@ function EquityCurveChart({ equity }) {
             yAxisId="left"
             tickFormatter={(v) => `${v.toFixed(0)}%`}
             tick={{ fontSize: 11, fill: 'var(--text-tertiary)' }}
-            label={{ value: 'Cumulative Return', angle: -90, position: 'insideLeft' }}
           />
           <YAxis
             yAxisId="right"
             orientation="right"
             tickFormatter={(v) => `${v.toFixed(0)}%`}
             tick={{ fontSize: 11, fill: 'var(--text-tertiary)' }}
-            label={{ value: 'Drawdown', angle: 90, position: 'insideRight' }}
+            domain={['dataMin', 0]}
           />
           <Tooltip content={<CustomTooltip />} />
           <Legend />
-          <Line
-            yAxisId="left"
-            type="monotone"
-            dataKey="cumReturn"
-            stroke="var(--color-primary)"
-            strokeWidth={2}
-            dot={false}
-            name="Cumulative Return"
-          />
           <Area
             yAxisId="right"
             type="monotone"
@@ -440,7 +562,16 @@ function EquityCurveChart({ equity }) {
             strokeWidth={1}
             name="Drawdown"
           />
-        </LineChart>
+          <Line
+            yAxisId="left"
+            type="monotone"
+            dataKey="cumReturn"
+            stroke="var(--color-primary)"
+            strokeWidth={2}
+            dot={false}
+            name="Cumulative Return"
+          />
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   );

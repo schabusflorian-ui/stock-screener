@@ -129,7 +129,7 @@ router.get('/stats', (req, res) => {
     res.json(stats);
   } catch (error) {
     console.error('Error getting factor stats:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -150,7 +150,7 @@ router.get('/cache-stats', (req, res) => {
       }
     });
   } catch (error) {
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -172,7 +172,7 @@ router.post('/cache-clear', (req, res) => {
       message: pattern ? `Cache cleared for pattern: ${pattern}` : 'Cache cleared'
     });
   } catch (error) {
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -284,7 +284,7 @@ router.get('/performance-dashboard', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Error getting performance dashboard:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -294,7 +294,7 @@ router.post('/decay-analysis', async (req, res) => {
     const { factorId, formula, icHistory } = req.body;
 
     if (!factorId && !formula && !icHistory) {
-      return sendValidationError(res, 'factorId, formula, or icHistory is required');
+      return res.status(400).json({ error: 'factorId, formula, or icHistory is required' });
     }
 
     let history = icHistory;
@@ -332,7 +332,7 @@ router.post('/decay-analysis', async (req, res) => {
     });
   } catch (error) {
     console.error('Error analyzing IC decay:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -352,12 +352,9 @@ function analyzeICDecay(history) {
   const sorted = [...history].sort((a, b) => new Date(a.date) - new Date(b.date));
   const ics = sorted.map(h => h.ic || 0);
 
-  // Use absolute IC values for decay analysis (handles inverse factors correctly)
-  const absICs = ics.map(ic => Math.abs(ic));
-
-  // Calculate overall mean and recent mean (last 6 months) using absolute values
-  const overallMean = absICs.reduce((a, b) => a + b, 0) / absICs.length;
-  const recentICs = absICs.slice(-6);
+  // Calculate overall mean and recent mean (last 6 months)
+  const overallMean = ics.reduce((a, b) => a + b, 0) / ics.length;
+  const recentICs = ics.slice(-6);
   const recentMean = recentICs.reduce((a, b) => a + b, 0) / recentICs.length;
 
   // Calculate 12-month rolling trend (linear regression slope)
@@ -385,12 +382,11 @@ function analyzeICDecay(history) {
   }
 
   // Calculate decay rate (percentage change from first half to second half)
-  // Use absolute IC values to handle inverse factors correctly
-  const firstHalf = absICs.slice(0, Math.floor(absICs.length / 2));
-  const secondHalf = absICs.slice(Math.floor(absICs.length / 2));
+  const firstHalf = ics.slice(0, Math.floor(ics.length / 2));
+  const secondHalf = ics.slice(Math.floor(ics.length / 2));
   const firstHalfMean = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
   const secondHalfMean = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
-  const decayRate = firstHalfMean !== 0 ? (secondHalfMean - firstHalfMean) / firstHalfMean : 0;
+  const decayRate = firstHalfMean !== 0 ? (secondHalfMean - firstHalfMean) / Math.abs(firstHalfMean) : 0;
 
   // Determine if decay is significant
   const hasDecay = decayRate < -0.3 && trendLabel === 'declining';
@@ -447,7 +443,7 @@ router.get('/definitions', (req, res) => {
     res.json(definitions);
   } catch (error) {
     console.error('Error getting factor definitions:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -465,13 +461,13 @@ router.get('/stocks/:symbol', requireFeature('factor_analysis'), (req, res) => {
     const scores = fas.getStockFactorScores(symbol.toUpperCase(), date);
 
     if (!scores) {
-      return sendNotFoundError(res, 'No factor scores found for this symbol');
+      return res.status(404).json({ error: 'No factor scores found for this symbol' });
     }
 
     res.json(scores);
   } catch (error) {
     console.error('Error getting stock factor scores:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -490,7 +486,7 @@ router.get('/stocks/:symbol/history', requireFeature('factor_analysis'), (req, r
     res.json(history);
   } catch (error) {
     console.error('Error getting stock factor history:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -501,12 +497,14 @@ router.get('/top/:factor', requireFeature('factor_analysis'), (req, res) => {
     const { date, limit = 20, minMarketCap, sector } = req.query;
 
     if (!date) {
-      return sendValidationError(res, 'date parameter is required');
+      return res.status(400).json({ error: 'date parameter is required' });
     }
 
     const validFactors = ['value', 'quality', 'momentum', 'growth', 'size', 'volatility', 'dividend'];
     if (!validFactors.includes(factor)) {
-      return sendValidationError(res, `Invalid factor. Valid options: ${validFactors.join(', ')}`);
+      return res.status(400).json({
+        error: `Invalid factor. Valid options: ${validFactors.join(', ')}`
+      });
     }
 
     const fas = getFactorAnalysisService();
@@ -519,7 +517,7 @@ router.get('/top/:factor', requireFeature('factor_analysis'), (req, res) => {
     res.json(stocks);
   } catch (error) {
     console.error('Error getting top stocks by factor:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -536,13 +534,13 @@ router.get('/investors/:id/profile', requireFeature('factor_analysis'), (req, re
     const profile = fas.getInvestorFactorProfile(parseInt(id));
 
     if (!profile) {
-      return sendNotFoundError(res, 'No factor profile found for this investor');
+      return res.status(404).json({ error: 'No factor profile found for this investor' });
     }
 
     res.json(profile);
   } catch (error) {
     console.error('Error getting investor factor profile:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -560,7 +558,7 @@ router.get('/investors/:id/history', requireFeature('factor_analysis'), (req, re
     res.json(history);
   } catch (error) {
     console.error('Error getting investor factor history:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -570,7 +568,7 @@ router.get('/compare', requireFeature('factor_analysis'), (req, res) => {
     const { investors, date } = req.query;
 
     if (!investors) {
-      return sendValidationError(res, 'investors parameter is required (comma-separated IDs)');
+      return res.status(400).json({ error: 'investors parameter is required (comma-separated IDs)' });
     }
 
     const investorIds = investors.split(',').map(id => parseInt(id.trim()));
@@ -581,7 +579,7 @@ router.get('/compare', requireFeature('factor_analysis'), (req, res) => {
     res.json(comparison);
   } catch (error) {
     console.error('Error comparing investor factors:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -597,7 +595,7 @@ router.get('/performance', requireFeature('factor_analysis'), (req, res) => {
     res.json(performance);
   } catch (error) {
     console.error('Error getting factor performance:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -615,7 +613,7 @@ router.get('/success', requireFeature('factor_analysis'), (req, res) => {
     res.json(analysis);
   } catch (error) {
     console.error('Error analyzing factor success:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -631,7 +629,7 @@ router.get('/regime', requireFeature('factor_analysis'), (req, res) => {
     res.json(regime || { message: 'No factor regime data available' });
   } catch (error) {
     console.error('Error getting factor regime:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -648,7 +646,7 @@ router.get('/regime/history', requireFeature('factor_analysis'), (req, res) => {
     res.json(history);
   } catch (error) {
     console.error('Error getting factor regime history:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -666,7 +664,7 @@ router.get('/portfolio/:id/fama-french', requireFeature('factor_analysis'), asyn
     const exposures = await fas.getFamaFrenchExposures(parseInt(id), { startDate, endDate });
 
     if (!exposures) {
-      return sendNotFoundError(res, 'Could not calculate Fama-French exposures for this portfolio');
+      return res.status(404).json({ error: 'Could not calculate Fama-French exposures for this portfolio' });
     }
 
     res.json({
@@ -675,7 +673,7 @@ router.get('/portfolio/:id/fama-french', requireFeature('factor_analysis'), asyn
     });
   } catch (error) {
     console.error('Error getting Fama-French exposures:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -697,7 +695,7 @@ router.get('/returns', requireFeature('factor_analysis'), (req, res) => {
     });
   } catch (error) {
     console.error('Error getting factor returns:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -711,7 +709,7 @@ router.post('/calculate', async (req, res) => {
     const { date, universeFilter } = req.body;
 
     if (!date) {
-      return sendValidationError(res, 'date is required');
+      return res.status(400).json({ error: 'date is required' });
     }
 
     const fas = getFactorAnalysisService();
@@ -723,7 +721,7 @@ router.post('/calculate', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Error calculating factor scores:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -743,7 +741,7 @@ router.post('/calculate-historical', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Error calculating historical factor scores:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -753,7 +751,7 @@ router.post('/portfolio-exposures', async (req, res) => {
     const { investorId, snapshotDate, benchmark = 'market' } = req.body;
 
     if (!investorId || !snapshotDate) {
-      return sendValidationError(res, 'investorId and snapshotDate are required');
+      return res.status(400).json({ error: 'investorId and snapshotDate are required' });
     }
 
     const fas = getFactorAnalysisService();
@@ -763,13 +761,13 @@ router.post('/portfolio-exposures', async (req, res) => {
     });
 
     if (!result) {
-      return sendNotFoundError(res, 'Could not calculate exposures for this date');
+      return res.status(404).json({ error: 'Could not calculate exposures for this date' });
     }
 
     res.json(result);
   } catch (error) {
     console.error('Error calculating portfolio exposures:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -779,7 +777,7 @@ router.post('/attribution', async (req, res) => {
     const { investorId, periodStart, periodEnd } = req.body;
 
     if (!investorId || !periodStart || !periodEnd) {
-      return sendValidationError(res, 'investorId, periodStart, and periodEnd are required');
+      return res.status(400).json({ error: 'investorId, periodStart, and periodEnd are required' });
     }
 
     const fas = getFactorAnalysisService();
@@ -788,13 +786,13 @@ router.post('/attribution', async (req, res) => {
     });
 
     if (!result) {
-      return sendNotFoundError(res, 'Could not calculate attribution for this period');
+      return res.status(404).json({ error: 'Could not calculate attribution for this period' });
     }
 
     res.json(result);
   } catch (error) {
     console.error('Error calculating factor attribution:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -812,7 +810,7 @@ router.post('/enrich-decisions', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Error enriching decisions with factors:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -836,7 +834,7 @@ router.get('/available-metrics', (req, res) => {
 
     const repo = getFactorRepository();
     if (!repo) {
-      return sendServiceUnavailable(res, 'Factor repository not available. Run migration first.');
+      return res.status(503).json({ error: 'Factor repository not available. Run migration first.' });
     }
 
     const metrics = repo.getAvailableMetrics();
@@ -863,7 +861,7 @@ router.get('/available-metrics', (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Error getting available metrics:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -872,13 +870,13 @@ router.post('/define', (req, res) => {
   try {
     const repo = getFactorRepository();
     if (!repo) {
-      return sendServiceUnavailable(res, 'Factor repository not available. Run migration first.');
+      return res.status(503).json({ error: 'Factor repository not available. Run migration first.' });
     }
 
     const { name, formula, description, higherIsBetter, transformations } = req.body;
 
     if (!name || !formula) {
-      return sendValidationError(res, 'name and formula are required');
+      return res.status(400).json({ error: 'name and formula are required' });
     }
 
     const result = repo.createFactor({
@@ -890,7 +888,7 @@ router.post('/define', (req, res) => {
     });
 
     if (!result.success) {
-      return sendValidationError(res, result.error || result);
+      return res.status(400).json(result);
     }
 
     res.json({
@@ -899,7 +897,7 @@ router.post('/define', (req, res) => {
     });
   } catch (error) {
     console.error('Error creating custom factor:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -908,7 +906,7 @@ router.get('/user', (req, res) => {
   try {
     const repo = getFactorRepository();
     if (!repo) {
-      return sendServiceUnavailable(res, 'Factor repository not available. Run migration first.');
+      return res.status(503).json({ error: 'Factor repository not available. Run migration first.' });
     }
 
     const { includeInactive, sortBy, order } = req.query;
@@ -925,7 +923,7 @@ router.get('/user', (req, res) => {
     });
   } catch (error) {
     console.error('Error getting user factors:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -934,13 +932,13 @@ router.get('/user/:id', (req, res) => {
   try {
     const repo = getFactorRepository();
     if (!repo) {
-      return sendServiceUnavailable(res, 'Factor repository not available. Run migration first.');
+      return res.status(503).json({ error: 'Factor repository not available. Run migration first.' });
     }
 
     const factor = repo.getFactorById(req.params.id);
 
     if (!factor) {
-      return sendNotFoundError(res, 'Factor not found');
+      return res.status(404).json({ error: 'Factor not found' });
     }
 
     res.json({
@@ -949,7 +947,7 @@ router.get('/user/:id', (req, res) => {
     });
   } catch (error) {
     console.error('Error getting user factor:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -958,7 +956,7 @@ router.put('/user/:id', (req, res) => {
   try {
     const repo = getFactorRepository();
     if (!repo) {
-      return sendServiceUnavailable(res, 'Factor repository not available. Run migration first.');
+      return res.status(503).json({ error: 'Factor repository not available. Run migration first.' });
     }
 
     const { formula, ...updates } = req.body;
@@ -967,7 +965,7 @@ router.put('/user/:id', (req, res) => {
     if (formula) {
       const result = repo.updateFactorFormula(req.params.id, formula);
       if (!result.success) {
-        return sendValidationError(res, result.error || result);
+        return res.status(400).json(result);
       }
     }
 
@@ -975,7 +973,7 @@ router.put('/user/:id', (req, res) => {
     if (Object.keys(updates).length > 0) {
       const result = repo.updateFactor(req.params.id, updates);
       if (!result.success) {
-        return sendValidationError(res, result.error || result);
+        return res.status(400).json(result);
       }
     }
 
@@ -986,7 +984,7 @@ router.put('/user/:id', (req, res) => {
     });
   } catch (error) {
     console.error('Error updating user factor:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -995,19 +993,19 @@ router.delete('/user/:id', (req, res) => {
   try {
     const repo = getFactorRepository();
     if (!repo) {
-      return sendServiceUnavailable(res, 'Factor repository not available. Run migration first.');
+      return res.status(503).json({ error: 'Factor repository not available. Run migration first.' });
     }
 
     const result = repo.deleteFactor(req.params.id);
 
     if (!result.success) {
-      return sendValidationError(res, result.error || result);
+      return res.status(400).json(result);
     }
 
-    sendSuccess(res, {});
+    res.json({ success: true });
   } catch (error) {
     console.error('Error deleting user factor:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -1016,20 +1014,20 @@ router.post('/user/:id/toggle-active', (req, res) => {
   try {
     const repo = getFactorRepository();
     if (!repo) {
-      return sendServiceUnavailable(res, 'Factor repository not available. Run migration first.');
+      return res.status(503).json({ error: 'Factor repository not available. Run migration first.' });
     }
 
     const { active } = req.body;
     const result = repo.toggleActive(req.params.id, active);
 
     if (!result.success) {
-      return sendValidationError(res, result.error || result);
+      return res.status(400).json(result);
     }
 
-    sendSuccess(res, {});
+    res.json({ success: true });
   } catch (error) {
     console.error('Error toggling factor active status:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -1042,14 +1040,20 @@ router.post('/validate', (req, res) => {
   try {
     const calc = getCustomFactorCalculator();
     if (!calc) {
-      return sendServiceUnavailable(res, 'Custom factor calculator not available. Run migration first.');
+      return res.status(503).json({
+        success: false,
+        error: 'Custom factor calculator not available. Run migration first.'
+      });
     }
 
     const { formula } = req.body;
 
     // Check for missing or invalid formula type
     if (formula === undefined || formula === null || typeof formula !== 'string') {
-      return sendValidationError(res, 'formula is required and must be a string');
+      return res.status(400).json({
+        success: false,
+        error: 'formula is required and must be a string'
+      });
     }
 
     // Check for empty/whitespace-only formula
@@ -1088,14 +1092,20 @@ router.post('/preview', (req, res) => {
   try {
     const calc = getCustomFactorCalculator();
     if (!calc) {
-      return sendServiceUnavailable(res, 'Custom factor calculator not available. Run migration first.');
+      return res.status(503).json({
+        success: false,
+        error: 'Custom factor calculator not available. Run migration first.'
+      });
     }
 
     const { formula, asOfDate, sampleSize = 20 } = req.body;
 
     // Check for missing or invalid formula
     if (formula === undefined || formula === null || typeof formula !== 'string') {
-      return sendValidationError(res, 'formula is required and must be a string');
+      return res.status(400).json({
+        success: false,
+        error: 'formula is required and must be a string'
+      });
     }
 
     // Check for empty/whitespace-only formula
@@ -1130,7 +1140,7 @@ router.post('/calculate-custom', (req, res) => {
   try {
     const calc = getCustomFactorCalculator();
     if (!calc) {
-      return sendServiceUnavailable(res, 'Custom factor calculator not available. Run migration first.');
+      return res.status(503).json({ error: 'Custom factor calculator not available. Run migration first.' });
     }
 
     const {
@@ -1144,7 +1154,7 @@ router.post('/calculate-custom', (req, res) => {
     } = req.body;
 
     if (!formula) {
-      return sendValidationError(res, 'formula is required');
+      return res.status(400).json({ error: 'formula is required' });
     }
 
     const result = calc.calculateFactorValues(factorId, formula, {
@@ -1187,7 +1197,7 @@ router.post('/calculate-custom', (req, res) => {
     });
   } catch (error) {
     console.error('Error calculating custom factor values:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -1205,37 +1215,11 @@ router.post('/ic-analysis', async (req, res) => {
     } = req.body;
 
     if (!formula) {
-      return sendValidationError(res, 'formula is required');
+      return res.status(400).json({ error: 'formula is required' });
     }
-
-    // Validate horizons parameter
-    if (!Array.isArray(horizons)) {
-      return sendValidationError(res, 'horizons must be an array');
-    }
-
-    if (horizons.length === 0) {
-      return sendValidationError(res, 'horizons array cannot be empty');
-    }
-
-    if (horizons.length > 20) {
-      return sendValidationError(res, 'Maximum 20 horizons allowed');
-    }
-
-    // Validate each horizon is a positive integer
-    for (const h of horizons) {
-      if (!Number.isInteger(h) || h <= 0) {
-        return sendValidationError(res, `Invalid horizon: ${h}. Horizons must be positive integers.`);
-      }
-      if (h > 500) {
-        return sendValidationError(res, `Horizon ${h} exceeds maximum of 500 trading days.`);
-      }
-    }
-
-    // Sort horizons for consistent ordering
-    const sortedHorizons = [...horizons].sort((a, b) => a - b);
 
     // Check cache first (unless skipCache is true)
-    const cacheKey = `ic-analysis:${formula}:${JSON.stringify(sortedHorizons)}:${universe}:${endDate || 'default'}`;
+    const cacheKey = `ic-analysis:${formula}:${JSON.stringify(horizons)}:${universe}:${endDate || 'default'}`;
     if (!skipCache) {
       const cached = factorCache.get(cacheKey);
       if (cached) {
@@ -1251,13 +1235,15 @@ router.post('/ic-analysis', async (req, res) => {
     const icModule = getICAnalysis();
 
     if (!calc) {
-      return sendServiceUnavailable(res, 'Custom factor calculator not available. Run migration first.');
+      return res.status(503).json({ error: 'Custom factor calculator not available. Run migration first.' });
     }
 
     // Validate formula before calculating
     const validation = calc.validateFormula(formula.trim());
     if (!validation.valid) {
-      return sendValidationError(res, validation.error, {
+      return res.status(400).json({
+        success: false,
+        error: validation.error,
         unknownMetrics: validation.unknownMetrics
       });
     }
@@ -1277,13 +1263,8 @@ router.post('/ic-analysis', async (req, res) => {
       universe
     });
 
-    // Validate factor calculation results
-    if (!factorResult || !factorResult.values || !Array.isArray(factorResult.values)) {
-      return sendError(res, 'Factor calculation failed: no values returned');
-    }
-
     if (factorResult.values.length === 0) {
-      return sendValidationError(res, 'Factor calculation returned no values. Check if universe has valid data.');
+      return res.status(400).json({ error: 'No factor values could be calculated' });
     }
 
     // Get price data for IC calculation
@@ -1292,7 +1273,7 @@ router.post('/ic-analysis', async (req, res) => {
     // Get company IDs for the factor values
     const companyIds = factorResult.values.map(v => v.company_id).filter(Boolean);
     if (companyIds.length === 0) {
-      return sendValidationError(res, 'No valid company IDs found in factor results');
+      return res.status(400).json({ error: 'No valid company IDs found in factor results' });
     }
     const placeholders = companyIds.map(() => '?').join(',');
 
@@ -1301,7 +1282,7 @@ router.post('/ic-analysis', async (req, res) => {
     let tstat = 0;
     let icIR = 0;
 
-    for (const horizon of sortedHorizons) {
+    for (const horizon of horizons) {
       // Get returns for this horizon - join prices with factor values
       const returnData = db.prepare(`
         SELECT c.id as company_id, c.symbol,
@@ -1407,7 +1388,7 @@ router.post('/ic-analysis', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Error running IC analysis:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -1417,7 +1398,7 @@ router.post('/correlation', (req, res) => {
     const { formula, asOfDate, skipCache = false } = req.body;
 
     if (!formula) {
-      return sendValidationError(res, 'formula is required');
+      return res.status(400).json({ error: 'formula is required' });
     }
 
     // Check cache first
@@ -1435,13 +1416,15 @@ router.post('/correlation', (req, res) => {
 
     const calc = getCustomFactorCalculator();
     if (!calc) {
-      return sendServiceUnavailable(res, 'Custom factor calculator not available. Run migration first.');
+      return res.status(503).json({ error: 'Custom factor calculator not available. Run migration first.' });
     }
 
     // Validate formula before calculating
     const validation = calc.validateFormula(formula.trim());
     if (!validation.valid) {
-      return sendValidationError(res, validation.error, {
+      return res.status(400).json({
+        success: false,
+        error: validation.error,
         unknownMetrics: validation.unknownMetrics
       });
     }
@@ -1450,7 +1433,7 @@ router.post('/correlation', (req, res) => {
     const customResult = calc.calculateFactorValues(null, formula, { asOfDate });
 
     if (customResult.values.length === 0) {
-      return sendValidationError(res, 'No factor values could be calculated');
+      return res.status(400).json({ error: 'No factor values could be calculated' });
     }
 
     // Get standard factor scores for the same stocks
@@ -1545,113 +1528,7 @@ router.post('/correlation', (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Error calculating factor correlations:', error);
-    sendError(res, error);
-  }
-});
-
-// POST /api/factors/custom-sector-exposures - Calculate sector exposures for a custom factor
-router.post('/custom-sector-exposures', (req, res) => {
-  try {
-    const { formula, factorId, factorName } = req.body;
-
-    if (!formula || typeof formula !== 'string' || !formula.trim()) {
-      return sendValidationError(res, 'formula is required and must be a non-empty string');
-    }
-
-    const calc = getCustomFactorCalculator();
-    if (!calc) {
-      return sendServiceUnavailable(res, 'Custom factor calculator not available. Run migration first.');
-    }
-
-    // Validate formula before calculating
-    const validation = calc.validateFormula(formula.trim());
-    if (!validation.valid) {
-      return sendValidationError(res, validation.error, {
-        unknownMetrics: validation.unknownMetrics
-      });
-    }
-
-    // Calculate factor values for ALL stocks (no limit)
-    const result = calc.calculateFactorValues(factorId, formula.trim(), {
-      universe: 'ALL'
-    });
-
-    if (!result.values || result.values.length === 0) {
-      return sendValidationError(res, 'No factor values could be calculated. Check if stocks have the required metrics.');
-    }
-
-    // Group stocks by sector and calculate average z-score
-    const sectorExposures = {};
-    const sectorCounts = {};
-    const sectorStocks = {};
-
-    // Initialize all sectors
-    const allSectors = Object.keys(SECTOR_GICS_MAP);
-    for (const sector of allSectors) {
-      sectorExposures[sector] = 0;
-      sectorCounts[sector] = 0;
-      sectorStocks[sector] = [];
-    }
-
-    // Build a symbol-to-sector lookup from SECTOR_GICS_MAP
-    const symbolToSector = {};
-    for (const [sector, symbols] of Object.entries(SECTOR_GICS_MAP)) {
-      for (const symbol of symbols) {
-        symbolToSector[symbol] = sector;
-      }
-    }
-
-    // Group by sector (prefer database sector, fallback to GICS map)
-    for (const stock of result.values) {
-      // Try database sector first, then fallback to GICS map
-      let sector = stock.sector;
-      if (!sector || !allSectors.includes(sector)) {
-        sector = symbolToSector[stock.symbol];
-      }
-
-      if (sector && allSectors.includes(sector)) {
-        sectorExposures[sector] += stock.zscoreValue || 0;
-        sectorCounts[sector]++;
-        sectorStocks[sector].push({
-          symbol: stock.symbol,
-          zscoreValue: stock.zscoreValue,
-          rawValue: stock.rawValue
-        });
-      }
-    }
-
-    // Calculate averages
-    const exposures = {};
-    for (const sector of allSectors) {
-      if (sectorCounts[sector] > 0) {
-        exposures[sector] = sectorExposures[sector] / sectorCounts[sector];
-      } else {
-        exposures[sector] = null;
-      }
-    }
-
-    // Get top 3 stocks per sector for drilldown
-    const topStocksBySector = {};
-    for (const sector of allSectors) {
-      topStocksBySector[sector] = sectorStocks[sector]
-        .sort((a, b) => Math.abs(b.zscoreValue) - Math.abs(a.zscoreValue))
-        .slice(0, 3);
-    }
-
-    res.json({
-      success: true,
-      data: {
-        name: factorName || 'Custom Factor',
-        exposures,
-        stockCounts: sectorCounts,
-        topStocksBySector,
-        totalStocks: result.values.length,
-        stats: result.stats
-      }
-    });
-  } catch (error) {
-    console.error('Error calculating custom sector exposures:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -1660,7 +1537,7 @@ router.get('/user/:id/backtest-runs', (req, res) => {
   try {
     const repo = getFactorRepository();
     if (!repo) {
-      return sendServiceUnavailable(res, 'Factor repository not available. Run migration first.');
+      return res.status(503).json({ error: 'Factor repository not available. Run migration first.' });
     }
 
     const { limit = 10 } = req.query;
@@ -1672,7 +1549,7 @@ router.get('/user/:id/backtest-runs', (req, res) => {
     });
   } catch (error) {
     console.error('Error getting backtest runs:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -1681,7 +1558,7 @@ router.get('/user/:id/ic-history', (req, res) => {
   try {
     const repo = getFactorRepository();
     if (!repo) {
-      return sendServiceUnavailable(res, 'Factor repository not available. Run migration first.');
+      return res.status(503).json({ error: 'Factor repository not available. Run migration first.' });
     }
 
     const { limit = 100, universeType } = req.query;
@@ -1696,7 +1573,7 @@ router.get('/user/:id/ic-history', (req, res) => {
     });
   } catch (error) {
     console.error('Error getting IC history:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -1706,12 +1583,12 @@ router.post('/ic-history-calculate', async (req, res) => {
     const { formula, horizon = 21, monthsBack = 60 } = req.body;
 
     if (!formula || typeof formula !== 'string' || !formula.trim()) {
-      return sendValidationError(res, 'Formula is required');
+      return res.status(400).json({ error: 'Formula is required' });
     }
 
     const calculator = getCustomFactorCalculator();
     if (!calculator) {
-      return sendServiceUnavailable(res, 'Factor calculator not available');
+      return res.status(503).json({ error: 'Factor calculator not available' });
     }
 
     // Check if this calculator supports historical IC calculation
@@ -1798,7 +1675,7 @@ router.post('/ic-history-calculate', async (req, res) => {
     });
   } catch (error) {
     console.error('Error calculating IC history:', error);
-    sendError(res, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -1908,7 +1785,10 @@ router.post('/signals', (req, res) => {
 
     // Check for missing or invalid formula
     if (formula === undefined || formula === null || typeof formula !== 'string') {
-      return sendValidationError(res, 'Formula is required and must be a string');
+      return res.status(400).json({
+        success: false,
+        error: 'Formula is required and must be a string'
+      });
     }
 
     // Check for empty/whitespace-only formula
@@ -1922,7 +1802,10 @@ router.post('/signals', (req, res) => {
 
     const calculator = getCustomFactorCalculator();
     if (!calculator) {
-      return sendError(res, new Error('Custom factor calculator not available'));
+      return res.status(500).json({
+        success: false,
+        error: 'Custom factor calculator not available'
+      });
     }
 
     // Calculate factor values for all stocks
@@ -1997,7 +1880,10 @@ router.post('/sector-exposures', async (req, res) => {
 
     const db = getDatabase();
     if (!db) {
-      return sendError(res, new Error('Database not available'));
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available'
+      });
     }
 
     const exposures = {};
@@ -2114,12 +2000,18 @@ router.get('/sector-stocks/:sector', async (req, res) => {
 
     const symbols = SECTOR_GICS_MAP[sector];
     if (!symbols) {
-      return sendValidationError(res, `Unknown sector: ${sector}`);
+      return res.status(400).json({
+        success: false,
+        error: `Unknown sector: ${sector}`
+      });
     }
 
     const db = getDatabase();
     if (!db) {
-      return sendError(res, new Error('Database not available'));
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available'
+      });
     }
 
     const symbolList = symbols.map(s => `'${s}'`).join(',');
@@ -2214,18 +2106,27 @@ router.post('/walk-forward', async (req, res) => {
     const { factorId, formula, config = {} } = req.body;
 
     if (!formula || typeof formula !== 'string' || !formula.trim()) {
-      return sendValidationError(res, 'Formula is required and must be a non-empty string');
+      return res.status(400).json({
+        success: false,
+        error: 'Formula is required and must be a non-empty string'
+      });
     }
 
     // Validate formula
     const calc = getCustomFactorCalculator();
     if (!calc) {
-      return sendServiceUnavailable(res, 'Factor calculator not available. Run migration first.');
+      return res.status(503).json({
+        success: false,
+        error: 'Factor calculator not available. Run migration first.'
+      });
     }
 
     const validation = calc.validateFormula(formula.trim());
     if (!validation.valid) {
-      return sendValidationError(res, `Invalid formula: ${validation.error}`);
+      return res.status(400).json({
+        success: false,
+        error: `Invalid formula: ${validation.error}`
+      });
     }
 
     // Default configuration
@@ -2279,7 +2180,10 @@ router.post('/walk-forward', async (req, res) => {
 
   } catch (error) {
     console.error('Error running walk-forward validation:', error);
-    sendError(res, new Error(error.message));
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
   }
 });
 
@@ -2322,18 +2226,27 @@ router.post('/backtest', async (req, res) => {
     const { factorId, formula, config = {} } = req.body;
 
     if (!formula || typeof formula !== 'string' || !formula.trim()) {
-      return sendValidationError(res, 'Formula is required and must be a non-empty string');
+      return res.status(400).json({
+        success: false,
+        error: 'Formula is required and must be a non-empty string'
+      });
     }
 
     // Validate formula
     const calc = getCustomFactorCalculator();
     if (!calc) {
-      return sendServiceUnavailable(res, 'Factor calculator not available. Run migration first.');
+      return res.status(503).json({
+        success: false,
+        error: 'Factor calculator not available. Run migration first.'
+      });
     }
 
     const validation = calc.validateFormula(formula.trim());
     if (!validation.valid) {
-      return sendValidationError(res, `Invalid formula: ${validation.error}`);
+      return res.status(400).json({
+        success: false,
+        error: `Invalid formula: ${validation.error}`
+      });
     }
 
     // Default configuration
@@ -2357,7 +2270,10 @@ router.post('/backtest', async (req, res) => {
 
   } catch (error) {
     console.error('Error running factor backtest:', error);
-    sendError(res, new Error(error.message));
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
   }
 });
 
@@ -2372,7 +2288,10 @@ router.get('/:id/backfill-status', (req, res) => {
     const factorId = parseInt(req.params.id);
 
     if (isNaN(factorId)) {
-      return sendValidationError(res, 'Invalid factor ID');
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid factor ID'
+      });
     }
 
     // Query backfill status from factor_values_cache
@@ -2387,14 +2306,20 @@ router.get('/:id/backfill-status', (req, res) => {
     `).get(factorId);
 
     if (status.total_values === 0) {
-      return sendNotFoundError(res, 'No backfill data found for this factor');
+      return res.status(404).json({
+        success: false,
+        error: 'No backfill data found for this factor'
+      });
     }
 
     res.json(status);
 
   } catch (error) {
     console.error('Error fetching backfill status:', error);
-    sendError(res, new Error(error.message));
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
   }
 });
 
@@ -2404,26 +2329,41 @@ router.post('/backfill', async (req, res) => {
     const { factorId, formula, startDate, endDate, frequency = 'monthly' } = req.body;
 
     if (!factorId) {
-      return sendValidationError(res, 'factorId is required');
+      return res.status(400).json({
+        success: false,
+        error: 'factorId is required'
+      });
     }
 
     if (!formula || typeof formula !== 'string' || !formula.trim()) {
-      return sendValidationError(res, 'Formula is required and must be a non-empty string');
+      return res.status(400).json({
+        success: false,
+        error: 'Formula is required and must be a non-empty string'
+      });
     }
 
     if (!startDate || !endDate) {
-      return sendValidationError(res, 'startDate and endDate are required (format: YYYY-MM-DD)');
+      return res.status(400).json({
+        success: false,
+        error: 'startDate and endDate are required (format: YYYY-MM-DD)'
+      });
     }
 
     // Validate formula
     const calc = getCustomFactorCalculator();
     if (!calc) {
-      return sendServiceUnavailable(res, 'Factor calculator not available. Run migration first.');
+      return res.status(503).json({
+        success: false,
+        error: 'Factor calculator not available. Run migration first.'
+      });
     }
 
     const validation = calc.validateFormula(formula.trim());
     if (!validation.valid) {
-      return sendValidationError(res, `Invalid formula: ${validation.error}`);
+      return res.status(400).json({
+        success: false,
+        error: `Invalid formula: ${validation.error}`
+      });
     }
 
     console.log(`Backfilling factor ${factorId} from ${startDate} to ${endDate} (${frequency})`);
@@ -2477,66 +2417,12 @@ router.post('/backfill', async (req, res) => {
 
   } catch (error) {
     console.error('Error running historical backfill:', error);
-    sendError(res, new Error(error.message));
-  }
-});
-
-// POST /api/factors/:id/clear-cache - Manually clear cached values for a factor
-router.post('/:id/clear-cache', (req, res) => {
-  try {
-    const { id } = req.params;
-    const repo = getFactorRepository();
-
-    if (!repo) {
-      return sendServiceUnavailable(res, 'Factor repository not available');
-    }
-
-    const db = require('../../database').db;
-    const result = db.prepare('DELETE FROM factor_values_cache WHERE factor_id = ?').run(id);
-
-    return sendSuccess(res, {
-      factorId: id,
-      rowsDeleted: result.changes,
-      clearedAt: new Date().toISOString()
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
-  } catch (error) {
-    return sendError(res, error);
   }
 });
-
-/**
- * Get last trading day of month from actual data
- * Falls back to last weekday if no data available
- */
-function getLastTradingDay(year, month, db) {
-  try {
-    // Try to get actual last trading day from factor scores
-    const lastDay = db.prepare(`
-      SELECT MAX(score_date) as last_date
-      FROM stock_factor_scores
-      WHERE strftime('%Y-%m', score_date) = ?
-    `).get(`${year}-${String(month).padStart(2, '0')}`);
-
-    if (lastDay?.last_date) {
-      return lastDay.last_date;
-    }
-
-    // Fallback: last weekday of month
-    const lastCalendarDay = new Date(year, month, 0);
-    let date = new Date(lastCalendarDay);
-
-    // Move back from weekend to Friday
-    while (date.getDay() === 0 || date.getDay() === 6) {
-      date.setDate(date.getDate() - 1);
-    }
-
-    return date.toISOString().split('T')[0];
-  } catch (err) {
-    console.warn('Error getting trading day:', err);
-    // Final fallback: last day of month
-    return new Date(year, month, 0).toISOString().split('T')[0];
-  }
-}
 
 /**
  * Generate list of dates for backfill based on frequency
@@ -2545,58 +2431,23 @@ function generateDateList(startDate, endDate, frequency) {
   const dates = [];
   const start = new Date(startDate);
   const end = new Date(endDate);
-  const db = require('../../database').db;
 
   let current = new Date(start);
 
   while (current <= end) {
+    dates.push(current.toISOString().split('T')[0]);
+
     if (frequency === 'daily') {
-      // Skip weekends for daily
-      if (current.getDay() !== 0 && current.getDay() !== 6) {
-        dates.push(current.toISOString().split('T')[0]);
-      }
       current.setDate(current.getDate() + 1);
-
     } else if (frequency === 'weekly') {
-      // Use Friday as standard
-      const friday = new Date(current);
-      const day = friday.getDay();
-
-      if (day === 0) {
-        // Sunday -> previous Friday
-        friday.setDate(friday.getDate() - 2);
-      } else if (day === 6) {
-        // Saturday -> previous Friday
-        friday.setDate(friday.getDate() - 1);
-      } else if (day !== 5) {
-        // Not Friday -> next Friday
-        friday.setDate(friday.getDate() + (5 - day));
-      }
-
-      if (friday <= end) {
-        dates.push(friday.toISOString().split('T')[0]);
-      }
       current.setDate(current.getDate() + 7);
-
     } else if (frequency === 'monthly') {
-      // Use last trading day of month
-      const year = current.getFullYear();
-      const month = current.getMonth() + 1;
-      const lastTradingDay = getLastTradingDay(year, month, db);
-      dates.push(lastTradingDay);
+      // Last trading day of month (approximate with last day)
       current.setMonth(current.getMonth() + 1);
-
+      current.setDate(1);  // First day of next month
+      current.setDate(current.getDate() - 1);  // Last day of current month
     } else if (frequency === 'quarterly') {
-      // Use last trading day of quarter-end month
-      const year = current.getFullYear();
-      const month = current.getMonth() + 1;
-      const quarterEndMonth = Math.ceil(month / 3) * 3; // 3, 6, 9, 12
-      const lastTradingDay = getLastTradingDay(year, quarterEndMonth, db);
-      dates.push(lastTradingDay);
-
-      // Move to next quarter
-      current.setMonth(quarterEndMonth);
-      current.setDate(1);
+      current.setMonth(current.getMonth() + 3);
     }
   }
 

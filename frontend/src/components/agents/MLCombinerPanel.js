@@ -19,6 +19,9 @@ function MLCombinerPanel({ agentId, onMLStatusChange }) {
   const [lookbackDays, setLookbackDays] = useState(730);
   const [activeTab, setActiveTab] = useState('status');
   const [trainResult, setTrainResult] = useState(null);
+  const [availableFactors, setAvailableFactors] = useState([]);
+  const [selectedCustomFactorIds, setSelectedCustomFactorIds] = useState([]);
+  const [loadingFactors, setLoadingFactors] = useState(false);
 
   // Fetch ML status - with timeout protection
   const fetchStatus = useCallback(async () => {
@@ -73,13 +76,29 @@ function MLCombinerPanel({ agentId, onMLStatusChange }) {
     }
   }, []);
 
+  // Fetch available custom factors
+  const fetchAvailableFactors = useCallback(async () => {
+    try {
+      setLoadingFactors(true);
+      const res = await mlCombinerAPI.getAvailableFactors();
+      setAvailableFactors(res.data?.data || []);
+    } catch (err) {
+      console.warn('Failed to fetch custom factors:', err.message);
+      setAvailableFactors([]);
+    } finally {
+      setLoadingFactors(false);
+    }
+  }, []);
+
   useEffect(() => {
     // Fetch status immediately
     fetchStatus();
+    // Fetch available custom factors
+    fetchAvailableFactors();
     // Delay signal health fetch to not block page load
     const timer = setTimeout(fetchSignalHealth, 1000);
     return () => clearTimeout(timer);
-  }, [fetchStatus, fetchSignalHealth]);
+  }, [fetchStatus, fetchSignalHealth, fetchAvailableFactors]);
 
   // Train the model
   const handleTrain = async () => {
@@ -88,7 +107,7 @@ function MLCombinerPanel({ agentId, onMLStatusChange }) {
       setTrainResult(null);
       setError(null);
 
-      const res = await mlCombinerAPI.train(lookbackDays);
+      const res = await mlCombinerAPI.train(lookbackDays, selectedCustomFactorIds);
 
       // Validate response structure
       if (!res?.data) {
@@ -118,6 +137,17 @@ function MLCombinerPanel({ agentId, onMLStatusChange }) {
   const formatPercent = (value) => {
     if (value === null || value === undefined) return '-';
     return `${(value * 100).toFixed(1)}%`;
+  };
+
+  // Toggle custom factor selection
+  const toggleCustomFactor = (factorId) => {
+    setSelectedCustomFactorIds(prev => {
+      if (prev.includes(factorId)) {
+        return prev.filter(id => id !== factorId);
+      } else {
+        return [...prev, factorId];
+      }
+    });
   };
 
   if (loading && !status) {
@@ -369,6 +399,66 @@ function MLCombinerPanel({ agentId, onMLStatusChange }) {
                 </span>
               </div>
 
+              <div className="form-group">
+                <label>
+                  Custom Factors (Optional)
+                  {selectedCustomFactorIds.length > 0 && (
+                    <span className="factor-count"> — {selectedCustomFactorIds.length} selected</span>
+                  )}
+                </label>
+                {loadingFactors ? (
+                  <div className="loading-factors">
+                    <RefreshCw size={14} className="spinning" />
+                    <span>Loading custom factors...</span>
+                  </div>
+                ) : availableFactors.length > 0 ? (
+                  <>
+                    <div className="custom-factors-list">
+                      {availableFactors.map(factor => (
+                        <div
+                          key={factor.id}
+                          className={`custom-factor-item ${
+                            selectedCustomFactorIds.includes(factor.id) ? 'selected' : ''
+                          }`}
+                          onClick={() => !training && toggleCustomFactor(factor.id)}
+                          style={{ cursor: training ? 'not-allowed' : 'pointer' }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedCustomFactorIds.includes(factor.id)}
+                            onChange={() => {}}
+                            disabled={training}
+                          />
+                          <div className="factor-details">
+                            <span className="factor-name">{factor.name}</span>
+                            <span className="factor-formula">{factor.formula}</span>
+                            {factor.ic_mean !== null && (
+                              <span className="factor-ic">IC: {factor.ic_mean.toFixed(3)}</span>
+                            )}
+                          </div>
+                          <div className="factor-stats">
+                            <span className="stat-item">{factor.coverage_companies} companies</span>
+                            <span className="stat-item">{factor.total_values.toLocaleString()} values</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <span className="form-hint">
+                      Select custom factors from Quant Workbench to include as ML features.
+                      Make sure factors have been backfilled with historical data.
+                    </span>
+                  </>
+                ) : (
+                  <div className="no-custom-factors">
+                    <p>No custom factors available with historical data.</p>
+                    <p className="hint">
+                      Create factors in Quant Workbench and use the Backfill endpoint to
+                      populate historical values before training.
+                    </p>
+                  </div>
+                )}
+              </div>
+
               <div className="train-info">
                 <h6>What happens during training:</h6>
                 <ul>
@@ -441,10 +531,13 @@ function MLCombinerPanel({ agentId, onMLStatusChange }) {
                 </p>
                 <div className="importance-list">
                   {importance.map((item, idx) => (
-                    <div key={item.feature} className="importance-item">
+                    <div key={item.feature} className={`importance-item ${item.isCustomFactor ? 'custom-factor' : ''}`}>
                       <div className="importance-rank">{idx + 1}</div>
                       <div className="importance-info">
-                        <span className="feature-name">{item.feature}</span>
+                        <span className="feature-name">
+                          {item.displayName || item.feature}
+                          {item.isCustomFactor && <span className="custom-badge">Custom</span>}
+                        </span>
                         <div className="importance-bar-container">
                           <div
                             className="importance-bar"

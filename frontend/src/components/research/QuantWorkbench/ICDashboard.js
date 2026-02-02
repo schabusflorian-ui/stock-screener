@@ -6,6 +6,20 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Loader, AlertTriangle, Info, TrendingUp, Check, X, Clock } from '../../icons';
 import ICTimeSeriesChart from './ICTimeSeriesChart';
 
+// ============================================================
+// UNIFIED THRESHOLD CONSTANTS - Single source of truth
+// ============================================================
+const IC_THRESHOLDS = {
+  STRONG: 0.05,    // 5% - Excellent signal, worth pursuing immediately
+  GOOD: 0.03,      // 3% - Solid signal, worth further testing
+  WEAK: 0.02,      // 2% - Detectable but weak, combine with other factors
+  NOISE: 0.01      // 1% - Below this is likely noise
+};
+
+const TSTAT_THRESHOLD = 2.0;      // Statistical significance (95% confidence)
+const UNIQUENESS_THRESHOLD = 0.3; // 30% uniqueness minimum
+const ICIR_THRESHOLD = 0.3;       // IC Information Ratio threshold
+
 export default function ICDashboard({ factor, preloadedResults, triggerAnalysis = 0 }) {
   const [formula, setFormula] = useState('');
   const [icResults, setICResults] = useState(null);
@@ -73,6 +87,7 @@ export default function ICDashboard({ factor, preloadedResults, triggerAnalysis 
         corrResponse.json()
       ]);
 
+      // Check standardized response format
       if (!icData.success) {
         throw new Error(icData.error || 'IC analysis failed');
       }
@@ -82,9 +97,14 @@ export default function ICDashboard({ factor, preloadedResults, triggerAnalysis 
       // Correlations are optional - don't fail if they don't work
       if (corrData.success) {
         setCorrelations(corrData.data);
+      } else {
+        console.warn('Correlation analysis failed:', corrData.error);
+        // Don't throw - correlations are supplementary
       }
+
     } catch (err) {
-      setError(err.message);
+      console.error('IC Analysis error:', err);
+      setError(err.message || 'Failed to run IC analysis');
     } finally {
       setLoading(false);
     }
@@ -119,51 +139,102 @@ export default function ICDashboard({ factor, preloadedResults, triggerAnalysis 
     size: 0.015
   };
 
-  // Get traffic light color based on IC value
+  // Get traffic light color based on IC value - uses unified thresholds
   const getTrafficLight = (ic) => {
     const absIC = Math.abs(ic || 0);
-    if (absIC >= 0.03) return 'green';
-    if (absIC >= 0.01) return 'yellow';
-    return 'red';
+    if (absIC >= IC_THRESHOLDS.GOOD) return 'green';      // 3%+ is green
+    if (absIC >= IC_THRESHOLDS.WEAK) return 'yellow';     // 2%+ is yellow
+    return 'red';                                          // Below 2% is red
   };
 
-  // Get signal quality assessment
+  // Get unified signal quality assessment
+  // Primary factors: IC magnitude + statistical significance
+  // Secondary factor: uniqueness (bonus, not gatekeeper)
   const getSignalQuality = () => {
     if (!icResults?.ic) return null;
 
     const ic21d = icResults.ic.icByHorizon?.[21] || 0;
-    const tstat = icResults.ic.tstat || 0;
-    const uniqueness = correlations?.uniquenessScore || 1;
+    const absIC = Math.abs(ic21d);
+    const tstat = Math.abs(icResults.ic.tstat || 0);
+    const uniqueness = correlations?.uniquenessScore;
+    const hasUniquenessData = uniqueness !== undefined && uniqueness !== null;
 
-    if (Math.abs(ic21d) > 0.05 && tstat > 2 && uniqueness > 0.5) {
-      return { level: 'strong', label: 'Strong Signal', color: 'var(--positive)', verdict: 'Worth pursuing' };
-    } else if (Math.abs(ic21d) > 0.03 && tstat > 1.5 && uniqueness > 0.3) {
-      return { level: 'moderate', label: 'Moderate Signal', color: 'var(--warning)', verdict: 'Worth testing further' };
-    } else if (Math.abs(ic21d) > 0.02) {
-      return { level: 'weak', label: 'Weak Signal', color: 'var(--text-secondary)', verdict: 'Consider combining with other factors' };
+    // Strong: Excellent IC (>= 5%) + statistically significant (t >= 2)
+    // Uniqueness is a bonus indicator, not a gatekeeper
+    if (absIC >= IC_THRESHOLDS.STRONG && tstat >= TSTAT_THRESHOLD) {
+      const isUnique = !hasUniquenessData || uniqueness >= 0.5;
+      return {
+        level: 'strong',
+        label: 'Strong Signal',
+        color: 'var(--positive)',
+        verdict: isUnique
+          ? 'Worth pursuing - deploy to production'
+          : 'Strong but correlated with existing factors - still worth testing'
+      };
     }
-    return { level: 'none', label: 'No Signal', color: 'var(--negative)', verdict: 'Likely noise - try different metrics' };
+
+    // Good: Solid IC (>= 3%) + reasonably significant (t >= 1.5)
+    if (absIC >= IC_THRESHOLDS.GOOD && tstat >= 1.5) {
+      const isUnique = !hasUniquenessData || uniqueness >= UNIQUENESS_THRESHOLD;
+      return {
+        level: 'moderate',
+        label: 'Good Signal',
+        color: 'var(--warning)',
+        verdict: isUnique
+          ? 'Worth testing further - validate with backtest'
+          : 'Good signal but may overlap with existing factors'
+      };
+    }
+
+    // Decent IC but low t-stat: promising but not statistically robust
+    if (absIC >= IC_THRESHOLDS.GOOD) {
+      return {
+        level: 'moderate',
+        label: 'Promising Signal',
+        color: 'var(--warning)',
+        verdict: 'Good IC but low statistical significance - needs more data'
+      };
+    }
+
+    // Weak: Detectable IC (>= 2%) but below "good" threshold
+    if (absIC >= IC_THRESHOLDS.WEAK) {
+      return {
+        level: 'weak',
+        label: 'Weak Signal',
+        color: 'var(--text-secondary)',
+        verdict: 'Consider combining with other factors'
+      };
+    }
+
+    // No signal
+    return {
+      level: 'none',
+      label: 'No Signal',
+      color: 'var(--negative)',
+      verdict: 'Likely noise - try different metrics'
+    };
   };
 
-  // Get plain English summary
+  // Get plain English summary - uses unified thresholds
   const getPlainEnglishSummary = () => {
     if (!icResults?.ic) return null;
 
     const ic21d = icResults.ic.icByHorizon?.[21] || 0;
     const absIC = Math.abs(ic21d);
-    const direction = ic21d > 0 ? 'outperform' : 'underperform';
+    const isInverse = ic21d < 0;
+    const direction = isInverse ? 'underperform' : 'outperform';
     const bestHorizon = Object.entries(icResults.ic.icByHorizon || {})
       .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))[0];
 
     let headline = '';
     let details = '';
 
-    if (absIC >= 0.03) {
+    if (absIC >= IC_THRESHOLDS.GOOD) {
       headline = 'This factor has meaningful predictive power';
-      details = `Stocks ranking high on this factor tend to ${direction} over 21 days. The signal is ${ic21d > 0 ? 'positive' : 'inverse'} (${ic21d > 0 ? 'higher' : 'lower'} values predict better returns).`;
-    } else if (absIC >= 0.01) {
+      details = `Stocks ranking high on this factor tend to ${direction} over 21 days. The signal is ${isInverse ? 'inverse' : 'positive'} (${isInverse ? 'lower' : 'higher'} values predict better returns).`;
+    } else if (absIC >= IC_THRESHOLDS.WEAK) {
       headline = 'This factor shows weak but detectable signal';
-      details = `There's a slight tendency for high-scoring stocks to ${direction}, but the effect is not strong enough to use alone.`;
+      details = `There's a slight tendency for high-scoring stocks to ${direction}, but the effect may not be strong enough to use alone.`;
     } else {
       headline = 'This factor shows no meaningful predictive pattern';
       details = 'The relationship between factor scores and future returns appears random. Consider revising the formula.';
@@ -190,20 +261,16 @@ export default function ICDashboard({ factor, preloadedResults, triggerAnalysis 
 
   return (
     <div className="ic-dashboard">
-      {/* Factor Info Header */}
-      <div className="ic-controls">
-        <div className="factor-info">
-          <span className="factor-name">{factor.name}</span>
-          <code className="factor-formula">{formula}</code>
-        </div>
-
-        {loading && (
-          <div className="analysis-status">
+      {/* Loading State */}
+      {loading && (
+        <div className="analysis-loading-bar">
+          <div className="loading-content">
             <Loader size={16} className="spin" />
             <span>Running IC Analysis...</span>
           </div>
-        )}
-      </div>
+          <div className="loading-progress" />
+        </div>
+      )}
 
       {error && (
         <div className="ic-error">
@@ -215,44 +282,50 @@ export default function ICDashboard({ factor, preloadedResults, triggerAnalysis 
       {/* Results */}
       {icResults && (
         <div className="ic-results">
-          {/* Traffic Light Verdict */}
-          <div className={`ic-verdict-card ${signalQuality?.level || 'none'}`}>
-            <div className="verdict-label">Overall Verdict</div>
-            <div className={`traffic-light ${getTrafficLight(icResults.ic?.icByHorizon?.[21])}`}>
-              <span className="traffic-light-dot"></span>
-              <span>{signalQuality?.label || 'No Signal'}</span>
+          {/* Top Row: Verdict + Summary Cards */}
+          <div className="ic-top-row">
+            {/* Traffic Light Verdict */}
+            <div className={`ic-verdict-card ${signalQuality?.level || 'none'}`}>
+              <div className="verdict-label">Overall Verdict</div>
+              <div className={`traffic-light ${getTrafficLight(icResults.ic?.icByHorizon?.[21])}`}>
+                <span className="traffic-light-dot"></span>
+                <span>{signalQuality?.label || 'No Signal'}</span>
+              </div>
+              <div className="verdict-description">{signalQuality?.verdict}</div>
             </div>
-            <div className="verdict-description">{signalQuality?.verdict}</div>
-          </div>
 
-          {/* Summary Cards */}
-          <div className="ic-summary">
-            <div className="summary-card">
-              <span className="card-label">IC (21-day)</span>
-              <span className={`card-value ${icResults.ic?.icByHorizon?.[21] > 0 ? 'positive' : 'negative'}`}>
-                {(icResults.ic?.icByHorizon?.[21] * 100)?.toFixed(2)}%
-              </span>
-              <span className="card-baseline">Baseline: Value ~2.5%</span>
-            </div>
-            <div className="summary-card">
-              <span className="card-label">T-Statistic</span>
-              <span className={`card-value ${Math.abs(icResults.ic?.tstat) > 2 ? 'positive' : ''}`}>
-                {icResults.ic?.tstat?.toFixed(2)}
-              </span>
-              <span className="card-baseline">Need &gt;2.0 for significance</span>
-            </div>
-            <div className="summary-card">
-              <span className="card-label">IC IR</span>
-              <span className={`card-value ${icResults.ic?.icIR > 0.5 ? 'positive' : ''}`}>
-                {icResults.ic?.icIR?.toFixed(2)}
-              </span>
-              <span className="card-baseline">Good if &gt;0.5</span>
-            </div>
-            <div className="summary-card">
-              <span className="card-label">Universe Size</span>
-              <span className="card-value">
-                {icResults.universeSize?.toLocaleString()}
-              </span>
+            {/* Summary Cards - Color based on meaningful thresholds, not just sign */}
+            <div className="ic-summary">
+              <div className="summary-card">
+                <span className="card-label">IC (21-day)</span>
+                <span className={`card-value ${
+                  Math.abs(icResults.ic?.icByHorizon?.[21] || 0) >= IC_THRESHOLDS.GOOD ? 'positive' :
+                  Math.abs(icResults.ic?.icByHorizon?.[21] || 0) >= IC_THRESHOLDS.WEAK ? 'moderate' : 'muted'
+                }`}>
+                  {(icResults.ic?.icByHorizon?.[21] * 100)?.toFixed(2)}%
+                </span>
+                <span className="card-baseline">Good if |IC| ≥ 3%</span>
+              </div>
+              <div className="summary-card">
+                <span className="card-label">T-Statistic</span>
+                <span className={`card-value ${Math.abs(icResults.ic?.tstat || 0) >= TSTAT_THRESHOLD ? 'positive' : 'muted'}`}>
+                  {icResults.ic?.tstat?.toFixed(2)}
+                </span>
+                <span className="card-baseline">Need |t| ≥ 2.0</span>
+              </div>
+              <div className="summary-card">
+                <span className="card-label">IC IR</span>
+                <span className={`card-value ${(icResults.ic?.icIR || 0) >= 0.5 ? 'positive' : (icResults.ic?.icIR || 0) >= ICIR_THRESHOLD ? 'moderate' : 'muted'}`}>
+                  {icResults.ic?.icIR?.toFixed(2)}
+                </span>
+                <span className="card-baseline">Good if ≥ 0.5</span>
+              </div>
+              <div className="summary-card">
+                <span className="card-label">Universe Size</span>
+                <span className="card-value">
+                  {icResults.universeSize?.toLocaleString()}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -274,7 +347,7 @@ export default function ICDashboard({ factor, preloadedResults, triggerAnalysis 
           <div className="ic-chart-section">
             <h4>IC by Horizon</h4>
             <p className="chart-description">
-              Information Coefficient measures predictive power. IC &gt; 0.02 is interesting, &gt; 0.05 is strong.
+              Information Coefficient measures predictive power. |IC| ≥ 3% is good (green), |IC| ≥ 5% is strong.
             </p>
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={icChartData}>
@@ -374,18 +447,41 @@ export default function ICDashboard({ factor, preloadedResults, triggerAnalysis 
             </table>
           </div>
 
-          {/* Interpretation */}
+          {/* Interpretation - Uses unified thresholds with Math.abs for inverse factors */}
           <div className="ic-interpretation">
             <Info size={16} />
             <div>
               <strong>What this means:</strong>
-              {icResults.ic?.icByHorizon?.[21] > 0.03 ? (
-                <p>This factor shows meaningful predictive power at the 21-day horizon. Stocks with higher factor values tend to outperform.</p>
-              ) : icResults.ic?.icByHorizon?.[21] > 0 ? (
-                <p>This factor shows weak positive predictive power. Consider combining with other factors or testing on different universes.</p>
-              ) : (
-                <p>This factor shows no positive predictive power or may be inversely predictive. Review the formula or try different metrics.</p>
-              )}
+              {(() => {
+                const ic = icResults.ic?.icByHorizon?.[21] || 0;
+                const absIC = Math.abs(ic);
+                const isInverse = ic < 0;
+                const direction = isInverse ? 'underperform' : 'outperform';
+
+                if (absIC >= IC_THRESHOLDS.GOOD) {
+                  return (
+                    <p>
+                      This factor shows meaningful predictive power at the 21-day horizon.
+                      Stocks with {isInverse ? 'lower' : 'higher'} factor values tend to {direction}.
+                      {isInverse && ' (Inverse factor - consider flipping the formula sign.)'}
+                    </p>
+                  );
+                } else if (absIC >= IC_THRESHOLDS.WEAK) {
+                  return (
+                    <p>
+                      This factor shows weak but detectable predictive power.
+                      Consider combining with other factors or testing on different universes.
+                    </p>
+                  );
+                } else {
+                  return (
+                    <p>
+                      This factor shows no meaningful predictive power (IC &lt; {(IC_THRESHOLDS.WEAK * 100).toFixed(0)}%).
+                      The relationship appears random. Review the formula or try different metrics.
+                    </p>
+                  );
+                }
+              })()}
             </div>
           </div>
         </div>
@@ -456,21 +552,25 @@ export default function ICDashboard({ factor, preloadedResults, triggerAnalysis 
         <div className="analysis-checklist">
           <h4>Signal Quality Checklist</h4>
           <div className="checklist-items">
-            <div className={`checklist-item ${icResults?.ic?.icByHorizon?.[21] > 0.02 ? 'pass' : 'fail'}`}>
-              {icResults?.ic?.icByHorizon?.[21] > 0.02 ? <Check size={16} /> : <X size={16} />}
-              <span>IC &gt; 2% (Predictive power)</span>
+            {/* IC check - uses Math.abs and GOOD threshold (3%) to match traffic light */}
+            <div className={`checklist-item ${Math.abs(icResults?.ic?.icByHorizon?.[21] || 0) >= IC_THRESHOLDS.GOOD ? 'pass' : 'fail'}`}>
+              {Math.abs(icResults?.ic?.icByHorizon?.[21] || 0) >= IC_THRESHOLDS.GOOD ? <Check size={16} /> : <X size={16} />}
+              <span>|IC| ≥ 3% (Meaningful predictive power)</span>
             </div>
-            <div className={`checklist-item ${Math.abs(icResults?.ic?.tstat || 0) > 2 ? 'pass' : 'fail'}`}>
-              {Math.abs(icResults?.ic?.tstat || 0) > 2 ? <Check size={16} /> : <X size={16} />}
-              <span>T-stat &gt; 2 (Statistically significant)</span>
+            {/* T-stat check - already uses Math.abs */}
+            <div className={`checklist-item ${Math.abs(icResults?.ic?.tstat || 0) >= TSTAT_THRESHOLD ? 'pass' : 'fail'}`}>
+              {Math.abs(icResults?.ic?.tstat || 0) >= TSTAT_THRESHOLD ? <Check size={16} /> : <X size={16} />}
+              <span>|T-stat| ≥ 2 (Statistically significant)</span>
             </div>
-            <div className={`checklist-item ${(correlations?.uniquenessScore || 1) > 0.3 ? 'pass' : 'fail'}`}>
-              {(correlations?.uniquenessScore || 1) > 0.3 ? <Check size={16} /> : <X size={16} />}
-              <span>Uniqueness &gt; 30% (Adds new information)</span>
+            {/* Uniqueness - default to 0 when not available */}
+            <div className={`checklist-item ${(correlations?.uniquenessScore ?? 0) >= UNIQUENESS_THRESHOLD ? 'pass' : correlations ? 'fail' : 'pending'}`}>
+              {(correlations?.uniquenessScore ?? 0) >= UNIQUENESS_THRESHOLD ? <Check size={16} /> : <X size={16} />}
+              <span>Uniqueness ≥ 30% (Adds new information)</span>
             </div>
-            <div className={`checklist-item ${icResults?.ic?.icIR > 0.3 ? 'pass' : 'fail'}`}>
-              {icResults?.ic?.icIR > 0.3 ? <Check size={16} /> : <X size={16} />}
-              <span>IC IR &gt; 0.3 (Consistent signal)</span>
+            {/* IC IR check */}
+            <div className={`checklist-item ${(icResults?.ic?.icIR || 0) >= ICIR_THRESHOLD ? 'pass' : 'fail'}`}>
+              {(icResults?.ic?.icIR || 0) >= ICIR_THRESHOLD ? <Check size={16} /> : <X size={16} />}
+              <span>IC IR ≥ 0.3 (Consistent signal)</span>
             </div>
           </div>
         </div>

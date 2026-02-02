@@ -283,6 +283,7 @@ const JOB_TIMEOUTS = {
   'investor-13f': 90 * 60 * 1000,      // 90 min - large data imports
   'xbrl-sync': 60 * 60 * 1000,         // 60 min
   'market-indicator': 10 * 60 * 1000,  // 10 min - calculates Buffett, P/E, MSI
+  'agent-scanner': 60 * 60 * 1000,     // 60 min - scans all agents for signals
 };
 
 /**
@@ -314,6 +315,7 @@ const { refreshEarnings } = require('./earningsRefresh');
 const { XBRLBulkImporter } = require('../services/xbrl/xbrlBulkImporter');
 const { XBRLSyncService } = require('../services/xbrl/xbrlSyncService');
 const AgentExecutor = require('./agentExecutor');
+const AgentScanner = require('./agentScanner');
 
 class MasterScheduler {
   constructor() {
@@ -346,6 +348,7 @@ class MasterScheduler {
     this.etfUpdater = getETFUpdateScheduler();
     this.investor13FRefresher = new Investor13FRefresh();
     this.agentExecutor = new AgentExecutor();
+    this.agentScanner = new AgentScanner();
 
     // Track running jobs (local tracking + distributed locks)
     this.runningJobs = new Set();
@@ -1084,6 +1087,7 @@ class MasterScheduler {
         { name: '13F Holdings Check', schedule: 'Sunday 8 AM ET' },
         { name: 'Insider Transactions', schedule: 'Weekdays 7:30 PM ET' },
         { name: 'Earnings Calendar', schedule: 'Daily 5 AM ET' },
+        { name: 'Agent Signal Scan', schedule: 'Weekdays 10:00 AM & 2:00 PM ET' },
         { name: 'Agent Trade Execution', schedule: 'Market hours every 30 min + 6:45 PM ET' },
         { name: 'EU/UK XBRL Import', schedule: 'Sunday 2:00 AM ET' },
         { name: 'EU/UK Price Update (GB)', schedule: 'Weekdays 12:00 PM ET (5 PM GMT)' },
@@ -1304,6 +1308,27 @@ class MasterScheduler {
     }, { timezone: 'America/New_York' });
 
     this.log('Scheduled: Earnings Calendar (Daily 5 AM ET)');
+
+    // ============================================
+    // AGENT SIGNAL SCANNING
+    // ============================================
+
+    // Weekdays at 10:00 AM ET - Morning scan after market open
+    // Generates trading signals for all active AI agents
+    cron.schedule('0 10 * * 1-5', async () => {
+      await this.runJob('Agent Signal Scan (Morning)', async () => {
+        await this.agentScanner.scanAllAgents();
+      });
+    }, { timezone: 'America/New_York' });
+
+    // Weekdays at 2:00 PM ET - Mid-day scan
+    cron.schedule('0 14 * * 1-5', async () => {
+      await this.runJob('Agent Signal Scan (Afternoon)', async () => {
+        await this.agentScanner.scanAllAgents();
+      });
+    }, { timezone: 'America/New_York' });
+
+    this.log('Scheduled: Agent Signal Scan (Weekdays 10:00 AM & 2:00 PM ET)');
 
     // ============================================
     // AGENT TRADE EXECUTION
@@ -1528,6 +1553,10 @@ class MasterScheduler {
 
     await this.runJob('Earnings Calendar', async () => {
       await refreshEarnings({ maxCompanies: 200, staleHours: 12 });
+    });
+
+    await this.runJob('Agent Signal Scan', async () => {
+      await this.agentScanner.scanAllAgents();
     });
 
     await this.runJob('Agent Trade Execution', async () => {

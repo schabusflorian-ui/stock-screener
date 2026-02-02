@@ -359,16 +359,18 @@ async function analyzeICDecay(params) {
 
 /**
  * Calculate signal decay rate (exponential decay fit)
+ * Uses absolute IC values to handle both positive and inverse factors correctly
  */
 function calculateDecayRate(horizonResults) {
   if (horizonResults.length < 2) return 0;
 
-  // Simple linear regression on log(IC) vs horizon
-  const validResults = horizonResults.filter(h => h.ic > 0);
+  // Filter out noise (|IC| < 1%) but include both positive AND negative ICs
+  const validResults = horizonResults.filter(h => Math.abs(h.ic || 0) > 0.01);
   if (validResults.length < 2) return 0;
 
   const x = validResults.map(h => h.horizon);
-  const y = validResults.map(h => Math.log(h.ic));
+  // Use absolute IC for log calculation (handles inverse factors correctly)
+  const y = validResults.map(h => Math.log(Math.abs(h.ic)));
 
   const n = x.length;
   const sumX = x.reduce((a, b) => a + b, 0);

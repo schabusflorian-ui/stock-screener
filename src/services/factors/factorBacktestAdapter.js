@@ -89,6 +89,9 @@ class FactorBacktestAdapter {
     const equityCurve = [];
     let lastRebalanceDate = null;
 
+    // Track universe statistics at each rebalance
+    const universeStats = [];
+
     // Simulate each trading day
     for (let i = 0; i < tradingDays.length; i++) {
       const date = tradingDays[i];
@@ -133,6 +136,16 @@ class FactorBacktestAdapter {
 
           console.log(`  Long: ${long.length} stocks, Short: ${short.length} stocks`);
 
+          // Track universe statistics for this rebalance
+          const sectors = [...new Set(factorResult.values.map(v => v.sector).filter(Boolean))];
+          universeStats.push({
+            date,
+            eligible: factorResult.values.length,
+            longCount: long.length,
+            shortCount: short.length,
+            sectorCount: sectors.length
+          });
+
           // Execute rebalance
           const rebalanceResult = this.executeRebalance(
             positions,
@@ -160,6 +173,20 @@ class FactorBacktestAdapter {
 
     console.log('Backtest complete. Calculating metrics...');
 
+    // Calculate aggregated universe statistics
+    const avgEligible = universeStats.length > 0
+      ? Math.round(universeStats.reduce((a, b) => a + b.eligible, 0) / universeStats.length)
+      : 0;
+    const avgLongPositions = universeStats.length > 0
+      ? Math.round(universeStats.reduce((a, b) => a + b.longCount, 0) / universeStats.length)
+      : 0;
+    const avgShortPositions = universeStats.length > 0
+      ? Math.round(universeStats.reduce((a, b) => a + b.shortCount, 0) / universeStats.length)
+      : 0;
+    const avgSectors = universeStats.length > 0
+      ? Math.round(universeStats.reduce((a, b) => a + b.sectorCount, 0) / universeStats.length)
+      : 0;
+
     // Calculate summary metrics and period returns
     return {
       equity: equityCurve,
@@ -167,6 +194,18 @@ class FactorBacktestAdapter {
       periodReturns: {
         yearly: this.calculateYearlyReturns(equityCurve),
         monthly: this.calculateMonthlyReturns(equityCurve)
+      },
+      universe: {
+        filter: config.universe || 'ALL',
+        minMarketCap: config.minMarketCap || null,
+        rebalanceCount: universeStats.length,
+        avgEligible,
+        avgLongPositions,
+        avgShortPositions,
+        avgSectors,
+        longShortRatio,
+        // Per-rebalance breakdown (optional, for detailed analysis)
+        stats: universeStats
       }
     };
   }
@@ -192,6 +231,12 @@ class FactorBacktestAdapter {
 
   /**
    * Calculate current portfolio value (long positions + short P&L + cash)
+   *
+   * Short position accounting:
+   * - When we short, we receive proceeds but owe shares
+   * - P&L = (entry price - current price) * shares
+   * - If price drops, we profit; if price rises, we lose
+   * - The proceeds are already in cash, so we only add the unrealized P&L
    */
   calculatePortfolioValue(positions, date, cash) {
     let value = cash;
@@ -210,9 +255,10 @@ class FactorBacktestAdapter {
         // Long: current market value
         value += position.shares * currentPrice;
       } else {
-        // Short: entry value + (entry price - current price) * shares
-        // = shares * (2 * entry - current)
-        value += position.shares * (2 * position.avgPrice - currentPrice);
+        // Short: only the unrealized P&L (proceeds already in cash)
+        // P&L = (entry price - current price) * shares
+        // Positive if price dropped (we profit), negative if price rose (we lose)
+        value += position.shares * (position.avgPrice - currentPrice);
       }
     }
 
@@ -220,89 +266,87 @@ class FactorBacktestAdapter {
   }
 
   /**
-   * Execute rebalance: sell old positions, buy new positions
+   * Execute rebalance: close old positions, open new positions
+   *
+   * Simplified NAV-based approach:
+   * - NAV = portfolioValue at start
+   * - Apply transaction costs as percentage of turnover
+   * - Allocate 50% notional to longs, 50% notional to shorts
+   * - Track positions; cash is implicit (NAV minus position values)
    */
   executeRebalance(oldPositions, targets, portfolioValue, date, transactionCost) {
     const newPositions = new Map();
-    let cash = 0;
 
-    // Step 1: Liquidate all old positions
+    // Calculate turnover cost (closing old + opening new positions)
+    let turnoverNotional = 0;
     for (const [symbol, position] of oldPositions) {
       const priceRow = this.stmtGetLatestPrice.get(symbol, date);
-      if (!priceRow) continue;
-
-      const currentPrice = priceRow.price;
-
-      if (position.side === 'long') {
-        // Sell long position
-        const proceeds = position.shares * currentPrice;
-        cash += proceeds * (1 - transactionCost);
-      } else {
-        // Cover short position
-        const coverCost = position.shares * currentPrice;
-        const shortProceeds = position.shares * (2 * position.avgPrice - currentPrice);
-        cash += shortProceeds * (1 - transactionCost);
+      if (priceRow) {
+        turnoverNotional += position.shares * priceRow.price;
       }
     }
 
-    // Add any existing cash
-    cash += portfolioValue - this.calculatePortfolioValue(oldPositions, date, 0);
+    // NAV after closing costs
+    let nav = portfolioValue - (turnoverNotional * transactionCost);
 
-    // Step 2: Allocate 50% to longs, 50% to shorts
-    const longCapital = cash * 0.5;
-    const shortCapital = cash * 0.5;
+    // Target 50% long exposure, 50% short exposure (by notional)
+    const targetLongNotional = nav * 0.5;
+    const targetShortNotional = nav * 0.5;
 
-    // Step 3: Buy new long positions (equal weight)
+    // Build new long positions (equal weight)
+    let actualLongNotional = 0;
     if (targets.long.length > 0) {
-      const perStockLong = longCapital / targets.long.length;
+      const perStockLong = targetLongNotional / targets.long.length;
 
       for (const stock of targets.long) {
         const priceRow = this.stmtGetLatestPrice.get(stock.symbol, date);
-        if (!priceRow) continue;
+        if (!priceRow || priceRow.price <= 0) continue;
 
         const price = priceRow.price;
-        const sharesToBuy = Math.floor(perStockLong / price);
+        const shares = Math.floor(perStockLong / price);
 
-        if (sharesToBuy > 0) {
-          const cost = sharesToBuy * price * (1 + transactionCost);
-
+        if (shares > 0) {
           newPositions.set(stock.symbol, {
-            shares: sharesToBuy,
+            shares,
             avgPrice: price,
             side: 'long'
           });
-
-          cash -= cost;
+          actualLongNotional += shares * price;
         }
       }
     }
 
-    // Step 4: Sell new short positions (equal weight)
+    // Build new short positions (equal weight)
+    let actualShortNotional = 0;
     if (targets.short.length > 0) {
-      const perStockShort = shortCapital / targets.short.length;
+      const perStockShort = targetShortNotional / targets.short.length;
 
       for (const stock of targets.short) {
         const priceRow = this.stmtGetLatestPrice.get(stock.symbol, date);
-        if (!priceRow) continue;
+        if (!priceRow || priceRow.price <= 0) continue;
 
         const price = priceRow.price;
-        const sharesToShort = Math.floor(perStockShort / price);
+        const shares = Math.floor(perStockShort / price);
 
-        if (sharesToShort > 0) {
-          const proceeds = sharesToShort * price * (1 - transactionCost);
-
+        if (shares > 0) {
           newPositions.set(stock.symbol, {
-            shares: sharesToShort,
+            shares,
             avgPrice: price,
             side: 'short'
           });
-
-          cash += proceeds;
+          actualShortNotional += shares * price;
         }
       }
     }
 
-    return { positions: newPositions, capital: cash };
+    // Opening transaction costs
+    const openingCosts = (actualLongNotional + actualShortNotional) * transactionCost;
+
+    // Remaining cash = NAV - long notional (shorts are funded by borrowed shares)
+    // We only "spend" cash on longs; shorts generate proceeds that offset the liability
+    const remainingCash = nav - actualLongNotional - openingCosts;
+
+    return { positions: newPositions, capital: remainingCash };
   }
 
   /**

@@ -910,6 +910,154 @@
 }
 
 /* ========================================
+   Custom Factor Selection
+   ======================================== */
+
+.factor-count {
+  font-size: var(--text-xs);
+  color: var(--color-ai-violet);
+  font-weight: var(--font-medium);
+  margin-left: var(--space-2);
+}
+
+.loading-factors {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.custom-factors-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  background: var(--bg-tertiary);
+}
+
+.custom-factor-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+}
+
+.custom-factor-item:hover {
+  background: var(--bg-hover);
+  border-color: var(--color-ai-violet);
+}
+
+.custom-factor-item.selected {
+  background: rgba(124, 58, 237, 0.08);
+  border-color: var(--color-ai-violet);
+}
+
+.custom-factor-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-ai-violet);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.factor-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.factor-name {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.factor-formula {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-family: 'Monaco', 'Courier New', monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.factor-ic {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.factor-stats {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+
+.stat-item {
+  font-size: var(--text-2xs);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.no-custom-factors {
+  padding: var(--space-5);
+  text-align: center;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+}
+
+.no-custom-factors p {
+  margin: var(--space-2) 0;
+  font-size: var(--text-sm);
+}
+
+.no-custom-factors .hint {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  line-height: 1.6;
+}
+
+/* Custom Factor Badge in Feature Importance */
+
+.custom-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--text-2xs);
+  padding: var(--space-0-5) var(--space-2);
+  margin-left: var(--space-2);
+  background: linear-gradient(135deg, var(--color-ai-violet), var(--color-ai-blue));
+  color: white;
+  border-radius: var(--radius-full);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+
+.importance-item.custom-factor {
+  border-left: 3px solid var(--color-ai-violet);
+}
+
+/* ========================================
    Responsive Design
    ======================================== */
 
@@ -949,5 +1097,13 @@
 
   .data-stat.wide {
     grid-column: span 1;
+  }
+
+  .custom-factors-list {
+    max-height: 200px;
+  }
+
+  .factor-stats {
+    display: none;
   }
 }

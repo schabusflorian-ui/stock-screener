@@ -3,6 +3,16 @@
 
 const { createParser, validateFormula } = require('./factorFormulaParser');
 
+// Quality filter defaults for factor universe
+// These filters exclude garbage stocks (penny stocks, micro-caps, illiquid stocks)
+const DEFAULT_QUALITY_FILTERS = {
+  minMarketCap: 300_000_000,      // $300M (small-cap+)
+  minAvgVolume: 50_000,           // 50K shares/day minimum
+  minPrice: 5.0,                  // No penny stocks (< $5)
+  maxDebtToEquity: 5.0,           // Exclude extremely leveraged (> 5x)
+  minDataQualityScore: 0.4        // At least 40% data completeness
+};
+
 /**
  * CustomFactorCalculator
  *

@@ -2624,8 +2624,12 @@ export const mlCombinerAPI = {
   getStatus: () => api.get('/validation/ml/status', { timeout: 60000 }),
 
   // Train the ML signal combiner (long-running operation)
-  train: (lookbackDays = 730) =>
-    apiLong.post('/validation/ml/train', { lookbackDays }),
+  train: (lookbackDays = 730, customFactorIds = []) =>
+    apiLong.post('/validation/ml/train', { lookbackDays, customFactorIds }),
+
+  // Get available custom factors for ML training
+  getAvailableFactors: () =>
+    api.get('/validation/ml/available-factors'),
 
   // Combine signals using ML model
   combine: (signals, context = {}, horizon = 21) =>
@@ -2800,7 +2804,11 @@ export const factorsAPI = {
   getCurrentRegime: () => api.get('/factors/regime'),
 
   // Get factor statistics
-  getStats: () => api.get('/factors/stats')
+  getStats: () => api.get('/factors/stats'),
+
+  // Custom factor operations
+  backfill: ({ factorId, formula, startDate, endDate, frequency = 'monthly' }) =>
+    apiLong.post('/factors/backfill', { factorId, formula, startDate, endDate, frequency })
 };
 
 // ============================================

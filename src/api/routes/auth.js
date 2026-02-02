@@ -60,15 +60,17 @@ router.get('/google', (req, res, next) => {
 // GET /api/auth/google/callback - Google OAuth callback
 router.get('/google/callback', (req, res, next) => {
   if (!passport || !process.env.GOOGLE_CLIENT_ID) {
-    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3001'}/login?error=oauth_not_configured`);
+    // Use relative redirect - works in all environments
+    return res.redirect('/login?error=oauth_not_configured');
   }
 
   passport.authenticate('google', {
-    failureRedirect: `${process.env.FRONTEND_URL || 'http://localhost:3001'}/login?error=auth_failed`
+    // Use relative redirect - works in all environments
+    failureRedirect: '/login?error=auth_failed'
   })(req, res, next);
 }, (req, res) => {
-  // Successful authentication
-  res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3001'}/`);
+  // Successful authentication - redirect to homepage
+  res.redirect('/');
 });
 
 // GET /api/auth/me - Get current user

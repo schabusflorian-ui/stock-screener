@@ -8,7 +8,7 @@ import {
 } from 'recharts';
 import {
   Loader, AlertTriangle, CheckCircle, XCircle,
-  Calendar, Target, Layers
+  Calendar, Target, Layers, RefreshCw
 } from '../../icons';
 
 // Default walk-forward configuration
@@ -34,6 +34,8 @@ export default function WalkForwardVisualization({
   const [error, setError] = useState(null);
   const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [hasRun, setHasRun] = useState(false);
+  const [dataSource, setDataSource] = useState(null); // 'real' | 'mock' | null
+  const [apiError, setApiError] = useState(null);
 
   // Auto-run when triggered centrally
   useEffect(() => {
@@ -49,6 +51,8 @@ export default function WalkForwardVisualization({
 
     setLoading(true);
     setError(null);
+    setApiError(null);
+    setDataSource(null);
 
     try {
       const response = await fetch('/api/factors/walk-forward', {
@@ -63,11 +67,13 @@ export default function WalkForwardVisualization({
 
       const data = await response.json();
 
+      // Check standardized response format
       if (!data.success) {
         throw new Error(data.error || 'Walk-forward validation failed');
       }
 
       setResults(data.data);
+      setDataSource('real');
       setHasRun(true);
 
       if (onRunWalkForward) {
@@ -75,12 +81,16 @@ export default function WalkForwardVisualization({
       }
 
     } catch (err) {
+      console.error('Walk-forward API error:', err.message);
+      setApiError(err.message);
       setError(err.message);
 
-      // Generate mock results for demo
+      // Generate mock results for demo with clear indication
       const mockResults = generateMockWalkForwardResults(config);
       setResults(mockResults);
+      setDataSource('mock');
       setHasRun(true);
+
     } finally {
       setLoading(false);
     }
@@ -266,22 +276,16 @@ export default function WalkForwardVisualization({
 
   return (
     <div className="walk-forward-viz">
-      {/* Header */}
-      <div className="wf-header">
-        <div className="header-title">
-          <Layers size={20} />
-          <h3>Walk-Forward Validation</h3>
-          {factor && (
-            <span className="header-factor-name">— {factor.name}</span>
-          )}
-        </div>
-        {loading && (
-          <div className="header-status">
+      {/* Loading State */}
+      {loading && (
+        <div className="analysis-loading-bar">
+          <div className="loading-content">
             <Loader size={16} className="spin" />
-            <span>Running validation...</span>
+            <span>Running walk-forward validation...</span>
           </div>
-        )}
-      </div>
+          <div className="loading-progress" />
+        </div>
+      )}
 
       {/* Configuration */}
       <div className="wf-config">
@@ -334,6 +338,46 @@ export default function WalkForwardVisualization({
         <div className="wf-error">
           <AlertTriangle size={16} />
           <span>{error}</span>
+        </div>
+      )}
+
+      {/* Mock Data Warning Banner */}
+      {dataSource === 'mock' && apiError && (
+        <div className="mock-data-warning">
+          <div className="warning-icon">
+            <AlertTriangle size={20} />
+          </div>
+          <div className="warning-content">
+            <div className="warning-title">Showing Simulated Results</div>
+            <div className="warning-message">
+              Unable to fetch real data: {apiError}
+            </div>
+            <div className="warning-note">
+              The results below are computer-generated for demonstration purposes only.
+              They do not represent actual walk-forward validation performance.
+            </div>
+            <button onClick={runWalkForward} className="warning-retry-btn">
+              <RefreshCw size={14} />
+              Retry with Real Data
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Data Source Badge */}
+      {dataSource && results && (
+        <div className={`data-source-badge badge-${dataSource}`}>
+          {dataSource === 'real' ? (
+            <>
+              <CheckCircle size={14} />
+              <span>Real Data</span>
+            </>
+          ) : (
+            <>
+              <AlertTriangle size={14} />
+              <span>Simulated Data</span>
+            </>
+          )}
         </div>
       )}
 

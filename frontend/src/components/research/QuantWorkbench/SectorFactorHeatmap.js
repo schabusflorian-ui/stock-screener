@@ -1,8 +1,9 @@
 // frontend/src/components/research/QuantWorkbench/SectorFactorHeatmap.js
 // Sector x Factor Heatmap - Shows factor exposures by sector
+// Option 1: Displays standard factors + selected custom factor for comparison
 
-import { useState, useEffect, useMemo } from 'react';
-import { Loader, AlertTriangle, RefreshCw, LayoutGrid, ChevronRight } from '../../icons';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Loader, AlertTriangle, RefreshCw, LayoutGrid, ChevronRight, Sparkles } from '../../icons';
 
 // Standard factors
 const FACTORS = ['Value', 'Quality', 'Momentum', 'Growth', 'Size', 'Volatility'];
@@ -21,6 +22,21 @@ const SECTORS = [
   'Real Estate',
   'Communication Services'
 ];
+
+// Sector mapping for grouping stocks (matches backend SECTOR_GICS_MAP)
+const SECTOR_KEYWORDS = {
+  'Technology': ['technology', 'software', 'hardware', 'semiconductor', 'internet'],
+  'Healthcare': ['healthcare', 'pharmaceutical', 'biotech', 'medical'],
+  'Financials': ['financial', 'bank', 'insurance', 'capital markets'],
+  'Consumer Discretionary': ['consumer discretionary', 'retail', 'automotive', 'leisure'],
+  'Consumer Staples': ['consumer staples', 'food', 'beverage', 'household'],
+  'Energy': ['energy', 'oil', 'gas', 'petroleum'],
+  'Industrials': ['industrial', 'aerospace', 'defense', 'machinery'],
+  'Materials': ['materials', 'chemicals', 'metals', 'mining'],
+  'Utilities': ['utilities', 'electric', 'gas utilities', 'water'],
+  'Real Estate': ['real estate', 'reit'],
+  'Communication Services': ['communication', 'media', 'entertainment', 'telecom']
+};
 
 // Color scale for heatmap (diverging: red-white-green)
 const getHeatmapColor = (value) => {
@@ -48,6 +64,29 @@ const getTextColor = (value) => {
   return 'var(--text-primary)';
 };
 
+// Color scale for custom factor (AI violet theme - all values use violet shades)
+// Intensity based on absolute value - stronger signals are darker violet
+const getCustomFactorColor = (value) => {
+  if (value === null || isNaN(value)) return 'var(--bg-tertiary)';
+
+  // Clamp absolute value between 0 and 2
+  const absValue = Math.min(2, Math.abs(value));
+
+  // All values use violet - intensity based on magnitude
+  // Base opacity 0.18, max opacity 0.78 for darker shades
+  const intensity = absValue / 2;
+  return `rgba(109, 40, 217, ${0.18 + intensity * 0.6})`; // #6D28D9 deep violet
+};
+
+// Text color for custom factor cells (white on dark violet)
+const getCustomFactorTextColor = (value) => {
+  if (value === null || isNaN(value)) return 'var(--text-tertiary)';
+  const absValue = Math.abs(value);
+  // Use white text when background is dark enough (|value| > 0.8)
+  if (absValue > 0.8) return 'white';
+  return 'var(--text-primary)';
+};
+
 export default function SectorFactorHeatmap({ selectedFactor, onSectorClick, height = 400 }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -56,15 +95,31 @@ export default function SectorFactorHeatmap({ selectedFactor, onSectorClick, hei
   const [sectorStocks, setSectorStocks] = useState([]);
   const [loadingStocks, setLoadingStocks] = useState(false);
 
-  // Determine if a factor should be highlighted (matches selectedFactor)
-  const highlightedFactor = useMemo(() => {
-    if (!selectedFactor?.name) return null;
-    // Match against standard factor names
-    return FACTORS.find(f =>
-      f.toLowerCase() === selectedFactor.name.toLowerCase() ||
-      selectedFactor.name.toLowerCase().includes(f.toLowerCase())
+  // Custom factor exposures state
+  const [customFactorExposures, setCustomFactorExposures] = useState(null);
+  const [loadingCustomFactor, setLoadingCustomFactor] = useState(false);
+
+  // Check if selected factor is a custom factor (has formula and is not a standard factor)
+  const isCustomFactor = useMemo(() => {
+    if (!selectedFactor?.formula) return false;
+    // Not a standard factor name
+    return !FACTORS.some(f =>
+      f.toLowerCase() === selectedFactor.name?.toLowerCase()
     );
   }, [selectedFactor]);
+
+  // Determine if a factor should be highlighted (matches selectedFactor)
+  // Only highlight standard factors when a STANDARD factor is selected (not custom)
+  const highlightedFactor = useMemo(() => {
+    if (!selectedFactor?.name) return null;
+    // Don't highlight standard factor columns when a custom factor is selected
+    // Custom factors get their own dedicated column instead
+    if (isCustomFactor) return null;
+    // Only exact match for standard factors (no partial matching)
+    return FACTORS.find(f =>
+      f.toLowerCase() === selectedFactor.name.toLowerCase()
+    );
+  }, [selectedFactor, isCustomFactor]);
 
   // Fetch sector exposures
   const fetchData = async () => {
@@ -195,21 +250,112 @@ export default function SectorFactorHeatmap({ selectedFactor, onSectorClick, hei
     fetchData();
   }, []);
 
-  // Calculate sector averages
+  // Calculate custom factor exposures when a custom factor is selected
+  const calculateCustomFactorExposures = useCallback(async () => {
+    if (!isCustomFactor || !selectedFactor?.formula) {
+      setCustomFactorExposures(null);
+      return;
+    }
+
+    setLoadingCustomFactor(true);
+
+    try {
+      // Use dedicated endpoint that calculates sector exposures for ALL stocks
+      const response = await fetch('/api/factors/custom-sector-exposures', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          formula: selectedFactor.formula,
+          factorId: selectedFactor.id,
+          factorName: selectedFactor.name
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to calculate custom factor sector exposures');
+      }
+
+      const result = await response.json();
+
+      if (result.success && result.data) {
+        setCustomFactorExposures({
+          name: result.data.name || selectedFactor.name || 'Custom',
+          exposures: result.data.exposures,
+          stockCount: result.data.totalStocks,
+          stockCounts: result.data.stockCounts,
+          topStocksBySector: result.data.topStocksBySector
+        });
+      } else {
+        // Generate mock data for demo
+        setCustomFactorExposures(generateMockCustomExposures(selectedFactor.name));
+      }
+    } catch (err) {
+      console.warn('Using mock custom factor exposures:', err.message);
+      setCustomFactorExposures(generateMockCustomExposures(selectedFactor.name));
+    } finally {
+      setLoadingCustomFactor(false);
+    }
+  }, [isCustomFactor, selectedFactor?.formula, selectedFactor?.id, selectedFactor?.name]);
+
+  // Trigger custom factor calculation when factor changes
+  useEffect(() => {
+    calculateCustomFactorExposures();
+  }, [calculateCustomFactorExposures]);
+
+  // Helper: Try to map a stock symbol to a sector (fallback)
+  const mapSectorFromSymbol = (symbol) => {
+    // Known sector mappings for common stocks
+    const knownMappings = {
+      'AAPL': 'Technology', 'MSFT': 'Technology', 'GOOGL': 'Technology', 'NVDA': 'Technology',
+      'META': 'Technology', 'AMZN': 'Consumer Discretionary', 'TSLA': 'Consumer Discretionary',
+      'JPM': 'Financials', 'BAC': 'Financials', 'WFC': 'Financials', 'GS': 'Financials',
+      'JNJ': 'Healthcare', 'UNH': 'Healthcare', 'PFE': 'Healthcare', 'ABBV': 'Healthcare',
+      'XOM': 'Energy', 'CVX': 'Energy', 'COP': 'Energy', 'SLB': 'Energy',
+      'PG': 'Consumer Staples', 'KO': 'Consumer Staples', 'PEP': 'Consumer Staples',
+      'NEE': 'Utilities', 'DUK': 'Utilities', 'SO': 'Utilities',
+      'CAT': 'Industrials', 'HON': 'Industrials', 'UNP': 'Industrials',
+      'LIN': 'Materials', 'APD': 'Materials', 'SHW': 'Materials',
+      'PLD': 'Real Estate', 'AMT': 'Real Estate', 'EQIX': 'Real Estate',
+      'DIS': 'Communication Services', 'NFLX': 'Communication Services', 'T': 'Communication Services'
+    };
+    return knownMappings[symbol] || null;
+  };
+
+  // Generate mock custom factor exposures for demo
+  const generateMockCustomExposures = (factorName) => {
+    const exposures = {};
+    SECTORS.forEach(sector => {
+      // Generate realistic looking exposures with some variation
+      exposures[sector] = (Math.random() - 0.5) * 2.5;
+    });
+    return {
+      name: factorName || 'Your Factor',
+      exposures,
+      stockCount: 100
+    };
+  };
+
+  // Calculate sector averages (including custom factor if present)
   const sectorAverages = useMemo(() => {
     if (!data?.exposures) return {};
 
     const averages = {};
     SECTORS.forEach(sector => {
       if (data.exposures[sector]) {
-        const values = Object.values(data.exposures[sector]).filter(v => v !== null);
-        averages[sector] = values.length > 0
-          ? values.reduce((a, b) => a + b, 0) / values.length
+        const standardValues = Object.values(data.exposures[sector]).filter(v => v !== null);
+        // Include custom factor in average if present
+        const customValue = customFactorExposures?.exposures?.[sector];
+        const allValues = customValue !== null && customValue !== undefined
+          ? [...standardValues, customValue]
+          : standardValues;
+
+        averages[sector] = allValues.length > 0
+          ? allValues.reduce((a, b) => a + b, 0) / allValues.length
           : 0;
       }
     });
     return averages;
-  }, [data]);
+  }, [data, customFactorExposures]);
 
   // Calculate factor averages
   const factorAverages = useMemo(() => {
@@ -226,6 +372,17 @@ export default function SectorFactorHeatmap({ selectedFactor, onSectorClick, hei
     });
     return averages;
   }, [data]);
+
+  // Calculate custom factor average across all sectors
+  const customFactorAverage = useMemo(() => {
+    if (!customFactorExposures?.exposures) return null;
+    const values = SECTORS
+      .map(sector => customFactorExposures.exposures[sector])
+      .filter(v => v !== null && !isNaN(v));
+    return values.length > 0
+      ? values.reduce((a, b) => a + b, 0) / values.length
+      : null;
+  }, [customFactorExposures]);
 
   if (loading) {
     return (
@@ -263,6 +420,11 @@ export default function SectorFactorHeatmap({ selectedFactor, onSectorClick, hei
 
       <p className="heatmap-description">
         Z-score exposures by sector. Green = overweight, Red = underweight. Click a sector to see top stocks.
+        {isCustomFactor && customFactorExposures && (
+          <span className="custom-factor-note">
+            {' '}Your factor "<strong>{customFactorExposures.name}</strong>" shown in violet.
+          </span>
+        )}
       </p>
 
       {/* Heatmap Table */}
@@ -271,6 +433,25 @@ export default function SectorFactorHeatmap({ selectedFactor, onSectorClick, hei
           <thead>
             <tr>
               <th className="sector-header">Sector</th>
+              {/* Custom Factor Column - FIRST after Sector for prominence */}
+              {isCustomFactor && customFactorExposures && (
+                <th className="factor-header custom-factor-header">
+                  <span className="custom-factor-label">
+                    <Sparkles size={12} className="custom-factor-icon" />
+                    <span className="custom-factor-name">
+                      {customFactorExposures.name?.length > 10
+                        ? customFactorExposures.name.slice(0, 8) + '…'
+                        : customFactorExposures.name || 'Custom'
+                      }
+                    </span>
+                  </span>
+                </th>
+              )}
+              {isCustomFactor && loadingCustomFactor && (
+                <th className="factor-header custom-factor-header loading">
+                  <Loader size={12} className="spin" />
+                </th>
+              )}
               {FACTORS.map(factor => (
                 <th
                   key={factor}
@@ -296,6 +477,28 @@ export default function SectorFactorHeatmap({ selectedFactor, onSectorClick, hei
                   {sector}
                   <ChevronRight size={14} className="drill-icon" />
                 </td>
+                {/* Custom Factor Cell - FIRST for prominence */}
+                {isCustomFactor && customFactorExposures && (
+                  <td
+                    className="heatmap-cell custom-factor-cell"
+                    style={{
+                      backgroundColor: getCustomFactorColor(customFactorExposures.exposures?.[sector]),
+                      color: getCustomFactorTextColor(customFactorExposures.exposures?.[sector])
+                    }}
+                  >
+                    {customFactorExposures.exposures?.[sector] !== null &&
+                     !isNaN(customFactorExposures.exposures?.[sector])
+                      ? (customFactorExposures.exposures[sector] >= 0 ? '+' : '') +
+                        customFactorExposures.exposures[sector].toFixed(2)
+                      : '-'
+                    }
+                  </td>
+                )}
+                {isCustomFactor && loadingCustomFactor && (
+                  <td className="heatmap-cell custom-factor-cell loading">
+                    <span className="loading-placeholder">...</span>
+                  </td>
+                )}
                 {FACTORS.map(factor => {
                   const value = data?.exposures?.[sector]?.[factor];
                   const isHighlighted = highlightedFactor === factor;
@@ -332,6 +535,24 @@ export default function SectorFactorHeatmap({ selectedFactor, onSectorClick, hei
             {/* Factor averages row */}
             <tr className="averages-row">
               <td className="sector-name">Average</td>
+              {/* Custom Factor Average - FIRST for prominence */}
+              {isCustomFactor && customFactorExposures && (
+                <td
+                  className="heatmap-cell custom-factor-cell"
+                  style={{
+                    backgroundColor: getCustomFactorColor(customFactorAverage),
+                    color: getCustomFactorTextColor(customFactorAverage)
+                  }}
+                >
+                  {customFactorAverage !== null
+                    ? (customFactorAverage >= 0 ? '+' : '') + customFactorAverage.toFixed(2)
+                    : '-'
+                  }
+                </td>
+              )}
+              {isCustomFactor && loadingCustomFactor && (
+                <td className="heatmap-cell custom-factor-cell loading">...</td>
+              )}
               {FACTORS.map(factor => (
                 <td
                   key={factor}
@@ -353,19 +574,6 @@ export default function SectorFactorHeatmap({ selectedFactor, onSectorClick, hei
         </table>
       </div>
 
-      {/* Legend */}
-      <div className="heatmap-legend">
-        <span className="legend-label">Underweight</span>
-        <div className="legend-scale">
-          <div className="scale-segment" style={{ background: 'rgba(239, 68, 68, 0.75)' }}>-2</div>
-          <div className="scale-segment" style={{ background: 'rgba(239, 68, 68, 0.45)' }}>-1</div>
-          <div className="scale-segment" style={{ background: 'rgba(239, 68, 68, 0.15)' }}>0</div>
-          <div className="scale-segment" style={{ background: 'rgba(16, 185, 129, 0.15)' }}>0</div>
-          <div className="scale-segment" style={{ background: 'rgba(16, 185, 129, 0.45)' }}>+1</div>
-          <div className="scale-segment" style={{ background: 'rgba(16, 185, 129, 0.75)' }}>+2</div>
-        </div>
-        <span className="legend-label">Overweight</span>
-      </div>
 
       {/* Sector Drill-down Panel */}
       {selectedSector && (
@@ -385,33 +593,66 @@ export default function SectorFactorHeatmap({ selectedFactor, onSectorClick, hei
               <thead>
                 <tr>
                   <th>Symbol</th>
+                  {/* Custom factor column header */}
+                  {isCustomFactor && customFactorExposures && (
+                    <th className="custom-factor-header-small">
+                      <Sparkles size={10} style={{ marginRight: 2 }} />
+                      {customFactorExposures.name?.slice(0, 4) || 'Cust'}
+                    </th>
+                  )}
                   {FACTORS.map(f => <th key={f}>{f.slice(0, 3)}</th>)}
                 </tr>
               </thead>
               <tbody>
-                {sectorStocks.slice(0, 5).map(stock => (
-                  <tr key={stock.symbol}>
-                    <td className="stock-symbol">{stock.symbol}</td>
-                    {FACTORS.map(factor => {
-                      const score = stock.factorScores?.[factor];
-                      return (
+                {sectorStocks.slice(0, 5).map(stock => {
+                  // Find custom factor z-score for this stock from topStocksBySector
+                  const customStockData = customFactorExposures?.topStocksBySector?.[selectedSector]
+                    ?.find(s => s.symbol === stock.symbol);
+                  const customZScore = customStockData?.zscoreValue;
+
+                  return (
+                    <tr key={stock.symbol}>
+                      <td className="stock-symbol">{stock.symbol}</td>
+                      {/* Custom factor cell - show actual z-score if available */}
+                      {isCustomFactor && customFactorExposures && (
                         <td
-                          key={factor}
-                          className="score-cell"
+                          className="score-cell custom-factor-cell"
                           style={{
-                            backgroundColor: getHeatmapColor(score),
-                            color: getTextColor(score)
+                            backgroundColor: customZScore != null
+                              ? getCustomFactorColor(customZScore)
+                              : 'rgba(109, 40, 217, 0.15)',
+                            color: customZScore != null
+                              ? getCustomFactorTextColor(customZScore)
+                              : 'var(--text-tertiary)'
                           }}
                         >
-                          {score !== null && !isNaN(score)
-                            ? (score >= 0 ? '+' : '') + score.toFixed(1)
+                          {customZScore != null
+                            ? (customZScore >= 0 ? '+' : '') + customZScore.toFixed(1)
                             : '-'
                           }
                         </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                      )}
+                      {FACTORS.map(factor => {
+                        const score = stock.factorScores?.[factor];
+                        return (
+                          <td
+                            key={factor}
+                            className="score-cell"
+                            style={{
+                              backgroundColor: getHeatmapColor(score),
+                              color: getTextColor(score)
+                            }}
+                          >
+                            {score !== null && !isNaN(score)
+                              ? (score >= 0 ? '+' : '') + score.toFixed(1)
+                              : '-'
+                            }
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

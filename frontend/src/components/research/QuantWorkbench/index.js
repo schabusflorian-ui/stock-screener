@@ -18,6 +18,7 @@ import SignalGenerator from './SignalGenerator';
 import SectorFactorHeatmap from './SectorFactorHeatmap';
 import WalkForwardVisualization from './WalkForwardVisualization';
 import FactorBacktest from './FactorBacktest';
+import BackfillPanel from './BackfillPanel';
 import './QuantWorkbench.css';
 
 // Lazy load heavier components
@@ -332,23 +333,13 @@ export default function QuantWorkbench({ standalone = false }) {
                     <SignalGenerator factor={selectedFactor} />
                   </div>
 
-                  {/* Secondary Actions Grid */}
-                  <div className="deploy-actions-grid">
-                    {/* ML Export Card */}
-                    <div className="action-card ml-card">
-                      <div className="card-icon">
-                        <Cpu size={24} />
-                      </div>
-                      <div className="card-content">
-                        <h4>Export to ML</h4>
-                        <p>Use this factor as a feature in machine learning models</p>
-                      </div>
-                      <button className="card-action" onClick={goToMLOps}>
-                        Go to ML Ops
-                      </button>
-                    </div>
+                  {/* ML Export Section: Backfill for ML Training */}
+                  <div className="deploy-section ml-export">
+                    <BackfillPanel factor={selectedFactor} />
+                  </div>
 
-                    {/* Quick Links */}
+                  {/* Quick Links Card */}
+                  <div className="deploy-actions-grid">
                     <div className="action-card links-card">
                       <div className="card-icon">
                         <Target size={24} />
@@ -360,6 +351,12 @@ export default function QuantWorkbench({ standalone = false }) {
                             <button onClick={() => setActiveTab('test')}>
                               <TestTube size={14} />
                               Run validation tests
+                            </button>
+                          </li>
+                          <li>
+                            <button onClick={goToMLOps}>
+                              <Cpu size={14} />
+                              Go to ML Ops
                             </button>
                           </li>
                           <li>

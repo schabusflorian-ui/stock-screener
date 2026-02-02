@@ -823,9 +823,9 @@ router.get('/ml/importance', (req, res) => {
 router.get('/ml/available-factors', (req, res) => {
   try {
     const { TrainingDataAssembler } = require('../../services/ml/trainingDataAssembler');
-    const { db } = require('../../database');
+    const database = require('../../database');
 
-    const assembler = new TrainingDataAssembler(db);
+    const assembler = new TrainingDataAssembler(database.getDatabase());
     const factors = assembler.getAvailableCustomFactors();
 
     res.json({

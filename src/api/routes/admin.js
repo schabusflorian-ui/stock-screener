@@ -14,7 +14,7 @@ router.use(requireAdmin);
 // ============================================
 
 // GET /api/admin/users - List all users
-router.get('/users', (req, res) => {
+router.get('/users', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
     const { limit = 100, offset = 0, search = '' } = req.query;
@@ -68,7 +68,7 @@ router.get('/users', (req, res) => {
 });
 
 // GET /api/admin/users/:id - Get user details
-router.get('/users/:id', (req, res) => {
+router.get('/users/:id', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
     const userId = req.params.id;
@@ -129,7 +129,7 @@ router.get('/users/:id', (req, res) => {
 });
 
 // PUT /api/admin/users/:id - Update user
-router.put('/users/:id', (req, res) => {
+router.put('/users/:id', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
     const userId = req.params.id;
@@ -186,7 +186,7 @@ router.put('/users/:id', (req, res) => {
 });
 
 // DELETE /api/admin/users/:id - Delete user (soft delete by default)
-router.delete('/users/:id', (req, res) => {
+router.delete('/users/:id', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
     const userId = req.params.id;
@@ -240,7 +240,7 @@ router.delete('/users/:id', (req, res) => {
 });
 
 // POST /api/admin/users/:id/grant-admin - Grant admin access
-router.post('/users/:id/grant-admin', (req, res) => {
+router.post('/users/:id/grant-admin', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
     const userId = req.params.id;
@@ -266,7 +266,7 @@ router.post('/users/:id/grant-admin', (req, res) => {
 });
 
 // POST /api/admin/users/:id/revoke-admin - Revoke admin access
-router.post('/users/:id/revoke-admin', (req, res) => {
+router.post('/users/:id/revoke-admin', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
     const userId = req.params.id;
@@ -301,7 +301,7 @@ router.post('/users/:id/revoke-admin', (req, res) => {
 // ============================================
 
 // GET /api/admin/portfolios - List all portfolios across all users
-router.get('/portfolios', (req, res) => {
+router.get('/portfolios', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
     const { limit = 100, offset = 0, userId = null } = req.query;
@@ -364,7 +364,7 @@ router.get('/portfolios', (req, res) => {
 });
 
 // POST /api/admin/portfolios/:id/transfer - Transfer portfolio to another user
-router.post('/portfolios/:id/transfer', (req, res) => {
+router.post('/portfolios/:id/transfer', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
     const portfolioId = parseInt(req.params.id);
@@ -410,7 +410,7 @@ router.post('/portfolios/:id/transfer', (req, res) => {
 // ============================================
 
 // GET /api/admin/stats - Get system statistics
-router.get('/stats', (req, res) => {
+router.get('/stats', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
 
@@ -464,7 +464,7 @@ router.get('/stats', (req, res) => {
 // ============================================
 
 // GET /api/admin/sessions - List active sessions
-router.get('/sessions', (req, res) => {
+router.get('/sessions', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
 
@@ -504,7 +504,7 @@ router.get('/sessions', (req, res) => {
 });
 
 // DELETE /api/admin/sessions/:userId - Invalidate all sessions for a user
-router.delete('/sessions/:userId', (req, res) => {
+router.delete('/sessions/:userId', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
     const userId = req.params.userId;

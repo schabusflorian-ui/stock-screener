@@ -1,8 +1,14 @@
 /**
- * Demo Admin Account Setup Script
+ * Demo Admin Account Setup Script (Backtest-Based)
  *
- * Creates 10 diverse AI trading agents with simulated trading history
- * for demo purposes. Deletes all existing agents first.
+ * Creates 10 diverse AI trading agents with REAL trading history
+ * using actual historical prices from the daily_prices table.
+ *
+ * Each agent gets:
+ * - Actual portfolio positions bought at historical prices
+ * - Real P&L based on price movements
+ * - Daily snapshots for performance tracking
+ * - Signal history linked to executed trades
  *
  * Usage: node scripts/setup-demo-agents.js
  */
@@ -17,7 +23,7 @@ const db = new Database(dbPath);
 // Import agent service after DB is ready
 const agentService = require('../src/services/agent/agentService');
 
-// Demo agent configurations
+// Demo agent configurations with target holdings
 const demoAgents = [
   {
     name: 'Buffett Value Hunter',
@@ -32,7 +38,9 @@ const demoAgents = [
     technical_weight: 0.05,
     max_position_size: 0.08,
     max_sector_exposure: 0.25,
-    simulatedDays: 30
+    simulatedDays: 30,
+    targetPositions: 8,
+    stockPool: ['BRK.B', 'KO', 'AXP', 'BAC', 'AAPL', 'CVX', 'JNJ', 'PG', 'WMT', 'JPM']
   },
   {
     name: 'Momentum Surfer',
@@ -47,7 +55,9 @@ const demoAgents = [
     valuation_weight: 0.05,
     max_position_size: 0.10,
     max_sector_exposure: 0.30,
-    simulatedDays: 21
+    simulatedDays: 21,
+    targetPositions: 10,
+    stockPool: ['NVDA', 'META', 'TSLA', 'AMD', 'NFLX', 'AVGO', 'GOOGL', 'AMZN', 'CRM', 'NOW']
   },
   {
     name: 'Sentiment Scanner',
@@ -62,7 +72,9 @@ const demoAgents = [
     fundamental_weight: 0.05,
     max_position_size: 0.08,
     max_sector_exposure: 0.25,
-    simulatedDays: 14
+    simulatedDays: 14,
+    targetPositions: 6,
+    stockPool: ['TSLA', 'PLTR', 'AMD', 'NVDA', 'META', 'NFLX', 'DIS', 'SBUX']
   },
   {
     name: 'Smart Money Tracker',
@@ -77,7 +89,9 @@ const demoAgents = [
     technical_weight: 0.05,
     max_position_size: 0.08,
     max_sector_exposure: 0.25,
-    simulatedDays: 21
+    simulatedDays: 21,
+    targetPositions: 8,
+    stockPool: ['AAPL', 'MSFT', 'GOOGL', 'META', 'AMZN', 'BRK.B', 'JPM', 'V', 'UNH', 'JNJ']
   },
   {
     name: 'Balanced Alpha',
@@ -95,7 +109,9 @@ const demoAgents = [
     value_quality_weight: 0.12,
     max_position_size: 0.06,
     max_sector_exposure: 0.20,
-    simulatedDays: 30
+    simulatedDays: 30,
+    targetPositions: 12,
+    stockPool: ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'JNJ', 'PG', 'V', 'MA', 'HD', 'COST', 'UNH', 'MRK', 'ABBV', 'PEP']
   },
   {
     name: 'Safe Haven Guardian',
@@ -111,7 +127,9 @@ const demoAgents = [
     max_position_size: 0.05,
     max_sector_exposure: 0.15,
     max_drawdown: 0.10,
-    simulatedDays: 14
+    simulatedDays: 14,
+    targetPositions: 6,
+    stockPool: ['JNJ', 'PG', 'KO', 'PEP', 'WMT', 'COST', 'MCD', 'CL']
   },
   {
     name: 'Growth Accelerator',
@@ -126,7 +144,9 @@ const demoAgents = [
     valuation_weight: 0.05,
     max_position_size: 0.12,
     max_sector_exposure: 0.35,
-    simulatedDays: 7
+    simulatedDays: 7,
+    targetPositions: 8,
+    stockPool: ['NVDA', 'TSLA', 'AMD', 'PLTR', 'AVGO', 'CRM', 'NOW', 'PANW', 'SNOW', 'CRWD']
   },
   {
     name: 'Dividend Compounder',
@@ -141,7 +161,9 @@ const demoAgents = [
     technical_weight: 0.05,
     max_position_size: 0.08,
     max_sector_exposure: 0.25,
-    simulatedDays: 21
+    simulatedDays: 21,
+    targetPositions: 10,
+    stockPool: ['JNJ', 'PG', 'KO', 'PEP', 'MRK', 'ABBV', 'XOM', 'CVX', 'VZ', 'T', 'PM', 'MO']
   },
   {
     name: 'Quant Factor Alpha',
@@ -158,7 +180,9 @@ const demoAgents = [
     max_position_size: 0.07,
     max_sector_exposure: 0.25,
     use_factor_exposure: 1,
-    simulatedDays: 14
+    simulatedDays: 14,
+    targetPositions: 10,
+    stockPool: ['AAPL', 'MSFT', 'GOOGL', 'META', 'NVDA', 'V', 'MA', 'UNH', 'LLY', 'AVGO', 'JPM', 'HD']
   },
   {
     name: 'Contrarian Opportunist',
@@ -173,103 +197,257 @@ const demoAgents = [
     technical_weight: 0.05,
     max_position_size: 0.08,
     max_sector_exposure: 0.25,
-    simulatedDays: 1
+    simulatedDays: 21,
+    targetPositions: 7,
+    stockPool: ['XOM', 'CVX', 'INTC', 'VZ', 'T', 'BMY', 'PFE', 'GM', 'F', 'BAC']
   }
-];
-
-// Sample stocks for signal generation (top market cap)
-const sampleStocks = [
-  { symbol: 'AAPL', companyId: 1 },
-  { symbol: 'MSFT', companyId: 2 },
-  { symbol: 'GOOGL', companyId: 3 },
-  { symbol: 'AMZN', companyId: 4 },
-  { symbol: 'NVDA', companyId: 5 },
-  { symbol: 'META', companyId: 6 },
-  { symbol: 'TSLA', companyId: 7 },
-  { symbol: 'BRK.B', companyId: 8 },
-  { symbol: 'JPM', companyId: 9 },
-  { symbol: 'V', companyId: 10 },
-  { symbol: 'JNJ', companyId: 11 },
-  { symbol: 'WMT', companyId: 12 },
-  { symbol: 'PG', companyId: 13 },
-  { symbol: 'MA', companyId: 14 },
-  { symbol: 'HD', companyId: 15 },
-  { symbol: 'CVX', companyId: 16 },
-  { symbol: 'MRK', companyId: 17 },
-  { symbol: 'ABBV', companyId: 18 },
-  { symbol: 'PEP', companyId: 19 },
-  { symbol: 'KO', companyId: 20 },
-  { symbol: 'COST', companyId: 21 },
-  { symbol: 'AVGO', companyId: 22 },
-  { symbol: 'TMO', companyId: 23 },
-  { symbol: 'MCD', companyId: 24 },
-  { symbol: 'CSCO', companyId: 25 },
-  { symbol: 'ACN', companyId: 26 },
-  { symbol: 'ABT', companyId: 27 },
-  { symbol: 'DHR', companyId: 28 },
-  { symbol: 'LIN', companyId: 29 },
-  { symbol: 'CMCSA', companyId: 30 }
 ];
 
 /**
- * Get actual company IDs from database
+ * Get date string for X days ago
  */
-function getCompanyIds() {
-  const companies = db.prepare(`
-    SELECT id, symbol FROM companies
-    WHERE symbol IN (${sampleStocks.map(() => '?').join(',')})
-  `).all(sampleStocks.map(s => s.symbol));
-
-  const symbolToId = {};
-  for (const c of companies) {
-    symbolToId[c.symbol] = c.id;
-  }
-  return symbolToId;
+function getDateDaysAgo(days) {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  return date.toISOString().split('T')[0];
 }
 
 /**
- * Generate simulated historical signals for an agent
+ * Get trading days between two dates
  */
-function simulateHistory(agentId, agentConfig, portfolioId, companyIds) {
-  const daysBack = agentConfig.simulatedDays;
-  const signalsPerDay = Math.floor(5 + Math.random() * 10); // 5-15 signals per day
+function getTradingDays(startDate, endDate) {
+  return db.prepare(`
+    SELECT DISTINCT date FROM daily_prices
+    WHERE date >= ? AND date <= ?
+    ORDER BY date ASC
+  `).all(startDate, endDate).map(r => r.date);
+}
 
-  console.log(`    Generating ${daysBack} days of history (${signalsPerDay} signals/day)...`);
+/**
+ * Get historical price for a company on or before a specific date
+ */
+function getHistoricalPrice(companyId, date) {
+  return db.prepare(`
+    SELECT close, date FROM daily_prices
+    WHERE company_id = ? AND date <= ?
+    ORDER BY date DESC
+    LIMIT 1
+  `).get(companyId, date);
+}
 
+/**
+ * Get current price from price_metrics
+ */
+function getCurrentPrice(companyId) {
+  return db.prepare(`
+    SELECT last_price FROM price_metrics WHERE company_id = ?
+  `).get(companyId);
+}
+
+/**
+ * Get company by symbol
+ */
+function getCompanyBySymbol(symbol) {
+  return db.prepare(`
+    SELECT c.id, c.symbol, c.name, c.sector, pm.last_price
+    FROM companies c
+    LEFT JOIN price_metrics pm ON c.id = pm.company_id
+    WHERE c.symbol = ? AND c.is_active = 1
+  `).get(symbol);
+}
+
+/**
+ * Execute trades and create positions for an agent portfolio
+ */
+function executeAgentTrades(agentId, portfolioId, config, creationDate) {
+  const initialCash = 100000;
+  const maxPositionPct = config.max_position_size || 0.08;
+  const stockPool = config.stockPool || [];
+  const targetPositions = config.targetPositions || 8;
+
+  let totalInvested = 0;
+  let positionsCreated = 0;
+  const executedTrades = [];
+
+  // Calculate position size
+  const positionSize = (initialCash * maxPositionPct);
+
+  // Shuffle and select stocks
+  const selectedStocks = [...stockPool]
+    .sort(() => Math.random() - 0.5)
+    .slice(0, targetPositions);
+
+  for (const symbol of selectedStocks) {
+    const company = getCompanyBySymbol(symbol);
+    if (!company) continue;
+
+    // Get historical price on creation date
+    const historicalPrice = getHistoricalPrice(company.id, creationDate);
+    if (!historicalPrice) continue;
+
+    const buyPrice = historicalPrice.close;
+    const shares = Math.floor(positionSize / buyPrice);
+    if (shares < 1) continue;
+
+    const costBasis = shares * buyPrice;
+    if (totalInvested + costBasis > initialCash * 0.9) continue; // Keep 10% cash
+
+    totalInvested += costBasis;
+
+    // Get current price for P&L
+    const currentPriceData = getCurrentPrice(company.id);
+    const currentPrice = currentPriceData?.last_price || buyPrice;
+    const currentValue = shares * currentPrice;
+    const unrealizedPnl = currentValue - costBasis;
+    const unrealizedPnlPct = (unrealizedPnl / costBasis) * 100;
+
+    const buyDateStr = creationDate + ' 10:30:00';
+
+    // Create position
+    const posResult = db.prepare(`
+      INSERT INTO portfolio_positions (
+        portfolio_id, company_id, shares, average_cost,
+        current_price, current_value, cost_basis,
+        unrealized_pnl, unrealized_pnl_pct, realized_pnl,
+        total_dividends, first_bought_at, last_traded_at,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, datetime('now'))
+    `).run(
+      portfolioId, company.id, shares, buyPrice,
+      currentPrice, currentValue, costBasis,
+      unrealizedPnl, unrealizedPnlPct,
+      buyDateStr, buyDateStr, buyDateStr
+    );
+
+    const positionId = posResult.lastInsertRowid;
+
+    // Create lot
+    db.prepare(`
+      INSERT INTO portfolio_lots (
+        portfolio_id, position_id, company_id,
+        shares_original, shares_remaining, cost_per_share, total_cost,
+        acquired_at, acquisition_type, shares_sold, realized_pnl,
+        is_closed, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'buy', 0, 0, 0, ?)
+    `).run(
+      portfolioId, positionId, company.id,
+      shares, shares, buyPrice, costBasis,
+      buyDateStr, buyDateStr
+    );
+
+    // Create buy transaction
+    db.prepare(`
+      INSERT INTO portfolio_transactions (
+        portfolio_id, company_id, position_id, transaction_type,
+        shares, price_per_share, total_amount, fees,
+        executed_at, created_at
+      ) VALUES (?, ?, ?, 'buy', ?, ?, ?, 0, ?, ?)
+    `).run(
+      portfolioId, company.id, positionId,
+      shares, buyPrice, costBasis,
+      buyDateStr, buyDateStr
+    );
+
+    // Create signal record for this trade
+    const signalScore = config.min_signal_score + Math.random() * 0.3;
+    const confidence = config.min_confidence + Math.random() * 0.2;
+
+    db.prepare(`
+      INSERT INTO agent_signals (
+        agent_id, symbol, company_id, signal_date, action,
+        overall_score, confidence, raw_score,
+        regime, price_at_signal, position_size_pct,
+        risk_approved, status, portfolio_id, created_at
+      ) VALUES (?, ?, ?, ?, 'buy', ?, ?, ?, 'BULL', ?, ?, 1, 'executed', ?, ?)
+    `).run(
+      agentId, symbol, company.id, buyDateStr,
+      Math.round(signalScore * 1000) / 1000,
+      Math.round(confidence * 1000) / 1000,
+      Math.round(signalScore * 1000) / 1000,
+      buyPrice,
+      Math.round(maxPositionPct * 1000) / 1000,
+      portfolioId, buyDateStr
+    );
+
+    executedTrades.push({
+      symbol,
+      companyId: company.id,
+      shares,
+      buyPrice,
+      currentPrice,
+      pnlPct: unrealizedPnlPct
+    });
+
+    positionsCreated++;
+  }
+
+  // Update portfolio cash and value
+  const cashRemaining = initialCash - totalInvested;
+  const currentPositionValue = db.prepare(`
+    SELECT COALESCE(SUM(current_value), 0) as total
+    FROM portfolio_positions WHERE portfolio_id = ?
+  `).get(portfolioId).total;
+
+  db.prepare(`
+    UPDATE portfolios
+    SET current_cash = ?,
+        current_value = ?,
+        initial_date = ?,
+        created_at = ?
+    WHERE id = ?
+  `).run(cashRemaining, cashRemaining + currentPositionValue, creationDate, creationDate, portfolioId);
+
+  return {
+    positions: positionsCreated,
+    invested: totalInvested,
+    cash: cashRemaining,
+    currentValue: cashRemaining + currentPositionValue,
+    trades: executedTrades
+  };
+}
+
+/**
+ * Generate additional signals (non-executed) for history
+ */
+function generateAdditionalSignals(agentId, portfolioId, config, companyIds, creationDate) {
+  const daysBack = config.simulatedDays;
+  const signalsPerDay = 3 + Math.floor(Math.random() * 5);
   let totalSignals = 0;
-  let totalTrades = 0;
+
+  const today = new Date().toISOString().split('T')[0];
 
   for (let day = daysBack; day >= 1; day--) {
     const targetDate = new Date();
     targetDate.setDate(targetDate.getDate() - day);
-    targetDate.setHours(9 + Math.floor(Math.random() * 7), Math.floor(Math.random() * 60), 0, 0);
-    const dateStr = targetDate.toISOString().replace('T', ' ').substring(0, 19);
+    const dateStr = targetDate.toISOString().split('T')[0];
 
-    // Generate signals for this day
-    const daySignals = Math.floor(signalsPerDay * (0.5 + Math.random()));
-    const shuffledStocks = [...sampleStocks].sort(() => Math.random() - 0.5).slice(0, daySignals);
+    // Skip dates before creation
+    if (dateStr < creationDate) continue;
 
-    for (const stock of shuffledStocks) {
-      const companyId = companyIds[stock.symbol];
+    // Generate some additional signals (not all executed)
+    const stockPool = config.stockPool || [];
+    const dayStocks = [...stockPool].sort(() => Math.random() - 0.5).slice(0, signalsPerDay);
+
+    for (const symbol of dayStocks) {
+      const companyId = companyIds[symbol];
       if (!companyId) continue;
 
-      // Generate realistic scores based on agent config
-      const baseScore = agentConfig.min_signal_score + Math.random() * (0.8 - agentConfig.min_signal_score);
-      const baseConf = agentConfig.min_confidence + Math.random() * (0.95 - agentConfig.min_confidence);
+      const score = config.min_signal_score + Math.random() * (0.8 - config.min_signal_score);
+      const conf = config.min_confidence + Math.random() * (0.95 - config.min_confidence);
 
-      // Determine action based on score
+      // Determine action
       let action = 'hold';
-      if (baseScore >= 0.55) action = 'strong_buy';
-      else if (baseScore >= 0.40) action = 'buy';
-      else if (baseScore <= -0.15) action = 'sell';
-      else if (baseScore <= -0.40) action = 'strong_sell';
+      if (score >= 0.55) action = 'strong_buy';
+      else if (score >= 0.40) action = 'buy';
+      else if (score <= 0.30) action = 'sell';
 
-      // Skip hold signals
       if (action === 'hold') continue;
 
-      // 70% chance signal was approved and executed
-      const wasExecuted = Math.random() < 0.7;
-      const status = wasExecuted ? 'executed' : (Math.random() < 0.5 ? 'approved' : 'expired');
+      // Most additional signals are not executed (analyzed but not acted on)
+      const status = Math.random() < 0.2 ? 'executed' : (Math.random() < 0.5 ? 'approved' : 'expired');
+
+      const historicalPrice = getHistoricalPrice(companyId, dateStr);
+      const priceAtSignal = historicalPrice?.close || 100;
 
       try {
         db.prepare(`
@@ -277,45 +455,102 @@ function simulateHistory(agentId, agentConfig, portfolioId, companyIds) {
             agent_id, symbol, company_id, signal_date, action,
             overall_score, confidence, raw_score,
             regime, price_at_signal, position_size_pct,
-            risk_approved, status, portfolio_id,
-            created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            risk_approved, status, portfolio_id, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
         `).run(
-          agentId,
-          stock.symbol,
-          companyId,
-          dateStr,
-          action,
-          Math.round(baseScore * 1000) / 1000,
-          Math.round(baseConf * 1000) / 1000,
-          Math.round(baseScore * 1000) / 1000,
+          agentId, symbol, companyId, dateStr + ' 10:00:00', action,
+          Math.round(score * 1000) / 1000,
+          Math.round(conf * 1000) / 1000,
+          Math.round(score * 1000) / 1000,
           ['BULL', 'SIDEWAYS', 'BEAR'][Math.floor(Math.random() * 3)],
-          Math.round((100 + Math.random() * 400) * 100) / 100, // Random price 100-500
-          Math.round(agentConfig.max_position_size * 0.8 * 1000) / 1000,
-          1,
-          status,
-          portfolioId,
-          dateStr
+          priceAtSignal,
+          Math.round((config.max_position_size || 0.08) * 1000) / 1000,
+          status, portfolioId, dateStr + ' 10:00:00'
         );
         totalSignals++;
-
-        if (wasExecuted) totalTrades++;
       } catch (e) {
-        // Skip duplicate or constraint errors
+        // Skip duplicates
       }
     }
   }
 
-  // Update agent stats
-  db.prepare(`
-    UPDATE trading_agents
-    SET total_signals_generated = ?,
-        total_trades_executed = ?,
-        updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).run(totalSignals, totalTrades, agentId);
+  return totalSignals;
+}
 
-  return { signals: totalSignals, trades: totalTrades };
+/**
+ * Create portfolio snapshots using real historical prices
+ */
+function createAgentSnapshots(portfolioId, creationDate, initialCash) {
+  const today = new Date().toISOString().split('T')[0];
+
+  // Get positions
+  const positions = db.prepare(`
+    SELECT pp.id, pp.company_id, pp.shares, pp.cost_basis, c.symbol
+    FROM portfolio_positions pp
+    JOIN companies c ON pp.company_id = c.id
+    WHERE pp.portfolio_id = ?
+  `).all(portfolioId);
+
+  // Get trading days
+  const tradingDays = getTradingDays(creationDate, today);
+
+  const totalCostBasis = positions.reduce((sum, p) => sum + p.cost_basis, 0);
+  const cashValue = initialCash - totalCostBasis;
+
+  let snapshotsCreated = 0;
+  let previousValue = null;
+
+  const insertSnapshot = db.prepare(`
+    INSERT OR REPLACE INTO portfolio_snapshots (
+      portfolio_id, snapshot_date, total_value, cash_value, positions_value,
+      total_cost_basis, unrealized_pnl, realized_pnl,
+      total_deposited, total_withdrawn, positions_count,
+      daily_return, daily_return_pct, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, 0, ?, ?, ?, datetime('now'))
+  `);
+
+  for (const date of tradingDays) {
+    let positionsValue = 0;
+
+    for (const pos of positions) {
+      const priceData = getHistoricalPrice(pos.company_id, date);
+      if (priceData) {
+        positionsValue += pos.shares * priceData.close;
+      }
+    }
+
+    const totalValue = cashValue + positionsValue;
+    const unrealizedPnl = positionsValue - totalCostBasis;
+
+    let dailyReturn = 0;
+    let dailyReturnPct = 0;
+    if (previousValue !== null && previousValue > 0) {
+      dailyReturn = totalValue - previousValue;
+      dailyReturnPct = (dailyReturn / previousValue) * 100;
+    }
+
+    try {
+      insertSnapshot.run(
+        portfolioId, date,
+        Math.round(totalValue * 100) / 100,
+        Math.round(cashValue * 100) / 100,
+        Math.round(positionsValue * 100) / 100,
+        Math.round(totalCostBasis * 100) / 100,
+        Math.round(unrealizedPnl * 100) / 100,
+        initialCash,
+        positions.length,
+        Math.round(dailyReturn * 100) / 100,
+        Math.round(dailyReturnPct * 100) / 100
+      );
+      snapshotsCreated++;
+    } catch (e) {
+      // Skip errors
+    }
+
+    previousValue = totalValue;
+  }
+
+  return snapshotsCreated;
 }
 
 /**
@@ -324,71 +559,74 @@ function simulateHistory(agentId, agentConfig, portfolioId, companyIds) {
 async function setupDemoAgents() {
   console.log('');
   console.log('╔════════════════════════════════════════════════════════════════╗');
-  console.log('║           DEMO ADMIN ACCOUNT SETUP                             ║');
-  console.log('║           10 Diverse AI Trading Agents                         ║');
+  console.log('║      DEMO AI AGENTS SETUP (BACKTEST-BASED REAL PRICES)         ║');
+  console.log('║      10 Diverse Trading Agents with Real Performance           ║');
   console.log('╚════════════════════════════════════════════════════════════════╝');
   console.log('');
 
   // Phase 1: Clean up existing agents
   console.log('PHASE 1: Cleaning up existing agents...');
   try {
-    // Disable foreign keys for cleanup
     db.pragma('foreign_keys = OFF');
 
-    // Get all existing agent IDs
     const existingAgents = db.prepare('SELECT id FROM trading_agents').all();
     console.log(`  Found ${existingAgents.length} existing agents to delete...`);
 
-    // Delete in correct order for each agent
     const portfolioLinks = db.prepare('SELECT portfolio_id FROM agent_portfolios WHERE agent_id = ?');
 
     for (const agent of existingAgents) {
-      // Get linked portfolios
       const portfolios = portfolioLinks.all(agent.id);
 
-      // Delete activity logs
       db.prepare('DELETE FROM agent_activity_log WHERE agent_id = ?').run(agent.id);
-
-      // Delete signals
       db.prepare('DELETE FROM agent_signals WHERE agent_id = ?').run(agent.id);
-
-      // Delete portfolio links
       db.prepare('DELETE FROM agent_portfolios WHERE agent_id = ?').run(agent.id);
 
-      // Delete portfolios and paper accounts
       for (const p of portfolios) {
         try {
+          db.prepare('DELETE FROM portfolio_snapshots WHERE portfolio_id = ?').run(p.portfolio_id);
+          db.prepare('DELETE FROM portfolio_transactions WHERE portfolio_id = ?').run(p.portfolio_id);
+          db.prepare('DELETE FROM portfolio_lots WHERE portfolio_id = ?').run(p.portfolio_id);
+          db.prepare('DELETE FROM portfolio_positions WHERE portfolio_id = ?').run(p.portfolio_id);
+          db.prepare('DELETE FROM portfolio_orders WHERE portfolio_id = ?').run(p.portfolio_id);
           db.prepare('DELETE FROM paper_positions WHERE account_id IN (SELECT id FROM paper_accounts WHERE portfolio_id = ?)').run(p.portfolio_id);
           db.prepare('DELETE FROM paper_orders WHERE account_id IN (SELECT id FROM paper_accounts WHERE portfolio_id = ?)').run(p.portfolio_id);
           db.prepare('DELETE FROM paper_accounts WHERE portfolio_id = ?').run(p.portfolio_id);
-          db.prepare('DELETE FROM portfolio_holdings WHERE portfolio_id = ?').run(p.portfolio_id);
           db.prepare('DELETE FROM portfolios WHERE id = ?').run(p.portfolio_id);
         } catch(e) {}
       }
 
-      // Delete agent
       db.prepare('DELETE FROM trading_agents WHERE id = ?').run(agent.id);
     }
 
-    // Re-enable foreign keys
     db.pragma('foreign_keys = ON');
-
     console.log('  [OK] All existing agents deleted\n');
   } catch (e) {
     console.log('  [WARN] Some cleanup failed:', e.message);
     db.pragma('foreign_keys = ON');
   }
 
-  // Get company IDs for signal generation
-  const companyIds = getCompanyIds();
-  console.log(`  Found ${Object.keys(companyIds).length} companies for signal generation\n`);
+  // Build company ID lookup
+  console.log('PHASE 2: Building company lookup...');
+  const allSymbols = [...new Set(demoAgents.flatMap(a => a.stockPool))];
+  const companies = db.prepare(`
+    SELECT id, symbol FROM companies WHERE symbol IN (${allSymbols.map(() => '?').join(',')})
+  `).all(allSymbols);
 
-  // Phase 2 & 3: Create agents with portfolios
-  console.log('PHASE 2-3: Creating demo agents with portfolios...\n');
+  const companyIds = {};
+  for (const c of companies) {
+    companyIds[c.symbol] = c.id;
+  }
+  console.log(`  Found ${Object.keys(companyIds).length} companies\n`);
+
+  // Phase 3: Create agents with portfolios and real trades
+  console.log('PHASE 3: Creating agents with real portfolio positions...\n');
   const createdAgents = [];
 
   for (const config of demoAgents) {
     try {
+      // Calculate creation date based on simulatedDays
+      const creationDate = getDateDaysAgo(config.simulatedDays);
+
       // Create agent
       const agent = agentService.createAgent({
         name: config.name,
@@ -411,65 +649,74 @@ async function setupDemoAgents() {
         use_factor_exposure: config.use_factor_exposure
       });
 
-      // Create portfolio for agent
-      const portfolioResult = agentService.createPortfolioForAgent(agent.id, {
+      // Create portfolio
+      agentService.createPortfolioForAgent(agent.id, {
         name: `${config.name} Portfolio`,
         initialCash: 100000,
         portfolioType: 'paper'
       });
 
-      // Get portfolio ID and update cash balance
       const portfolioLink = db.prepare(`
         SELECT portfolio_id FROM agent_portfolios WHERE agent_id = ? LIMIT 1
       `).get(agent.id);
 
-      // Ensure portfolio has correct cash balance
-      if (portfolioLink) {
-        db.prepare('UPDATE portfolios SET current_cash = 100000 WHERE id = ?')
-          .run(portfolioLink.portfolio_id);
+      if (!portfolioLink) {
+        console.log(`  [ERR] ${config.name}: No portfolio created`);
+        continue;
       }
+
+      const portfolioId = portfolioLink.portfolio_id;
+
+      // Ensure initial_cash is set (agentService may not set it)
+      db.prepare(`
+        UPDATE portfolios SET initial_cash = 100000 WHERE id = ? AND initial_cash IS NULL
+      `).run(portfolioId);
+
+      // Execute real trades at historical prices
+      const tradeResult = executeAgentTrades(agent.id, portfolioId, config, creationDate);
+
+      // Generate additional signal history
+      const additionalSignals = generateAdditionalSignals(
+        agent.id, portfolioId, config, companyIds, creationDate
+      );
+
+      // Create portfolio snapshots
+      const snapshots = createAgentSnapshots(portfolioId, creationDate, 100000);
+
+      // Update agent stats
+      const totalSignals = tradeResult.positions + additionalSignals;
+      db.prepare(`
+        UPDATE trading_agents
+        SET total_signals_generated = ?,
+            total_trades_executed = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(totalSignals, tradeResult.positions, agent.id);
 
       createdAgents.push({
         id: agent.id,
-        portfolioId: portfolioLink?.portfolio_id,
-        ...config
+        portfolioId,
+        ...config,
+        result: tradeResult,
+        snapshots
       });
 
+      const returnPct = ((tradeResult.currentValue - 100000) / 100000 * 100).toFixed(2);
+      const returnStr = returnPct >= 0 ? `+${returnPct}%` : `${returnPct}%`;
+
       console.log(`  [OK] ${config.name}`);
-      console.log(`       Agent ID: ${agent.id} | Strategy: ${config.strategy_type}`);
-      console.log(`       Thresholds: conf >= ${config.min_confidence}, score >= ${config.min_signal_score}`);
-      console.log(`       History: ${config.simulatedDays} days`);
+      console.log(`       Created: ${creationDate} (${config.simulatedDays} days ago)`);
+      console.log(`       Positions: ${tradeResult.positions} | Value: $${Math.round(tradeResult.currentValue).toLocaleString()} | Return: ${returnStr}`);
+      console.log(`       Signals: ${totalSignals} | Snapshots: ${snapshots}`);
       console.log('');
+
     } catch (e) {
       console.log(`  [ERR] ${config.name}: ${e.message}\n`);
     }
   }
 
-  console.log(`Created ${createdAgents.length}/10 agents\n`);
-
-  // Phase 4: Simulate historical trading activity
-  console.log('PHASE 4: Simulating historical trading activity...\n');
-
-  let totalSignals = 0;
-  let totalTrades = 0;
-
-  for (const agent of createdAgents) {
-    if (!agent.portfolioId) {
-      console.log(`  [SKIP] ${agent.name}: No portfolio linked`);
-      continue;
-    }
-
-    const result = simulateHistory(agent.id, agent, agent.portfolioId, companyIds);
-    totalSignals += result.signals;
-    totalTrades += result.trades;
-
-    console.log(`  [OK] ${agent.name}: ${result.signals} signals, ${result.trades} trades\n`);
-  }
-
-  console.log(`Total: ${totalSignals} signals, ${totalTrades} trades simulated\n`);
-
-  // Phase 5: Start all agents
-  console.log('PHASE 5: Starting agents for continuous operation...\n');
+  // Phase 4: Start all agents
+  console.log('PHASE 4: Starting agents for continuous operation...\n');
 
   for (const agent of createdAgents) {
     try {
@@ -484,32 +731,71 @@ async function setupDemoAgents() {
   console.log('');
   console.log('╔════════════════════════════════════════════════════════════════╗');
   console.log('║                    SETUP COMPLETE                              ║');
+  console.log('║          All performance based on REAL historical prices       ║');
   console.log('╚════════════════════════════════════════════════════════════════╝');
   console.log('');
-  console.log('Summary:');
-  console.log(`  - Agents created: ${createdAgents.length}`);
-  console.log(`  - Total signals: ${totalSignals}`);
-  console.log(`  - Total trades: ${totalTrades}`);
-  console.log(`  - All agents: RUNNING`);
-  console.log('');
 
-  // Verification query
-  console.log('Verification:');
-  const agents = db.prepare(`
-    SELECT id, name, strategy_type, status, total_signals_generated, total_trades_executed
-    FROM trading_agents WHERE is_active = 1
-    ORDER BY id
+  // Verification
+  console.log('Verification (Real Performance):\n');
+
+  const summary = db.prepare(`
+    SELECT
+      ta.id,
+      ta.name,
+      ta.strategy_type,
+      ta.status,
+      p.initial_cash,
+      p.current_value,
+      p.initial_date,
+      (SELECT COUNT(*) FROM portfolio_positions WHERE portfolio_id = p.id AND shares > 0) as positions,
+      (SELECT COUNT(*) FROM portfolio_snapshots WHERE portfolio_id = p.id) as snapshots,
+      ta.total_signals_generated as signals
+    FROM trading_agents ta
+    JOIN agent_portfolios ap ON ta.id = ap.agent_id
+    JOIN portfolios p ON ap.portfolio_id = p.id
+    ORDER BY ta.id
   `).all();
 
-  console.log('');
-  console.log('ID  | Name                      | Type        | Status  | Signals | Trades');
-  console.log('----|---------------------------|-------------|---------|---------|-------');
-  for (const a of agents) {
+  console.log('ID  │ Agent Name                │ Strategy    │ Created    │ Value      │ Return  │ Pos');
+  console.log('────┼───────────────────────────┼─────────────┼────────────┼────────────┼─────────┼────');
+
+  for (const a of summary) {
     const name = a.name.substring(0, 25).padEnd(25);
-    const type = a.strategy_type.padEnd(11);
-    const status = a.status.padEnd(7);
-    console.log(`${String(a.id).padStart(3)} | ${name} | ${type} | ${status} | ${String(a.total_signals_generated || 0).padStart(7)} | ${String(a.total_trades_executed || 0).padStart(5)}`);
+    const strategy = (a.strategy_type || '').padEnd(11);
+    const value = ('$' + Math.round(a.current_value || 100000).toLocaleString()).padStart(10);
+    const returnPct = a.initial_cash > 0 ? (((a.current_value || 100000) - a.initial_cash) / a.initial_cash * 100).toFixed(2) : '0.00';
+    const returnStr = (returnPct >= 0 ? '+' : '') + returnPct + '%';
+    const created = a.initial_date || 'N/A';
+    console.log(`${String(a.id).padStart(3)} │ ${name} │ ${strategy} │ ${created} │ ${value} │ ${returnStr.padStart(7)} │ ${String(a.positions).padStart(3)}`);
   }
+
+  // Top performers
+  console.log('\n\nTop Performers by P&L:\n');
+
+  for (const a of summary.slice(0, 3)) {
+    const topMovers = db.prepare(`
+      SELECT c.symbol, pp.unrealized_pnl, pp.unrealized_pnl_pct, pp.average_cost, pp.current_price
+      FROM portfolio_positions pp
+      JOIN companies c ON pp.company_id = c.id
+      JOIN agent_portfolios ap ON pp.portfolio_id = ap.portfolio_id
+      WHERE ap.agent_id = ? AND pp.shares > 0
+      ORDER BY pp.unrealized_pnl DESC
+      LIMIT 3
+    `).all(a.id);
+
+    console.log(`  ${a.name}:`);
+    for (const m of topMovers) {
+      const sign = m.unrealized_pnl >= 0 ? '+' : '';
+      console.log(`    ${m.symbol.padEnd(6)}: ${sign}$${Math.round(m.unrealized_pnl).toLocaleString().padStart(5)} (${sign}${m.unrealized_pnl_pct.toFixed(1)}%)`);
+    }
+  }
+
+  console.log('\n');
+  console.log('Total agents:', summary.length);
+  console.log('Total positions:', summary.reduce((sum, a) => sum + a.positions, 0));
+  console.log('Total snapshots:', summary.reduce((sum, a) => sum + a.snapshots, 0));
+  console.log('');
+  console.log('All prices from daily_prices table - verifiable and realistic!');
   console.log('');
 }
 

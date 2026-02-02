@@ -4,7 +4,7 @@
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const crypto = require('crypto');
-const { getDatabase, isPostgres } = require('../lib/db');
+const { getDatabase, isUsingPostgres } = require('../lib/db');
 
 function configurePassport(db) {
   // Serialize user into session
@@ -28,7 +28,7 @@ function configurePassport(db) {
       const userId = data;
 
       // PostgreSQL mode - use async query
-      if (isPostgres()) {
+      if (isUsingPostgres()) {
         const dbClient = getDatabase();
         const result = await dbClient.query('SELECT * FROM users WHERE id = $1', [userId]);
         const user = result.rows[0] || null;

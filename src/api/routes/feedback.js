@@ -421,3 +421,5 @@ router.post('/prompt/response', optionalAuth, attachUserId, async (req, res) => 
     res.status(500).json({ success: false, error: 'Failed to record response' });
   }
 });
+
+module.exports = router;

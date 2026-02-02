@@ -222,6 +222,15 @@ class FactorRepository {
     }
 
     try {
+      // Get current formula to detect changes
+      const current = this.db.prepare('SELECT formula FROM user_factors WHERE id = ?').get(id);
+      if (!current) {
+        return { success: false, error: 'Factor not found' };
+      }
+
+      const formulaChanged = current.formula.trim() !== formula.trim();
+
+      // Update formula and reset stats
       this.db.prepare(`
         UPDATE user_factors SET
           formula = ?,
@@ -236,7 +245,28 @@ class FactorRepository {
         WHERE id = ?
       `).run(formula, JSON.stringify(validation.requiredMetrics), id);
 
-      return { success: true, factor: this.getFactorById(id) };
+      // CRITICAL: Clear cached values if formula changed
+      let cachedValuesRemoved = 0;
+      if (formulaChanged) {
+        try {
+          const deleteResult = this.db.prepare(
+            'DELETE FROM factor_values_cache WHERE factor_id = ?'
+          ).run(id);
+
+          cachedValuesRemoved = deleteResult.changes;
+          console.log(`[Cache Invalidation] Cleared ${cachedValuesRemoved} cached values for factor ${id}`);
+        } catch (cacheErr) {
+          console.warn(`[Cache Warning] Could not clear cache for factor ${id}:`, cacheErr.message);
+          // Don't fail the update if cache clear fails
+        }
+      }
+
+      return {
+        success: true,
+        factor: this.getFactorById(id),
+        cacheCleared: formulaChanged,
+        cachedValuesRemoved
+      };
     } catch (err) {
       return { success: false, error: err.message };
     }

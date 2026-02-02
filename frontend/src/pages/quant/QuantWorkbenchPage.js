@@ -24,6 +24,7 @@ export default function QuantWorkbenchPage() {
           title="Quant Lab"
           subtitle="Define custom factors, test predictive power, and build trading signals"
           icon={PrismSparkle}
+          iconColorScheme="ai"
         />
         <main className="quant-workbench-content">
           <Suspense fallback={<SkeletonTable rows={8} />}>
