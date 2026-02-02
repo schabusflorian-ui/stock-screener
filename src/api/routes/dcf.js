@@ -8,10 +8,9 @@
 const express = require('express');
 const router = express.Router();
 const DCFCalculator = require('../../services/dcfCalculator');
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 const { requireFeature } = require('../../middleware/subscription');
 
-const database = db.getDatabase();
 const calculator = new DCFCalculator(database);
 
 /**
@@ -427,7 +426,7 @@ router.get('/:symbol/history', requireFeature('dcf_valuation'), (req, res) => {
  * GET /api/dcf/benchmarks/:industry
  * Get industry benchmarks for DCF assumptions
  */
-router.get('/benchmarks/:industry', (req, res) => {
+router.get('/benchmarks/:industry', async (req, res) => {
   try {
     const { industry } = req.params;
 
@@ -465,8 +464,9 @@ router.get('/benchmarks/:industry', (req, res) => {
  * GET /api/dcf/benchmarks
  * Get all industry benchmarks
  */
-router.get('/benchmarks', (req, res) => {
+router.get('/benchmarks', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const benchmarks = database.prepare(`
       SELECT * FROM industry_benchmarks ORDER BY industry
     `).all();

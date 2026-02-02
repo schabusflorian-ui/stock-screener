@@ -10,7 +10,7 @@ const router = express.Router();
 const { spawn } = require('child_process');
 const path = require('path');
 const crypto = require('crypto');
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 const { routeQuery, shouldUseLLM } = require('../../services/nl/queryRouter');
 const { getLLMHandler, SSE_EVENTS } = require('../../services/nl/llmHandler');
 const { ERROR_CODES, sendError, asyncHandler, safeErrorMessage } = require('../../utils/errorHandler');
@@ -18,8 +18,6 @@ const { ERROR_CODES, sendError, asyncHandler, safeErrorMessage } = require('../.
 // Authentication and subscription middleware
 const { requireAuth, optionalAuth } = require('../../middleware/auth');
 const { checkUsageLimit, attachSubscription } = require('../../middleware/subscription');
-
-const database = db.getDatabase();
 
 // Python service for NL processing
 let pythonProcess = null;
@@ -790,7 +788,7 @@ router.post('/classify', async (req, res) => {
  * GET /api/nl/examples
  * Get example queries by intent type
  */
-router.get('/examples', (req, res) => {
+router.get('/examples', async (req, res) => {
   res.json({
     screen: [
       'Show me undervalued tech stocks',
@@ -836,7 +834,7 @@ router.get('/examples', (req, res) => {
  * GET /api/nl/suggestions
  * Get context-aware query suggestions with natural language
  */
-router.get('/suggestions', (req, res) => {
+router.get('/suggestions', async (req, res) => {
   const { symbol, page, sector, previousQuery } = req.query;
 
   let suggestions = [];
@@ -1105,7 +1103,7 @@ function resolveContextualReferences(query, conversationContext) {
  * GET /api/nl/health
  * Check NL service health
  */
-router.get('/health', (req, res) => {
+router.get('/health', async (req, res) => {
   res.json({
     status: pythonProcess ? 'running' : 'stopped',
     pendingRequests: requestQueue.size
@@ -1116,7 +1114,7 @@ router.get('/health', (req, res) => {
  * GET /api/nl/conversations
  * List all conversations (most recent first)
  */
-router.get('/conversations', (req, res) => {
+router.get('/conversations', async (req, res) => {
   try {
     const { limit = 20, session_id } = req.query;
 
@@ -1158,7 +1156,7 @@ router.get('/conversations', (req, res) => {
  * GET /api/nl/conversation/:id
  * Get conversation history
  */
-router.get('/conversation/:id', (req, res) => {
+router.get('/conversation/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { limit = 20 } = req.query;
@@ -1188,7 +1186,7 @@ router.get('/conversation/:id', (req, res) => {
  * DELETE /api/nl/conversation/:id
  * Clear/delete a conversation
  */
-router.delete('/conversation/:id', (req, res) => {
+router.delete('/conversation/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -1213,7 +1211,7 @@ router.delete('/conversation/:id', (req, res) => {
  * POST /api/nl/conversation/new
  * Start a new conversation (optionally clearing an old one)
  */
-router.post('/conversation/new', (req, res) => {
+router.post('/conversation/new', async (req, res) => {
   try {
     const { session_id, clear_previous } = req.body;
 

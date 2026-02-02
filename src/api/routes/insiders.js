@@ -3,14 +3,14 @@
 
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 const InsiderTracker = require('../../services/insiderTracker');
 
-const database = db.getDatabase();
 let insiderTracker;
 
 // Initialize insider tracker
 try {
+    const database = await getDatabaseAsync();
   insiderTracker = new InsiderTracker(database);
 } catch (error) {
   console.error('Failed to initialize InsiderTracker:', error.message);
@@ -23,7 +23,7 @@ try {
  *   - limit: number of results (default 20)
  *   - period: time period - '1m', '3m', '6m', '1y' (default '3m')
  */
-router.get('/top-buying', (req, res) => {
+router.get('/top-buying', async (req, res) => {
   try {
     if (!insiderTracker) {
       return res.status(503).json({ error: 'Insider tracking service unavailable' });
@@ -49,7 +49,7 @@ router.get('/top-buying', (req, res) => {
  *   - limit: number of results (default 50)
  *   - type: 'buy', 'sell', 'all' (default 'all')
  */
-router.get('/recent', (req, res) => {
+router.get('/recent', async (req, res) => {
   try {
     const { limit = 50, type = 'all' } = req.query;
 
@@ -96,7 +96,7 @@ router.get('/recent', (req, res) => {
  *   - period: '1m', '3m', '6m' (default '3m')
  *   - signal: 'bullish', 'bearish', 'neutral', 'all' (default 'all')
  */
-router.get('/signals', (req, res) => {
+router.get('/signals', async (req, res) => {
   try {
     const { period = '3m', signal = 'all' } = req.query;
 
@@ -149,7 +149,7 @@ router.get('/signals', (req, res) => {
  *   - months: how many months of history (default 12)
  *   - type: 'buy', 'sell', 'all' (default 'all')
  */
-router.get('/company/:symbol', (req, res) => {
+router.get('/company/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
     const { months = 12, type = 'all' } = req.query;
@@ -213,7 +213,7 @@ router.get('/company/:symbol', (req, res) => {
  * Query params:
  *   - months: how many months (default 24)
  */
-router.get('/company/:symbol/chart', (req, res) => {
+router.get('/company/:symbol/chart', async (req, res) => {
   try {
     const { symbol } = req.params;
     const { months = 24 } = req.query;
@@ -282,7 +282,7 @@ router.get('/company/:symbol/chart', (req, res) => {
  * GET /api/insiders/insider/:cik
  * Get all activity for a specific insider across companies
  */
-router.get('/insider/:cik', (req, res) => {
+router.get('/insider/:cik', async (req, res) => {
   try {
     const { cik } = req.params;
 
@@ -352,7 +352,7 @@ router.get('/insider/:cik', (req, res) => {
  *   - minInsiders: minimum number of insiders (default 2)
  *   - days: time window in days (default 30)
  */
-router.get('/cluster-buying', (req, res) => {
+router.get('/cluster-buying', async (req, res) => {
   try {
     const { minInsiders = 2, days = 30 } = req.query;
 
@@ -439,8 +439,9 @@ router.post('/update', async (req, res) => {
  * GET /api/insiders/update-status
  * Get the last insider data update status
  */
-router.get('/update-status', (req, res) => {
+router.get('/update-status', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     // Get counts and latest transaction date
     const stats = database.prepare(`
       SELECT
@@ -477,8 +478,9 @@ router.get('/update-status', (req, res) => {
  * GET /api/insiders/stats
  * Get overall insider trading statistics
  */
-router.get('/stats', (req, res) => {
+router.get('/stats', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     // Overall stats
     const stats = database.prepare(`
       SELECT

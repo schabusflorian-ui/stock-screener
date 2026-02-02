@@ -3,12 +3,11 @@
 
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 const SECFilingParser = require('../../services/secFilingParser');
 const PRISMReportGeneratorV2 = require('../../services/prismReportGeneratorV2');
 const { requireFeature } = require('../../middleware/subscription');
 
-const database = db.getDatabase();
 const secParser = new SECFilingParser();
 const reportGenerator = new PRISMReportGeneratorV2();
 
@@ -142,6 +141,7 @@ router.get('/:symbol/scorecard', async (req, res) => {
   const { symbol } = req.params;
 
   try {
+    const database = await getDatabaseAsync();
     const symbolUpper = symbol.toUpperCase();
 
     // Get latest scorecard from prism_scores
@@ -183,6 +183,7 @@ router.get('/:symbol/sec-filings', async (req, res) => {
   const { formType, refresh } = req.query;
 
   try {
+    const database = await getDatabaseAsync();
     const symbolUpper = symbol.toUpperCase();
 
     // Get cached filings
@@ -340,6 +341,7 @@ router.get('/:symbol/score-history', async (req, res) => {
   const { limit = 30 } = req.query;
 
   try {
+    const database = await getDatabaseAsync();
     const symbolUpper = symbol.toUpperCase();
 
     const history = database.prepare(`
@@ -390,6 +392,7 @@ router.get('/:symbol/score-history', async (req, res) => {
 
 function getCachedReport(symbol) {
   try {
+    const database = await getDatabaseAsync();
     return database.prepare(`
       SELECT * FROM prism_reports WHERE symbol = ?
     `).get(symbol);

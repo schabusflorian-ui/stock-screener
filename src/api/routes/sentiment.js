@@ -3,7 +3,7 @@
 
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 const RedditFetcher = require('../../services/redditFetcher');
 const SentimentSignalGenerator = require('../../services/sentimentSignal');
 const NewsFetcher = require('../../services/newsFetcher');
@@ -12,7 +12,6 @@ const FearGreedFetcher = require('../../services/fearGreedFetcher');
 const SentimentAggregator = require('../../services/sentimentAggregator');
 const AnalystEstimatesFetcher = require('../../services/analystEstimates');
 
-const database = db.getDatabase();
 let redditFetcher;
 let signalGenerator;
 let newsFetcher;
@@ -42,6 +41,7 @@ function getSafeDateInterval(period) {
 
 // Initialize services
 try {
+    const database = await getDatabaseAsync();
   redditFetcher = new RedditFetcher(database);
   signalGenerator = new SentimentSignalGenerator(database);
   newsFetcher = new NewsFetcher(database);
@@ -65,6 +65,7 @@ try {
  */
 router.get('/status', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     // Get counts from trending_tickers
     const trendingStats = database.prepare(`
       SELECT
@@ -114,6 +115,7 @@ router.get('/status', async (req, res) => {
     // Get StockTwits message count
     let stocktwitsStats = { total_messages: 0 };
     try {
+    const database = await getDatabaseAsync();
       stocktwitsStats = database.prepare(`
         SELECT COUNT(*) as total_messages
         FROM stocktwits_messages
@@ -332,6 +334,7 @@ router.get('/sources-overview', async (req, res) => {
     // StockTwits sentiment summary
     let stocktwitsStats = { message_count: 0, avg_sentiment: 0, bullish_count: 0, bearish_count: 0, neutral_count: 0 };
     try {
+    const database = await getDatabaseAsync();
       stocktwitsStats = database.prepare(`
         SELECT
           COUNT(*) as message_count,
@@ -349,6 +352,7 @@ router.get('/sources-overview', async (req, res) => {
     // News sentiment summary
     let newsStats = { article_count: 0, avg_sentiment: 0, bullish_count: 0, bearish_count: 0, neutral_count: 0 };
     try {
+    const database = await getDatabaseAsync();
       newsStats = database.prepare(`
         SELECT
           COUNT(*) as article_count,
@@ -366,6 +370,7 @@ router.get('/sources-overview', async (req, res) => {
     // Top news sources
     let topNewsSources = [];
     try {
+    const database = await getDatabaseAsync();
       topNewsSources = database.prepare(`
         SELECT source, COUNT(*) as count
         FROM news_articles
@@ -382,6 +387,7 @@ router.get('/sources-overview', async (req, res) => {
     // OPTIMIZED: Single batch query with subquery instead of N+1 loop queries
     const divergences = [];
     try {
+    const database = await getDatabaseAsync();
       // Get tickers with both Reddit and News sentiment in one query using a correlated subquery
       const tickersWithDivergences = database.prepare(`
         SELECT
@@ -791,6 +797,7 @@ router.get('/trending-enhanced', async (req, res) => {
     // Batch query: Reddit data for all tickers
     const redditDataMap = new Map();
     try {
+    const database = await getDatabaseAsync();
       const redditRows = database.prepare(`
         SELECT
           company_id,
@@ -810,6 +817,7 @@ router.get('/trending-enhanced', async (req, res) => {
     // Batch query: StockTwits data for all tickers
     const stocktwitsDataMap = new Map();
     try {
+    const database = await getDatabaseAsync();
       const stocktwitsRows = database.prepare(`
         SELECT
           company_id,
@@ -828,6 +836,7 @@ router.get('/trending-enhanced', async (req, res) => {
     // Batch query: News data for all tickers
     const newsDataMap = new Map();
     try {
+    const database = await getDatabaseAsync();
       const newsRows = database.prepare(`
         SELECT
           company_id,
@@ -846,6 +855,7 @@ router.get('/trending-enhanced', async (req, res) => {
     // Batch query: Insider activity for all tickers
     const insiderDataMap = new Map();
     try {
+    const database = await getDatabaseAsync();
       const insiderRows = database.prepare(`
         SELECT
           company_id,
@@ -866,6 +876,7 @@ router.get('/trending-enhanced', async (req, res) => {
     // Batch query: Analyst data for all tickers
     const analystDataMap = new Map();
     try {
+    const database = await getDatabaseAsync();
       const analystRows = database.prepare(`
         SELECT
           company_id,
@@ -885,6 +896,7 @@ router.get('/trending-enhanced', async (req, res) => {
     // Batch query: Recent sentiment (last 3 days) for momentum calculation
     const recentSentimentMap = new Map();
     try {
+    const database = await getDatabaseAsync();
       const recentRows = database.prepare(`
         SELECT
           company_id,
@@ -902,6 +914,7 @@ router.get('/trending-enhanced', async (req, res) => {
     // Batch query: Older sentiment (3-7 days ago) for momentum calculation
     const olderSentimentMap = new Map();
     try {
+    const database = await getDatabaseAsync();
       const olderRows = database.prepare(`
         SELECT
           company_id,
@@ -1495,6 +1508,7 @@ router.get('/sources-overview', async (req, res) => {
     // StockTwits sentiment summary
     let stocktwitsStats = { message_count: 0, avg_sentiment: 0, bullish_count: 0, bearish_count: 0, neutral_count: 0 };
     try {
+    const database = await getDatabaseAsync();
       stocktwitsStats = database.prepare(`
         SELECT
           COUNT(*) as message_count,
@@ -1512,6 +1526,7 @@ router.get('/sources-overview', async (req, res) => {
     // News sentiment summary
     let newsStats = { article_count: 0, avg_sentiment: 0, bullish_count: 0, bearish_count: 0, neutral_count: 0 };
     try {
+    const database = await getDatabaseAsync();
       newsStats = database.prepare(`
         SELECT
           COUNT(*) as article_count,
@@ -1529,6 +1544,7 @@ router.get('/sources-overview', async (req, res) => {
     // Top news sources
     let topNewsSources = [];
     try {
+    const database = await getDatabaseAsync();
       topNewsSources = database.prepare(`
         SELECT source, COUNT(*) as count
         FROM news_articles
@@ -1545,6 +1561,7 @@ router.get('/sources-overview', async (req, res) => {
     // OPTIMIZED: Single batch query with subquery instead of N+1 loop queries
     const divergences = [];
     try {
+    const database = await getDatabaseAsync();
       // Get tickers with both Reddit and News sentiment in one query using a correlated subquery
       const tickersWithDivergences = database.prepare(`
         SELECT

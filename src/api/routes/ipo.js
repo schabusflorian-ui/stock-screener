@@ -3,11 +3,10 @@
 
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 const { IPOTracker, IPO_STAGES, IPO_FORM_TYPES, IPO_REGIONS } = require('../../services/ipoTracker');
 
 // Initialize IPO tracker
-const database = db.getDatabase();
 const ipoTracker = new IPOTracker(database, 'Stock Analyzer contact@example.com');
 
 // ============================================
@@ -19,7 +18,7 @@ const ipoTracker = new IPOTracker(database, 'Stock Analyzer contact@example.com'
  * Get all active IPOs in the pipeline
  * Query params: region (US|EU|UK|all), status, sector, sortBy, sortOrder, limit
  */
-router.get('/pipeline', (req, res) => {
+router.get('/pipeline', async (req, res) => {
   try {
     const { region, status, sector, sortBy, sortOrder, limit } = req.query;
 
@@ -48,7 +47,7 @@ router.get('/pipeline', (req, res) => {
  * Get IPOs grouped by lifecycle stage
  * Query params: region (US|EU|UK|all)
  */
-router.get('/by-stage', (req, res) => {
+router.get('/by-stage', async (req, res) => {
   try {
     const { region } = req.query;
     const byStage = ipoTracker.getByStage(region || 'all');
@@ -74,7 +73,7 @@ router.get('/by-stage', (req, res) => {
  * GET /api/ipo/upcoming
  * Get IPOs expected to trade soon (have price range, effective, or priced)
  */
-router.get('/upcoming', (req, res) => {
+router.get('/upcoming', async (req, res) => {
   try {
     const upcoming = ipoTracker.getExpectedSoon();
     res.json({
@@ -92,7 +91,7 @@ router.get('/upcoming', (req, res) => {
  * Get recently completed IPOs
  * Query params: limit (default 20)
  */
-router.get('/recent', (req, res) => {
+router.get('/recent', async (req, res) => {
   try {
     const { limit = 20 } = req.query;
     const recent = ipoTracker.getRecentlyCompleted(parseInt(limit));
@@ -112,7 +111,7 @@ router.get('/recent', (req, res) => {
  * Get pipeline statistics
  * Query params: region (US|EU|UK|all)
  */
-router.get('/statistics', (req, res) => {
+router.get('/statistics', async (req, res) => {
   try {
     const { region } = req.query;
     const stats = ipoTracker.getStatistics({ region: region || 'all' });
@@ -130,7 +129,7 @@ router.get('/statistics', (req, res) => {
  * GET /api/ipo/sectors
  * Get sector breakdown
  */
-router.get('/sectors', (req, res) => {
+router.get('/sectors', async (req, res) => {
   try {
     const sectors = ipoTracker.getSectorBreakdown();
     res.json({
@@ -147,7 +146,7 @@ router.get('/sectors', (req, res) => {
  * GET /api/ipo/stages
  * Get stage definitions
  */
-router.get('/stages', (req, res) => {
+router.get('/stages', async (req, res) => {
   res.json(IPO_STAGES);
 });
 
@@ -155,7 +154,7 @@ router.get('/stages', (req, res) => {
  * GET /api/ipo/form-types
  * Get IPO-related form types
  */
-router.get('/form-types', (req, res) => {
+router.get('/form-types', async (req, res) => {
   res.json(IPO_FORM_TYPES);
 });
 
@@ -163,7 +162,7 @@ router.get('/form-types', (req, res) => {
  * GET /api/ipo/regions
  * Get available regions for IPO tracking
  */
-router.get('/regions', (req, res) => {
+router.get('/regions', async (req, res) => {
   res.json(IPO_REGIONS);
 });
 
@@ -254,7 +253,7 @@ router.post('/check-fca', async (req, res) => {
  * GET /api/ipo/lei/:lei
  * Get IPO by LEI (Legal Entity Identifier) - EU/UK companies
  */
-router.get('/lei/:lei', (req, res) => {
+router.get('/lei/:lei', async (req, res) => {
   try {
     const { lei } = req.params;
 
@@ -284,7 +283,7 @@ router.get('/lei/:lei', (req, res) => {
  * GET /api/ipo/isin/:isin
  * Get IPO by ISIN
  */
-router.get('/isin/:isin', (req, res) => {
+router.get('/isin/:isin', async (req, res) => {
   try {
     const { isin } = req.params;
 
@@ -314,7 +313,7 @@ router.get('/isin/:isin', (req, res) => {
  * POST /api/ipo/eu
  * Manually add an EU/UK IPO
  */
-router.post('/eu', (req, res) => {
+router.post('/eu', async (req, res) => {
   try {
     const {
       company_name, lei, isin, region = 'EU', regulator,
@@ -382,7 +381,7 @@ router.post('/eu', (req, res) => {
  * Search IPOs by name, ticker, industry
  * Query params: q (required)
  */
-router.get('/search', (req, res) => {
+router.get('/search', async (req, res) => {
   try {
     const { q } = req.query;
 
@@ -411,7 +410,7 @@ router.get('/search', (req, res) => {
  * GET /api/ipo/watchlist
  * Get user's IPO watchlist
  */
-router.get('/watchlist', (req, res) => {
+router.get('/watchlist', async (req, res) => {
   try {
     const watchlist = ipoTracker.getWatchlist();
 
@@ -429,7 +428,7 @@ router.get('/watchlist', (req, res) => {
  * POST /api/ipo/:id/watchlist
  * Add IPO to watchlist
  */
-router.post('/:id/watchlist', (req, res) => {
+router.post('/:id/watchlist', async (req, res) => {
   try {
     const ipoId = parseInt(req.params.id);
     const { notes } = req.body;
@@ -456,7 +455,7 @@ router.post('/:id/watchlist', (req, res) => {
  * PUT /api/ipo/:id/watchlist
  * Update watchlist notes
  */
-router.put('/:id/watchlist', (req, res) => {
+router.put('/:id/watchlist', async (req, res) => {
   try {
     const ipoId = parseInt(req.params.id);
     const { notes } = req.body;
@@ -481,7 +480,7 @@ router.put('/:id/watchlist', (req, res) => {
  * DELETE /api/ipo/:id/watchlist
  * Remove IPO from watchlist
  */
-router.delete('/:id/watchlist', (req, res) => {
+router.delete('/:id/watchlist', async (req, res) => {
   try {
     const ipoId = parseInt(req.params.id);
 
@@ -530,7 +529,7 @@ router.post('/check', async (req, res) => {
  * GET /api/ipo/check-history
  * Get history of filing checks
  */
-router.get('/check-history', (req, res) => {
+router.get('/check-history', async (req, res) => {
   try {
     const { limit = 20 } = req.query;
     const history = ipoTracker.getCheckHistory(parseInt(limit));
@@ -553,7 +552,7 @@ router.get('/check-history', (req, res) => {
  * GET /api/ipo/:id
  * Get single IPO with all filings
  */
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
     const ipoId = parseInt(req.params.id);
     const ipo = ipoTracker.getIPOWithFilings(ipoId);
@@ -676,6 +675,7 @@ router.post('/:id/create-company', async (req, res) => {
  */
 router.post('/sync-trading-companies', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     // Get all trading IPOs without company_id (include ISIN for EU/UK)
     const tradingIPOs = database.prepare(`
       SELECT * FROM ipo_tracker
@@ -715,6 +715,7 @@ router.post('/sync-trading-companies', async (req, res) => {
       }
 
       try {
+    const database = await getDatabaseAsync();
         // Check if company already exists by ticker
         let existingCompany = database.prepare(`
           SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
@@ -804,7 +805,7 @@ router.post('/:id/mark-withdrawn', async (req, res) => {
  * PUT /api/ipo/:id
  * Update IPO details (manual correction)
  */
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
   try {
     const ipoId = parseInt(req.params.id);
     const updates = req.body;
@@ -860,7 +861,7 @@ router.put('/:id', (req, res) => {
  * POST /api/ipo/manual
  * Manually add an IPO (for testing or backfill)
  */
-router.post('/manual', (req, res) => {
+router.post('/manual', async (req, res) => {
   try {
     const {
       cik, company_name, ticker_proposed, initial_s1_date,
@@ -908,7 +909,7 @@ router.post('/manual', (req, res) => {
  * GET /api/ipo/cik/:cik
  * Get IPO by CIK
  */
-router.get('/cik/:cik', (req, res) => {
+router.get('/cik/:cik', async (req, res) => {
   try {
     const { cik } = req.params;
     const ipo = ipoTracker.getIPOByCIK(cik);

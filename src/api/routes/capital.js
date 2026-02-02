@@ -3,15 +3,15 @@
 
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 const CapitalAllocationTracker = require('../../services/capitalAllocationTracker');
 const DividendService = require('../../services/dividendService');
 
-const database = db.getDatabase();
 let capitalTracker;
 
 // Initialize capital allocation tracker
 try {
+    const database = await getDatabaseAsync();
   capitalTracker = new CapitalAllocationTracker(database);
 } catch (error) {
   console.error('Failed to initialize CapitalAllocationTracker:', error.message);
@@ -23,7 +23,7 @@ try {
  * Query params:
  *   - limit: number of results (default 20)
  */
-router.get('/top-yield', (req, res) => {
+router.get('/top-yield', async (req, res) => {
   try {
     const { limit = 20 } = req.query;
 
@@ -81,7 +81,7 @@ router.get('/top-yield', (req, res) => {
  * Query params:
  *   - minYears: minimum years of dividend growth (default 25 for true aristocrats)
  */
-router.get('/dividend-aristocrats', (req, res) => {
+router.get('/dividend-aristocrats', async (req, res) => {
   try {
     const { minYears = 25 } = req.query;
 
@@ -184,8 +184,9 @@ router.get('/dividend-aristocrats', (req, res) => {
  * GET /api/capital/dividend-kings
  * Get dividend kings (50+ years of consecutive dividend growth)
  */
-router.get('/dividend-kings', (req, res) => {
+router.get('/dividend-kings', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const results = database.prepare(`
       SELECT
         c.id, c.symbol, c.name, c.sector, c.market_cap,
@@ -227,7 +228,7 @@ router.get('/dividend-kings', (req, res) => {
  *   - minYearsGrowth: minimum years of growth
  *   - limit: number of results (default 50)
  */
-router.get('/top-dividend-yielders', (req, res) => {
+router.get('/top-dividend-yielders', async (req, res) => {
   try {
     const {
       minYield = 0,
@@ -286,7 +287,7 @@ router.get('/top-dividend-yielders', (req, res) => {
  *   - period: '1y', '3y', '5y', '10y' (default '5y')
  *   - limit: number of results (default 50)
  */
-router.get('/dividend-growth-leaders', (req, res) => {
+router.get('/dividend-growth-leaders', async (req, res) => {
   try {
     const { period = '5y', limit = 50 } = req.query;
 
@@ -330,8 +331,9 @@ router.get('/dividend-growth-leaders', (req, res) => {
  * GET /api/capital/dividends-by-sector
  * Get dividend statistics grouped by sector
  */
-router.get('/dividends-by-sector', (req, res) => {
+router.get('/dividends-by-sector', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const results = database.prepare(`
       SELECT
         c.sector,
@@ -364,7 +366,7 @@ router.get('/dividends-by-sector', (req, res) => {
  * Screen dividend stocks with multiple criteria
  * Query params: minYield, maxYield, minPayoutRatio, maxPayoutRatio, minYearsGrowth, sector, sp500Only, sortBy, limit
  */
-router.get('/dividend-screen', (req, res) => {
+router.get('/dividend-screen', async (req, res) => {
   try {
     const {
       minYield,
@@ -469,7 +471,7 @@ router.get('/dividend-screen', (req, res) => {
  *   - limit: number of results (default 50)
  *   - type: event type filter (optional)
  */
-router.get('/recent-events', (req, res) => {
+router.get('/recent-events', async (req, res) => {
   try {
     const { limit = 50, type } = req.query;
 
@@ -583,7 +585,7 @@ router.get('/recent-events', (req, res) => {
  * Query params:
  *   - limit: number of results (default 20)
  */
-router.get('/top-buybacks', (req, res) => {
+router.get('/top-buybacks', async (req, res) => {
   try {
     const { limit = 20 } = req.query;
 
@@ -624,7 +626,7 @@ router.get('/top-buybacks', (req, res) => {
  * Query params:
  *   - quarters: number of quarters of history (default 8)
  */
-router.get('/company/:symbol', (req, res) => {
+router.get('/company/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
     const { quarters = 8 } = req.query;
@@ -686,7 +688,7 @@ router.get('/company/:symbol', (req, res) => {
  * GET /api/capital/company/:symbol/buybacks
  * Get buyback programs and activity for a company
  */
-router.get('/company/:symbol/buybacks', (req, res) => {
+router.get('/company/:symbol/buybacks', async (req, res) => {
   try {
     const { symbol } = req.params;
 
@@ -738,7 +740,7 @@ router.get('/company/:symbol/buybacks', (req, res) => {
  * Query params:
  *   - limit: number of history records (default 40)
  */
-router.get('/company/:symbol/dividends', (req, res) => {
+router.get('/company/:symbol/dividends', async (req, res) => {
   try {
     const { symbol } = req.params;
     const { limit = 40 } = req.query;
@@ -844,7 +846,7 @@ router.get('/company/:symbol/dividends', (req, res) => {
  * Query params:
  *   - quarters: number of quarters (default 20)
  */
-router.get('/company/:symbol/chart', (req, res) => {
+router.get('/company/:symbol/chart', async (req, res) => {
   try {
     const { symbol } = req.params;
     const { quarters = 20 } = req.query;
@@ -914,8 +916,9 @@ router.get('/company/:symbol/chart', (req, res) => {
  * Get overall capital allocation statistics
  * Optimized: Combined multiple queries into a single batch query
  */
-router.get('/stats', (req, res) => {
+router.get('/stats', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     // Combined query for all stats - runs as single transaction
     const allStats = database.prepare(`
       WITH summary_stats AS (
@@ -1038,7 +1041,7 @@ router.get('/stats', (req, res) => {
  * Query params:
  *   - days: days ahead to look (default 30)
  */
-router.get('/dividend-calendar', (req, res) => {
+router.get('/dividend-calendar', async (req, res) => {
   try {
     const { days = 30 } = req.query;
 
@@ -1109,8 +1112,9 @@ router.get('/dividend-calendar', (req, res) => {
  * GET /api/capital/sector-comparison
  * Compare capital allocation across sectors
  */
-router.get('/sector-comparison', (req, res) => {
+router.get('/sector-comparison', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const comparison = database.prepare(`
       SELECT
         c.sector,
@@ -1145,8 +1149,9 @@ router.get('/sector-comparison', (req, res) => {
  * GET /api/capital/update-status
  * Get current status of capital allocation data
  */
-router.get('/update-status', (req, res) => {
+router.get('/update-status', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     // Get data freshness stats
     const summaryStats = database.prepare(`
       SELECT
@@ -1189,8 +1194,9 @@ router.get('/update-status', (req, res) => {
  * This re-runs the import script logic to refresh capital allocation data
  * Returns immediately and runs processing in background
  */
-router.post('/update', (req, res) => {
+router.post('/update', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     // Get company count for status message
     const countResult = database.prepare('SELECT COUNT(*) as count FROM companies').get();
     const totalCompanies = countResult.count;
@@ -1214,6 +1220,7 @@ router.post('/update', (req, res) => {
 // Background capital allocation update function
 function runCapitalUpdate() {
   try {
+    const database = await getDatabaseAsync();
     const companies = database.prepare('SELECT id, symbol FROM companies').all();
     let processed = 0;
     let recordsUpdated = 0;

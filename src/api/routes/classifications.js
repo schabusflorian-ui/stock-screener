@@ -1,15 +1,13 @@
 // src/api/routes/classifications.js
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
-
-const database = db.getDatabase();
+const { getDatabaseAsync } = require('../../database');
 
 /**
  * GET /api/classifications
  * Get all custom classification definitions
  */
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { type } = req.query;
 
@@ -47,7 +45,7 @@ router.get('/', (req, res) => {
  * POST /api/classifications
  * Create a new custom classification
  */
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const { type, name, description, parent_name, color } = req.body;
 
@@ -84,7 +82,7 @@ router.post('/', (req, res) => {
  * PUT /api/classifications/:id
  * Update a custom classification
  */
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { name, description, parent_name, color } = req.body;
@@ -116,7 +114,7 @@ router.put('/:id', (req, res) => {
  * DELETE /api/classifications/:id
  * Delete a custom classification
  */
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -137,7 +135,7 @@ router.delete('/:id', (req, res) => {
  * GET /api/classifications/company/:symbol
  * Get custom classifications for a company
  */
-router.get('/company/:symbol', (req, res) => {
+router.get('/company/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
 
@@ -184,7 +182,7 @@ router.get('/company/:symbol', (req, res) => {
  * PUT /api/classifications/company/:symbol
  * Update custom classifications for a company
  */
-router.put('/company/:symbol', (req, res) => {
+router.put('/company/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
     const { user_sector, user_industry, user_subsector, user_tags } = req.body;
@@ -224,7 +222,7 @@ router.put('/company/:symbol', (req, res) => {
  * POST /api/classifications/company/:symbol/tags
  * Add a tag to a company
  */
-router.post('/company/:symbol/tags', (req, res) => {
+router.post('/company/:symbol/tags', async (req, res) => {
   try {
     const { symbol } = req.params;
     const { tag } = req.body;
@@ -269,7 +267,7 @@ router.post('/company/:symbol/tags', (req, res) => {
  * DELETE /api/classifications/company/:symbol/tags/:tag
  * Remove a tag from a company
  */
-router.delete('/company/:symbol/tags/:tag', (req, res) => {
+router.delete('/company/:symbol/tags/:tag', async (req, res) => {
   try {
     const { symbol, tag } = req.params;
 
@@ -307,7 +305,7 @@ router.delete('/company/:symbol/tags/:tag', (req, res) => {
  * GET /api/classifications/companies
  * Get companies filtered by custom classification
  */
-router.get('/companies', (req, res) => {
+router.get('/companies', async (req, res) => {
   try {
     const { user_sector, user_industry, user_subsector, tag, limit = 100 } = req.query;
 
@@ -363,7 +361,7 @@ router.get('/companies', (req, res) => {
  * POST /api/classifications/bulk
  * Bulk assign classification to multiple companies
  */
-router.post('/bulk', (req, res) => {
+router.post('/bulk', async (req, res) => {
   try {
     const { symbols, user_sector, user_industry, user_subsector, add_tags, remove_tags } = req.body;
 

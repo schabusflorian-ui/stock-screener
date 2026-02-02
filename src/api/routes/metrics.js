@@ -1,16 +1,15 @@
 // src/api/routes/metrics.js
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
-
-const database = db.getDatabase();
+const { getDatabaseAsync } = require('../../database');
 
 /**
  * GET /api/metrics/summary
  * Summary statistics across all companies
  */
-router.get('/summary', (req, res) => {
+router.get('/summary', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const summary = database.prepare(`
       SELECT 
         COUNT(DISTINCT m.company_id) as total_companies,
@@ -39,7 +38,7 @@ router.get('/summary', (req, res) => {
  * GET /api/metrics/compare
  * Compare metrics across multiple companies
  */
-router.get('/compare', (req, res) => {
+router.get('/compare', async (req, res) => {
   try {
     const { symbols, metric = 'roic' } = req.query;
 
@@ -90,7 +89,7 @@ router.get('/compare', (req, res) => {
  * GET /api/metrics/leaderboard
  * Top companies by specific metric
  */
-router.get('/leaderboard', (req, res) => {
+router.get('/leaderboard', async (req, res) => {
   try {
     const { metric = 'roic', limit = 10, order = 'DESC', periodType = 'ttm' } = req.query;
 

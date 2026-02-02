@@ -3,11 +3,9 @@
 
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 const { spawn } = require('child_process');
 const path = require('path');
-
-const database = db.getDatabase();
 
 /**
  * GET /api/sec-refresh/status
@@ -20,7 +18,7 @@ let secStatusCache = {
 };
 const SEC_STATUS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
-router.get('/status', (req, res) => {
+router.get('/status', async (req, res) => {
   try {
     // Return cached data if fresh enough
     if (secStatusCache.data && secStatusCache.lastUpdated &&
@@ -96,7 +94,7 @@ router.get('/status', (req, res) => {
  * Trigger SEC direct refresh
  * Body: { mode: 'watchlist' | 'all' | 'symbols', symbols?: ['AAPL', 'MSFT'] }
  */
-router.post('/run', (req, res) => {
+router.post('/run', async (req, res) => {
   try {
     const { mode = 'watchlist', symbols = [] } = req.body || {};
 
@@ -142,8 +140,9 @@ router.post('/run', (req, res) => {
  * GET /api/sec-refresh/watchlist
  * Get watchlist symbols
  */
-router.get('/watchlist', (req, res) => {
+router.get('/watchlist', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const watchlist = database.prepare(`
       SELECT c.symbol, c.name, c.cik
       FROM watchlist w
