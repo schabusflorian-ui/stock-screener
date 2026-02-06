@@ -1,6 +1,6 @@
 {
   "name": "investment-project",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A tool for analyzing stocks using value investing metrics.",
   "main": "src/api/server.js",
   "directories": {
