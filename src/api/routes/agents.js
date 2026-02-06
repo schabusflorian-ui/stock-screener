@@ -431,7 +431,35 @@ router.delete('/:id/portfolios/:portfolioId', (req, res) => {
  */
 router.get('/:id/performance', (req, res) => {
   try {
-    const performance = agentService.getAgentPerformance(parseInt(req.params.id, 10));
+    const agentId = parseInt(req.params.id, 10);
+
+    // Validate agent exists
+    const agent = agentService.getAgent(agentId);
+    if (!agent) {
+      return res.status(404).json({ success: false, error: 'Agent not found' });
+    }
+
+    const performance = agentService.getAgentPerformance(agentId);
+
+    // Handle case where no performance data exists yet
+    if (!performance || !performance.total_signals_generated) {
+      return res.json({
+        success: true,
+        data: {
+          message: 'No performance data available yet',
+          total_signals_generated: 0,
+          total_trades_executed: 0,
+          win_rate: 0,
+          avg_return: 0,
+          total_return: 0,
+          sharpe_ratio: 0,
+          max_drawdown_actual: 0,
+          signalPerformance: { buy: [], sell: [] },
+          recentReturns: []
+        }
+      });
+    }
+
     res.json({ success: true, data: performance });
   } catch (error) {
     console.error('Error fetching agent performance:', error);

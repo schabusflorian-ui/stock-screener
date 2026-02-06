@@ -2808,7 +2808,11 @@ export const factorsAPI = {
 
   // Custom factor operations
   backfill: ({ factorId, formula, startDate, endDate, frequency = 'monthly' }) =>
-    apiLong.post('/factors/backfill', { factorId, formula, startDate, endDate, frequency })
+    apiLong.post('/factors/backfill', { factorId, formula, startDate, endDate, frequency }),
+
+  // Run factor backtest with extended timeout (backtests can take several minutes)
+  backtest: ({ factorId, formula, config }) =>
+    apiLong.post('/factors/backtest', { factorId, formula, config })
 };
 
 // ============================================

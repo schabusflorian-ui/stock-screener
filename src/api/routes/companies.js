@@ -426,7 +426,7 @@ router.get('/:symbol', async (req, res) => {
     }
 
     // Get reporting currency for non-US companies
-    const reportingCurrency = currencyService.getCompanyCurrency(company.id);
+    const reportingCurrency = await currencyService.getCompanyCurrency(company.id);
     const currencyInfo = currencyService.getCurrencyInfo(reportingCurrency);
 
     // Get home index for company based on country
@@ -742,7 +742,7 @@ router.get('/:symbol/metrics', responseCacheMiddleware(CACHE_MEDIUM), async (req
     const dataSource = enrichedMetrics[0]?.data_source || 'sec';
 
     // Get reporting currency for non-US companies
-    const reportingCurrency = currencyService.getCompanyCurrency(company.id);
+    const reportingCurrency = await currencyService.getCompanyCurrency(company.id);
     const currencyInfo = currencyService.getCurrencyInfo(reportingCurrency);
 
     // Add USD-converted values for monetary fields if not already USD
@@ -960,7 +960,7 @@ router.get('/:symbol/breakdown', responseCacheMiddleware(CACHE_MEDIUM), async (r
     } : null;
 
     // Get reporting currency for non-US companies
-    const reportingCurrency = currencyService.getCompanyCurrency(company.id);
+    const reportingCurrency = await currencyService.getCompanyCurrency(company.id);
     const currencyInfo = currencyService.getCurrencyInfo(reportingCurrency);
 
     // Add USD-converted values for monetary fields if not already USD
@@ -1276,7 +1276,7 @@ router.get('/:symbol/balance-sheet', async (req, res) => {
     });
 
     // Get reporting currency for non-US companies
-    const reportingCurrency = currencyService.getCompanyCurrency(company.id);
+    const reportingCurrency = await currencyService.getCompanyCurrency(company.id);
     const currencyInfo = currencyService.getCurrencyInfo(reportingCurrency);
 
     res.json({
@@ -1461,7 +1461,7 @@ router.get('/:symbol/cash-flow', async (req, res) => {
     });
 
     // Get reporting currency for non-US companies
-    const reportingCurrency = currencyService.getCompanyCurrency(company.id);
+    const reportingCurrency = await currencyService.getCompanyCurrency(company.id);
     const currencyInfo = currencyService.getCurrencyInfo(reportingCurrency);
 
     res.json({

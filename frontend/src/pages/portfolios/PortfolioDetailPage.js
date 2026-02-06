@@ -833,7 +833,15 @@ function PortfolioDetailPage() {
             </div>
             <div className="portfolio-title">
               <h1>{portfolio.name}</h1>
-              <span className="portfolio-type">{portfolio.type}</span>
+              <div className="portfolio-meta-row">
+                <span className="portfolio-type">{portfolio.type}</span>
+                {portfolio.type === 'agent_managed' && portfolio.agentId && (
+                  <Link to={`/agents/${portfolio.agentId}`} className="agent-link">
+                    <Brain size={14} />
+                    View Agent
+                  </Link>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1264,6 +1272,7 @@ function PortfolioDetailPage() {
                 height={400}
                 portfolioName={portfolio.name}
                 benchmarkName={BENCHMARK_LABELS[preferences.defaultBenchmark] || 'S&P 500'}
+                initialInvestment={(portfolio.total_deposited || 0) - (portfolio.total_withdrawn || 0)}
               />
             </AskAIProvider>
           </div>

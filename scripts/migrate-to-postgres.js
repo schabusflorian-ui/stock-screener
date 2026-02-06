@@ -11,65 +11,32 @@ const fs = require('fs');
 require('dotenv').config();
 
 const BATCH_SIZE = 1000;
+const MAX_PARAMETERS = 60000; // PostgreSQL limit is 65535, use 60000 for safety
 
-// Tables to migrate in order (respecting foreign key dependencies)
-const TABLES = [
-  // Core tables (no dependencies)
-  'companies',
-  'stock_indexes',
-  'tracked_subreddits',
+/**
+ * Get all table names from SQLite database
+ * Automatically discovers all tables to migrate
+ * @param {Database} sqliteDb - SQLite database instance
+ * @param {Array<string>} excludeTables - Optional array of table names to exclude
+ */
+function getAllTableNames(sqliteDb, excludeTables = []) {
+  const tables = sqliteDb.prepare(`
+    SELECT name FROM sqlite_master
+    WHERE type='table'
+      AND name NOT LIKE 'sqlite_%'
+    ORDER BY name
+  `).all();
 
-  // Dependent on companies
-  'company_identifiers',
-  'financial_data',
-  'calculated_metrics',
-  'daily_prices',
-  'liquidity_metrics',
-  'stocktwits_messages',
-  'news_articles',
-  'combined_sentiment',
-  'analyst_estimates',
-  'data_fetch_log',
+  const allTables = tables.map(t => t.name);
 
-  // Dependent on stock_indexes
-  'index_constituents',
-  'index_metrics',
+  // Filter out excluded tables
+  if (excludeTables.length > 0) {
+    const excludeSet = new Set(excludeTables);
+    return allTables.filter(t => !excludeSet.has(t));
+  }
 
-  // NL conversations
-  'nl_conversations',
-  'nl_messages',
-
-  // Market-wide data
-  'market_sentiment',
-
-  // Add any additional tables from migrations
-  'users',
-  'user_preferences',
-  'portfolios',
-  'portfolio_positions',
-  'watchlists',
-  'watchlist_items',
-  'trades',
-  'paper_trades',
-  'paper_portfolios',
-  'backtest_runs',
-  'backtest_results',
-  'investor_holdings',
-  'investor_13f_filings',
-  'etf_holdings',
-  'knowledge_base',
-  'notes',
-  'theses',
-  'alerts',
-  'update_jobs',
-  'update_runs',
-  'sec_filings',
-  'earnings_calendar',
-  'macro_indicators',
-  'factor_exposures',
-  'risk_metrics',
-  'sessions',
-];
+  return allTables;
+}
 
 /**
  * Convert SQLite schema to PostgreSQL
@@ -78,13 +45,13 @@ function convertSchemaType(sqliteType) {
   const type = (sqliteType || 'TEXT').toUpperCase();
 
   if (type.includes('INTEGER PRIMARY KEY AUTOINCREMENT')) {
-    return 'SERIAL PRIMARY KEY';
+    return 'BIGSERIAL PRIMARY KEY';
   }
   if (type.includes('INTEGER PRIMARY KEY')) {
-    return 'INTEGER PRIMARY KEY';
+    return 'BIGINT PRIMARY KEY';
   }
   if (type === 'INTEGER' || type === 'INT') {
-    return 'INTEGER';
+    return 'BIGINT';
   }
   if (type === 'REAL' || type === 'FLOAT' || type === 'DOUBLE') {
     return 'DOUBLE PRECISION';
@@ -117,6 +84,37 @@ function getTableInfo(sqliteDb, tableName) {
 }
 
 /**
+ * Extract UNIQUE constraints from SQLite table
+ */
+function getUniqueConstraints(sqliteDb, tableName) {
+  try {
+    // Get the CREATE TABLE statement
+    const schema = sqliteDb.prepare(`
+      SELECT sql FROM sqlite_master
+      WHERE type='table' AND name=?
+    `).get(tableName);
+
+    if (!schema || !schema.sql) return [];
+
+    const constraints = [];
+    const sql = schema.sql;
+
+    // Match UNIQUE constraints in format: UNIQUE(col1, col2, ...)
+    const uniqueRegex = /UNIQUE\s*\(([^)]+)\)/gi;
+    let match;
+
+    while ((match = uniqueRegex.exec(sql)) !== null) {
+      const columns = match[1].split(',').map(c => c.trim());
+      constraints.push(columns);
+    }
+
+    return constraints;
+  } catch (err) {
+    return [];
+  }
+}
+
+/**
  * Create PostgreSQL table from SQLite schema
  */
 async function createPostgresTable(pgClient, sqliteDb, tableName) {
@@ -137,17 +135,30 @@ async function createPostgresTable(pgClient, sqliteDb, tableName) {
 
     if (col.dflt_value !== null && !col.pk) {
       let defaultVal = col.dflt_value;
+      const colType = (col.type || 'TEXT').toUpperCase();
+
       // Convert SQLite defaults to PostgreSQL
       if (defaultVal === 'CURRENT_TIMESTAMP') {
         defaultVal = 'NOW()';
+      } else if (defaultVal === "datetime('now')") {
+        // Convert SQLite datetime() to PostgreSQL NOW()
+        // Keep as TEXT if column type is TEXT, otherwise use TIMESTAMP
+        defaultVal = colType === 'TEXT' ? "NOW()::TEXT" : 'NOW()';
+      } else if (defaultVal === '0' && colType === 'BOOLEAN') {
+        defaultVal = 'false';
+      } else if (defaultVal === '1' && colType === 'BOOLEAN') {
+        defaultVal = 'true';
       } else if (defaultVal === '1' || defaultVal === '0') {
-        // Keep numeric defaults as-is
+        // Keep other numeric defaults as-is
       }
       def += ` DEFAULT ${defaultVal}`;
     }
 
     return def;
   });
+
+  // Extract UNIQUE constraints
+  const uniqueConstraints = getUniqueConstraints(sqliteDb, tableName);
 
   const createSQL = `
     CREATE TABLE IF NOT EXISTS "${tableName}" (
@@ -158,6 +169,27 @@ async function createPostgresTable(pgClient, sqliteDb, tableName) {
   try {
     await pgClient.query(createSQL);
     console.log(`  ✅ Created table: ${tableName}`);
+
+    // Add UNIQUE constraints if they don't exist
+    for (const columns of uniqueConstraints) {
+      const constraintName = `${tableName}_${columns.join('_')}_key`;
+      const columnList = columns.map(c => `"${c}"`).join(', ');
+
+      try {
+        await pgClient.query(`
+          ALTER TABLE "${tableName}"
+          ADD CONSTRAINT "${constraintName}"
+          UNIQUE (${columnList})
+        `);
+        console.log(`    ✅ Added UNIQUE constraint: ${constraintName}`);
+      } catch (err) {
+        // Constraint might already exist (IF NOT EXISTS not supported for constraints)
+        if (!err.message.includes('already exists')) {
+          console.log(`    ⚠️  Could not add UNIQUE constraint: ${err.message}`);
+        }
+      }
+    }
+
     return true;
   } catch (err) {
     console.error(`  ❌ Failed to create ${tableName}: ${err.message}`);
@@ -166,9 +198,43 @@ async function createPostgresTable(pgClient, sqliteDb, tableName) {
 }
 
 /**
- * Migrate data from SQLite table to PostgreSQL
+ * Create a new PostgreSQL client connection
  */
-async function migrateTableData(pgClient, sqliteDb, tableName) {
+function createPgClient(onConnectionError) {
+  const client = new Client({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production'
+      ? { rejectUnauthorized: false }
+      : false,
+    // Prevent connection timeouts during long-running migration
+    connectionTimeoutMillis: 60000, // 60 seconds to establish connection
+    keepAlive: true, // Enable TCP keepalive
+    keepAliveInitialDelayMillis: 10000, // Start keepalive after 10 seconds
+    statement_timeout: 600000, // 10 minutes per query (Railway default timeout)
+  });
+
+  // Handle connection errors at the driver level
+  if (onConnectionError) {
+    client.on('error', (err) => {
+      console.log(`\n⚠️  Client error event: ${err.message}`);
+      onConnectionError(err);
+    });
+  }
+
+  return client;
+}
+
+/**
+ * Sleep for specified milliseconds
+ */
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Migrate data from SQLite table to PostgreSQL with automatic retry on connection failures
+ */
+async function migrateTableData(pgClientRef, sqliteDb, tableName) {
   // Check if table exists in SQLite
   const tableExists = sqliteDb.prepare(`
     SELECT name FROM sqlite_master
@@ -195,12 +261,77 @@ async function migrateTableData(pgClient, sqliteDb, tableName) {
 
   let migrated = 0;
   let offset = 0;
+  const MAX_RETRIES = 5;
+  let connectionErrorOccurred = false;
+
+  // Calculate optimal batch size based on column count to avoid PostgreSQL parameter limit
+  const columnCount = columns.length;
+  const maxRowsPerBatch = Math.min(BATCH_SIZE, Math.floor(MAX_PARAMETERS / columnCount));
+  const effectiveBatchSize = Math.max(1, maxRowsPerBatch);
+
+  if (effectiveBatchSize < BATCH_SIZE) {
+    console.log(`    ℹ️  Using batch size of ${effectiveBatchSize} rows (${columnCount} columns × ${effectiveBatchSize} = ${columnCount * effectiveBatchSize} parameters)`);
+  }
+
+  // Set up connection error handler
+  const handleConnectionError = async (err) => {
+    if (!connectionErrorOccurred) {
+      connectionErrorOccurred = true;
+      console.log(`\n⚠️  Handling connection error: ${err.message}`);
+    }
+  };
 
   while (offset < count) {
+    // Check if we need to reconnect due to connection error
+    if (connectionErrorOccurred) {
+      console.log(`\n⚠️  Connection error detected, reconnecting...`);
+
+      // Close old connection
+      try {
+        pgClientRef.client.removeAllListeners('error');
+        await pgClientRef.client.end();
+      } catch (e) {
+        // Ignore errors closing dead connection
+      }
+
+      // Retry reconnection with exponential backoff
+      let reconnectAttempt = 0;
+      const MAX_RECONNECT_ATTEMPTS = 5;
+      let reconnected = false;
+
+      while (!reconnected && reconnectAttempt < MAX_RECONNECT_ATTEMPTS) {
+        reconnectAttempt++;
+        const backoffMs = Math.min(5000 * Math.pow(2, reconnectAttempt - 1), 60000); // 5s, 10s, 20s, 40s, 60s
+
+        console.log(`\n    Reconnect attempt ${reconnectAttempt}/${MAX_RECONNECT_ATTEMPTS}, waiting ${backoffMs/1000}s...`);
+        await sleep(backoffMs);
+
+        try {
+          // Create new connection with error handler
+          pgClientRef.client = createPgClient(handleConnectionError);
+          await pgClientRef.client.connect();
+          console.log(`    ✅ Reconnected to PostgreSQL`);
+
+          // Re-enable replica mode
+          await pgClientRef.client.query('SET session_replication_role = replica');
+
+          reconnected = true;
+          connectionErrorOccurred = false;
+        } catch (reconnectErr) {
+          console.log(`    ❌ Reconnection failed: ${reconnectErr.message}`);
+
+          if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
+            throw new Error(`Failed to reconnect after ${MAX_RECONNECT_ATTEMPTS} attempts: ${reconnectErr.message}`);
+          }
+          // Try again after backoff
+        }
+      }
+    }
+
     // Fetch batch from SQLite
     const rows = sqliteDb.prepare(`
       SELECT * FROM "${tableName}"
-      LIMIT ${BATCH_SIZE} OFFSET ${offset}
+      LIMIT ${effectiveBatchSize} OFFSET ${offset}
     `).all();
 
     if (rows.length === 0) break;
@@ -232,31 +363,103 @@ async function migrateTableData(pgClient, sqliteDb, tableName) {
       })
     );
 
-    try {
-      await pgClient.query(insertSQL, values);
-      migrated += rows.length;
-    } catch (err) {
-      console.error(`    ❌ Batch error: ${err.message}`);
-      // Try individual inserts
-      for (const row of rows) {
-        try {
-          const singlePlaceholders = columns.map((_, i) => `$${i + 1}`).join(', ');
-          const singleSQL = `
-            INSERT INTO "${tableName}" (${columnNames.join(', ')})
-            VALUES (${singlePlaceholders})
-            ON CONFLICT DO NOTHING
-          `;
-          const singleValues = columns.map(col => row[col.name]);
-          await pgClient.query(singleSQL, singleValues);
-          migrated++;
-        } catch (rowErr) {
-          console.error(`    ❌ Row error: ${rowErr.message}`);
+    let retryCount = 0;
+    let batchSuccess = false;
+
+    while (!batchSuccess && retryCount < MAX_RETRIES) {
+      // If connection error occurred, break and reconnect at the top of the main loop
+      if (connectionErrorOccurred) {
+        break;
+      }
+
+      try {
+        await pgClientRef.client.query(insertSQL, values);
+        migrated += rows.length;
+        batchSuccess = true;
+      } catch (err) {
+        // Check if it's a connection error
+        const isConnectionError =
+          err.message.includes('Connection terminated') ||
+          err.message.includes('Connection lost') ||
+          err.message.includes('ECONNRESET') ||
+          err.message.includes('socket hang up');
+
+        if (isConnectionError && retryCount < MAX_RETRIES - 1) {
+          retryCount++;
+          const backoffMs = Math.min(1000 * Math.pow(2, retryCount), 30000); // Exponential backoff, max 30s
+          console.log(`\n    ⚠️  Connection lost, reconnecting in ${backoffMs/1000}s (attempt ${retryCount}/${MAX_RETRIES})...`);
+
+          // Close old connection
+          try {
+            pgClientRef.client.removeAllListeners('error');
+            await pgClientRef.client.end();
+          } catch (e) {
+            // Ignore errors closing dead connection
+          }
+
+          // Wait before reconnecting
+          await sleep(backoffMs);
+
+          // Create new connection with error handler - wrap in try-catch to handle connection errors
+          try {
+            pgClientRef.client = createPgClient(handleConnectionError);
+            await pgClientRef.client.connect();
+            console.log(`    ✅ Reconnected to PostgreSQL`);
+
+            // Re-enable replica mode
+            await pgClientRef.client.query('SET session_replication_role = replica');
+
+            // Retry the batch
+            continue;
+          } catch (reconnectErr) {
+            console.log(`    ❌ Reconnection failed: ${reconnectErr.message}`);
+            // Will retry on next iteration if retryCount < MAX_RETRIES - 1
+            continue;
+          }
         }
+
+        // Not a connection error or max retries exceeded - try individual inserts
+        console.error(`    ❌ Batch error: ${err.message}`);
+
+        // Check if connection is still alive before trying individual inserts
+        if (err.message.includes('not queryable') || err.message.includes('connection error')) {
+          connectionErrorOccurred = true;
+          break; // Will reconnect at top of main loop
+        }
+
+        for (const row of rows) {
+          try {
+            const singlePlaceholders = columns.map((_, i) => `$${i + 1}`).join(', ');
+            const singleSQL = `
+              INSERT INTO "${tableName}" (${columnNames.join(', ')})
+              VALUES (${singlePlaceholders})
+              ON CONFLICT DO NOTHING
+            `;
+            const singleValues = columns.map(col => row[col.name]);
+            await pgClientRef.client.query(singleSQL, singleValues);
+            migrated++;
+          } catch (rowErr) {
+            // Check if individual insert failed due to connection error
+            if (rowErr.message.includes('not queryable') || rowErr.message.includes('connection error')) {
+              connectionErrorOccurred = true;
+              break; // Stop individual inserts and reconnect
+            }
+            console.error(`    ❌ Row error: ${rowErr.message}`);
+          }
+        }
+        batchSuccess = true; // Mark as done even if some individual rows failed
       }
     }
 
-    offset += BATCH_SIZE;
-    process.stdout.write(`\r    Progress: ${migrated}/${count}`);
+    if (!batchSuccess && !connectionErrorOccurred) {
+      throw new Error(`Failed to migrate batch after ${MAX_RETRIES} retries`);
+    }
+
+    // Only advance offset if batch was successful
+    if (batchSuccess) {
+      offset += effectiveBatchSize;
+      process.stdout.write(`\r    Progress: ${migrated}/${count} (${Math.floor(migrated/count*100)}%)`);
+    }
   }
 
   console.log(`\r  ✅ ${tableName}: ${migrated} rows migrated`);
@@ -318,20 +521,20 @@ async function migrate() {
 
   const sqliteDb = new Database(sqlitePath, { readonly: true });
 
-  // Connect to PostgreSQL
-  const pgClient = new Client({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production'
-      ? { rejectUnauthorized: false }
-      : false,
-  });
+  // Connect to PostgreSQL - use reference object so we can replace client on reconnect
+  // Global connection error handler (logs but doesn't crash, migration loop will handle reconnection)
+  const globalConnectionErrorHandler = (err) => {
+    console.log(`\n⚠️  Global connection error: ${err.message}`);
+  };
+
+  const pgClientRef = { client: createPgClient(globalConnectionErrorHandler) };
 
   try {
-    await pgClient.connect();
+    await pgClientRef.client.connect();
     console.log('✅ Connected to PostgreSQL\n');
 
     // Disable triggers during migration
-    await pgClient.query('SET session_replication_role = replica');
+    await pgClientRef.client.query('SET session_replication_role = replica');
 
     const results = {
       created: 0,
@@ -340,16 +543,31 @@ async function migrate() {
       totalRows: 0,
     };
 
+    // Get already-migrated tables from PostgreSQL
+    console.log('🔍 Checking for already-migrated tables...');
+    const pgTablesResult = await pgClientRef.client.query(`
+      SELECT tablename
+      FROM pg_tables
+      WHERE schemaname = 'public'
+      ORDER BY tablename
+    `);
+    const alreadyMigrated = pgTablesResult.rows.map(r => r.tablename);
+    console.log(`✅ Found ${alreadyMigrated.length} already-migrated tables in PostgreSQL\n`);
+
+    // Get all tables from SQLite database, excluding already-migrated tables
+    const TABLES = getAllTableNames(sqliteDb, alreadyMigrated);
+    console.log(`📋 Found ${TABLES.length} tables to migrate from SQLite database\n`);
+
     // Create tables and migrate data
     for (const table of TABLES) {
-      const created = await createPostgresTable(pgClient, sqliteDb, table);
+      const created = await createPostgresTable(pgClientRef.client, sqliteDb, table);
       if (created) {
         results.created++;
-        const { skipped, rows } = await migrateTableData(pgClient, sqliteDb, table);
+        const { skipped, rows } = await migrateTableData(pgClientRef, sqliteDb, table);
         if (!skipped) {
           results.migrated++;
           results.totalRows += rows;
-          await resetSequences(pgClient, table);
+          await resetSequences(pgClientRef.client, table);
         } else {
           results.skipped++;
         }
@@ -357,7 +575,7 @@ async function migrate() {
     }
 
     // Re-enable triggers
-    await pgClient.query('SET session_replication_role = DEFAULT');
+    await pgClientRef.client.query('SET session_replication_role = DEFAULT');
 
     // Summary
     console.log('\n' + '='.repeat(50));
@@ -375,7 +593,7 @@ async function migrate() {
     process.exit(1);
   } finally {
     sqliteDb.close();
-    await pgClient.end();
+    await pgClientRef.client.end();
   }
 }
 

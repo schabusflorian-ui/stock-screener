@@ -42,7 +42,8 @@ function PerformanceChart({
   showBenchmark = true,
   initialShowAlpha = false,
   height = 350,
-  portfolioName = 'Portfolio'
+  portfolioName = 'Portfolio',
+  initialInvestment = null // Net invested capital for accurate return calculation
 }) {
   // Index data state
   const [indexData, setIndexData] = useState({ spy: null, qqq: null, dia: null });
@@ -102,8 +103,9 @@ function PerformanceChart({
   const chartData = useMemo(() => {
     if (!data || data.length === 0) return [];
 
-    // Calculate percentage returns from start
-    const startValue = data[0].value;
+    // Calculate percentage returns from initial investment (or first snapshot if not provided)
+    // Using initialInvestment gives accurate total return, not just period return
+    const startValue = initialInvestment || data[0].value;
 
     // Get start prices for indices
     const spyStart = indexData.spy?.[0]?.adjusted_close || indexData.spy?.[0]?.close;
@@ -152,7 +154,7 @@ function PerformanceChart({
         volume: item.volume
       };
     });
-  }, [data, indexData]);
+  }, [data, indexData, initialInvestment]);
 
   // Calculate summary stats
   const stats = useMemo(() => {
@@ -343,7 +345,7 @@ function PerformanceChart({
               dataKey="date"
               tickFormatter={(date) => {
                 const d = new Date(date);
-                return d.toLocaleDateString('en-US', { month: 'short' });
+                return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
               }}
               tick={{ fontSize: 11, fill: '#94A3B8', fontFamily: 'ui-monospace, monospace' }}
               tickLine={false}

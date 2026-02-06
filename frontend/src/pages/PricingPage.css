@@ -1,9 +1,22 @@
 /* PricingPage.css */
 
 .pricing-page {
+  position: relative;
   max-width: 1200px;
   margin: 0 auto;
   padding: var(--space-8, 32px) var(--space-4, 16px);
+}
+
+/* Gold gradient top bar - PRISM branding */
+.pricing-page::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--gold-gradient);
+  border-radius: var(--radius-lg, 12px) var(--radius-lg, 12px) 0 0;
 }
 
 /* Header */
@@ -81,8 +94,8 @@
 .pricing-page__toggle {
   display: inline-flex;
   align-items: center;
-  background: var(--color-bg-secondary, #1a1a1a);
-  border: 1px solid var(--color-border, #333);
+  background: var(--color-navy-900, #0F172A);
+  border: 1px solid var(--color-navy-700, #334155);
   border-radius: var(--radius-lg, 12px);
   padding: 4px;
 }
@@ -107,8 +120,9 @@
 }
 
 .pricing-page__toggle button.active {
-  color: var(--color-text-primary, #fff);
-  background: var(--color-bg-tertiary, #252525);
+  color: var(--color-navy-900, #0F172A);
+  background: var(--gold-gradient);
+  font-weight: 600;
 }
 
 .pricing-page__toggle-badge {
@@ -149,24 +163,41 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  background: var(--color-bg-secondary, #1a1a1a);
-  border: 1px solid var(--color-border, #333);
+  background: var(--color-navy-900, #0F172A);
+  border: 1px solid var(--color-navy-700, #334155);
   border-radius: var(--radius-xl, 16px);
   padding: var(--space-6, 24px);
   transition: all 0.2s ease;
 }
 
 .pricing-tier:hover {
-  border-color: var(--color-border-hover, #444);
+  border-color: var(--color-navy-600, #475569);
 }
 
 .pricing-tier--current {
-  border-color: var(--color-primary, #3b82f6);
+  background: linear-gradient(135deg,
+    rgba(15, 23, 42, 0.95) 0%,
+    rgba(212, 175, 55, 0.05) 100%
+  );
+  border-color: var(--color-gold-500, #D4AF37);
 }
 
 .pricing-tier--popular {
-  border-color: var(--color-primary, #3b82f6);
-  box-shadow: 0 0 0 1px var(--color-primary, #3b82f6);
+  border-color: var(--color-gold-500, #D4AF37);
+  box-shadow: 0 0 0 1px var(--color-gold-500, #D4AF37);
+}
+
+/* Gold gradient top bar for popular/current tier */
+.pricing-tier--popular::before,
+.pricing-tier--current::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--gold-gradient);
+  border-radius: var(--radius-xl, 16px) var(--radius-xl, 16px) 0 0;
 }
 
 .pricing-tier__popular-badge {
@@ -179,9 +210,10 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: white;
-  background: var(--color-primary, #3b82f6);
+  color: var(--color-navy-900, #0F172A);
+  background: var(--gold-gradient);
   border-radius: 100px;
+  box-shadow: 0 2px 8px rgba(212, 175, 55, 0.3);
 }
 
 .pricing-tier__header {
@@ -271,35 +303,40 @@
 }
 
 .pricing-tier__btn--current {
-  color: var(--color-text-secondary, #888);
-  background: var(--color-bg-tertiary, #252525);
+  color: var(--color-navy-900, #0F172A);
+  background: var(--gold-gradient);
   cursor: default;
+  font-weight: 600;
 }
 
 .pricing-tier__btn--free {
   color: var(--color-text-secondary, #888);
-  background: var(--color-bg-tertiary, #252525);
+  background: var(--color-navy-800, #1E293B);
   cursor: default;
 }
 
 .pricing-tier__btn--upgrade {
   color: white;
-  background: var(--color-bg-tertiary, #252525);
-  border: 1px solid var(--color-border, #333);
+  background: var(--color-navy-800, #1E293B);
+  border: 1px solid var(--color-navy-700, #334155);
 }
 
 .pricing-tier__btn--upgrade:hover:not(:disabled) {
-  background: var(--color-bg-hover, #2a2a2a);
-  border-color: var(--color-border-hover, #444);
+  background: var(--color-navy-700, #334155);
+  border-color: var(--color-gold-500, #D4AF37);
 }
 
 .pricing-tier__btn--popular {
-  background: var(--color-primary, #3b82f6);
+  background: var(--gold-gradient);
+  color: var(--color-navy-900, #0F172A);
+  font-weight: 600;
   border: none;
+  box-shadow: 0 4px 12px rgba(212, 175, 55, 0.3);
 }
 
 .pricing-tier__btn--popular:hover:not(:disabled) {
   filter: brightness(1.1);
+  box-shadow: 0 6px 16px rgba(212, 175, 55, 0.4);
 }
 
 .pricing-tier__btn--manage {
@@ -406,7 +443,7 @@
 /* FAQ */
 .pricing-page__faq {
   padding: var(--space-8, 32px) 0;
-  border-top: 1px solid var(--color-border, #333);
+  border-top: 1px solid var(--color-navy-700, #334155);
 }
 
 .pricing-page__faq h2 {
@@ -425,9 +462,15 @@
 
 .pricing-faq-item {
   padding: var(--space-4, 16px);
-  background: var(--color-bg-secondary, #1a1a1a);
-  border: 1px solid var(--color-border, #333);
+  background: var(--color-navy-900, #0F172A);
+  border: 1px solid var(--color-navy-700, #334155);
   border-radius: var(--radius-lg, 12px);
+  transition: all 0.2s ease;
+}
+
+.pricing-faq-item:hover {
+  border-color: var(--color-gold-500, #D4AF37);
+  box-shadow: 0 4px 12px rgba(212, 175, 55, 0.15);
 }
 
 .pricing-faq-item h3 {

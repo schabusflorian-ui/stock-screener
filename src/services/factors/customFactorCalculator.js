@@ -73,7 +73,10 @@ class CustomFactorCalculator {
       transformations = {},
       universe = 'ALL',
       minMarketCap = null,
-      storeResults = false
+      storeResults = false,
+      // NEW: Quality filter options
+      qualityFilters = DEFAULT_QUALITY_FILTERS,
+      disableQualityFilters = false  // Escape hatch for testing
     } = options;
 
     // Parse the formula
@@ -88,7 +91,9 @@ class CustomFactorCalculator {
     // Build query to get all stocks with required metrics
     const stocks = this._getStocksWithMetrics(requiredMetrics, asOfDate, {
       universe,
-      minMarketCap
+      minMarketCap,
+      qualityFilters,
+      disableQualityFilters
     });
 
     if (stocks.length === 0) {
@@ -104,6 +109,7 @@ class CustomFactorCalculator {
 
       return {
         symbol: stock.symbol,
+        name: stock.name,
         company_id: stock.company_id,
         sector: stock.sector,
         market_cap: stock.market_cap,
@@ -261,7 +267,12 @@ class CustomFactorCalculator {
    * Get stocks with required metrics at a date
    */
   _getStocksWithMetrics(requiredMetrics, asOfDate, options = {}) {
-    const { universe = 'ALL', minMarketCap = null } = options;
+    const {
+      universe = 'ALL',
+      minMarketCap = null,
+      qualityFilters = DEFAULT_QUALITY_FILTERS,
+      disableQualityFilters = false
+    } = options;
 
     // Build the SELECT clause dynamically
     const metricSelects = requiredMetrics.map(m => {
@@ -280,6 +291,7 @@ class CustomFactorCalculator {
       SELECT
         c.id as company_id,
         c.symbol,
+        c.name,
         c.sector,
         c.industry,
         c.market_cap,
@@ -306,10 +318,35 @@ class CustomFactorCalculator {
           GROUP BY company_id
         ) latest ON sfs1.company_id = latest.company_id AND sfs1.score_date = latest.latest_score
       ) sfs ON c.id = sfs.company_id
+      LEFT JOIN price_metrics pm ON c.id = pm.company_id
       WHERE c.is_active = 1
     `;
 
     const params = [asOfDate, asOfDate];
+
+    // Add quality filters to exclude garbage stocks
+    if (!disableQualityFilters && qualityFilters) {
+      if (qualityFilters.minMarketCap) {
+        query += ' AND (pm.market_cap_usd IS NULL OR pm.market_cap_usd >= ?)';
+        params.push(qualityFilters.minMarketCap);
+      }
+      if (qualityFilters.minAvgVolume) {
+        query += ' AND (pm.avg_volume_30d IS NULL OR pm.avg_volume_30d >= ?)';
+        params.push(qualityFilters.minAvgVolume);
+      }
+      if (qualityFilters.minPrice) {
+        query += ' AND (pm.last_price IS NULL OR pm.last_price >= ?)';
+        params.push(qualityFilters.minPrice);
+      }
+      if (qualityFilters.maxDebtToEquity) {
+        query += ' AND (cm.debt_to_equity IS NULL OR cm.debt_to_equity <= ?)';
+        params.push(qualityFilters.maxDebtToEquity);
+      }
+      if (qualityFilters.minDataQualityScore) {
+        query += ' AND (cm.data_quality_score IS NULL OR cm.data_quality_score >= ?)';
+        params.push(qualityFilters.minDataQualityScore);
+      }
+    }
 
     if (minMarketCap) {
       query += ' AND c.market_cap >= ?';
@@ -325,7 +362,20 @@ class CustomFactorCalculator {
     // Add a reasonable limit to prevent memory issues
     query += ' LIMIT 10000';
 
-    return this.db.prepare(query).all(...params);
+    const rows = this.db.prepare(query).all(...params);
+
+    // Log filter statistics
+    if (!disableQualityFilters && qualityFilters) {
+      console.log(`[FactorCalculator] Quality Filters Applied:`);
+      console.log(`  - Min Market Cap: $${(qualityFilters.minMarketCap / 1_000_000).toFixed(0)}M`);
+      console.log(`  - Min Volume: ${qualityFilters.minAvgVolume.toLocaleString()} shares/day`);
+      console.log(`  - Min Price: $${qualityFilters.minPrice}`);
+      console.log(`  - Max Debt/Equity: ${qualityFilters.maxDebtToEquity}x`);
+      console.log(`  - Min Data Quality: ${(qualityFilters.minDataQualityScore * 100).toFixed(0)}%`);
+      console.log(`  - Result: ${rows.length} stocks in universe`);
+    }
+
+    return rows;
   }
 
   /**

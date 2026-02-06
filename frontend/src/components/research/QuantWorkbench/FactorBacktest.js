@@ -9,6 +9,7 @@ import {
 import {
   Loader, AlertTriangle, CheckCircle, Activity, Calendar, Layers, TrendingUp, RefreshCw, Database
 } from '../../icons';
+import { factorsAPI } from '../../../services/api';
 
 // Default backtest configuration
 const DEFAULT_CONFIG = {
@@ -162,6 +163,16 @@ const generateMockBacktestResults = (config = DEFAULT_CONFIG) => {
       yearly: yearlyReturns,
       monthly: monthlyReturns.slice(-36) // Last 3 years
     },
+    universe: {
+      filter: 'ALL',
+      minMarketCap: null,
+      rebalanceCount: Math.floor(years * 12), // Monthly rebalances
+      avgEligible: 4500,
+      avgLongPositions: 900,
+      avgShortPositions: 900,
+      avgSectors: 11,
+      longShortRatio: config.longShortRatio || { long: 20, short: 20 }
+    },
     // Mock metadata
     _mock: true,
     _mockQuality: qualityTier,
@@ -177,6 +188,8 @@ export default function FactorBacktest({ factor, triggerAnalysis = 0 }) {
   const [hasRun, setHasRun] = useState(false);
   const [dataSource, setDataSource] = useState(null); // 'real' | 'mock' | null
   const [apiError, setApiError] = useState(null);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadingPhase, setLoadingPhase] = useState('');
 
   // Auto-run when triggered centrally
   useEffect(() => {
@@ -194,30 +207,57 @@ export default function FactorBacktest({ factor, triggerAnalysis = 0 }) {
     setError(null);
     setApiError(null);
     setDataSource(null);
+    setLoadingProgress(0);
+    setLoadingPhase('Initializing backtest...');
+
+    // Simulate progress updates (since backend doesn't stream progress)
+    const phases = [
+      { progress: 10, message: 'Calculating factor values across universe...', delay: 2000 },
+      { progress: 30, message: 'Ranking stocks by factor scores...', delay: 8000 },
+      { progress: 50, message: 'Building long-short portfolios...', delay: 15000 },
+      { progress: 70, message: 'Simulating rebalances and returns...', delay: 25000 },
+      { progress: 85, message: 'Computing performance metrics...', delay: 40000 },
+      { progress: 95, message: 'Finalizing results...', delay: 60000 }
+    ];
+
+    let progressTimer;
+    let phaseIndex = 0;
+
+    const updateProgress = () => {
+      if (phaseIndex < phases.length) {
+        const phase = phases[phaseIndex];
+        setLoadingProgress(phase.progress);
+        setLoadingPhase(phase.message);
+        phaseIndex++;
+      }
+    };
+
+    // Start progress simulation
+    progressTimer = setInterval(updateProgress, 8000);
+    updateProgress(); // Immediate first update
 
     try {
-      const response = await fetch('/api/factors/backtest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          factorId: factor.id,
-          formula: factor.formula,
-          config
-        })
+      const response = await factorsAPI.backtest({
+        factorId: factor.id,
+        formula: factor.formula,
+        config
       });
 
-      const data = await response.json();
+      clearInterval(progressTimer);
+      setLoadingProgress(100);
+      setLoadingPhase('Complete!');
 
       // Check standardized response format
-      if (!data.success) {
-        throw new Error(data.error || 'Backtest failed');
+      if (!response.data?.success) {
+        throw new Error(response.data?.error || 'Backtest failed');
       }
 
-      setResults(data.data);
+      setResults(response.data.data);
       setDataSource('real');
       setHasRun(true);
 
     } catch (err) {
+      clearInterval(progressTimer);
       console.error('Backtest API error:', err.message);
       setApiError(err.message);
 
@@ -228,6 +268,7 @@ export default function FactorBacktest({ factor, triggerAnalysis = 0 }) {
       setHasRun(true);
 
     } finally {
+      clearInterval(progressTimer);
       setLoading(false);
     }
   };
@@ -281,14 +322,32 @@ export default function FactorBacktest({ factor, triggerAnalysis = 0 }) {
 
   return (
     <div className="factor-backtest">
-      {/* Loading State */}
+      {/* Enhanced Loading State */}
       {loading && (
-        <div className="analysis-loading-bar">
-          <div className="loading-content">
-            <Loader size={16} className="spin" />
-            <span>Running backtest...</span>
+        <div className="bt-loading-overlay">
+          <div className="bt-loading-card">
+            <div className="loading-header">
+              <Loader size={24} className="spin" />
+              <h4>Running Backtest</h4>
+            </div>
+
+            <div className="loading-progress-bar">
+              <div
+                className="loading-progress-fill"
+                style={{ width: `${loadingProgress}%` }}
+              />
+            </div>
+
+            <div className="loading-status">
+              <span className="loading-phase">{loadingPhase}</span>
+              <span className="loading-percentage">{loadingProgress}%</span>
+            </div>
+
+            <div className="loading-info">
+              <p>Processing ~120 monthly rebalances across {config.startYear}-{config.endYear}</p>
+              <p className="loading-tip">💡 Tip: Backtests analyze thousands of stocks to simulate real portfolio performance</p>
+            </div>
           </div>
-          <div className="loading-progress" />
         </div>
       )}
 

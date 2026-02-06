@@ -4656,6 +4656,11 @@
   letter-spacing: var(--tracking-wider, 0.05em);
 }
 
+/* Center numeric column headers */
+.signal-results-table th:first-child {
+  text-align: center;
+}
+
 .signal-results-table th.sortable {
   cursor: pointer;
   user-select: none;
@@ -4714,10 +4719,12 @@
 }
 
 .signal-results-table .company-name {
-  color: var(--text-secondary, #64748b);
-  max-width: 180px;
+  color: var(--text-primary, #0f172a);
+  max-width: 250px;
+  font-weight: var(--font-medium, 500);
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .signal-results-table .sector-cell {
@@ -4727,7 +4734,8 @@
 
 .signal-results-table .numeric-cell {
   font-family: var(--font-mono, ui-monospace, monospace);
-  text-align: right;
+  text-align: center;
+  font-weight: var(--font-medium, 500);
 }
 
 .signal-results-table .numeric-cell.positive {
@@ -4737,6 +4745,14 @@
 
 .signal-results-table .numeric-cell.negative {
   color: var(--negative, #dc2626);
+  font-weight: var(--font-semibold, 600);
+}
+
+/* Rank column - always centered */
+.signal-results-table tbody td:first-child {
+  text-align: center;
+  font-weight: var(--font-semibold, 600);
+  color: var(--text-secondary, #64748b);
 }
 
 .signal-results-table .actions-col {
@@ -7373,6 +7389,122 @@
 /* ============================================
    Factor Backtest Component
    ============================================ */
+
+/* Enhanced Backtest Loading Overlay */
+.bt-loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.8);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-in;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.bt-loading-card {
+  background: var(--bg-surface, #ffffff);
+  border-radius: var(--radius-lg, 12px);
+  padding: var(--space-6, 1.5rem);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  max-width: 500px;
+  width: 90%;
+}
+
+.bt-loading-card .loading-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 0.75rem);
+  margin-bottom: var(--space-4, 1rem);
+}
+
+.bt-loading-card .loading-header svg {
+  color: var(--color-ai, #7c3aed);
+}
+
+.bt-loading-card .loading-header h4 {
+  margin: 0;
+  font-size: var(--text-lg, 1.125rem);
+  font-weight: 600;
+  color: var(--text-primary, #0f172a);
+}
+
+.loading-progress-bar {
+  height: 8px;
+  background: var(--bg-tertiary, #f1f5f9);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: var(--space-3, 0.75rem);
+}
+
+.loading-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #7c3aed 0%, #2563eb 50%, #0891b2 100%);
+  border-radius: 999px;
+  transition: width 0.5s ease-out;
+  animation: shimmer 2s infinite;
+  background-size: 200% 100%;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -100% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.loading-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-4, 1rem);
+}
+
+.loading-phase {
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--text-secondary, #64748b);
+  font-weight: 500;
+}
+
+.loading-percentage {
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: 600;
+  font-family: var(--font-mono, 'SF Mono', monospace);
+  color: var(--color-ai, #7c3aed);
+}
+
+.loading-info {
+  padding-top: var(--space-3, 0.75rem);
+  border-top: 1px solid var(--border-subtle, #e2e8f0);
+}
+
+.loading-info p {
+  margin: 0 0 var(--space-2, 0.5rem) 0;
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--text-tertiary, #94a3b8);
+  line-height: 1.5;
+}
+
+.loading-info .loading-tip {
+  color: var(--text-secondary, #64748b);
+  font-style: italic;
+  margin-top: var(--space-3, 0.75rem);
+}
 
 .factor-backtest {
   display: flex;

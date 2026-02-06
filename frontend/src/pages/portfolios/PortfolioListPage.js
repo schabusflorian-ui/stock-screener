@@ -34,7 +34,8 @@ const PORTFOLIO_TYPE_LABELS = {
   clone: 'Manual',  // Clone portfolios show as Manual unless famous investor
   etf_model: 'ETF',
   backtest: 'Manual',
-  bot: 'AI'
+  bot: 'AI',
+  agent_managed: 'AI'
 };
 
 const PORTFOLIO_TYPE_ICONS = {
@@ -42,7 +43,8 @@ const PORTFOLIO_TYPE_ICONS = {
   clone: Copy,
   etf_model: BarChart3,
   backtest: Target,
-  bot: Target
+  bot: Target,
+  agent_managed: Target
 };
 
 // Tag color schemes for different portfolio types
@@ -51,7 +53,8 @@ const PORTFOLIO_TAG_STYLES = {
   clone: 'tag-manual',  // Clone portfolios use manual style unless famous investor
   etf_model: 'tag-etf',
   backtest: 'tag-manual',
-  bot: 'tag-ai'
+  bot: 'tag-ai',
+  agent_managed: 'tag-ai'
 };
 
 // Check if portfolio is a famous investor clone
@@ -108,7 +111,7 @@ const PortfolioCard = memo(function PortfolioCard({ portfolio }) {
   const famousInvestor = getFamousInvestorTag(portfolio.name);
 
   // Determine which tag to show - famous investor replaces manual/clone tag
-  const showTypeTag = portfolioType === 'etf_model' || portfolioType === 'bot';
+  const showTypeTag = portfolioType === 'etf_model' || portfolioType === 'bot' || portfolioType === 'agent_managed';
   const typeLabel = PORTFOLIO_TYPE_LABELS[portfolioType] || 'Manual';
 
   return (
@@ -220,6 +223,9 @@ function PortfolioListPage() {
       } else if (typeFilter === 'manual') {
         // Manual excludes famous investors (they're clones)
         matchesType = portfolioType === 'manual' && !isFamousInvestor;
+      } else if (typeFilter === 'bot') {
+        // AI filter should match both 'bot' and 'agent_managed' types
+        matchesType = portfolioType === 'bot' || portfolioType === 'agent_managed';
       } else {
         matchesType = portfolioType === typeFilter;
       }

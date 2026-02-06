@@ -161,6 +161,13 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* Overview Tab Specific */
+.agent-detail__overview {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
 /* Signals Grid */
 .agent-detail__signals-grid {
   display: grid;
@@ -186,31 +193,27 @@
 /* Grid */
 .agent-detail__grid {
   display: grid;
-  grid-template-columns: 1fr 380px;
+  grid-template-columns: 1fr 420px;
   gap: var(--space-6);
+  align-items: start;
 }
 
 .agent-detail__main {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--space-5);
+  min-width: 0;
 }
 
 .agent-detail__sidebar {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-4);
+  position: sticky;
+  top: var(--space-6);
 }
 
-/* Cards */
-.agent-detail__signals,
-.agent-detail__portfolios,
-.agent-detail__context,
-.agent-detail__performance,
-.agent-detail__activity {
-  padding: var(--space-5);
-}
-
+/* Cards - Removed padding here as Card component handles it */
 .agent-detail__signals h3,
 .agent-detail__portfolios h3,
 .agent-detail__context h3,
@@ -245,6 +248,17 @@
   flex-shrink: 0;
 }
 
+/* Ensure all overview cards have proper spacing */
+.agent-detail__overview .ui-card {
+  height: 100%;
+}
+
+.agent-detail__overview .ui-card__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
 /* Legacy selector for backwards compatibility */
 .agent-detail__signals h3 svg,
 .agent-detail__portfolios h3 svg,
@@ -276,26 +290,32 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: var(--space-3);
-  padding: var(--space-12) var(--space-6);
+  padding: var(--space-10) var(--space-6);
   text-align: center;
+  min-height: 200px;
 }
 
 .agent-detail__empty svg {
   color: var(--color-ai-violet);
-  opacity: 0.6;
+  opacity: 0.4;
+  margin-bottom: var(--space-2);
 }
 
 .agent-detail__empty h4 {
   margin: 0;
-  font-size: var(--text-lg);
-  font-weight: var(--font-semibold);
+  font-size: var(--text-xl);
+  font-weight: var(--font-bold);
   color: var(--text-primary);
 }
 
 .agent-detail__empty p {
   margin: 0;
+  font-size: var(--text-sm);
   color: var(--text-secondary);
+  max-width: 400px;
+  line-height: 1.5;
 }
 
 /* Signal Cards */
@@ -501,10 +521,11 @@
 }
 
 .agent-detail__portfolio-card {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
   align-items: center;
   gap: var(--space-4);
-  padding: var(--space-4);
+  padding: var(--space-5);
   background: var(--bg-tertiary);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-md);
@@ -514,48 +535,70 @@
 
 .agent-detail__portfolio-card:hover {
   border-color: var(--color-ai-violet);
-  transform: translateX(4px);
+  background: var(--bg-secondary);
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.1);
+  transform: translateX(2px);
 }
 
 .agent-detail__portfolio-info {
-  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--space-1-5);
+  min-width: 0;
 }
 
 .agent-detail__portfolio-name {
+  font-size: var(--text-base);
   font-weight: var(--font-semibold);
   color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .agent-detail__portfolio-mode {
-  font-size: var(--text-xs);
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-0-5) var(--space-2);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-medium);
   color: var(--text-tertiary);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  width: fit-content;
 }
 
 .agent-detail__portfolio-mode.paper {
   color: var(--warning);
+  background: rgba(251, 191, 36, 0.1);
 }
 
 .agent-detail__portfolio-mode.live {
   color: var(--positive);
+  background: rgba(16, 185, 129, 0.1);
 }
 
 .agent-detail__portfolio-stats {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: var(--space-0-5);
+  gap: var(--space-1);
+  text-align: right;
 }
 
 .agent-detail__portfolio-value {
-  font-weight: var(--font-semibold);
+  font-size: var(--text-lg);
+  font-weight: var(--font-bold);
   color: var(--text-primary);
+  white-space: nowrap;
 }
 
 .agent-detail__portfolio-pnl {
   font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  white-space: nowrap;
 }
 
 .agent-detail__portfolio-pnl.positive {
@@ -577,37 +620,50 @@
 
 /* Context */
 .agent-detail__context-data {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
 }
 
 .agent-detail__context-item {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
 .agent-detail__context-label {
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: var(--font-medium);
+}
+
+.agent-detail__context-item > span:not(.agent-detail__context-label) {
+  font-size: var(--text-lg);
+  font-weight: var(--font-bold);
+  color: var(--text-primary);
 }
 
 .agent-detail__regime {
-  padding: var(--space-1) var(--space-2-5);
-  border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
-  font-weight: var(--font-semibold);
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1-5) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: var(--font-bold);
   text-transform: uppercase;
+  letter-spacing: 0.05em;
+  width: fit-content;
 }
 
 .agent-detail__regime.bull {
-  background: var(--positive-muted);
+  background: rgba(16, 185, 129, 0.15);
   color: var(--positive);
 }
 
 .agent-detail__regime.bear {
-  background: var(--negative-muted);
+  background: rgba(239, 68, 68, 0.15);
   color: var(--negative);
 }
 
@@ -660,29 +716,37 @@
 .agent-detail__activity-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 0;
 }
 
 .activity-item {
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-2-5);
-  padding: var(--space-2) 0;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
   border-bottom: 1px solid var(--border-primary);
+  transition: background var(--transition-fast);
 }
 
 .activity-item:last-child {
   border-bottom: none;
 }
 
+.activity-item:hover {
+  background: rgba(124, 58, 237, 0.03);
+  margin: 0 calc(-1 * var(--space-4));
+  padding-left: var(--space-4);
+  padding-right: var(--space-4);
+}
+
 .activity-item__icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-sm);
-  background: rgba(124, 58, 237, 0.08);
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background: rgba(124, 58, 237, 0.1);
   color: var(--color-ai-violet);
   flex-shrink: 0;
 }
@@ -694,22 +758,26 @@
 .activity-item__content {
   flex: 1;
   display: flex;
-  flex-direction: column;
-  gap: var(--space-0-5);
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
   min-width: 0;
 }
 
 .activity-item__description {
   font-size: var(--text-sm);
+  font-weight: var(--font-medium);
   color: var(--text-primary);
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .activity-item__time {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
+  flex-shrink: 0;
+  font-weight: var(--font-medium);
 }
 
 .agent-detail__no-activity {
@@ -758,9 +826,16 @@
   }
 
   .agent-detail__sidebar {
+    position: static;
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: var(--space-4);
+  }
+}
+
+@media (min-width: 1600px) {
+  .agent-detail__grid {
+    grid-template-columns: 1fr 450px;
   }
 }
 
@@ -786,6 +861,22 @@
 
   .agent-detail__sidebar {
     grid-template-columns: 1fr;
+  }
+
+  .agent-detail__portfolio-card {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+    padding: var(--space-4);
+  }
+
+  .agent-detail__portfolio-stats {
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .agent-detail__context-data {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
   }
 
   .signal-card__details {

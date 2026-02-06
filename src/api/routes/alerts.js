@@ -65,7 +65,7 @@ router.use(async (req, res, next) => {
  */
 router.get('/', (req, res) => {
   try {
-
+    const {
       types,
       signals,
       companies,
@@ -81,7 +81,7 @@ router.get('/', (req, res) => {
     const filters = {
       alertTypes: types ? types.split(',') : null,
       signalTypes: signals ? signals.split(',') : null,
-      companyIds: companies ? companies.split(',') : map(Number) : null,
+      companyIds: companies ? companies.split(',').map(Number) : null,
       watchlistOnly: watchlistOnly === 'true',
       unreadOnly: unreadOnly === 'true',
       minPriority: minPriority ? parseInt(minPriority) : 1,

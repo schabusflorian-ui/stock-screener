@@ -89,10 +89,35 @@
   margin: 0;
 }
 
+.portfolio-meta-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+}
+
 .portfolio-type {
   font-size: var(--text-sm);
   color: var(--text-secondary);
   text-transform: capitalize;
+}
+
+.agent-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--brand-primary);
+  text-decoration: none;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--brand-primary);
+  transition: all var(--transition-fast);
+}
+
+.agent-link:hover {
+  background: var(--brand-primary);
+  color: white;
 }
 
 .header-actions {

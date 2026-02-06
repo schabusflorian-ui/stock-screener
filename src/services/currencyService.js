@@ -1,7 +1,7 @@
 // src/services/currencyService.js
 // Currency conversion service for standardizing financial data across currencies
 
-const { getDatabase, isPostgres } = require('../database');
+const { getDatabase, getDatabaseAsync, isPostgres } = require('../database');
 
 // Default exchange rates (fallback if API unavailable)
 // Rates are relative to USD (1 USD = X of currency)
@@ -137,17 +137,27 @@ class CurrencyService {
    * Get historical exchange rate for a specific date
    * @param {string} currency - Currency code
    * @param {string} date - Date in YYYY-MM-DD format
-   * @returns {number|null} Exchange rate or null if not found
+   * @returns {Promise<number|null>} Exchange rate or null if not found
    */
-  getHistoricalRate(currency, date) {
-    const row = this.db.prepare(`
-      SELECT rate FROM exchange_rates_history
-      WHERE currency = ? AND date <= ?
-      ORDER BY date DESC
-      LIMIT 1
-    `).get(currency, date);
-
-    return row?.rate || null;
+  async getHistoricalRate(currency, date) {
+    if (isPostgres) {
+      const database = await getDatabaseAsync();
+      const result = await database.query(`
+        SELECT rate FROM exchange_rates_history
+        WHERE currency = $1 AND date <= $2
+        ORDER BY date DESC
+        LIMIT 1
+      `, [currency, date]);
+      return result.rows[0]?.rate || null;
+    } else {
+      const row = this.db.prepare(`
+        SELECT rate FROM exchange_rates_history
+        WHERE currency = ? AND date <= ?
+        ORDER BY date DESC
+        LIMIT 1
+      `).get(currency, date);
+      return row?.rate || null;
+    }
   }
 
   /**
@@ -156,11 +166,21 @@ class CurrencyService {
    * @param {string} currency - Currency code
    * @param {number} rate - Exchange rate relative to USD
    */
-  storeHistoricalRate(date, currency, rate) {
-    this.db.prepare(`
-      INSERT OR REPLACE INTO exchange_rates_history (date, base_currency, currency, rate)
-      VALUES (?, 'USD', ?, ?)
-    `).run(date, currency, rate);
+  async storeHistoricalRate(date, currency, rate) {
+    if (isPostgres) {
+      const database = await getDatabaseAsync();
+      await database.query(`
+        INSERT INTO exchange_rates_history (date, base_currency, currency, rate)
+        VALUES ($1, 'USD', $2, $3)
+        ON CONFLICT (date, base_currency, currency) DO UPDATE
+        SET rate = EXCLUDED.rate
+      `, [date, currency, rate]);
+    } else {
+      this.db.prepare(`
+        INSERT OR REPLACE INTO exchange_rates_history (date, base_currency, currency, rate)
+        VALUES (?, 'USD', ?, ?)
+      `).run(date, currency, rate);
+    }
   }
 
   /**
@@ -191,16 +211,23 @@ class CurrencyService {
   /**
    * Get company's reporting currency
    * @param {number} companyId - Company ID
-   * @returns {string} Currency code (default: USD)
+   * @returns {Promise<string>} Currency code (default: USD)
    */
-  getCompanyCurrency(companyId) {
-    // Check companies table for reporting_currency (set by migration based on country)
-    const company = this.db.prepare(`
-      SELECT reporting_currency FROM companies
-      WHERE id = ?
-    `).get(companyId);
-
-    return company?.reporting_currency || 'USD';
+  async getCompanyCurrency(companyId) {
+    if (isPostgres) {
+      const database = await getDatabaseAsync();
+      const result = await database.query(`
+        SELECT reporting_currency FROM companies
+        WHERE id = $1
+      `, [companyId]);
+      return result.rows[0]?.reporting_currency || 'USD';
+    } else {
+      const company = this.db.prepare(`
+        SELECT reporting_currency FROM companies
+        WHERE id = ?
+      `).get(companyId);
+      return company?.reporting_currency || 'USD';
+    }
   }
 
   /**

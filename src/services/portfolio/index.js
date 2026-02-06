@@ -45,8 +45,8 @@ class PortfolioService {
           p.current_cash as cash_balance,
           (p.current_value - p.total_deposited + p.total_withdrawn) as total_gain,
           CASE
-            WHEN p.total_deposited > 0
-            THEN ((p.current_value - p.total_deposited + p.total_withdrawn) / p.total_deposited) * 100
+            WHEN (p.total_deposited - p.total_withdrawn) > 0
+            THEN ((p.current_value - p.total_deposited + p.total_withdrawn) / (p.total_deposited - p.total_withdrawn)) * 100
             ELSE 0
           END as total_gain_pct,
           (SELECT COUNT(*) FROM portfolio_positions WHERE portfolio_id = p.id) as positions_count
@@ -62,8 +62,8 @@ class PortfolioService {
           p.current_cash as cash_balance,
           (p.current_value - p.total_deposited + p.total_withdrawn) as total_gain,
           CASE
-            WHEN p.total_deposited > 0
-            THEN ((p.current_value - p.total_deposited + p.total_withdrawn) / p.total_deposited) * 100
+            WHEN (p.total_deposited - p.total_withdrawn) > 0
+            THEN ((p.current_value - p.total_deposited + p.total_withdrawn) / (p.total_deposited - p.total_withdrawn)) * 100
             ELSE 0
           END as total_gain_pct,
           (SELECT COUNT(*) FROM portfolio_positions WHERE portfolio_id = p.id) as positions_count
@@ -151,6 +151,23 @@ class PortfolioService {
    * @param {string|null} userId - User ID to filter by, or null for all (admin)
    */
   getAllPortfolios(userId = null) {
+    // First, get the list of portfolios to refresh
+    const portfolios = userId
+      ? this.stmts.getPortfoliosByUser.all(userId)
+      : this.stmts.getAllPortfolios.all();
+
+    // Refresh position values for each portfolio to ensure current_value is up-to-date
+    // This prevents stale values when market prices change between trade executions
+    for (const portfolio of portfolios) {
+      try {
+        this.holdingsEngine.refreshPositionValues(portfolio.id);
+      } catch (error) {
+        console.error(`Failed to refresh portfolio ${portfolio.id}:`, error);
+        // Continue with stale value rather than failing entirely
+      }
+    }
+
+    // Re-query to get updated values after refresh
     if (userId) {
       return this.stmts.getPortfoliosByUser.all(userId);
     }
@@ -291,7 +308,8 @@ class PortfolioService {
         description: portfolio.description,
         type: portfolio.portfolio_type,
         currency: portfolio.currency,
-        createdAt: portfolio.created_at
+        createdAt: portfolio.created_at,
+        agentId: portfolio.agent_id // For agent-managed portfolios
       },
       values: {
         cashValue: values.cashValue,

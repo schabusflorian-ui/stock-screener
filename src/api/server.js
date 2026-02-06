@@ -302,7 +302,7 @@ const pricesRouter = require('./routes/prices');
 const earningsRouter = require('./routes/earnings'); // FIXED: Now uses lazy initialization
 const priceUpdatesRouter = require('./routes/priceUpdates');
 const fiscalRouter = require('./routes/fiscal'); // FIXED: Now uses lazy initialization
-const alertsRouter = require('./routes/alerts'); // FIXED: Now uses lazy initialization
+// const alertsRouter = require('./routes/alerts'); // Temporarily disabled due to syntax errors
 const indicesRouter = require('./routes/indices');
 const dividendsRouter = require('./routes/dividends');
 const investorsRouter = require('./routes/investors');
@@ -397,7 +397,7 @@ app.use('/api/prices', pricesRouter);
 app.use('/api/earnings', earningsRouter); // FIXED: Now uses lazy initialization
 app.use('/api/price-updates', priceUpdatesRouter);
 app.use('/api/fiscal', fiscalRouter); // FIXED: Now uses lazy initialization
-app.use('/api/alerts', alertsRouter); // FIXED: Now uses lazy initialization
+// app.use('/api/alerts', alertsRouter); // Temporarily disabled due to syntax errors
 app.use('/api/indices', indicesRouter);
 app.use('/api/dividends', dividendsRouter);
 app.use('/api/investors', investorsRouter);

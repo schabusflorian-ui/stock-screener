@@ -50,11 +50,11 @@ export default function FeatureGate({
   // Show blurred preview with overlay
   if (showPreview && children) {
     return (
-      <div className={`feature-gate feature-gate--preview ${className}`}>
-        <div
-          className="feature-gate__preview-content"
-          style={previewHeight ? { maxHeight: previewHeight } : undefined}
-        >
+      <div
+        className={`feature-gate feature-gate--preview ${className}`}
+        style={previewHeight ? { maxHeight: previewHeight } : undefined}
+      >
+        <div className="feature-gate__preview-content">
           {children}
         </div>
         <LockedOverlay

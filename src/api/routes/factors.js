@@ -1904,7 +1904,13 @@ function getRanks(arr) {
 // POST /api/factors/signals - Generate buy signals based on factor scores
 router.post('/signals', (req, res) => {
   try {
-    const { factorId, formula, topN = 10, higherIsBetter = true } = req.body;
+    const {
+      factorId,
+      formula,
+      topN = 10,
+      higherIsBetter = true,
+      qualityFilters  // NEW: Accept custom quality filters
+    } = req.body;
 
     // Check for missing or invalid formula
     if (formula === undefined || formula === null || typeof formula !== 'string') {
@@ -1925,9 +1931,10 @@ router.post('/signals', (req, res) => {
       return sendError(res, new Error('Custom factor calculator not available'));
     }
 
-    // Calculate factor values for all stocks
+    // Calculate factor values for all stocks with quality filters
     const result = calculator.calculateFactorValues(factorId, trimmedFormula, {
-      storeResults: false
+      storeResults: false,
+      qualityFilters: qualityFilters  // NEW: Pass quality filters to calculator
     });
 
     if (!result.values || result.values.length === 0) {

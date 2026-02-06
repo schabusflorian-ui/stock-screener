@@ -407,6 +407,97 @@ function executeAgentTrades(agentId, portfolioId, config, creationDate) {
 }
 
 /**
+ * Create closing trades for some positions (for testing realized returns)
+ * Closes 30% of positions with a mix of winners and losers
+ */
+function createClosingTrades(agentId, portfolioId, config, creationDate) {
+  const today = new Date().toISOString().split('T')[0];
+
+  // Get all executed buy signals for this agent
+  const buySignals = db.prepare(`
+    SELECT s.*, c.symbol
+    FROM agent_signals s
+    JOIN companies c ON s.company_id = c.id
+    WHERE s.agent_id = ?
+      AND s.portfolio_id = ?
+      AND s.action IN ('buy', 'strong_buy')
+      AND s.status = 'executed'
+    ORDER BY RANDOM()
+  `).all(agentId, portfolioId);
+
+  if (buySignals.length === 0) {
+    return 0;
+  }
+
+  // Close 30% of positions
+  const numToClose = Math.max(1, Math.floor(buySignals.length * 0.3));
+  const signalsToClose = buySignals.slice(0, numToClose);
+
+  let closedCount = 0;
+
+  for (const buySignal of signalsToClose) {
+    try {
+      // Determine sell date (between 7-30 days after buy)
+      const buyDate = new Date(buySignal.signal_date);
+      const daysHeld = 7 + Math.floor(Math.random() * 23);
+      const sellDate = new Date(buyDate);
+      sellDate.setDate(sellDate.getDate() + daysHeld);
+      const sellDateStr = sellDate.toISOString().split('T')[0];
+
+      // Don't sell in the future
+      if (sellDateStr > today) continue;
+
+      // Get sell price (70% winners, 30% losers)
+      const isWinner = Math.random() < 0.7;
+      const buyPrice = buySignal.price_at_signal;
+      let sellPrice;
+
+      if (isWinner) {
+        // Winner: 2% to 15% gain
+        sellPrice = buyPrice * (1 + (0.02 + Math.random() * 0.13));
+      } else {
+        // Loser: 1% to 8% loss
+        sellPrice = buyPrice * (1 - (0.01 + Math.random() * 0.07));
+      }
+
+      sellPrice = Math.round(sellPrice * 100) / 100;
+
+      // Create sell signal
+      const sellScore = 0.3 + Math.random() * 0.2; // Lower score for sell
+      const confidence = 0.6 + Math.random() * 0.3;
+
+      db.prepare(`
+        INSERT INTO agent_signals (
+          agent_id, symbol, company_id, signal_date, action,
+          overall_score, confidence, raw_score,
+          regime, price_at_signal, position_size_pct,
+          risk_approved, status, executed_at, executed_price,
+          portfolio_id, created_at
+        ) VALUES (?, ?, ?, ?, 'sell', ?, ?, ?, ?, ?, ?, 1, 'executed', ?, ?, ?, ?)
+      `).run(
+        agentId, buySignal.symbol, buySignal.company_id, sellDateStr,
+        Math.round(sellScore * 1000) / 1000,
+        Math.round(confidence * 1000) / 1000,
+        Math.round(sellScore * 1000) / 1000,
+        'SIDEWAYS',
+        sellPrice,
+        0, // Position size doesn't apply to sells
+        sellDateStr,
+        sellPrice,
+        portfolioId, sellDateStr
+      );
+
+      closedCount++;
+    } catch (e) {
+      // Skip on error
+      console.log(`      [SKIP] Failed to close ${buySignal.symbol}: ${e.message}`);
+    }
+  }
+
+  return closedCount;
+}
+
+/**
  * Generate additional signals (non-executed) for history
  */
 function generateAdditionalSignals(agentId, portfolioId, config, companyIds, creationDate) {
@@ -675,6 +766,10 @@ async function setupDemoAgents() {
       // Execute real trades at historical prices
       const tradeResult = executeAgentTrades(agent.id, portfolioId, config, creationDate);
 
+      // Create some closing trades (for testing realized returns)
+      const closedTrades = createClosingTrades(agent.id, portfolioId, config, creationDate);
+      console.log(`  Closed ${closedTrades} positions for testing`);
+
       // Generate additional signal history
       const additionalSignals = generateAdditionalSignals(
         agent.id, portfolioId, config, companyIds, creationDate
@@ -682,6 +777,11 @@ async function setupDemoAgents() {
 
       // Create portfolio snapshots
       const snapshots = createAgentSnapshots(portfolioId, creationDate, 100000);
+      console.log(`  Created ${snapshots} portfolio snapshots`);
+
+      if (snapshots === 0) {
+        console.log(`  [WARN] No snapshots created for ${config.name}`);
+      }
 
       // Update agent stats
       const totalSignals = tradeResult.positions + additionalSignals;

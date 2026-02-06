@@ -930,10 +930,11 @@ function createPortfolioForAgent(agentId, portfolioConfig) {
   // Use transaction for atomic portfolio creation and linking
   const createTransaction = db.transaction(() => {
     // Create the portfolio
+    // Set total_deposited to initial_capital so return calculations work correctly
     const portfolioResult = db.prepare(`
-      INSERT INTO portfolios (name, initial_cash, current_cash, current_value, portfolio_type, agent_id)
-      VALUES (?, ?, ?, ?, 'agent_managed', ?)
-    `).run(name, initial_capital, initial_capital, initial_capital, agentId);
+      INSERT INTO portfolios (name, initial_cash, current_cash, current_value, total_deposited, portfolio_type, agent_id)
+      VALUES (?, ?, ?, ?, ?, 'agent_managed', ?)
+    `).run(name, initial_capital, initial_capital, initial_capital, initial_capital, agentId);
 
     const portfolioId = portfolioResult.lastInsertRowid;
 

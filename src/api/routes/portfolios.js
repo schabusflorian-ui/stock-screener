@@ -862,10 +862,13 @@ router.get('/:id/performance', (req, res) => {
     const first = sortedSnapshots[0];
     const last = sortedSnapshots[sortedSnapshots.length - 1];
 
-    // Calculate performance metrics
-    const totalReturn = last.total_value - first.total_value;
-    const totalReturnPct = first.total_value > 0
-      ? (totalReturn / first.total_value) * 100
+    // Calculate net invested capital (total deposited - total withdrawn)
+    const netInvested = (portfolio.total_deposited || 0) - (portfolio.total_withdrawn || 0);
+
+    // Calculate performance metrics using net invested capital
+    const totalReturn = last.total_value - netInvested;
+    const totalReturnPct = netInvested > 0
+      ? (totalReturn / netInvested) * 100
       : 0;
 
     // Calculate daily returns for volatility
