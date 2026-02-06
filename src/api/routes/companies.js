@@ -622,7 +622,7 @@ router.get('/:symbol/metrics', responseCacheMiddleware(CACHE_MEDIUM), async (req
             dp.date,
             ROW_NUMBER() OVER (PARTITION BY fp.period ORDER BY dp.date DESC) as rn
           FROM (${periodUnionSQL}) fp
-          JOIN daily_prices dp ON dp.company_id = ? AND dp.date <= fp.period
+          JOIN daily_prices dp ON dp.company_id = ? AND dp.date <= CAST(fp.period AS DATE)
         )
         SELECT period, adjusted_close, close, date
         FROM period_prices
