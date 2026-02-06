@@ -521,6 +521,11 @@ router.get('/:symbol/metrics', responseCacheMiddleware(CACHE_MEDIUM), async (req
     const { symbol } = req.params;
     const { limit = 20, period_type = 'annual' } = req.query;
 
+    const companyResult = await database.query(
+      'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)',
+      [symbol.toUpperCase()]
+    );
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -796,12 +801,37 @@ router.get('/:symbol/breakdown', responseCacheMiddleware(CACHE_MEDIUM), async (r
     const { symbol } = req.params;
     const { period_type = 'annual', limit = 10 } = req.query;
 
+    const companyResult = await database.query(
+      'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)',
+      [symbol.toUpperCase()]
+    );
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
     }
 
     // Get income statement data with extracted fields and full JSON
+    const incomeStatementsResult = await database.query(`
+      SELECT
+        fiscal_date_ending,
+        fiscal_year,
+        fiscal_period,
+        period_type,
+        total_revenue,
+        cost_of_revenue,
+        gross_profit,
+        operating_income,
+        net_income,
+        data
+      FROM financial_data
+      WHERE company_id = ?
+        AND statement_type = 'income_statement'
+        AND period_type = ?
+      ORDER BY fiscal_date_ending DESC
+      LIMIT ?
+    `, [company.id, period_type, parseInt(limit)]);
+    let incomeStatements = incomeStatementsResult.rows;
 
     // For quarterly data, calculate Q4 from annual - (Q1+Q2+Q3) if missing
     // Companies don't file 10-Q for Q4, only 10-K annual reports
@@ -1022,6 +1052,11 @@ router.get('/:symbol/balance-sheet', async (req, res) => {
     const { symbol } = req.params;
     const { period_type = 'annual', limit = 10 } = req.query;
 
+    const companyResult = await database.query(
+      'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)',
+      [symbol.toUpperCase()]
+    );
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -1309,6 +1344,11 @@ router.get('/:symbol/cash-flow', async (req, res) => {
     const { symbol } = req.params;
     const { period_type = 'annual', limit = 10 } = req.query;
 
+    const companyResult = await database.query(
+      'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)',
+      [symbol.toUpperCase()]
+    );
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -1493,6 +1533,11 @@ router.get('/:symbol/analysis', responseCacheMiddleware(CACHE_MEDIUM), async (re
     const { symbol } = req.params;
     const { period_type = 'annual' } = req.query;
 
+    const companyResult = await database.query(
+      'SELECT * FROM companies WHERE LOWER(symbol) = LOWER(?)',
+      [symbol.toUpperCase()]
+    );
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -1840,6 +1885,11 @@ router.get('/:symbol/news', async (req, res) => {
     const database = await getDatabaseAsync();
     const { symbol } = req.params;
 
+    const companyResult = await database.query(
+      'SELECT * FROM companies WHERE LOWER(symbol) = LOWER(?)',
+      [symbol.toUpperCase()]
+    );
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
