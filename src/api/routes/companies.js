@@ -251,7 +251,7 @@ router.get('/', async (req, res) => {
       WHERE 1=1
         ${activeOnly ? 'AND c.is_active = 1' : ''}
         ${excludeCIK ? "AND c.symbol NOT LIKE 'CIK_%'" : ''}
-      GROUP BY c.id
+      GROUP BY c.id, m.roic, m.roe, m.net_margin
       ORDER BY c.symbol
     `);
     const companies = companiesResult.rows;
