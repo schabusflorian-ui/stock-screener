@@ -30,6 +30,7 @@ async function runMigrations() {
   console.log('================================');
   console.log('');
 
+  console.log('📊 PostgreSQL database connected');
   const db = await getDatabase();
 
   // Ensure migrations table exists (match existing schema from data migration)
