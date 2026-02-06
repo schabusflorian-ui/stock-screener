@@ -1,7 +1,7 @@
 // src/api/routes/classifications.js
 const express = require('express');
 const router = express.Router();
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync, isPostgres } = require('../../database');
 
 /**
  * GET /api/classifications
@@ -9,19 +9,21 @@ const { getDatabaseAsync } = require('../../database');
  */
 router.get('/', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { type } = req.query;
 
     let sql = 'SELECT * FROM custom_classifications';
     const params = [];
 
     if (type) {
-      sql += ' WHERE type = ?';
+      sql += ' WHERE type = $1';
       params.push(type);
     }
 
     sql += ' ORDER BY type, name';
 
-    const classifications = database.prepare(sql).all(...params);
+    const result = await database.query(sql, params);
+    const classifications = result.rows;
 
     // Group by type
     const grouped = {
@@ -47,6 +49,7 @@ router.get('/', async (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { type, name, description, parent_name, color } = req.body;
 
     if (!type || !name) {
@@ -57,20 +60,21 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'type must be sector, industry, subsector, or tag' });
     }
 
-    const stmt = database.prepare(`
+    const result = await database.query(`
       INSERT INTO custom_classifications (type, name, description, parent_name, color)
-      VALUES (?, ?, ?, ?, ?)
-    `);
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id
+    `, [type, name, description || null, parent_name || null, color || null]);
 
-    const result = stmt.run(type, name, description || null, parent_name || null, color || null);
+    const insertedId = result.rows[0].id;
 
     res.json({
       success: true,
-      id: result.lastInsertRowid,
-      classification: { id: result.lastInsertRowid, type, name, description, parent_name, color }
+      id: insertedId,
+      classification: { id: insertedId, type, name, description, parent_name, color }
     });
   } catch (error) {
-    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+    if (error.code === '23505') { // PostgreSQL unique violation
       return res.status(409).json({ error: 'Classification with this type and name already exists' });
     }
     console.error('Error creating classification:', error);
@@ -84,22 +88,21 @@ router.post('/', async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { id } = req.params;
     const { name, description, parent_name, color } = req.body;
 
-    const stmt = database.prepare(`
+    const result = await database.query(`
       UPDATE custom_classifications
-      SET name = COALESCE(?, name),
-          description = COALESCE(?, description),
-          parent_name = ?,
-          color = COALESCE(?, color),
+      SET name = COALESCE($1, name),
+          description = COALESCE($2, description),
+          parent_name = $3,
+          color = COALESCE($4, color),
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `);
+      WHERE id = $5
+    `, [name, description, parent_name, color, id]);
 
-    const result = stmt.run(name, description, parent_name, color, id);
-
-    if (result.changes === 0) {
+    if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Classification not found' });
     }
 
@@ -116,11 +119,12 @@ router.put('/:id', async (req, res) => {
  */
 router.delete('/:id', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { id } = req.params;
 
-    const result = database.prepare('DELETE FROM custom_classifications WHERE id = ?').run(id);
+    const result = await database.query('DELETE FROM custom_classifications WHERE id = $1', [id]);
 
-    if (result.changes === 0) {
+    if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Classification not found' });
     }
 
@@ -137,14 +141,16 @@ router.delete('/:id', async (req, res) => {
  */
 router.get('/company/:symbol', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { symbol } = req.params;
 
-    const company = database.prepare(`
+    const result = await database.query(`
       SELECT symbol, name, sector, industry, user_sector, user_industry, user_subsector, user_tags
       FROM companies
-      WHERE symbol = ?
-    `).get(symbol);
+      WHERE symbol = $1
+    `, [symbol]);
 
+    const company = result.rows[0];
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
     }
@@ -184,30 +190,29 @@ router.get('/company/:symbol', async (req, res) => {
  */
 router.put('/company/:symbol', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { symbol } = req.params;
     const { user_sector, user_industry, user_subsector, user_tags } = req.body;
 
     // Convert tags array to JSON
     const tagsJson = user_tags ? JSON.stringify(user_tags) : null;
 
-    const stmt = database.prepare(`
+    const result = await database.query(`
       UPDATE companies
-      SET user_sector = ?,
-          user_industry = ?,
-          user_subsector = ?,
-          user_tags = ?
-      WHERE symbol = ?
-    `);
-
-    const result = stmt.run(
+      SET user_sector = $1,
+          user_industry = $2,
+          user_subsector = $3,
+          user_tags = $4
+      WHERE symbol = $5
+    `, [
       user_sector || null,
       user_industry || null,
       user_subsector || null,
       tagsJson,
       symbol
-    );
+    ]);
 
-    if (result.changes === 0) {
+    if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Company not found' });
     }
 
@@ -224,6 +229,7 @@ router.put('/company/:symbol', async (req, res) => {
  */
 router.post('/company/:symbol/tags', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { symbol } = req.params;
     const { tag } = req.body;
 
@@ -232,7 +238,8 @@ router.post('/company/:symbol/tags', async (req, res) => {
     }
 
     // Get current tags
-    const company = database.prepare('SELECT user_tags FROM companies WHERE symbol = ?').get(symbol);
+    const result = await database.query('SELECT user_tags FROM companies WHERE symbol = $1', [symbol]);
+    const company = result.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -253,8 +260,7 @@ router.post('/company/:symbol/tags', async (req, res) => {
     }
 
     // Update
-    database.prepare('UPDATE companies SET user_tags = ? WHERE symbol = ?')
-      .run(JSON.stringify(tags), symbol);
+    await database.query('UPDATE companies SET user_tags = $1 WHERE symbol = $2', [JSON.stringify(tags), symbol]);
 
     res.json({ success: true, tags });
   } catch (error) {
@@ -269,10 +275,12 @@ router.post('/company/:symbol/tags', async (req, res) => {
  */
 router.delete('/company/:symbol/tags/:tag', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { symbol, tag } = req.params;
 
     // Get current tags
-    const company = database.prepare('SELECT user_tags FROM companies WHERE symbol = ?').get(symbol);
+    const result = await database.query('SELECT user_tags FROM companies WHERE symbol = $1', [symbol]);
+    const company = result.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -291,8 +299,10 @@ router.delete('/company/:symbol/tags/:tag', async (req, res) => {
     tags = tags.filter(t => t !== tag);
 
     // Update
-    database.prepare('UPDATE companies SET user_tags = ? WHERE symbol = ?')
-      .run(tags.length > 0 ? JSON.stringify(tags) : null, symbol);
+    await database.query('UPDATE companies SET user_tags = $1 WHERE symbol = $2', [
+      tags.length > 0 ? JSON.stringify(tags) : null,
+      symbol
+    ]);
 
     res.json({ success: true, tags });
   } catch (error) {
@@ -307,6 +317,7 @@ router.delete('/company/:symbol/tags/:tag', async (req, res) => {
  */
 router.get('/companies', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { user_sector, user_industry, user_subsector, tag, limit = 100 } = req.query;
 
     let sql = `
@@ -315,31 +326,33 @@ router.get('/companies', async (req, res) => {
       WHERE 1=1
     `;
     const params = [];
+    let paramCounter = 1;
 
     if (user_sector) {
-      sql += ' AND c.user_sector = ?';
+      sql += ` AND c.user_sector = $${paramCounter++}`;
       params.push(user_sector);
     }
 
     if (user_industry) {
-      sql += ' AND c.user_industry = ?';
+      sql += ` AND c.user_industry = $${paramCounter++}`;
       params.push(user_industry);
     }
 
     if (user_subsector) {
-      sql += ' AND c.user_subsector = ?';
+      sql += ` AND c.user_subsector = $${paramCounter++}`;
       params.push(user_subsector);
     }
 
     if (tag) {
-      sql += ' AND c.user_tags LIKE ?';
+      sql += ` AND c.user_tags LIKE $${paramCounter++}`;
       params.push(`%"${tag}"%`);
     }
 
-    sql += ' LIMIT ?';
+    sql += ` LIMIT $${paramCounter++}`;
     params.push(parseInt(limit));
 
-    const companies = database.prepare(sql).all(...params);
+    const result = await database.query(sql, params);
+    const companies = result.rows;
 
     // Parse tags for each company
     const result = companies.map(c => ({
@@ -363,6 +376,7 @@ router.get('/companies', async (req, res) => {
  */
 router.post('/bulk', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { symbols, user_sector, user_industry, user_subsector, add_tags, remove_tags } = req.body;
 
     if (!symbols || !Array.isArray(symbols) || symbols.length === 0) {
@@ -371,39 +385,41 @@ router.post('/bulk', async (req, res) => {
 
     const updateParts = [];
     const params = [];
+    let paramCounter = 1;
 
     if (user_sector !== undefined) {
-      updateParts.push('user_sector = ?');
+      updateParts.push(`user_sector = $${paramCounter++}`);
       params.push(user_sector || null);
     }
 
     if (user_industry !== undefined) {
-      updateParts.push('user_industry = ?');
+      updateParts.push(`user_industry = $${paramCounter++}`);
       params.push(user_industry || null);
     }
 
     if (user_subsector !== undefined) {
-      updateParts.push('user_subsector = ?');
+      updateParts.push(`user_subsector = $${paramCounter++}`);
       params.push(user_subsector || null);
     }
 
     // Handle bulk updates for sector/industry/subsector
     let updated = 0;
     if (updateParts.length > 0) {
-      const placeholders = symbols.map(() => '?').join(',');
+      const placeholders = symbols.map((_, idx) => `$${paramCounter + idx}`).join(',');
       const sql = `
         UPDATE companies
         SET ${updateParts.join(', ')}
         WHERE symbol IN (${placeholders})
       `;
-      const result = database.prepare(sql).run(...params, ...symbols);
-      updated = result.changes;
+      const result = await database.query(sql, [...params, ...symbols]);
+      updated = result.rowCount;
     }
 
     // Handle tags separately (need to merge with existing)
     if (add_tags || remove_tags) {
       for (const symbol of symbols) {
-        const company = database.prepare('SELECT user_tags FROM companies WHERE symbol = ?').get(symbol);
+        const result = await database.query('SELECT user_tags FROM companies WHERE symbol = $1', [symbol]);
+        const company = result.rows[0];
         if (!company) continue;
 
         let tags = [];
@@ -429,8 +445,10 @@ router.post('/bulk', async (req, res) => {
           tags = tags.filter(t => !remove_tags.includes(t));
         }
 
-        database.prepare('UPDATE companies SET user_tags = ? WHERE symbol = ?')
-          .run(tags.length > 0 ? JSON.stringify(tags) : null, symbol);
+        await database.query('UPDATE companies SET user_tags = $1 WHERE symbol = $2', [
+          tags.length > 0 ? JSON.stringify(tags) : null,
+          symbol
+        ]);
       }
       updated = symbols.length;
     }

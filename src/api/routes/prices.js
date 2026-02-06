@@ -151,7 +151,7 @@ router.get('/:symbol', async (req, res) => {
     const database = await getDatabaseAsync();
 
     // Get company
-    const companyResult = await database.query('SELECT id, symbol, name, sector, industry FROM companies WHERE LOWER(symbol) = LOWER(?)', [symbol]);
+    const companyResult = await database.query('SELECT id, symbol, name, sector, industry FROM companies WHERE LOWER(symbol) = LOWER($1)', [symbol]);
     const company = companyResult.rows[0];
 
     if (!company) {
@@ -176,28 +176,29 @@ router.get('/:symbol', async (req, res) => {
     let sql = `
       SELECT date, open, high, low, close, adjusted_close, volume
       FROM daily_prices
-      WHERE company_id = ?
+      WHERE company_id = $1
     `;
     const params = [company.id];
+    let paramCounter = 2;
 
     if (startDate) {
-      sql += ' AND date >= ?';
+      sql += ` AND date >= $${paramCounter++}`;
       params.push(startDate);
     }
 
     if (endDate) {
-      sql += ' AND date <= ?';
+      sql += ` AND date <= $${paramCounter++}`;
       params.push(endDate);
     }
 
-    sql += ' ORDER BY date DESC LIMIT ?';
+    sql += ` ORDER BY date DESC LIMIT $${paramCounter++}`;
     params.push(effectiveLimit);
 
     const pricesResult = await database.query(sql, params);
     const prices = pricesResult.rows;
 
     // Get metrics
-    const metricsResult = await database.query('SELECT * FROM price_metrics WHERE company_id = ?', [company.id]);
+    const metricsResult = await database.query('SELECT * FROM price_metrics WHERE company_id = $1', [company.id]);
     const metrics = metricsResult.rows[0];
 
     res.json({
@@ -229,14 +230,14 @@ router.get('/:symbol/metrics', async (req, res) => {
     const { symbol } = req.params;
     const database = await getDatabaseAsync();
 
-    const companyResult = await database.query('SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)', [symbol]);
+    const companyResult = await database.query('SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)', [symbol]);
     const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ success: false, error: 'Company not found' });
     }
 
-    const metricsResult = await database.query('SELECT * FROM price_metrics WHERE company_id = ?', [company.id]);
+    const metricsResult = await database.query('SELECT * FROM price_metrics WHERE company_id = $1', [company.id]);
     const metrics = metricsResult.rows[0];
 
     res.json({
