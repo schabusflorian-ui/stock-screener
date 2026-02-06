@@ -32,18 +32,19 @@ async function runMigrations() {
 
   const db = await getDatabase();
 
-  // Ensure migrations table exists
+  // Ensure migrations table exists (match existing schema from data migration)
   await db.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
-      id SERIAL PRIMARY KEY,
-      migration_name TEXT UNIQUE NOT NULL,
-      applied_at TIMESTAMP DEFAULT NOW()
+      id BIGSERIAL PRIMARY KEY,
+      name TEXT UNIQUE NOT NULL,
+      batch BIGINT NOT NULL DEFAULT 1,
+      executed_at TIMESTAMP DEFAULT NOW()
     )
   `);
 
   // Get already applied migrations
-  const result = await db.query('SELECT migration_name FROM schema_migrations');
-  const appliedMigrations = new Set(result.rows.map(r => r.migration_name));
+  const result = await db.query('SELECT name FROM schema_migrations');
+  const appliedMigrations = new Set(result.rows.map(r => r.name));
 
   console.log(`Found ${appliedMigrations.size} already applied migrations`);
   console.log('');
@@ -81,8 +82,8 @@ async function runMigrations() {
 
       // Record the migration
       await db.query(
-        'INSERT INTO schema_migrations (migration_name) VALUES ($1) ON CONFLICT DO NOTHING',
-        [migrationName]
+        'INSERT INTO schema_migrations (name, batch) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING',
+        [migrationName, 1]
       );
 
       console.log(`   ✅ ${migrationName} completed`);
