@@ -238,9 +238,9 @@ router.get('/', async (req, res) => {
         c.*,
         COUNT(DISTINCT f.fiscal_date_ending) as years_of_data,
         MAX(f.fiscal_date_ending) as latest_data,
-        m.roic as latest_roic,
-        m.roe as latest_roe,
-        m.net_margin as latest_net_margin
+        MAX(m.roic) as latest_roic,
+        MAX(m.roe) as latest_roe,
+        MAX(m.net_margin) as latest_net_margin
       FROM companies c
       LEFT JOIN financial_data f ON c.id = f.company_id
       LEFT JOIN calculated_metrics m ON c.id = m.company_id
@@ -251,7 +251,7 @@ router.get('/', async (req, res) => {
       WHERE 1=1
         ${activeOnly ? 'AND c.is_active = 1' : ''}
         ${excludeCIK ? "AND c.symbol NOT LIKE 'CIK_%'" : ''}
-      GROUP BY c.id, m.roic, m.roe, m.net_margin
+      GROUP BY c.id
       ORDER BY c.symbol
     `);
     const companies = companiesResult.rows;
