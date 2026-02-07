@@ -1,18 +1,17 @@
 // src/services/portfolio/exportService.js
 // Portfolio Export Service - CSV and Summary exports
 
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 
 class ExportService {
-  constructor() {
-    this.db = db.getDatabase();
-  }
+  // No constructor needed
 
   // ============================================
   // Holdings Export (CSV format)
   // ============================================
-  exportHoldingsCSV(portfolioId) {
-    const positions = this.db.prepare(`
+  async exportHoldingsCSV(portfolioId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         c.symbol,
         c.name,
@@ -38,9 +37,10 @@ class ExportService {
       JOIN companies c ON pp.company_id = c.id
       LEFT JOIN price_metrics pm ON c.id = pm.company_id
       LEFT JOIN dividend_metrics dm ON c.id = dm.company_id
-      WHERE pp.portfolio_id = ?
+      WHERE pp.portfolio_id = $1
       ORDER BY pp.shares * COALESCE(pm.last_price, 0) DESC
-    `).all(portfolioId);
+    `, [portfolioId]);
+    const positions = result.rows;
 
     const headers = [
       'Symbol', 'Name', 'Sector', 'Industry', 'Shares', 'Cost Basis',
@@ -75,7 +75,8 @@ class ExportService {
   // ============================================
   // Transactions Export (CSV format)
   // ============================================
-  exportTransactionsCSV(portfolioId, options = {}) {
+  async exportTransactionsCSV(portfolioId, options = {}) {
+    const database = await getDatabaseAsync();
     const { startDate, endDate, type } = options;
 
     let query = `
@@ -91,26 +92,28 @@ class ExportService {
         t.notes
       FROM portfolio_transactions t
       LEFT JOIN companies c ON t.company_id = c.id
-      WHERE t.portfolio_id = ?
+      WHERE t.portfolio_id = $1
     `;
     const params = [portfolioId];
+    let paramCounter = 2;
 
     if (startDate) {
-      query += ' AND t.executed_at >= ?';
+      query += ` AND t.executed_at >= $${paramCounter++}`;
       params.push(startDate);
     }
     if (endDate) {
-      query += ' AND t.executed_at <= ?';
+      query += ` AND t.executed_at <= $${paramCounter++}`;
       params.push(endDate);
     }
     if (type) {
-      query += ' AND t.transaction_type = ?';
+      query += ` AND t.transaction_type = $${paramCounter++}`;
       params.push(type);
     }
 
     query += ' ORDER BY t.executed_at DESC';
 
-    const transactions = this.db.prepare(query).all(...params);
+    const result = await database.query(query, params);
+    const transactions = result.rows;
 
     const headers = [
       'Date', 'Type', 'Symbol', 'Name', 'Shares', 'Price',
@@ -135,34 +138,38 @@ class ExportService {
   // ============================================
   // Portfolio Summary Export (JSON/Text)
   // ============================================
-  exportSummary(portfolioId) {
+  async exportSummary(portfolioId) {
+    const database = await getDatabaseAsync();
+
     // Get portfolio info
-    const portfolio = this.db.prepare(`
+    const portfolioResult = await database.query(`
       SELECT
         p.id, p.name, p.description, p.portfolio_type, p.currency,
         p.current_cash as cash_balance, p.created_at,
         (SELECT COUNT(*) FROM portfolio_positions WHERE portfolio_id = p.id) as position_count
       FROM portfolios p
-      WHERE p.id = ?
-    `).get(portfolioId);
+      WHERE p.id = $1
+    `, [portfolioId]);
+    const portfolio = portfolioResult.rows[0];
 
     if (!portfolio) {
       throw new Error('Portfolio not found');
     }
 
     // Get positions summary
-    const positionsSummary = this.db.prepare(`
+    const positionsSummaryResult = await database.query(`
       SELECT
         SUM(pp.shares * COALESCE(pm.last_price, 0)) as total_market_value,
         SUM(pp.cost_basis) as total_cost_basis,
         COUNT(*) as position_count
       FROM portfolio_positions pp
       LEFT JOIN price_metrics pm ON pp.company_id = pm.company_id
-      WHERE pp.portfolio_id = ?
-    `).get(portfolioId);
+      WHERE pp.portfolio_id = $1
+    `, [portfolioId]);
+    const positionsSummary = positionsSummaryResult.rows[0];
 
     // Get sector allocation
-    const sectorAllocation = this.db.prepare(`
+    const sectorAllocationResult = await database.query(`
       SELECT
         COALESCE(c.sector, 'Unknown') as sector,
         SUM(pp.shares * COALESCE(pm.last_price, 0)) as value,
@@ -170,13 +177,14 @@ class ExportService {
       FROM portfolio_positions pp
       JOIN companies c ON pp.company_id = c.id
       LEFT JOIN price_metrics pm ON c.id = pm.company_id
-      WHERE pp.portfolio_id = ?
+      WHERE pp.portfolio_id = $1
       GROUP BY COALESCE(c.sector, 'Unknown')
       ORDER BY value DESC
-    `).all(portfolioId);
+    `, [portfolioId]);
+    const sectorAllocation = sectorAllocationResult.rows;
 
     // Get top holdings
-    const topHoldings = this.db.prepare(`
+    const topHoldingsResult = await database.query(`
       SELECT
         c.symbol,
         c.name,
@@ -185,13 +193,14 @@ class ExportService {
       FROM portfolio_positions pp
       JOIN companies c ON pp.company_id = c.id
       LEFT JOIN price_metrics pm ON c.id = pm.company_id
-      WHERE pp.portfolio_id = ?
+      WHERE pp.portfolio_id = $1
       ORDER BY value DESC
       LIMIT 10
-    `).all(portfolioId);
+    `, [portfolioId]);
+    const topHoldings = topHoldingsResult.rows;
 
     // Get transaction stats
-    const transactionStats = this.db.prepare(`
+    const transactionStatsResult = await database.query(`
       SELECT
         COUNT(*) as total_trades,
         SUM(CASE WHEN transaction_type = 'buy' THEN 1 ELSE 0 END) as buys,
@@ -199,8 +208,9 @@ class ExportService {
         MIN(executed_at) as first_trade,
         MAX(executed_at) as last_trade
       FROM portfolio_transactions
-      WHERE portfolio_id = ?
-    `).get(portfolioId);
+      WHERE portfolio_id = $1
+    `, [portfolioId]);
+    const transactionStats = transactionStatsResult.rows[0];
 
     const totalValue = (positionsSummary?.total_market_value || 0) + (portfolio.cash_balance || 0);
     const totalCost = positionsSummary?.total_cost_basis || 0;
@@ -251,12 +261,13 @@ class ExportService {
   // ============================================
   // Tax Report Export (CSV)
   // ============================================
-  exportTaxReport(portfolioId, year) {
+  async exportTaxReport(portfolioId, year) {
+    const database = await getDatabaseAsync();
     const startDate = `${year}-01-01`;
     const endDate = `${year}-12-31`;
 
     // Get closed lots (sales) within the year
-    const closedLots = this.db.prepare(`
+    const result = await database.query(`
       SELECT
         pl.closed_at as sell_date,
         c.symbol,
@@ -268,11 +279,12 @@ class ExportService {
         pl.acquired_at
       FROM portfolio_lots pl
       JOIN companies c ON pl.company_id = c.id
-      WHERE pl.portfolio_id = ?
-        AND pl.is_closed = 1
-        AND pl.closed_at BETWEEN ? AND ?
+      WHERE pl.portfolio_id = $1
+        AND pl.is_closed = true
+        AND pl.closed_at BETWEEN $2 AND $3
       ORDER BY pl.closed_at ASC
-    `).all(portfolioId, startDate, endDate);
+    `, [portfolioId, startDate, endDate]);
+    const closedLots = result.rows;
 
     // Calculate short-term vs long-term
     const oneYearMs = 365 * 24 * 60 * 60 * 1000;
@@ -322,11 +334,12 @@ class ExportService {
   // ============================================
   // Dividend Report Export (CSV)
   // ============================================
-  exportDividendReport(portfolioId, year) {
+  async exportDividendReport(portfolioId, year) {
+    const database = await getDatabaseAsync();
     const startDate = `${year}-01-01`;
     const endDate = `${year}-12-31`;
 
-    const dividends = this.db.prepare(`
+    const result = await database.query(`
       SELECT
         t.executed_at as payment_date,
         c.symbol,
@@ -335,11 +348,12 @@ class ExportService {
         t.notes
       FROM portfolio_transactions t
       LEFT JOIN companies c ON t.company_id = c.id
-      WHERE t.portfolio_id = ?
+      WHERE t.portfolio_id = $1
         AND t.transaction_type = 'dividend'
-        AND t.executed_at BETWEEN ? AND ?
+        AND t.executed_at BETWEEN $2 AND $3
       ORDER BY t.executed_at ASC
-    `).all(portfolioId, startDate, endDate);
+    `, [portfolioId, startDate, endDate]);
+    const dividends = result.rows;
 
     const totalDividends = dividends.reduce((sum, d) => sum + (d.dividend_amount || 0), 0);
 
