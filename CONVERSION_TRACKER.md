@@ -1,7 +1,7 @@
 # PostgreSQL Conversion Progress Tracker
 
 **Last Updated**: 2026-02-07
-**Overall Progress**: 19 / 197 services (10%)
+**Overall Progress**: 24 / 197 services (12%)
 
 ---
 
@@ -22,6 +22,11 @@
 | portfolio/exportService.js | Medium | 2h | ✅ | 5 methods, 9 DB calls, 53 params, CSV exports |
 | portfolio/positionSizing.js | Low | 1h | ✅ | 4 DB calls, 8 params, volatility-based sizing |
 | portfolio/correlationManager.js | Medium | 2.5h | ✅ | 6 DB calls, 27 params, 7 async methods |
+| portfolio/rebalanceCalculator.js | Medium | 2h | ✅ | 8 DB calls, 27 params, 6 helper + 3 main methods |
+| portfolio/whatIfAnalysis.js | Medium | 1.5h | ✅ | 7 DB calls, 7 params, portfolio simulation |
+| portfolio/portfolioTaxService.js | Medium | 2h | ✅ | 7 DB calls, tax tracking, multi-jurisdiction |
+| portfolio/orderEngine.js | Medium | 2.5h | ✅ | 13 DB calls, stop loss, trailing stop, limit orders |
+| portfolio/dividendProcessor.js | Medium | 2.5h | ✅ | 13 DB calls, 6 methods, transactions, auto DRIP |
 
 ---
 
@@ -50,21 +55,21 @@ Priority 1A is now complete! All Data Access Layer services have been converted.
 | 7 | portfolio/metricsEngine.js | High | 5-6h | ⏸️ Pending | - |
 | 8 | portfolio/performanceAttribution.js | High | 4-5h | ⏸️ Pending | - |
 | 9 | portfolio/correlationManager.js | Medium | 3-4h | ✅ Complete | - |
-| 10 | portfolio/dividendProcessor.js | Medium | 3-4h | ⏸️ Pending | - |
-| 11 | portfolio/rebalanceCalculator.js | High | 5-6h | ⏸️ Pending | - |
+| 10 | portfolio/dividendProcessor.js | Medium | 3-4h | ✅ Complete | - |
+| 11 | portfolio/rebalanceCalculator.js | High | 5-6h | ✅ Complete | - |
 | 12 | portfolio/riskManagement.js | Medium | 4-5h | ⏸️ Pending | - |
 | 13 | portfolio/backtestEngine.js | High | 6-8h | ⏸️ Pending | - |
 | 14 | portfolio/advancedAnalytics.js | High | 5-6h | ⏸️ Pending | - |
 | 15 | portfolio/monteCarloEngine.js | High | 4-5h | ⏸️ Pending | - |
-| 16 | portfolio/orderEngine.js | Medium | 3-4h | ⏸️ Pending | - |
+| 16 | portfolio/orderEngine.js | Medium | 3-4h | ✅ Complete | - |
 | 17 | portfolio/positionSizing.js | Medium | 3-4h | ✅ Complete | - |
 | 18 | portfolio/stressTestEngine.js | High | 5-6h | ⏸️ Pending | - |
 | 19 | portfolio/alphaAnalytics.js | High | 4-5h | ⏸️ Pending | - |
 | 20 | portfolio/exportService.js | Medium | 2-3h | ✅ Complete | - |
 | 21 | portfolio/hedgeOptimizer.js | High | 5-6h | ⏸️ Pending | - |
-| 22 | portfolio/whatIfAnalysis.js | Medium | 4-5h | ⏸️ Pending | - |
+| 22 | portfolio/whatIfAnalysis.js | Medium | 4-5h | ✅ Complete | - |
 | 23 | portfolio/portfolioAlerts.js | Medium | 3-4h | ⏸️ Pending | - |
-| 24 | portfolio/portfolioTaxService.js | Medium | 3-4h | ⏸️ Pending | - |
+| 24 | portfolio/portfolioTaxService.js | Medium | 3-4h | ✅ Complete | - |
 | 25 | portfolio/advancedKelly.js | High | 4-5h | ⏸️ Pending | - |
 
 **Total Estimated**: 85-105 hours
