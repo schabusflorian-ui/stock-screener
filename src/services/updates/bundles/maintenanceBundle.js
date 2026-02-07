@@ -11,6 +11,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const { getDatabaseAsync } = require('../../../database');
 
 class MaintenanceBundle {
   constructor() {
@@ -21,22 +22,23 @@ class MaintenanceBundle {
 
   async execute(jobKey, db, context) {
     const { onProgress } = context;
+    const database = await getDatabaseAsync();
 
     switch (jobKey) {
       case 'maintenance.cleanup':
-        return this.runCleanup(db, onProgress);
+        return this.runCleanup(database, onProgress);
       case 'maintenance.vacuum':
-        return this.runVacuum(db, onProgress);
+        return this.runVacuum(database, onProgress);
       case 'maintenance.integrity':
-        return this.runIntegrityCheck(db, onProgress);
+        return this.runIntegrityCheck(database, onProgress);
       case 'maintenance.backup':
-        return this.runBackup(db, onProgress);
+        return this.runBackup(database, onProgress);
       default:
         throw new Error(`Unknown maintenance job: ${jobKey}`);
     }
   }
 
-  async runCleanup(db, onProgress) {
+  async runCleanup(database, onProgress) {
     await onProgress(5, 'Starting database cleanup...');
 
     try {
@@ -44,67 +46,68 @@ class MaintenanceBundle {
 
       // Clean old update_runs (keep last 30 days)
       await onProgress(10, 'Cleaning old update runs...');
-      const runsResult = db.prepare(`
+      const runsResult = await database.query(`
         DELETE FROM update_runs
-        WHERE started_at < datetime('now', '-30 days')
+        WHERE started_at < NOW() - INTERVAL '30 days'
         AND status IN ('completed', 'failed')
-      `).run();
-      totalDeleted += runsResult.changes;
+      `);
+      totalDeleted += runsResult.rowCount;
 
       // Clean old sentiment data (keep last 90 days)
       await onProgress(25, 'Cleaning old sentiment data...');
       try {
-        const sentimentResult = db.prepare(`
+        const sentimentResult = await database.query(`
           DELETE FROM sentiment_scores
-          WHERE created_at < datetime('now', '-90 days')
-        `).run();
-        totalDeleted += sentimentResult.changes;
+          WHERE created_at < NOW() - INTERVAL '90 days'
+        `);
+        totalDeleted += sentimentResult.rowCount;
       } catch (e) {
         // Table may not exist
       }
 
       // Clean orphaned queue entries
       await onProgress(40, 'Cleaning orphaned queue entries...');
-      const queueResult = db.prepare(`
+      const queueResult = await database.query(`
         DELETE FROM update_queue
         WHERE status IN ('completed', 'failed')
-        AND created_at < datetime('now', '-7 days')
-      `).run();
-      totalDeleted += queueResult.changes;
+        AND created_at < NOW() - INTERVAL '7 days'
+      `);
+      totalDeleted += queueResult.rowCount;
 
       // Clean old log entries from any log tables
       await onProgress(55, 'Cleaning old logs...');
       try {
-        const logsResult = db.prepare(`
+        const logsResult = await database.query(`
           DELETE FROM update_logs
-          WHERE created_at < datetime('now', '-14 days')
-        `).run();
-        totalDeleted += logsResult.changes;
+          WHERE created_at < NOW() - INTERVAL '14 days'
+        `);
+        totalDeleted += logsResult.rowCount;
       } catch (e) {
         // Table may not exist
       }
 
       // Clean expired locks
       await onProgress(70, 'Cleaning expired locks...');
-      const locksResult = db.prepare(`
+      const locksResult = await database.query(`
         DELETE FROM update_locks
-        WHERE expires_at < datetime('now')
-      `).run();
-      totalDeleted += locksResult.changes;
+        WHERE expires_at < NOW()
+      `);
+      totalDeleted += locksResult.rowCount;
 
       // Clean old price data if too much (keep last 5 years)
       await onProgress(85, 'Checking price data volume...');
-      const priceCount = db.prepare(`
+      const priceCountResult = await database.query(`
         SELECT COUNT(*) as count FROM stock_prices
-        WHERE date < date('now', '-5 years')
-      `).get();
+        WHERE date < CURRENT_DATE - INTERVAL '5 years'
+      `);
+      const priceCount = priceCountResult.rows[0];
 
       if (priceCount && priceCount.count > 0) {
-        const priceResult = db.prepare(`
+        const priceResult = await database.query(`
           DELETE FROM stock_prices
-          WHERE date < date('now', '-5 years')
-        `).run();
-        totalDeleted += priceResult.changes;
+          WHERE date < CURRENT_DATE - INTERVAL '5 years'
+        `);
+        totalDeleted += priceResult.rowCount;
       }
 
       await onProgress(100, 'Cleanup complete');
@@ -120,43 +123,25 @@ class MaintenanceBundle {
     }
   }
 
-  async runVacuum(db, onProgress) {
+  async runVacuum(database, onProgress) {
     await onProgress(5, 'Starting database vacuum...');
 
     try {
-      // Get database size before
-      const dbPath = path.join(this.dataDir, 'stocks.db');
-      let sizeBefore = 0;
-      try {
-        const stats = fs.statSync(dbPath);
-        sizeBefore = stats.size;
-      } catch (e) {
-        // Ignore
-      }
-
       await onProgress(20, 'Running VACUUM...');
 
-      // Run vacuum (this can take a while for large databases)
-      db.exec('VACUUM');
+      // Run VACUUM (PostgreSQL equivalent of SQLite VACUUM)
+      await database.query('VACUUM');
 
       await onProgress(70, 'Running ANALYZE...');
 
       // Update statistics for query optimizer
-      db.exec('ANALYZE');
+      await database.query('ANALYZE');
 
       await onProgress(90, 'Checking results...');
 
-      // Get database size after
-      let sizeAfter = 0;
-      try {
-        const stats = fs.statSync(dbPath);
-        sizeAfter = stats.size;
-      } catch (e) {
-        // Ignore
-      }
-
-      const savedBytes = sizeBefore - sizeAfter;
-      const savedMB = (savedBytes / (1024 * 1024)).toFixed(2);
+      // PostgreSQL doesn't have a file-based size like SQLite, but we can use disk usage
+      // For now, just report success without size comparison
+      const savedMB = '0.00';
 
       await onProgress(100, `Vacuum complete, saved ${savedMB} MB`);
 
@@ -166,9 +151,9 @@ class MaintenanceBundle {
         itemsUpdated: 1,
         itemsFailed: 0,
         metadata: {
-          sizeBefore,
-          sizeAfter,
-          savedBytes
+          sizeBefore: 0,
+          sizeAfter: 0,
+          savedBytes: 0
         }
       };
     } catch (error) {
@@ -176,29 +161,19 @@ class MaintenanceBundle {
     }
   }
 
-  async runIntegrityCheck(db, onProgress) {
+  async runIntegrityCheck(database, onProgress) {
     await onProgress(5, 'Starting integrity check...');
 
     try {
       const issues = [];
 
-      // Check SQLite integrity
-      await onProgress(10, 'Checking SQLite integrity...');
-      const integrityResult = db.prepare('PRAGMA integrity_check').all();
-      if (integrityResult[0]?.integrity_check !== 'ok') {
-        issues.push({
-          type: 'sqlite_integrity',
-          message: 'SQLite integrity check failed',
-          details: integrityResult
-        });
-      }
-
       // Check for orphaned financial data
       await onProgress(25, 'Checking for orphaned financial data...');
-      const orphanedFinancials = db.prepare(`
+      const orphanedFinancialsResult = await database.query(`
         SELECT COUNT(*) as count FROM financial_data
         WHERE company_id NOT IN (SELECT id FROM companies)
-      `).get();
+      `);
+      const orphanedFinancials = orphanedFinancialsResult.rows[0];
       if (orphanedFinancials.count > 0) {
         issues.push({
           type: 'orphaned_financials',
@@ -209,10 +184,11 @@ class MaintenanceBundle {
 
       // Check for orphaned prices
       await onProgress(40, 'Checking for orphaned price data...');
-      const orphanedPrices = db.prepare(`
+      const orphanedPricesResult = await database.query(`
         SELECT COUNT(*) as count FROM stock_prices
         WHERE company_id NOT IN (SELECT id FROM companies)
-      `).get();
+      `);
+      const orphanedPrices = orphanedPricesResult.rows[0];
       if (orphanedPrices.count > 0) {
         issues.push({
           type: 'orphaned_prices',
@@ -223,10 +199,11 @@ class MaintenanceBundle {
 
       // Check for companies without prices
       await onProgress(55, 'Checking for companies without price data...');
-      const companiesWithoutPrices = db.prepare(`
+      const companiesWithoutPricesResult = await database.query(`
         SELECT COUNT(*) as count FROM companies
         WHERE id NOT IN (SELECT DISTINCT company_id FROM stock_prices)
-      `).get();
+      `);
+      const companiesWithoutPrices = companiesWithoutPricesResult.rows[0];
       if (companiesWithoutPrices.count > 0) {
         issues.push({
           type: 'missing_prices',
@@ -238,13 +215,14 @@ class MaintenanceBundle {
 
       // Check for duplicate entries
       await onProgress(70, 'Checking for duplicate prices...');
-      const duplicatePrices = db.prepare(`
+      const duplicatePricesResult = await database.query(`
         SELECT company_id, date, COUNT(*) as count
         FROM stock_prices
         GROUP BY company_id, date
         HAVING COUNT(*) > 1
         LIMIT 10
-      `).all();
+      `);
+      const duplicatePrices = duplicatePricesResult.rows;
       if (duplicatePrices.length > 0) {
         issues.push({
           type: 'duplicate_prices',
@@ -254,22 +232,11 @@ class MaintenanceBundle {
         });
       }
 
-      // Check foreign key constraints
-      await onProgress(85, 'Checking foreign key constraints...');
-      const fkViolations = db.prepare('PRAGMA foreign_key_check').all();
-      if (fkViolations.length > 0) {
-        issues.push({
-          type: 'fk_violations',
-          message: `Found ${fkViolations.length} foreign key violations`,
-          count: fkViolations.length
-        });
-      }
-
       await onProgress(100, `Integrity check complete, ${issues.length} issues found`);
 
       return {
-        itemsTotal: 6, // Number of checks performed
-        itemsProcessed: 6,
+        itemsTotal: 5, // Number of checks performed (removed SQLite-specific checks)
+        itemsProcessed: 5,
         itemsUpdated: 0,
         itemsFailed: issues.filter(i => i.severity !== 'warning').length,
         metadata: { issues }
@@ -279,7 +246,7 @@ class MaintenanceBundle {
     }
   }
 
-  async runBackup(db, onProgress) {
+  async runBackup(database, onProgress) {
     await onProgress(5, 'Starting database backup...');
 
     try {
@@ -288,29 +255,33 @@ class MaintenanceBundle {
         fs.mkdirSync(this.backupDir, { recursive: true });
       }
 
-      const dbPath = path.join(this.dataDir, 'stocks.db');
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      const backupPath = path.join(this.backupDir, `stocks-${timestamp}.db`);
+      const backupPath = path.join(this.backupDir, `stocks-${timestamp}.sql`);
 
       await onProgress(20, 'Creating backup...');
 
-      // Use SQLite backup API via better-sqlite3
-      db.backup(backupPath);
+      // For PostgreSQL, create a SQL dump using pg_dump
+      // Note: This requires pg_dump to be available in the system PATH
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+
+      const databaseUrl = process.env.DATABASE_URL || 'postgresql://localhost/stocks';
+      await execAsync(`pg_dump "${databaseUrl}" > "${backupPath}"`);
 
       await onProgress(80, 'Verifying backup...');
 
       // Verify backup exists and has reasonable size
       const backupStats = fs.statSync(backupPath);
-      const originalStats = fs.statSync(dbPath);
 
-      if (backupStats.size < originalStats.size * 0.9) {
+      if (backupStats.size < 1000) {
         throw new Error('Backup file is suspiciously small');
       }
 
       // Clean old backups (keep last 7)
       await onProgress(90, 'Cleaning old backups...');
       const backups = fs.readdirSync(this.backupDir)
-        .filter(f => f.startsWith('stocks-') && f.endsWith('.db'))
+        .filter(f => f.startsWith('stocks-') && f.endsWith('.sql'))
         .sort()
         .reverse();
 

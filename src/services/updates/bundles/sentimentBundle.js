@@ -10,6 +10,7 @@
 
 const { spawn } = require('child_process');
 const path = require('path');
+const { getDatabaseAsync } = require('../../../database');
 
 class SentimentBundle {
   constructor() {
@@ -32,6 +33,7 @@ class SentimentBundle {
   }
 
   async runRedditSentiment(db, onProgress) {
+    const database = await getDatabaseAsync();
     await onProgress(5, 'Starting Reddit sentiment scan...');
 
     return new Promise((resolve, reject) => {
@@ -49,7 +51,7 @@ class SentimentBundle {
         if (code === 0) {
           await onProgress(100, 'Reddit sentiment scan complete');
 
-          const stats = this.getSentimentStats(db);
+          const stats = await this.getSentimentStats(database);
           resolve({
             itemsTotal: stats.totalTickers,
             itemsProcessed: stats.totalTickers,
@@ -66,11 +68,12 @@ class SentimentBundle {
   }
 
   async runStockTwitsSentiment(db, onProgress) {
+    const database = await getDatabaseAsync();
     await onProgress(5, 'Starting StockTwits sentiment update...');
 
     try {
       // Get tickers to update
-      const tickers = db.prepare(`
+      const result = await database.query(`
         SELECT DISTINCT symbol FROM (
           SELECT symbol FROM watchlist
           UNION
@@ -79,7 +82,8 @@ class SentimentBundle {
           UNION
           SELECT symbol FROM companies WHERE market_cap > 10000000000 LIMIT 100
         )
-      `).all();
+      `);
+      const tickers = result.rows;
 
       await onProgress(10, `Updating ${tickers.length} tickers...`);
 
@@ -112,28 +116,34 @@ class SentimentBundle {
   }
 
   async runTrendingAnalysis(db, onProgress) {
+    const database = await getDatabaseAsync();
     await onProgress(5, 'Starting trending analysis...');
 
     try {
       // Analyze recent sentiment data for trends
-      const recentMentions = db.prepare(`
+      const result = await database.query(`
         SELECT symbol, COUNT(*) as mention_count, AVG(sentiment_score) as avg_sentiment
         FROM reddit_mentions
-        WHERE created_at > datetime('now', '-24 hours')
+        WHERE created_at > CURRENT_TIMESTAMP - INTERVAL '24 hours'
         GROUP BY symbol
         ORDER BY mention_count DESC
         LIMIT 100
-      `).all();
+      `);
+      const recentMentions = result.rows;
 
       await onProgress(50, `Analyzing ${recentMentions.length} trending tickers...`);
 
       // Update trending scores
       for (const ticker of recentMentions) {
         try {
-          db.prepare(`
-            INSERT OR REPLACE INTO trending_tickers (symbol, mention_count, avg_sentiment, updated_at)
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-          `).run(ticker.symbol, ticker.mention_count, ticker.avg_sentiment);
+          await database.query(`
+            INSERT INTO trending_tickers (symbol, mention_count, avg_sentiment, updated_at)
+            VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+            ON CONFLICT (symbol) DO UPDATE SET
+              mention_count = $2,
+              avg_sentiment = $3,
+              updated_at = CURRENT_TIMESTAMP
+          `, [ticker.symbol, ticker.mention_count, ticker.avg_sentiment]);
         } catch {
           // Ignore individual errors
         }
@@ -152,18 +162,20 @@ class SentimentBundle {
     }
   }
 
-  getSentimentStats(db) {
+  async getSentimentStats(database) {
     try {
       const today = new Date().toISOString().split('T')[0];
 
-      const totalTickers = db.prepare(`
+      const totalTickersResult = await database.query(`
         SELECT COUNT(DISTINCT symbol) as count FROM reddit_mentions
-      `).get()?.count || 0;
+      `);
+      const totalTickers = totalTickersResult.rows[0]?.count || 0;
 
-      const updatedToday = db.prepare(`
+      const updatedTodayResult = await database.query(`
         SELECT COUNT(DISTINCT symbol) as count FROM reddit_mentions
-        WHERE date(created_at) = ?
-      `).get(today)?.count || 0;
+        WHERE DATE(created_at) = $1
+      `, [today]);
+      const updatedToday = updatedTodayResult.rows[0]?.count || 0;
 
       return { totalTickers, updatedToday };
     } catch {
@@ -175,5 +187,5 @@ class SentimentBundle {
 const sentimentBundle = new SentimentBundle();
 
 module.exports = {
-  execute: (jobKey, db, context) => sentimentBundle.execute(jobKey, db, context)
+  execute: async (jobKey, db, context) => sentimentBundle.execute(jobKey, db, context)
 };

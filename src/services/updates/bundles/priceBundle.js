@@ -11,6 +11,7 @@
 
 const { spawn } = require('child_process');
 const path = require('path');
+const { getDatabaseAsync } = require('../../../database');
 
 // Import existing price update infrastructure
 const PriceUpdateScheduler = require('../../../jobs/priceUpdateScheduler');
@@ -39,6 +40,7 @@ class PriceBundle {
   }
 
   async runDailyUpdate(db, onProgress) {
+    const database = await getDatabaseAsync();
     await onProgress(5, 'Starting daily price update...');
 
     try {
@@ -47,7 +49,7 @@ class PriceBundle {
       await this.priceScheduler.runUpdate('update');
 
       // Get stats from database
-      const stats = this.getPriceStats(db);
+      const stats = await this.getPriceStats(database);
 
       await onProgress(100, 'Daily price update complete');
 
@@ -63,13 +65,14 @@ class PriceBundle {
   }
 
   async runBackfill(db, onProgress) {
+    const database = await getDatabaseAsync();
     await onProgress(5, 'Starting price backfill...');
 
     try {
       await onProgress(10, 'Running backfill...');
       await this.priceScheduler.runUpdate('backfill');
 
-      const stats = this.getPriceStats(db);
+      const stats = await this.getPriceStats(database);
 
       await onProgress(100, 'Price backfill complete');
 
@@ -85,17 +88,19 @@ class PriceBundle {
   }
 
   async runIntradayUpdate(db, onProgress) {
+    const database = await getDatabaseAsync();
     await onProgress(5, 'Starting intraday update...');
 
     // Get watchlist and portfolio stocks for intraday updates
-    const stocks = db.prepare(`
+    const result = await database.query(`
       SELECT DISTINCT symbol FROM (
         SELECT symbol FROM watchlist
         UNION
         SELECT c.symbol FROM portfolio_holdings ph
         JOIN companies c ON ph.company_id = c.id
-      )
-    `).all();
+      ) AS combined
+    `);
+    const stocks = result.rows;
 
     await onProgress(20, `Updating ${stocks.length} tracked stocks...`);
 
@@ -126,6 +131,7 @@ class PriceBundle {
   }
 
   async runIndexUpdate(db, onProgress) {
+    const database = await getDatabaseAsync();
     const indices = ['SPY', 'QQQ', 'DIA', 'IWM', 'VTI', 'BND', 'GLD', 'TLT'];
 
     await onProgress(5, `Updating ${indices.length} indices...`);
@@ -156,27 +162,30 @@ class PriceBundle {
     };
   }
 
-  getPriceStats(db) {
+  async getPriceStats(database) {
     try {
       const today = new Date().toISOString().split('T')[0];
 
-      const totalCompanies = db.prepare(`
+      const totalResult = await database.query(`
         SELECT COUNT(DISTINCT company_id) as count FROM daily_prices
-      `).get()?.count || 0;
+      `);
+      const totalCompanies = totalResult.rows[0]?.count || 0;
 
-      const updatedToday = db.prepare(`
-        SELECT COUNT(DISTINCT company_id) as count FROM daily_prices WHERE date = ?
-      `).get(today)?.count || 0;
+      const updatedResult = await database.query(`
+        SELECT COUNT(DISTINCT company_id) as count FROM daily_prices WHERE date = $1
+      `, [today]);
+      const updatedToday = updatedResult.rows[0]?.count || 0;
 
-      const staleCount = db.prepare(`
+      const staleResult = await database.query(`
         SELECT COUNT(*) as count FROM companies c
-        WHERE c.is_active = 1
+        WHERE c.is_active = true
         AND NOT EXISTS (
           SELECT 1 FROM daily_prices dp
           WHERE dp.company_id = c.id
-          AND dp.date >= date('now', '-3 days')
+          AND dp.date >= CURRENT_DATE - INTERVAL '3 days'
         )
-      `).get()?.count || 0;
+      `);
+      const staleCount = staleResult.rows[0]?.count || 0;
 
       return { totalCompanies, updatedToday, staleCount };
     } catch {

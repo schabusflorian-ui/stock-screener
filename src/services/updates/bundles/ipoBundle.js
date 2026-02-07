@@ -7,6 +7,8 @@
  * - ipo.check_status - Check and update IPO status based on trading dates
  */
 
+const { getDatabaseAsync } = require('../../../database');
+
 class IPOBundle {
   constructor() {
     this.ipoTracker = null;
@@ -22,12 +24,13 @@ class IPOBundle {
 
   async execute(jobKey, db, context) {
     const { onProgress } = context;
+    const database = await getDatabaseAsync();
 
     switch (jobKey) {
       case 'ipo.sync_trading_companies':
-        return this.syncTradingCompanies(db, onProgress);
+        return this.syncTradingCompanies(database, onProgress);
       case 'ipo.check_status':
-        return this.checkIPOStatus(db, onProgress);
+        return this.checkIPOStatus(database, onProgress);
       default:
         throw new Error(`Unknown IPO job: ${jobKey}`);
     }
@@ -37,17 +40,18 @@ class IPOBundle {
    * Sync Trading IPOs - Create company records for trading IPOs without company_id
    * This handles cases where EU/UK IPOs started trading but company wasn't created
    */
-  async syncTradingCompanies(db, onProgress) {
+  async syncTradingCompanies(database, onProgress) {
     await onProgress(5, 'Finding trading IPOs without company records...');
 
     try {
       // Get all trading IPOs without company_id
-      const tradingIPOs = db.prepare(`
+      const result = await database.query(`
         SELECT * FROM ipo_tracker
         WHERE status = 'TRADING'
           AND (company_id IS NULL OR company_id = 0)
           AND (ticker_final IS NOT NULL OR ticker_proposed IS NOT NULL OR isin IS NOT NULL)
-      `).all();
+      `);
+      const tradingIPOs = result.rows;
 
       await onProgress(10, `Found ${tradingIPOs.length} trading IPOs needing company sync`);
 
@@ -93,26 +97,28 @@ class IPOBundle {
           }
 
           // Check if company already exists by ticker
-          const existingByTicker = db.prepare(`
-            SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
-          `).get(ticker);
+          const existingByTickerResult = await database.query(`
+            SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)
+          `, [ticker]);
+          const existingByTicker = existingByTickerResult.rows[0];
 
           if (existingByTicker) {
             // Link to existing company
-            db.prepare('UPDATE ipo_tracker SET company_id = ? WHERE id = ?').run(existingByTicker.id, ipo.id);
+            await database.query('UPDATE ipo_tracker SET company_id = $1 WHERE id = $2', [existingByTicker.id, ipo.id]);
             linked++;
             console.log(`  Linked IPO ${ipo.company_name} to existing company ${ticker}`);
           } else {
             // Also check by ISIN if available
             let existingByIsin = null;
             if (ipo.isin) {
-              existingByIsin = db.prepare(`
-                SELECT id FROM companies WHERE isin = ?
-              `).get(ipo.isin);
+              const existingByIsinResult = await database.query(`
+                SELECT id FROM companies WHERE isin = $1
+              `, [ipo.isin]);
+              existingByIsin = existingByIsinResult.rows[0];
             }
 
             if (existingByIsin) {
-              db.prepare('UPDATE ipo_tracker SET company_id = ? WHERE id = ?').run(existingByIsin.id, ipo.id);
+              await database.query('UPDATE ipo_tracker SET company_id = $1 WHERE id = $2', [existingByIsin.id, ipo.id]);
               linked++;
               console.log(`  Linked IPO ${ipo.company_name} to existing company by ISIN`);
             } else {
@@ -123,10 +129,11 @@ class IPOBundle {
                 ipo.home_member_state ||
                 (ipo.isin ? ipo.isin.substring(0, 2) : 'XX');
 
-              const result = db.prepare(`
+              const insertResult = await database.query(`
                 INSERT INTO companies (symbol, name, sector, industry, exchange, country, is_active, cik, isin)
-                VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
-              `).run(
+                VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8)
+                RETURNING id
+              `, [
                 ticker,
                 ipo.company_name,
                 ipo.sector || null,
@@ -135,10 +142,10 @@ class IPOBundle {
                 country,
                 ipo.cik || null,
                 ipo.isin || null
-              );
+              ]);
 
-              const companyId = result.lastInsertRowid;
-              db.prepare('UPDATE ipo_tracker SET company_id = ? WHERE id = ?').run(companyId, ipo.id);
+              const companyId = insertResult.rows[0].id;
+              await database.query('UPDATE ipo_tracker SET company_id = $1 WHERE id = $2', [companyId, ipo.id]);
               created++;
               console.log(`  Created company ${ticker} (id: ${companyId}) for IPO ${ipo.company_name}`);
             }
@@ -180,22 +187,23 @@ class IPOBundle {
   /**
    * Check IPO Status - Update status based on expected trading dates
    */
-  async checkIPOStatus(db, onProgress) {
+  async checkIPOStatus(database, onProgress) {
     await onProgress(5, 'Checking IPO statuses...');
 
     try {
       const today = new Date().toISOString().split('T')[0];
 
       // Find IPOs that should have started trading
-      const shouldBeTrading = db.prepare(`
+      const result = await database.query(`
         SELECT * FROM ipo_tracker
         WHERE status IN ('PRICED', 'APPROVED', 'EXPECTED')
           AND (
-            expected_trade_date <= ?
-            OR first_trade_date <= ?
-            OR pricing_date <= ?
+            expected_trade_date <= $1
+            OR first_trade_date <= $1
+            OR pricing_date <= $1
           )
-      `).all(today, today, today);
+      `, [today]);
+      const shouldBeTrading = result.rows;
 
       await onProgress(10, `Found ${shouldBeTrading.length} IPOs to check`);
 
@@ -210,16 +218,17 @@ class IPOBundle {
 
         try {
           // Update to TRADING status
-          db.prepare(`
+          await database.query(`
             UPDATE ipo_tracker
             SET status = 'TRADING',
-                first_trade_date = COALESCE(first_trade_date, ?),
-                updated_at = datetime('now')
-            WHERE id = ?
-          `).run(today, ipo.id);
+                first_trade_date = COALESCE(first_trade_date, $1),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2
+          `, [today, ipo.id]);
 
           // Try to create/link company
-          const updatedIpo = db.prepare('SELECT * FROM ipo_tracker WHERE id = ?').get(ipo.id);
+          const updatedIpoResult = await database.query('SELECT * FROM ipo_tracker WHERE id = $1', [ipo.id]);
+          const updatedIpo = updatedIpoResult.rows[0];
           if (updatedIpo && !updatedIpo.company_id) {
             tracker.ensureCompanyExists(updatedIpo);
           }
@@ -257,5 +266,5 @@ class IPOBundle {
 const ipoBundle = new IPOBundle();
 
 module.exports = {
-  execute: (jobKey, db, context) => ipoBundle.execute(jobKey, db, context)
+  execute: async (jobKey, db, context) => ipoBundle.execute(jobKey, db, context)
 };

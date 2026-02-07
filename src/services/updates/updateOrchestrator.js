@@ -11,11 +11,11 @@ const EventEmitter = require('events');
 const path = require('path');
 const fs = require('fs');
 const sentry = require('../../lib/sentry'); // PHASE 2.4: Sentry integration for job failures
+const { getDatabaseAsync } = require('../../database');
 
 class UpdateOrchestrator extends EventEmitter {
-  constructor(db) {
+  constructor() {
     super();
-    this.db = db;
     this.cronJobs = new Map();
     this.bundles = new Map();
     this.isRunning = false;
@@ -27,228 +27,8 @@ class UpdateOrchestrator extends EventEmitter {
     if (!fs.existsSync(this.logDir)) {
       fs.mkdirSync(this.logDir, { recursive: true });
     }
-
-    this._prepareStatements();
   }
 
-  _prepareStatements() {
-    this.stmts = {
-      // Bundle queries
-      getBundles: this.db.prepare(`
-        SELECT b.*,
-          (SELECT COUNT(*) FROM update_jobs WHERE bundle_id = b.id) as job_count,
-          (SELECT COUNT(*) FROM update_jobs WHERE bundle_id = b.id AND status = 'running') as running_count
-        FROM update_bundles b
-        ORDER BY b.priority
-      `),
-
-      getBundle: this.db.prepare(`
-        SELECT * FROM update_bundles WHERE name = ?
-      `),
-
-      setBundleAutomatic: this.db.prepare(`
-        UPDATE update_bundles SET is_automatic = ?, updated_at = CURRENT_TIMESTAMP WHERE name = ?
-      `),
-
-      // Job queries
-      getAutomaticJobs: this.db.prepare(`
-        SELECT j.*, b.name as bundle_name, b.is_automatic as bundle_automatic
-        FROM update_jobs j
-        JOIN update_bundles b ON j.bundle_id = b.id
-        WHERE j.is_enabled = 1
-          AND b.is_enabled = 1
-          AND COALESCE(j.is_automatic, b.is_automatic) = 1
-          AND j.cron_expression IS NOT NULL
-      `),
-
-      getAllJobs: this.db.prepare(`
-        SELECT j.*, b.name as bundle_name, b.display_name as bundle_display_name
-        FROM update_jobs j
-        JOIN update_bundles b ON j.bundle_id = b.id
-        ORDER BY b.priority, j.id
-      `),
-
-      getJob: this.db.prepare(`
-        SELECT j.*, b.name as bundle_name FROM update_jobs j
-        JOIN update_bundles b ON j.bundle_id = b.id
-        WHERE j.job_key = ?
-      `),
-
-      getJobsByBundle: this.db.prepare(`
-        SELECT j.*, b.name as bundle_name FROM update_jobs j
-        JOIN update_bundles b ON j.bundle_id = b.id
-        WHERE b.name = ? AND j.is_enabled = 1
-        ORDER BY j.id
-      `),
-
-      updateJobStatus: this.db.prepare(`
-        UPDATE update_jobs SET
-          status = ?,
-          is_running = ?,
-          current_progress = ?,
-          current_step = ?,
-          updated_at = CURRENT_TIMESTAMP
-        WHERE job_key = ?
-      `),
-
-      updateJobRunResult: this.db.prepare(`
-        UPDATE update_jobs SET
-          last_run_at = CURRENT_TIMESTAMP,
-          last_run_status = ?,
-          last_run_duration_ms = ?,
-          last_run_items_processed = ?,
-          last_run_items_updated = ?,
-          last_run_items_failed = ?,
-          total_runs = total_runs + 1,
-          successful_runs = successful_runs + CASE WHEN ? = 'completed' THEN 1 ELSE 0 END,
-          failed_runs = failed_runs + CASE WHEN ? = 'failed' THEN 1 ELSE 0 END,
-          status = 'idle',
-          is_running = 0,
-          current_progress = 0,
-          current_step = NULL,
-          updated_at = CURRENT_TIMESTAMP
-        WHERE job_key = ?
-      `),
-
-      updateJobError: this.db.prepare(`
-        UPDATE update_jobs SET last_error = ?, updated_at = CURRENT_TIMESTAMP WHERE job_key = ?
-      `),
-
-      updateNextRun: this.db.prepare(`
-        UPDATE update_jobs SET next_run_at = ?, updated_at = CURRENT_TIMESTAMP WHERE job_key = ?
-      `),
-
-      setJobAutomatic: this.db.prepare(`
-        UPDATE update_jobs SET is_automatic = ?, updated_at = CURRENT_TIMESTAMP WHERE job_key = ?
-      `),
-
-      setJobEnabled: this.db.prepare(`
-        UPDATE update_jobs SET is_enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE job_key = ?
-      `),
-
-      getJobDependencies: this.db.prepare(`
-        SELECT depends_on FROM update_jobs WHERE job_key = ?
-      `),
-
-      getDependentJobs: this.db.prepare(`
-        SELECT job_key FROM update_jobs
-        WHERE depends_on LIKE ? AND is_enabled = 1 AND COALESCE(is_automatic, 1) = 1
-      `),
-
-      // Run queries
-      createRun: this.db.prepare(`
-        INSERT INTO update_runs (job_id, job_key, bundle_name, started_at, trigger_type, triggered_by, status)
-        VALUES (
-          (SELECT id FROM update_jobs WHERE job_key = ?),
-          ?, ?, CURRENT_TIMESTAMP, ?, ?, 'running'
-        )
-      `),
-
-      completeRun: this.db.prepare(`
-        UPDATE update_runs SET
-          completed_at = CURRENT_TIMESTAMP,
-          duration_ms = ?,
-          status = ?,
-          items_total = ?,
-          items_processed = ?,
-          items_updated = ?,
-          items_failed = ?,
-          progress = 100
-        WHERE id = ?
-      `),
-
-      failRun: this.db.prepare(`
-        UPDATE update_runs SET
-          completed_at = CURRENT_TIMESTAMP,
-          status = 'failed',
-          error_message = ?,
-          error_stack = ?
-        WHERE id = ?
-      `),
-
-      updateRunProgress: this.db.prepare(`
-        UPDATE update_runs SET progress = ?, current_step = ? WHERE id = ?
-      `),
-
-      getRunHistory: this.db.prepare(`
-        SELECT * FROM update_runs WHERE job_key = ? ORDER BY started_at DESC LIMIT ?
-      `),
-
-      getRecentRuns: this.db.prepare(`
-        SELECT * FROM update_runs ORDER BY started_at DESC LIMIT ?
-      `),
-
-      // Lock queries
-      // FIXED: Use INSERT OR IGNORE for atomic lock acquisition
-      // This ensures only one instance can acquire the lock at a time
-      acquireLock: this.db.prepare(`
-        INSERT OR IGNORE INTO update_locks (job_key, locked_at, locked_by, expires_at)
-        SELECT ?, CURRENT_TIMESTAMP, ?, datetime('now', '+2 hours')
-        WHERE NOT EXISTS (
-          SELECT 1 FROM update_locks
-          WHERE job_key = ? AND expires_at > CURRENT_TIMESTAMP
-        )
-      `),
-
-      checkLock: this.db.prepare(`
-        SELECT * FROM update_locks WHERE job_key = ? AND locked_by = ? AND expires_at > CURRENT_TIMESTAMP
-      `),
-
-      releaseLock: this.db.prepare(`
-        DELETE FROM update_locks WHERE job_key = ? AND locked_by = ?
-      `),
-
-      cleanExpiredLocks: this.db.prepare(`
-        DELETE FROM update_locks WHERE expires_at < CURRENT_TIMESTAMP
-      `),
-
-      // Queue queries
-      queueJob: this.db.prepare(`
-        INSERT INTO update_queue (job_key, priority, scheduled_for, trigger_type, triggered_by, options)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `),
-
-      getNextQueueItem: this.db.prepare(`
-        SELECT * FROM update_queue
-        WHERE status = 'pending' AND scheduled_for <= CURRENT_TIMESTAMP
-        ORDER BY priority, scheduled_for
-        LIMIT 1
-      `),
-
-      updateQueueStatus: this.db.prepare(`
-        UPDATE update_queue SET status = ?, processed_at = CURRENT_TIMESTAMP WHERE id = ?
-      `),
-
-      updateQueueError: this.db.prepare(`
-        UPDATE update_queue SET status = 'failed', last_error = ? WHERE id = ?
-      `),
-
-      // QUEUE RESILIENCE: Heartbeat management
-      updateQueueHeartbeat: this.db.prepare(`
-        UPDATE update_queue SET last_heartbeat = CURRENT_TIMESTAMP WHERE id = ?
-      `),
-
-      recoverStalledQueueItems: this.db.prepare(`
-        UPDATE update_queue
-        SET status = 'pending',
-            attempt = attempt + 1
-        WHERE status = 'processing'
-          AND (last_heartbeat IS NULL OR last_heartbeat < datetime('now', '-10 minutes'))
-          AND attempt < max_attempts
-        RETURNING id, job_key, attempt
-      `),
-
-      // Settings queries
-      getSetting: this.db.prepare(`
-        SELECT value FROM update_settings WHERE key = ?
-      `),
-
-      setSetting: this.db.prepare(`
-        INSERT OR REPLACE INTO update_settings (key, value, updated_at)
-        VALUES (?, ?, CURRENT_TIMESTAMP)
-      `)
-    };
-  }
 
   // =========================================================================
   // LOGGING
@@ -276,12 +56,13 @@ class UpdateOrchestrator extends EventEmitter {
 
     this.log('Starting Update Orchestrator...');
     this.isRunning = true;
+    const database = await getDatabaseAsync();
 
     // Clean expired locks
-    this.stmts.cleanExpiredLocks.run();
+    await database.query('DELETE FROM update_locks WHERE expires_at < CURRENT_TIMESTAMP');
 
     // RESILIENCE: Recover stalled queue items from previous crashes
-    this.recoverStalledQueueItems();
+    await this.recoverStalledQueueItems();
 
     // Schedule all automatic jobs
     await this.scheduleAllJobs();
@@ -326,7 +107,17 @@ class UpdateOrchestrator extends EventEmitter {
   // =========================================================================
 
   async scheduleAllJobs() {
-    const jobs = this.stmts.getAutomaticJobs.all();
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT j.*, b.name as bundle_name, b.is_automatic as bundle_automatic
+      FROM update_jobs j
+      JOIN update_bundles b ON j.bundle_id = b.id
+      WHERE j.is_enabled = true
+        AND b.is_enabled = true
+        AND COALESCE(j.is_automatic, b.is_automatic) = true
+        AND j.cron_expression IS NOT NULL
+    `);
+    const jobs = result.rows;
 
     for (const job of jobs) {
       if (job.cron_expression) {
@@ -337,7 +128,7 @@ class UpdateOrchestrator extends EventEmitter {
     this.log(`Scheduled ${this.cronJobs.size} automatic jobs`);
   }
 
-  scheduleJob(job) {
+  async scheduleJob(job) {
     if (this.cronJobs.has(job.job_key)) {
       this.cronJobs.get(job.job_key).stop();
     }
@@ -365,7 +156,9 @@ class UpdateOrchestrator extends EventEmitter {
       // Calculate next run time (approximate)
       const nextRun = this.getNextRunTime(job.cron_expression, job.timezone);
       if (nextRun) {
-        this.stmts.updateNextRun.run(nextRun.toISOString(), job.job_key);
+        const database = await getDatabaseAsync();
+        await database.query('UPDATE update_jobs SET next_run_at = $1, updated_at = CURRENT_TIMESTAMP WHERE job_key = $2',
+          [nextRun.toISOString(), job.job_key]);
       }
 
       this.log(`Scheduled ${job.job_key} - cron: ${job.cron_expression}`);
@@ -392,8 +185,15 @@ class UpdateOrchestrator extends EventEmitter {
 
   async runJob(jobKey, options = {}) {
     const { triggerType = 'manual', triggeredBy = 'system', jobOptions = {} } = options;
+    const database = await getDatabaseAsync();
 
-    const job = this.stmts.getJob.get(jobKey);
+    const result = await database.query(`
+      SELECT j.*, b.name as bundle_name FROM update_jobs j
+      JOIN update_bundles b ON j.bundle_id = b.id
+      WHERE j.job_key = $1
+    `, [jobKey]);
+    const job = result.rows[0];
+
     if (!job) {
       throw new Error(`Job not found: ${jobKey}`);
     }
@@ -408,21 +208,37 @@ class UpdateOrchestrator extends EventEmitter {
     }
 
     // Acquire lock
-    const lockAcquired = this.acquireLock(jobKey);
+    const lockAcquired = await this.acquireLock(jobKey);
     if (!lockAcquired) {
       this.log(`Skipping ${jobKey} - already running`);
       return { success: false, reason: 'already_running' };
     }
 
     // Create run record
-    const runResult = this.stmts.createRun.run(jobKey, jobKey, job.bundle_name, triggerType, triggeredBy);
-    const runId = runResult.lastInsertRowid;
+    const runResult = await database.query(`
+      INSERT INTO update_runs (job_id, job_key, bundle_name, started_at, trigger_type, triggered_by, status)
+      VALUES (
+        (SELECT id FROM update_jobs WHERE job_key = $1),
+        $2, $3, CURRENT_TIMESTAMP, $4, $5, 'running'
+      )
+      RETURNING id
+    `, [jobKey, jobKey, job.bundle_name, triggerType, triggeredBy]);
+    const runId = runResult.rows[0].id;
 
     const startTime = Date.now();
 
     try {
       // Update job status
-      this.stmts.updateJobStatus.run('running', 1, 0, 'Starting...', jobKey);
+      await database.query(`
+        UPDATE update_jobs SET
+          status = $1,
+          is_running = $2,
+          current_progress = $3,
+          current_step = $4,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE job_key = $5
+      `, ['running', true, 0, 'Starting...', jobKey]);
+
       this.emit('jobStarted', { jobKey, runId });
       this.log(`Starting job: ${jobKey} (${triggerType})`);
 
@@ -436,26 +252,37 @@ class UpdateOrchestrator extends EventEmitter {
       const durationMs = Date.now() - startTime;
 
       // Complete the run
-      this.stmts.completeRun.run(
-        durationMs,
-        'completed',
-        result.itemsTotal || 0,
-        result.itemsProcessed || 0,
-        result.itemsUpdated || 0,
-        result.itemsFailed || 0,
-        runId
-      );
+      await database.query(`
+        UPDATE update_runs SET
+          completed_at = CURRENT_TIMESTAMP,
+          duration_ms = $1,
+          status = $2,
+          items_total = $3,
+          items_processed = $4,
+          items_updated = $5,
+          items_failed = $6,
+          progress = 100
+        WHERE id = $7
+      `, [durationMs, 'completed', result.itemsTotal || 0, result.itemsProcessed || 0, result.itemsUpdated || 0, result.itemsFailed || 0, runId]);
 
-      this.stmts.updateJobRunResult.run(
-        'completed',
-        durationMs,
-        result.itemsProcessed || 0,
-        result.itemsUpdated || 0,
-        result.itemsFailed || 0,
-        'completed',
-        'completed',
-        jobKey
-      );
+      await database.query(`
+        UPDATE update_jobs SET
+          last_run_at = CURRENT_TIMESTAMP,
+          last_run_status = $1,
+          last_run_duration_ms = $2,
+          last_run_items_processed = $3,
+          last_run_items_updated = $4,
+          last_run_items_failed = $5,
+          total_runs = total_runs + 1,
+          successful_runs = successful_runs + CASE WHEN $6 = 'completed' THEN 1 ELSE 0 END,
+          failed_runs = failed_runs + CASE WHEN $7 = 'failed' THEN 1 ELSE 0 END,
+          status = 'idle',
+          is_running = false,
+          current_progress = 0,
+          current_step = NULL,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE job_key = $8
+      `, ['completed', durationMs, result.itemsProcessed || 0, result.itemsUpdated || 0, result.itemsFailed || 0, 'completed', 'completed', jobKey]);
 
       this.emit('jobCompleted', { jobKey, runId, result });
       this.log(`Completed job: ${jobKey} (${(durationMs / 1000).toFixed(1)}s)`);
@@ -470,16 +297,36 @@ class UpdateOrchestrator extends EventEmitter {
     } catch (error) {
       const durationMs = Date.now() - startTime;
 
-      this.stmts.failRun.run(error.message, error.stack, runId);
-      this.stmts.updateJobError.run(error.message, jobKey);
-      this.stmts.updateJobRunResult.run(
-        'failed',
-        durationMs,
-        0, 0, 0,
-        'failed',
-        'failed',
-        jobKey
-      );
+      await database.query(`
+        UPDATE update_runs SET
+          completed_at = CURRENT_TIMESTAMP,
+          status = 'failed',
+          error_message = $1,
+          error_stack = $2
+        WHERE id = $3
+      `, [error.message, error.stack, runId]);
+
+      await database.query('UPDATE update_jobs SET last_error = $1, updated_at = CURRENT_TIMESTAMP WHERE job_key = $2',
+        [error.message, jobKey]);
+
+      await database.query(`
+        UPDATE update_jobs SET
+          last_run_at = CURRENT_TIMESTAMP,
+          last_run_status = $1,
+          last_run_duration_ms = $2,
+          last_run_items_processed = $3,
+          last_run_items_updated = $4,
+          last_run_items_failed = $5,
+          total_runs = total_runs + 1,
+          successful_runs = successful_runs + CASE WHEN $6 = 'completed' THEN 1 ELSE 0 END,
+          failed_runs = failed_runs + CASE WHEN $7 = 'failed' THEN 1 ELSE 0 END,
+          status = 'idle',
+          is_running = false,
+          current_progress = 0,
+          current_step = NULL,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE job_key = $8
+      `, ['failed', durationMs, 0, 0, 0, 'failed', 'failed', jobKey]);
 
       this.emit('jobFailed', { jobKey, runId, error: error.message });
       this.log(`Failed job: ${jobKey} - ${error.message}`, 'ERROR');
@@ -492,7 +339,7 @@ class UpdateOrchestrator extends EventEmitter {
       return { success: false, error: error.message };
 
     } finally {
-      this.releaseLock(jobKey);
+      await this.releaseLock(jobKey);
     }
   }
 
@@ -539,7 +386,8 @@ class UpdateOrchestrator extends EventEmitter {
           throw new Error(`Unknown bundle: ${bundleName}`);
       }
 
-      return await handler.execute(jobKey, this.db, context);
+      const database = await getDatabaseAsync();
+      return await handler.execute(jobKey, database, context);
 
     } catch (error) {
       if (error.code === 'MODULE_NOT_FOUND') {
@@ -556,9 +404,19 @@ class UpdateOrchestrator extends EventEmitter {
     }
   }
 
-  updateProgress(runId, jobKey, progress, step) {
-    this.stmts.updateRunProgress.run(progress, step, runId);
-    this.stmts.updateJobStatus.run('running', 1, progress, step, jobKey);
+  async updateProgress(runId, jobKey, progress, step) {
+    const database = await getDatabaseAsync();
+    await database.query('UPDATE update_runs SET progress = $1, current_step = $2 WHERE id = $3',
+      [progress, step, runId]);
+    await database.query(`
+      UPDATE update_jobs SET
+        status = $1,
+        is_running = $2,
+        current_progress = $3,
+        current_step = $4,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE job_key = $5
+    `, ['running', true, progress, step, jobKey]);
     this.emit('progress', { jobKey, runId, progress, step });
   }
 
@@ -567,12 +425,15 @@ class UpdateOrchestrator extends EventEmitter {
   // =========================================================================
 
   async checkDependencies(jobKey) {
-    const result = this.stmts.getJobDependencies.get(jobKey);
-    if (!result?.depends_on) return true;
+    const database = await getDatabaseAsync();
+    const result = await database.query('SELECT depends_on FROM update_jobs WHERE job_key = $1', [jobKey]);
+    const row = result.rows[0];
+
+    if (!row?.depends_on) return true;
 
     let dependsOn;
     try {
-      dependsOn = JSON.parse(result.depends_on);
+      dependsOn = JSON.parse(row.depends_on);
     } catch {
       return true;
     }
@@ -582,7 +443,12 @@ class UpdateOrchestrator extends EventEmitter {
     const today = new Date().toISOString().split('T')[0];
 
     for (const depKey of dependsOn) {
-      const depJob = this.stmts.getJob.get(depKey);
+      const depResult = await database.query(`
+        SELECT j.*, b.name as bundle_name FROM update_jobs j
+        JOIN update_bundles b ON j.bundle_id = b.id
+        WHERE j.job_key = $1
+      `, [depKey]);
+      const depJob = depResult.rows[0];
       if (!depJob) continue;
 
       const lastRunDate = depJob.last_run_at?.split('T')[0];
@@ -596,7 +462,12 @@ class UpdateOrchestrator extends EventEmitter {
   }
 
   async triggerDependentJobs(jobKey) {
-    const dependents = this.stmts.getDependentJobs.all(`%"${jobKey}"%`);
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT job_key FROM update_jobs
+      WHERE depends_on LIKE $1 AND is_enabled = true AND COALESCE(is_automatic, true) = true
+    `, [`%"${jobKey}"%`]);
+    const dependents = result.rows;
 
     for (const dep of dependents) {
       await this.queueJobInternal(dep.job_key, {
@@ -611,22 +482,34 @@ class UpdateOrchestrator extends EventEmitter {
   // LOCKING
   // =========================================================================
 
-  acquireLock(jobKey) {
+  async acquireLock(jobKey) {
     try {
-      // FIXED: Use atomic INSERT OR IGNORE and check result.changes
-      // If changes > 0, we successfully acquired the lock
+      const database = await getDatabaseAsync();
+      // FIXED: Use atomic INSERT...ON CONFLICT for atomic lock acquisition
+      // If we successfully insert, we acquired the lock
       // This prevents race condition where two instances could both think they acquired the lock
-      const result = this.stmts.acquireLock.run(jobKey, this.instanceId, jobKey);
-      return result.changes > 0;
+      const result = await database.query(`
+        INSERT INTO update_locks (job_key, locked_at, locked_by, expires_at)
+        SELECT $1, CURRENT_TIMESTAMP, $2, CURRENT_TIMESTAMP + INTERVAL '2 hours'
+        WHERE NOT EXISTS (
+          SELECT 1 FROM update_locks
+          WHERE job_key = $3 AND expires_at > CURRENT_TIMESTAMP
+        )
+        ON CONFLICT (job_key) DO NOTHING
+        RETURNING id
+      `, [jobKey, this.instanceId, jobKey]);
+      return result.rows.length > 0;
     } catch (error) {
       console.error('Lock acquisition failed:', { jobKey, instanceId: this.instanceId, error: error.message });
       return false;
     }
   }
 
-  releaseLock(jobKey) {
+  async releaseLock(jobKey) {
     try {
-      this.stmts.releaseLock.run(jobKey, this.instanceId);
+      const database = await getDatabaseAsync();
+      await database.query('DELETE FROM update_locks WHERE job_key = $1 AND locked_by = $2',
+        [jobKey, this.instanceId]);
     } catch (error) {
       // FIXED: Handle potential database errors when releasing locks
       this.log(`Failed to release lock for ${jobKey}: ${error.message}`, 'ERROR');
@@ -641,10 +524,20 @@ class UpdateOrchestrator extends EventEmitter {
    * Recover stalled queue items from crashed processes
    * Called on startup to resume any items that were being processed when the system crashed
    */
-  recoverStalledQueueItems() {
+  async recoverStalledQueueItems() {
     try {
+      const database = await getDatabaseAsync();
       // Find items stuck in 'processing' state for >10 minutes without heartbeat
-      const stalled = this.stmts.recoverStalledQueueItems.all();
+      const result = await database.query(`
+        UPDATE update_queue
+        SET status = 'pending',
+            attempt = attempt + 1
+        WHERE status = 'processing'
+          AND (last_heartbeat IS NULL OR last_heartbeat < CURRENT_TIMESTAMP - INTERVAL '10 minutes')
+          AND attempt < max_attempts
+        RETURNING id, job_key, attempt
+      `);
+      const stalled = result.rows;
 
       if (stalled.length > 0) {
         this.log(`RECOVERY: Found ${stalled.length} stalled queue items, resetting to pending`, 'WARN');
@@ -668,15 +561,12 @@ class UpdateOrchestrator extends EventEmitter {
 
   async queueJobInternal(jobKey, options = {}) {
     const { triggerType = 'manual', triggeredBy = 'system', priority = 50, scheduledFor = null, jobOptions = null } = options;
+    const database = await getDatabaseAsync();
 
-    this.stmts.queueJob.run(
-      jobKey,
-      priority,
-      scheduledFor || new Date().toISOString(),
-      triggerType,
-      triggeredBy,
-      jobOptions ? JSON.stringify(jobOptions) : null
-    );
+    await database.query(`
+      INSERT INTO update_queue (job_key, priority, scheduled_for, trigger_type, triggered_by, options)
+      VALUES ($1, $2, $3, $4, $5, $6)
+    `, [jobKey, priority, scheduledFor || new Date().toISOString(), triggerType, triggeredBy, jobOptions ? JSON.stringify(jobOptions) : null]);
   }
 
   async queueRetry(jobKey, job, originalOptions, attempt = 0) {
@@ -726,8 +616,10 @@ class UpdateOrchestrator extends EventEmitter {
     this.log(`Queued retry ${attempt + 1}/${maxRetries} for ${jobKey} (delay: ${Math.round(totalDelaySeconds / 60)}min) at ${scheduledFor.toISOString()}`);
   }
 
-  startQueueProcessor() {
-    const pollInterval = parseInt(this.stmts.getSetting.get('queue_poll_interval_ms')?.value || '5000');
+  async startQueueProcessor() {
+    const database = await getDatabaseAsync();
+    const settingResult = await database.query('SELECT value FROM update_settings WHERE key = $1', ['queue_poll_interval_ms']);
+    const pollInterval = parseInt(settingResult.rows[0]?.value || '5000');
 
     // FIXED: Wrap processQueue in error handler to prevent queue processor from crashing
     this.queueInterval = setInterval(async () => {
@@ -745,17 +637,26 @@ class UpdateOrchestrator extends EventEmitter {
   }
 
   async processQueue() {
-    const item = this.stmts.getNextQueueItem.get();
+    const database = await getDatabaseAsync();
+    const itemResult = await database.query(`
+      SELECT * FROM update_queue
+      WHERE status = 'pending' AND scheduled_for <= CURRENT_TIMESTAMP
+      ORDER BY priority, scheduled_for
+      LIMIT 1
+    `);
+    const item = itemResult.rows[0];
     if (!item) return;
 
     // Mark as processing and set initial heartbeat
-    this.stmts.updateQueueStatus.run('processing', item.id);
-    this.stmts.updateQueueHeartbeat.run(item.id);
+    await database.query('UPDATE update_queue SET status = $1, processed_at = CURRENT_TIMESTAMP WHERE id = $2',
+      ['processing', item.id]);
+    await database.query('UPDATE update_queue SET last_heartbeat = CURRENT_TIMESTAMP WHERE id = $1', [item.id]);
 
     // RESILIENCE: Update heartbeat every 30 seconds during processing
-    const heartbeatInterval = setInterval(() => {
+    const heartbeatInterval = setInterval(async () => {
       try {
-        this.stmts.updateQueueHeartbeat.run(item.id);
+        const db = await getDatabaseAsync();
+        await db.query('UPDATE update_queue SET last_heartbeat = CURRENT_TIMESTAMP WHERE id = $1', [item.id]);
       } catch (error) {
         this.log(`Failed to update heartbeat for queue item ${item.id}: ${error.message}`, 'WARN');
       }
@@ -777,10 +678,12 @@ class UpdateOrchestrator extends EventEmitter {
         jobOptions
       });
 
-      this.stmts.updateQueueStatus.run('completed', item.id);
+      await database.query('UPDATE update_queue SET status = $1, processed_at = CURRENT_TIMESTAMP WHERE id = $2',
+        ['completed', item.id]);
     } catch (error) {
       this.log(`Queue item ${item.job_key} failed: ${error.message}`, 'ERROR');
-      this.stmts.updateQueueError.run(error.message, item.id);
+      await database.query('UPDATE update_queue SET status = $1, last_error = $2 WHERE id = $3',
+        ['failed', error.message, item.id]);
 
       // PHASE 2.4: Report to Sentry if it's a recurring failure
       const isLastAttempt = item.attempt >= (item.max_attempts - 1);
@@ -801,7 +704,12 @@ class UpdateOrchestrator extends EventEmitter {
       }
 
       // Check if should retry
-      const job = this.stmts.getJob.get(item.job_key);
+      const jobResult = await database.query(`
+        SELECT j.*, b.name as bundle_name FROM update_jobs j
+        JOIN update_bundles b ON j.bundle_id = b.id
+        WHERE j.job_key = $1
+      `, [item.job_key]);
+      const job = jobResult.rows[0];
       if (job && item.attempt < item.max_attempts) {
         await this.queueRetry(item.job_key, job, jobOptions, item.attempt);
       }
@@ -829,7 +737,14 @@ class UpdateOrchestrator extends EventEmitter {
 
   // Trigger all jobs in a bundle
   async triggerBundle(bundleName, triggeredBy = 'user') {
-    const jobs = this.stmts.getJobsByBundle.all(bundleName);
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT j.*, b.name as bundle_name FROM update_jobs j
+      JOIN update_bundles b ON j.bundle_id = b.id
+      WHERE b.name = $1 AND j.is_enabled = true
+      ORDER BY j.id
+    `, [bundleName]);
+    const jobs = result.rows;
 
     for (const job of jobs) {
       await this.queueJobInternal(job.job_key, {
@@ -841,12 +756,19 @@ class UpdateOrchestrator extends EventEmitter {
 
   // Toggle job automatic/manual
   async setJobAutomatic(jobKey, isAutomatic) {
-    this.stmts.setJobAutomatic.run(isAutomatic ? 1 : 0, jobKey);
+    const database = await getDatabaseAsync();
+    await database.query('UPDATE update_jobs SET is_automatic = $1, updated_at = CURRENT_TIMESTAMP WHERE job_key = $2',
+      [isAutomatic, jobKey]);
 
     if (isAutomatic) {
-      const job = this.stmts.getJob.get(jobKey);
+      const result = await database.query(`
+        SELECT j.*, b.name as bundle_name FROM update_jobs j
+        JOIN update_bundles b ON j.bundle_id = b.id
+        WHERE j.job_key = $1
+      `, [jobKey]);
+      const job = result.rows[0];
       if (job?.cron_expression) {
-        this.scheduleJob(job);
+        await this.scheduleJob(job);
       }
     } else {
       if (this.cronJobs.has(jobKey)) {
@@ -858,21 +780,30 @@ class UpdateOrchestrator extends EventEmitter {
 
   // Toggle bundle automatic/manual
   async setBundleAutomatic(bundleName, isAutomatic) {
-    this.stmts.setBundleAutomatic.run(isAutomatic ? 1 : 0, bundleName);
+    const database = await getDatabaseAsync();
+    await database.query('UPDATE update_bundles SET is_automatic = $1, updated_at = CURRENT_TIMESTAMP WHERE name = $2',
+      [isAutomatic, bundleName]);
     await this.restart();
   }
 
   // Toggle job enabled/disabled
   async setJobEnabled(jobKey, isEnabled) {
-    this.stmts.setJobEnabled.run(isEnabled ? 1 : 0, jobKey);
+    const database = await getDatabaseAsync();
+    await database.query('UPDATE update_jobs SET is_enabled = $1, updated_at = CURRENT_TIMESTAMP WHERE job_key = $2',
+      [isEnabled, jobKey]);
 
     if (!isEnabled && this.cronJobs.has(jobKey)) {
       this.cronJobs.get(jobKey).stop();
       this.cronJobs.delete(jobKey);
     } else if (isEnabled) {
-      const job = this.stmts.getJob.get(jobKey);
+      const result = await database.query(`
+        SELECT j.*, b.name as bundle_name FROM update_jobs j
+        JOIN update_bundles b ON j.bundle_id = b.id
+        WHERE j.job_key = $1
+      `, [jobKey]);
+      const job = result.rows[0];
       if (job?.cron_expression && job.is_automatic) {
-        this.scheduleJob(job);
+        await this.scheduleJob(job);
       }
     }
   }
@@ -881,30 +812,61 @@ class UpdateOrchestrator extends EventEmitter {
   // QUERIES
   // =========================================================================
 
-  getBundles() {
-    return this.stmts.getBundles.all();
+  async getBundles() {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT b.*,
+        (SELECT COUNT(*) FROM update_jobs WHERE bundle_id = b.id) as job_count,
+        (SELECT COUNT(*) FROM update_jobs WHERE bundle_id = b.id AND status = 'running') as running_count
+      FROM update_bundles b
+      ORDER BY b.priority
+    `);
+    return result.rows;
   }
 
-  getAllJobs() {
-    return this.stmts.getAllJobs.all();
+  async getAllJobs() {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT j.*, b.name as bundle_name, b.display_name as bundle_display_name
+      FROM update_jobs j
+      JOIN update_bundles b ON j.bundle_id = b.id
+      ORDER BY b.priority, j.id
+    `);
+    return result.rows;
   }
 
-  getJob(jobKey) {
-    return this.stmts.getJob.get(jobKey);
+  async getJob(jobKey) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT j.*, b.name as bundle_name FROM update_jobs j
+      JOIN update_bundles b ON j.bundle_id = b.id
+      WHERE j.job_key = $1
+    `, [jobKey]);
+    return result.rows[0];
   }
 
-  getJobHistory(jobKey, limit = 20) {
-    return this.stmts.getRunHistory.all(jobKey, limit);
+  async getJobHistory(jobKey, limit = 20) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM update_runs WHERE job_key = $1 ORDER BY started_at DESC LIMIT $2
+    `, [jobKey, limit]);
+    return result.rows;
   }
 
-  getRecentRuns(limit = 50) {
-    return this.stmts.getRecentRuns.all(limit);
+  async getRecentRuns(limit = 50) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM update_runs ORDER BY started_at DESC LIMIT $1
+    `, [limit]);
+    return result.rows;
   }
 
-  getStatus() {
-    const bundles = this.getBundles();
-    const jobs = this.getAllJobs();
-    const recentRuns = this.getRecentRuns(20);
+  async getStatus() {
+    const bundles = await this.getBundles();
+    const jobs = await this.getAllJobs();
+    const recentRuns = await this.getRecentRuns(20);
+    const database = await getDatabaseAsync();
+    const settingResult = await database.query('SELECT value FROM update_settings WHERE key = $1', ['global_automatic_updates']);
 
     return {
       isRunning: this.isRunning,
@@ -913,13 +875,18 @@ class UpdateOrchestrator extends EventEmitter {
       bundles,
       jobs,
       recentRuns,
-      globalAutomatic: this.stmts.getSetting.get('global_automatic_updates')?.value !== 'false'
+      globalAutomatic: settingResult.rows[0]?.value !== 'false'
     };
   }
 
   // Global toggle
   async setGlobalAutomatic(isAutomatic) {
-    this.stmts.setSetting.run('global_automatic_updates', isAutomatic ? 'true' : 'false');
+    const database = await getDatabaseAsync();
+    await database.query(`
+      INSERT INTO update_settings (key, value, updated_at)
+      VALUES ($1, $2, CURRENT_TIMESTAMP)
+      ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = CURRENT_TIMESTAMP
+    `, ['global_automatic_updates', isAutomatic ? 'true' : 'false']);
 
     if (isAutomatic) {
       await this.start();
@@ -932,9 +899,9 @@ class UpdateOrchestrator extends EventEmitter {
 // Singleton factory
 let orchestratorInstance = null;
 
-function getUpdateOrchestrator(db) {
-  if (!orchestratorInstance && db) {
-    orchestratorInstance = new UpdateOrchestrator(db);
+function getUpdateOrchestrator() {
+  if (!orchestratorInstance) {
+    orchestratorInstance = new UpdateOrchestrator();
   }
   return orchestratorInstance;
 }

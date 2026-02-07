@@ -10,6 +10,7 @@
 
 const path = require('path');
 const { spawn } = require('child_process');
+const { getDatabaseAsync } = require('../../../database');
 
 class SECBundle {
   constructor() {
@@ -57,18 +58,20 @@ class SECBundle {
   }
 
   async runInsiderUpdate(db, onProgress) {
+    const database = await getDatabaseAsync();
     await onProgress(5, 'Starting insider trading update...');
 
     try {
       // Get companies to check for insider trading
-      const companies = db.prepare(`
+      const result = await database.query(`
         SELECT c.id, c.symbol, c.cik
         FROM companies c
         WHERE c.cik IS NOT NULL
         AND c.market_cap > 1000000000
         ORDER BY c.market_cap DESC
         LIMIT 100
-      `).all();
+      `);
+      const companies = result.rows;
 
       await onProgress(10, `Checking insider trades for ${companies.length} companies...`);
 
@@ -83,13 +86,14 @@ class SECBundle {
           if (trades && trades.length > 0) {
             for (const trade of trades) {
               try {
-                db.prepare(`
-                  INSERT OR IGNORE INTO insider_trades (
+                await database.query(`
+                  INSERT INTO insider_trades (
                     company_id, symbol, filing_date, transaction_date,
                     owner_name, owner_title, transaction_type,
                     shares, price_per_share, total_value, created_at
-                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-                `).run(
+                  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)
+                  ON CONFLICT (company_id, symbol, filing_date, transaction_date) DO NOTHING
+                `, [
                   company.id,
                   company.symbol,
                   trade.filingDate,
@@ -100,7 +104,7 @@ class SECBundle {
                   trade.securitiesTransacted,
                   trade.price,
                   trade.securitiesTransacted * (trade.price || 0)
-                );
+                ]);
               } catch (e) {
                 // Ignore duplicate entries
               }
@@ -136,6 +140,7 @@ class SECBundle {
   }
 
   async run13FUpdate(db, onProgress) {
+    const database = await getDatabaseAsync();
     await onProgress(5, 'Starting 13F institutional holdings update...');
 
     try {
@@ -146,13 +151,14 @@ class SECBundle {
       await onProgress(10, 'Fetching institutional holdings...');
 
       // Get tracked investors
-      const investors = db.prepare(`
+      const result = await database.query(`
         SELECT id, name, cik
         FROM famous_investors
-        WHERE cik IS NOT NULL AND active = 1
+        WHERE cik IS NOT NULL AND active = true
         ORDER BY aum DESC
         LIMIT 50
-      `).all();
+      `);
+      const investors = result.rows;
 
       let updated = 0;
       let failed = 0;

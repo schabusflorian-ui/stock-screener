@@ -10,6 +10,7 @@
  * - etf.promotion - Tier 3 to Tier 2 promotion checks
  */
 
+const { getDatabaseAsync } = require('../../../database');
 const { getETFUpdateScheduler } = require('../../../jobs/etfUpdateScheduler');
 
 class ETFBundle {
@@ -37,13 +38,14 @@ class ETFBundle {
   }
 
   async runTier1Update(db, onProgress) {
+    const database = await getDatabaseAsync();
     await onProgress(5, 'Starting Tier 1 ETF update...');
 
     // Use existing ETF scheduler
     await onProgress(10, 'Updating curated ETFs...');
     await this.etfScheduler.runTier1Update();
 
-    const stats = this.getETFStats(db, 1);
+    const stats = await this.getETFStats(database, 1);
     await onProgress(100, 'Tier 1 update complete');
 
     return {
@@ -55,12 +57,13 @@ class ETFBundle {
   }
 
   async runTier2Update(db, onProgress) {
+    const database = await getDatabaseAsync();
     await onProgress(5, 'Starting Tier 2 ETF update...');
 
     await onProgress(10, 'Updating indexed ETFs...');
     await this.etfScheduler.runTier2Update();
 
-    const stats = this.getETFStats(db, 2);
+    const stats = await this.getETFStats(database, 2);
     await onProgress(100, 'Tier 2 update complete');
 
     return {
@@ -72,18 +75,20 @@ class ETFBundle {
   }
 
   async runHoldingsImport(db, onProgress) {
+    const database = await getDatabaseAsync();
     await onProgress(5, 'Starting ETF holdings import...');
 
     const { getEtfService } = require('../../etfService');
     const etfService = getEtfService();
 
     // Get ETFs that need holdings update (tier 1 and 2, no recent update)
-    const etfs = db.prepare(`
+    const result = await database.query(`
       SELECT symbol FROM etf_definitions
       WHERE tier IN (1, 2)
-      AND (last_holdings_update IS NULL OR last_holdings_update < date('now', '-90 days'))
+      AND (last_holdings_update IS NULL OR last_holdings_update < CURRENT_DATE - INTERVAL '90 days')
       ORDER BY tier ASC, symbol ASC
-    `).all();
+    `);
+    const etfs = result.rows;
 
     await onProgress(10, `Importing holdings for ${etfs.length} ETFs...`);
 
@@ -130,6 +135,7 @@ class ETFBundle {
   }
 
   async runStaticHoldingsPreload(db, onProgress) {
+    const database = await getDatabaseAsync();
     await onProgress(5, 'Loading static ETF holdings data...');
 
     // Static holdings data for common ETFs
@@ -254,14 +260,6 @@ class ETFBundle {
       ]
     };
 
-    const insertStmt = db.prepare(`
-      INSERT INTO etf_holdings (etf_id, symbol, security_name, weight, company_id, as_of_date)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-
-    const getCompanyId = db.prepare('SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)');
-    const getEtf = db.prepare('SELECT id FROM etf_definitions WHERE symbol = ?');
-
     const etfSymbols = Object.keys(staticHoldings);
     let totalInserted = 0;
     let etfsUpdated = 0;
@@ -272,30 +270,39 @@ class ETFBundle {
       const progress = 10 + Math.floor((i / etfSymbols.length) * 85);
       await onProgress(progress, `Processing ${etfSymbol}...`);
 
-      const etf = getEtf.get(etfSymbol);
+      const etfResult = await database.query('SELECT id FROM etf_definitions WHERE symbol = $1', [etfSymbol]);
+      const etf = etfResult.rows[0];
       if (!etf) {
         continue;
       }
 
       // Delete existing holdings
-      db.prepare('DELETE FROM etf_holdings WHERE etf_id = ?').run(etf.id);
+      await database.query('DELETE FROM etf_holdings WHERE etf_id = $1', [etf.id]);
 
       // Insert new holdings
       for (const holding of holdings) {
-        const company = holding.symbol ? getCompanyId.get(holding.symbol) : null;
-        insertStmt.run(
-          etf.id,
-          holding.symbol || 'BOND',
-          holding.name,
-          holding.weight,
-          company?.id || null,
-          new Date().toISOString().split('T')[0]
+        const companyResult = holding.symbol ?
+          await database.query('SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)', [holding.symbol])
+          : { rows: [] };
+        const company = companyResult.rows[0];
+
+        await database.query(
+          `INSERT INTO etf_holdings (etf_id, symbol, security_name, weight, company_id, as_of_date)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [
+            etf.id,
+            holding.symbol || 'BOND',
+            holding.name,
+            holding.weight,
+            company?.id || null,
+            new Date().toISOString().split('T')[0]
+          ]
         );
         totalInserted++;
       }
 
       // Update last_holdings_update
-      db.prepare('UPDATE etf_definitions SET last_holdings_update = CURRENT_TIMESTAMP WHERE id = ?').run(etf.id);
+      await database.query('UPDATE etf_definitions SET last_holdings_update = CURRENT_TIMESTAMP WHERE id = $1', [etf.id]);
       etfsUpdated++;
     }
 
@@ -310,16 +317,18 @@ class ETFBundle {
   }
 
   async runPromotionCheck(db, onProgress) {
+    const database = await getDatabaseAsync();
     await onProgress(5, 'Checking Tier 3 ETFs for promotion...');
 
     // Find frequently accessed Tier 3 ETFs
-    const candidates = db.prepare(`
+    const candidatesResult = await database.query(`
       SELECT symbol, access_count
       FROM etf_definitions
       WHERE tier = 3 AND access_count >= 10
       ORDER BY access_count DESC
       LIMIT 50
-    `).all();
+    `);
+    const candidates = candidatesResult.rows;
 
     await onProgress(30, `Found ${candidates.length} promotion candidates...`);
 
@@ -327,10 +336,10 @@ class ETFBundle {
 
     for (const etf of candidates) {
       try {
-        db.prepare(`
+        await database.query(`
           UPDATE etf_definitions SET tier = 2, updated_at = CURRENT_TIMESTAMP
-          WHERE LOWER(symbol) = LOWER(?)
-        `).run(etf.symbol);
+          WHERE LOWER(symbol) = LOWER($1)
+        `, [etf.symbol]);
         promoted++;
       } catch {
         // Ignore promotion errors
@@ -338,7 +347,7 @@ class ETFBundle {
     }
 
     // Reset access counts
-    db.prepare('UPDATE etf_definitions SET access_count = 0').run();
+    await database.query('UPDATE etf_definitions SET access_count = 0');
 
     await onProgress(100, `Promoted ${promoted} ETFs to Tier 2`);
 
@@ -350,12 +359,12 @@ class ETFBundle {
     };
   }
 
-  getETFStats(db, tier) {
+  async getETFStats(database, tier) {
     try {
-      const result = db.prepare(`
-        SELECT COUNT(*) as count FROM etf_definitions WHERE tier = ?
-      `).get(tier);
-      return { count: result?.count || 0 };
+      const result = await database.query(`
+        SELECT COUNT(*) as count FROM etf_definitions WHERE tier = $1
+      `, [tier]);
+      return { count: parseInt(result.rows[0]?.count) || 0 };
     } catch {
       return { count: 0 };
     }

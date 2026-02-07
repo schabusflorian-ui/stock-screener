@@ -9,6 +9,7 @@
  */
 
 const path = require('path');
+const { getDatabaseAsync } = require('../../../database');
 
 class MarketBundle {
   constructor() {
@@ -31,6 +32,7 @@ class MarketBundle {
   }
 
   async runIndicesUpdate(db, onProgress) {
+    const database = await getDatabaseAsync();
     await onProgress(5, 'Starting index data update...');
 
     try {
@@ -71,6 +73,7 @@ class MarketBundle {
   }
 
   async runSectorsUpdate(db, onProgress) {
+    const database = await getDatabaseAsync();
     await onProgress(5, 'Starting sector performance update...');
 
     try {
@@ -102,18 +105,23 @@ class MarketBundle {
 
           if (priceData) {
             // Update sector_performance table
-            db.prepare(`
-              INSERT OR REPLACE INTO sector_performance (
+            await database.query(`
+              INSERT INTO sector_performance (
                 sector, symbol, close_price, change_percent,
                 volume, date, updated_at
-              ) VALUES (?, ?, ?, ?, ?, date('now'), datetime('now'))
-            `).run(
+              ) VALUES ($1, $2, $3, $4, $5, CURRENT_DATE, CURRENT_TIMESTAMP)
+              ON CONFLICT (sector, symbol) DO UPDATE SET
+              close_price = $3,
+              change_percent = $4,
+              volume = $5,
+              updated_at = CURRENT_TIMESTAMP
+            `, [
               etf.sector,
               etf.symbol,
               priceData.close,
               priceData.changePercent,
               priceData.volume
-            );
+            ]);
             updated++;
           }
         } catch (error) {
@@ -139,6 +147,7 @@ class MarketBundle {
   }
 
   async runCalendarUpdate(db, onProgress) {
+    const database = await getDatabaseAsync();
     await onProgress(5, 'Starting calendar update...');
 
     try {
@@ -153,19 +162,25 @@ class MarketBundle {
         let inserted = 0;
         for (const event of earningsData) {
           try {
-            db.prepare(`
-              INSERT OR REPLACE INTO earnings_calendar (
+            await database.query(`
+              INSERT INTO earnings_calendar (
                 symbol, company_name, report_date, fiscal_quarter,
                 eps_estimate, revenue_estimate, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-            `).run(
+              ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+              ON CONFLICT (symbol, report_date) DO UPDATE SET
+              company_name = $2,
+              fiscal_quarter = $4,
+              eps_estimate = $5,
+              revenue_estimate = $6,
+              updated_at = CURRENT_TIMESTAMP
+            `, [
               event.symbol,
               event.companyName,
               event.date,
               event.fiscalQuarter,
               event.epsEstimate,
               event.revenueEstimate
-            );
+            ]);
             inserted++;
           } catch (err) {
             // Ignore duplicate errors

@@ -12,6 +12,8 @@
  * - analytics.market_indicators - Update Buffett Indicator, S&P P/E, MSI (FRED + stock-based)
  */
 
+const { getDatabaseAsync } = require('../../../database');
+
 class AnalyticsBundle {
   constructor() {
     this.factorService = null;
@@ -147,14 +149,16 @@ class AnalyticsBundle {
    * Runs weekly to keep classifications current
    */
   async runStyleClassification(db, onProgress) {
+    const database = await getDatabaseAsync();
     await onProgress(5, 'Starting investor style classification...');
 
     // Get all famous investors
-    const investors = db.prepare(`
+    const result = await database.query(`
       SELECT id, name, investment_style
       FROM famous_investors
-      WHERE is_active = 1
-    `).all();
+      WHERE is_active = true
+    `);
+    const investors = result.rows;
 
     await onProgress(10, `Classifying ${investors.length} investors...`);
 
@@ -165,7 +169,7 @@ class AnalyticsBundle {
       const investor = investors[i];
 
       // Calculate investor's factor preferences from their decisions
-      const factorPrefs = db.prepare(`
+      const factorResult = await database.query(`
         SELECT
           AVG(dfc.value_percentile) as avg_value_pct,
           AVG(dfc.quality_percentile) as avg_quality_pct,
@@ -176,9 +180,10 @@ class AnalyticsBundle {
           COUNT(*) as decision_count
         FROM investment_decisions d
         JOIN decision_factor_context dfc ON dfc.decision_id = d.id
-        WHERE d.investor_id = ?
+        WHERE d.investor_id = $1
           AND d.decision_type IN ('new_position', 'increased')
-      `).get(investor.id);
+      `, [investor.id]);
+      const factorPrefs = factorResult.rows[0];
 
       if (!factorPrefs || factorPrefs.decision_count < 10) {
         continue; // Need at least 10 decisions with factor context
@@ -188,13 +193,13 @@ class AnalyticsBundle {
       const newStyle = this._classifyStyle(factorPrefs);
 
       if (newStyle && newStyle !== investor.investment_style) {
-        db.prepare(`
+        await database.query(`
           UPDATE famous_investors
-          SET investment_style = ?,
+          SET investment_style = $1,
               style_updated_at = CURRENT_TIMESTAMP,
-              style_confidence = ?
-          WHERE id = ?
-        `).run(newStyle, factorPrefs.confidence || 0.7, investor.id);
+              style_confidence = $2
+          WHERE id = $3
+        `, [newStyle, factorPrefs.confidence || 0.7, investor.id]);
         updated++;
       }
 
@@ -270,15 +275,17 @@ class AnalyticsBundle {
    * Calculates win rates, average returns, sector performance
    */
   async runTrackRecordUpdate(db, onProgress) {
+    const database = await getDatabaseAsync();
     await onProgress(5, 'Starting track record update...');
 
     const historicalService = this.getHistoricalService();
 
     // Get all investors with decisions
-    const investors = db.prepare(`
+    const result = await database.query(`
       SELECT DISTINCT investor_id FROM investment_decisions
       WHERE return_1y IS NOT NULL
-    `).all();
+    `);
+    const investors = result.rows;
 
     await onProgress(10, `Updating track records for ${investors.length} investors...`);
 
@@ -342,12 +349,13 @@ class AnalyticsBundle {
    * - Stock MSI (aggregate EV/Book from individual stocks)
    */
   async runMarketIndicators(db, onProgress) {
+    const database = await getDatabaseAsync();
     await onProgress(5, 'Starting market indicator update...');
 
     const { HistoricalMarketIndicatorsService } = require('../../historicalMarketIndicators');
     const { FREDService } = require('../../dataProviders/fredService');
 
-    const service = new HistoricalMarketIndicatorsService(db);
+    const service = new HistoricalMarketIndicatorsService(database);
     const fredService = new FREDService();
 
     // Determine current and previous quarter
@@ -379,24 +387,24 @@ class AnalyticsBundle {
         const msi = service.calculateAggregateMSI(quarter);
         const fredMSI = service.getMSIFromFRED(quarter);
 
-        db.prepare(`
+        await database.query(`
           INSERT INTO market_indicator_history (
             quarter, buffett_indicator, buffett_source, sp500_pe, aggregate_msi, fred_msi
-          ) VALUES (?, ?, ?, ?, ?, ?)
+          ) VALUES ($1, $2, $3, $4, $5, $6)
           ON CONFLICT(quarter) DO UPDATE SET
             buffett_indicator = excluded.buffett_indicator,
             buffett_source = excluded.buffett_source,
             sp500_pe = excluded.sp500_pe,
             aggregate_msi = excluded.aggregate_msi,
             fred_msi = excluded.fred_msi
-        `).run(
+        `, [
           quarter,
           buffett?.value || null,
           buffett?.source || null,
           pe || null,
           msi?.value || null,
           fredMSI?.value || null
-        );
+        ]);
 
         updated++;
         await onProgress(30 + (updated / 2) * 60, `Updated ${quarter}: Buffett=${buffett?.value?.toFixed(1) || 'N/A'}%, FRED MSI=${fredMSI?.value?.toFixed(3) || 'N/A'}`);

@@ -7,6 +7,7 @@
  * - knowledge.full - Weekly full rebuild
  */
 
+const { getDatabaseAsync } = require('../../../database');
 const KnowledgeBaseRefresh = require('../../../jobs/knowledgeBaseRefresh');
 
 class KnowledgeBundle {
@@ -14,26 +15,28 @@ class KnowledgeBundle {
     this.knowledgeRefresher = new KnowledgeBaseRefresh();
   }
 
-  async execute(jobKey, db, context) {
+  async execute(jobKey, context) {
     const { onProgress } = context;
 
     switch (jobKey) {
       case 'knowledge.incremental':
-        return this.runIncrementalRefresh(db, onProgress);
+        return this.runIncrementalRefresh(onProgress);
       case 'knowledge.full':
-        return this.runFullRefresh(db, onProgress);
+        return this.runFullRefresh(onProgress);
       default:
         throw new Error(`Unknown knowledge job: ${jobKey}`);
     }
   }
 
-  async runIncrementalRefresh(db, onProgress) {
+  async runIncrementalRefresh(onProgress) {
+    const database = await getDatabaseAsync();
+
     await onProgress(5, 'Starting incremental knowledge base refresh...');
 
     await onProgress(10, 'Refreshing investment sources...');
     await this.knowledgeRefresher.runIncrementalRefresh();
 
-    const stats = this.getKnowledgeStats(db);
+    const stats = await this.getKnowledgeStats(database);
     await onProgress(100, 'Incremental refresh complete');
 
     return {
@@ -44,13 +47,15 @@ class KnowledgeBundle {
     };
   }
 
-  async runFullRefresh(db, onProgress) {
+  async runFullRefresh(onProgress) {
+    const database = await getDatabaseAsync();
+
     await onProgress(5, 'Starting full knowledge base rebuild...');
 
     await onProgress(10, 'Rebuilding knowledge base...');
     await this.knowledgeRefresher.runFullRefresh();
 
-    const stats = this.getKnowledgeStats(db);
+    const stats = await this.getKnowledgeStats(database);
     await onProgress(100, 'Full rebuild complete');
 
     return {
@@ -61,16 +66,18 @@ class KnowledgeBundle {
     };
   }
 
-  getKnowledgeStats(db) {
+  async getKnowledgeStats(database) {
     try {
-      const totalDocuments = db.prepare(`
+      const totalDocumentsResult = await database.query(`
         SELECT COUNT(*) as count FROM knowledge_base
-      `).get()?.count || 0;
+      `);
+      const totalDocuments = totalDocumentsResult.rows[0]?.count || 0;
 
-      const recentlyUpdated = db.prepare(`
+      const recentlyUpdatedResult = await database.query(`
         SELECT COUNT(*) as count FROM knowledge_base
-        WHERE updated_at > datetime('now', '-1 day')
-      `).get()?.count || 0;
+        WHERE updated_at > CURRENT_TIMESTAMP - INTERVAL '1 day'
+      `);
+      const recentlyUpdated = recentlyUpdatedResult.rows[0]?.count || 0;
 
       return { totalDocuments, recentlyUpdated };
     } catch {
@@ -82,5 +89,5 @@ class KnowledgeBundle {
 const knowledgeBundle = new KnowledgeBundle();
 
 module.exports = {
-  execute: (jobKey, db, context) => knowledgeBundle.execute(jobKey, db, context)
+  execute: (jobKey, context) => knowledgeBundle.execute(jobKey, context)
 };

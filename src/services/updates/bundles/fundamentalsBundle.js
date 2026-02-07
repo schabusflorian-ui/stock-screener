@@ -10,6 +10,7 @@
 
 const path = require('path');
 const { spawn } = require('child_process');
+const { getDatabaseAsync } = require('../../../database');
 
 class FundamentalsBundle {
   constructor() {
@@ -32,17 +33,18 @@ class FundamentalsBundle {
   }
 
   async runQuarterlyUpdate(db, onProgress) {
+    const database = await getDatabaseAsync();
     await onProgress(5, 'Starting quarterly fundamentals update...');
 
     // Get companies that need updating (no recent financial data)
-    const companies = db.prepare(`
+    const result = await database.query(`
       SELECT c.id, c.symbol, c.cik
       FROM companies c
       WHERE c.cik IS NOT NULL
       AND (
         c.id NOT IN (
           SELECT DISTINCT company_id FROM financial_data
-          WHERE created_at > datetime('now', '-30 days')
+          WHERE created_at > CURRENT_TIMESTAMP - INTERVAL '30 days'
         )
         OR c.id IN (
           SELECT company_id FROM update_queue
@@ -51,7 +53,8 @@ class FundamentalsBundle {
       )
       ORDER BY c.market_cap DESC NULLS LAST
       LIMIT 50
-    `).all();
+    `);
+    const companies = result.rows;
 
     await onProgress(10, `Found ${companies.length} companies to update`);
 
@@ -85,16 +88,18 @@ class FundamentalsBundle {
   }
 
   async runMetricsUpdate(db, onProgress) {
+    const database = await getDatabaseAsync();
     await onProgress(5, 'Starting metrics recalculation...');
 
     // Get companies with financial data
-    const companies = db.prepare(`
+    const result = await database.query(`
       SELECT DISTINCT c.id, c.symbol
       FROM companies c
       JOIN financial_data f ON f.company_id = c.id
-      WHERE f.updated_at > datetime('now', '-7 days')
+      WHERE f.updated_at > CURRENT_TIMESTAMP - INTERVAL '7 days'
       ORDER BY c.market_cap DESC NULLS LAST
-    `).all();
+    `);
+    const companies = result.rows;
 
     await onProgress(10, `Recalculating metrics for ${companies.length} companies`);
 
@@ -128,17 +133,19 @@ class FundamentalsBundle {
   }
 
   async runRatiosUpdate(db, onProgress) {
+    const database = await getDatabaseAsync();
     await onProgress(5, 'Starting ratios calculation...');
 
     // Get companies with price and fundamental data
-    const companies = db.prepare(`
+    const result = await database.query(`
       SELECT DISTINCT c.id, c.symbol
       FROM companies c
       WHERE c.id IN (SELECT company_id FROM financial_data)
-      AND c.id IN (SELECT company_id FROM stock_prices WHERE date > date('now', '-7 days'))
+      AND c.id IN (SELECT company_id FROM stock_prices WHERE date > CURRENT_DATE - INTERVAL '7 days')
       ORDER BY c.market_cap DESC NULLS LAST
       LIMIT 500
-    `).all();
+    `);
+    const companies = result.rows;
 
     await onProgress(10, `Calculating ratios for ${companies.length} companies`);
 
@@ -197,8 +204,10 @@ class FundamentalsBundle {
   }
 
   async calculateCompanyRatios(db, companyId) {
+    const database = await getDatabaseAsync();
+
     // Get latest financial data
-    const financial = db.prepare(`
+    const financialResult = await database.query(`
       SELECT
         total_revenue,
         net_income,
@@ -207,22 +216,24 @@ class FundamentalsBundle {
         shareholders_equity,
         operating_cash_flow
       FROM financial_data
-      WHERE company_id = ? AND statement_type = 'income_statement'
+      WHERE company_id = $1 AND statement_type = 'income_statement'
       ORDER BY fiscal_date_ending DESC
       LIMIT 1
-    `).get(companyId);
+    `, [companyId]);
 
+    const financial = financialResult.rows[0];
     if (!financial) return;
 
     // Get latest price data
-    const price = db.prepare(`
+    const priceResult = await database.query(`
       SELECT close_price, market_cap
       FROM stock_prices
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY date DESC
       LIMIT 1
-    `).get(companyId);
+    `, [companyId]);
 
+    const price = priceResult.rows[0];
     if (!price || !price.market_cap) return;
 
     // Calculate and store ratios
@@ -249,15 +260,15 @@ class FundamentalsBundle {
     }
 
     // Update company metrics
-    db.prepare(`
+    await database.query(`
       UPDATE companies
       SET
-        pe_ratio = ?,
-        ps_ratio = ?,
-        pb_ratio = ?,
-        updated_at = datetime('now')
-      WHERE id = ?
-    `).run(ratios.pe_ratio || null, ratios.ps_ratio || null, ratios.pb_ratio || null, companyId);
+        pe_ratio = $1,
+        ps_ratio = $2,
+        pb_ratio = $3,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $4
+    `, [ratios.pe_ratio || null, ratios.ps_ratio || null, ratios.pb_ratio || null, companyId]);
   }
 }
 
