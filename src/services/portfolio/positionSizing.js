@@ -1,20 +1,17 @@
 // src/services/portfolio/positionSizing.js
 // Position Sizing Calculator (Agent 2)
 
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 
 const TRADING_DAYS_PER_YEAR = 252;
 
 class PositionSizing {
-  constructor() {
-    this.db = db.getDatabase();
-    console.log('📐 Position Sizing Calculator initialized');
-  }
+  // No constructor needed
 
   // ============================================
   // Calculate Position Size
   // ============================================
-  calculate(method, params) {
+  async calculate(method, params) {
     switch (method) {
       case 'fixed_risk':
         return this._fixedRisk(params);
@@ -23,7 +20,7 @@ class PositionSizing {
       case 'equal_weight':
         return this._equalWeight(params);
       case 'volatility_based':
-        return this._volatilityBased(params);
+        return await this._volatilityBased(params);
       case 'percent_of_portfolio':
         return this._percentOfPortfolio(params);
       default:
@@ -195,7 +192,8 @@ class PositionSizing {
   // Volatility-Based Sizing
   // Size inversely proportional to volatility
   // ============================================
-  _volatilityBased(params) {
+  async _volatilityBased(params) {
+    const database = await getDatabaseAsync();
     const {
       portfolioValue,
       symbol,
@@ -210,9 +208,10 @@ class PositionSizing {
     }
 
     // Get stock volatility
-    const company = this.db.prepare(`
-      SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
-    `).get(symbol);
+    const companyResult = await database.query(`
+      SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)
+    `, [symbol]);
+    const company = companyResult.rows[0];
 
     if (!company) {
       throw new Error(`Symbol ${symbol} not found`);
@@ -221,9 +220,10 @@ class PositionSizing {
     // Check price_metrics for pre-calculated volatility
     let stockVolatility = null;
 
-    const metrics = this.db.prepare(`
-      SELECT volatility_30d FROM price_metrics WHERE company_id = ?
-    `).get(company.id);
+    const metricsResult = await database.query(`
+      SELECT volatility_30d FROM price_metrics WHERE company_id = $1
+    `, [company.id]);
+    const metrics = metricsResult.rows[0];
 
     if (metrics?.volatility_30d) {
       // price_metrics stores DAILY volatility as percentage (e.g., 1.6%)
@@ -231,12 +231,13 @@ class PositionSizing {
       stockVolatility = metrics.volatility_30d * Math.sqrt(TRADING_DAYS_PER_YEAR);
     } else {
       // Calculate from daily prices
-      const prices = this.db.prepare(`
+      const pricesResult = await database.query(`
         SELECT close FROM daily_prices
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY date DESC
-        LIMIT ?
-      `).all(company.id, lookbackDays + 1);
+        LIMIT $2
+      `, [company.id, lookbackDays + 1]);
+      const prices = pricesResult.rows;
 
       if (prices.length < 2) {
         throw new Error(`Insufficient price data for ${symbol}`);
@@ -260,9 +261,14 @@ class PositionSizing {
     const positionPct = weightPct * 100;
 
     let shares = 0;
-    const currentPrice = entryPrice || this.db.prepare(`
-      SELECT last_price FROM price_metrics WHERE company_id = ?
-    `).get(company.id)?.last_price;
+    let currentPrice = entryPrice;
+
+    if (!currentPrice) {
+      const priceResult = await database.query(`
+        SELECT last_price FROM price_metrics WHERE company_id = $1
+      `, [company.id]);
+      currentPrice = priceResult.rows[0]?.last_price;
+    }
 
     if (currentPrice) {
       shares = Math.floor(positionValue / currentPrice);
