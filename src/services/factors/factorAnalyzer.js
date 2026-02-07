@@ -1,6 +1,8 @@
 // src/services/factors/factorAnalyzer.js
 // Analyzes factor exposures at the portfolio and investor level
 
+const { getDatabaseAsync } = require('../../database');
+
 /**
  * FactorAnalyzer
  *
@@ -12,18 +14,19 @@
  * - Factor regime analysis
  */
 class FactorAnalyzer {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No db needed
   }
 
   /**
    * Calculate portfolio factor exposures for an investor at a point in time
    */
   async calculatePortfolioExposures(investorId, snapshotDate, options = {}) {
+    const database = await getDatabaseAsync();
     const { verbose = false, benchmark = 'market' } = options;
 
     // Get investor holdings at this date
-    const holdings = this.db.prepare(`
+    const holdingsResult = await database.query(`
       SELECT
         ih.company_id,
         ih.cusip,
@@ -33,15 +36,17 @@ class FactorAnalyzer {
         ih.shares
       FROM investor_holdings ih
       LEFT JOIN companies c ON ih.company_id = c.id
-      WHERE ih.investor_id = ?
+      WHERE ih.investor_id = $1
         AND ih.filing_date = (
           SELECT MAX(filing_date)
           FROM investor_holdings
-          WHERE investor_id = ?
-            AND filing_date <= ?
+          WHERE investor_id = $2
+            AND filing_date <= $3
         )
         AND ih.shares > 0
-    `).all(investorId, investorId, snapshotDate);
+    `, [investorId, investorId, snapshotDate]);
+
+    const holdings = holdingsResult.rows;
 
     if (holdings.length === 0) {
       if (verbose) console.log('  No holdings found for this date');
@@ -49,28 +54,31 @@ class FactorAnalyzer {
     }
 
     // Get factor scores for each holding
-    const holdingsWithFactors = holdings.map(holding => {
-      const factors = this.db.prepare(`
+    const holdingsWithFactors = await Promise.all(holdings.map(async holding => {
+      const result = await database.query(`
         SELECT * FROM stock_factor_scores
-        WHERE company_id = ?
-          AND score_date <= ?
+        WHERE company_id = $1
+          AND score_date <= $2
         ORDER BY score_date DESC
         LIMIT 1
-      `).get(holding.company_id, snapshotDate);
+      `, [holding.company_id, snapshotDate]);
 
+      const factors = result.rows[0];
       return { ...holding, factors };
-    }).filter(h => h.factors);
+    }));
 
-    if (holdingsWithFactors.length === 0) {
+    const filtered = holdingsWithFactors.filter(h => h.factors);
+
+    if (filtered.length === 0) {
       if (verbose) console.log('  No factor data available for holdings');
       return null;
     }
 
     // Calculate total portfolio value for weighting
-    const totalValue = holdingsWithFactors.reduce((sum, h) => sum + (h.market_value || 0), 0);
+    const totalValue = filtered.reduce((sum, h) => sum + (h.market_value || 0), 0);
 
     // Calculate weighted average factor scores
-    const weightedFactors = this._calculateWeightedFactors(holdingsWithFactors, totalValue);
+    const weightedFactors = this._calculateWeightedFactors(filtered, totalValue);
 
     // Get benchmark exposures for comparison
     const benchmarkExposures = await this._getBenchmarkExposures(snapshotDate, benchmark);
@@ -82,7 +90,7 @@ class FactorAnalyzer {
     const styleBox = this._classifyStyleBox(weightedFactors, tilts);
 
     // Calculate portfolio characteristics
-    const characteristics = this._calculatePortfolioCharacteristics(holdingsWithFactors, totalValue);
+    const characteristics = await this._calculatePortfolioCharacteristics(filtered, totalValue);
 
     // Store exposures
     const result = {
@@ -93,10 +101,10 @@ class FactorAnalyzer {
       ...characteristics,
       style_box: styleBox.style,
       style_confidence: styleBox.confidence,
-      position_count: holdingsWithFactors.length
+      position_count: filtered.length
     };
 
-    this._storePortfolioExposures(result);
+    await this._storePortfolioExposures(result);
 
     return result;
   }
@@ -214,26 +222,31 @@ class FactorAnalyzer {
   /**
    * Calculate portfolio characteristics from holdings
    */
-  _calculatePortfolioCharacteristics(holdings, totalValue) {
+  async _calculatePortfolioCharacteristics(holdings, totalValue) {
+    const database = await getDatabaseAsync();
+
     // Get additional metrics for each holding
-    const holdingsWithMetrics = holdings.map(h => {
-      const metrics = this.db.prepare(`
+    const holdingsWithMetrics = await Promise.all(holdings.map(async h => {
+      const metricsResult = await database.query(`
         SELECT
           pe_ratio, pb_ratio, roe, roic,
           revenue_growth_yoy, earnings_growth_yoy,
           dividend_yield
         FROM calculated_metrics
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY fiscal_period DESC
         LIMIT 1
-      `).get(h.company_id);
+      `, [h.company_id]);
 
-      const company = this.db.prepare(`
-        SELECT market_cap FROM companies WHERE id = ?
-      `).get(h.company_id);
+      const companyResult = await database.query(`
+        SELECT market_cap FROM companies WHERE id = $1
+      `, [h.company_id]);
+
+      const metrics = metricsResult.rows[0];
+      const company = companyResult.rows[0];
 
       return { ...h, metrics, company };
-    });
+    }));
 
     // Calculate weighted averages
     const weightedMetrics = {
@@ -299,9 +312,11 @@ class FactorAnalyzer {
   /**
    * Store portfolio exposures in database
    */
-  _storePortfolioExposures(exposures) {
-    this.db.prepare(`
-      INSERT OR REPLACE INTO portfolio_factor_exposures (
+  async _storePortfolioExposures(exposures) {
+    const database = await getDatabaseAsync();
+
+    await database.query(`
+      INSERT INTO portfolio_factor_exposures (
         investor_id, snapshot_date,
         avg_value_score, avg_quality_score, avg_momentum_score,
         avg_growth_score, avg_size_score, avg_volatility_score, avg_dividend_score,
@@ -311,32 +326,74 @@ class FactorAnalyzer {
         weighted_market_cap, herfindahl_index, top_10_weight, sector_concentration,
         style_box, style_confidence, position_count, created_at
       ) VALUES (
-        @investor_id, @snapshot_date,
-        @avg_value_score, @avg_quality_score, @avg_momentum_score,
-        @avg_growth_score, @avg_size_score, @avg_volatility_score, @avg_dividend_score,
-        @value_tilt, @quality_tilt, @momentum_tilt, @growth_tilt, @size_tilt,
-        @weighted_pe, @weighted_pb, @weighted_roe, @weighted_roic,
-        @weighted_revenue_growth, @weighted_earnings_growth, @weighted_dividend_yield,
-        @weighted_market_cap, @herfindahl_index, @top_10_weight, @sector_concentration,
-        @style_box, @style_confidence, @position_count, datetime('now')
+        $1, $2,
+        $3, $4, $5,
+        $6, $7, $8, $9,
+        $10, $11, $12, $13, $14,
+        $15, $16, $17, $18,
+        $19, $20, $21,
+        $22, $23, $24, $25,
+        $26, $27, $28, CURRENT_TIMESTAMP
       )
-    `).run(exposures);
+      ON CONFLICT (investor_id, snapshot_date)
+      DO UPDATE SET
+        avg_value_score = EXCLUDED.avg_value_score,
+        avg_quality_score = EXCLUDED.avg_quality_score,
+        avg_momentum_score = EXCLUDED.avg_momentum_score,
+        avg_growth_score = EXCLUDED.avg_growth_score,
+        avg_size_score = EXCLUDED.avg_size_score,
+        avg_volatility_score = EXCLUDED.avg_volatility_score,
+        avg_dividend_score = EXCLUDED.avg_dividend_score,
+        value_tilt = EXCLUDED.value_tilt,
+        quality_tilt = EXCLUDED.quality_tilt,
+        momentum_tilt = EXCLUDED.momentum_tilt,
+        growth_tilt = EXCLUDED.growth_tilt,
+        size_tilt = EXCLUDED.size_tilt,
+        weighted_pe = EXCLUDED.weighted_pe,
+        weighted_pb = EXCLUDED.weighted_pb,
+        weighted_roe = EXCLUDED.weighted_roe,
+        weighted_roic = EXCLUDED.weighted_roic,
+        weighted_revenue_growth = EXCLUDED.weighted_revenue_growth,
+        weighted_earnings_growth = EXCLUDED.weighted_earnings_growth,
+        weighted_dividend_yield = EXCLUDED.weighted_dividend_yield,
+        weighted_market_cap = EXCLUDED.weighted_market_cap,
+        herfindahl_index = EXCLUDED.herfindahl_index,
+        top_10_weight = EXCLUDED.top_10_weight,
+        sector_concentration = EXCLUDED.sector_concentration,
+        style_box = EXCLUDED.style_box,
+        style_confidence = EXCLUDED.style_confidence,
+        position_count = EXCLUDED.position_count,
+        created_at = EXCLUDED.created_at
+    `, [
+      exposures.investor_id, exposures.snapshot_date,
+      exposures.avg_value_score, exposures.avg_quality_score, exposures.avg_momentum_score,
+      exposures.avg_growth_score, exposures.avg_size_score, exposures.avg_volatility_score, exposures.avg_dividend_score,
+      exposures.value_tilt, exposures.quality_tilt, exposures.momentum_tilt, exposures.growth_tilt, exposures.size_tilt,
+      exposures.weighted_pe, exposures.weighted_pb, exposures.weighted_roe, exposures.weighted_roic,
+      exposures.weighted_revenue_growth, exposures.weighted_earnings_growth, exposures.weighted_dividend_yield,
+      exposures.weighted_market_cap, exposures.herfindahl_index, exposures.top_10_weight, exposures.sector_concentration,
+      exposures.style_box, exposures.style_confidence, exposures.position_count
+    ]);
   }
 
   /**
    * Get investor factor profile
    */
-  getInvestorFactorProfile(investorId) {
+  async getInvestorFactorProfile(investorId) {
+    const database = await getDatabaseAsync();
+
     // Get latest exposures
-    const latest = this.db.prepare(`
+    const latestResult = await database.query(`
       SELECT * FROM portfolio_factor_exposures
-      WHERE investor_id = ?
+      WHERE investor_id = $1
       ORDER BY snapshot_date DESC
       LIMIT 1
-    `).get(investorId);
+    `, [investorId]);
+
+    const latest = latestResult.rows[0];
 
     // Get historical average tilts
-    const historicalAvg = this.db.prepare(`
+    const historicalAvgResult = await database.query(`
       SELECT
         AVG(value_tilt) as avg_value_tilt,
         AVG(quality_tilt) as avg_quality_tilt,
@@ -347,23 +404,27 @@ class FactorAnalyzer {
         AVG(avg_quality_score) as hist_quality_score,
         COUNT(*) as observation_count
       FROM portfolio_factor_exposures
-      WHERE investor_id = ?
-    `).get(investorId);
+      WHERE investor_id = $1
+    `, [investorId]);
+
+    const historicalAvg = historicalAvgResult.rows[0];
 
     // Get factor consistency (standard deviation of tilts)
-    const consistency = this.db.prepare(`
+    const consistencyResult = await database.query(`
       SELECT
         CASE WHEN COUNT(*) > 1 THEN
-          SQRT(SUM((value_tilt - (SELECT AVG(value_tilt) FROM portfolio_factor_exposures WHERE investor_id = ?)) *
-               (value_tilt - (SELECT AVG(value_tilt) FROM portfolio_factor_exposures WHERE investor_id = ?))) / COUNT(*))
+          SQRT(SUM((value_tilt - (SELECT AVG(value_tilt) FROM portfolio_factor_exposures WHERE investor_id = $1)) *
+               (value_tilt - (SELECT AVG(value_tilt) FROM portfolio_factor_exposures WHERE investor_id = $2))) / COUNT(*))
         ELSE 0 END as value_tilt_std,
         CASE WHEN COUNT(*) > 1 THEN
-          SQRT(SUM((quality_tilt - (SELECT AVG(quality_tilt) FROM portfolio_factor_exposures WHERE investor_id = ?)) *
-               (quality_tilt - (SELECT AVG(quality_tilt) FROM portfolio_factor_exposures WHERE investor_id = ?))) / COUNT(*))
+          SQRT(SUM((quality_tilt - (SELECT AVG(quality_tilt) FROM portfolio_factor_exposures WHERE investor_id = $3)) *
+               (quality_tilt - (SELECT AVG(quality_tilt) FROM portfolio_factor_exposures WHERE investor_id = $4))) / COUNT(*))
         ELSE 0 END as quality_tilt_std
       FROM portfolio_factor_exposures
-      WHERE investor_id = ?
-    `).get(investorId, investorId, investorId, investorId, investorId);
+      WHERE investor_id = $5
+    `, [investorId, investorId, investorId, investorId, investorId]);
+
+    const consistency = consistencyResult.rows[0];
 
     // Determine dominant factor style
     const tilts = [
@@ -410,31 +471,33 @@ class FactorAnalyzer {
   /**
    * Compare factor exposures between investors
    */
-  compareInvestorFactors(investorIds, snapshotDate = null) {
+  async compareInvestorFactors(investorIds, snapshotDate = null) {
+    const database = await getDatabaseAsync();
     const results = [];
 
     for (const investorId of investorIds) {
-      let exposure;
+      let exposureResult;
       if (snapshotDate) {
-        exposure = this.db.prepare(`
+        exposureResult = await database.query(`
           SELECT pfe.*, fi.name as investor_name
           FROM portfolio_factor_exposures pfe
           JOIN famous_investors fi ON pfe.investor_id = fi.id
-          WHERE pfe.investor_id = ? AND pfe.snapshot_date <= ?
+          WHERE pfe.investor_id = $1 AND pfe.snapshot_date <= $2
           ORDER BY pfe.snapshot_date DESC
           LIMIT 1
-        `).get(investorId, snapshotDate);
+        `, [investorId, snapshotDate]);
       } else {
-        exposure = this.db.prepare(`
+        exposureResult = await database.query(`
           SELECT pfe.*, fi.name as investor_name
           FROM portfolio_factor_exposures pfe
           JOIN famous_investors fi ON pfe.investor_id = fi.id
-          WHERE pfe.investor_id = ?
+          WHERE pfe.investor_id = $1
           ORDER BY pfe.snapshot_date DESC
           LIMIT 1
-        `).get(investorId);
+        `, [investorId]);
       }
 
+      const exposure = exposureResult.rows[0];
       if (exposure) {
         results.push(exposure);
       }
@@ -447,16 +510,19 @@ class FactorAnalyzer {
    * Calculate factor attribution for an investor's returns
    */
   async calculateFactorAttribution(investorId, periodStart, periodEnd, options = {}) {
+    const database = await getDatabaseAsync();
     const { verbose = false } = options;
 
     // Get factor exposures during the period
-    const exposures = this.db.prepare(`
+    const exposuresResult = await database.query(`
       SELECT * FROM portfolio_factor_exposures
-      WHERE investor_id = ?
-        AND snapshot_date >= ?
-        AND snapshot_date <= ?
+      WHERE investor_id = $1
+        AND snapshot_date >= $2
+        AND snapshot_date <= $3
       ORDER BY snapshot_date
-    `).all(investorId, periodStart, periodEnd);
+    `, [investorId, periodStart, periodEnd]);
+
+    const exposures = exposuresResult.rows;
 
     if (exposures.length === 0) {
       return null;
@@ -472,11 +538,13 @@ class FactorAnalyzer {
     };
 
     // Get factor returns during the period
-    const factorReturns = this.db.prepare(`
+    const factorReturnsResult = await database.query(`
       SELECT * FROM factor_returns
-      WHERE return_date >= ? AND return_date <= ?
+      WHERE return_date >= $1 AND return_date <= $2
       ORDER BY return_date
-    `).all(periodStart, periodEnd);
+    `, [periodStart, periodEnd]);
+
+    const factorReturns = factorReturnsResult.rows;
 
     // Calculate factor contributions (exposure * factor return)
     // This is a simplified Brinson-style attribution
@@ -507,8 +575,8 @@ class FactorAnalyzer {
     };
 
     // Store attribution
-    this.db.prepare(`
-      INSERT OR REPLACE INTO investor_factor_attribution (
+    await database.query(`
+      INSERT INTO investor_factor_attribution (
         investor_id, period_start, period_end, period_type,
         value_contribution, quality_contribution, momentum_contribution,
         growth_contribution, size_contribution,
@@ -516,14 +584,33 @@ class FactorAnalyzer {
         avg_growth_exposure, avg_size_exposure,
         created_at
       ) VALUES (
-        @investor_id, @period_start, @period_end, @period_type,
-        @value_contribution, @quality_contribution, @momentum_contribution,
-        @growth_contribution, @size_contribution,
-        @avg_value_exposure, @avg_quality_exposure, @avg_momentum_exposure,
-        @avg_growth_exposure, @avg_size_exposure,
-        datetime('now')
+        $1, $2, $3, $4,
+        $5, $6, $7,
+        $8, $9,
+        $10, $11, $12,
+        $13, $14,
+        CURRENT_TIMESTAMP
       )
-    `).run(result);
+      ON CONFLICT (investor_id, period_start, period_end, period_type)
+      DO UPDATE SET
+        value_contribution = EXCLUDED.value_contribution,
+        quality_contribution = EXCLUDED.quality_contribution,
+        momentum_contribution = EXCLUDED.momentum_contribution,
+        growth_contribution = EXCLUDED.growth_contribution,
+        size_contribution = EXCLUDED.size_contribution,
+        avg_value_exposure = EXCLUDED.avg_value_exposure,
+        avg_quality_exposure = EXCLUDED.avg_quality_exposure,
+        avg_momentum_exposure = EXCLUDED.avg_momentum_exposure,
+        avg_growth_exposure = EXCLUDED.avg_growth_exposure,
+        avg_size_exposure = EXCLUDED.avg_size_exposure,
+        created_at = EXCLUDED.created_at
+    `, [
+      result.investor_id, result.period_start, result.period_end, result.period_type,
+      result.value_contribution, result.quality_contribution, result.momentum_contribution,
+      result.growth_contribution, result.size_contribution,
+      result.avg_value_exposure, result.avg_quality_exposure, result.avg_momentum_exposure,
+      result.avg_growth_exposure, result.avg_size_exposure
+    ]);
 
     return result;
   }
@@ -532,21 +619,27 @@ class FactorAnalyzer {
    * Enrich investment decisions with factor context
    */
   async enrichDecisionWithFactors(decisionId) {
-    const decision = this.db.prepare(`
-      SELECT * FROM investment_decisions WHERE id = ?
-    `).get(decisionId);
+    const database = await getDatabaseAsync();
+
+    const decisionResult = await database.query(`
+      SELECT * FROM investment_decisions WHERE id = $1
+    `, [decisionId]);
+
+    const decision = decisionResult.rows[0];
 
     if (!decision || !decision.company_id) {
       return null;
     }
 
     // Get factor scores at decision time
-    const factors = this.db.prepare(`
+    const factorsResult = await database.query(`
       SELECT * FROM stock_factor_scores
-      WHERE company_id = ? AND score_date <= ?
+      WHERE company_id = $1 AND score_date <= $2
       ORDER BY score_date DESC
       LIMIT 1
-    `).get(decision.company_id, decision.decision_date);
+    `, [decision.company_id, decision.decision_date]);
+
+    const factors = factorsResult.rows[0];
 
     if (!factors) {
       return null;
@@ -594,8 +687,8 @@ class FactorAnalyzer {
       is_small_cap_play: isSmallCapPlay
     };
 
-    this.db.prepare(`
-      INSERT OR REPLACE INTO decision_factor_context (
+    await database.query(`
+      INSERT INTO decision_factor_context (
         decision_id, value_score, quality_score, momentum_score, growth_score,
         size_score, volatility_score,
         value_percentile, quality_percentile, momentum_percentile, growth_percentile,
@@ -604,15 +697,43 @@ class FactorAnalyzer {
         is_contrarian_play, is_small_cap_play,
         created_at
       ) VALUES (
-        @decision_id, @value_score, @quality_score, @momentum_score, @growth_score,
-        @size_score, @volatility_score,
-        @value_percentile, @quality_percentile, @momentum_percentile, @growth_percentile,
-        @dominant_factor, @dominant_factor_percentile,
-        @is_value_play, @is_quality_play, @is_momentum_play, @is_growth_play,
-        @is_contrarian_play, @is_small_cap_play,
-        datetime('now')
+        $1, $2, $3, $4, $5,
+        $6, $7,
+        $8, $9, $10, $11,
+        $12, $13,
+        $14, $15, $16, $17,
+        $18, $19,
+        CURRENT_TIMESTAMP
       )
-    `).run(context);
+      ON CONFLICT (decision_id)
+      DO UPDATE SET
+        value_score = EXCLUDED.value_score,
+        quality_score = EXCLUDED.quality_score,
+        momentum_score = EXCLUDED.momentum_score,
+        growth_score = EXCLUDED.growth_score,
+        size_score = EXCLUDED.size_score,
+        volatility_score = EXCLUDED.volatility_score,
+        value_percentile = EXCLUDED.value_percentile,
+        quality_percentile = EXCLUDED.quality_percentile,
+        momentum_percentile = EXCLUDED.momentum_percentile,
+        growth_percentile = EXCLUDED.growth_percentile,
+        dominant_factor = EXCLUDED.dominant_factor,
+        dominant_factor_percentile = EXCLUDED.dominant_factor_percentile,
+        is_value_play = EXCLUDED.is_value_play,
+        is_quality_play = EXCLUDED.is_quality_play,
+        is_momentum_play = EXCLUDED.is_momentum_play,
+        is_growth_play = EXCLUDED.is_growth_play,
+        is_contrarian_play = EXCLUDED.is_contrarian_play,
+        is_small_cap_play = EXCLUDED.is_small_cap_play,
+        created_at = EXCLUDED.created_at
+    `, [
+      context.decision_id, context.value_score, context.quality_score, context.momentum_score, context.growth_score,
+      context.size_score, context.volatility_score,
+      context.value_percentile, context.quality_percentile, context.momentum_percentile, context.growth_percentile,
+      context.dominant_factor, context.dominant_factor_percentile,
+      context.is_value_play, context.is_quality_play, context.is_momentum_play, context.is_growth_play,
+      context.is_contrarian_play, context.is_small_cap_play
+    ]);
 
     return context;
   }
@@ -621,16 +742,19 @@ class FactorAnalyzer {
    * Batch enrich all decisions with factor context
    */
   async enrichAllDecisionsWithFactors(options = {}) {
+    const database = await getDatabaseAsync();
     const { limit = 10000, verbose = false } = options;
 
-    const decisions = this.db.prepare(`
+    const decisionsResult = await database.query(`
       SELECT d.id
       FROM investment_decisions d
       LEFT JOIN decision_factor_context dfc ON d.id = dfc.decision_id
       WHERE dfc.decision_id IS NULL
         AND d.company_id IS NOT NULL
-      LIMIT ?
-    `).all(limit);
+      LIMIT $1
+    `, [limit]);
+
+    const decisions = decisionsResult.rows;
 
     if (verbose) {
       console.log(`📊 Enriching ${decisions.length} decisions with factor context...`);
