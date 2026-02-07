@@ -1,9 +1,10 @@
 // src/services/fiscalCalendar.js
 // Fiscal calendar service for quarter mapping and period translation
 
+const { getDatabaseAsync } = require('../database');
+
 class FiscalCalendarService {
-  constructor(db) {
-    this.db = db;
+  constructor() {
     this.configCache = new Map(); // company_id -> fiscal config
     this.cacheTimeout = 60 * 60 * 1000; // 1 hour
     this.lastCacheRefresh = 0;
@@ -12,7 +13,7 @@ class FiscalCalendarService {
   /**
    * Get fiscal year end configuration for a company
    */
-  getFiscalConfig(companyId) {
+  async getFiscalConfig(companyId) {
     // Refresh cache if stale
     if (Date.now() - this.lastCacheRefresh > this.cacheTimeout) {
       this.configCache.clear();
@@ -23,11 +24,14 @@ class FiscalCalendarService {
       return this.configCache.get(companyId);
     }
 
-    const config = this.db.prepare(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT fiscal_year_end, fiscal_year_end_month, fiscal_year_end_day
       FROM company_fiscal_config
-      WHERE company_id = ?
-    `).get(companyId);
+      WHERE company_id = $1
+    `, [companyId]);
+
+    const config = result.rows[0];
 
     if (config) {
       this.configCache.set(companyId, config);
@@ -39,13 +43,16 @@ class FiscalCalendarService {
   /**
    * Get fiscal year end for a company by symbol
    */
-  getFiscalYearEnd(symbol) {
-    const result = this.db.prepare(`
+  async getFiscalYearEnd(symbol) {
+    const database = await getDatabaseAsync();
+    const queryResult = await database.query(`
       SELECT fc.fiscal_year_end, fc.fiscal_year_end_month, fc.fiscal_year_end_day
       FROM company_fiscal_config fc
       JOIN companies c ON c.id = fc.company_id
-      WHERE c.symbol = ?
-    `).get(symbol.toUpperCase());
+      WHERE c.symbol = $1
+    `, [symbol.toUpperCase()]);
+
+    const result = queryResult.rows[0];
 
     if (!result) return null;
 
@@ -60,8 +67,8 @@ class FiscalCalendarService {
   /**
    * Convert calendar quarter to fiscal quarter for a company
    */
-  calendarToFiscal(companyId, calendarYear, calendarQuarter) {
-    const config = this.getFiscalConfig(companyId);
+  async calendarToFiscal(companyId, calendarYear, calendarQuarter) {
+    const config = await this.getFiscalConfig(companyId);
     if (!config) return null;
 
     const fyeMonth = config.fiscal_year_end_month;
@@ -96,8 +103,8 @@ class FiscalCalendarService {
   /**
    * Convert fiscal quarter to calendar quarter(s) for a company
    */
-  fiscalToCalendar(companyId, fiscalYear, fiscalQuarter) {
-    const config = this.getFiscalConfig(companyId);
+  async fiscalToCalendar(companyId, fiscalYear, fiscalQuarter) {
+    const config = await this.getFiscalConfig(companyId);
     if (!config) return null;
 
     const fyeMonth = config.fiscal_year_end_month;
@@ -131,7 +138,8 @@ class FiscalCalendarService {
   /**
    * Get the fiscal calendar for a company
    */
-  getFiscalCalendar(companyId, options = {}) {
+  async getFiscalCalendar(companyId, options = {}) {
+    const database = await getDatabaseAsync();
     const { limit = 20, fiscalYear, includeFY = true } = options;
 
     let query = `
@@ -148,13 +156,14 @@ class FiscalCalendarService {
         cfg.fiscal_year_end_month
       FROM fiscal_calendar fc
       JOIN company_fiscal_config cfg ON cfg.company_id = fc.company_id
-      WHERE fc.company_id = ?
+      WHERE fc.company_id = $1
     `;
 
     const params = [companyId];
+    let paramCounter = 2;
 
     if (fiscalYear) {
-      query += ' AND fc.fiscal_year = ?';
+      query += ` AND fc.fiscal_year = $${paramCounter++}`;
       params.push(fiscalYear);
     }
 
@@ -162,32 +171,37 @@ class FiscalCalendarService {
       query += ' AND fc.fiscal_period != \'FY\'';
     }
 
-    query += ' ORDER BY fc.period_end DESC LIMIT ?';
+    query += ` ORDER BY fc.period_end DESC LIMIT $${paramCounter}`;
     params.push(limit);
 
-    return this.db.prepare(query).all(...params);
+    const result = await database.query(query, params);
+    return result.rows;
   }
 
   /**
    * Get fiscal calendar for a company by symbol
    */
-  getFiscalCalendarBySymbol(symbol, options = {}) {
-    const company = this.db.prepare(`
-      SELECT id FROM companies WHERE symbol = ?
-    `).get(symbol.toUpperCase());
+  async getFiscalCalendarBySymbol(symbol, options = {}) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT id FROM companies WHERE symbol = $1
+    `, [symbol.toUpperCase()]);
+
+    const company = result.rows[0];
 
     if (!company) return null;
 
-    return this.getFiscalCalendar(company.id, options);
+    return await this.getFiscalCalendar(company.id, options);
   }
 
   /**
    * Find the fiscal period that contains a specific date
    */
-  findPeriodForDate(companyId, date) {
+  async findPeriodForDate(companyId, date) {
+    const database = await getDatabaseAsync();
     const dateStr = typeof date === 'string' ? date : date.toISOString().split('T')[0];
 
-    return this.db.prepare(`
+    const result = await database.query(`
       SELECT
         fc.fiscal_year,
         fc.fiscal_period,
@@ -196,25 +210,28 @@ class FiscalCalendarService {
         fc.calendar_quarter,
         fc.calendar_year
       FROM fiscal_calendar fc
-      WHERE fc.company_id = ?
-        AND fc.period_start <= ?
-        AND fc.period_end >= ?
+      WHERE fc.company_id = $1
+        AND fc.period_start <= $2
+        AND fc.period_end >= $3
         AND fc.fiscal_period != 'FY'
       ORDER BY fc.period_end DESC
       LIMIT 1
-    `).get(companyId, dateStr, dateStr);
+    `, [companyId, dateStr, dateStr]);
+
+    return result.rows[0];
   }
 
   /**
    * Get upcoming fiscal period ends (for earnings expectations)
    */
-  getUpcomingPeriodEnds(options = {}) {
+  async getUpcomingPeriodEnds(options = {}) {
+    const database = await getDatabaseAsync();
     const { days = 30, limit = 100 } = options;
 
     const today = new Date().toISOString().split('T')[0];
     const futureDate = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-    return this.db.prepare(`
+    const result = await database.query(`
       SELECT
         c.id as company_id,
         c.symbol,
@@ -228,22 +245,26 @@ class FiscalCalendarService {
       FROM fiscal_calendar fc
       JOIN companies c ON c.id = fc.company_id
       JOIN company_fiscal_config cfg ON cfg.company_id = c.id
-      WHERE fc.period_end >= ?
-        AND fc.period_end <= ?
+      WHERE fc.period_end >= $1
+        AND fc.period_end <= $2
         AND fc.fiscal_period != 'FY'
         AND fc.filed_date IS NULL
       ORDER BY fc.period_end ASC
-      LIMIT ?
-    `).all(today, futureDate, limit);
+      LIMIT $3
+    `, [today, futureDate, limit]);
+
+    return result.rows;
   }
 
   /**
    * Compare fiscal periods across companies for the same calendar period
    */
-  getComparablePeriods(symbols, calendarYear, calendarQuarter) {
-    const placeholders = symbols.map(() => '?').join(',');
+  async getComparablePeriods(symbols, calendarYear, calendarQuarter) {
+    const database = await getDatabaseAsync();
+    const upperSymbols = symbols.map(s => s.toUpperCase());
+    const placeholders = upperSymbols.map((_, i) => `$${i + 1}`).join(',');
 
-    return this.db.prepare(`
+    const result = await database.query(`
       SELECT
         c.symbol,
         c.name,
@@ -258,11 +279,13 @@ class FiscalCalendarService {
       JOIN companies c ON c.id = fc.company_id
       JOIN company_fiscal_config cfg ON cfg.company_id = c.id
       WHERE c.symbol IN (${placeholders})
-        AND fc.calendar_year = ?
-        AND fc.calendar_quarter = ?
+        AND fc.calendar_year = $${upperSymbols.length + 1}
+        AND fc.calendar_quarter = $${upperSymbols.length + 2}
         AND fc.fiscal_period != 'FY'
       ORDER BY c.symbol
-    `).all(...symbols.map(s => s.toUpperCase()), calendarYear, calendarQuarter);
+    `, [...upperSymbols, calendarYear, calendarQuarter]);
+
+    return result.rows;
   }
 
   /**
@@ -295,8 +318,10 @@ class FiscalCalendarService {
   /**
    * Get fiscal year summary statistics
    */
-  getFiscalYearStats() {
-    return this.db.prepare(`
+  async getFiscalYearStats() {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT
         fiscal_year_end_month as month,
         COUNT(*) as company_count,
@@ -317,7 +342,9 @@ class FiscalCalendarService {
       FROM company_fiscal_config
       GROUP BY fiscal_year_end_month
       ORDER BY company_count DESC
-    `).all();
+    `);
+
+    return result.rows;
   }
 }
 
