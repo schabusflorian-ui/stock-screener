@@ -1,6 +1,8 @@
 // src/services/capitalAllocationTracker.js
 // Service for tracking capital allocation: buybacks, dividends, and shareholder returns
 
+const { getDatabaseAsync } = require('../database');
+
 /**
  * Capital Allocation Tracker
  *
@@ -11,195 +13,10 @@
  * - Shareholder yield calculations
  */
 class CapitalAllocationTracker {
-  constructor(db) {
-    this.db = db;
-    this.prepareStatements();
+  constructor() {
+    // No db initialization needed with async pattern
   }
 
-  prepareStatements() {
-    // Buyback program statements
-    this.insertBuybackProgram = this.db.prepare(`
-      INSERT INTO buyback_programs (
-        company_id, announced_date, authorization_amount, authorization_shares,
-        expiration_date, status, source_filing, accession_number, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    this.updateBuybackProgram = this.db.prepare(`
-      UPDATE buyback_programs SET
-        shares_repurchased = ?,
-        amount_spent = ?,
-        average_price = ?,
-        remaining_authorization = ?,
-        status = ?,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `);
-
-    this.getActiveBuybackPrograms = this.db.prepare(`
-      SELECT * FROM buyback_programs
-      WHERE company_id = ? AND status = 'active'
-      ORDER BY announced_date DESC
-    `);
-
-    this.getAllBuybackPrograms = this.db.prepare(`
-      SELECT * FROM buyback_programs
-      WHERE company_id = ?
-      ORDER BY announced_date DESC
-    `);
-
-    // Buyback activity statements
-    this.upsertBuybackActivity = this.db.prepare(`
-      INSERT INTO buyback_activity (
-        company_id, program_id, fiscal_quarter,
-        shares_repurchased, amount_spent, average_price,
-        month1_shares, month1_amount, month2_shares, month2_amount,
-        month3_shares, month3_amount, source_filing, accession_number
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(company_id, fiscal_quarter) DO UPDATE SET
-        shares_repurchased = excluded.shares_repurchased,
-        amount_spent = excluded.amount_spent,
-        average_price = excluded.average_price,
-        month1_shares = excluded.month1_shares,
-        month1_amount = excluded.month1_amount,
-        month2_shares = excluded.month2_shares,
-        month2_amount = excluded.month2_amount,
-        month3_shares = excluded.month3_shares,
-        month3_amount = excluded.month3_amount,
-        source_filing = excluded.source_filing,
-        accession_number = excluded.accession_number
-    `);
-
-    this.getBuybackActivity = this.db.prepare(`
-      SELECT * FROM buyback_activity
-      WHERE company_id = ?
-      ORDER BY fiscal_quarter DESC
-      LIMIT ?
-    `);
-
-    // Dividend statements
-    this.insertDividend = this.db.prepare(`
-      INSERT INTO dividends (
-        company_id, declared_date, ex_dividend_date, record_date, payment_date,
-        dividend_amount, dividend_type, frequency, prior_dividend,
-        change_amount, change_pct, consecutive_increases,
-        is_increase, is_decrease, is_initiation, is_suspension,
-        source_filing, accession_number
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(company_id, ex_dividend_date, dividend_type) DO UPDATE SET
-        declared_date = excluded.declared_date,
-        record_date = excluded.record_date,
-        payment_date = excluded.payment_date,
-        dividend_amount = excluded.dividend_amount,
-        frequency = excluded.frequency,
-        prior_dividend = excluded.prior_dividend,
-        change_amount = excluded.change_amount,
-        change_pct = excluded.change_pct,
-        consecutive_increases = excluded.consecutive_increases,
-        is_increase = excluded.is_increase,
-        is_decrease = excluded.is_decrease,
-        is_initiation = excluded.is_initiation,
-        is_suspension = excluded.is_suspension
-    `);
-
-    this.getDividendHistory = this.db.prepare(`
-      SELECT * FROM dividends
-      WHERE company_id = ?
-      ORDER BY ex_dividend_date DESC
-      LIMIT ?
-    `);
-
-    this.getLatestDividend = this.db.prepare(`
-      SELECT * FROM dividends
-      WHERE company_id = ? AND dividend_type = 'regular'
-      ORDER BY ex_dividend_date DESC
-      LIMIT 1
-    `);
-
-    this.getDividendStreak = this.db.prepare(`
-      SELECT consecutive_increases FROM dividends
-      WHERE company_id = ? AND dividend_type = 'regular'
-      ORDER BY ex_dividend_date DESC
-      LIMIT 1
-    `);
-
-    // Capital allocation summary statements
-    this.upsertCapitalSummary = this.db.prepare(`
-      INSERT INTO capital_allocation_summary (
-        company_id, fiscal_quarter, operating_cash_flow, free_cash_flow,
-        dividends_paid, buybacks_executed, capex, acquisitions,
-        debt_repayment, debt_issuance,
-        total_shareholder_return, shareholder_yield,
-        dividend_pct_of_fcf, buyback_pct_of_fcf, capex_pct_of_revenue,
-        dividend_payout_ratio, total_payout_ratio
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(company_id, fiscal_quarter) DO UPDATE SET
-        operating_cash_flow = excluded.operating_cash_flow,
-        free_cash_flow = excluded.free_cash_flow,
-        dividends_paid = excluded.dividends_paid,
-        buybacks_executed = excluded.buybacks_executed,
-        capex = excluded.capex,
-        acquisitions = excluded.acquisitions,
-        debt_repayment = excluded.debt_repayment,
-        debt_issuance = excluded.debt_issuance,
-        total_shareholder_return = excluded.total_shareholder_return,
-        shareholder_yield = excluded.shareholder_yield,
-        dividend_pct_of_fcf = excluded.dividend_pct_of_fcf,
-        buyback_pct_of_fcf = excluded.buyback_pct_of_fcf,
-        capex_pct_of_revenue = excluded.capex_pct_of_revenue,
-        dividend_payout_ratio = excluded.dividend_payout_ratio,
-        total_payout_ratio = excluded.total_payout_ratio,
-        updated_at = CURRENT_TIMESTAMP
-    `);
-
-    this.getCapitalSummary = this.db.prepare(`
-      SELECT * FROM capital_allocation_summary
-      WHERE company_id = ?
-      ORDER BY fiscal_quarter DESC
-      LIMIT ?
-    `);
-
-    // Significant events
-    this.insertSignificantEvent = this.db.prepare(`
-      INSERT INTO significant_events (
-        company_id, event_type, event_date, headline, description,
-        value, value_formatted, significance_score, is_positive,
-        source_type, source_url, accession_number,
-        insider_id, program_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    this.getSignificantEvents = this.db.prepare(`
-      SELECT se.*, c.symbol, c.name as company_name
-      FROM significant_events se
-      JOIN companies c ON se.company_id = c.id
-      WHERE se.company_id = ?
-      ORDER BY se.event_date DESC
-      LIMIT ?
-    `);
-
-    this.getRecentEvents = this.db.prepare(`
-      SELECT se.*, c.symbol, c.name as company_name
-      FROM significant_events se
-      JOIN companies c ON se.company_id = c.id
-      ORDER BY se.event_date DESC
-      LIMIT ?
-    `);
-
-    this.getUnsentAlerts = this.db.prepare(`
-      SELECT se.*, c.symbol, c.name as company_name
-      FROM significant_events se
-      JOIN companies c ON se.company_id = c.id
-      WHERE se.alert_sent = 0
-      ORDER BY se.significance_score DESC, se.event_date DESC
-    `);
-
-    this.markAlertSent = this.db.prepare(`
-      UPDATE significant_events
-      SET alert_sent = 1, alert_sent_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `);
-  }
 
   // ============================================
   // BUYBACK PROGRAM MANAGEMENT
@@ -321,8 +138,16 @@ class CapitalAllocationTracker {
   /**
    * Store a new buyback program
    */
-  storeBuybackProgram(companyId, data, filing) {
-    const info = this.insertBuybackProgram.run(
+  async storeBuybackProgram(companyId, data, filing) {
+    const database = await getDatabaseAsync();
+
+    const programResult = await database.query(`
+      INSERT INTO buyback_programs (
+        company_id, announced_date, authorization_amount, authorization_shares,
+        expiration_date, status, source_filing, accession_number, notes
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING id
+    `, [
       companyId,
       data.announcedDate || filing.filingDate,
       data.authorizationAmount,
@@ -332,14 +157,23 @@ class CapitalAllocationTracker {
       filing.formType || '8-K',
       filing.accessionNumber,
       data.notes?.join('; ') || null
-    );
+    ]);
+
+    const programId = programResult.rows[0].id;
 
     // Create significant event
     const formattedAmount = data.authorizationAmount
       ? this.formatCurrency(data.authorizationAmount)
       : `${this.formatNumber(data.authorizationShares)} shares`;
 
-    this.insertSignificantEvent.run(
+    await database.query(`
+      INSERT INTO significant_events (
+        company_id, event_type, event_date, headline, description,
+        value, value_formatted, significance_score, is_positive,
+        source_type, source_url, accession_number,
+        insider_id, program_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+    `, [
       companyId,
       'buyback_announcement',
       data.announcedDate || filing.filingDate,
@@ -348,15 +182,15 @@ class CapitalAllocationTracker {
       data.authorizationAmount || data.authorizationShares,
       formattedAmount,
       this.calculateBuybackSignificance(data),
-      1, // is_positive
+      true, // is_positive
       'sec_filing',
       null,
       filing.accessionNumber,
       null,
-      info.lastInsertRowid
-    );
+      programId
+    ]);
 
-    return info.lastInsertRowid;
+    return programId;
   }
 
   /**
@@ -437,13 +271,40 @@ class CapitalAllocationTracker {
   /**
    * Store buyback execution activity
    */
-  storeBuybackActivity(companyId, fiscalQuarter, data, filing) {
+  async storeBuybackActivity(companyId, fiscalQuarter, data, filing) {
+    const database = await getDatabaseAsync();
+
     // Find active program
-    const activePrograms = this.getActiveBuybackPrograms.all(companyId);
+    const activeProgramsResult = await database.query(`
+      SELECT * FROM buyback_programs
+      WHERE company_id = $1 AND status = 'active'
+      ORDER BY announced_date DESC
+    `, [companyId]);
+
+    const activePrograms = activeProgramsResult.rows;
     const programId = activePrograms.length > 0 ? activePrograms[0].id : null;
 
     // Store the activity
-    this.upsertBuybackActivity.run(
+    await database.query(`
+      INSERT INTO buyback_activity (
+        company_id, program_id, fiscal_quarter,
+        shares_repurchased, amount_spent, average_price,
+        month1_shares, month1_amount, month2_shares, month2_amount,
+        month3_shares, month3_amount, source_filing, accession_number
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      ON CONFLICT(company_id, fiscal_quarter) DO UPDATE SET
+        shares_repurchased = excluded.shares_repurchased,
+        amount_spent = excluded.amount_spent,
+        average_price = excluded.average_price,
+        month1_shares = excluded.month1_shares,
+        month1_amount = excluded.month1_amount,
+        month2_shares = excluded.month2_shares,
+        month2_amount = excluded.month2_amount,
+        month3_shares = excluded.month3_shares,
+        month3_amount = excluded.month3_amount,
+        source_filing = excluded.source_filing,
+        accession_number = excluded.accession_number
+    `, [
       companyId,
       programId,
       fiscalQuarter,
@@ -458,7 +319,7 @@ class CapitalAllocationTracker {
       data.monthlyBreakdown[2]?.shares ? data.monthlyBreakdown[2].shares * data.monthlyBreakdown[2].avgPrice : null,
       filing.formType,
       filing.accessionNumber
-    );
+    ]);
 
     // Update program totals if we have an active program
     if (programId) {
@@ -470,14 +331,23 @@ class CapitalAllocationTracker {
         ? program.authorization_amount - newAmountSpent
         : null;
 
-      this.updateBuybackProgram.run(
+      await database.query(`
+        UPDATE buyback_programs SET
+          shares_repurchased = $1,
+          amount_spent = $2,
+          average_price = $3,
+          remaining_authorization = $4,
+          status = $5,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $6
+      `, [
         newTotal,
         newAmountSpent,
         newAvgPrice,
         remaining,
         remaining !== null && remaining <= 0 ? 'completed' : 'active',
         programId
-      );
+      ]);
     }
   }
 
@@ -488,35 +358,66 @@ class CapitalAllocationTracker {
   /**
    * Store a dividend record
    */
-  storeDividend(companyId, data) {
+  async storeDividend(companyId, data) {
+    const database = await getDatabaseAsync();
+
     // Get prior dividend to calculate change
-    const priorDividend = this.getLatestDividend.get(companyId);
+    const priorDividendResult = await database.query(`
+      SELECT * FROM dividends
+      WHERE company_id = $1 AND dividend_type = 'regular'
+      ORDER BY ex_dividend_date DESC
+      LIMIT 1
+    `, [companyId]);
+
+    const priorDividend = priorDividendResult.rows[0];
 
     let changeAmount = null;
     let changePct = null;
     let consecutiveIncreases = 0;
-    let isIncrease = 0;
-    let isDecrease = 0;
-    let isInitiation = 0;
+    let isIncrease = false;
+    let isDecrease = false;
+    let isInitiation = false;
 
     if (priorDividend) {
       changeAmount = data.dividendAmount - priorDividend.dividend_amount;
       changePct = (changeAmount / priorDividend.dividend_amount) * 100;
 
       if (changeAmount > 0.001) {
-        isIncrease = 1;
+        isIncrease = true;
         consecutiveIncreases = (priorDividend.consecutive_increases || 0) + 1;
       } else if (changeAmount < -0.001) {
-        isDecrease = 1;
+        isDecrease = true;
         consecutiveIncreases = 0;
       } else {
         consecutiveIncreases = priorDividend.consecutive_increases || 0;
       }
     } else {
-      isInitiation = 1;
+      isInitiation = true;
     }
 
-    this.insertDividend.run(
+    await database.query(`
+      INSERT INTO dividends (
+        company_id, declared_date, ex_dividend_date, record_date, payment_date,
+        dividend_amount, dividend_type, frequency, prior_dividend,
+        change_amount, change_pct, consecutive_increases,
+        is_increase, is_decrease, is_initiation, is_suspension,
+        source_filing, accession_number
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+      ON CONFLICT(company_id, ex_dividend_date, dividend_type) DO UPDATE SET
+        declared_date = excluded.declared_date,
+        record_date = excluded.record_date,
+        payment_date = excluded.payment_date,
+        dividend_amount = excluded.dividend_amount,
+        frequency = excluded.frequency,
+        prior_dividend = excluded.prior_dividend,
+        change_amount = excluded.change_amount,
+        change_pct = excluded.change_pct,
+        consecutive_increases = excluded.consecutive_increases,
+        is_increase = excluded.is_increase,
+        is_decrease = excluded.is_decrease,
+        is_initiation = excluded.is_initiation,
+        is_suspension = excluded.is_suspension
+    `, [
       companyId,
       data.declaredDate,
       data.exDividendDate,
@@ -532,10 +433,10 @@ class CapitalAllocationTracker {
       isIncrease,
       isDecrease,
       isInitiation,
-      data.isSuspension ? 1 : 0,
+      data.isSuspension ? true : false,
       data.sourceFiling,
       data.accessionNumber
-    );
+    ]);
 
     // Create significant event for increases, initiations, or decreases
     if (isIncrease || isInitiation || isDecrease) {
@@ -545,20 +446,27 @@ class CapitalAllocationTracker {
         eventType = 'dividend_initiation';
         headline = `Dividend Initiated: $${data.dividendAmount.toFixed(4)}/share`;
         significance = 80;
-        isPositive = 1;
+        isPositive = true;
       } else if (isIncrease) {
         eventType = 'dividend_increase';
         headline = `Dividend Increased ${changePct.toFixed(1)}% to $${data.dividendAmount.toFixed(4)}/share`;
         significance = 60 + Math.min(changePct, 20); // Higher increase = more significant
-        isPositive = 1;
+        isPositive = true;
       } else {
         eventType = 'dividend_decrease';
         headline = `Dividend Cut ${Math.abs(changePct).toFixed(1)}% to $${data.dividendAmount.toFixed(4)}/share`;
         significance = 90; // Cuts are very significant
-        isPositive = 0;
+        isPositive = false;
       }
 
-      this.insertSignificantEvent.run(
+      await database.query(`
+        INSERT INTO significant_events (
+          company_id, event_type, event_date, headline, description,
+          value, value_formatted, significance_score, is_positive,
+          source_type, source_url, accession_number,
+          insider_id, program_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      `, [
         companyId,
         eventType,
         data.declaredDate || data.exDividendDate,
@@ -575,15 +483,24 @@ class CapitalAllocationTracker {
         data.accessionNumber,
         null,
         null
-      );
+      ]);
     }
   }
 
   /**
    * Calculate annual dividend and yield
    */
-  getAnnualDividend(companyId, currentPrice = null) {
-    const history = this.getDividendHistory.all(companyId, 8); // Last 8 payments
+  async getAnnualDividend(companyId, currentPrice = null) {
+    const database = await getDatabaseAsync();
+
+    const historyResult = await database.query(`
+      SELECT * FROM dividends
+      WHERE company_id = $1
+      ORDER BY ex_dividend_date DESC
+      LIMIT $2
+    `, [companyId, 8]);
+
+    const history = historyResult.rows;
 
     if (history.length === 0) {
       return { annualDividend: 0, dividendYield: null, frequency: null };
@@ -645,7 +562,9 @@ class CapitalAllocationTracker {
   /**
    * Calculate and store capital allocation summary for a quarter
    */
-  calculateCapitalSummary(companyId, fiscalQuarter, financialData, marketCap = null) {
+  async calculateCapitalSummary(companyId, fiscalQuarter, financialData, marketCap = null) {
+    const database = await getDatabaseAsync();
+
     const {
       operatingCashFlow,
       freeCashFlow,
@@ -683,7 +602,33 @@ class CapitalAllocationTracker {
       ? (totalShareholderReturn / netIncome) * 100
       : null;
 
-    this.upsertCapitalSummary.run(
+    await database.query(`
+      INSERT INTO capital_allocation_summary (
+        company_id, fiscal_quarter, operating_cash_flow, free_cash_flow,
+        dividends_paid, buybacks_executed, capex, acquisitions,
+        debt_repayment, debt_issuance,
+        total_shareholder_return, shareholder_yield,
+        dividend_pct_of_fcf, buyback_pct_of_fcf, capex_pct_of_revenue,
+        dividend_payout_ratio, total_payout_ratio
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+      ON CONFLICT(company_id, fiscal_quarter) DO UPDATE SET
+        operating_cash_flow = excluded.operating_cash_flow,
+        free_cash_flow = excluded.free_cash_flow,
+        dividends_paid = excluded.dividends_paid,
+        buybacks_executed = excluded.buybacks_executed,
+        capex = excluded.capex,
+        acquisitions = excluded.acquisitions,
+        debt_repayment = excluded.debt_repayment,
+        debt_issuance = excluded.debt_issuance,
+        total_shareholder_return = excluded.total_shareholder_return,
+        shareholder_yield = excluded.shareholder_yield,
+        dividend_pct_of_fcf = excluded.dividend_pct_of_fcf,
+        buyback_pct_of_fcf = excluded.buyback_pct_of_fcf,
+        capex_pct_of_revenue = excluded.capex_pct_of_revenue,
+        dividend_payout_ratio = excluded.dividend_payout_ratio,
+        total_payout_ratio = excluded.total_payout_ratio,
+        updated_at = CURRENT_TIMESTAMP
+    `, [
       companyId,
       fiscalQuarter,
       operatingCashFlow,
@@ -701,7 +646,7 @@ class CapitalAllocationTracker {
       capexPctOfRevenue,
       dividendPayoutRatio,
       totalPayoutRatio
-    );
+    ]);
 
     return {
       totalShareholderReturn,
@@ -720,12 +665,50 @@ class CapitalAllocationTracker {
   /**
    * Get comprehensive capital allocation data for a company
    */
-  getCapitalAllocationOverview(companyId, quarters = 8) {
-    const buybackPrograms = this.getAllBuybackPrograms.all(companyId);
-    const buybackActivity = this.getBuybackActivity.all(companyId, quarters);
-    const dividendHistory = this.getDividendHistory.all(companyId, quarters * 3); // More frequent
-    const summaryHistory = this.getCapitalSummary.all(companyId, quarters);
-    const events = this.getSignificantEvents.all(companyId, 20);
+  async getCapitalAllocationOverview(companyId, quarters = 8) {
+    const database = await getDatabaseAsync();
+
+    const buybackProgramsResult = await database.query(`
+      SELECT * FROM buyback_programs
+      WHERE company_id = $1
+      ORDER BY announced_date DESC
+    `, [companyId]);
+
+    const buybackActivityResult = await database.query(`
+      SELECT * FROM buyback_activity
+      WHERE company_id = $1
+      ORDER BY fiscal_quarter DESC
+      LIMIT $2
+    `, [companyId, quarters]);
+
+    const dividendHistoryResult = await database.query(`
+      SELECT * FROM dividends
+      WHERE company_id = $1
+      ORDER BY ex_dividend_date DESC
+      LIMIT $2
+    `, [companyId, quarters * 3]);
+
+    const summaryHistoryResult = await database.query(`
+      SELECT * FROM capital_allocation_summary
+      WHERE company_id = $1
+      ORDER BY fiscal_quarter DESC
+      LIMIT $2
+    `, [companyId, quarters]);
+
+    const eventsResult = await database.query(`
+      SELECT se.*, c.symbol, c.name as company_name
+      FROM significant_events se
+      JOIN companies c ON se.company_id = c.id
+      WHERE se.company_id = $1
+      ORDER BY se.event_date DESC
+      LIMIT $2
+    `, [companyId, 20]);
+
+    const buybackPrograms = buybackProgramsResult.rows;
+    const buybackActivity = buybackActivityResult.rows;
+    const dividendHistory = dividendHistoryResult.rows;
+    const summaryHistory = summaryHistoryResult.rows;
+    const events = eventsResult.rows;
 
     // Calculate TTM totals
     const ttmBuybacks = buybackActivity
@@ -733,7 +716,7 @@ class CapitalAllocationTracker {
       .reduce((sum, q) => sum + (q.amount_spent || 0), 0);
 
     const regularDividends = dividendHistory.filter(d => d.dividend_type === 'regular');
-    const dividendInfo = this.getAnnualDividend(companyId);
+    const dividendInfo = await this.getAnnualDividend(companyId);
 
     return {
       buybackPrograms: {
@@ -760,8 +743,10 @@ class CapitalAllocationTracker {
   /**
    * Get companies with highest shareholder yield
    */
-  getTopShareholderYield(limit = 20) {
-    const stmt = this.db.prepare(`
+  async getTopShareholderYield(limit = 20) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT
         c.id, c.symbol, c.name,
         cas.shareholder_yield,
@@ -777,17 +762,19 @@ class CapitalAllocationTracker {
       )
       AND cas.shareholder_yield IS NOT NULL
       ORDER BY cas.shareholder_yield DESC
-      LIMIT ?
-    `);
+      LIMIT $1
+    `, [limit]);
 
-    return stmt.all(limit);
+    return result.rows;
   }
 
   /**
    * Get recent dividend aristocrats (companies with long increase streaks)
    */
-  getDividendAristocrats(minYears = 10) {
-    const stmt = this.db.prepare(`
+  async getDividendAristocrats(minYears = 10) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT
         c.id, c.symbol, c.name,
         d.consecutive_increases,
@@ -796,22 +783,32 @@ class CapitalAllocationTracker {
       FROM dividends d
       JOIN companies c ON d.company_id = c.id
       WHERE d.dividend_type = 'regular'
-      AND d.consecutive_increases >= ?
+      AND d.consecutive_increases >= $1
       AND d.ex_dividend_date = (
         SELECT MAX(ex_dividend_date) FROM dividends
         WHERE company_id = d.company_id AND dividend_type = 'regular'
       )
       ORDER BY d.consecutive_increases DESC
-    `);
+    `, [minYears]);
 
-    return stmt.all(minYears);
+    return result.rows;
   }
 
   /**
    * Get recent capital allocation events across all companies
    */
-  getRecentCapitalEvents(limit = 50) {
-    return this.getRecentEvents.all(limit).filter(e =>
+  async getRecentCapitalEvents(limit = 50) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT se.*, c.symbol, c.name as company_name
+      FROM significant_events se
+      JOIN companies c ON se.company_id = c.id
+      ORDER BY se.event_date DESC
+      LIMIT $1
+    `, [limit]);
+
+    return result.rows.filter(e =>
       ['buyback_announcement', 'dividend_increase', 'dividend_decrease',
        'dividend_initiation', 'dividend_suspension'].includes(e.event_type)
     );
