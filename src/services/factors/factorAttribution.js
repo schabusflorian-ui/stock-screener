@@ -2,6 +2,8 @@
 // Factor Attribution System - Asness/AQR-inspired factor decomposition
 // Decomposes portfolio returns into factor contributions to identify true alpha
 
+const { getDatabaseAsync } = require('../../database');
+
 /**
  * FactorAttribution - Fama-French style factor decomposition
  *
@@ -12,101 +14,132 @@
  */
 class FactorAttribution {
   /**
-   * @param {Database} db - better-sqlite3 database instance
+   * Constructor - no longer takes db parameter
    */
-  constructor(db) {
-    this.db = db;
+  constructor() {
     this._initializeTables();
-    this._prepareStatements();
     console.log('📊 FactorAttribution initialized');
   }
 
-  _initializeTables() {
-    this.db.exec(`
+  async _initializeTables() {
+    const database = await getDatabaseAsync();
+    await database.query(`
       CREATE TABLE IF NOT EXISTS daily_factor_returns (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         date TEXT NOT NULL UNIQUE,
-        mkt_rf REAL,
-        smb REAL,
-        hml REAL,
-        umd REAL,
-        qmj REAL,
-        bab REAL,
-        rf REAL,
-        created_at TEXT DEFAULT (datetime('now'))
+        mkt_rf DOUBLE PRECISION,
+        smb DOUBLE PRECISION,
+        hml DOUBLE PRECISION,
+        umd DOUBLE PRECISION,
+        qmj DOUBLE PRECISION,
+        bab DOUBLE PRECISION,
+        rf DOUBLE PRECISION,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
       CREATE TABLE IF NOT EXISTS backtest_factor_exposures (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         backtest_id INTEGER,
         date TEXT NOT NULL,
         window_days INTEGER,
-        alpha_daily REAL,
-        alpha_annualized REAL,
-        alpha_tstat REAL,
-        beta_mkt REAL,
-        beta_smb REAL,
-        beta_hml REAL,
-        beta_umd REAL,
-        beta_qmj REAL,
-        beta_bab REAL,
-        r_squared REAL,
-        created_at TEXT DEFAULT (datetime('now'))
+        alpha_daily DOUBLE PRECISION,
+        alpha_annualized DOUBLE PRECISION,
+        alpha_tstat DOUBLE PRECISION,
+        beta_mkt DOUBLE PRECISION,
+        beta_smb DOUBLE PRECISION,
+        beta_hml DOUBLE PRECISION,
+        beta_umd DOUBLE PRECISION,
+        beta_qmj DOUBLE PRECISION,
+        beta_bab DOUBLE PRECISION,
+        r_squared DOUBLE PRECISION,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
   }
 
-  _prepareStatements() {
-    this.stmtGetSPY = this.db.prepare(`
+  async _getSPYPrices(date, limit) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT dp.date, dp.close as price
       FROM daily_prices dp
       JOIN companies c ON dp.company_id = c.id
-      WHERE c.symbol = 'SPY' AND dp.date <= ?
+      WHERE c.symbol = 'SPY' AND dp.date <= $1
       ORDER BY dp.date DESC
-      LIMIT ?
-    `);
+      LIMIT $2
+    `, [date, limit]);
+    return result.rows;
+  }
 
-    this.stmtGetStocksByMarketCap = this.db.prepare(`
+  async _getStocksByMarketCap() {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT c.id, c.symbol, c.market_cap
       FROM companies c
       WHERE c.market_cap > 0
       ORDER BY c.market_cap DESC
     `);
+    return result.rows;
+  }
 
-    this.stmtGetPriceHistory = this.db.prepare(`
+  async _getPriceHistory(companyId, date, limit) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT date, close as price
       FROM daily_prices
-      WHERE company_id = ? AND date <= ?
+      WHERE company_id = $1 AND date <= $2
       ORDER BY date DESC
-      LIMIT ?
-    `);
+      LIMIT $3
+    `, [companyId, date, limit]);
+    return result.rows;
+  }
 
-    this.stmtGetMetrics = this.db.prepare(`
+  async _getMetrics(companyId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT pe_ratio, pb_ratio, roe, debt_to_equity
       FROM calculated_metrics
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY updated_at DESC
       LIMIT 1
-    `);
+    `, [companyId]);
+    return result.rows[0];
+  }
 
-    this.stmtStoreFactorReturns = this.db.prepare(`
-      INSERT OR REPLACE INTO daily_factor_returns (
+  async _storeFactorReturns(date, mkt_rf, smb, hml, umd, qmj, bab, rf) {
+    const database = await getDatabaseAsync();
+    await database.query(`
+      INSERT INTO daily_factor_returns (
         date, mkt_rf, smb, hml, umd, qmj, bab, rf
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      ON CONFLICT (date) DO UPDATE SET
+        mkt_rf = EXCLUDED.mkt_rf,
+        smb = EXCLUDED.smb,
+        hml = EXCLUDED.hml,
+        umd = EXCLUDED.umd,
+        qmj = EXCLUDED.qmj,
+        bab = EXCLUDED.bab,
+        rf = EXCLUDED.rf
+    `, [date, mkt_rf, smb, hml, umd, qmj, bab, rf]);
+  }
 
-    this.stmtStoreExposures = this.db.prepare(`
+  async _storeExposures(backtestId, date, windowDays, alphaDaily, alphaAnnualized, alphaTstat, betaMkt, betaSmb, betaHml, betaUmd, betaQmj, betaBab, rSquared) {
+    const database = await getDatabaseAsync();
+    await database.query(`
       INSERT INTO backtest_factor_exposures (
         backtest_id, date, window_days, alpha_daily, alpha_annualized,
         alpha_tstat, beta_mkt, beta_smb, beta_hml, beta_umd, beta_qmj, beta_bab, r_squared
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    `, [backtestId, date, windowDays, alphaDaily, alphaAnnualized, alphaTstat, betaMkt, betaSmb, betaHml, betaUmd, betaQmj, betaBab, rSquared]);
+  }
 
-    this.stmtGetFactorReturns = this.db.prepare(`
+  async _getFactorReturns(startDate, endDate) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT * FROM daily_factor_returns
-      WHERE date BETWEEN ? AND ?
+      WHERE date BETWEEN $1 AND $2
       ORDER BY date ASC
-    `);
+    `, [startDate, endDate]);
+    return result.rows;
   }
 
   /**
@@ -114,24 +147,24 @@ class FactorAttribution {
    * @param {string} date - Date to calculate factors for
    * @returns {Object} Factor returns
    */
-  calculateDailyFactorReturns(date) {
+  async calculateDailyFactorReturns(date) {
     // Get market return (SPY as proxy)
-    const mktReturn = this._calculateMarketReturn(date);
+    const mktReturn = await this._calculateMarketReturn(date);
 
     // Get SMB (Small minus Big)
-    const smbReturn = this._calculateSMB(date);
+    const smbReturn = await this._calculateSMB(date);
 
     // Get HML (High minus Low book/market)
-    const hmlReturn = this._calculateHML(date);
+    const hmlReturn = await this._calculateHML(date);
 
     // Get UMD (Up minus Down momentum - 12-1 month)
-    const umdReturn = this._calculateUMD(date);
+    const umdReturn = await this._calculateUMD(date);
 
     // Get QMJ (Quality minus Junk)
-    const qmjReturn = this._calculateQMJ(date);
+    const qmjReturn = await this._calculateQMJ(date);
 
     // Get BAB (Betting Against Beta)
-    const babReturn = this._calculateBAB(date);
+    const babReturn = await this._calculateBAB(date);
 
     // Risk-free rate approximation (0.02% daily ≈ 5% annual)
     const rf = 0.0002;
@@ -148,7 +181,7 @@ class FactorAttribution {
     };
 
     // Store to database
-    this.stmtStoreFactorReturns.run(
+    await this._storeFactorReturns(
       date, factors.mkt_rf, factors.smb, factors.hml,
       factors.umd, factors.qmj, factors.bab, factors.rf
     );
@@ -156,37 +189,38 @@ class FactorAttribution {
     return factors;
   }
 
-  _calculateMarketReturn(date) {
-    const prices = this.stmtGetSPY.all(date, 2);
+  async _calculateMarketReturn(date) {
+    const prices = await this._getSPYPrices(date, 2);
     if (prices.length < 2) return 0;
     return (prices[0].price - prices[1].price) / prices[1].price;
   }
 
-  _calculateSMB(date) {
+  async _calculateSMB(date) {
     // Small minus Big: return of small cap - return of large cap
-    const stocks = this.stmtGetStocksByMarketCap.all();
+    const stocks = await this._getStocksByMarketCap();
     if (stocks.length < 20) return 0;
 
     const quintile = Math.floor(stocks.length / 5);
     const smallCap = stocks.slice(-quintile); // Bottom 20%
     const largeCap = stocks.slice(0, quintile); // Top 20%
 
-    const smallReturn = this._calculatePortfolioReturn(smallCap, date);
-    const largeReturn = this._calculatePortfolioReturn(largeCap, date);
+    const smallReturn = await this._calculatePortfolioReturn(smallCap, date);
+    const largeReturn = await this._calculatePortfolioReturn(largeCap, date);
 
     return smallReturn - largeReturn;
   }
 
-  _calculateHML(date) {
+  async _calculateHML(date) {
     // High minus Low book/market (value)
-    const stocks = this.stmtGetStocksByMarketCap.all();
+    const stocks = await this._getStocksByMarketCap();
 
     // Score by book/market (inverse of P/B)
-    const scored = stocks.map(s => {
-      const metrics = this.stmtGetMetrics.get(s.id);
+    const scoredPromises = stocks.map(async (s) => {
+      const metrics = await this._getMetrics(s.id);
       const pbRatio = metrics?.pb_ratio || 2;
       return { ...s, bookMarket: 1 / Math.max(pbRatio, 0.1) };
-    }).filter(s => s.bookMarket > 0);
+    });
+    const scored = (await Promise.all(scoredPromises)).filter(s => s.bookMarket > 0);
 
     scored.sort((a, b) => b.bookMarket - a.bookMarket);
 
@@ -194,18 +228,19 @@ class FactorAttribution {
     const highBM = scored.slice(0, quintile); // Value stocks
     const lowBM = scored.slice(-quintile); // Growth stocks
 
-    const valueReturn = this._calculatePortfolioReturn(highBM, date);
-    const growthReturn = this._calculatePortfolioReturn(lowBM, date);
+    const valueReturn = await this._calculatePortfolioReturn(highBM, date);
+    const growthReturn = await this._calculatePortfolioReturn(lowBM, date);
 
     return valueReturn - growthReturn;
   }
 
-  _calculateUMD(date) {
+  async _calculateUMD(date) {
     // Up minus Down: 12-1 month momentum (SKIP MOST RECENT MONTH)
-    const stocks = this.stmtGetStocksByMarketCap.all().slice(0, 500); // Top 500
+    const allStocks = await this._getStocksByMarketCap();
+    const stocks = allStocks.slice(0, 500); // Top 500
 
-    const scored = stocks.map(s => {
-      const prices = this.stmtGetPriceHistory.all(s.id, date, 270);
+    const scoredPromises = stocks.map(async (s) => {
+      const prices = await this._getPriceHistory(s.id, date, 270);
       if (prices.length < 250) return null;
 
       // 12 month return EXCLUDING last month
@@ -216,7 +251,8 @@ class FactorAttribution {
 
       const momentum = (price1MonthAgo - price12MonthsAgo) / price12MonthsAgo;
       return { ...s, momentum };
-    }).filter(Boolean);
+    });
+    const scored = (await Promise.all(scoredPromises)).filter(Boolean);
 
     scored.sort((a, b) => b.momentum - a.momentum);
 
@@ -224,18 +260,19 @@ class FactorAttribution {
     const winners = scored.slice(0, quintile);
     const losers = scored.slice(-quintile);
 
-    const winnerReturn = this._calculatePortfolioReturn(winners, date);
-    const loserReturn = this._calculatePortfolioReturn(losers, date);
+    const winnerReturn = await this._calculatePortfolioReturn(winners, date);
+    const loserReturn = await this._calculatePortfolioReturn(losers, date);
 
     return winnerReturn - loserReturn;
   }
 
-  _calculateQMJ(date) {
+  async _calculateQMJ(date) {
     // Quality minus Junk: high quality - low quality
-    const stocks = this.stmtGetStocksByMarketCap.all().slice(0, 500);
+    const allStocks = await this._getStocksByMarketCap();
+    const stocks = allStocks.slice(0, 500);
 
-    const scored = stocks.map(s => {
-      const metrics = this.stmtGetMetrics.get(s.id);
+    const scoredPromises = stocks.map(async (s) => {
+      const metrics = await this._getMetrics(s.id);
       if (!metrics) return null;
 
       // Quality score: high ROE, low leverage
@@ -244,7 +281,8 @@ class FactorAttribution {
 
       const qualityScore = roe * 10 - debtEquity;
       return { ...s, qualityScore };
-    }).filter(Boolean);
+    });
+    const scored = (await Promise.all(scoredPromises)).filter(Boolean);
 
     scored.sort((a, b) => b.qualityScore - a.qualityScore);
 
@@ -252,18 +290,19 @@ class FactorAttribution {
     const quality = scored.slice(0, quintile);
     const junk = scored.slice(-quintile);
 
-    const qualityReturn = this._calculatePortfolioReturn(quality, date);
-    const junkReturn = this._calculatePortfolioReturn(junk, date);
+    const qualityReturn = await this._calculatePortfolioReturn(quality, date);
+    const junkReturn = await this._calculatePortfolioReturn(junk, date);
 
     return qualityReturn - junkReturn;
   }
 
-  _calculateBAB(date) {
+  async _calculateBAB(date) {
     // Betting Against Beta: low beta - high beta (leveraged)
-    const stocks = this.stmtGetStocksByMarketCap.all().slice(0, 500);
+    const allStocks = await this._getStocksByMarketCap();
+    const stocks = allStocks.slice(0, 500);
 
-    const scored = stocks.map(s => {
-      const prices = this.stmtGetPriceHistory.all(s.id, date, 252);
+    const scoredPromises = stocks.map(async (s) => {
+      const prices = await this._getPriceHistory(s.id, date, 252);
       if (prices.length < 60) return null;
 
       // Calculate beta (simplified)
@@ -276,7 +315,8 @@ class FactorAttribution {
       const beta = volatility / 0.01; // Rough beta estimate
 
       return { ...s, beta };
-    }).filter(Boolean);
+    });
+    const scored = (await Promise.all(scoredPromises)).filter(Boolean);
 
     scored.sort((a, b) => a.beta - b.beta);
 
@@ -284,24 +324,33 @@ class FactorAttribution {
     const lowBeta = scored.slice(0, quintile);
     const highBeta = scored.slice(-quintile);
 
-    const lowBetaReturn = this._calculatePortfolioReturn(lowBeta, date);
-    const highBetaReturn = this._calculatePortfolioReturn(highBeta, date);
+    const lowBetaReturn = await this._calculatePortfolioReturn(lowBeta, date);
+    const highBetaReturn = await this._calculatePortfolioReturn(highBeta, date);
 
     // BAB is leveraged low beta minus deleveraged high beta
     return lowBetaReturn * 1.5 - highBetaReturn * 0.75;
   }
 
-  _calculatePortfolioReturn(stocks, date) {
+  async _calculatePortfolioReturn(stocks, date) {
     if (stocks.length === 0) return 0;
 
     let totalReturn = 0;
     let count = 0;
 
-    for (const stock of stocks) {
-      const prices = this.stmtGetPriceHistory.all(stock.id, date, 2);
+    const returnsPromises = stocks.map(async (stock) => {
+      const prices = await this._getPriceHistory(stock.id, date, 2);
       if (prices.length >= 2) {
         const ret = (prices[0].price - prices[1].price) / prices[1].price;
-        totalReturn += ret;
+        return { valid: true, ret };
+      }
+      return { valid: false };
+    });
+
+    const returns = await Promise.all(returnsPromises);
+
+    for (const result of returns) {
+      if (result.valid) {
+        totalReturn += result.ret;
         count++;
       }
     }
@@ -315,7 +364,7 @@ class FactorAttribution {
    * @param {number} window - Regression window in days
    * @returns {Object} Factor exposures and alpha
    */
-  calculatePortfolioFactorExposure(portfolioReturns, window = 63) {
+  async calculatePortfolioFactorExposure(portfolioReturns, window = 63) {
     if (portfolioReturns.length < window) {
       return { error: 'Insufficient data for regression' };
     }
@@ -323,13 +372,13 @@ class FactorAttribution {
     // Get factor returns for the period
     const startDate = portfolioReturns[0].date;
     const endDate = portfolioReturns[portfolioReturns.length - 1].date;
-    const factorData = this.stmtGetFactorReturns.all(startDate, endDate);
+    const factorData = await this._getFactorReturns(startDate, endDate);
 
     if (factorData.length < window) {
       // Calculate missing factor returns
       for (const pr of portfolioReturns) {
         try {
-          this.calculateDailyFactorReturns(pr.date);
+          await this.calculateDailyFactorReturns(pr.date);
         } catch (e) {
           // Ignore errors
         }
@@ -468,13 +517,13 @@ class FactorAttribution {
    * @param {string} endDate - Report end date
    * @returns {Object} Full attribution report
    */
-  generateAttributionReport(portfolioReturns, startDate, endDate) {
+  async generateAttributionReport(portfolioReturns, startDate, endDate) {
     // Calculate exposures
-    const exposures = this.calculatePortfolioFactorExposure(portfolioReturns);
+    const exposures = await this.calculatePortfolioFactorExposure(portfolioReturns);
     if (exposures.error) return exposures;
 
     // Get cumulative factor returns for period
-    const factorData = this.stmtGetFactorReturns.all(startDate, endDate);
+    const factorData = await this._getFactorReturns(startDate, endDate);
     const cumulativeFactors = this._calculateCumulativeReturns(factorData);
 
     // Total portfolio return
@@ -491,7 +540,7 @@ class FactorAttribution {
       },
       factorExposures: exposures,
       attribution,
-      styleDrift: this._analyzeStyleDrift(portfolioReturns),
+      styleDrift: await this._analyzeStyleDrift(portfolioReturns),
       summary: {
         isAlphaSignificant: exposures.alpha.isSignificant,
         dominantFactor: this._getDominantFactor(attribution.percentages),
@@ -517,14 +566,14 @@ class FactorAttribution {
     return cumulative;
   }
 
-  _analyzeStyleDrift(portfolioReturns) {
+  async _analyzeStyleDrift(portfolioReturns) {
     // Compare first half vs second half exposures
     const midpoint = Math.floor(portfolioReturns.length / 2);
     const firstHalf = portfolioReturns.slice(0, midpoint);
     const secondHalf = portfolioReturns.slice(midpoint);
 
-    const exp1 = this.calculatePortfolioFactorExposure(firstHalf);
-    const exp2 = this.calculatePortfolioFactorExposure(secondHalf);
+    const exp1 = await this.calculatePortfolioFactorExposure(firstHalf);
+    const exp2 = await this.calculatePortfolioFactorExposure(secondHalf);
 
     if (exp1.error || exp2.error) return { hasDrift: false };
 
@@ -683,8 +732,8 @@ class FactorAttribution {
   }
 }
 
-function createFactorAttribution(db) {
-  return new FactorAttribution(db);
+function createFactorAttribution() {
+  return new FactorAttribution();
 }
 
 module.exports = { FactorAttribution, createFactorAttribution };
