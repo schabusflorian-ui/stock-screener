@@ -10,131 +10,25 @@
  * - Multi-jurisdiction support
  */
 
+const { getDatabaseAsync } = require('../../database');
 const { getTaxRegime, calculateTax, checkWashSale, isLongTermHolding } = require('../costs/taxRegimes');
 const { AustrianTaxTracker } = require('../costs/austrianTaxTracker');
 const { TaxTracker } = require('../costs/taxTracker');
 
 class PortfolioTaxService {
-  constructor(db) {
-    this.db = db.getDatabase ? db.getDatabase() : db;
-    this._prepareStatements();
+  constructor() {
     this._taxTrackers = new Map(); // portfolioId -> TaxTracker instance
-  }
-
-  _prepareStatements() {
-    // Get portfolio tax settings
-    this.stmtGetPortfolioTaxSettings = this.db.prepare(`
-      SELECT tax_country, tax_year, lot_method, broker_type
-      FROM portfolios WHERE id = ?
-    `);
-
-    // Get or create tax settings table
-    try {
-      this.db.exec(`
-        CREATE TABLE IF NOT EXISTS portfolio_tax_settings (
-          portfolio_id INTEGER PRIMARY KEY,
-          tax_country TEXT DEFAULT 'AT',
-          tax_year INTEGER DEFAULT 2024,
-          lot_method TEXT DEFAULT 'fifo',
-          broker_type TEXT DEFAULT 'foreign',
-          track_tax_lots INTEGER DEFAULT 1,
-          enable_tax_loss_harvesting INTEGER DEFAULT 1,
-          tax_loss_threshold REAL DEFAULT 500,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (portfolio_id) REFERENCES portfolios(id)
-        )
-      `);
-    } catch (e) {
-      // Table may already exist
-    }
-
-    // Get tax settings
-    this.stmtGetTaxSettings = this.db.prepare(`
-      SELECT * FROM portfolio_tax_settings WHERE portfolio_id = ?
-    `);
-
-    // Upsert tax settings
-    this.stmtUpsertTaxSettings = this.db.prepare(`
-      INSERT INTO portfolio_tax_settings (portfolio_id, tax_country, tax_year, lot_method, broker_type, track_tax_lots, enable_tax_loss_harvesting, tax_loss_threshold)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(portfolio_id) DO UPDATE SET
-        tax_country = excluded.tax_country,
-        tax_year = excluded.tax_year,
-        lot_method = excluded.lot_method,
-        broker_type = excluded.broker_type,
-        track_tax_lots = excluded.track_tax_lots,
-        enable_tax_loss_harvesting = excluded.enable_tax_loss_harvesting,
-        tax_loss_threshold = excluded.tax_loss_threshold,
-        updated_at = CURRENT_TIMESTAMP
-    `);
-
-    // Get realized gains for portfolio
-    this.stmtGetRealizedGains = this.db.prepare(`
-      SELECT
-        pt.id,
-        pt.company_id,
-        c.symbol,
-        pt.shares,
-        pt.price_per_share,
-        pt.total_amount,
-        pt.executed_at,
-        pl.cost_per_share,
-        pl.acquired_at,
-        (pt.price_per_share - pl.cost_per_share) * pt.shares as gain_loss
-      FROM portfolio_transactions pt
-      JOIN companies c ON pt.company_id = c.id
-      LEFT JOIN portfolio_lots pl ON pt.lot_id = pl.id
-      WHERE pt.portfolio_id = ?
-        AND pt.transaction_type = 'SELL'
-        AND strftime('%Y', pt.executed_at) = ?
-      ORDER BY pt.executed_at DESC
-    `);
-
-    // Get open positions with lots
-    this.stmtGetPositionsWithLots = this.db.prepare(`
-      SELECT
-        pp.id as position_id,
-        pp.company_id,
-        c.symbol,
-        c.name,
-        pp.shares,
-        pp.average_cost,
-        pp.cost_basis,
-        pp.current_price,
-        pp.current_value,
-        pp.unrealized_pnl,
-        pp.unrealized_pnl_pct
-      FROM portfolio_positions pp
-      JOIN companies c ON pp.company_id = c.id
-      WHERE pp.portfolio_id = ? AND pp.shares > 0
-      ORDER BY pp.current_value DESC
-    `);
-
-    // Get lots for position
-    this.stmtGetLotsForPosition = this.db.prepare(`
-      SELECT
-        id,
-        shares_remaining,
-        cost_per_share,
-        total_cost,
-        acquired_at,
-        acquisition_type
-      FROM portfolio_lots
-      WHERE position_id = ? AND is_closed = 0
-      ORDER BY acquired_at ASC
-    `);
   }
 
   /**
    * Get or create tax tracker for portfolio
    */
-  getTaxTracker(portfolioId) {
+  async getTaxTracker(portfolioId) {
     if (this._taxTrackers.has(portfolioId)) {
       return this._taxTrackers.get(portfolioId);
     }
 
-    const settings = this.getTaxSettings(portfolioId);
+    const settings = await this.getTaxSettings(portfolioId);
     const regime = getTaxRegime(settings.tax_country);
 
     let tracker;
@@ -157,8 +51,13 @@ class PortfolioTaxService {
   /**
    * Get tax settings for portfolio
    */
-  getTaxSettings(portfolioId) {
-    let settings = this.stmtGetTaxSettings.get(portfolioId);
+  async getTaxSettings(portfolioId) {
+    const database = await getDatabaseAsync();
+
+    const settingsResult = await database.query(`
+      SELECT * FROM portfolio_tax_settings WHERE portfolio_id = $1
+    `, [portfolioId]);
+    let settings = settingsResult.rows[0];
 
     if (!settings) {
       // Create default settings
@@ -172,7 +71,7 @@ class PortfolioTaxService {
         enable_tax_loss_harvesting: 1,
         tax_loss_threshold: 500
       };
-      this.updateTaxSettings(portfolioId, settings);
+      await this.updateTaxSettings(portfolioId, settings);
     }
 
     return settings;
@@ -181,8 +80,22 @@ class PortfolioTaxService {
   /**
    * Update tax settings for portfolio
    */
-  updateTaxSettings(portfolioId, settings) {
-    this.stmtUpsertTaxSettings.run(
+  async updateTaxSettings(portfolioId, settings) {
+    const database = await getDatabaseAsync();
+
+    await database.query(`
+      INSERT INTO portfolio_tax_settings (portfolio_id, tax_country, tax_year, lot_method, broker_type, track_tax_lots, enable_tax_loss_harvesting, tax_loss_threshold)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      ON CONFLICT(portfolio_id) DO UPDATE SET
+        tax_country = excluded.tax_country,
+        tax_year = excluded.tax_year,
+        lot_method = excluded.lot_method,
+        broker_type = excluded.broker_type,
+        track_tax_lots = excluded.track_tax_lots,
+        enable_tax_loss_harvesting = excluded.enable_tax_loss_harvesting,
+        tax_loss_threshold = excluded.tax_loss_threshold,
+        updated_at = CURRENT_TIMESTAMP
+    `, [
       portfolioId,
       settings.tax_country || 'AT',
       settings.tax_year || new Date().getFullYear(),
@@ -191,19 +104,20 @@ class PortfolioTaxService {
       settings.track_tax_lots ? 1 : 0,
       settings.enable_tax_loss_harvesting ? 1 : 0,
       settings.tax_loss_threshold || 500
-    );
+    ]);
 
     // Clear cached tracker to pick up new settings
     this._taxTrackers.delete(portfolioId);
 
-    return this.getTaxSettings(portfolioId);
+    return await this.getTaxSettings(portfolioId);
   }
 
   /**
    * Calculate tax impact before executing a trade
    */
-  calculateTradeImpact(portfolioId, symbol, shares, currentPrice, side) {
-    const settings = this.getTaxSettings(portfolioId);
+  async calculateTradeImpact(portfolioId, symbol, shares, currentPrice, side) {
+    const database = await getDatabaseAsync();
+    const settings = await this.getTaxSettings(portfolioId);
     const regime = getTaxRegime(settings.tax_country);
 
     if (side === 'buy') {
@@ -215,12 +129,24 @@ class PortfolioTaxService {
     }
 
     // Get position and lots for sell
-    const position = this._getPositionBySymbol(portfolioId, symbol);
+    const position = await this._getPositionBySymbol(portfolioId, symbol);
     if (!position) {
       return { error: 'Position not found' };
     }
 
-    const lots = this.stmtGetLotsForPosition.all(position.position_id);
+    const lotsResult = await database.query(`
+      SELECT
+        id,
+        shares_remaining,
+        cost_per_share,
+        total_cost,
+        acquired_at,
+        acquisition_type
+      FROM portfolio_lots
+      WHERE position_id = $1 AND is_closed = false
+      ORDER BY acquired_at ASC
+    `, [position.position_id]);
+    const lots = lotsResult.rows;
     if (!lots || lots.length === 0) {
       // Use average cost if no lots
       const avgCost = position.average_cost;
@@ -298,8 +224,9 @@ class PortfolioTaxService {
   /**
    * Get tax loss harvesting opportunities
    */
-  getTaxLossHarvestingOpportunities(portfolioId) {
-    const settings = this.getTaxSettings(portfolioId);
+  async getTaxLossHarvestingOpportunities(portfolioId) {
+    const database = await getDatabaseAsync();
+    const settings = await this.getTaxSettings(portfolioId);
     const regime = getTaxRegime(settings.tax_country);
 
     // No benefit if no capital gains tax
@@ -310,12 +237,42 @@ class PortfolioTaxService {
       };
     }
 
-    const positions = this.stmtGetPositionsWithLots.all(portfolioId);
+    const positionsResult = await database.query(`
+      SELECT
+        pp.id as position_id,
+        pp.company_id,
+        c.symbol,
+        c.name,
+        pp.shares,
+        pp.average_cost,
+        pp.cost_basis,
+        pp.current_price,
+        pp.current_value,
+        pp.unrealized_pnl,
+        pp.unrealized_pnl_pct
+      FROM portfolio_positions pp
+      JOIN companies c ON pp.company_id = c.id
+      WHERE pp.portfolio_id = $1 AND pp.shares > 0
+      ORDER BY pp.current_value DESC
+    `, [portfolioId]);
+    const positions = positionsResult.rows;
     const opportunities = [];
 
     for (const pos of positions) {
       if (pos.unrealized_pnl < -settings.tax_loss_threshold) {
-        const lots = this.stmtGetLotsForPosition.all(pos.position_id);
+        const lotsResult = await database.query(`
+          SELECT
+            id,
+            shares_remaining,
+            cost_per_share,
+            total_cost,
+            acquired_at,
+            acquisition_type
+          FROM portfolio_lots
+          WHERE position_id = $1 AND is_closed = false
+          ORDER BY acquired_at ASC
+        `, [pos.position_id]);
+        const lots = lotsResult.rows;
 
         // Calculate potential tax savings
         const taxSavings = Math.abs(pos.unrealized_pnl) * regime.capitalGains.rate;
@@ -363,12 +320,33 @@ class PortfolioTaxService {
   /**
    * Get year-end tax summary
    */
-  getYearEndSummary(portfolioId, year = new Date().getFullYear()) {
-    const settings = this.getTaxSettings(portfolioId);
+  async getYearEndSummary(portfolioId, year = new Date().getFullYear()) {
+    const database = await getDatabaseAsync();
+    const settings = await this.getTaxSettings(portfolioId);
     const regime = getTaxRegime(settings.tax_country);
 
     // Get realized gains from transactions
-    const trades = this.stmtGetRealizedGains.all(portfolioId, year.toString());
+    const tradesResult = await database.query(`
+      SELECT
+        pt.id,
+        pt.company_id,
+        c.symbol,
+        pt.shares,
+        pt.price_per_share,
+        pt.total_amount,
+        pt.executed_at,
+        pl.cost_per_share,
+        pl.acquired_at,
+        (pt.price_per_share - pl.cost_per_share) * pt.shares as gain_loss
+      FROM portfolio_transactions pt
+      JOIN companies c ON pt.company_id = c.id
+      LEFT JOIN portfolio_lots pl ON pt.lot_id = pl.id
+      WHERE pt.portfolio_id = $1
+        AND pt.transaction_type = 'SELL'
+        AND EXTRACT(YEAR FROM pt.executed_at) = $2
+      ORDER BY pt.executed_at DESC
+    `, [portfolioId, year]);
+    const trades = tradesResult.rows;
 
     let totalGains = 0;
     let totalLosses = 0;
@@ -426,7 +404,25 @@ class PortfolioTaxService {
     }
 
     // Get unrealized gains for context
-    const positions = this.stmtGetPositionsWithLots.all(portfolioId);
+    const positionsResult = await database.query(`
+      SELECT
+        pp.id as position_id,
+        pp.company_id,
+        c.symbol,
+        c.name,
+        pp.shares,
+        pp.average_cost,
+        pp.cost_basis,
+        pp.current_price,
+        pp.current_value,
+        pp.unrealized_pnl,
+        pp.unrealized_pnl_pct
+      FROM portfolio_positions pp
+      JOIN companies c ON pp.company_id = c.id
+      WHERE pp.portfolio_id = $1 AND pp.shares > 0
+      ORDER BY pp.current_value DESC
+    `, [portfolioId]);
+    const positions = positionsResult.rows;
     const totalUnrealizedGain = positions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0);
 
     return {
@@ -467,13 +463,15 @@ class PortfolioTaxService {
   /**
    * Helper: Get position by symbol
    */
-  _getPositionBySymbol(portfolioId, symbol) {
-    return this.db.prepare(`
+  async _getPositionBySymbol(portfolioId, symbol) {
+    const database = await getDatabaseAsync();
+    const positionResult = await database.query(`
       SELECT pp.*, c.symbol
       FROM portfolio_positions pp
       JOIN companies c ON pp.company_id = c.id
-      WHERE pp.portfolio_id = ? AND LOWER(c.symbol) = LOWER(?)
-    `).get(portfolioId, symbol);
+      WHERE pp.portfolio_id = $1 AND LOWER(c.symbol) = LOWER($2)
+    `, [portfolioId, symbol]);
+    return positionResult.rows[0];
   }
 
   /**
