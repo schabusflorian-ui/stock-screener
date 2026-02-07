@@ -1,6 +1,7 @@
 // src/services/backtesting/factorBacktestEngine.js
 // Factor Combination Backtester - Tests weighted factor combinations historically
 
+const { getDatabaseAsync } = require('../../database');
 const { calculateMetrics } = require('./walkForwardEngine');
 
 /**
@@ -13,8 +14,8 @@ const { calculateMetrics } = require('./walkForwardEngine');
  * - Returns performance metrics, equity curve, and trade history
  */
 class FactorBacktestEngine {
-  constructor(db, options = {}) {
-    this.db = db.getDatabase ? db.getDatabase() : db;
+  constructor(options = {}) {
+    this.database = null;
     this.options = {
       riskFreeRate: 0.02,
       tradingDaysPerYear: 252,
@@ -23,66 +24,13 @@ class FactorBacktestEngine {
       slippage: 0.0005, // 5 bps
       ...options
     };
-
-    this._prepareStatements();
   }
 
-  _prepareStatements() {
-    // Get factor scores at a specific date
-    this.stmtGetFactorScores = this.db.prepare(`
-      SELECT
-        sfs.symbol,
-        sfs.company_id,
-        sfs.value_percentile,
-        sfs.quality_percentile,
-        sfs.momentum_percentile,
-        sfs.growth_percentile,
-        sfs.size_percentile,
-        sfs.volatility_score as volatility_percentile,
-        c.market_cap,
-        c.sector
-      FROM stock_factor_scores sfs
-      JOIN companies c ON sfs.company_id = c.id
-      WHERE sfs.score_date <= ?
-        AND sfs.score_date >= date(?, '-30 days')
-        AND c.market_cap >= ?
-      ORDER BY sfs.score_date DESC
-    `);
-
-    // Get price on a specific date
-    this.stmtGetPrice = this.db.prepare(`
-      SELECT dp.close
-      FROM daily_prices dp
-      JOIN companies c ON dp.company_id = c.id
-      WHERE LOWER(c.symbol) = LOWER(?)
-        AND dp.date <= ?
-      ORDER BY dp.date DESC
-      LIMIT 1
-    `);
-
-    // Get benchmark prices
-    this.stmtGetBenchmarkPrices = this.db.prepare(`
-      SELECT dp.date, dp.close
-      FROM daily_prices dp
-      JOIN companies c ON dp.company_id = c.id
-      WHERE LOWER(c.symbol) = LOWER(?)
-        AND dp.date BETWEEN ? AND ?
-      ORDER BY dp.date ASC
-    `);
-
-    // Get rebalance dates (month-end)
-    this.stmtGetRebalanceDates = this.db.prepare(`
-      SELECT DISTINCT date
-      FROM daily_prices dp
-      JOIN companies c ON dp.company_id = c.id
-      WHERE LOWER(c.symbol) = LOWER(?)
-        AND dp.date BETWEEN ? AND ?
-        AND (
-          strftime('%Y-%m', dp.date) != strftime('%Y-%m', date(dp.date, '+1 day'))
-          OR dp.date = (SELECT MAX(date) FROM daily_prices WHERE date <= ?)
-        )
-      ORDER BY dp.date ASC
-    `);
+  async _getDatabase() {
+    if (!this.database) {
+      this.database = await getDatabaseAsync();
+    }
+    return this.database;
   }
 
   /**
@@ -103,8 +51,10 @@ class FactorBacktestEngine {
       equalWeight = true
     } = config;
 
+    const database = await this._getDatabase();
+
     console.log('\n' + '='.repeat(60));
-    console.log('🔬 FACTOR COMBINATION BACKTEST');
+    console.log('FACTOR COMBINATION BACKTEST');
     console.log('='.repeat(60));
     console.log('Factor Weights:', factorWeights);
     console.log(`Period: ${startDate} to ${endDate}`);
@@ -115,13 +65,13 @@ class FactorBacktestEngine {
     console.log('Normalized Weights:', normalizedWeights);
 
     // Get benchmark prices for trading days
-    const benchmarkPrices = this.stmtGetBenchmarkPrices.all(benchmark, startDate, endDate);
+    const benchmarkPrices = await this._getBenchmarkPrices(database, benchmark, startDate, endDate);
     if (benchmarkPrices.length < 30) {
       throw new Error('Insufficient trading days for backtest');
     }
 
     // Get rebalance dates
-    const rebalanceDates = this._getRebalanceDates(benchmark, startDate, endDate, rebalanceFrequency);
+    const rebalanceDates = await this._getRebalanceDatesAsync(database, benchmark, startDate, endDate, rebalanceFrequency);
     console.log(`Rebalance dates: ${rebalanceDates.length}`);
 
     // Initialize portfolio
@@ -140,7 +90,7 @@ class FactorBacktestEngine {
       const date = benchmarkPrices[i].date;
 
       // Calculate portfolio value
-      const portfolioValue = this._calculatePortfolioValue(positions, date);
+      const portfolioValue = await this._calculatePortfolioValue(database, positions, date);
       const totalValue = capital + portfolioValue;
 
       // Calculate daily return
@@ -160,10 +110,10 @@ class FactorBacktestEngine {
 
       // Check if rebalance day
       if (rebalanceDates.includes(date)) {
-        console.log(`\n📅 Rebalancing on ${date}...`);
+        console.log(`\nRebalancing on ${date}...`);
 
         // Get factor scores and calculate combined score
-        const rankedStocks = this._getRankedStocks(date, normalizedWeights, minMarketCap);
+        const rankedStocks = await this._getRankedStocks(database, date, normalizedWeights, minMarketCap);
 
         if (rankedStocks.length === 0) {
           console.log('  No stocks with factor scores available');
@@ -190,7 +140,8 @@ class FactorBacktestEngine {
           : this._calculateScoreWeights(targetHoldings);
 
         // Execute rebalance trades
-        const rebalanceTrades = this._executeRebalance(
+        const rebalanceTrades = await this._executeRebalance(
+          database,
           positions,
           targetWeights,
           totalValue,
@@ -260,38 +211,35 @@ class FactorBacktestEngine {
   }
 
   /**
-   * Normalize factor weights to sum to 1
+   * Get benchmark prices from database
    */
-  _normalizeWeights(weights) {
-    const factors = ['value', 'quality', 'momentum', 'growth', 'size', 'volatility'];
-    const normalized = {};
+  async _getBenchmarkPrices(database, symbol, startDate, endDate) {
+    const result = await database.query(`
+      SELECT dp.date, dp.close
+      FROM daily_prices dp
+      JOIN companies c ON dp.company_id = c.id
+      WHERE LOWER(c.symbol) = LOWER($1)
+        AND dp.date BETWEEN $2 AND $3
+      ORDER BY dp.date ASC
+    `, [symbol, startDate, endDate]);
 
-    let sum = 0;
-    for (const factor of factors) {
-      const weight = weights[factor] || 0;
-      normalized[factor] = Math.max(0, weight);
-      sum += normalized[factor];
-    }
-
-    if (sum === 0) {
-      // Default to equal weight if all zero
-      for (const factor of factors) {
-        normalized[factor] = 1 / factors.length;
-      }
-    } else {
-      for (const factor of factors) {
-        normalized[factor] = normalized[factor] / sum;
-      }
-    }
-
-    return normalized;
+    return result.rows;
   }
 
   /**
-   * Get rebalance dates based on frequency
+   * Get rebalance dates based on frequency (month-end or quarter-end)
    */
-  _getRebalanceDates(benchmark, startDate, endDate, frequency) {
-    const allDates = this.stmtGetBenchmarkPrices.all(benchmark, startDate, endDate).map(p => p.date);
+  async _getRebalanceDatesAsync(database, symbol, startDate, endDate, frequency) {
+    const result = await database.query(`
+      SELECT dp.date
+      FROM daily_prices dp
+      JOIN companies c ON dp.company_id = c.id
+      WHERE LOWER(c.symbol) = LOWER($1)
+        AND dp.date BETWEEN $2 AND $3
+      ORDER BY dp.date ASC
+    `, [symbol, startDate, endDate]);
+
+    const allDates = result.rows.map(p => p.date);
 
     if (frequency === 'monthly') {
       // Last trading day of each month
@@ -336,10 +284,58 @@ class FactorBacktestEngine {
   }
 
   /**
+   * Normalize factor weights to sum to 1
+   */
+  _normalizeWeights(weights) {
+    const factors = ['value', 'quality', 'momentum', 'growth', 'size', 'volatility'];
+    const normalized = {};
+
+    let sum = 0;
+    for (const factor of factors) {
+      const weight = weights[factor] || 0;
+      normalized[factor] = Math.max(0, weight);
+      sum += normalized[factor];
+    }
+
+    if (sum === 0) {
+      // Default to equal weight if all zero
+      for (const factor of factors) {
+        normalized[factor] = 1 / factors.length;
+      }
+    } else {
+      for (const factor of factors) {
+        normalized[factor] = normalized[factor] / sum;
+      }
+    }
+
+    return normalized;
+  }
+
+  /**
    * Get stocks ranked by combined factor score
    */
-  _getRankedStocks(date, weights, minMarketCap) {
-    const scores = this.stmtGetFactorScores.all(date, date, minMarketCap);
+  async _getRankedStocks(database, date, weights, minMarketCap) {
+    const result = await database.query(`
+      SELECT
+        sfs.symbol,
+        sfs.company_id,
+        sfs.value_percentile,
+        sfs.quality_percentile,
+        sfs.momentum_percentile,
+        sfs.growth_percentile,
+        sfs.size_percentile,
+        sfs.volatility_score as volatility_percentile,
+        c.market_cap,
+        c.sector
+      FROM stock_factor_scores sfs
+      JOIN companies c ON sfs.company_id = c.id
+      WHERE sfs.score_date <= $1
+        AND sfs.score_date >= $1::date - INTERVAL '30 days'
+        AND c.market_cap >= $2
+      ORDER BY sfs.score_date DESC
+    `, [date, minMarketCap]);
+
+    const scores = result.rows;
 
     // Dedupe by symbol (keep most recent)
     const uniqueScores = new Map();
@@ -387,11 +383,11 @@ class FactorBacktestEngine {
   /**
    * Calculate portfolio value
    */
-  _calculatePortfolioValue(positions, date) {
+  async _calculatePortfolioValue(database, positions, date) {
     let value = 0;
 
     for (const [symbol, position] of positions) {
-      const priceData = this.stmtGetPrice.get(symbol, date);
+      const priceData = await this._getPrice(database, symbol, date);
       if (priceData) {
         value += position.shares * priceData.close;
       }
@@ -401,16 +397,33 @@ class FactorBacktestEngine {
   }
 
   /**
+   * Get price on a specific date
+   */
+  async _getPrice(database, symbol, date) {
+    const result = await database.query(`
+      SELECT dp.close
+      FROM daily_prices dp
+      JOIN companies c ON dp.company_id = c.id
+      WHERE LOWER(c.symbol) = LOWER($1)
+        AND dp.date <= $2
+      ORDER BY dp.date DESC
+      LIMIT 1
+    `, [symbol, date]);
+
+    return result.rows[0] || null;
+  }
+
+  /**
    * Execute rebalance trades
    */
-  _executeRebalance(positions, targetWeights, totalValue, date) {
+  async _executeRebalance(database, positions, targetWeights, totalValue, date) {
     const trades = [];
     const targetSymbols = new Set(Object.keys(targetWeights));
 
     // Sell positions not in target
     for (const [symbol, position] of positions) {
       if (!targetSymbols.has(symbol)) {
-        const priceData = this.stmtGetPrice.get(symbol, date);
+        const priceData = await this._getPrice(database, symbol, date);
         if (priceData && position.shares > 0) {
           const value = position.shares * priceData.close;
           trades.push({
@@ -430,7 +443,7 @@ class FactorBacktestEngine {
     // Calculate available capital after sells
     let availableCapital = totalValue;
     for (const [symbol, position] of positions) {
-      const priceData = this.stmtGetPrice.get(symbol, date);
+      const priceData = await this._getPrice(database, symbol, date);
       if (priceData) {
         availableCapital -= position.shares * priceData.close;
       }
@@ -439,7 +452,7 @@ class FactorBacktestEngine {
     // Add/rebalance target positions
     for (const [symbol, targetWeight] of Object.entries(targetWeights)) {
       const targetValue = totalValue * targetWeight;
-      const priceData = this.stmtGetPrice.get(symbol, date);
+      const priceData = await this._getPrice(database, symbol, date);
 
       if (!priceData || priceData.close <= 0) continue;
 
@@ -568,7 +581,7 @@ class FactorBacktestEngine {
    */
   _printSummary(results) {
     console.log('\n' + '='.repeat(60));
-    console.log('📊 BACKTEST RESULTS');
+    console.log('BACKTEST RESULTS');
     console.log('='.repeat(60));
     console.log(`Total Return: ${results.totalReturn.toFixed(2)}%`);
     console.log(`Benchmark Return: ${results.benchmarkMetrics.totalReturn.toFixed(2)}%`);

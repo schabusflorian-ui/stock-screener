@@ -2,7 +2,7 @@
 // VaR (Value at Risk) Backtesting with Statistical Validation
 // Implements Kupiec Test, Christoffersen Test, and Basel Traffic Light System
 
-const { db } = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 
 /**
  * Chi-squared distribution quantile approximation
@@ -521,15 +521,19 @@ async function runVaRBacktest(params) {
     method = 'historical' // 'historical', 'parametric', 'monte_carlo'
   } = params;
 
+  const database = await getDatabaseAsync();
+
   // Get portfolio daily returns
-  const returns = db.prepare(`
+  const result = await database.query(`
     SELECT snapshot_date as date, daily_return_pct as daily_return
     FROM portfolio_snapshots
-    WHERE portfolio_id = ?
-      AND snapshot_date >= COALESCE(?, '1900-01-01')
-      AND snapshot_date <= COALESCE(?, '2100-01-01')
+    WHERE portfolio_id = $1
+      AND snapshot_date >= COALESCE($2::date, '1900-01-01'::date)
+      AND snapshot_date <= COALESCE($3::date, '2100-01-01'::date)
     ORDER BY snapshot_date ASC
-  `).all(portfolioId, startDate, endDate);
+  `, [portfolioId, startDate, endDate]);
+
+  const returns = result.rows;
 
   if (returns.length < 252) {
     throw new Error(`Insufficient data: ${returns.length} days, need at least 252`);
@@ -596,11 +600,18 @@ async function runVaRBacktest(params) {
     }
 
     // Store exception in database
-    db.prepare(`
-      INSERT OR REPLACE INTO var_exceptions
+    await database.query(`
+      INSERT INTO var_exceptions
       (portfolio_id, exception_date, var_estimate, es_estimate, actual_loss, confidence_level, method, is_exception)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      ON CONFLICT (portfolio_id, exception_date) DO UPDATE SET
+        var_estimate = $3,
+        es_estimate = $4,
+        actual_loss = $5,
+        confidence_level = $6,
+        method = $7,
+        is_exception = $8
+    `, [
       portfolioId,
       currentDate,
       var_,
@@ -608,8 +619,8 @@ async function runVaRBacktest(params) {
       -currentReturn,
       confidenceLevel,
       method,
-      isException
-    );
+      isException === 1 ? true : false
+    ]);
   }
 
   // Run statistical tests
@@ -622,15 +633,15 @@ async function runVaRBacktest(params) {
   const esResult = backtestExpectedShortfall(actualLosses, varEstimates, esEstimates);
 
   // Store summary results
-  db.prepare(`
+  await database.query(`
     INSERT INTO var_backtest_results
     (portfolio_id, confidence_level, method, start_date, end_date,
      total_observations, total_exceptions, exception_rate, expected_exception_rate,
      kupiec_stat, kupiec_p_value, kupiec_pass,
      christoffersen_stat, christoffersen_p_value, christoffersen_pass,
      basel_zone, es_ratio)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+  `, [
     portfolioId,
     confidenceLevel,
     method,
@@ -642,13 +653,13 @@ async function runVaRBacktest(params) {
     1 - confidenceLevel,
     kupiecResult.lrStatistic,
     kupiecResult.pValue,
-    kupiecResult.pass ? 1 : 0,
+    kupiecResult.pass ? true : false,
     christoffersenResult.conditionalCoverage?.lrStatistic || 0,
     christoffersenResult.conditionalCoverage?.pValue || 1,
-    christoffersenResult.pass ? 1 : 0,
+    christoffersenResult.pass ? true : false,
     baselResult.zone,
     esResult.avgExceedanceRatio
-  );
+  ]);
 
   return {
     portfolioId,
@@ -715,28 +726,32 @@ function normalRandom() {
 /**
  * Get VaR backtest history for a portfolio
  */
-function getVaRBacktestHistory(portfolioId, limit = 10) {
-  return db.prepare(`
+async function getVaRBacktestHistory(portfolioId, limit = 10) {
+  const database = await getDatabaseAsync();
+  const result = await database.query(`
     SELECT *
     FROM var_backtest_results
-    WHERE portfolio_id = ?
+    WHERE portfolio_id = $1
     ORDER BY created_at DESC
-    LIMIT ?
-  `).all(portfolioId, limit);
+    LIMIT $2
+  `, [portfolioId, limit]);
+  return result.rows;
 }
 
 /**
  * Get VaR exceptions for a portfolio
  */
-function getVaRExceptions(portfolioId, days = 90) {
-  return db.prepare(`
+async function getVaRExceptions(portfolioId, days = 90) {
+  const database = await getDatabaseAsync();
+  const result = await database.query(`
     SELECT *
     FROM var_exceptions
-    WHERE portfolio_id = ?
-      AND exception_date >= date('now', '-' || ? || ' days')
-      AND is_exception = 1
+    WHERE portfolio_id = $1
+      AND exception_date >= CURRENT_DATE - INTERVAL '1 day' * $2
+      AND is_exception = true
     ORDER BY exception_date DESC
-  `).all(portfolioId, days);
+  `, [portfolioId, days]);
+  return result.rows;
 }
 
 module.exports = {

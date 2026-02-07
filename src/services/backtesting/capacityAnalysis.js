@@ -2,7 +2,7 @@
 // Strategy Capacity Analysis
 // Estimates maximum AUM before execution costs significantly degrade returns
 
-const { db } = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 const { squareRootImpact } = require('./executionSimulator');
 
 /**
@@ -20,39 +20,45 @@ async function estimateCapacity(params) {
     returnTarget = null // Expected gross return for break-even analysis
   } = params;
 
+  const database = await getDatabaseAsync();
+
   // Get portfolio positions and weights
-  const positions = db.prepare(`
+  const positionsResult = await database.query(`
     SELECT c.symbol, c.id as company_id, pp.current_value,
            c.market_cap, COALESCE(lm.avg_volume_30d, 1000000) as avgVolume,
            pp.current_value * 1.0 / (SELECT SUM(current_value) FROM portfolio_positions WHERE portfolio_id = pp.portfolio_id) as weight
     FROM portfolio_positions pp
     JOIN companies c ON pp.company_id = c.id
     LEFT JOIN liquidity_metrics lm ON lm.company_id = c.id
-    WHERE pp.portfolio_id = ?
-  `).all(portfolioId);
+    WHERE pp.portfolio_id = $1
+  `, [portfolioId]);
+
+  const positions = positionsResult.rows;
 
   if (positions.length === 0) {
     throw new Error('Portfolio has no positions');
   }
 
   // Get portfolio total value
-  const portfolio = db.prepare(`
-    SELECT current_value, name FROM portfolios WHERE id = ?
-  `).get(portfolioId);
+  const portfolioResult = await database.query(`
+    SELECT current_value, name FROM portfolios WHERE id = $1
+  `, [portfolioId]);
 
+  const portfolio = portfolioResult.rows[0];
   const currentValue = portfolio?.current_value || 0;
 
   // Estimate turnover if not provided
   let estimatedTurnover = turnover;
   if (!estimatedTurnover) {
     // Count trades in last year
-    const trades = db.prepare(`
+    const tradesResult = await database.query(`
       SELECT COUNT(*) as count, SUM(ABS(total_amount)) as volume
       FROM portfolio_transactions
-      WHERE portfolio_id = ?
-        AND executed_at >= date('now', '-1 year')
-    `).get(portfolioId);
+      WHERE portfolio_id = $1
+        AND executed_at >= CURRENT_DATE - INTERVAL '1 year'
+    `, [portfolioId]);
 
+    const trades = tradesResult.rows[0];
     estimatedTurnover = trades?.volume && currentValue > 0
       ? trades.volume / currentValue
       : 2.0; // Default: 200% annual turnover
@@ -63,14 +69,15 @@ async function estimateCapacity(params) {
 
   for (const pos of positions) {
     // Get 20-day volatility
-    const returns = db.prepare(`
+    const returnsResult = await database.query(`
       SELECT close
       FROM daily_prices
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY date DESC
       LIMIT 21
-    `).all(pos.company_id);
+    `, [pos.company_id]);
 
+    const returns = returnsResult.rows;
     let volatility = 0.02; // Default 2% daily vol
 
     if (returns.length >= 2) {
@@ -135,13 +142,14 @@ async function estimateCapacity(params) {
   const liquidityScore = calculateLiquidityScore(positionsWithVol, currentValue);
 
   // Store results
-  db.prepare(`
+  await database.query(`
     INSERT INTO capacity_analysis
     (portfolio_id, strategy_name, estimated_capacity, capacity_at_10bps, capacity_at_25bps,
      capacity_at_50bps, avg_daily_turnover, avg_position_size, liquidity_score,
      market_impact_model, impact_curve)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    RETURNING id
+  `, [
     portfolioId,
     portfolio?.name || 'Unknown',
     estimatedCapacity,
@@ -153,7 +161,7 @@ async function estimateCapacity(params) {
     liquidityScore,
     'square_root',
     JSON.stringify(capacityCurve)
-  );
+  ]);
 
   return {
     portfolioId,
@@ -343,10 +351,13 @@ async function calculateLiquidityAdjustedReturns(params) {
     aumLevels = null
   } = params;
 
-  const portfolio = db.prepare(`
-    SELECT current_value FROM portfolios WHERE id = ?
-  `).get(portfolioId);
+  const database = await getDatabaseAsync();
 
+  const portfolioResult = await database.query(`
+    SELECT current_value FROM portfolios WHERE id = $1
+  `, [portfolioId]);
+
+  const portfolio = portfolioResult.rows[0];
   const currentValue = portfolio?.current_value || 1e6;
 
   const levels = aumLevels || [
@@ -358,15 +369,17 @@ async function calculateLiquidityAdjustedReturns(params) {
   ].filter((v, i, arr) => arr.indexOf(v) === i).sort((a, b) => a - b);
 
   // Get positions
-  const positions = db.prepare(`
+  const positionsResult = await database.query(`
     SELECT c.symbol, c.id as company_id, pp.current_value,
            COALESCE(lm.avg_volume_30d, 1000000) as avgVolume,
            pp.current_value * 1.0 / (SELECT SUM(current_value) FROM portfolio_positions WHERE portfolio_id = pp.portfolio_id) as weight
     FROM portfolio_positions pp
     JOIN companies c ON pp.company_id = c.id
     LEFT JOIN liquidity_metrics lm ON lm.company_id = c.id
-    WHERE pp.portfolio_id = ?
-  `).all(portfolioId);
+    WHERE pp.portfolio_id = $1
+  `, [portfolioId]);
+
+  const positions = positionsResult.rows;
 
   // Add volatility estimates
   const positionsWithVol = await addVolatilityToPositions(positions);
@@ -432,14 +445,16 @@ function findBreakEvenAUM(positions, turnover, grossReturn) {
  * Add volatility estimates to positions
  */
 async function addVolatilityToPositions(positions) {
+  const database = await getDatabaseAsync();
   const result = [];
 
   for (const pos of positions) {
-    const returns = db.prepare(`
+    const returnsResult = await database.query(`
       SELECT close FROM daily_prices
-      WHERE company_id = ? ORDER BY date DESC LIMIT 21
-    `).all(pos.company_id);
+      WHERE company_id = $1 ORDER BY date DESC LIMIT 21
+    `, [pos.company_id]);
 
+    const returns = returnsResult.rows;
     let volatility = 0.02;
     if (returns.length >= 2) {
       const dailyReturns = [];
@@ -502,14 +517,18 @@ function generateCapacityInterpretation(capacity, currentValue, liquidityScore) 
 /**
  * Get capacity analysis history
  */
-function getCapacityHistory(portfolioId, limit = 10) {
-  return db.prepare(`
+async function getCapacityHistory(portfolioId, limit = 10) {
+  const database = await getDatabaseAsync();
+
+  const result = await database.query(`
     SELECT *
     FROM capacity_analysis
-    WHERE portfolio_id = ?
+    WHERE portfolio_id = $1
     ORDER BY created_at DESC
-    LIMIT ?
-  `).all(portfolioId, limit).map(row => ({
+    LIMIT $2
+  `, [portfolioId, limit]);
+
+  return result.rows.map(row => ({
     ...row,
     impact_curve: JSON.parse(row.impact_curve || '[]')
   }));

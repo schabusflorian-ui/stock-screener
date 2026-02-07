@@ -2,6 +2,7 @@
 // Unified Backtesting Engine - Full validation suite for strategy testing
 // Integrates walk-forward analysis, overfitting detection, stress testing, and factor attribution
 
+const { getDatabaseAsync } = require('../../database');
 const { UnifiedStrategyEngine } = require('../strategy/unifiedStrategyEngine');
 const { StrategyManager } = require('../strategy/strategyManager');
 const { MultiStrategyOrchestrator, createOrchestratorIfMulti } = require('../strategy/multiStrategyOrchestrator');
@@ -33,11 +34,9 @@ const BACKTEST_MODES = {
  */
 class UnifiedBacktestEngine {
   /**
-   * @param {Object} db Database instance
    * @param {Object} options Configuration options
    */
-  constructor(db, options = {}) {
-    this.db = db.getDatabase ? db.getDatabase() : db;
+  constructor(options = {}) {
     this.options = {
       defaultBenchmark: 'SPY',
       riskFreeRate: 0.02,
@@ -48,53 +47,12 @@ class UnifiedBacktestEngine {
       ...options
     };
 
-    // Initialize services
-    this.strategyManager = new StrategyManager(db);
-    this.overfittingDetector = new OverfittingDetector(this.db);
+    // Initialize services (will be set up with db in async methods)
+    this.strategyManager = null;
+    this.overfittingDetector = null;
 
     // Factor attribution (lazy load to avoid circular deps)
     this._factorAttribution = null;
-
-    this._prepareStatements();
-  }
-
-  _prepareStatements() {
-    // Get historical prices
-    this.stmtGetPrices = this.db.prepare(`
-      SELECT dp.date, dp.open, dp.high, dp.low, dp.close, dp.volume
-      FROM daily_prices dp
-      JOIN companies c ON dp.company_id = c.id
-      WHERE LOWER(c.symbol) = LOWER(?)
-        AND dp.date BETWEEN ? AND ?
-      ORDER BY dp.date ASC
-    `);
-
-    // Get companies in universe
-    this.stmtGetUniverse = this.db.prepare(`
-      SELECT c.id, c.symbol, c.name, c.sector, c.market_cap
-      FROM companies c
-      WHERE c.market_cap >= ?
-        AND c.market_cap <= COALESCE(?, 1e15)
-      ORDER BY c.market_cap DESC
-    `);
-
-    // Store backtest results
-    this.stmtStoreBacktest = this.db.prepare(`
-      INSERT INTO backtest_results (
-        unified_strategy_id, strategy_name, run_type, start_date, end_date,
-        parameters, metrics, equity_curve, trades
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    // Get benchmark returns
-    this.stmtGetBenchmark = this.db.prepare(`
-      SELECT dp.date, dp.close
-      FROM daily_prices dp
-      JOIN companies c ON dp.company_id = c.id
-      WHERE LOWER(c.symbol) = LOWER(?)
-        AND dp.date BETWEEN ? AND ?
-      ORDER BY dp.date ASC
-    `);
   }
 
   /**
@@ -120,6 +78,14 @@ class UnifiedBacktestEngine {
    * @returns {Object} Comprehensive backtest results
    */
   async runFullBacktest(strategyId, config = {}) {
+    const database = await getDatabaseAsync();
+
+    // Initialize services on first run
+    if (!this.strategyManager) {
+      this.strategyManager = new StrategyManager(database);
+      this.overfittingDetector = new OverfittingDetector(database);
+    }
+
     const {
       startDate = '2020-01-01',
       endDate = new Date().toISOString().split('T')[0],
@@ -145,12 +111,13 @@ class UnifiedBacktestEngine {
     console.log(`📊 Mode: ${mode}`);
 
     // Check if multi-strategy
-    const orchestrator = createOrchestratorIfMulti(this.db, strategyId);
+    const orchestrator = createOrchestratorIfMulti(database, strategyId);
     const isMultiStrategy = orchestrator !== null;
 
     // 1. Run simple backtest
     console.log('\n📈 Running backtest simulation...');
     const backtest = await this._runBacktest(
+      database,
       isMultiStrategy ? orchestrator : strategy,
       { startDate, endDate, benchmark, isMultiStrategy }
     );
@@ -169,6 +136,7 @@ class UnifiedBacktestEngine {
       console.log('\n🔄 Running walk-forward analysis...');
       try {
         const walkForward = await this._runWalkForwardAnalysis(
+          database,
           isMultiStrategy ? orchestrator : strategy,
           { startDate, endDate, ...walkForwardConfig, isMultiStrategy }
         );
@@ -194,7 +162,7 @@ class UnifiedBacktestEngine {
       // Stress testing
       console.log('\n⚡ Running stress tests...');
       try {
-        const stress = await this._runStressTests(backtest.trades, stressScenarios);
+        const stress = await this._runStressTests(database, backtest.trades, stressScenarios);
         results.stress = stress;
       } catch (error) {
         console.warn('Stress testing failed:', error.message);
@@ -222,7 +190,7 @@ class UnifiedBacktestEngine {
     results.recommendation = this._generateRecommendation(results);
 
     // Store results
-    this._storeResults(strategyId, strategy.name, results);
+    await this._storeResults(database, strategyId, strategy.name, results);
 
     // Print summary
     this._printSummary(results);
@@ -233,7 +201,7 @@ class UnifiedBacktestEngine {
   /**
    * Run basic backtest simulation
    */
-  async _runBacktest(strategyOrOrchestrator, config) {
+  async _runBacktest(database, strategyOrOrchestrator, config) {
     const { startDate, endDate, benchmark, isMultiStrategy } = config;
 
     // Get universe
@@ -245,13 +213,28 @@ class UnifiedBacktestEngine {
     const minMarketCap = universeConfig.minMarketCap || 1e9;
     const maxMarketCap = universeConfig.maxMarketCap || null;
 
-    const universe = this.stmtGetUniverse.all(minMarketCap, maxMarketCap);
+    const universeResult = await database.query(`
+      SELECT c.id, c.symbol, c.name, c.sector, c.market_cap
+      FROM companies c
+      WHERE c.market_cap >= $1
+        AND c.market_cap <= COALESCE($2, 1e15)
+      ORDER BY c.market_cap DESC
+    `, [minMarketCap, maxMarketCap]);
+    const universe = universeResult.rows;
     const symbols = universe.map(u => u.symbol).slice(0, 100); // Limit for performance
 
     console.log(`  Universe: ${symbols.length} stocks (market cap >= ${(minMarketCap / 1e9).toFixed(1)}B)`);
 
     // Get trading days
-    const benchmarkPrices = this.stmtGetBenchmark.all(benchmark, startDate, endDate);
+    const benchmarkResult = await database.query(`
+      SELECT dp.date, dp.close
+      FROM daily_prices dp
+      JOIN companies c ON dp.company_id = c.id
+      WHERE LOWER(c.symbol) = LOWER($1)
+        AND dp.date BETWEEN $2 AND $3
+      ORDER BY dp.date ASC
+    `, [benchmark, startDate, endDate]);
+    const benchmarkPrices = benchmarkResult.rows;
     const tradingDays = benchmarkPrices.map(p => p.date);
 
     if (tradingDays.length < 30) {
@@ -270,7 +253,7 @@ class UnifiedBacktestEngine {
     // Create strategy engine
     const engine = isMultiStrategy
       ? null  // Use orchestrator directly
-      : new UnifiedStrategyEngine(this.db);
+      : new UnifiedStrategyEngine(database);
 
     // Simulation loop
     let lastValue = capital;
@@ -286,7 +269,7 @@ class UnifiedBacktestEngine {
       }
 
       // Calculate portfolio value at start of day
-      const portfolioValue = this._calculatePortfolioValue(positions, date);
+      const portfolioValue = await this._calculatePortfolioValue(database, positions, date);
       const totalValue = capital + portfolioValue;
 
       // Calculate daily return
@@ -332,7 +315,8 @@ class UnifiedBacktestEngine {
         }
 
         // Execute trades based on signals
-        const newTrades = this._executeSignals(
+        const newTrades = await this._executeSignals(
+          database,
           signals,
           positions,
           capital,
@@ -391,7 +375,7 @@ class UnifiedBacktestEngine {
   /**
    * Execute signals and generate trades
    */
-  _executeSignals(signals, positions, cash, totalValue, date, riskParams) {
+  async _executeSignals(database, signals, positions, cash, totalValue, date, riskParams) {
     const trades = [];
     const maxPositionSize = riskParams.maxPositionSize || 0.10;
     const maxPositions = riskParams.maxPositions || 20;
@@ -403,7 +387,7 @@ class UnifiedBacktestEngine {
     for (const signal of signals) {
       if ((signal.action === 'SELL' || signal.action === 'STRONG_SELL') && positions.has(signal.symbol)) {
         const position = positions.get(signal.symbol);
-        const price = this._getPrice(signal.symbol, date);
+        const price = await this._getPrice(database, signal.symbol, date);
 
         if (price) {
           const value = position.shares * price;
@@ -428,7 +412,7 @@ class UnifiedBacktestEngine {
     for (const signal of buySignals.slice(0, maxPositions - positions.size)) {
       if (positions.has(signal.symbol)) continue;
 
-      const price = this._getPrice(signal.symbol, date);
+      const price = await this._getPrice(database, signal.symbol, date);
       if (!price) continue;
 
       // Calculate position size
@@ -469,17 +453,17 @@ class UnifiedBacktestEngine {
   /**
    * Get price for symbol on date
    */
-  _getPrice(symbol, date) {
+  async _getPrice(database, symbol, date) {
     try {
-      const row = this.db.prepare(`
+      const result = await database.query(`
         SELECT dp.close
         FROM daily_prices dp
         JOIN companies c ON dp.company_id = c.id
-        WHERE LOWER(c.symbol) = LOWER(?) AND dp.date <= ?
+        WHERE LOWER(c.symbol) = LOWER($1) AND dp.date <= $2
         ORDER BY dp.date DESC
         LIMIT 1
-      `).get(symbol, date);
-      return row?.close || null;
+      `, [symbol, date]);
+      return result.rows[0]?.close || null;
     } catch (error) {
       return null;
     }
@@ -488,10 +472,10 @@ class UnifiedBacktestEngine {
   /**
    * Calculate portfolio value
    */
-  _calculatePortfolioValue(positions, date) {
+  async _calculatePortfolioValue(database, positions, date) {
     let value = 0;
     for (const [symbol, position] of positions) {
-      const price = this._getPrice(symbol, date);
+      const price = await this._getPrice(database, symbol, date);
       if (price) {
         value += position.shares * price;
       }
@@ -502,7 +486,7 @@ class UnifiedBacktestEngine {
   /**
    * Run walk-forward analysis
    */
-  async _runWalkForwardAnalysis(strategyOrOrchestrator, config) {
+  async _runWalkForwardAnalysis(database, strategyOrOrchestrator, config) {
     const {
       startDate,
       endDate,
@@ -543,12 +527,14 @@ class UnifiedBacktestEngine {
 
         // Run IS backtest
         const isBacktest = await this._runBacktest(
+          database,
           strategyOrOrchestrator,
           { startDate, endDate: isEndDate, benchmark: 'SPY', isMultiStrategy }
         );
 
         // Run OOS backtest
         const oosBacktest = await this._runBacktest(
+          database,
           strategyOrOrchestrator,
           { startDate: oosStartDate, endDate: oosEndDate, benchmark: 'SPY', isMultiStrategy }
         );
@@ -586,12 +572,14 @@ class UnifiedBacktestEngine {
 
         // Run IS backtest
         const isBacktest = await this._runBacktest(
+          database,
           strategyOrOrchestrator,
           { startDate: windowStartDate, endDate: isEndDate, benchmark: 'SPY', isMultiStrategy }
         );
 
         // Run OOS backtest
         const oosBacktest = await this._runBacktest(
+          database,
           strategyOrOrchestrator,
           { startDate: isEndDate, endDate: windowEndDate, benchmark: 'SPY', isMultiStrategy }
         );
@@ -762,7 +750,7 @@ class UnifiedBacktestEngine {
   /**
    * Run stress tests
    */
-  async _runStressTests(trades, scenarios) {
+  async _runStressTests(database, trades, scenarios) {
     const results = [];
 
     // Get unique symbols from trades
@@ -777,9 +765,10 @@ class UnifiedBacktestEngine {
 
       for (const symbol of symbols) {
         // Get sector
-        const company = this.db.prepare(`
-          SELECT sector FROM companies WHERE LOWER(symbol) = LOWER(?)
-        `).get(symbol);
+        const companyResult = await database.query(`
+          SELECT sector FROM companies WHERE LOWER(symbol) = LOWER($1)
+        `, [symbol]);
+        const company = companyResult.rows[0];
 
         const sector = company?.sector?.toLowerCase().replace(/ /g, '_') || 'other';
         const shock = scenario.shocks[sector] || scenario.shocks.SP500 || -0.20;
@@ -1072,9 +1061,14 @@ class UnifiedBacktestEngine {
   /**
    * Store results in database
    */
-  _storeResults(strategyId, strategyName, results) {
+  async _storeResults(database, strategyId, strategyName, results) {
     try {
-      this.stmtStoreBacktest.run(
+      await database.query(`
+        INSERT INTO backtest_results (
+          unified_strategy_id, strategy_name, run_type, start_date, end_date,
+          parameters, metrics, equity_curve, trades
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `, [
         strategyId,
         strategyName,
         'unified_full',
@@ -1091,7 +1085,7 @@ class UnifiedBacktestEngine {
         }),
         JSON.stringify(results.backtest.equityCurve),
         JSON.stringify(results.backtest.trades.slice(0, 1000)) // Limit stored trades
-      );
+      ]);
 
       // Update strategy backtest cache
       this.strategyManager.updateBacktestCache(strategyId, {

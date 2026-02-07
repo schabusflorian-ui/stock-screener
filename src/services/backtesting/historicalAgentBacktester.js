@@ -2,6 +2,7 @@
 // Historical Agent Backtester - Runs trading agents against historical data
 // Enables accelerated testing with point-in-time data to prevent lookahead bias
 
+const { getDatabaseAsync } = require('../../database');
 const { HistoricalDataProvider } = require('./historicalDataProvider');
 
 /**
@@ -12,11 +13,10 @@ const { HistoricalDataProvider } = require('./historicalDataProvider');
  */
 class HistoricalAgentBacktester {
   /**
-   * @param {Database} db - better-sqlite3 database instance
    * @param {Object} config - Backtest configuration
    */
-  constructor(db, config = {}) {
-    this.db = db;
+  constructor(config = {}) {
+    this.database = null;
     this.config = {
       // Date range
       startDate: config.startDate || '2024-01-01',
@@ -55,39 +55,15 @@ class HistoricalAgentBacktester {
     };
 
     // Initialize data provider
-    this.dataProvider = new HistoricalDataProvider(db);
+    this.dataProvider = new HistoricalDataProvider();
 
-    // Prepare statements
-    this._prepareStatements();
-
-    console.log('🔬 HistoricalAgentBacktester initialized');
+    console.log('HistoricalAgentBacktester initialized');
   }
 
-  _prepareStatements() {
-    // Get company by symbol
-    this.stmtGetCompany = this.db.prepare(`
-      SELECT id, symbol, name, sector, market_cap
-      FROM companies
-      WHERE LOWER(symbol) = LOWER(?)
-    `);
-
-    // Get price for forward return calculation
-    this.stmtGetForwardPrice = this.db.prepare(`
-      SELECT close as price, date
-      FROM daily_prices
-      WHERE company_id = ? AND date >= ?
-      ORDER BY date ASC
-      LIMIT 1
-    `);
-
-    // Store backtest results (matching existing schema)
-    this.stmtStoreBacktest = this.db.prepare(`
-      INSERT INTO backtest_results (
-        strategy_name, run_type, start_date, end_date,
-        parameters, metrics, equity_curve, trades,
-        status, created_at, updated_at
-      ) VALUES (?, 'historical_agent', ?, ?, ?, ?, ?, ?, 'completed', datetime('now'), datetime('now'))
-    `);
+  async _initializeDatabase() {
+    if (!this.database) {
+      this.database = await getDatabaseAsync();
+    }
   }
 
   /**
@@ -95,11 +71,12 @@ class HistoricalAgentBacktester {
    * @returns {Object} Backtest results
    */
   async runBacktest() {
+    await this._initializeDatabase();
     const startTime = Date.now();
     const { startDate, endDate, initialCapital, verbose } = this.config;
 
     console.log(`\n${'='.repeat(60)}`);
-    console.log('📊 HISTORICAL AGENT BACKTEST');
+    console.log('HISTORICAL AGENT BACKTEST');
     console.log(`${'='.repeat(60)}`);
     console.log(`Period: ${startDate} to ${endDate}`);
     console.log(`Initial Capital: $${initialCapital.toLocaleString()}`);
@@ -140,7 +117,7 @@ class HistoricalAgentBacktester {
       }
 
       // Step 1: Update portfolio values
-      this._updatePortfolioValues(portfolio);
+      await this._updatePortfolioValues(portfolio);
 
       // Step 2: Generate signals for universe
       const daySignals = this._generateSignals(universe, portfolio);
@@ -199,6 +176,9 @@ class HistoricalAgentBacktester {
     // Print summary
     this._printSummary(results);
 
+    // Store results if configured
+    await this._storeBacktestResults(results);
+
     return results;
   }
 
@@ -226,14 +206,16 @@ class HistoricalAgentBacktester {
 
     if (Array.isArray(universe)) {
       // Custom symbol list - still compute point-in-time market cap
-      return universe.map(symbol => {
-        const company = this.stmtGetCompany.get(symbol);
-        if (!company) return null;
+      const results = [];
+      for (const symbol of universe) {
+        const company = await this._getCompanyBySymbol(symbol);
+        if (!company) continue;
 
         // Calculate point-in-time market cap
-        const historicalMarketCap = this._getPointInTimeMarketCap(company.id, company.market_cap, startDate);
-        return { id: company.id, symbol, sector: company.sector, marketCap: historicalMarketCap };
-      }).filter(Boolean);
+        const historicalMarketCap = await this._getPointInTimeMarketCap(company.id, company.market_cap, startDate);
+        results.push({ id: company.id, symbol, sector: company.sector, marketCap: historicalMarketCap });
+      }
+      return results;
     }
 
     // Get top companies by POINT-IN-TIME market cap (avoid survivorship bias)
@@ -242,30 +224,45 @@ class HistoricalAgentBacktester {
     if (universe === 'all') limit = 2000;
 
     // First, get all eligible companies (with any market cap)
-    const allCompanies = this.db.prepare(`
+    const result = await this.database.query(`
       SELECT id, symbol, name, sector, market_cap
       FROM companies
-      WHERE market_cap >= 1e6
-        AND symbol NOT LIKE '^%'
-        AND symbol NOT LIKE '%.%'
-    `).all();
+      WHERE market_cap >= $1
+        AND symbol NOT LIKE $2
+        AND symbol NOT LIKE $3
+    `, [1e6, '^%', '%.%']);
+
+    const allCompanies = result.rows || [];
 
     // Calculate point-in-time market cap for each and filter/sort
-    const companiesWithHistoricalCap = allCompanies
-      .map(c => {
-        const historicalMarketCap = this._getPointInTimeMarketCap(c.id, c.market_cap, startDate);
-        return {
+    const companiesWithHistoricalCap = [];
+    for (const c of allCompanies) {
+      const historicalMarketCap = await this._getPointInTimeMarketCap(c.id, c.market_cap, startDate);
+      if (historicalMarketCap >= minMarketCap) {
+        companiesWithHistoricalCap.push({
           id: c.id,
           symbol: c.symbol,
           sector: c.sector,
           marketCap: historicalMarketCap
-        };
-      })
-      .filter(c => c.marketCap >= minMarketCap)
-      .sort((a, b) => b.marketCap - a.marketCap)
-      .slice(0, limit);
+        });
+      }
+    }
 
-    return companiesWithHistoricalCap;
+    companiesWithHistoricalCap.sort((a, b) => b.marketCap - a.marketCap);
+    return companiesWithHistoricalCap.slice(0, limit);
+  }
+
+  /**
+   * Get company by symbol
+   */
+  async _getCompanyBySymbol(symbol) {
+    const result = await this.database.query(`
+      SELECT id, symbol, name, sector, market_cap
+      FROM companies
+      WHERE LOWER(symbol) = LOWER($1)
+    `, [symbol]);
+
+    return result.rows && result.rows.length > 0 ? result.rows[0] : null;
   }
 
   /**
@@ -278,24 +275,32 @@ class HistoricalAgentBacktester {
    * @param {string} asOfDate - Simulation date
    * @returns {number} Point-in-time market cap
    */
-  _getPointInTimeMarketCap(companyId, currentMarketCap, asOfDate) {
+  async _getPointInTimeMarketCap(companyId, currentMarketCap, asOfDate) {
     // Get historical price as of the simulation date
-    const historicalPrice = this.db.prepare(`
+    const historicalPriceResult = await this.database.query(`
       SELECT close
       FROM daily_prices
-      WHERE company_id = ? AND date <= ?
+      WHERE company_id = $1 AND date <= $2
       ORDER BY date DESC
       LIMIT 1
-    `).get(companyId, asOfDate);
+    `, [companyId, asOfDate]);
+
+    const historicalPrice = historicalPriceResult.rows && historicalPriceResult.rows.length > 0
+      ? historicalPriceResult.rows[0]
+      : null;
 
     // Get current/latest price
-    const currentPrice = this.db.prepare(`
+    const currentPriceResult = await this.database.query(`
       SELECT close
       FROM daily_prices
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY date DESC
       LIMIT 1
-    `).get(companyId);
+    `, [companyId]);
+
+    const currentPrice = currentPriceResult.rows && currentPriceResult.rows.length > 0
+      ? currentPriceResult.rows[0]
+      : null;
 
     if (!historicalPrice || !currentPrice || currentPrice.close === 0) {
       // Fallback to current market cap if no price data
@@ -314,11 +319,11 @@ class HistoricalAgentBacktester {
   /**
    * Update portfolio position values with current prices
    */
-  _updatePortfolioValues(portfolio) {
+  async _updatePortfolioValues(portfolio) {
     let positionsValue = 0;
 
     for (const [symbol, position] of portfolio.positions) {
-      const company = this.stmtGetCompany.get(symbol);
+      const company = await this._getCompanyBySymbol(symbol);
       if (!company) continue;
 
       const priceData = this.dataProvider.getLatestPrice(company.id);
@@ -810,9 +815,45 @@ class HistoricalAgentBacktester {
     return Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
   }
 
+  async _storeBacktestResults(results) {
+    try {
+      const parametersJson = JSON.stringify(results.config);
+      const metricsJson = JSON.stringify(results.performance);
+      const equityCurveJson = JSON.stringify(results.equityCurve);
+      const tradesJson = JSON.stringify(results.tradeHistory);
+
+      const query = `
+        INSERT INTO backtest_results (
+          strategy_name, run_type, start_date, end_date,
+          parameters, metrics, equity_curve, trades,
+          status, created_at, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        )
+        RETURNING id;
+      `;
+
+      const result = await this.database.query(query, [
+        'historical_agent_backtest',
+        'historical_agent',
+        results.config.startDate,
+        results.config.endDate,
+        parametersJson,
+        metricsJson,
+        equityCurveJson,
+        tradesJson,
+        'completed'
+      ]);
+
+      console.log(`Backtest results stored with ID: ${result.rows[0].id}`);
+    } catch (error) {
+      console.error('Failed to store backtest results:', error.message);
+    }
+  }
+
   _printSummary(results) {
     console.log(`\n${'='.repeat(60)}`);
-    console.log('📈 BACKTEST RESULTS');
+    console.log('BACKTEST RESULTS');
     console.log(`${'='.repeat(60)}`);
     console.log('\nPerformance Metrics:');
     console.log(`  Total Return: ${results.performance.totalReturn}%`);

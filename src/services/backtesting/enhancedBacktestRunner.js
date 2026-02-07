@@ -3,7 +3,7 @@
 // Runs comparative backtests to measure improvement from quant enhancements
 
 const path = require('path');
-const { db, isPostgres } = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 const { HistoricalAgentBacktester } = require('./historicalAgentBacktester');
 const { EnhancedQuantSystem } = require('../quant/enhancedQuantSystem');
 
@@ -16,9 +16,9 @@ const { EnhancedQuantSystem } = require('../quant/enhancedQuantSystem');
  * - Signal quality from decorrelation and moat scoring
  */
 class EnhancedBacktestRunner {
-  constructor(db) {
-    this.db = db;
-    this.quantSystem = new EnhancedQuantSystem(db);
+  constructor(database) {
+    this.database = database;
+    this.quantSystem = new EnhancedQuantSystem(database);
   }
 
   /**
@@ -77,7 +77,7 @@ class EnhancedBacktestRunner {
     };
 
     // Create enhanced backtester
-    const backtester = new EnhancedAgentBacktester(this.db, backtestConfig, this.quantSystem);
+    const backtester = new EnhancedAgentBacktester(this.database, backtestConfig, this.quantSystem);
 
     // Run enhanced backtest
     console.log('\n' + '-'.repeat(70));
@@ -91,7 +91,7 @@ class EnhancedBacktestRunner {
     console.log('Running Baseline Backtest (for comparison)...');
     console.log('-'.repeat(70));
 
-    const baselineBacktester = new HistoricalAgentBacktester(this.db, {
+    const baselineBacktester = new HistoricalAgentBacktester(this.database, {
       ...backtestConfig,
       verbose: false
     });
@@ -434,14 +434,10 @@ class EnhancedAgentBacktester extends HistoricalAgentBacktester {
  * Run the enhanced backtest
  */
 async function runEnhancedBacktest() {
-  if (isPostgres) {
-    console.error('runEnhancedBacktest() is not yet supported in PostgreSQL mode.');
-    console.error('Use async database methods from lib/db.js');
-    process.exit(1);
-  }
-
+  let database;
   try {
-    const runner = new EnhancedBacktestRunner(db);
+    database = await getDatabaseAsync();
+    const runner = new EnhancedBacktestRunner(database);
     const results = await runner.runEnhancedBacktest({
       startDate: '2024-01-01',
       endDate: '2024-12-31',

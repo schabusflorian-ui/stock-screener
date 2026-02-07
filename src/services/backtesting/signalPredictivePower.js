@@ -2,7 +2,7 @@
 // Signal Predictive Power Analyzer
 // Measures and ranks the predictive power of each signal type
 
-const { db } = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 const {
   calculateIC,
   calculateICIR,
@@ -19,80 +19,15 @@ const REGIMES = ['BULL', 'BEAR', 'SIDEWAYS', 'HIGH_VOL', 'CRISIS', 'ALL'];
  * Analyzes the predictive power of each signal type across different horizons and regimes
  */
 class SignalPredictivePowerAnalyzer {
-  constructor(dbInstance = db) {
-    this.db = dbInstance;
-    this._prepareStatements();
+  constructor() {
+    this.database = null;
   }
 
-  _prepareStatements() {
-    // Get recommendation outcomes for IC calculation
-    this.stmtGetOutcomes = this.db.prepare(`
-      SELECT
-        ro.symbol,
-        date(ro.recommended_at) as date,
-        ro.action as signal_type,
-        ro.signal_score as signal_value,
-        ro.return_5d as forward_return_5d,
-        ro.return_21d as forward_return_21d,
-        ro.return_63d as forward_return_63d,
-        ro.regime as regime
-      FROM recommendation_outcomes ro
-      WHERE date(ro.recommended_at) >= ?
-        AND date(ro.recommended_at) <= ?
-        AND ro.return_21d IS NOT NULL
-      ORDER BY ro.recommended_at ASC
-    `);
-
-    // Get calculated metrics for signal generation
-    this.stmtGetMetrics = this.db.prepare(`
-      SELECT
-        c.symbol,
-        cm.fiscal_period as date,
-        cm.pe_ratio,
-        cm.pb_ratio,
-        cm.roe,
-        cm.roic,
-        cm.net_margin,
-        cm.revenue_growth_yoy as revenue_growth,
-        cm.debt_to_equity
-      FROM calculated_metrics cm
-      JOIN companies c ON cm.company_id = c.id
-      WHERE cm.fiscal_period >= ?
-        AND cm.fiscal_period <= ?
-      ORDER BY cm.fiscal_period ASC
-    `);
-
-    // Get price data for return calculation
-    this.stmtGetPrices = this.db.prepare(`
-      SELECT
-        c.symbol,
-        dp.date,
-        dp.close as price
-      FROM daily_prices dp
-      JOIN companies c ON dp.company_id = c.id
-      WHERE dp.date >= ?
-        AND dp.date <= ?
-      ORDER BY dp.date ASC
-    `);
-
-    // Store predictive power results
-    this.stmtStorePredictivePower = this.db.prepare(`
-      INSERT OR REPLACE INTO signal_predictive_power (
-        signal_type, horizon_days, ic, ic_ir, t_stat, p_value,
-        hit_rate, hit_rate_ci_lower, hit_rate_ci_upper,
-        decay_half_life, sample_size, regime, composite_score,
-        rank_in_regime, start_date, end_date, calculated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    `);
-
-    // Get market regime for date
-    this.stmtGetRegime = this.db.prepare(`
-      SELECT regime
-      FROM market_regime_history
-      WHERE date <= ?
-      ORDER BY date DESC
-      LIMIT 1
-    `);
+  async _ensureDatabase() {
+    if (!this.database) {
+      this.database = await getDatabaseAsync();
+    }
+    return this.database;
   }
 
   /**
@@ -180,7 +115,7 @@ class SignalPredictivePowerAnalyzer {
         result.regimes[regime].sampleSize = regimeData.length;
 
         // Store in database
-        this._storeResult(signalType, 21, result.regimes[regime], regime, startDate, endDate);
+        await this._storeResult(signalType, 21, result.regimes[regime], regime, startDate, endDate);
       }
     }
 
@@ -201,9 +136,26 @@ class SignalPredictivePowerAnalyzer {
 
     try {
       // First try overall recommendation outcomes
-      const outcomes = this.stmtGetOutcomes.all(startDate, endDate);
-      if (outcomes.length > 0 && signalType === 'overall') {
-        data = outcomes.map(o => ({
+      const database = await this._ensureDatabase();
+      const outcomes = await database.query(`
+        SELECT
+          ro.symbol,
+          DATE(ro.recommended_at) as date,
+          ro.action as signal_type,
+          ro.signal_score as signal_value,
+          ro.return_5d as forward_return_5d,
+          ro.return_21d as forward_return_21d,
+          ro.return_63d as forward_return_63d,
+          ro.regime as regime
+        FROM recommendation_outcomes ro
+        WHERE DATE(ro.recommended_at) >= $1
+          AND DATE(ro.recommended_at) <= $2
+          AND ro.return_21d IS NOT NULL
+        ORDER BY ro.recommended_at ASC
+      `, [startDate, endDate]);
+
+      if (outcomes.rows.length > 0 && signalType === 'overall') {
+        data = outcomes.rows.map(o => ({
           symbol: o.symbol,
           date: o.date,
           signal: o.signal_value,
@@ -230,12 +182,24 @@ class SignalPredictivePowerAnalyzer {
    */
   async _generateSyntheticSignalData(signalType, startDate, endDate) {
     const data = [];
+    const database = await this._ensureDatabase();
 
     // Get price data first
     const prices = {};
     try {
-      const priceRows = this.stmtGetPrices.all(startDate, endDate);
-      for (const row of priceRows) {
+      const priceResult = await database.query(`
+        SELECT
+          c.symbol,
+          dp.date,
+          dp.close as price
+        FROM daily_prices dp
+        JOIN companies c ON dp.company_id = c.id
+        WHERE dp.date >= $1
+          AND dp.date <= $2
+        ORDER BY dp.date ASC
+      `, [startDate, endDate]);
+
+      for (const row of priceResult.rows) {
         if (!prices[row.symbol]) prices[row.symbol] = [];
         prices[row.symbol].push({ date: row.date, price: row.price });
       }
@@ -246,11 +210,27 @@ class SignalPredictivePowerAnalyzer {
 
     // Get metrics and generate signals
     try {
-      const metrics = this.stmtGetMetrics.all(startDate, endDate);
+      const metricsResult = await database.query(`
+        SELECT
+          c.symbol,
+          cm.fiscal_period as date,
+          cm.pe_ratio,
+          cm.pb_ratio,
+          cm.roe,
+          cm.roic,
+          cm.net_margin,
+          cm.revenue_growth_yoy as revenue_growth,
+          cm.debt_to_equity
+        FROM calculated_metrics cm
+        JOIN companies c ON cm.company_id = c.id
+        WHERE cm.fiscal_period >= $1
+          AND cm.fiscal_period <= $2
+        ORDER BY cm.fiscal_period ASC
+      `, [startDate, endDate]);
 
       // Group by symbol and date
       const grouped = new Map();
-      for (const m of metrics) {
+      for (const m of metricsResult.rows) {
         const key = `${m.symbol}_${m.date}`;
         grouped.set(key, m);
       }
@@ -278,8 +258,15 @@ class SignalPredictivePowerAnalyzer {
         // Get regime for this date
         let regime = 'ALL';
         try {
-          const regimeRow = this.stmtGetRegime.get(m.date);
-          if (regimeRow) regime = regimeRow.regime;
+          const regimeResult = await database.query(`
+            SELECT regime
+            FROM market_regime_history
+            WHERE date <= $1
+            ORDER BY date DESC
+            LIMIT 1
+          `, [m.date]);
+
+          if (regimeResult.rows.length > 0) regime = regimeResult.rows[0].regime;
         } catch (e) {
           // Ignore
         }
@@ -545,9 +532,30 @@ class SignalPredictivePowerAnalyzer {
   /**
    * Store result in database
    */
-  _storeResult(signalType, horizon, data, regime, startDate, endDate) {
+  async _storeResult(signalType, horizon, data, regime, startDate, endDate) {
     try {
-      this.stmtStorePredictivePower.run(
+      const database = await this._ensureDatabase();
+      await database.query(`
+        INSERT INTO signal_predictive_power (
+          signal_type, horizon_days, ic, ic_ir, t_stat, p_value,
+          hit_rate, hit_rate_ci_lower, hit_rate_ci_upper,
+          decay_half_life, sample_size, regime, composite_score,
+          rank_in_regime, start_date, end_date, calculated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP)
+        ON CONFLICT (signal_type, horizon_days, regime, start_date, end_date)
+        DO UPDATE SET
+          ic = $3,
+          ic_ir = $4,
+          t_stat = $5,
+          p_value = $6,
+          hit_rate = $7,
+          hit_rate_ci_lower = $8,
+          hit_rate_ci_upper = $9,
+          decay_half_life = $10,
+          sample_size = $11,
+          composite_score = $13,
+          calculated_at = CURRENT_TIMESTAMP
+      `, [
         signalType,
         horizon,
         data.ic,
@@ -564,7 +572,7 @@ class SignalPredictivePowerAnalyzer {
         null, // rank updated later
         startDate,
         endDate
-      );
+      ]);
     } catch (e) {
       // Ignore storage errors
     }
@@ -615,27 +623,32 @@ class SignalPredictivePowerAnalyzer {
   /**
    * Get stored predictive power results
    */
-  getStoredResults(signalType = null, regime = 'ALL') {
+  async getStoredResults(signalType = null, regime = 'ALL') {
+    const database = await this._ensureDatabase();
     let sql = `
       SELECT *
       FROM signal_predictive_power
       WHERE 1=1
     `;
     const params = [];
+    let paramCount = 1;
 
     if (signalType) {
-      sql += ' AND signal_type = ?';
+      sql += ` AND signal_type = $${paramCount}`;
       params.push(signalType);
+      paramCount++;
     }
 
     if (regime !== 'ALL') {
-      sql += ' AND regime = ?';
+      sql += ` AND regime = $${paramCount}`;
       params.push(regime);
+      paramCount++;
     }
 
     sql += ' ORDER BY composite_score DESC';
 
-    return this.db.prepare(sql).all(...params);
+    const result = await database.query(sql, params);
+    return result.rows;
   }
 }
 

@@ -2,7 +2,7 @@
 // Weight Optimization Engine for Signal Weighting
 // Finds optimal signal weights through grid search and ablation studies
 
-const { db } = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 const { HistoricalAgentBacktester } = require('./historicalAgentBacktester');
 const { SignalPredictivePowerAnalyzer, SIGNAL_TYPES, REGIMES } = require('./signalPredictivePower');
 const { deflatedSharpeRatio, correctForMultipleTesting, bootstrapConfidenceInterval,
@@ -23,98 +23,22 @@ const DEFAULT_WEIGHTS = {
  * Optimizes signal weights to maximize alpha vs benchmark
  */
 class WeightOptimizer {
-  constructor(dbInstance = db) {
-    this.db = dbInstance;
-    this._prepareStatements();
+  constructor() {
+    this.database = null;
   }
 
-  _prepareStatements() {
-    // Create optimization run
-    this.stmtCreateRun = this.db.prepare(`
-      INSERT INTO weight_optimization_runs (
-        run_name, run_type, start_date, end_date, optimization_target,
-        search_config, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'running', datetime('now'))
-    `);
-
-    // Update run status (updated Week 3 to include stress tests and CIs)
-    this.stmtUpdateRun = this.db.prepare(`
-      UPDATE weight_optimization_runs
-      SET status = ?,
-          total_combinations_tested = ?,
-          best_weights = ?,
-          best_alpha = ?,
-          best_sharpe = ?,
-          baseline_alpha = ?,
-          baseline_sharpe = ?,
-          improvement_pct = ?,
-          walk_forward_validated = ?,
-          walk_forward_efficiency = ?,
-          stress_test_results = ?,
-          alpha_ci_lower = ?,
-          alpha_ci_upper = ?,
-          sharpe_ci_lower = ?,
-          sharpe_ci_upper = ?,
-          completed_at = datetime('now')
-      WHERE id = ?
-    `);
-
-    // Store combination result
-    this.stmtStoreCombination = this.db.prepare(`
-      INSERT INTO weight_combination_results (
-        run_id, weights, regime, total_return, annualized_return,
-        sharpe_ratio, sortino_ratio, max_drawdown, alpha, beta,
-        win_rate, profit_factor, total_trades, avg_holding_days,
-        is_walk_forward_validated, walk_forward_efficiency, rank_in_run
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    // Store regime optimal weights
-    this.stmtStoreRegimeWeights = this.db.prepare(`
-      INSERT INTO regime_optimal_weights (
-        regime, technical_weight, fundamental_weight, sentiment_weight,
-        insider_weight, valuation_weight, factor_weight,
-        optimization_run_id, alpha, sharpe_ratio, walk_forward_efficiency,
-        is_active
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-    `);
-
-    // Store ablation result
-    this.stmtStoreAblation = this.db.prepare(`
-      INSERT INTO ablation_study_results (
-        run_id, signal_type, baseline_alpha, without_signal_alpha,
-        alpha_degradation, importance_rank, regime
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    // Store walk-forward period results (NEW)
-    this.stmtStoreWalkForwardPeriod = this.db.prepare(`
-      INSERT INTO walk_forward_periods (
-        run_id, period_index, train_start_date, train_end_date,
-        test_start_date, test_end_date, purge_days,
-        train_sharpe, test_sharpe, train_alpha, test_alpha,
-        efficiency, optimal_weights
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    // Get market regime periods
-    this.stmtGetRegimePeriods = this.db.prepare(`
-      SELECT
-        regime,
-        MIN(date) as start_date,
-        MAX(date) as end_date,
-        COUNT(*) as days
-      FROM market_regime_history
-      WHERE date >= ? AND date <= ?
-      GROUP BY regime
-      ORDER BY days DESC
-    `);
+  async initialize() {
+    this.database = await getDatabaseAsync();
   }
 
   /**
    * Run full weight optimization
    */
   async runOptimization(config = {}) {
+    if (!this.database) {
+      await this.initialize();
+    }
+
     const {
       runName = `Optimization_${new Date().toISOString().split('T')[0]}`,
       startDate = '2020-01-01', // Extended to include COVID crisis
@@ -162,14 +86,22 @@ class WeightOptimizer {
     const startTime = Date.now();
 
     // Create run record
-    const runId = this.stmtCreateRun.run(
+    const runResult = await this.database.query(`
+      INSERT INTO weight_optimization_runs (
+        run_name, run_type, start_date, end_date, optimization_target,
+        search_config, status, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, 'running', CURRENT_TIMESTAMP)
+      RETURNING id
+    `, [
       runName,
       'grid_search',
       startDate,
       endDate,
       optimizationTarget,
       JSON.stringify({ stepSize, fineStepSize, minWeight, maxWeight, regimeSpecific })
-    ).lastInsertRowid;
+    ]);
+
+    const runId = runResult.rows[0].id;
 
     try {
       // Step 1: Run baseline
@@ -303,10 +235,11 @@ class WeightOptimizer {
       }
 
       // Add ranks
-      allResults.forEach((r, i) => {
+      for (let i = 0; i < allResults.length; i++) {
+        const r = allResults[i];
         r.rank = i + 1;
-        this._updateCombinationRank(runId, r.weights, i + 1);
-      });
+        await this._updateCombinationRank(runId, r.weights, i + 1);
+      }
 
       const bestResult = allResults[0];
       const improvement = baselineAlpha !== 0
@@ -482,7 +415,26 @@ class WeightOptimizer {
       }
 
       // Update run record (including new fields - Week 3)
-      this.stmtUpdateRun.run(
+      await this.database.query(`
+        UPDATE weight_optimization_runs
+        SET status = $1,
+            total_combinations_tested = $2,
+            best_weights = $3,
+            best_alpha = $4,
+            best_sharpe = $5,
+            baseline_alpha = $6,
+            baseline_sharpe = $7,
+            improvement_pct = $8,
+            walk_forward_validated = $9,
+            walk_forward_efficiency = $10,
+            stress_test_results = $11,
+            alpha_ci_lower = $12,
+            alpha_ci_upper = $13,
+            sharpe_ci_lower = $14,
+            sharpe_ci_upper = $15,
+            completed_at = CURRENT_TIMESTAMP
+        WHERE id = $16
+      `, [
         'completed',
         allResults.length,
         JSON.stringify(bestResult.weights),
@@ -491,7 +443,7 @@ class WeightOptimizer {
         baselineAlpha,
         baselineSharpe,
         improvement,
-        walkForwardResult ? 1 : 0,
+        walkForwardResult ? true : false,
         walkForwardResult?.avgEfficiency,
         stressTestResults ? JSON.stringify(stressTestResults) : null,
         confidenceIntervals?.alpha?.lower || null,
@@ -499,7 +451,7 @@ class WeightOptimizer {
         confidenceIntervals?.sharpe?.lower || null,
         confidenceIntervals?.sharpe?.upper || null,
         runId
-      );
+      ]);
 
       const elapsed = (Date.now() - startTime) / 1000;
 
@@ -534,8 +486,10 @@ class WeightOptimizer {
       };
 
     } catch (error) {
-      this.db.prepare('UPDATE weight_optimization_runs SET status = \'failed\', error_message = ? WHERE id = ?')
-        .run(error.message, runId);
+      await this.database.query(
+        'UPDATE weight_optimization_runs SET status = $1, error_message = $2 WHERE id = $3',
+        ['failed', error.message, runId]
+      );
       throw error;
     }
   }
@@ -544,7 +498,7 @@ class WeightOptimizer {
    * Run a single backtest with given weights
    */
   async _runBacktest(weights, startDate, endDate, verbose = false) {
-    const backtester = new HistoricalAgentBacktester(this.db, {
+    const backtester = new HistoricalAgentBacktester({
       startDate,
       endDate,
       initialCapital: 100000,
@@ -601,9 +555,15 @@ class WeightOptimizer {
 
     // Rank by importance
     results.sort((a, b) => b.degradation - a.degradation);
-    results.forEach((r, i) => {
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
       r.rank = i + 1;
-      this.stmtStoreAblation.run(
+      await this.database.query(`
+        INSERT INTO ablation_study_results (
+          run_id, signal_type, baseline_alpha, without_signal_alpha,
+          alpha_degradation, importance_rank, regime
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `, [
         runId,
         r.signalType,
         r.baselineAlpha,
@@ -611,8 +571,8 @@ class WeightOptimizer {
         r.degradation,
         r.rank,
         'ALL'
-      );
-    });
+      ]);
+    }
 
     return results;
   }
@@ -735,7 +695,14 @@ class WeightOptimizer {
         };
 
         // Store in database
-        this.stmtStoreCombination.run(
+        await this.database.query(`
+          INSERT INTO weight_combination_results (
+            run_id, weights, regime, total_return, annualized_return,
+            sharpe_ratio, sortino_ratio, max_drawdown, alpha, beta,
+            win_rate, profit_factor, total_trades, avg_holding_days,
+            is_walk_forward_validated, walk_forward_efficiency, rank_in_run
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        `, [
           runId,
           JSON.stringify(weights),
           result.regime,
@@ -750,10 +717,10 @@ class WeightOptimizer {
           result.profitFactor,
           result.trades,
           result.avgHoldingDays,
-          0, // walk-forward validated
+          false, // walk-forward validated
           null, // walk-forward efficiency
           null // rank
-        );
+        ]);
 
         results.push(result);
       } catch (e) {
@@ -784,7 +751,18 @@ class WeightOptimizer {
     // Get regime periods
     let regimePeriods;
     try {
-      regimePeriods = this.stmtGetRegimePeriods.all(startDate, endDate);
+      const result = await this.database.query(`
+        SELECT
+          regime,
+          MIN(date) as start_date,
+          MAX(date) as end_date,
+          COUNT(*) as days
+        FROM market_regime_history
+        WHERE date >= $1 AND date <= $2
+        GROUP BY regime
+        ORDER BY days DESC
+      `, [startDate, endDate]);
+      regimePeriods = result.rows;
     } catch (e) {
       // No regime data, use overall best
       if (verbose) console.log('  No regime data available, using overall optimal weights');
@@ -827,7 +805,14 @@ class WeightOptimizer {
         };
 
         // Store in database
-        this.stmtStoreRegimeWeights.run(
+        await this.database.query(`
+          INSERT INTO regime_optimal_weights (
+            regime, technical_weight, fundamental_weight, sentiment_weight,
+            insider_weight, valuation_weight, factor_weight,
+            optimization_run_id, alpha, sharpe_ratio, walk_forward_efficiency,
+            is_active
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        `, [
           regime,
           bestResult.weights.technical,
           bestResult.weights.fundamental,
@@ -838,8 +823,9 @@ class WeightOptimizer {
           runId,
           bestResult.alpha,
           bestResult.sharpe,
-          null // walk-forward efficiency
-        );
+          null, // walk-forward efficiency
+          true
+        ]);
 
         if (verbose) {
           console.log(`    Best Alpha: ${bestResult.alpha.toFixed(2)}%`);
@@ -866,7 +852,7 @@ class WeightOptimizer {
     console.log(`  Rolling Walk-Forward: ${numPeriods} periods, ${(isRatio * 100).toFixed(0)}% train / ${((1 - isRatio) * 100).toFixed(0)}% test`);
 
     // Get trading days in range
-    const tradingDays = this._getTradingDays(startDate, endDate);
+    const tradingDays = await this._getTradingDays(startDate, endDate);
     const totalDays = tradingDays.length;
 
     if (totalDays < 252) {
@@ -933,7 +919,14 @@ class WeightOptimizer {
       });
 
       // Store in database
-      this.stmtStoreWalkForwardPeriod.run(
+      await this.database.query(`
+        INSERT INTO walk_forward_periods (
+          run_id, period_index, train_start_date, train_end_date,
+          test_start_date, test_end_date, purge_days,
+          train_sharpe, test_sharpe, train_alpha, test_alpha,
+          efficiency, optimal_weights
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      `, [
         runId,
         i + 1,
         trainStartDate,
@@ -947,7 +940,7 @@ class WeightOptimizer {
         testAlpha,
         efficiency,
         JSON.stringify(weights)
-      );
+      ]);
 
       console.log(`  Period ${i + 1}: Train Sharpe ${trainSharpe.toFixed(2)} → Test Sharpe ${testSharpe.toFixed(2)} (Eff: ${(efficiency * 100).toFixed(1)}%)`);
 
@@ -991,12 +984,12 @@ class WeightOptimizer {
   /**
    * Update combination rank in database
    */
-  _updateCombinationRank(runId, weights, rank) {
-    this.db.prepare(`
+  async _updateCombinationRank(runId, weights, rank) {
+    await this.database.query(`
       UPDATE weight_combination_results
-      SET rank_in_run = ?
-      WHERE run_id = ? AND weights = ?
-    `).run(rank, runId, JSON.stringify(weights));
+      SET rank_in_run = $1
+      WHERE run_id = $2 AND weights = $3
+    `, [rank, runId, JSON.stringify(weights)]);
   }
 
   /**
@@ -1048,58 +1041,72 @@ class WeightOptimizer {
   /**
    * Get optimization results by run ID
    */
-  getOptimizationResults(runId) {
-    const run = this.db.prepare(`
-      SELECT * FROM weight_optimization_runs WHERE id = ?
-    `).get(runId);
+  async getOptimizationResults(runId) {
+    if (!this.database) {
+      await this.initialize();
+    }
 
+    const runResult = await this.database.query(`
+      SELECT * FROM weight_optimization_runs WHERE id = $1
+    `, [runId]);
+
+    const run = runResult.rows[0];
     if (!run) return null;
 
-    const combinations = this.db.prepare(`
+    const combinationsResult = await this.database.query(`
       SELECT * FROM weight_combination_results
-      WHERE run_id = ?
+      WHERE run_id = $1
       ORDER BY rank_in_run ASC
       LIMIT 20
-    `).all(runId);
+    `, [runId]);
 
-    const ablation = this.db.prepare(`
+    const ablationResult = await this.database.query(`
       SELECT * FROM ablation_study_results
-      WHERE run_id = ?
+      WHERE run_id = $1
       ORDER BY importance_rank ASC
-    `).all(runId);
+    `, [runId]);
 
-    const regimeWeights = this.db.prepare(`
+    const regimeWeightsResult = await this.database.query(`
       SELECT * FROM regime_optimal_weights
-      WHERE optimization_run_id = ?
-    `).all(runId);
+      WHERE optimization_run_id = $1
+    `, [runId]);
 
     return {
       run,
-      topCombinations: combinations.map(c => ({
+      topCombinations: combinationsResult.rows.map(c => ({
         ...c,
         weights: JSON.parse(c.weights)
       })),
-      ablation,
-      regimeWeights
+      ablation: ablationResult.rows,
+      regimeWeights: regimeWeightsResult.rows
     };
   }
 
   /**
    * Get active regime-specific weights
    */
-  getActiveRegimeWeights() {
-    return this.db.prepare(`
+  async getActiveRegimeWeights() {
+    if (!this.database) {
+      await this.initialize();
+    }
+
+    const result = await this.database.query(`
       SELECT * FROM regime_optimal_weights
-      WHERE is_active = 1
+      WHERE is_active = true
       ORDER BY regime
-    `).all();
+    `);
+
+    return result.rows;
   }
 
   /**
    * Quick analysis using predictive power
    */
   async quickAnalysis(startDate, endDate) {
-    const analyzer = new SignalPredictivePowerAnalyzer(this.db);
+    if (!this.database) {
+      await this.initialize();
+    }
+    const analyzer = new SignalPredictivePowerAnalyzer();
     return await analyzer.analyzeAllSignals(startDate, endDate);
   }
 
@@ -1125,15 +1132,15 @@ class WeightOptimizer {
   /**
    * Get trading days in date range from database
    */
-  _getTradingDays(startDate, endDate) {
-    const result = this.db.prepare(`
+  async _getTradingDays(startDate, endDate) {
+    const result = await this.database.query(`
       SELECT DISTINCT date
       FROM daily_prices
-      WHERE date >= ? AND date <= ?
+      WHERE date >= $1 AND date <= $2
       ORDER BY date ASC
-    `).all(startDate, endDate);
+    `, [startDate, endDate]);
 
-    return result.map(r => r.date);
+    return result.rows.map(r => r.date);
   }
 
   /**

@@ -105,8 +105,8 @@ module.exports = {
   historicalAgent: {
     DataProvider: HistoricalDataProvider,
     Backtester: HistoricalAgentBacktester,
-    run: (db, config) => {
-      const backtester = new HistoricalAgentBacktester(db, config);
+    run: (config) => {
+      const backtester = new HistoricalAgentBacktester(config);
       return backtester.runBacktest();
     }
   }

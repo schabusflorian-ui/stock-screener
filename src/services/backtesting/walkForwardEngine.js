@@ -2,7 +2,7 @@
 // Walk-Forward Optimization Engine for HF-style backtesting
 // Implements rolling and anchored walk-forward analysis with CPCV support
 
-const { db } = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 
 /**
  * Calculate basic performance metrics for a returns series
@@ -156,6 +156,7 @@ function generatePeriods(data, options) {
  * @returns {Object} Walk-forward results
  */
 async function runWalkForward(params) {
+  const database = await getDatabaseAsync();
   const {
     portfolioId,
     strategyName = 'AI_TRADING',
@@ -169,16 +170,18 @@ async function runWalkForward(params) {
   } = params;
 
   // Get portfolio returns
-  const returns = db.prepare(`
+  const result = await database.query(`
     SELECT
       snapshot_date as date,
       daily_return_pct as return
     FROM portfolio_snapshots
-    WHERE portfolio_id = ?
-      AND snapshot_date >= COALESCE(?, '1900-01-01')
-      AND snapshot_date <= COALESCE(?, '2100-01-01')
+    WHERE portfolio_id = $1
+      AND snapshot_date >= COALESCE($2, '1900-01-01')
+      AND snapshot_date <= COALESCE($3, '2100-01-01')
     ORDER BY snapshot_date ASC
-  `).all(portfolioId, startDate, endDate);
+  `, [portfolioId, startDate, endDate]);
+
+  const returns = result.rows;
 
   if (returns.length < windowSize) {
     throw new Error(`Insufficient data: ${returns.length} days, need at least ${windowSize}`);
@@ -250,11 +253,12 @@ async function runWalkForward(params) {
   const parameterStability = avgISSharpe > 0 ? 1 - (sharpeStd / Math.abs(avgISSharpe)) : 0;
 
   // Store results
-  const result = db.prepare(`
+  const insertResult = await database.query(`
     INSERT INTO backtest_results
     (portfolio_id, strategy_name, run_type, start_date, end_date, parameters, metrics)
-    VALUES (?, ?, 'walk_forward', ?, ?, ?, ?)
-  `).run(
+    VALUES ($1, $2, 'walk_forward', $3, $4, $5, $6)
+    RETURNING id
+  `, [
     portfolioId,
     strategyName,
     returns[0]?.date,
@@ -266,21 +270,19 @@ async function runWalkForward(params) {
       parameterStability,
       aggregateOOSMetrics
     })
-  );
+  ]);
 
-  const backtestId = result.lastInsertRowid;
+  const backtestId = insertResult.rows[0].id;
 
   // Store period details
-  const insertPeriod = db.prepare(`
-    INSERT INTO walk_forward_results
-    (backtest_id, period_index, is_start_date, is_end_date, oos_start_date, oos_end_date,
-     is_sharpe, oos_sharpe, is_return, oos_return, is_max_drawdown, oos_max_drawdown,
-     optimal_params, walk_forward_efficiency)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
   for (const p of periodResults) {
-    insertPeriod.run(
+    await database.query(`
+      INSERT INTO walk_forward_results
+      (backtest_id, period_index, is_start_date, is_end_date, oos_start_date, oos_end_date,
+       is_sharpe, oos_sharpe, is_return, oos_return, is_max_drawdown, oos_max_drawdown,
+       optimal_params, walk_forward_efficiency)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+    `, [
       backtestId,
       p.periodIndex,
       p.isStartDate,
@@ -295,7 +297,7 @@ async function runWalkForward(params) {
       p.oosMetrics.maxDrawdown,
       null, // optimal_params - would be set by optimization
       p.walkForwardEfficiency
-    );
+    ]);
   }
 
   return {
@@ -351,6 +353,7 @@ function interpretWalkForward(efficiency, stability) {
  * More sophisticated than simple walk-forward for testing multiple parameter combinations
  */
 async function runCPCV(params) {
+  const database = await getDatabaseAsync();
   const {
     portfolioId,
     strategyName = 'AI_TRADING',
@@ -362,14 +365,16 @@ async function runCPCV(params) {
   } = params;
 
   // Get portfolio returns
-  const returns = db.prepare(`
+  const result = await database.query(`
     SELECT snapshot_date as date, daily_return_pct as return
     FROM portfolio_snapshots
-    WHERE portfolio_id = ?
-      AND snapshot_date >= COALESCE(?, '1900-01-01')
-      AND snapshot_date <= COALESCE(?, '2100-01-01')
+    WHERE portfolio_id = $1
+      AND snapshot_date >= COALESCE($2, '1900-01-01')
+      AND snapshot_date <= COALESCE($3, '2100-01-01')
     ORDER BY snapshot_date ASC
-  `).all(portfolioId, startDate, endDate);
+  `, [portfolioId, startDate, endDate]);
+
+  const returns = result.rows;
 
   const n = returns.length;
   const groupSize = Math.floor(n / nSplits);
@@ -488,18 +493,24 @@ function getCombinations(n, k) {
 /**
  * Get walk-forward results for a backtest
  */
-function getWalkForwardResults(backtestId) {
-  const backtest = db.prepare(`
-    SELECT * FROM backtest_results WHERE id = ?
-  `).get(backtestId);
+async function getWalkForwardResults(backtestId) {
+  const database = await getDatabaseAsync();
+
+  const backtestResult = await database.query(`
+    SELECT * FROM backtest_results WHERE id = $1
+  `, [backtestId]);
+
+  const backtest = backtestResult.rows[0];
 
   if (!backtest || backtest.run_type !== 'walk_forward') {
     return null;
   }
 
-  const periods = db.prepare(`
-    SELECT * FROM walk_forward_results WHERE backtest_id = ? ORDER BY period_index
-  `).all(backtestId);
+  const periodsResult = await database.query(`
+    SELECT * FROM walk_forward_results WHERE backtest_id = $1 ORDER BY period_index
+  `, [backtestId]);
+
+  const periods = periodsResult.rows;
 
   return {
     ...backtest,
@@ -512,14 +523,18 @@ function getWalkForwardResults(backtestId) {
 /**
  * List walk-forward backtests for a portfolio
  */
-function listWalkForwardBacktests(portfolioId, limit = 10) {
-  return db.prepare(`
+async function listWalkForwardBacktests(portfolioId, limit = 10) {
+  const database = await getDatabaseAsync();
+
+  const result = await database.query(`
     SELECT id, strategy_name, start_date, end_date, parameters, metrics, created_at
     FROM backtest_results
-    WHERE portfolio_id = ? AND run_type = 'walk_forward'
+    WHERE portfolio_id = $1 AND run_type = 'walk_forward'
     ORDER BY created_at DESC
-    LIMIT ?
-  `).all(portfolioId, limit).map(row => ({
+    LIMIT $2
+  `, [portfolioId, limit]);
+
+  return result.rows.map(row => ({
     ...row,
     parameters: JSON.parse(row.parameters || '{}'),
     metrics: JSON.parse(row.metrics || '{}')

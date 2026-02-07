@@ -2,7 +2,7 @@
 // Stress Testing Framework for Portfolio Risk Assessment
 // Implements historical, hypothetical, factor, and reverse stress tests
 
-const { db } = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 
 /**
  * Predefined Historical Stress Scenarios
@@ -181,11 +181,14 @@ function getSector(symbol) {
 /**
  * Get sector from database if available
  */
-function getSectorFromDB(symbol) {
-  const company = db.prepare(`
-    SELECT sector FROM companies WHERE symbol = ?
-  `).get(symbol.toUpperCase());
+async function getSectorFromDB(symbol) {
+  const database = await getDatabaseAsync();
+  const result = await database.query(
+    `SELECT sector FROM companies WHERE symbol = $1`,
+    [symbol.toUpperCase()]
+  );
 
+  const company = result.rows[0];
   if (company?.sector) {
     // Map to our sector keys
     const sectorMap = {
@@ -216,6 +219,7 @@ async function runHistoricalStress(params) {
     customScenario = null
   } = params;
 
+  const database = await getDatabaseAsync();
   const scenario = customScenario || HISTORICAL_SCENARIOS[scenarioName];
 
   if (!scenario) {
@@ -223,23 +227,25 @@ async function runHistoricalStress(params) {
   }
 
   // Get portfolio positions
-  const positions = db.prepare(`
+  const positionsResult = await database.query(`
     SELECT c.symbol, pp.shares, pp.current_value,
            pp.current_value * 1.0 / (SELECT SUM(current_value) FROM portfolio_positions WHERE portfolio_id = pp.portfolio_id) as weight
     FROM portfolio_positions pp
     JOIN companies c ON pp.company_id = c.id
-    WHERE pp.portfolio_id = ?
-  `).all(portfolioId);
+    WHERE pp.portfolio_id = $1
+  `, [portfolioId]);
 
+  const positions = positionsResult.rows;
   if (positions.length === 0) {
     throw new Error('Portfolio has no positions');
   }
 
   // Get portfolio total value
-  const portfolio = db.prepare(`
-    SELECT current_value FROM portfolios WHERE id = ?
-  `).get(portfolioId);
+  const portfolioResult = await database.query(`
+    SELECT current_value FROM portfolios WHERE id = $1
+  `, [portfolioId]);
 
+  const portfolio = portfolioResult.rows[0];
   const totalValue = portfolio?.current_value || positions.reduce((sum, p) => sum + p.current_value, 0);
 
   // Calculate impact for each position
@@ -249,7 +255,7 @@ async function runHistoricalStress(params) {
   let worstImpact = 0;
 
   for (const position of positions) {
-    const sector = getSectorFromDB(position.symbol);
+    const sector = await getSectorFromDB(position.symbol);
     let shock = scenario.shocks[sector] || scenario.shocks.SP500 || -0.20;
 
     // Apply market-wide shock if specified
@@ -284,15 +290,16 @@ async function runHistoricalStress(params) {
   const recoveryDays = estimateRecoveryTime(portfolioImpactPercent, scenario);
 
   // Store results
-  db.prepare(`
+  await database.query(`
     INSERT INTO stress_test_results
     (portfolio_id, scenario_name, scenario_type, scenario_params,
      portfolio_impact, portfolio_impact_dollar, position_impacts,
      worst_position, worst_position_impact, recovery_time_days)
-    VALUES (?, ?, 'historical', ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+  `, [
     portfolioId,
     scenario.name || scenarioName,
+    'historical',
     JSON.stringify(scenario.shocks),
     portfolioImpactPercent,
     totalImpact,
@@ -300,7 +307,7 @@ async function runHistoricalStress(params) {
     worstPosition,
     worstImpact,
     recoveryDays
-  );
+  ]);
 
   return {
     portfolioId,
@@ -333,8 +340,10 @@ async function runFactorStress(params) {
     factorShocks // { equities: -0.20, rates: +0.02, credit: +0.03, volatility: +1.5 }
   } = params;
 
+  const database = await getDatabaseAsync();
+
   // Get portfolio positions with betas
-  const positions = db.prepare(`
+  const positionsResult = await database.query(`
     SELECT c.symbol, pp.shares, pp.current_value,
            pp.current_value * 1.0 / (SELECT SUM(current_value) FROM portfolio_positions WHERE portfolio_id = pp.portfolio_id) as weight,
            cm.value as beta
@@ -343,20 +352,23 @@ async function runFactorStress(params) {
     LEFT JOIN calculated_metrics cm ON c.symbol = cm.symbol
       AND cm.metric_name = 'beta'
       AND cm.date = (SELECT MAX(date) FROM calculated_metrics WHERE symbol = c.symbol AND metric_name = 'beta')
-    WHERE pp.portfolio_id = ?
-  `).all(portfolioId);
+    WHERE pp.portfolio_id = $1
+  `, [portfolioId]);
 
-  const portfolio = db.prepare(`
-    SELECT current_value FROM portfolios WHERE id = ?
-  `).get(portfolioId);
+  const positions = positionsResult.rows;
 
+  const portfolioResult = await database.query(`
+    SELECT current_value FROM portfolios WHERE id = $1
+  `, [portfolioId]);
+
+  const portfolio = portfolioResult.rows[0];
   const totalValue = portfolio?.current_value || 0;
   const positionImpacts = [];
   let totalImpact = 0;
 
   for (const position of positions) {
     const beta = position.beta || 1.0;
-    const sector = getSectorFromDB(position.symbol);
+    const sector = await getSectorFromDB(position.symbol);
 
     // Calculate impact based on factor exposures
     let shock = 0;
@@ -409,19 +421,20 @@ async function runFactorStress(params) {
   const portfolioImpactPercent = totalValue > 0 ? totalImpact / totalValue : 0;
 
   // Store results
-  db.prepare(`
+  await database.query(`
     INSERT INTO stress_test_results
     (portfolio_id, scenario_name, scenario_type, scenario_params,
      portfolio_impact, portfolio_impact_dollar, position_impacts)
-    VALUES (?, ?, 'factor', ?, ?, ?, ?)
-  `).run(
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
+  `, [
     portfolioId,
     'Custom Factor Stress',
+    'factor',
     JSON.stringify(factorShocks),
     portfolioImpactPercent,
     totalImpact,
     JSON.stringify(positionImpacts)
-  );
+  ]);
 
   return {
     portfolioId,
@@ -596,14 +609,17 @@ function estimateSeverity(shocks) {
 /**
  * Get stress test history for a portfolio
  */
-function getStressTestHistory(portfolioId, limit = 10) {
-  return db.prepare(`
+async function getStressTestHistory(portfolioId, limit = 10) {
+  const database = await getDatabaseAsync();
+  const result = await database.query(`
     SELECT *
     FROM stress_test_results
-    WHERE portfolio_id = ?
+    WHERE portfolio_id = $1
     ORDER BY run_date DESC
-    LIMIT ?
-  `).all(portfolioId, limit).map(row => ({
+    LIMIT $2
+  `, [portfolioId, limit]);
+
+  return result.rows.map(row => ({
     ...row,
     scenario_params: JSON.parse(row.scenario_params || '{}'),
     position_impacts: JSON.parse(row.position_impacts || '[]')

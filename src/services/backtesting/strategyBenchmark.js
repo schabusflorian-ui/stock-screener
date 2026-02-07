@@ -3,7 +3,7 @@
 // Provides comprehensive trading behavior statistics
 
 const path = require('path');
-const { db, isPostgres } = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 const { StrategyConfigManager } = require('../agent/strategyConfig');
 const { ConfigurableStrategyAgent } = require('../agent/configurableStrategyAgent');
 const { HistoricalDataProvider } = require('./historicalDataProvider');
@@ -12,35 +12,16 @@ const { HistoricalDataProvider } = require('./historicalDataProvider');
  * StrategyBenchmark - Backtest and compare multiple strategies
  */
 class StrategyBenchmark {
-  constructor(db) {
-    this.db = db;
-    this.configManager = new StrategyConfigManager(db);
-    this.dataProvider = new HistoricalDataProvider(db);
-
-    this._prepareStatements();
+  constructor() {
+    this.database = null;
+    this.configManager = null;
+    this.dataProvider = null;
   }
 
-  _prepareStatements() {
-    this.stmtGetCompany = this.db.prepare(`
-      SELECT id, symbol, name, sector, market_cap
-      FROM companies WHERE LOWER(symbol) = LOWER(?)
-    `);
-
-    this.stmtGetPrice = this.db.prepare(`
-      SELECT close as price, date
-      FROM daily_prices
-      WHERE company_id = ? AND date <= ?
-      ORDER BY date DESC
-      LIMIT 1
-    `);
-
-    this.stmtGetForwardPrice = this.db.prepare(`
-      SELECT close as price, date
-      FROM daily_prices
-      WHERE company_id = ? AND date >= ?
-      ORDER BY date ASC
-      LIMIT 1
-    `);
+  async initialize() {
+    this.database = await getDatabaseAsync();
+    this.configManager = new StrategyConfigManager();
+    this.dataProvider = new HistoricalDataProvider();
   }
 
   /**
@@ -50,6 +31,10 @@ class StrategyBenchmark {
    * @returns {Object} Backtest results
    */
   async backtestStrategy(strategyId, config = {}) {
+    if (!this.database) {
+      await this.initialize();
+    }
+
     const {
       startDate = '2024-01-01',
       endDate = '2024-12-31',
@@ -57,7 +42,7 @@ class StrategyBenchmark {
       stepFrequency = 'weekly'
     } = config;
 
-    const agent = new ConfigurableStrategyAgent(this.db, strategyId);
+    const agent = new ConfigurableStrategyAgent(strategyId);
     const strategyConfig = agent.config;
 
     console.log(`\n📊 Backtesting: ${strategyConfig.name}`);
@@ -92,7 +77,7 @@ class StrategyBenchmark {
       agent.setSimulationDate(currentDate); // Sync agent's date for price queries
 
       // Update portfolio values
-      this._updatePortfolioValues(portfolio, currentDate);
+      await this._updatePortfolioValues(portfolio, currentDate);
 
       // Generate signals
       const signals = [];
@@ -159,10 +144,14 @@ class StrategyBenchmark {
    * @returns {Object} Comparison results
    */
   async benchmarkAllPresets(config = {}) {
+    if (!this.database) {
+      await this.initialize();
+    }
+
     const startTime = Date.now();
 
     console.log('\n' + '='.repeat(70));
-    console.log('🏆 STRATEGY BENCHMARK - ALL PRESETS');
+    console.log('STRATEGY BENCHMARK - ALL PRESETS');
     console.log('='.repeat(70));
     console.log(`Period: ${config.startDate || '2024-01-01'} to ${config.endDate || '2024-12-31'}`);
     console.log(`Initial Capital: $${(config.initialCapital || 100000).toLocaleString()}`);
@@ -174,14 +163,15 @@ class StrategyBenchmark {
     for (const preset of presets) {
       // Try to get existing benchmark strategy or create new one
       let strategy;
-      const existingStrategy = this.db.prepare(
-        'SELECT * FROM strategy_configs WHERE name = ?'
-      ).get(`Benchmark_${preset.name}`);
+      const existingStrategyResult = await this.database.query(
+        'SELECT * FROM strategy_configs WHERE name = $1',
+        [`Benchmark_${preset.name}`]
+      );
 
-      if (existingStrategy) {
-        strategy = existingStrategy;
+      if (existingStrategyResult.rows.length > 0) {
+        strategy = existingStrategyResult.rows[0];
       } else {
-        strategy = this.configManager.createStrategy({
+        strategy = await this.configManager.createStrategy({
           name: `Benchmark_${preset.name}`,
           description: preset.description
         }, preset.name);
@@ -425,15 +415,28 @@ class StrategyBenchmark {
     return allDays.filter((_, i) => i % 5 === 0); // weekly
   }
 
-  _updatePortfolioValues(portfolio, date) {
+  async _updatePortfolioValues(portfolio, date) {
     let positionsValue = 0;
 
     for (const [symbol, position] of portfolio.positions) {
-      const company = this.stmtGetCompany.get(symbol);
-      if (!company) continue;
+      const companyResult = await this.database.query(`
+        SELECT id, symbol, name, sector, market_cap
+        FROM companies WHERE LOWER(symbol) = LOWER($1)
+      `, [symbol]);
 
-      const priceData = this.stmtGetPrice.get(company.id, date);
-      if (priceData) {
+      if (companyResult.rows.length === 0) continue;
+      const company = companyResult.rows[0];
+
+      const priceResult = await this.database.query(`
+        SELECT close as price, date
+        FROM daily_prices
+        WHERE company_id = $1 AND date <= $2
+        ORDER BY date DESC
+        LIMIT 1
+      `, [company.id, date]);
+
+      if (priceResult.rows.length > 0) {
+        const priceData = priceResult.rows[0];
         position.currentPrice = priceData.price;
         position.marketValue = position.shares * priceData.price;
         position.unrealizedPnL = (priceData.price - position.avgCost) * position.shares;
@@ -639,14 +642,9 @@ class StrategyBenchmark {
  * Run the benchmark and print results
  */
 async function runStrategyBenchmark() {
-  if (isPostgres) {
-    console.error('runStrategyBenchmark() is not yet supported in PostgreSQL mode.');
-    console.error('Use async database methods from lib/db.js');
-    process.exit(1);
-  }
-
   try {
-    const benchmark = new StrategyBenchmark(db);
+    const benchmark = new StrategyBenchmark();
+    await benchmark.initialize();
 
     const results = await benchmark.benchmarkAllPresets({
       startDate: '2024-01-01',
@@ -657,11 +655,11 @@ async function runStrategyBenchmark() {
 
     // Print results
     console.log('\n' + '='.repeat(80));
-    console.log('📊 BENCHMARK RESULTS');
+    console.log('BENCHMARK RESULTS');
     console.log('='.repeat(80));
 
     // Performance Ranking Table
-    console.log('\n📈 PERFORMANCE RANKING:');
+    console.log('\nPERFORMANCE RANKING:');
     console.log('┌────────────────────────┬──────────────┬────────────┬──────────────┬──────────┐');
     console.log('│ Strategy               │ Total Return │ Sharpe     │ Max Drawdown │ Alpha    │');
     console.log('├────────────────────────┼──────────────┼────────────┼──────────────┼──────────┤');
@@ -677,7 +675,7 @@ async function runStrategyBenchmark() {
     console.log('└────────────────────────┴──────────────┴────────────┴──────────────┴──────────┘');
 
     // Trading Behavior Table
-    console.log('\n📊 TRADING BEHAVIOR:');
+    console.log('\nTRADING BEHAVIOR:');
     console.log('┌────────────────────────┬────────┬──────────┬──────────┬──────────┬──────────┐');
     console.log('│ Strategy               │ Trades │ Win Rate │ Avg Hold │ Turnover │ P/F      │');
     console.log('├────────────────────────┼────────┼──────────┼──────────┼──────────┼──────────┤');
@@ -694,7 +692,7 @@ async function runStrategyBenchmark() {
     console.log('└────────────────────────┴────────┴──────────┴──────────┴──────────┴──────────┘');
 
     // Highlights
-    console.log('\n🏆 HIGHLIGHTS:');
+    console.log('\nHIGHLIGHTS:');
     const h = results.comparison.highlights;
     console.log(`   Best Return:        ${h.bestReturn.name} (${h.bestReturn.value})`);
     console.log(`   Best Risk-Adjusted: ${h.bestRiskAdjusted.name} (Sharpe: ${h.bestRiskAdjusted.sharpe})`);
@@ -702,30 +700,30 @@ async function runStrategyBenchmark() {
     console.log(`   Highest Win Rate:   ${h.highestWinRate.name} (${h.highestWinRate.value})`);
     console.log(`   Worst Return:       ${h.worstReturn.name} (${h.worstReturn.value})`);
 
-    console.log(`\n⏱️ Total Benchmark Time: ${results.elapsedSeconds.toFixed(1)}s`);
+    console.log(`\nTotal Benchmark Time: ${results.elapsedSeconds.toFixed(1)}s`);
     console.log('='.repeat(80) + '\n');
 
     // Save results
     const resultsPath = path.join(__dirname, '../../../data/strategy-benchmark-results.json');
     require('fs').writeFileSync(resultsPath, JSON.stringify(results, null, 2));
-    console.log(`💾 Full results saved to: ${resultsPath}`);
+    console.log(`Full results saved to: ${resultsPath}`);
 
     return results;
   } catch (error) {
+    console.error('Error running benchmark:', error);
     throw error;
   }
-  // Note: Don't close shared database instance
 }
 
 // Run if called directly
 if (require.main === module) {
   runStrategyBenchmark()
     .then(() => {
-      console.log('\n✅ Benchmark completed successfully');
+      console.log('\nBenchmark completed successfully');
       process.exit(0);
     })
     .catch(error => {
-      console.error('\n❌ Benchmark failed:', error);
+      console.error('\nBenchmark failed:', error);
       process.exit(1);
     });
 }

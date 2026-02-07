@@ -3,7 +3,7 @@
 // Implements 6 diagnostic tests to identify overfitting in backtest results
 // Based on Bailey & Lopez de Prado research and Nassim Taleb principles
 
-const { db } = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 
 /**
  * Overfitting Detector
@@ -11,8 +11,7 @@ const { db } = require('../../database');
  * Runs 6 diagnostic tests and provides overall risk assessment
  */
 class OverfittingDetector {
-  constructor(database) {
-    this.db = database || db;
+  constructor() {
   }
 
   /**
@@ -20,31 +19,36 @@ class OverfittingDetector {
    * Returns comprehensive diagnostics and risk assessment
    */
   async analyzeRun(runId) {
+    const database = await getDatabaseAsync();
+
     console.log(`\n${'='.repeat(70)}`);
     console.log(`🔍 OVERFITTING DETECTION ANALYSIS - Run #${runId}`);
     console.log('='.repeat(70));
 
     // Get run data
-    const run = this.db.prepare(`
-      SELECT * FROM weight_optimization_runs WHERE id = ?
-    `).get(runId);
+    const runResult = await database.query(
+      `SELECT * FROM weight_optimization_runs WHERE id = $1`,
+      [runId]
+    );
+    const run = runResult.rows[0];
 
     if (!run) {
       throw new Error(`Run ${runId} not found`);
     }
 
     // Get combination results
-    const combinations = this.db.prepare(`
-      SELECT * FROM weight_combination_results
-      WHERE run_id = ?
-    `).all(runId);
+    const combinationsResult = await database.query(
+      `SELECT * FROM weight_combination_results WHERE run_id = $1`,
+      [runId]
+    );
+    const combinations = combinationsResult.rows;
 
     // Get walk-forward periods
-    const wfPeriods = this.db.prepare(`
-      SELECT * FROM walk_forward_periods
-      WHERE run_id = ?
-      ORDER BY period_index
-    `).all(runId);
+    const wfPeriodsResult = await database.query(
+      `SELECT * FROM walk_forward_periods WHERE run_id = $1 ORDER BY period_index`,
+      [runId]
+    );
+    const wfPeriods = wfPeriodsResult.rows;
 
     const diagnostics = [];
 
@@ -60,22 +64,23 @@ class OverfittingDetector {
 
     // Store all diagnostics in database
     for (const diagnostic of diagnostics) {
-      this.db.prepare(`
-        INSERT INTO overfitting_diagnostics (
+      await database.query(
+        `INSERT INTO overfitting_diagnostics (
           run_id, diagnostic_type, severity, metric_name,
           metric_value, threshold_value, passed,
           description, recommendation
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        runId,
-        diagnostic.type,
-        diagnostic.severity,
-        diagnostic.metricName,
-        diagnostic.metricValue,
-        diagnostic.thresholdValue,
-        diagnostic.passed ? 1 : 0,
-        diagnostic.description,
-        diagnostic.recommendation
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          runId,
+          diagnostic.type,
+          diagnostic.severity,
+          diagnostic.metricName,
+          diagnostic.metricValue,
+          diagnostic.thresholdValue,
+          diagnostic.passed,
+          diagnostic.description,
+          diagnostic.recommendation
+        ]
       );
     }
 

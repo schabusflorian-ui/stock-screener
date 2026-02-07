@@ -1,6 +1,7 @@
 // src/services/backtesting/multiStrategyBacktester.js
 // Multi-strategy backtest runner for testing MetaAllocator
 
+const { getDatabaseAsync } = require('../../database');
 const { MetaAllocator } = require('../agent/metaAllocator');
 const { HistoricalDataProvider } = require('./historicalDataProvider');
 const { StrategyConfigManager } = require('../agent/strategyConfig');
@@ -9,10 +10,10 @@ const { StrategyConfigManager } = require('../agent/strategyConfig');
  * Backtests a multi-strategy configuration with dynamic capital allocation
  */
 class MultiStrategyBacktester {
-  constructor(db) {
-    this.db = db;
-    this.dataProvider = new HistoricalDataProvider(db);
-    this.configManager = new StrategyConfigManager(db);
+  async initialize() {
+    this.database = await getDatabaseAsync();
+    this.dataProvider = new HistoricalDataProvider(this.database);
+    this.configManager = new StrategyConfigManager(this.database);
   }
 
   /**

@@ -2,7 +2,7 @@
 // Statistical Validation Framework for Alpha Significance Testing
 // Implements t-tests, bootstrap confidence intervals, Deflated Sharpe Ratio, and multiple testing corrections
 
-const { db } = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 
 /**
  * Normal distribution CDF
@@ -508,6 +508,8 @@ function correctForMultipleTesting(pValues, method = 'fdr_bh') {
  * Run complete alpha validation for a portfolio
  */
 async function runAlphaValidation(params) {
+  const database = await getDatabaseAsync();
+
   const {
     portfolioId,
     benchmark = 'SPY',
@@ -518,41 +520,43 @@ async function runAlphaValidation(params) {
   } = params;
 
   // Get portfolio returns
-  const portfolioReturns = db.prepare(`
+  const portfolioReturns = await database.query(`
     SELECT snapshot_date as date, daily_return_pct as daily_return
     FROM portfolio_snapshots
-    WHERE portfolio_id = ?
-      AND snapshot_date >= COALESCE(?, '1900-01-01')
-      AND snapshot_date <= COALESCE(?, '2100-01-01')
+    WHERE portfolio_id = $1
+      AND snapshot_date >= COALESCE($2, '1900-01-01')
+      AND snapshot_date <= COALESCE($3, '2100-01-01')
     ORDER BY snapshot_date ASC
-  `).all(portfolioId, startDate, endDate);
+  `, [portfolioId, startDate, endDate]);
 
-  if (portfolioReturns.length < 60) {
-    throw new Error(`Insufficient portfolio data: ${portfolioReturns.length} days`);
+  if (portfolioReturns.rows.length < 60) {
+    throw new Error(`Insufficient portfolio data: ${portfolioReturns.rows.length} days`);
   }
 
   // Get benchmark returns
-  const benchmarkReturns = db.prepare(`
+  const benchmarkReturns = await database.query(`
     SELECT date, close
     FROM daily_prices
-    WHERE symbol = ?
-      AND date >= COALESCE(?, '1900-01-01')
-      AND date <= COALESCE(?, '2100-01-01')
+    WHERE symbol = $1
+      AND date >= COALESCE($2, '1900-01-01')
+      AND date <= COALESCE($3, '2100-01-01')
     ORDER BY date ASC
-  `).all(benchmark, startDate, endDate);
+  `, [benchmark, startDate, endDate]);
 
   // Calculate benchmark returns
   const benchmarkReturnMap = new Map();
-  for (let i = 1; i < benchmarkReturns.length; i++) {
-    const ret = (benchmarkReturns[i].close - benchmarkReturns[i - 1].close) / benchmarkReturns[i - 1].close;
-    benchmarkReturnMap.set(benchmarkReturns[i].date, ret);
+  const benchmarkData = benchmarkReturns.rows;
+  for (let i = 1; i < benchmarkData.length; i++) {
+    const ret = (benchmarkData[i].close - benchmarkData[i - 1].close) / benchmarkData[i - 1].close;
+    benchmarkReturnMap.set(benchmarkData[i].date, ret);
   }
 
   // Align returns
   const alignedPortfolio = [];
   const alignedBenchmark = [];
 
-  for (const pr of portfolioReturns) {
+  const portfolioData = portfolioReturns.rows;
+  for (const pr of portfolioData) {
     if (benchmarkReturnMap.has(pr.date)) {
       alignedPortfolio.push(pr.daily_return);
       alignedBenchmark.push(benchmarkReturnMap.get(pr.date));
@@ -599,7 +603,7 @@ async function runAlphaValidation(params) {
   const minTrackRecord = minimumTrackRecord(sharpe, 0.95, stats.skew, stats.kurtosis);
 
   // Store results
-  db.prepare(`
+  await database.query(`
     INSERT INTO alpha_validation_results
     (portfolio_id, benchmark, start_date, end_date,
      alpha, alpha_t_stat, alpha_p_value, alpha_significant,
@@ -607,16 +611,16 @@ async function runAlphaValidation(params) {
      bootstrap_alpha_lower, bootstrap_alpha_upper,
      bootstrap_sharpe_lower, bootstrap_sharpe_upper,
      n_bootstrap, min_track_record_months, information_ratio, tracking_error)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+  `, [
     portfolioId,
     benchmark,
-    portfolioReturns[0]?.date,
-    portfolioReturns[portfolioReturns.length - 1]?.date,
+    portfolioData[0]?.date,
+    portfolioData[portfolioData.length - 1]?.date,
     alphaTest.alpha?.annualized || 0,
     alphaTest.alpha?.tStatistic || 0,
     alphaTest.alpha?.pValue || 1,
-    (alphaTest.alpha?.significant ? 1 : 0),
+    alphaTest.alpha?.significant || false,
     alphaTest.beta?.value || 0,
     sharpe,
     deflatedSharpe.deflatedSharpe,
@@ -629,14 +633,14 @@ async function runAlphaValidation(params) {
     minTrackRecord.minMonths,
     alphaTest.informationRatio || 0,
     alphaTest.trackingError || 0
-  );
+  ]);
 
   return {
     portfolioId,
     benchmark,
     period: {
-      start: portfolioReturns[0]?.date,
-      end: portfolioReturns[portfolioReturns.length - 1]?.date,
+      start: portfolioData[0]?.date,
+      end: portfolioData[portfolioData.length - 1]?.date,
       tradingDays: alignedPortfolio.length
     },
     returnStats: {
@@ -743,14 +747,18 @@ function interpretAlphaResults(alpha, pValue, ir) {
 /**
  * Get alpha validation history
  */
-function getAlphaValidationHistory(portfolioId, limit = 10) {
-  return db.prepare(`
+async function getAlphaValidationHistory(portfolioId, limit = 10) {
+  const database = await getDatabaseAsync();
+
+  const result = await database.query(`
     SELECT *
     FROM alpha_validation_results
-    WHERE portfolio_id = ?
+    WHERE portfolio_id = $1
     ORDER BY created_at DESC
-    LIMIT ?
-  `).all(portfolioId, limit);
+    LIMIT $2
+  `, [portfolioId, limit]);
+
+  return result.rows;
 }
 
 module.exports = {

@@ -1,6 +1,7 @@
 // src/services/backtesting/screeningBacktestEngine.js
 // Screening Backtest Engine - Tests stock screening strategies historically
 
+const { getDatabaseAsync } = require('../../database');
 const { calculateMetrics } = require('./walkForwardEngine');
 
 /**
@@ -89,8 +90,7 @@ const SCREEN_PRESETS = {
  * - Returns performance metrics and analysis
  */
 class ScreeningBacktestEngine {
-  constructor(db, options = {}) {
-    this.db = db.getDatabase ? db.getDatabase() : db;
+  constructor(options = {}) {
     this.options = {
       riskFreeRate: 0.02,
       tradingDaysPerYear: 252,
@@ -99,62 +99,13 @@ class ScreeningBacktestEngine {
       slippage: 0.0005,
       ...options
     };
-
-    this._prepareStatements();
   }
 
-  _prepareStatements() {
-    // Get benchmark prices
-    this.stmtGetBenchmarkPrices = this.db.prepare(`
-      SELECT dp.date, dp.close
-      FROM daily_prices dp
-      JOIN companies c ON dp.company_id = c.id
-      WHERE LOWER(c.symbol) = LOWER(?)
-        AND dp.date BETWEEN ? AND ?
-      ORDER BY dp.date ASC
-    `);
-
-    // Get price on a specific date
-    this.stmtGetPrice = this.db.prepare(`
-      SELECT dp.close
-      FROM daily_prices dp
-      JOIN companies c ON dp.company_id = c.id
-      WHERE LOWER(c.symbol) = LOWER(?)
-        AND dp.date <= ?
-      ORDER BY dp.date DESC
-      LIMIT 1
-    `);
-
-    // Get stocks passing screening criteria at a historical date
-    // This is a simplified version - the full ScreeningService has more complex logic
-    this.stmtScreenStocks = this.db.prepare(`
-      SELECT DISTINCT
-        c.id as company_id,
-        c.symbol,
-        c.name,
-        c.sector,
-        c.market_cap,
-        cm.roic,
-        cm.roe,
-        cm.pe_ratio,
-        cm.pb_ratio,
-        cm.debt_to_equity,
-        cm.fcf_yield,
-        cm.operating_margin,
-        cm.revenue_growth_yoy,
-        cm.earnings_growth_yoy
-      FROM calculated_metrics cm
-      JOIN companies c ON cm.company_id = c.id
-      WHERE cm.fiscal_period <= ?
-        AND cm.fiscal_period >= date(?, '-1 year')
-        AND c.market_cap >= ?
-        AND c.symbol IS NOT NULL
-        AND c.symbol NOT LIKE 'CIK%'
-      GROUP BY c.id
-      HAVING MAX(cm.fiscal_period)
-      ORDER BY cm.roic DESC
-      LIMIT 500
-    `);
+  async _getDatabase() {
+    if (!this.database) {
+      this.database = await getDatabaseAsync();
+    }
+    return this.database;
   }
 
   /**
@@ -207,8 +158,19 @@ class ScreeningBacktestEngine {
     console.log(`Rebalance: ${rebalanceFrequency}, Max ${maxPositions} positions`);
     console.log('Criteria:', JSON.stringify(criteria, null, 2));
 
+    const database = await this._getDatabase();
+
     // Get benchmark prices for trading days
-    const benchmarkPrices = this.stmtGetBenchmarkPrices.all(benchmark, startDate, endDate);
+    const benchmarkPricesResult = await database.query(`
+      SELECT dp.date, dp.close
+      FROM daily_prices dp
+      JOIN companies c ON dp.company_id = c.id
+      WHERE LOWER(c.symbol) = LOWER($1)
+        AND dp.date BETWEEN $2 AND $3
+      ORDER BY dp.date ASC
+    `, [benchmark, startDate, endDate]);
+
+    const benchmarkPrices = benchmarkPricesResult.rows;
     if (benchmarkPrices.length < 30) {
       throw new Error('Insufficient trading days for backtest');
     }
@@ -232,7 +194,7 @@ class ScreeningBacktestEngine {
       const date = benchmarkPrices[i].date;
 
       // Calculate portfolio value
-      const portfolioValue = this._calculatePortfolioValue(positions, date);
+      const portfolioValue = await this._calculatePortfolioValue(positions, date);
       const totalValue = capital + portfolioValue;
 
       // Calculate daily return
@@ -255,7 +217,7 @@ class ScreeningBacktestEngine {
         console.log(`\n📅 Screening on ${date}...`);
 
         // Run screen
-        const screenedStocks = this._runScreen(criteria, date, minMarketCap);
+        const screenedStocks = await this._runScreen(criteria, date, minMarketCap);
 
         if (screenedStocks.length === 0) {
           console.log('  No stocks passed screening criteria');
@@ -284,7 +246,7 @@ class ScreeningBacktestEngine {
         const targetWeights = this._calculateWeights(targetHoldings, positionSizing);
 
         // Execute rebalance
-        const rebalanceTrades = this._executeRebalance(
+        const rebalanceTrades = await this._executeRebalance(
           positions,
           targetWeights,
           totalValue,
@@ -354,9 +316,40 @@ class ScreeningBacktestEngine {
   /**
    * Run screen at a historical date
    */
-  _runScreen(criteria, asOfDate, minMarketCap) {
+  async _runScreen(criteria, asOfDate, minMarketCap) {
+    const database = await this._getDatabase();
+
     // Get all stocks with metrics
-    const stocks = this.stmtScreenStocks.all(asOfDate, asOfDate, minMarketCap);
+    const stocksResult = await database.query(`
+      SELECT DISTINCT
+        c.id as company_id,
+        c.symbol,
+        c.name,
+        c.sector,
+        c.market_cap,
+        cm.roic,
+        cm.roe,
+        cm.pe_ratio,
+        cm.pb_ratio,
+        cm.debt_to_equity,
+        cm.fcf_yield,
+        cm.operating_margin,
+        cm.revenue_growth_yoy,
+        cm.earnings_growth_yoy
+      FROM calculated_metrics cm
+      JOIN companies c ON cm.company_id = c.id
+      WHERE cm.fiscal_period <= $1
+        AND cm.fiscal_period >= $1::date - INTERVAL '1 year'
+        AND c.market_cap >= $3
+        AND c.symbol IS NOT NULL
+        AND c.symbol NOT LIKE 'CIK%'
+      GROUP BY c.id, c.symbol, c.name, c.sector, c.market_cap, cm.roic, cm.roe, cm.pe_ratio, cm.pb_ratio, cm.debt_to_equity, cm.fcf_yield, cm.operating_margin, cm.revenue_growth_yoy, cm.earnings_growth_yoy
+      HAVING MAX(cm.fiscal_period) IS NOT NULL
+      ORDER BY cm.roic DESC
+      LIMIT 500
+    `, [asOfDate, asOfDate, minMarketCap]);
+
+    const stocks = stocksResult.rows;
 
     // Apply criteria filters
     const filtered = stocks.filter(stock => {
@@ -471,11 +464,22 @@ class ScreeningBacktestEngine {
   /**
    * Calculate portfolio value
    */
-  _calculatePortfolioValue(positions, date) {
+  async _calculatePortfolioValue(positions, date) {
+    const database = await this._getDatabase();
     let value = 0;
     for (const [symbol, position] of positions) {
-      const priceData = this.stmtGetPrice.get(symbol, date);
-      if (priceData) {
+      const priceResult = await database.query(`
+        SELECT dp.close
+        FROM daily_prices dp
+        JOIN companies c ON dp.company_id = c.id
+        WHERE LOWER(c.symbol) = LOWER($1)
+          AND dp.date <= $2
+        ORDER BY dp.date DESC
+        LIMIT 1
+      `, [symbol, date]);
+
+      if (priceResult.rows.length > 0) {
+        const priceData = priceResult.rows[0];
         value += position.shares * priceData.close;
       }
     }
@@ -485,14 +489,30 @@ class ScreeningBacktestEngine {
   /**
    * Execute rebalance trades
    */
-  _executeRebalance(positions, targetWeights, totalValue, date) {
+  async _executeRebalance(positions, targetWeights, totalValue, date) {
+    const database = await this._getDatabase();
     const trades = [];
     const targetSymbols = new Set(Object.keys(targetWeights));
+
+    // Helper function to get price
+    const getPrice = async (symbol, asOfDate) => {
+      const priceResult = await database.query(`
+        SELECT dp.close
+        FROM daily_prices dp
+        JOIN companies c ON dp.company_id = c.id
+        WHERE LOWER(c.symbol) = LOWER($1)
+          AND dp.date <= $2
+        ORDER BY dp.date DESC
+        LIMIT 1
+      `, [symbol, asOfDate]);
+
+      return priceResult.rows.length > 0 ? priceResult.rows[0] : null;
+    };
 
     // Sell positions not in target
     for (const [symbol, position] of positions) {
       if (!targetSymbols.has(symbol)) {
-        const priceData = this.stmtGetPrice.get(symbol, date);
+        const priceData = await getPrice(symbol, date);
         if (priceData && position.shares > 0) {
           trades.push({
             date,
@@ -511,7 +531,7 @@ class ScreeningBacktestEngine {
     // Calculate available capital
     let availableCapital = totalValue;
     for (const [symbol, position] of positions) {
-      const priceData = this.stmtGetPrice.get(symbol, date);
+      const priceData = await getPrice(symbol, date);
       if (priceData) {
         availableCapital -= position.shares * priceData.close;
       }
@@ -520,7 +540,7 @@ class ScreeningBacktestEngine {
     // Add/adjust target positions
     for (const [symbol, targetWeight] of Object.entries(targetWeights)) {
       const targetValue = totalValue * targetWeight;
-      const priceData = this.stmtGetPrice.get(symbol, date);
+      const priceData = await getPrice(symbol, date);
 
       if (!priceData || priceData.close <= 0) continue;
 

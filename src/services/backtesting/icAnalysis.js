@@ -2,7 +2,7 @@
 // Information Coefficient (IC) Analysis for Signal Quality Testing
 // Measures predictive power of trading signals using rank correlation
 
-const { db } = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 
 /**
  * Calculate Spearman rank correlation coefficient
@@ -320,22 +320,35 @@ async function analyzeICDecay(params) {
       });
 
       // Store in database
-      db.prepare(`
-        INSERT OR REPLACE INTO signal_ic_history
+      const database = await getDatabaseAsync();
+      await database.query(`
+        INSERT INTO signal_ic_history
         (signal_type, horizon_days, ic_value, ic_ir, t_stat, p_value, hit_rate, regime, sample_size, calculated_date, start_date, end_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, date('now'), ?, ?)
-      `).run(
-        signalType,
-        horizon,
-        avgIC,
-        icIR,
-        tStat,
-        pValue,
-        null, // hit_rate calculated separately
-        regime,
-        icValues.length,
-        startDate,
-        endDate
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_DATE, $10, $11)
+        ON CONFLICT (signal_type, horizon_days, calculated_date)
+        DO UPDATE SET
+          ic_value = $3,
+          ic_ir = $4,
+          t_stat = $5,
+          p_value = $6,
+          regime = $8,
+          sample_size = $9,
+          start_date = $10,
+          end_date = $11
+      `,
+        [
+          signalType,
+          horizon,
+          avgIC,
+          icIR,
+          tStat,
+          pValue,
+          null, // hit_rate calculated separately
+          regime,
+          icValues.length,
+          startDate,
+          endDate
+        ]
       );
     }
   }
@@ -523,15 +536,24 @@ function alignSignals(signals1, signals2) {
  */
 async function getSignalHistory(signalType, startDate, endDate, regime = 'ALL') {
   // Try to get from trading_signal_history if it exists
-  const signals = db.prepare(`
+  const database = await getDatabaseAsync();
+  const query = `
     SELECT symbol, date, signal_value as value, regime
     FROM trading_signal_history
-    WHERE signal_type = ?
-      AND date >= COALESCE(?, '1900-01-01')
-      AND date <= COALESCE(?, '2100-01-01')
-      ${regime !== 'ALL' ? 'AND regime = ?' : ''}
+    WHERE signal_type = $1
+      AND date >= COALESCE($2, '1900-01-01')
+      AND date <= COALESCE($3, '2100-01-01')
+      ${regime !== 'ALL' ? 'AND regime = $4' : ''}
     ORDER BY date ASC
-  `).all(signalType, startDate, endDate, ...(regime !== 'ALL' ? [regime] : []));
+  `;
+
+  const params = [signalType, startDate, endDate];
+  if (regime !== 'ALL') {
+    params.push(regime);
+  }
+
+  const result = await database.query(query, params);
+  const signals = result.rows;
 
   if (signals.length > 0) {
     return signals;
@@ -545,7 +567,7 @@ async function getSignalHistory(signalType, startDate, endDate, regime = 'ALL') 
 /**
  * Generate synthetic signals from available metrics for testing
  */
-function generateSyntheticSignals(signalType, startDate, endDate) {
+async function generateSyntheticSignals(signalType, startDate, endDate) {
   const signals = [];
 
   // Map signal types to metric calculations
@@ -561,15 +583,19 @@ function generateSyntheticSignals(signalType, startDate, endDate) {
   if (metrics.length === 0) return signals;
 
   // Get data from calculated_metrics
-  const data = db.prepare(`
+  const database = await getDatabaseAsync();
+  const placeholders = metrics.map((_, i) => `$${i + 1}`).join(',');
+  const result = await database.query(`
     SELECT cm.symbol, cm.date, cm.metric_name, cm.value
     FROM calculated_metrics cm
     JOIN companies c ON cm.symbol = c.symbol
-    WHERE cm.metric_name IN (${metrics.map(() => '?').join(',')})
-      AND cm.date >= COALESCE(?, '1900-01-01')
-      AND cm.date <= COALESCE(?, '2100-01-01')
+    WHERE cm.metric_name IN (${placeholders})
+      AND cm.date >= COALESCE($${metrics.length + 1}, '1900-01-01')
+      AND cm.date <= COALESCE($${metrics.length + 2}, '2100-01-01')
     ORDER BY cm.date ASC
-  `).all(...metrics, startDate, endDate);
+  `, [...metrics, startDate, endDate]);
+
+  const data = result.rows;
 
   // Aggregate metrics into signals
   const bySymbolDate = new Map();
@@ -599,18 +625,19 @@ function generateSyntheticSignals(signalType, startDate, endDate) {
  */
 async function getPriceData(symbols, startDate, endDate) {
   const priceData = {};
+  const database = await getDatabaseAsync();
 
   for (const symbol of symbols) {
-    const prices = db.prepare(`
+    const result = await database.query(`
       SELECT date, close
       FROM daily_prices
-      WHERE symbol = ?
-        AND date >= COALESCE(?, '1900-01-01')
-        AND date <= COALESCE(?, '2100-01-01')
+      WHERE symbol = $1
+        AND date >= COALESCE($2, '1900-01-01')
+        AND date <= COALESCE($3, '2100-01-01')
       ORDER BY date ASC
-    `).all(symbol, startDate, endDate);
+    `, [symbol, startDate, endDate]);
 
-    priceData[symbol] = prices;
+    priceData[symbol] = result.rows;
   }
 
   return priceData;
@@ -659,25 +686,31 @@ function interpretICResults(horizonResults, optimalHorizon) {
 /**
  * Get IC history for a signal type
  */
-function getICHistory(signalType, days = 90) {
-  return db.prepare(`
+async function getICHistory(signalType, days = 90) {
+  const database = await getDatabaseAsync();
+  const result = await database.query(`
     SELECT *
     FROM signal_ic_history
-    WHERE signal_type = ?
-      AND calculated_date >= date('now', '-' || ? || ' days')
+    WHERE signal_type = $1
+      AND calculated_date >= CURRENT_DATE - INTERVAL '1 day' * $2
     ORDER BY calculated_date DESC, horizon_days ASC
-  `).all(signalType, days);
+  `, [signalType, days]);
+
+  return result.rows;
 }
 
 /**
  * Get all signal types with IC data
  */
-function getSignalTypes() {
-  return db.prepare(`
+async function getSignalTypes() {
+  const database = await getDatabaseAsync();
+  const result = await database.query(`
     SELECT DISTINCT signal_type
     FROM signal_ic_history
     ORDER BY signal_type
-  `).all().map(r => r.signal_type);
+  `);
+
+  return result.rows.map(r => r.signal_type);
 }
 
 module.exports = {

@@ -2,7 +2,7 @@
 // Execution Simulation for Realistic Backtest Performance
 // Models slippage, market impact, and execution costs
 
-const { db } = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 
 /**
  * Market Impact Models
@@ -291,13 +291,14 @@ async function analyzeExecutionCosts(params) {
 
   // Store results
   if (portfolioId) {
-    db.prepare(`
+    const database = getDatabaseAsync();
+    await database.query(`
       INSERT INTO execution_analysis
       (portfolio_id, backtest_id, total_trades, avg_slippage_bps, total_slippage_bps,
        avg_market_impact_bps, total_market_impact_bps, avg_spread_cost_bps, total_spread_cost_bps,
        gross_return, net_return, implementation_shortfall)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    `, [
       portfolioId,
       backtestId || null,
       numTrades,
@@ -310,7 +311,7 @@ async function analyzeExecutionCosts(params) {
       grossReturn,
       netReturn,
       totalCostDollars
-    );
+    ]);
   }
 
   return {
@@ -337,35 +338,41 @@ async function analyzeExecutionCosts(params) {
  * Get market data for a specific trade
  */
 async function getMarketDataForTrade(symbol, date) {
+  const database = getDatabaseAsync();
+
   // Get price and volume
-  const priceData = db.prepare(`
+  const priceResult = await database.query(`
     SELECT close as price, volume
     FROM daily_prices
-    WHERE symbol = ? AND date <= ?
+    WHERE symbol = $1 AND date <= $2
     ORDER BY date DESC
     LIMIT 1
-  `).get(symbol, date);
+  `, [symbol, date]);
 
-  if (!priceData) return null;
+  if (!priceResult.rows || priceResult.rows.length === 0) return null;
+  const priceData = priceResult.rows[0];
 
   // Get average volume (20-day)
-  const avgVolumeData = db.prepare(`
-    SELECT AVG(volume) as avgVolume
+  const avgVolumeResult = await database.query(`
+    SELECT AVG(volume) as avg_volume
     FROM daily_prices
-    WHERE symbol = ? AND date <= ?
+    WHERE symbol = $1 AND date <= $2
     ORDER BY date DESC
     LIMIT 20
-  `).get(symbol, date);
+  `, [symbol, date]);
+
+  const avgVolumeData = avgVolumeResult.rows[0];
 
   // Get volatility (20-day)
-  const returns = db.prepare(`
+  const returnsResult = await database.query(`
     SELECT close
     FROM daily_prices
-    WHERE symbol = ? AND date <= ?
+    WHERE symbol = $1 AND date <= $2
     ORDER BY date DESC
     LIMIT 21
-  `).all(symbol, date);
+  `, [symbol, date]);
 
+  const returns = returnsResult.rows;
   let volatility = 0.02; // Default 2% daily vol
 
   if (returns.length >= 2) {
@@ -379,14 +386,16 @@ async function getMarketDataForTrade(symbol, date) {
   }
 
   // Get market cap
-  const company = db.prepare(`
-    SELECT market_cap FROM companies WHERE symbol = ?
-  `).get(symbol);
+  const companyResult = await database.query(`
+    SELECT market_cap FROM companies WHERE symbol = $1
+  `, [symbol]);
+
+  const company = companyResult.rows[0];
 
   return {
     price: priceData.price,
     volume: priceData.volume,
-    avgVolume: avgVolumeData?.avgVolume || priceData.volume,
+    avgVolume: avgVolumeData?.avg_volume || priceData.volume,
     volatility,
     marketCap: company?.market_cap || 10e9
   };
@@ -484,14 +493,16 @@ function generateExecutionInterpretation(totalCostBps, marketImpactBps) {
 /**
  * Get execution analysis history
  */
-function getExecutionHistory(portfolioId, limit = 10) {
-  return db.prepare(`
+async function getExecutionHistory(portfolioId, limit = 10) {
+  const database = getDatabaseAsync();
+  const result = await database.query(`
     SELECT *
     FROM execution_analysis
-    WHERE portfolio_id = ?
+    WHERE portfolio_id = $1
     ORDER BY created_at DESC
-    LIMIT ?
-  `).all(portfolioId, limit);
+    LIMIT $2
+  `, [portfolioId, limit]);
+  return result.rows;
 }
 
 module.exports = {

@@ -2,6 +2,8 @@
 // Provides point-in-time data access for historical backtesting
 // Ensures no lookahead bias by filtering all queries to simulationDate
 
+const { getDatabaseAsync } = require('../../database');
+
 /**
  * HistoricalDataProvider - Time-travel layer for backtesting
  *
@@ -10,13 +12,11 @@
  */
 class HistoricalDataProvider {
   /**
-   * @param {Database} db - better-sqlite3 database instance
+   * Creates a HistoricalDataProvider instance
    */
-  constructor(db) {
-    this.db = db;
+  constructor() {
     this.simulationDate = null;
-    this._prepareStatements();
-    console.log('📊 HistoricalDataProvider initialized');
+    console.log('HistoricalDataProvider initialized');
   }
 
   /**
@@ -36,297 +36,288 @@ class HistoricalDataProvider {
     return this.simulationDate;
   }
 
-  _prepareStatements() {
-    // Price query with date filter
-    this.stmtGetPrice = this.db.prepare(`
-      SELECT close as price, date, high, low, volume
-      FROM daily_prices
-      WHERE company_id = ? AND date <= ?
-      ORDER BY date DESC
-      LIMIT 1
-    `);
-
-    // Get multiple days of prices for technical analysis
-    this.stmtGetPriceHistory = this.db.prepare(`
-      SELECT date, open, high, low, close, adjusted_close, volume
-      FROM daily_prices
-      WHERE company_id = ? AND date <= ?
-      ORDER BY date DESC
-      LIMIT ?
-    `);
-
-    // Price metrics computed as-of date (need to recompute or get latest before date)
-    this.stmtGetPriceMetrics = this.db.prepare(`
-      SELECT pm.*
-      FROM price_metrics pm
-      WHERE pm.company_id = ?
-    `);
-
-    // Calculated metrics (fundamentals) - get latest before simulation date
-    this.stmtGetCalculatedMetrics = this.db.prepare(`
-      SELECT *
-      FROM calculated_metrics
-      WHERE company_id = ?
-        AND fiscal_period <= ?
-      ORDER BY fiscal_period DESC
-      LIMIT 1
-    `);
-
-    // Sentiment data - get latest before simulation date
-    this.stmtGetSentiment = this.db.prepare(`
-      SELECT *
-      FROM combined_sentiment
-      WHERE company_id = ?
-        AND calculated_at <= ?
-      ORDER BY calculated_at DESC
-      LIMIT 1
-    `);
-
-    // Insider activity - only transactions before simulation date
-    this.stmtGetInsiderActivity = this.db.prepare(`
-      SELECT
-        SUM(CASE WHEN transaction_code IN ('P', 'A') THEN shares_transacted ELSE 0 END) as buy_shares,
-        SUM(CASE WHEN transaction_code = 'S' THEN shares_transacted ELSE 0 END) as sell_shares,
-        SUM(CASE WHEN transaction_code IN ('P', 'A') THEN total_value ELSE 0 END) as buy_value,
-        SUM(CASE WHEN transaction_code = 'S' THEN total_value ELSE 0 END) as sell_value,
-        COUNT(CASE WHEN transaction_code IN ('P', 'A') THEN 1 END) as buy_count,
-        COUNT(CASE WHEN transaction_code = 'S' THEN 1 END) as sell_count
-      FROM insider_transactions
-      WHERE company_id = ?
-        AND transaction_date BETWEEN date(?, '-90 days') AND ?
-    `);
-
-    // 13F holdings - get filings before simulation date
-    this.stmtGet13FHoldings = this.db.prepare(`
-      SELECT
-        ih.*,
-        fi.name as investor_name
-      FROM investor_holdings ih
-      JOIN famous_investors fi ON fi.id = ih.investor_id
-      WHERE ih.company_id = ?
-        AND ih.filing_date <= ?
-      ORDER BY ih.filing_date DESC
-    `);
-
-    // Congressional trades before simulation date
-    this.stmtGetCongressTrades = this.db.prepare(`
-      SELECT
-        COUNT(CASE WHEN transaction_type = 'purchase' THEN 1 END) as buy_count,
-        COUNT(CASE WHEN transaction_type = 'sale' THEN 1 END) as sell_count,
-        SUM(CASE WHEN transaction_type = 'purchase' THEN (amount_min + COALESCE(amount_max, amount_min)) / 2 ELSE 0 END) as buy_amount,
-        SUM(CASE WHEN transaction_type = 'sale' THEN (amount_min + COALESCE(amount_max, amount_min)) / 2 ELSE 0 END) as sell_amount
-      FROM congressional_trades
-      WHERE company_id = ?
-        AND transaction_date BETWEEN date(?, '-90 days') AND ?
-    `);
-
-    // Short interest data before simulation date
-    this.stmtGetShortInterest = this.db.prepare(`
-      SELECT *
-      FROM short_interest
-      WHERE company_id = ?
-        AND settlement_date <= ?
-      ORDER BY settlement_date DESC
-      LIMIT 1
-    `);
-
-    // Intrinsic value estimates before simulation date
-    this.stmtGetIntrinsicValue = this.db.prepare(`
-      SELECT
-        weighted_intrinsic_value as intrinsic_value_per_share,
-        margin_of_safety,
-        valuation_signal,
-        confidence_level as confidence_score
-      FROM intrinsic_value_estimates
-      WHERE company_id = ?
-        AND estimate_date <= ?
-      ORDER BY estimate_date DESC
-      LIMIT 1
-    `);
-
-    // Earnings dates before simulation date (for blackout checking)
-    this.stmtGetUpcomingEarnings = this.db.prepare(`
-      SELECT next_earnings_date as report_date
-      FROM earnings_calendar
-      WHERE company_id = ?
-        AND next_earnings_date > ?
-        AND next_earnings_date <= date(?, '+30 days')
-      ORDER BY next_earnings_date ASC
-      LIMIT 1
-    `);
-
-    // Factor scores as of simulation date
-    this.stmtGetFactorScores = this.db.prepare(`
-      SELECT *
-      FROM stock_factor_scores
-      WHERE company_id = ?
-        AND score_date <= ?
-      ORDER BY score_date DESC
-      LIMIT 1
-    `);
-
-    // VIX level for regime detection
-    this.stmtGetVIX = this.db.prepare(`
-      SELECT close as vix_level, date
-      FROM daily_prices p
-      JOIN companies c ON c.id = p.company_id
-      WHERE c.symbol = '^VIX'
-        AND p.date <= ?
-      ORDER BY p.date DESC
-      LIMIT 1
-    `);
-
-    // Get trading days in range
-    this.stmtGetTradingDays = this.db.prepare(`
-      SELECT DISTINCT date
-      FROM daily_prices
-      WHERE date BETWEEN ? AND ?
-      ORDER BY date ASC
-    `);
-
-    // Get all companies with price data on a specific date
-    this.stmtGetActiveCompanies = this.db.prepare(`
-      SELECT DISTINCT c.id, c.symbol, c.name, c.sector, c.market_cap
-      FROM companies c
-      JOIN daily_prices dp ON dp.company_id = c.id
-      WHERE dp.date = ?
-        AND c.symbol NOT LIKE '^%'
-        AND c.symbol NOT LIKE '%.%'
-      ORDER BY c.market_cap DESC
-    `);
-
-    // Get benchmark (SPY) price
-    this.stmtGetBenchmarkPrice = this.db.prepare(`
-      SELECT close as price, date
-      FROM daily_prices p
-      JOIN companies c ON c.id = p.company_id
-      WHERE c.symbol = 'SPY'
-        AND p.date <= ?
-      ORDER BY p.date DESC
-      LIMIT 1
-    `);
-  }
 
   // ========== Public API Methods ==========
 
   /**
    * Get latest price as of simulation date
    */
-  getLatestPrice(companyId) {
+  async getLatestPrice(companyId) {
     this._ensureSimulationDate();
-    return this.stmtGetPrice.get(companyId, this.simulationDate);
+    const database = getDatabaseAsync();
+    const result = await database.query(
+      `SELECT close as price, date, high, low, volume
+       FROM daily_prices
+       WHERE company_id = $1 AND date <= $2
+       ORDER BY date DESC
+       LIMIT 1`,
+      [companyId, this.simulationDate]
+    );
+    return result.rows[0];
   }
 
   /**
    * Get price history for technical analysis
    */
-  getPriceHistory(companyId, days = 200) {
+  async getPriceHistory(companyId, days = 200) {
     this._ensureSimulationDate();
-    return this.stmtGetPriceHistory.all(companyId, this.simulationDate, days);
+    const database = getDatabaseAsync();
+    const result = await database.query(
+      `SELECT date, open, high, low, close, adjusted_close, volume
+       FROM daily_prices
+       WHERE company_id = $1 AND date <= $2
+       ORDER BY date DESC
+       LIMIT $3`,
+      [companyId, this.simulationDate, days]
+    );
+    return result.rows;
   }
 
   /**
    * Get calculated metrics (fundamentals)
    */
-  getCalculatedMetrics(companyId) {
+  async getCalculatedMetrics(companyId) {
     this._ensureSimulationDate();
-    // Use simulation date as fiscal_period cutoff
-    return this.stmtGetCalculatedMetrics.get(companyId, this.simulationDate);
+    const database = getDatabaseAsync();
+    const result = await database.query(
+      `SELECT *
+       FROM calculated_metrics
+       WHERE company_id = $1
+         AND fiscal_period <= $2
+       ORDER BY fiscal_period DESC
+       LIMIT 1`,
+      [companyId, this.simulationDate]
+    );
+    return result.rows[0];
   }
 
   /**
    * Get sentiment data
    */
-  getSentiment(companyId) {
+  async getSentiment(companyId) {
     this._ensureSimulationDate();
-    return this.stmtGetSentiment.get(companyId, this.simulationDate);
+    const database = getDatabaseAsync();
+    const result = await database.query(
+      `SELECT *
+       FROM combined_sentiment
+       WHERE company_id = $1
+         AND calculated_at <= $2
+       ORDER BY calculated_at DESC
+       LIMIT 1`,
+      [companyId, this.simulationDate]
+    );
+    return result.rows[0];
   }
 
   /**
    * Get insider activity summary
    */
-  getInsiderActivity(companyId) {
+  async getInsiderActivity(companyId) {
     this._ensureSimulationDate();
-    return this.stmtGetInsiderActivity.get(companyId, this.simulationDate, this.simulationDate);
+    const database = getDatabaseAsync();
+    const result = await database.query(
+      `SELECT
+         SUM(CASE WHEN transaction_code IN ('P', 'A') THEN shares_transacted ELSE 0 END) as buy_shares,
+         SUM(CASE WHEN transaction_code = 'S' THEN shares_transacted ELSE 0 END) as sell_shares,
+         SUM(CASE WHEN transaction_code IN ('P', 'A') THEN total_value ELSE 0 END) as buy_value,
+         SUM(CASE WHEN transaction_code = 'S' THEN total_value ELSE 0 END) as sell_value,
+         COUNT(CASE WHEN transaction_code IN ('P', 'A') THEN 1 END) as buy_count,
+         COUNT(CASE WHEN transaction_code = 'S' THEN 1 END) as sell_count
+       FROM insider_transactions
+       WHERE company_id = $1
+         AND transaction_date BETWEEN ($2::date - INTERVAL '90 days') AND $2`,
+      [companyId, this.simulationDate]
+    );
+    return result.rows[0];
   }
 
   /**
    * Get 13F holdings
    */
-  get13FHoldings(companyId) {
+  async get13FHoldings(companyId) {
     this._ensureSimulationDate();
-    return this.stmtGet13FHoldings.all(companyId, this.simulationDate);
+    const database = getDatabaseAsync();
+    const result = await database.query(
+      `SELECT
+         ih.*,
+         fi.name as investor_name
+       FROM investor_holdings ih
+       JOIN famous_investors fi ON fi.id = ih.investor_id
+       WHERE ih.company_id = $1
+         AND ih.filing_date <= $2
+       ORDER BY ih.filing_date DESC`,
+      [companyId, this.simulationDate]
+    );
+    return result.rows;
   }
 
   /**
    * Get congressional trades
    */
-  getCongressTrades(companyId) {
+  async getCongressTrades(companyId) {
     this._ensureSimulationDate();
-    return this.stmtGetCongressTrades.get(companyId, this.simulationDate, this.simulationDate);
+    const database = getDatabaseAsync();
+    const result = await database.query(
+      `SELECT
+         COUNT(CASE WHEN transaction_type = 'purchase' THEN 1 END) as buy_count,
+         COUNT(CASE WHEN transaction_type = 'sale' THEN 1 END) as sell_count,
+         SUM(CASE WHEN transaction_type = 'purchase' THEN (amount_min + COALESCE(amount_max, amount_min)) / 2 ELSE 0 END) as buy_amount,
+         SUM(CASE WHEN transaction_type = 'sale' THEN (amount_min + COALESCE(amount_max, amount_min)) / 2 ELSE 0 END) as sell_amount
+       FROM congressional_trades
+       WHERE company_id = $1
+         AND transaction_date BETWEEN ($2::date - INTERVAL '90 days') AND $2`,
+      [companyId, this.simulationDate]
+    );
+    return result.rows[0];
   }
 
   /**
    * Get short interest
    */
-  getShortInterest(companyId) {
+  async getShortInterest(companyId) {
     this._ensureSimulationDate();
-    return this.stmtGetShortInterest.get(companyId, this.simulationDate);
+    const database = getDatabaseAsync();
+    const result = await database.query(
+      `SELECT *
+       FROM short_interest
+       WHERE company_id = $1
+         AND settlement_date <= $2
+       ORDER BY settlement_date DESC
+       LIMIT 1`,
+      [companyId, this.simulationDate]
+    );
+    return result.rows[0];
   }
 
   /**
    * Get intrinsic value estimate
    */
-  getIntrinsicValue(companyId) {
+  async getIntrinsicValue(companyId) {
     this._ensureSimulationDate();
-    return this.stmtGetIntrinsicValue.get(companyId, this.simulationDate);
+    const database = getDatabaseAsync();
+    const result = await database.query(
+      `SELECT
+         weighted_intrinsic_value as intrinsic_value_per_share,
+         margin_of_safety,
+         valuation_signal,
+         confidence_level as confidence_score
+       FROM intrinsic_value_estimates
+       WHERE company_id = $1
+         AND estimate_date <= $2
+       ORDER BY estimate_date DESC
+       LIMIT 1`,
+      [companyId, this.simulationDate]
+    );
+    return result.rows[0];
   }
 
   /**
    * Get upcoming earnings (for blackout checking)
    */
-  getUpcomingEarnings(companyId) {
+  async getUpcomingEarnings(companyId) {
     this._ensureSimulationDate();
-    return this.stmtGetUpcomingEarnings.get(companyId, this.simulationDate, this.simulationDate);
+    const database = getDatabaseAsync();
+    const result = await database.query(
+      `SELECT next_earnings_date as report_date
+       FROM earnings_calendar
+       WHERE company_id = $1
+         AND next_earnings_date > $2
+         AND next_earnings_date <= ($2::date + INTERVAL '30 days')
+       ORDER BY next_earnings_date ASC
+       LIMIT 1`,
+      [companyId, this.simulationDate]
+    );
+    return result.rows[0];
   }
 
   /**
    * Get factor scores
    */
-  getFactorScores(companyId) {
+  async getFactorScores(companyId) {
     this._ensureSimulationDate();
-    return this.stmtGetFactorScores.get(companyId, this.simulationDate);
+    const database = getDatabaseAsync();
+    const result = await database.query(
+      `SELECT *
+       FROM stock_factor_scores
+       WHERE company_id = $1
+         AND score_date <= $2
+       ORDER BY score_date DESC
+       LIMIT 1`,
+      [companyId, this.simulationDate]
+    );
+    return result.rows[0];
   }
 
   /**
    * Get VIX level for regime detection
    */
-  getVIXLevel() {
+  async getVIXLevel() {
     this._ensureSimulationDate();
-    return this.stmtGetVIX.get(this.simulationDate);
+    const database = getDatabaseAsync();
+    const result = await database.query(
+      `SELECT close as vix_level, date
+       FROM daily_prices p
+       JOIN companies c ON c.id = p.company_id
+       WHERE c.symbol = '^VIX'
+         AND p.date <= $1
+       ORDER BY p.date DESC
+       LIMIT 1`,
+      [this.simulationDate]
+    );
+    return result.rows[0];
   }
 
   /**
    * Get all trading days in a date range
    */
-  getTradingDays(startDate, endDate) {
-    return this.stmtGetTradingDays.all(startDate, endDate).map(r => r.date);
+  async getTradingDays(startDate, endDate) {
+    const database = getDatabaseAsync();
+    const result = await database.query(
+      `SELECT DISTINCT date
+       FROM daily_prices
+       WHERE date BETWEEN $1 AND $2
+       ORDER BY date ASC`,
+      [startDate, endDate]
+    );
+    return result.rows.map(r => r.date);
   }
 
   /**
    * Get companies that were trading on the simulation date
    */
-  getActiveCompanies() {
+  async getActiveCompanies() {
     this._ensureSimulationDate();
-    return this.stmtGetActiveCompanies.all(this.simulationDate);
+    const database = getDatabaseAsync();
+    const result = await database.query(
+      `SELECT DISTINCT c.id, c.symbol, c.name, c.sector, c.market_cap
+       FROM companies c
+       JOIN daily_prices dp ON dp.company_id = c.id
+       WHERE dp.date = $1
+         AND c.symbol NOT LIKE '^%'
+         AND c.symbol NOT LIKE '%.%'
+       ORDER BY c.market_cap DESC`,
+      [this.simulationDate]
+    );
+    return result.rows;
   }
 
   /**
    * Get benchmark price (SPY)
    */
-  getBenchmarkPrice() {
+  async getBenchmarkPrice() {
     this._ensureSimulationDate();
-    return this.stmtGetBenchmarkPrice.get(this.simulationDate);
+    const database = getDatabaseAsync();
+    const result = await database.query(
+      `SELECT close as price, date
+       FROM daily_prices p
+       JOIN companies c ON c.id = p.company_id
+       WHERE c.symbol = 'SPY'
+         AND p.date <= $1
+       ORDER BY p.date DESC
+       LIMIT 1`,
+      [this.simulationDate]
+    );
+    return result.rows[0];
   }
 
   /**
@@ -334,8 +325,8 @@ class HistoricalDataProvider {
    * @param {number} companyId
    * @returns {object} Technical metrics
    */
-  calculateTechnicalMetrics(companyId) {
-    const prices = this.getPriceHistory(companyId, 200);
+  async calculateTechnicalMetrics(companyId) {
+    const prices = await this.getPriceHistory(companyId, 200);
     if (!prices || prices.length < 20) return null;
 
     // Prices are in descending order, reverse for calculations
@@ -405,8 +396,8 @@ class HistoricalDataProvider {
   /**
    * Get market regime based on VIX level
    */
-  getMarketRegime() {
-    const vixData = this.getVIXLevel();
+  async getMarketRegime() {
+    const vixData = await this.getVIXLevel();
     if (!vixData) return { regime: 'UNKNOWN', confidence: 0.5 };
 
     const vix = vixData.vix_level;

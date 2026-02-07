@@ -2,7 +2,7 @@
 // Regime-Conditional Performance Analysis
 // Analyzes strategy performance across different market regimes
 
-const { db } = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 const { calculateMetrics } = require('./walkForwardEngine');
 
 /**
@@ -35,6 +35,7 @@ const REGIMES = {
  * Analyze portfolio performance by market regime
  */
 async function analyzeByRegime(params) {
+  const database = await getDatabaseAsync();
   const {
     portfolioId,
     startDate,
@@ -42,27 +43,31 @@ async function analyzeByRegime(params) {
   } = params;
 
   // Get portfolio returns
-  const portfolioReturns = db.prepare(`
+  const portfolioReturnsResult = await database.query(`
     SELECT snapshot_date as date, daily_return_pct as daily_return
     FROM portfolio_snapshots
-    WHERE portfolio_id = ?
-      AND snapshot_date >= COALESCE(?, '1900-01-01')
-      AND snapshot_date <= COALESCE(?, '2100-01-01')
+    WHERE portfolio_id = $1
+      AND snapshot_date >= COALESCE($2, '1900-01-01')
+      AND snapshot_date <= COALESCE($3, '2100-01-01')
     ORDER BY snapshot_date ASC
-  `).all(portfolioId, startDate, endDate);
+  `, [portfolioId, startDate, endDate]);
+
+  const portfolioReturns = portfolioReturnsResult.rows;
 
   if (portfolioReturns.length === 0) {
     throw new Error('No portfolio data available');
   }
 
   // Get market regime history
-  const regimes = db.prepare(`
+  const regimesResult = await database.query(`
     SELECT date, regime, vix, trend_strength, confidence as regime_confidence
     FROM market_regimes
-    WHERE date >= COALESCE(?, '1900-01-01')
-      AND date <= COALESCE(?, '2100-01-01')
+    WHERE date >= COALESCE($1, '1900-01-01')
+      AND date <= COALESCE($2, '2100-01-01')
     ORDER BY date ASC
-  `).all(startDate, endDate);
+  `, [startDate, endDate]);
+
+  const regimes = regimesResult.rows;
 
   // Create regime lookup
   const regimeMap = new Map();
@@ -132,13 +137,13 @@ async function analyzeByRegime(params) {
     };
 
     // Store in database
-    db.prepare(`
+    await database.query(`
       INSERT INTO regime_performance
       (portfolio_id, regime, start_date, end_date, trading_days,
        total_return, annualized_return, volatility, sharpe_ratio, sortino_ratio,
        max_drawdown, win_rate, avg_win, avg_loss, profit_factor, calmar_ratio)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+    `, [
       portfolioId,
       regime,
       startDate || portfolioReturns[0]?.date,
@@ -155,7 +160,7 @@ async function analyzeByRegime(params) {
       avgLoss,
       profitFactor,
       metrics.calmar
-    );
+    ]);
   }
 
   // Calculate regime transition analysis
@@ -273,6 +278,7 @@ function analyzeRegimeTransitionsInternal(returns, regimeMap) {
  * Analyze how signals perform in different regimes
  */
 async function analyzeSignalsByRegime(params) {
+  const database = await getDatabaseAsync();
   const {
     signalTypes = ['technical', 'fundamental', 'sentiment', 'insider'],
     startDate,
@@ -280,29 +286,31 @@ async function analyzeSignalsByRegime(params) {
   } = params;
 
   // Get regime history
-  const regimes = db.prepare(`
+  const regimesResult = await database.query(`
     SELECT date, regime
     FROM market_regimes
-    WHERE date >= COALESCE(?, '1900-01-01')
-      AND date <= COALESCE(?, '2100-01-01')
+    WHERE date >= COALESCE($1, '1900-01-01')
+      AND date <= COALESCE($2, '2100-01-01')
     ORDER BY date ASC
-  `).all(startDate, endDate);
+  `, [startDate, endDate]);
 
-  const regimeMap = new Map(regimes.map(r => [r.date, r.regime]));
+  const regimeMap = new Map(regimesResult.rows.map(r => [r.date, r.regime]));
 
   const results = {};
 
   for (const signalType of signalTypes) {
     // Get IC history for this signal type
-    const icHistory = db.prepare(`
+    const icHistoryResult = await database.query(`
       SELECT regime, AVG(ic_value) as avg_ic, AVG(t_stat) as avg_t,
              COUNT(*) as sample_count
       FROM signal_ic_history
-      WHERE signal_type = ?
-        AND calculated_date >= COALESCE(?, '1900-01-01')
-        AND calculated_date <= COALESCE(?, '2100-01-01')
+      WHERE signal_type = $1
+        AND calculated_date >= COALESCE($2, '1900-01-01')
+        AND calculated_date <= COALESCE($3, '2100-01-01')
       GROUP BY regime
-    `).all(signalType, startDate, endDate);
+    `, [signalType, startDate, endDate]);
+
+    const icHistory = icHistoryResult.rows;
 
     results[signalType] = {};
 
@@ -463,25 +471,30 @@ function generateRegimeInterpretation(regimeResults) {
 /**
  * Get regime performance history
  */
-function getRegimePerformanceHistory(portfolioId, limit = 10) {
-  return db.prepare(`
+async function getRegimePerformanceHistory(portfolioId, limit = 10) {
+  const database = await getDatabaseAsync();
+  const result = await database.query(`
     SELECT *
     FROM regime_performance
-    WHERE portfolio_id = ?
+    WHERE portfolio_id = $1
     ORDER BY calculated_at DESC
-    LIMIT ?
-  `).all(portfolioId, limit);
+    LIMIT $2
+  `, [portfolioId, limit]);
+  return result.rows;
 }
 
 /**
  * Get current market regime
  */
-function getCurrentRegime() {
-  const latest = db.prepare(`
+async function getCurrentRegime() {
+  const database = await getDatabaseAsync();
+  const result = await database.query(`
     SELECT * FROM market_regimes
     ORDER BY date DESC
     LIMIT 1
-  `).get();
+  `);
+
+  const latest = result.rows[0];
 
   return {
     regime: latest?.regime || 'UNKNOWN',
