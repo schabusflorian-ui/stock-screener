@@ -2,7 +2,7 @@
 // Performance Attribution - Brinson-Fachler and Factor-based attribution
 // Explains WHERE portfolio returns came from
 
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 
 /**
  * Performance Attribution Calculator
@@ -13,7 +13,7 @@ const db = require('../../database');
  */
 class PerformanceAttribution {
   constructor() {
-    this.db = db.getDatabase();
+    // No database initialization needed for async pattern
   }
 
   /**
@@ -234,14 +234,17 @@ class PerformanceAttribution {
   // ============================================
 
   async _getPositionsAtDate(portfolioId, date) {
+    const database = await getDatabaseAsync();
+
     // Try to get from snapshot first
-    const snapshot = this.db.prepare(`
+    const snapshotResult = await database.query(`
       SELECT ps.*, c.symbol, c.sector
       FROM portfolio_position_snapshots ps
       JOIN companies c ON ps.company_id = c.id
-      WHERE ps.portfolio_id = ? AND ps.snapshot_date <= ?
+      WHERE ps.portfolio_id = $1 AND ps.snapshot_date <= $2
       ORDER BY ps.snapshot_date DESC
-    `).all(portfolioId, date);
+    `, [portfolioId, date]);
+    const snapshot = snapshotResult.rows;
 
     if (snapshot.length > 0) {
       return snapshot.map(s => ({
@@ -255,21 +258,23 @@ class PerformanceAttribution {
     }
 
     // Fall back to current positions with historical prices
-    const positions = this.db.prepare(`
+    const positionsResult = await database.query(`
       SELECT pp.*, c.symbol, c.sector
       FROM portfolio_positions pp
       JOIN companies c ON pp.company_id = c.id
-      WHERE pp.portfolio_id = ?
-    `).all(portfolioId);
+      WHERE pp.portfolio_id = $1
+    `, [portfolioId]);
+    const positions = positionsResult.rows;
 
     // Get prices at date
     const result = [];
     for (const pos of positions) {
-      const priceRow = this.db.prepare(`
+      const priceRowResult = await database.query(`
         SELECT close as price FROM daily_prices
-        WHERE company_id = ? AND date <= ?
+        WHERE company_id = $1 AND date <= $2
         ORDER BY date DESC LIMIT 1
-      `).get(pos.company_id, date);
+      `, [pos.company_id, date]);
+      const priceRow = priceRowResult.rows[0];
 
       if (priceRow) {
         result.push({
@@ -287,18 +292,22 @@ class PerformanceAttribution {
   }
 
   async _getBenchmarkSectorData(benchmarkIndexId, startDate, endDate) {
-    // Get benchmark prices
-    const startPrice = this.db.prepare(`
-      SELECT close FROM market_index_prices
-      WHERE index_id = ? AND date <= ?
-      ORDER BY date DESC LIMIT 1
-    `).get(benchmarkIndexId, startDate);
+    const database = await getDatabaseAsync();
 
-    const endPrice = this.db.prepare(`
+    // Get benchmark prices
+    const startPriceResult = await database.query(`
       SELECT close FROM market_index_prices
-      WHERE index_id = ? AND date <= ?
+      WHERE index_id = $1 AND date <= $2
       ORDER BY date DESC LIMIT 1
-    `).get(benchmarkIndexId, endDate);
+    `, [benchmarkIndexId, startDate]);
+    const startPrice = startPriceResult.rows[0];
+
+    const endPriceResult = await database.query(`
+      SELECT close FROM market_index_prices
+      WHERE index_id = $1 AND date <= $2
+      ORDER BY date DESC LIMIT 1
+    `, [benchmarkIndexId, endDate]);
+    const endPrice = endPriceResult.rows[0];
 
     const totalReturn = startPrice && endPrice
       ? (endPrice.close - startPrice.close) / startPrice.close
@@ -370,6 +379,8 @@ class PerformanceAttribution {
   }
 
   async _calculateFactorExposures(positions) {
+    const database = await getDatabaseAsync();
+
     // Calculate portfolio factor exposures
     const totalValue = positions.reduce((sum, p) => sum + (p.value || 0), 0);
 
@@ -383,15 +394,17 @@ class PerformanceAttribution {
       const weight = totalValue > 0 ? (pos.value || 0) / totalValue : 0;
 
       // Get company metrics
-      const metrics = this.db.prepare(`
+      const metricsResult = await database.query(`
         SELECT * FROM calculated_metrics
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY fiscal_period DESC LIMIT 1
-      `).get(pos.company_id);
+      `, [pos.company_id]);
+      const metrics = metricsResult.rows[0];
 
-      const company = this.db.prepare(`
-        SELECT market_cap FROM companies WHERE id = ?
-      `).get(pos.company_id);
+      const companyResult = await database.query(`
+        SELECT market_cap FROM companies WHERE id = $1
+      `, [pos.company_id]);
+      const company = companyResult.rows[0];
 
       // Size factor (log market cap, normalized)
       if (company?.market_cap) {
@@ -412,9 +425,10 @@ class PerformanceAttribution {
       }
 
       // Momentum would need price data - simplified here
-      const priceMetrics = this.db.prepare(`
-        SELECT change_6m FROM price_metrics WHERE company_id = ?
-      `).get(pos.company_id);
+      const priceMetricsResult = await database.query(`
+        SELECT change_6m FROM price_metrics WHERE company_id = $1
+      `, [pos.company_id]);
+      const priceMetrics = priceMetricsResult.rows[0];
 
       if (priceMetrics?.change_6m) {
         momentumExposure += weight * Math.max(-1, Math.min(1, priceMetrics.change_6m / 30));
@@ -431,16 +445,20 @@ class PerformanceAttribution {
   }
 
   async _getFactorReturns(startDate, endDate) {
-    // Get market return
-    const marketStart = this.db.prepare(`
-      SELECT close FROM market_index_prices
-      WHERE index_id = 1 AND date <= ? ORDER BY date DESC LIMIT 1
-    `).get(startDate);
+    const database = await getDatabaseAsync();
 
-    const marketEnd = this.db.prepare(`
+    // Get market return
+    const marketStartResult = await database.query(`
       SELECT close FROM market_index_prices
-      WHERE index_id = 1 AND date <= ? ORDER BY date DESC LIMIT 1
-    `).get(endDate);
+      WHERE index_id = 1 AND date <= $1 ORDER BY date DESC LIMIT 1
+    `, [startDate]);
+    const marketStart = marketStartResult.rows[0];
+
+    const marketEndResult = await database.query(`
+      SELECT close FROM market_index_prices
+      WHERE index_id = 1 AND date <= $1 ORDER BY date DESC LIMIT 1
+    `, [endDate]);
+    const marketEnd = marketEndResult.rows[0];
 
     const marketReturn = marketStart && marketEnd
       ? (marketEnd.close - marketStart.close) / marketStart.close
