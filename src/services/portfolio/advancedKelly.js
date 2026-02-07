@@ -3,7 +3,7 @@
 // Enhanced with Taleb/Spitznagel safety: Kelly caps, ruin awareness, convexity
 // Integrated with parametric return distributions for fat-tail awareness
 
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 const ParametricDistributions = require('../statistics/parametricDistributions');
 const MatrixOps = require('../../utils/matrixOps');
 
@@ -34,7 +34,6 @@ const DEFAULT_CONFIG = {
 
 class AdvancedKelly {
   constructor() {
-    this.db = db.getDatabase();
     this.config = { ...DEFAULT_CONFIG };
     console.log('🎯 Advanced Kelly Engine initialized');
   }
@@ -58,7 +57,7 @@ class AdvancedKelly {
   // Historical Kelly Backtest
   // Test Kelly sizing with actual historical returns
   // ============================================
-  historicalKellyBacktest(portfolioId, params = {}) {
+  async historicalKellyBacktest(portfolioId, params = {}) {
     const {
       period = this.config.DEFAULT_PERIOD,
       kellyFractions = this.config.DEFAULT_KELLY_FRACTIONS,
@@ -70,13 +69,13 @@ class AdvancedKelly {
     // Store risk-free rate for this calculation
     this._currentRiskFreeRate = riskFreeRate;
 
-    const positions = this._getPortfolioPositions(portfolioId);
+    const positions = await this._getPortfolioPositions(portfolioId);
     if (positions.length === 0) {
       return { error: 'Portfolio has no positions' };
     }
 
     const { startDate } = this._getPeriodDates(period);
-    const returns = this._loadDailyReturns(positions, startDate);
+    const returns = await this._loadDailyReturns(positions, startDate);
     const missingData = returns._missingData || [];
 
     const symbolsWithData = Object.keys(returns).filter(k => k !== '_missingData');
@@ -135,7 +134,7 @@ class AdvancedKelly {
   // Multi-Asset Kelly Optimization
   // Find optimal weights maximizing geometric growth rate
   // ============================================
-  optimizeKellyWeights(portfolioId, params = {}) {
+  async optimizeKellyWeights(portfolioId, params = {}) {
     const {
       period = this.config.DEFAULT_PERIOD,
       targetVolatility = null,
@@ -147,13 +146,13 @@ class AdvancedKelly {
 
     this._currentRiskFreeRate = riskFreeRate;
 
-    const positions = this._getPortfolioPositions(portfolioId);
+    const positions = await this._getPortfolioPositions(portfolioId);
     if (!positions || positions.length < 2) {
       return { error: 'Need at least 2 positions for optimization' };
     }
 
     const { startDate } = this._getPeriodDates(period);
-    const returns = this._loadDailyReturns(positions, startDate);
+    const returns = await this._loadDailyReturns(positions, startDate);
     const dates = this._getAlignedDates(returns);
 
     if (dates.length < 60) {
@@ -468,8 +467,10 @@ class AdvancedKelly {
   // Private Helper Methods
   // ============================================
 
-  _getPortfolioPositions(portfolioId) {
-    return this.db.prepare(`
+  async _getPortfolioPositions(portfolioId) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT
         pp.company_id,
         pp.shares,
@@ -482,8 +483,10 @@ class AdvancedKelly {
       FROM portfolio_positions pp
       JOIN companies c ON pp.company_id = c.id
       LEFT JOIN price_metrics pm ON c.id = pm.company_id
-      WHERE pp.portfolio_id = ?
-    `).all(portfolioId).map(pos => ({
+      WHERE pp.portfolio_id = $1
+    `, [portfolioId]);
+
+    return result.rows.map(pos => ({
       ...pos,
       value: pos.shares * (pos.last_price || 0)
     }));
@@ -503,17 +506,20 @@ class AdvancedKelly {
     };
   }
 
-  _loadDailyReturns(positions, startDate) {
+  async _loadDailyReturns(positions, startDate) {
+    const database = await getDatabaseAsync();
     const returns = {};
     const missingData = [];
 
     for (const pos of positions) {
-      const prices = this.db.prepare(`
+      const result = await database.query(`
         SELECT date, adjusted_close, close
         FROM daily_prices
-        WHERE company_id = ? AND date >= ?
+        WHERE company_id = $1 AND date >= $2
         ORDER BY date ASC
-      `).all(pos.company_id, startDate);
+      `, [pos.company_id, startDate]);
+
+      const prices = result.rows;
 
       if (prices.length < 2) {
         missingData.push(pos.symbol);
@@ -1622,7 +1628,9 @@ class AdvancedKelly {
   // Single Holding Kelly Analysis
   // Analyze Kelly sizing for a single stock (existing or potential)
   // ============================================
-  analyzeSingleHolding(params = {}) {
+  async analyzeSingleHolding(params = {}) {
+    const database = await getDatabaseAsync();
+
     const {
       symbol,
       portfolioId = null,
@@ -1639,11 +1647,13 @@ class AdvancedKelly {
     this._currentRiskFreeRate = riskFreeRate;
 
     // Look up company
-    const company = this.db.prepare(`
+    const companyResult = await database.query(`
       SELECT id, symbol, name, sector
       FROM companies
-      WHERE LOWER(symbol) = LOWER(?)
-    `).get(symbol);
+      WHERE LOWER(symbol) = LOWER($1)
+    `, [symbol]);
+
+    const company = companyResult.rows[0];
 
     if (!company) {
       return { error: `Company not found: ${symbol}` };
@@ -1651,12 +1661,14 @@ class AdvancedKelly {
 
     // Get price history
     const { startDate } = this._getPeriodDates(period);
-    const prices = this.db.prepare(`
+    const pricesResult = await database.query(`
       SELECT date, adjusted_close, close
       FROM daily_prices
-      WHERE company_id = ? AND date >= ?
+      WHERE company_id = $1 AND date >= $2
       ORDER BY date ASC
-    `).all(company.id, startDate);
+    `, [company.id, startDate]);
+
+    const prices = pricesResult.rows;
 
     if (prices.length < MIN_OBSERVATIONS_FOR_KELLY) {
       return {
@@ -1796,17 +1808,21 @@ class AdvancedKelly {
 
     // Benchmark comparison
     let benchmarkComparison = null;
-    const benchmark = this.db.prepare(`
-      SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
-    `).get(benchmarkSymbol);
+    const benchmarkResult = await database.query(`
+      SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)
+    `, [benchmarkSymbol]);
+
+    const benchmark = benchmarkResult.rows[0];
 
     if (benchmark) {
-      const benchPrices = this.db.prepare(`
+      const benchPricesResult = await database.query(`
         SELECT date, adjusted_close, close
         FROM daily_prices
-        WHERE company_id = ? AND date >= ?
+        WHERE company_id = $1 AND date >= $2
         ORDER BY date ASC
-      `).all(benchmark.id, startDate);
+      `, [benchmark.id, startDate]);
+
+      const benchPrices = benchPricesResult.rows;
 
       if (benchPrices.length > MIN_OBSERVATIONS_FOR_KELLY) {
         const benchReturns = [];
