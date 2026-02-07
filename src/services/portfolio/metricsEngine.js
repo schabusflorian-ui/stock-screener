@@ -1,31 +1,34 @@
 // src/services/portfolio/metricsEngine.js
 // Portfolio Analytics and Metrics Engine (Agent 2)
 
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 
 const TRADING_DAYS_PER_YEAR = 252;
 const RISK_FREE_RATE = 0.05; // 5% annual risk-free rate
 
 class MetricsEngine {
+  // No constructor needed - all methods will get database async
+
   constructor() {
-    this.db = db.getDatabase();
     console.log('📊 Portfolio Metrics Engine initialized');
   }
 
   // ============================================
   // Quick Metrics (for dashboard cards)
   // ============================================
-  getQuickMetrics(portfolioId) {
-    const portfolio = this.db.prepare(`
-      SELECT * FROM portfolios WHERE id = ?
-    `).get(portfolioId);
+  async getQuickMetrics(portfolioId) {
+    const database = await getDatabaseAsync();
+    const portfolioResult = await database.query(`
+      SELECT * FROM portfolios WHERE id = $1
+    `, [portfolioId]);
+    const portfolio = portfolioResult.rows[0];
 
     if (!portfolio) {
       throw new Error(`Portfolio ${portfolioId} not found`);
     }
 
     // Get current positions with values
-    const positions = this.db.prepare(`
+    const positionsResult = await database.query(`
       SELECT
         pp.*,
         c.symbol,
@@ -36,8 +39,9 @@ class MetricsEngine {
       FROM portfolio_positions pp
       JOIN companies c ON pp.company_id = c.id
       LEFT JOIN price_metrics pm ON c.id = pm.company_id
-      WHERE pp.portfolio_id = ?
-    `).all(portfolioId);
+      WHERE pp.portfolio_id = $1
+    `, [portfolioId]);
+    const positions = positionsResult.rows;
 
     // Calculate current value
     let positionsValue = 0;
@@ -52,10 +56,10 @@ class MetricsEngine {
     const unrealizedPnLPct = totalCostBasis > 0 ? (unrealizedPnL / totalCostBasis) * 100 : 0;
 
     // Get period returns from snapshots
-    const periodReturns = this._getPeriodReturns(portfolioId, totalValue);
+    const periodReturns = await this._getPeriodReturns(portfolioId, totalValue);
 
     // Get today's change
-    const todayChange = this._getTodayChange(portfolioId, totalValue);
+    const todayChange = await this._getTodayChange(portfolioId, totalValue);
 
     return {
       portfolioId,
@@ -76,8 +80,8 @@ class MetricsEngine {
   // ============================================
   // Full Performance Metrics
   // ============================================
-  getPerformanceMetrics(portfolioId, period = '1y') {
-    const snapshots = this._getSnapshotsForPeriod(portfolioId, period);
+  async getPerformanceMetrics(portfolioId, period = '1y') {
+    const snapshots = await this._getSnapshotsForPeriod(portfolioId, period);
 
     if (snapshots.length < 2) {
       return {
@@ -135,8 +139,9 @@ class MetricsEngine {
   // ============================================
   // Allocation Analysis
   // ============================================
-  getAllocation(portfolioId) {
-    const positions = this.db.prepare(`
+  async getAllocation(portfolioId) {
+    const database = await getDatabaseAsync();
+    const positionsResult = await database.query(`
       SELECT
         pp.*,
         c.symbol,
@@ -148,12 +153,14 @@ class MetricsEngine {
       FROM portfolio_positions pp
       JOIN companies c ON pp.company_id = c.id
       LEFT JOIN price_metrics pm ON c.id = pm.company_id
-      WHERE pp.portfolio_id = ?
-    `).all(portfolioId);
+      WHERE pp.portfolio_id = $1
+    `, [portfolioId]);
+    const positions = positionsResult.rows;
 
-    const portfolio = this.db.prepare(`
-      SELECT current_cash FROM portfolios WHERE id = ?
-    `).get(portfolioId);
+    const portfolioResult = await database.query(`
+      SELECT current_cash FROM portfolios WHERE id = $1
+    `, [portfolioId]);
+    const portfolio = portfolioResult.rows[0];
 
     if (!portfolio) {
       throw new Error(`Portfolio ${portfolioId} not found`);
@@ -208,26 +215,29 @@ class MetricsEngine {
   // ============================================
   // Daily Snapshot Creation
   // ============================================
-  createDailySnapshot(portfolioId, date = null) {
+  async createDailySnapshot(portfolioId, date = null) {
+    const database = await getDatabaseAsync();
     const snapshotDate = date || new Date().toISOString().split('T')[0];
 
-    const portfolio = this.db.prepare(`
-      SELECT * FROM portfolios WHERE id = ?
-    `).get(portfolioId);
+    const portfolioResult = await database.query(`
+      SELECT * FROM portfolios WHERE id = $1
+    `, [portfolioId]);
+    const portfolio = portfolioResult.rows[0];
 
     if (!portfolio) {
       throw new Error(`Portfolio ${portfolioId} not found`);
     }
 
     // Get positions with current prices
-    const positions = this.db.prepare(`
+    const positionsResult = await database.query(`
       SELECT
         pp.*,
         pm.last_price
       FROM portfolio_positions pp
       LEFT JOIN price_metrics pm ON pp.company_id = pm.company_id
-      WHERE pp.portfolio_id = ?
-    `).all(portfolioId);
+      WHERE pp.portfolio_id = $1
+    `, [portfolioId]);
+    const positions = positionsResult.rows;
 
     // Calculate current value
     let positionsValue = 0;
@@ -241,12 +251,13 @@ class MetricsEngine {
     const unrealizedPnL = positionsValue - totalCostBasis;
 
     // Get previous day snapshot for return calculation
-    const prevSnapshot = this.db.prepare(`
+    const prevSnapshotResult = await database.query(`
       SELECT * FROM portfolio_snapshots
-      WHERE portfolio_id = ? AND snapshot_date < ?
+      WHERE portfolio_id = $1 AND snapshot_date < $2
       ORDER BY snapshot_date DESC
       LIMIT 1
-    `).get(portfolioId, snapshotDate);
+    `, [portfolioId, snapshotDate]);
+    const prevSnapshot = prevSnapshotResult.rows[0];
 
     let dailyReturn = null;
     let dailyReturnPct = null;
@@ -257,18 +268,19 @@ class MetricsEngine {
     }
 
     // Get transaction flows for the day
-    const flows = this.db.prepare(`
+    const flowsResult = await database.query(`
       SELECT
         SUM(CASE WHEN transaction_type IN ('deposit') THEN total_amount ELSE 0 END) as deposits,
         SUM(CASE WHEN transaction_type IN ('withdraw') THEN total_amount ELSE 0 END) as withdrawals
       FROM portfolio_transactions
-      WHERE portfolio_id = ? AND DATE(executed_at) = ?
-    `).get(portfolioId, snapshotDate);
+      WHERE portfolio_id = $1 AND DATE(executed_at) = $2
+    `, [portfolioId, snapshotDate]);
+    const flows = flowsResult.rows[0];
 
     const netFlows = (flows?.deposits || 0) - (flows?.withdrawals || 0);
 
     // Get benchmark value
-    const benchmarkValue = this._getBenchmarkValue(portfolio.benchmark_index_id, snapshotDate);
+    const benchmarkValue = await this._getBenchmarkValue(portfolio.benchmark_index_id, snapshotDate);
 
     // Calculate benchmark return
     let benchmarkDailyReturnPct = null;
@@ -277,37 +289,38 @@ class MetricsEngine {
     }
 
     // Get cumulative deposits/withdrawals
-    const cumFlows = this.db.prepare(`
+    const cumFlowsResult = await database.query(`
       SELECT
         SUM(CASE WHEN transaction_type = 'deposit' THEN total_amount ELSE 0 END) as total_deposited,
         SUM(CASE WHEN transaction_type = 'withdraw' THEN total_amount ELSE 0 END) as total_withdrawn
       FROM portfolio_transactions
-      WHERE portfolio_id = ? AND DATE(executed_at) <= ?
-    `).get(portfolioId, snapshotDate);
+      WHERE portfolio_id = $1 AND DATE(executed_at) <= $2
+    `, [portfolioId, snapshotDate]);
+    const cumFlows = cumFlowsResult.rows[0];
 
     // Upsert snapshot
-    this.db.prepare(`
+    await database.query(`
       INSERT INTO portfolio_snapshots (
         portfolio_id, snapshot_date, total_value, cash_value, positions_value,
         total_cost_basis, unrealized_pnl, realized_pnl, total_deposited, total_withdrawn,
         positions_count, benchmark_value, net_flows, daily_return, daily_return_pct,
         benchmark_daily_return_pct
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       ON CONFLICT(portfolio_id, snapshot_date) DO UPDATE SET
-        total_value = excluded.total_value,
-        cash_value = excluded.cash_value,
-        positions_value = excluded.positions_value,
-        total_cost_basis = excluded.total_cost_basis,
-        unrealized_pnl = excluded.unrealized_pnl,
-        total_deposited = excluded.total_deposited,
-        total_withdrawn = excluded.total_withdrawn,
-        positions_count = excluded.positions_count,
-        benchmark_value = excluded.benchmark_value,
-        net_flows = excluded.net_flows,
-        daily_return = excluded.daily_return,
-        daily_return_pct = excluded.daily_return_pct,
-        benchmark_daily_return_pct = excluded.benchmark_daily_return_pct
-    `).run(
+        total_value = EXCLUDED.total_value,
+        cash_value = EXCLUDED.cash_value,
+        positions_value = EXCLUDED.positions_value,
+        total_cost_basis = EXCLUDED.total_cost_basis,
+        unrealized_pnl = EXCLUDED.unrealized_pnl,
+        total_deposited = EXCLUDED.total_deposited,
+        total_withdrawn = EXCLUDED.total_withdrawn,
+        positions_count = EXCLUDED.positions_count,
+        benchmark_value = EXCLUDED.benchmark_value,
+        net_flows = EXCLUDED.net_flows,
+        daily_return = EXCLUDED.daily_return,
+        daily_return_pct = EXCLUDED.daily_return_pct,
+        benchmark_daily_return_pct = EXCLUDED.benchmark_daily_return_pct
+    `, [
       portfolioId,
       snapshotDate,
       totalValue,
@@ -324,7 +337,7 @@ class MetricsEngine {
       dailyReturn,
       dailyReturnPct,
       benchmarkDailyReturnPct
-    );
+    ]);
 
     return {
       portfolioId,
@@ -338,15 +351,17 @@ class MetricsEngine {
     };
   }
 
-  createAllDailySnapshots(date = null) {
-    const portfolios = this.db.prepare(`
-      SELECT id, name FROM portfolios WHERE is_archived = 0
-    `).all();
+  async createAllDailySnapshots(date = null) {
+    const database = await getDatabaseAsync();
+    const portfoliosResult = await database.query(`
+      SELECT id, name FROM portfolios WHERE is_archived = false
+    `);
+    const portfolios = portfoliosResult.rows;
 
     const results = [];
     for (const portfolio of portfolios) {
       try {
-        const snapshot = this.createDailySnapshot(portfolio.id, date);
+        const snapshot = await this.createDailySnapshot(portfolio.id, date);
         results.push({ ...snapshot, name: portfolio.name, success: true });
       } catch (error) {
         results.push({
@@ -371,7 +386,8 @@ class MetricsEngine {
   // Private Helper Methods
   // ============================================
 
-  _getPeriodReturns(portfolioId, currentValue) {
+  async _getPeriodReturns(portfolioId, currentValue) {
+    const database = await getDatabaseAsync();
     const periods = {
       '1d': 1,
       '1w': 7,
@@ -395,12 +411,13 @@ class MetricsEngine {
         targetDate = d.toISOString().split('T')[0];
       }
 
-      const snapshot = this.db.prepare(`
+      const snapshotResult = await database.query(`
         SELECT total_value FROM portfolio_snapshots
-        WHERE portfolio_id = ? AND snapshot_date <= ?
+        WHERE portfolio_id = $1 AND snapshot_date <= $2
         ORDER BY snapshot_date DESC
         LIMIT 1
-      `).get(portfolioId, targetDate);
+      `, [portfolioId, targetDate]);
+      const snapshot = snapshotResult.rows[0];
 
       if (snapshot && snapshot.total_value > 0) {
         returns[`return_${period}`] = ((currentValue - snapshot.total_value) / snapshot.total_value) * 100;
@@ -412,17 +429,19 @@ class MetricsEngine {
     return returns;
   }
 
-  _getTodayChange(portfolioId, currentValue) {
+  async _getTodayChange(portfolioId, currentValue) {
+    const database = await getDatabaseAsync();
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayStr = yesterday.toISOString().split('T')[0];
 
-    const snapshot = this.db.prepare(`
+    const snapshotResult = await database.query(`
       SELECT total_value FROM portfolio_snapshots
-      WHERE portfolio_id = ? AND snapshot_date <= ?
+      WHERE portfolio_id = $1 AND snapshot_date <= $2
       ORDER BY snapshot_date DESC
       LIMIT 1
-    `).get(portfolioId, yesterdayStr);
+    `, [portfolioId, yesterdayStr]);
+    const snapshot = snapshotResult.rows[0];
 
     if (snapshot && snapshot.total_value > 0) {
       return {
@@ -434,7 +453,8 @@ class MetricsEngine {
     return { value: 0, pct: 0 };
   }
 
-  _getSnapshotsForPeriod(portfolioId, period) {
+  async _getSnapshotsForPeriod(portfolioId, period) {
+    const database = await getDatabaseAsync();
     const periodDays = {
       '1m': 30,
       '3m': 90,
@@ -457,11 +477,12 @@ class MetricsEngine {
       startDate = d.toISOString().split('T')[0];
     }
 
-    return this.db.prepare(`
+    const result = await database.query(`
       SELECT * FROM portfolio_snapshots
-      WHERE portfolio_id = ? AND snapshot_date >= ?
+      WHERE portfolio_id = $1 AND snapshot_date >= $2
       ORDER BY snapshot_date ASC
-    `).all(portfolioId, startDate);
+    `, [portfolioId, startDate]);
+    return result.rows;
   }
 
   _calculateDailyReturns(snapshots) {
@@ -691,18 +712,20 @@ class MetricsEngine {
     };
   }
 
-  _getBenchmarkValue(benchmarkIndexId, date) {
+  async _getBenchmarkValue(benchmarkIndexId, date) {
+    const database = await getDatabaseAsync();
     if (!benchmarkIndexId) {
       // Default to S&P 500 (id=1)
       benchmarkIndexId = 1;
     }
 
-    const price = this.db.prepare(`
+    const priceResult = await database.query(`
       SELECT close FROM market_index_prices
-      WHERE index_id = ? AND date <= ?
+      WHERE index_id = $1 AND date <= $2
       ORDER BY date DESC
       LIMIT 1
-    `).get(benchmarkIndexId, date);
+    `, [benchmarkIndexId, date]);
+    const price = priceResult.rows[0];
 
     return price?.close || null;
   }
