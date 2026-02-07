@@ -9,10 +9,10 @@
  */
 
 const YahooFinance = require('yahoo-finance2').default;
+const { getDatabaseAsync } = require('../database');
 
 class EarningsCalendarService {
-  constructor(db) {
-    this.db = db;
+  constructor() {
     this.yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
     this.cache = new Map();
     this.cacheTimeout = 60 * 60 * 1000; // 1 hour cache
@@ -157,15 +157,17 @@ class EarningsCalendarService {
    * Get upcoming earnings for watchlist or tracked companies
    */
   async getUpcomingEarnings(companyIds, daysAhead = 30) {
+    const database = await getDatabaseAsync();
     const upcoming = [];
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() + daysAhead);
 
     // Get symbols for company IDs
-    const placeholders = companyIds.map(() => '?').join(',');
-    const companies = this.db.prepare(`
+    const placeholders = companyIds.map((_, i) => `$${i + 1}`).join(',');
+    const result = await database.query(`
       SELECT id, symbol, name FROM companies WHERE id IN (${placeholders})
-    `).all(...companyIds);
+    `, companyIds);
+    const companies = result.rows;
 
     for (const company of companies) {
       try {
@@ -198,6 +200,7 @@ class EarningsCalendarService {
    * Get earnings for companies in a date range
    */
   async getEarningsInRange(startDate, endDate, options = {}) {
+    const database = await getDatabaseAsync();
     const { sector, limit = 100 } = options;
 
     // Get companies with analyst data (likely to have earnings data)
@@ -208,14 +211,19 @@ class EarningsCalendarService {
       WHERE c.symbol IS NOT NULL
     `;
 
+    let paramCounter = 1;
+    const params = [];
+
     if (sector) {
-      query += ' AND c.sector = ?';
+      query += ` AND c.sector = $${paramCounter++}`;
+      params.push(sector);
     }
 
-    query += ' ORDER BY ae.number_of_analysts DESC LIMIT ?';
+    query += ` ORDER BY ae.number_of_analysts DESC LIMIT $${paramCounter}`;
+    params.push(limit);
 
-    const params = sector ? [sector, limit] : [limit];
-    const companies = this.db.prepare(query).all(...params);
+    const result = await database.query(query, params);
+    const companies = result.rows;
 
     const results = [];
     const start = new Date(startDate);
@@ -251,8 +259,10 @@ class EarningsCalendarService {
   /**
    * Store earnings data in database for faster access
    */
-  storeEarningsData(companyId, data) {
+  async storeEarningsData(companyId, data) {
     if (!data) return;
+
+    const database = await getDatabaseAsync();
 
     // Helper to convert dates to ISO strings
     const toISOString = (val) => {
@@ -262,24 +272,38 @@ class EarningsCalendarService {
       return null;
     };
 
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO earnings_calendar (
-        company_id, fetched_at,
-        next_earnings_date, is_estimate,
-        eps_estimate, eps_low, eps_high,
-        revenue_estimate, revenue_low, revenue_high,
-        ex_dividend_date, dividend_pay_date,
-        beat_rate, avg_surprise, consecutive_beats,
-        history_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
     try {
-      stmt.run(
+      await database.query(`
+        INSERT INTO earnings_calendar (
+          company_id, fetched_at,
+          next_earnings_date, is_estimate,
+          eps_estimate, eps_low, eps_high,
+          revenue_estimate, revenue_low, revenue_high,
+          ex_dividend_date, dividend_pay_date,
+          beat_rate, avg_surprise, consecutive_beats,
+          history_json
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        ON CONFLICT (company_id) DO UPDATE SET
+          fetched_at = EXCLUDED.fetched_at,
+          next_earnings_date = EXCLUDED.next_earnings_date,
+          is_estimate = EXCLUDED.is_estimate,
+          eps_estimate = EXCLUDED.eps_estimate,
+          eps_low = EXCLUDED.eps_low,
+          eps_high = EXCLUDED.eps_high,
+          revenue_estimate = EXCLUDED.revenue_estimate,
+          revenue_low = EXCLUDED.revenue_low,
+          revenue_high = EXCLUDED.revenue_high,
+          ex_dividend_date = EXCLUDED.ex_dividend_date,
+          dividend_pay_date = EXCLUDED.dividend_pay_date,
+          beat_rate = EXCLUDED.beat_rate,
+          avg_surprise = EXCLUDED.avg_surprise,
+          consecutive_beats = EXCLUDED.consecutive_beats,
+          history_json = EXCLUDED.history_json
+      `, [
         companyId,
         data.fetchedAt,
         toISOString(data.nextEarnings?.date),
-        data.nextEarnings?.isEstimate ? 1 : 0,
+        data.nextEarnings?.isEstimate ? true : false,
         data.nextEarnings?.epsEstimate ?? null,
         data.nextEarnings?.epsLow ?? null,
         data.nextEarnings?.epsHigh ?? null,
@@ -292,7 +316,7 @@ class EarningsCalendarService {
         data.stats?.avgSurprise ?? null,
         data.stats?.consecutiveBeats ?? null,
         JSON.stringify(data.history)
-      );
+      ]);
     } catch (error) {
       console.error(`Error storing earnings for company ${companyId}:`, error.message);
     }
@@ -301,14 +325,17 @@ class EarningsCalendarService {
   /**
    * Get stored earnings data
    */
-  getStoredEarningsData(companyId) {
-    const stmt = this.db.prepare(`
+  async getStoredEarningsData(companyId) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT * FROM earnings_calendar
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY fetched_at DESC
       LIMIT 1
-    `);
-    const row = stmt.get(companyId);
+    `, [companyId]);
+
+    const row = result.rows[0];
 
     if (row) {
       return {
