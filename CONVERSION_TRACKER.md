@@ -1,7 +1,7 @@
 # PostgreSQL Conversion Progress Tracker
 
 **Last Updated**: 2026-02-07
-**Overall Progress**: 14 / 197 services (7%)
+**Overall Progress**: 15 / 197 services (8%)
 
 ---
 
@@ -17,7 +17,8 @@
 | screeningService.js | Medium | 5h | ✅ | All 23 methods converted, 74 params fixed |
 | etfService.js | Medium | 3h | ✅ | 15 methods, transactions, 47 params |
 | sectorAnalysisService.js | Medium | 3.5h | ✅ | 9 methods, aggregations, 31 params |
-| stockImporter.js | Medium | 3h | 🔄 | 7 methods, 6 loops, 24 params per insert |
+| stockImporter.js | Medium | 3h | ✅ | 7 methods, 6 loops, 24 params per insert |
+| portfolio/index.js | High | 6h | 🔄 | 1027 lines, 71 params, 23 DB calls, lazy engines |
 
 ---
 
@@ -25,7 +26,7 @@
 
 | Service | Assignee | Status | ETA | Blocker |
 |---------|----------|--------|-----|---------|
-| stockImporter.js | Claude | Deploying | 5 min | - |
+| portfolio/index.js | Claude | Deploying | 5 min | - |
 
 ---
 

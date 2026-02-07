@@ -1,6 +1,7 @@
 // src/services/portfolio/index.js
 // Main portfolio service - orchestrates holdings and order engines
 
+const { getDatabaseAsync } = require('../../database');
 const HoldingsEngine = require('./holdingsEngine');
 const OrderEngine = require('./orderEngine');
 const PortfolioAlertsService = require('./portfolioAlerts');
@@ -27,119 +28,34 @@ const { PerformanceAttribution } = require('./performanceAttribution');
 // Dividend processing
 const { DividendProcessor, getDividendProcessor } = require('./dividendProcessor');
 
+// Lazy-loaded engines (converted to singletons)
+let holdingsEngineInstance = null;
+let orderEngineInstance = null;
+let alertsServiceInstance = null;
+
 class PortfolioService {
-  constructor(db) {
-    this.db = db;
-    this.holdingsEngine = new HoldingsEngine(db);
-    this.orderEngine = new OrderEngine(db, this.holdingsEngine);
-    this.alertsService = new PortfolioAlertsService(db);
-    this._prepareStatements();
+  // Lazy load the holdings engine
+  get holdingsEngine() {
+    if (!holdingsEngineInstance) {
+      holdingsEngineInstance = new HoldingsEngine();
+    }
+    return holdingsEngineInstance;
   }
 
-  _prepareStatements() {
-    this.stmts = {
-      // Portfolio CRUD - with user filtering support
-      getAllPortfolios: this.db.prepare(`
-        SELECT p.*,
-          p.current_value as total_value,
-          p.current_cash as cash_balance,
-          (p.current_value - p.total_deposited + p.total_withdrawn) as total_gain,
-          CASE
-            WHEN (p.total_deposited - p.total_withdrawn) > 0
-            THEN ((p.current_value - p.total_deposited + p.total_withdrawn) / (p.total_deposited - p.total_withdrawn)) * 100
-            ELSE 0
-          END as total_gain_pct,
-          (SELECT COUNT(*) FROM portfolio_positions WHERE portfolio_id = p.id) as positions_count
-        FROM portfolios p
-        WHERE p.is_archived = 0
-        ORDER BY p.created_at DESC
-      `),
+  // Lazy load the order engine
+  get orderEngine() {
+    if (!orderEngineInstance) {
+      orderEngineInstance = new OrderEngine();
+    }
+    return orderEngineInstance;
+  }
 
-      // User-filtered portfolio list
-      getPortfoliosByUser: this.db.prepare(`
-        SELECT p.*,
-          p.current_value as total_value,
-          p.current_cash as cash_balance,
-          (p.current_value - p.total_deposited + p.total_withdrawn) as total_gain,
-          CASE
-            WHEN (p.total_deposited - p.total_withdrawn) > 0
-            THEN ((p.current_value - p.total_deposited + p.total_withdrawn) / (p.total_deposited - p.total_withdrawn)) * 100
-            ELSE 0
-          END as total_gain_pct,
-          (SELECT COUNT(*) FROM portfolio_positions WHERE portfolio_id = p.id) as positions_count
-        FROM portfolios p
-        WHERE p.is_archived = 0 AND p.user_id = ?
-        ORDER BY p.created_at DESC
-      `),
-
-      getPortfolio: this.db.prepare(`
-        SELECT * FROM portfolios WHERE id = ?
-      `),
-
-      getPortfolioWithDetails: this.db.prepare(`
-        SELECT p.*,
-          (SELECT COUNT(*) FROM portfolio_positions WHERE portfolio_id = p.id) as positions_count,
-          (SELECT COUNT(*) FROM portfolio_orders WHERE portfolio_id = p.id AND status = 'active') as active_orders_count
-        FROM portfolios p
-        WHERE p.id = ?
-      `),
-
-      // Check portfolio ownership
-      getPortfolioOwner: this.db.prepare(`
-        SELECT user_id FROM portfolios WHERE id = ?
-      `),
-
-      createPortfolio: this.db.prepare(`
-        INSERT INTO portfolios
-        (name, description, portfolio_type, benchmark_index_id, currency,
-         initial_cash, initial_date, current_cash, current_value,
-         total_deposited, clone_investor_id, user_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `),
-
-      updatePortfolio: this.db.prepare(`
-        UPDATE portfolios
-        SET name = COALESCE(?, name),
-            description = COALESCE(?, description),
-            benchmark_index_id = COALESCE(?, benchmark_index_id),
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `),
-
-      archivePortfolio: this.db.prepare(`
-        UPDATE portfolios
-        SET is_archived = 1,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `),
-
-      deletePortfolio: this.db.prepare(`
-        DELETE FROM portfolios WHERE id = ?
-      `),
-
-      // Snapshot queries
-      createSnapshot: this.db.prepare(`
-        INSERT OR REPLACE INTO portfolio_snapshots
-        (portfolio_id, snapshot_date, total_value, cash_value, positions_value,
-         total_cost_basis, unrealized_pnl, realized_pnl, total_deposited,
-         total_withdrawn, positions_count, benchmark_value)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `),
-
-      getSnapshots: this.db.prepare(`
-        SELECT * FROM portfolio_snapshots
-        WHERE portfolio_id = ?
-        ORDER BY snapshot_date DESC
-        LIMIT ?
-      `),
-
-      getSnapshotRange: this.db.prepare(`
-        SELECT * FROM portfolio_snapshots
-        WHERE portfolio_id = ?
-          AND snapshot_date BETWEEN ? AND ?
-        ORDER BY snapshot_date ASC
-      `)
-    };
+  // Lazy load the alerts service
+  get alertsService() {
+    if (!alertsServiceInstance) {
+      alertsServiceInstance = new PortfolioAlertsService();
+    }
+    return alertsServiceInstance;
   }
 
   // ============================================
@@ -150,17 +66,52 @@ class PortfolioService {
    * Get all portfolios (for admin) or user-specific portfolios
    * @param {string|null} userId - User ID to filter by, or null for all (admin)
    */
-  getAllPortfolios(userId = null) {
+  async getAllPortfolios(userId = null) {
+    const database = await getDatabaseAsync();
+
     // First, get the list of portfolios to refresh
-    const portfolios = userId
-      ? this.stmts.getPortfoliosByUser.all(userId)
-      : this.stmts.getAllPortfolios.all();
+    let portfolios;
+    if (userId) {
+      const result = await database.query(`
+        SELECT p.*,
+          p.current_value as total_value,
+          p.current_cash as cash_balance,
+          (p.current_value - p.total_deposited + p.total_withdrawn) as total_gain,
+          CASE
+            WHEN (p.total_deposited - p.total_withdrawn) > 0
+            THEN ((p.current_value - p.total_deposited + p.total_withdrawn) / (p.total_deposited - p.total_withdrawn)) * 100
+            ELSE 0
+          END as total_gain_pct,
+          (SELECT COUNT(*) FROM portfolio_positions WHERE portfolio_id = p.id) as positions_count
+        FROM portfolios p
+        WHERE p.is_archived = false AND p.user_id = $1
+        ORDER BY p.created_at DESC
+      `, [userId]);
+      portfolios = result.rows;
+    } else {
+      const result = await database.query(`
+        SELECT p.*,
+          p.current_value as total_value,
+          p.current_cash as cash_balance,
+          (p.current_value - p.total_deposited + p.total_withdrawn) as total_gain,
+          CASE
+            WHEN (p.total_deposited - p.total_withdrawn) > 0
+            THEN ((p.current_value - p.total_deposited + p.total_withdrawn) / (p.total_deposited - p.total_withdrawn)) * 100
+            ELSE 0
+          END as total_gain_pct,
+          (SELECT COUNT(*) FROM portfolio_positions WHERE portfolio_id = p.id) as positions_count
+        FROM portfolios p
+        WHERE p.is_archived = false
+        ORDER BY p.created_at DESC
+      `);
+      portfolios = result.rows;
+    }
 
     // Refresh position values for each portfolio to ensure current_value is up-to-date
     // This prevents stale values when market prices change between trade executions
     for (const portfolio of portfolios) {
       try {
-        this.holdingsEngine.refreshPositionValues(portfolio.id);
+        await this.holdingsEngine.refreshPositionValues(portfolio.id);
       } catch (error) {
         console.error(`Failed to refresh portfolio ${portfolio.id}:`, error);
         // Continue with stale value rather than failing entirely
@@ -169,13 +120,51 @@ class PortfolioService {
 
     // Re-query to get updated values after refresh
     if (userId) {
-      return this.stmts.getPortfoliosByUser.all(userId);
+      const result = await database.query(`
+        SELECT p.*,
+          p.current_value as total_value,
+          p.current_cash as cash_balance,
+          (p.current_value - p.total_deposited + p.total_withdrawn) as total_gain,
+          CASE
+            WHEN (p.total_deposited - p.total_withdrawn) > 0
+            THEN ((p.current_value - p.total_deposited + p.total_withdrawn) / (p.total_deposited - p.total_withdrawn)) * 100
+            ELSE 0
+          END as total_gain_pct,
+          (SELECT COUNT(*) FROM portfolio_positions WHERE portfolio_id = p.id) as positions_count
+        FROM portfolios p
+        WHERE p.is_archived = false AND p.user_id = $1
+        ORDER BY p.created_at DESC
+      `, [userId]);
+      return result.rows;
     }
-    return this.stmts.getAllPortfolios.all();
+    const result = await database.query(`
+      SELECT p.*,
+        p.current_value as total_value,
+        p.current_cash as cash_balance,
+        (p.current_value - p.total_deposited + p.total_withdrawn) as total_gain,
+        CASE
+          WHEN (p.total_deposited - p.total_withdrawn) > 0
+          THEN ((p.current_value - p.total_deposited + p.total_withdrawn) / (p.total_deposited - p.total_withdrawn)) * 100
+          ELSE 0
+        END as total_gain_pct,
+        (SELECT COUNT(*) FROM portfolio_positions WHERE portfolio_id = p.id) as positions_count
+      FROM portfolios p
+      WHERE p.is_archived = false
+      ORDER BY p.created_at DESC
+    `);
+    return result.rows;
   }
 
-  getPortfolio(portfolioId) {
-    return this.stmts.getPortfolioWithDetails.get(portfolioId);
+  async getPortfolio(portfolioId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT p.*,
+        (SELECT COUNT(*) FROM portfolio_positions WHERE portfolio_id = p.id) as positions_count,
+        (SELECT COUNT(*) FROM portfolio_orders WHERE portfolio_id = p.id AND status = 'active') as active_orders_count
+      FROM portfolios p
+      WHERE p.id = $1
+    `, [portfolioId]);
+    return result.rows[0];
   }
 
   /**
@@ -184,12 +173,16 @@ class PortfolioService {
    * @param {string} userId
    * @returns {boolean}
    */
-  isPortfolioOwner(portfolioId, userId) {
-    const result = this.stmts.getPortfolioOwner.get(portfolioId);
-    if (!result) return false;
+  async isPortfolioOwner(portfolioId, userId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT user_id FROM portfolios WHERE id = $1
+    `, [portfolioId]);
+    const owner = result.rows[0];
+    if (!owner) return false;
     // If portfolio has no user_id (legacy), allow access
-    if (!result.user_id) return true;
-    return result.user_id === userId;
+    if (!owner.user_id) return true;
+    return owner.user_id === userId;
   }
 
   /**
@@ -197,12 +190,16 @@ class PortfolioService {
    * @param {number} portfolioId
    * @returns {string|null}
    */
-  getPortfolioOwner(portfolioId) {
-    const result = this.stmts.getPortfolioOwner.get(portfolioId);
-    return result?.user_id || null;
+  async getPortfolioOwner(portfolioId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT user_id FROM portfolios WHERE id = $1
+    `, [portfolioId]);
+    const owner = result.rows[0];
+    return owner?.user_id || null;
   }
 
-  createPortfolio({
+  async createPortfolio({
     name,
     description = null,
     portfolioType = PORTFOLIO_TYPES.MANUAL,
@@ -213,9 +210,17 @@ class PortfolioService {
     cloneInvestorId = null,
     userId = null
   }) {
+    const database = await getDatabaseAsync();
     const date = initialDate || new Date().toISOString().split('T')[0];
 
-    const result = this.stmts.createPortfolio.run(
+    const result = await database.query(`
+      INSERT INTO portfolios
+      (name, description, portfolio_type, benchmark_index_id, currency,
+       initial_cash, initial_date, current_cash, current_value,
+       total_deposited, clone_investor_id, user_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      RETURNING id
+    `, [
       name,
       description,
       portfolioType,
@@ -228,11 +233,11 @@ class PortfolioService {
       initialCash, // total_deposited = initial_cash
       cloneInvestorId,
       userId
-    );
+    ]);
 
     return {
       success: true,
-      portfolioId: result.lastInsertRowid,
+      portfolioId: result.rows[0].id,
       name,
       initialCash,
       initialDate: date,
@@ -240,19 +245,34 @@ class PortfolioService {
     };
   }
 
-  updatePortfolio(portfolioId, { name = null, description = null, benchmarkIndexId = null }) {
-    this.stmts.updatePortfolio.run(name, description, benchmarkIndexId, portfolioId);
+  async updatePortfolio(portfolioId, { name = null, description = null, benchmarkIndexId = null }) {
+    const database = await getDatabaseAsync();
+    await database.query(`
+      UPDATE portfolios
+      SET name = COALESCE($1, name),
+          description = COALESCE($2, description),
+          benchmark_index_id = COALESCE($3, benchmark_index_id),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $4
+    `, [name, description, benchmarkIndexId, portfolioId]);
     return { success: true, portfolioId };
   }
 
-  archivePortfolio(portfolioId) {
-    this.stmts.archivePortfolio.run(portfolioId);
+  async archivePortfolio(portfolioId) {
+    const database = await getDatabaseAsync();
+    await database.query(`
+      UPDATE portfolios
+      SET is_archived = true,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [portfolioId]);
     return { success: true, portfolioId, archived: true };
   }
 
-  deletePortfolio(portfolioId) {
+  async deletePortfolio(portfolioId) {
+    const database = await getDatabaseAsync();
     // This will cascade delete positions, lots, transactions, orders due to FK constraints
-    this.stmts.deletePortfolio.run(portfolioId);
+    await database.query(`DELETE FROM portfolios WHERE id = $1`, [portfolioId]);
     return { success: true, portfolioId, deleted: true };
   }
 
@@ -260,23 +280,23 @@ class PortfolioService {
   // Full Portfolio Summary
   // ============================================
 
-  getPortfolioSummary(portfolioId) {
-    const portfolio = this.getPortfolio(portfolioId);
+  async getPortfolioSummary(portfolioId) {
+    const portfolio = await this.getPortfolio(portfolioId);
     if (!portfolio) {
       throw new Error(`Portfolio ${portfolioId} not found`);
     }
 
     // Refresh position values
-    this.holdingsEngine.refreshPositionValues(portfolioId);
+    await this.holdingsEngine.refreshPositionValues(portfolioId);
 
     // Get value calculation
-    const values = this.holdingsEngine.calculatePortfolioValue(portfolioId);
+    const values = await this.holdingsEngine.calculatePortfolioValue(portfolioId);
 
     // Get positions
-    const positions = this.holdingsEngine.getPositions(portfolioId);
+    const positions = await this.holdingsEngine.getPositions(portfolioId);
 
     // Get active orders
-    const activeOrders = this.orderEngine.getActiveOrders(portfolioId);
+    const activeOrders = await this.orderEngine.getActiveOrders(portfolioId);
 
     // Calculate allocation
     const allocation = positions.map(p => ({
@@ -348,32 +368,52 @@ class PortfolioService {
   // Snapshots (for historical tracking)
   // ============================================
 
-  takeSnapshot(portfolioId, snapshotDate = null) {
+  async takeSnapshot(portfolioId, snapshotDate = null) {
+    const database = await getDatabaseAsync();
     const date = snapshotDate || new Date().toISOString().split('T')[0];
 
     // Refresh values first
-    this.holdingsEngine.refreshPositionValues(portfolioId);
+    await this.holdingsEngine.refreshPositionValues(portfolioId);
 
-    const portfolio = this.stmts.getPortfolio.get(portfolioId);
+    const portfolioResult = await database.query(`SELECT * FROM portfolios WHERE id = $1`, [portfolioId]);
+    const portfolio = portfolioResult.rows[0];
     if (!portfolio) {
       throw new Error(`Portfolio ${portfolioId} not found`);
     }
 
-    const values = this.holdingsEngine.calculatePortfolioValue(portfolioId);
+    const values = await this.holdingsEngine.calculatePortfolioValue(portfolioId);
 
     // Get benchmark value if benchmark_index_id is set
     let benchmarkValue = null;
     if (portfolio.benchmark_index_id) {
-      const benchmarkPrice = this.db.prepare(`
+      const benchmarkResult = await database.query(`
         SELECT close FROM market_index_prices
-        WHERE index_id = ? AND date <= ?
+        WHERE index_id = $1 AND date <= $2
         ORDER BY date DESC
         LIMIT 1
-      `).get(portfolio.benchmark_index_id, date);
+      `, [portfolio.benchmark_index_id, date]);
+      const benchmarkPrice = benchmarkResult.rows[0];
       benchmarkValue = benchmarkPrice?.close || null;
     }
 
-    this.stmts.createSnapshot.run(
+    await database.query(`
+      INSERT INTO portfolio_snapshots
+      (portfolio_id, snapshot_date, total_value, cash_value, positions_value,
+       total_cost_basis, unrealized_pnl, realized_pnl, total_deposited,
+       total_withdrawn, positions_count, benchmark_value)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      ON CONFLICT (portfolio_id, snapshot_date) DO UPDATE SET
+        total_value = excluded.total_value,
+        cash_value = excluded.cash_value,
+        positions_value = excluded.positions_value,
+        total_cost_basis = excluded.total_cost_basis,
+        unrealized_pnl = excluded.unrealized_pnl,
+        realized_pnl = excluded.realized_pnl,
+        total_deposited = excluded.total_deposited,
+        total_withdrawn = excluded.total_withdrawn,
+        positions_count = excluded.positions_count,
+        benchmark_value = excluded.benchmark_value
+    `, [
       portfolioId,
       date,
       values.totalValue,
@@ -386,13 +426,13 @@ class PortfolioService {
       portfolio.total_withdrawn,
       values.positionsCount,
       benchmarkValue
-    );
+    ]);
 
     // Update high water mark if current value exceeds it
     if (values.totalValue > (portfolio.high_water_mark || 0)) {
-      this.db.prepare(`
-        UPDATE portfolios SET high_water_mark = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-      `).run(values.totalValue, portfolioId);
+      await database.query(`
+        UPDATE portfolios SET high_water_mark = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2
+      `, [values.totalValue, portfolioId]);
     }
 
     return {
@@ -404,12 +444,26 @@ class PortfolioService {
     };
   }
 
-  getSnapshots(portfolioId, limit = 365) {
-    return this.stmts.getSnapshots.all(portfolioId, limit);
+  async getSnapshots(portfolioId, limit = 365) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM portfolio_snapshots
+      WHERE portfolio_id = $1
+      ORDER BY snapshot_date DESC
+      LIMIT $2
+    `, [portfolioId, limit]);
+    return result.rows;
   }
 
-  getSnapshotRange(portfolioId, startDate, endDate) {
-    return this.stmts.getSnapshotRange.all(portfolioId, startDate, endDate);
+  async getSnapshotRange(portfolioId, startDate, endDate) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM portfolio_snapshots
+      WHERE portfolio_id = $1
+        AND snapshot_date BETWEEN $2 AND $3
+      ORDER BY snapshot_date ASC
+    `, [portfolioId, startDate, endDate]);
+    return result.rows;
   }
 
   // ============================================
@@ -417,61 +471,61 @@ class PortfolioService {
   // ============================================
 
   // Holdings
-  getPositions(portfolioId) {
-    return this.holdingsEngine.getPositions(portfolioId);
+  async getPositions(portfolioId) {
+    return await this.holdingsEngine.getPositions(portfolioId);
   }
 
-  getPosition(portfolioId, companyId) {
-    return this.holdingsEngine.getPosition(portfolioId, companyId);
+  async getPosition(portfolioId, companyId) {
+    return await this.holdingsEngine.getPosition(portfolioId, companyId);
   }
 
-  getLots(positionId, openOnly = false) {
-    return this.holdingsEngine.getLots(positionId, openOnly);
+  async getLots(positionId, openOnly = false) {
+    return await this.holdingsEngine.getLots(positionId, openOnly);
   }
 
-  executeBuy(portfolioId, params) {
-    return this.holdingsEngine.executeBuy(portfolioId, params);
+  async executeBuy(portfolioId, params) {
+    return await this.holdingsEngine.executeBuy(portfolioId, params);
   }
 
-  executeSell(portfolioId, params) {
-    return this.holdingsEngine.executeSell(portfolioId, params);
+  async executeSell(portfolioId, params) {
+    return await this.holdingsEngine.executeSell(portfolioId, params);
   }
 
-  deposit(portfolioId, amount, options = {}) {
-    return this.holdingsEngine.deposit(portfolioId, amount, options);
+  async deposit(portfolioId, amount, options = {}) {
+    return await this.holdingsEngine.deposit(portfolioId, amount, options);
   }
 
-  withdraw(portfolioId, amount, options = {}) {
-    return this.holdingsEngine.withdraw(portfolioId, amount, options);
+  async withdraw(portfolioId, amount, options = {}) {
+    return await this.holdingsEngine.withdraw(portfolioId, amount, options);
   }
 
-  recordDividend(portfolioId, params) {
-    return this.holdingsEngine.recordDividend(portfolioId, params);
+  async recordDividend(portfolioId, params) {
+    return await this.holdingsEngine.recordDividend(portfolioId, params);
   }
 
-  getTransactions(portfolioId, options = {}) {
-    return this.holdingsEngine.getTransactions(portfolioId, options);
+  async getTransactions(portfolioId, options = {}) {
+    return await this.holdingsEngine.getTransactions(portfolioId, options);
   }
 
   // Orders
-  createOrder(portfolioId, params) {
-    return this.orderEngine.createOrder(portfolioId, params);
+  async createOrder(portfolioId, params) {
+    return await this.orderEngine.createOrder(portfolioId, params);
   }
 
-  getActiveOrders(portfolioId) {
-    return this.orderEngine.getActiveOrders(portfolioId);
+  async getActiveOrders(portfolioId) {
+    return await this.orderEngine.getActiveOrders(portfolioId);
   }
 
-  cancelOrder(orderId) {
-    return this.orderEngine.cancelOrder(orderId);
+  async cancelOrder(orderId) {
+    return await this.orderEngine.cancelOrder(orderId);
   }
 
-  checkAndExecuteOrders() {
-    return this.orderEngine.checkAndExecuteOrders();
+  async checkAndExecuteOrders() {
+    return await this.orderEngine.checkAndExecuteOrders();
   }
 
-  refreshValues(portfolioId) {
-    return this.holdingsEngine.refreshPositionValues(portfolioId);
+  async refreshValues(portfolioId) {
+    return await this.holdingsEngine.refreshPositionValues(portfolioId);
   }
 
   // ============================================
@@ -479,9 +533,9 @@ class PortfolioService {
   // ============================================
 
   // Quick add from company detail page
-  addFromCompanyPage(portfolioId, companyId, shares, price) {
+  async addFromCompanyPage(portfolioId, companyId, shares, price) {
     // Validate first
-    const validation = this.holdingsEngine.validateTrade(portfolioId, {
+    const validation = await this.holdingsEngine.validateTrade(portfolioId, {
       companyId,
       side: 'buy',
       shares,
@@ -492,7 +546,7 @@ class PortfolioService {
       throw new Error(validation.error);
     }
 
-    return this.holdingsEngine.executeBuy(portfolioId, {
+    return await this.holdingsEngine.executeBuy(portfolioId, {
       companyId,
       shares,
       pricePerShare: price,
@@ -502,9 +556,10 @@ class PortfolioService {
   }
 
   // Add multiple stocks from screener results
-  addFromScreener(portfolioId, selections, allocation = 'equal') {
+  async addFromScreener(portfolioId, selections, allocation = 'equal') {
+    const database = await getDatabaseAsync();
     // selections: [{ companyId, shares?, weight? }]
-    const portfolio = this.getPortfolio(portfolioId);
+    const portfolio = await this.getPortfolio(portfolioId);
     if (!portfolio) {
       throw new Error(`Portfolio ${portfolioId} not found`);
     }
@@ -522,7 +577,8 @@ class PortfolioService {
       const marketCaps = [];
       let totalMarketCap = 0;
       for (const sel of selections) {
-        const company = this.db.prepare('SELECT market_cap FROM companies WHERE id = ?').get(sel.companyId);
+        const result = await database.query('SELECT market_cap FROM companies WHERE id = $1', [sel.companyId]);
+        const company = result.rows[0];
         const cap = company?.market_cap || 0;
         marketCaps.push({ ...sel, marketCap: cap });
         totalMarketCap += cap;
@@ -545,10 +601,11 @@ class PortfolioService {
     for (const alloc of allocations) {
       try {
         // Get current price
-        const priceRow = this.db.prepare(`
+        const priceResult = await database.query(`
           SELECT close as price FROM daily_prices
-          WHERE company_id = ? ORDER BY date DESC LIMIT 1
-        `).get(alloc.companyId);
+          WHERE company_id = $1 ORDER BY date DESC LIMIT 1
+        `, [alloc.companyId]);
+        const priceRow = priceResult.rows[0];
 
         if (!priceRow) {
           results.push({
@@ -569,7 +626,7 @@ class PortfolioService {
           continue;
         }
 
-        const result = this.holdingsEngine.executeBuy(portfolioId, {
+        const result = await this.holdingsEngine.executeBuy(portfolioId, {
           companyId: alloc.companyId,
           shares,
           pricePerShare: priceRow.price,
@@ -600,11 +657,11 @@ class PortfolioService {
   }
 
   // Convert watchlist to portfolio
-  createFromWatchlist(watchlistItems, { name, initialCash, allocation = 'equal' }) {
+  async createFromWatchlist(watchlistItems, { name, initialCash, allocation = 'equal' }) {
     // watchlistItems: [{ companyId, symbol }]
 
     // Create portfolio
-    const portfolio = this.createPortfolio({
+    const portfolio = await this.createPortfolio({
       name,
       description: 'Created from watchlist',
       initialCash
@@ -612,7 +669,7 @@ class PortfolioService {
 
     // Add stocks from watchlist
     const selections = watchlistItems.map(item => ({ companyId: item.companyId || item.company_id }));
-    const addResult = this.addFromScreener(portfolio.portfolioId, selections, allocation);
+    const addResult = await this.addFromScreener(portfolio.portfolioId, selections, allocation);
 
     return {
       success: true,
@@ -626,8 +683,8 @@ class PortfolioService {
   }
 
   // Get portfolio summaries for dashboard widget
-  getPortfolioSummaries(userId = null) {
-    const portfolios = this.getAllPortfolios(userId);
+  async getPortfolioSummaries(userId = null) {
+    const portfolios = await this.getAllPortfolios(userId);
 
     return portfolios.map(p => {
       try {
@@ -665,14 +722,16 @@ class PortfolioService {
   // Portfolio Duplication
   // ============================================
 
-  duplicatePortfolio(portfolioId, newName) {
-    const original = this.stmts.getPortfolio.get(portfolioId);
+  async duplicatePortfolio(portfolioId, newName) {
+    const database = await getDatabaseAsync();
+    const originalResult = await database.query('SELECT * FROM portfolios WHERE id = $1', [portfolioId]);
+    const original = originalResult.rows[0];
     if (!original) {
       throw new Error(`Portfolio ${portfolioId} not found`);
     }
 
     // Create new portfolio with same settings
-    const newPortfolio = this.createPortfolio({
+    const newPortfolio = await this.createPortfolio({
       name: newName || `${original.name} (Copy)`,
       description: original.description ? `Copy of: ${original.description}` : `Copy of portfolio ${portfolioId}`,
       portfolioType: original.portfolio_type,
@@ -682,21 +741,22 @@ class PortfolioService {
     });
 
     // Copy positions
-    const positions = this.holdingsEngine.getPositions(portfolioId);
+    const positions = await this.holdingsEngine.getPositions(portfolioId);
     const copiedPositions = [];
 
     for (const pos of positions) {
       try {
         // Get current price
-        const priceRow = this.db.prepare(`
+        const priceResult = await database.query(`
           SELECT close as price FROM daily_prices
-          WHERE company_id = ? ORDER BY date DESC LIMIT 1
-        `).get(pos.company_id);
+          WHERE company_id = $1 ORDER BY date DESC LIMIT 1
+        `, [pos.company_id]);
+        const priceRow = priceResult.rows[0];
 
         const price = priceRow?.price || pos.average_cost;
 
         // Buy same number of shares
-        const result = this.holdingsEngine.executeBuy(newPortfolio.portfolioId, {
+        const result = await this.holdingsEngine.executeBuy(newPortfolio.portfolioId, {
           companyId: pos.company_id,
           shares: pos.shares,
           pricePerShare: price,
@@ -720,9 +780,9 @@ class PortfolioService {
     }
 
     // Copy DRIP setting
-    this.db.prepare(`
-      UPDATE portfolios SET dividend_reinvest = ? WHERE id = ?
-    `).run(original.dividend_reinvest || 0, newPortfolio.portfolioId);
+    await database.query(`
+      UPDATE portfolios SET dividend_reinvest = $1 WHERE id = $2
+    `, [original.dividend_reinvest || false, newPortfolio.portfolioId]);
 
     return {
       success: true,
@@ -740,46 +800,47 @@ class PortfolioService {
   // ============================================
 
   // Delegate bulk operations to holdings engine
-  liquidatePortfolio(portfolioId) {
-    return this.holdingsEngine.liquidatePortfolio(portfolioId);
+  async liquidatePortfolio(portfolioId) {
+    return await this.holdingsEngine.liquidatePortfolio(portfolioId);
   }
 
-  closePosition(portfolioId, companyId) {
-    return this.holdingsEngine.closePosition(portfolioId, companyId);
+  async closePosition(portfolioId, companyId) {
+    return await this.holdingsEngine.closePosition(portfolioId, companyId);
   }
 
-  processDividend(portfolioId, params) {
-    return this.holdingsEngine.processDividend(portfolioId, params);
+  async processDividend(portfolioId, params) {
+    return await this.holdingsEngine.processDividend(portfolioId, params);
   }
 
-  validateTrade(portfolioId, params) {
-    return this.holdingsEngine.validateTrade(portfolioId, params);
+  async validateTrade(portfolioId, params) {
+    return await this.holdingsEngine.validateTrade(portfolioId, params);
   }
 
   // Stock split processing
-  processStockSplit(companyId, splitRatio, effectiveDate = null) {
-    return this.holdingsEngine.processStockSplit(companyId, splitRatio, effectiveDate);
+  async processStockSplit(companyId, splitRatio, effectiveDate = null) {
+    return await this.holdingsEngine.processStockSplit(companyId, splitRatio, effectiveDate);
   }
 
-  processStockSplitForPortfolio(portfolioId, companyId, splitRatio, effectiveDate = null) {
-    return this.holdingsEngine.processStockSplitForPortfolio(portfolioId, companyId, splitRatio, effectiveDate);
+  async processStockSplitForPortfolio(portfolioId, companyId, splitRatio, effectiveDate = null) {
+    return await this.holdingsEngine.processStockSplitForPortfolio(portfolioId, companyId, splitRatio, effectiveDate);
   }
 
   // Set DRIP setting for portfolio
-  setDividendReinvest(portfolioId, enabled) {
-    this.db.prepare(`
-      UPDATE portfolios SET dividend_reinvest = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-    `).run(enabled ? 1 : 0, portfolioId);
+  async setDividendReinvest(portfolioId, enabled) {
+    const database = await getDatabaseAsync();
+    await database.query(`
+      UPDATE portfolios SET dividend_reinvest = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2
+    `, [enabled ? true : false, portfolioId]);
     return { success: true, portfolioId, dividendReinvest: enabled };
   }
 
-  refreshAllPortfolios() {
-    const portfolios = this.getAllPortfolios();
+  async refreshAllPortfolios() {
+    const portfolios = await this.getAllPortfolios();
     const results = [];
 
     for (const portfolio of portfolios) {
       try {
-        const refreshResult = this.holdingsEngine.refreshPositionValues(portfolio.id);
+        const refreshResult = await this.holdingsEngine.refreshPositionValues(portfolio.id);
         results.push({
           portfolioId: portfolio.id,
           name: portfolio.name,
@@ -799,13 +860,13 @@ class PortfolioService {
     return results;
   }
 
-  takeAllSnapshots(snapshotDate = null) {
-    const portfolios = this.getAllPortfolios();
+  async takeAllSnapshots(snapshotDate = null) {
+    const portfolios = await this.getAllPortfolios();
     const results = [];
 
     for (const portfolio of portfolios) {
       try {
-        const snapshotResult = this.takeSnapshot(portfolio.id, snapshotDate);
+        const snapshotResult = await this.takeSnapshot(portfolio.id, snapshotDate);
         results.push({
           portfolioId: portfolio.id,
           name: portfolio.name,
@@ -829,65 +890,69 @@ class PortfolioService {
   // Alerts (delegate to alertsService)
   // ============================================
 
-  getAlertSettings(portfolioId) {
-    return this.alertsService.getAlertSettings(portfolioId);
+  async getAlertSettings(portfolioId) {
+    return await this.alertsService.getAlertSettings(portfolioId);
   }
 
-  updateAlertSetting(portfolioId, alertType, settings) {
-    return this.alertsService.updateAlertSetting(portfolioId, alertType, settings);
+  async updateAlertSetting(portfolioId, alertType, settings) {
+    return await this.alertsService.updateAlertSetting(portfolioId, alertType, settings);
   }
 
-  getAlerts(portfolioId, options = {}) {
-    return this.alertsService.getAlerts(portfolioId, options);
+  async getAlerts(portfolioId, options = {}) {
+    return await this.alertsService.getAlerts(portfolioId, options);
   }
 
-  getUnreadAlertCount(portfolioId) {
-    return this.alertsService.getUnreadCount(portfolioId);
+  async getUnreadAlertCount(portfolioId) {
+    return await this.alertsService.getUnreadCount(portfolioId);
   }
 
-  markAlertsAsRead(alertIds) {
-    return this.alertsService.markAsRead(alertIds);
+  async markAlertsAsRead(alertIds) {
+    return await this.alertsService.markAsRead(alertIds);
   }
 
-  markAllAlertsAsRead(portfolioId) {
-    return this.alertsService.markAllAsRead(portfolioId);
+  async markAllAlertsAsRead(portfolioId) {
+    return await this.alertsService.markAllAsRead(portfolioId);
   }
 
-  dismissAlert(alertId) {
-    return this.alertsService.dismissAlert(alertId);
+  async dismissAlert(alertId) {
+    return await this.alertsService.dismissAlert(alertId);
   }
 
   /**
    * Check all alerts for a single portfolio
    */
-  checkPortfolioAlerts(portfolioId) {
+  async checkPortfolioAlerts(portfolioId) {
+    const database = await getDatabaseAsync();
     // Refresh values first
-    this.holdingsEngine.refreshPositionValues(portfolioId);
+    await this.holdingsEngine.refreshPositionValues(portfolioId);
 
-    const portfolio = this.stmts.getPortfolio.get(portfolioId);
+    const portfolioResult = await database.query('SELECT * FROM portfolios WHERE id = $1', [portfolioId]);
+    const portfolio = portfolioResult.rows[0];
     if (!portfolio) {
       throw new Error(`Portfolio ${portfolioId} not found`);
     }
 
-    const values = this.holdingsEngine.calculatePortfolioValue(portfolioId);
-    const positions = this.holdingsEngine.getPositions(portfolioId);
+    const values = await this.holdingsEngine.calculatePortfolioValue(portfolioId);
+    const positions = await this.holdingsEngine.getPositions(portfolioId);
 
     // Get yesterday's snapshot for daily change calculation
-    const yesterdaySnapshot = this.db.prepare(`
+    const yesterdayResult = await database.query(`
       SELECT total_value FROM portfolio_snapshots
-      WHERE portfolio_id = ? AND snapshot_date < date('now')
+      WHERE portfolio_id = $1 AND snapshot_date < CURRENT_DATE
       ORDER BY snapshot_date DESC LIMIT 1
-    `).get(portfolioId);
+    `, [portfolioId]);
+    const yesterdaySnapshot = yesterdayResult.rows[0];
 
     const previousValue = yesterdaySnapshot?.total_value || values.totalValue;
     const dailyChange = values.totalValue - previousValue;
     const dailyChangePct = previousValue > 0 ? (dailyChange / previousValue) * 100 : 0;
 
     // Get high water mark from snapshots
-    const highWaterMarkRow = this.db.prepare(`
+    const highWaterMarkResult = await database.query(`
       SELECT MAX(total_value) as high_water_mark FROM portfolio_snapshots
-      WHERE portfolio_id = ?
-    `).get(portfolioId);
+      WHERE portfolio_id = $1
+    `, [portfolioId]);
+    const highWaterMarkRow = highWaterMarkResult.rows[0];
 
     const portfolioData = {
       totalValue: values.totalValue,
@@ -904,19 +969,19 @@ class PortfolioService {
       previousHighWaterMark: portfolio.high_water_mark || 0
     };
 
-    return this.alertsService.checkPortfolioAlerts(portfolioId, portfolioData);
+    return await this.alertsService.checkPortfolioAlerts(portfolioId, portfolioData);
   }
 
   /**
    * Check alerts for all portfolios
    */
-  checkAllPortfolioAlerts() {
-    const portfolios = this.getAllPortfolios();
+  async checkAllPortfolioAlerts() {
+    const portfolios = await this.getAllPortfolios();
     const results = [];
 
     for (const portfolio of portfolios) {
       try {
-        const alerts = this.checkPortfolioAlerts(portfolio.id);
+        const alerts = await this.checkPortfolioAlerts(portfolio.id);
         results.push({
           portfolioId: portfolio.id,
           name: portfolio.name,
@@ -945,29 +1010,32 @@ class PortfolioService {
   /**
    * Create order triggered alert (called from order engine after execution)
    */
-  createOrderTriggeredAlert(portfolioId, order, result) {
-    return this.alertsService.createOrderTriggeredAlert(portfolioId, order, result);
+  async createOrderTriggeredAlert(portfolioId, order, result) {
+    return await this.alertsService.createOrderTriggeredAlert(portfolioId, order, result);
   }
 
   /**
    * Create dividend alert (called from holdings engine after dividend processing)
    */
-  createDividendAlert(portfolioId, dividendData) {
-    return this.alertsService.createDividendAlert(portfolioId, dividendData);
+  async createDividendAlert(portfolioId, dividendData) {
+    return await this.alertsService.createDividendAlert(portfolioId, dividendData);
   }
 
   /**
    * Get all unread alerts across all portfolios (for dashboard notification badge)
    */
-  getAllUnreadAlerts(limit = 20) {
-    const alerts = this.db.prepare(`
+  async getAllUnreadAlerts(limit = 20) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT pa.*, p.name as portfolio_name
       FROM portfolio_alerts pa
       JOIN portfolios p ON pa.portfolio_id = p.id
-      WHERE pa.is_read = 0
+      WHERE pa.is_read = false
       ORDER BY pa.created_at DESC
-      LIMIT ?
-    `).all(limit);
+      LIMIT $1
+    `, [limit]);
+
+    const alerts = result.rows;
 
     return alerts.map(a => ({
       id: a.id,
@@ -984,11 +1052,12 @@ class PortfolioService {
   /**
    * Get total unread alert count across all portfolios
    */
-  getTotalUnreadAlertCount() {
-    const result = this.db.prepare(`
-      SELECT COUNT(*) as count FROM portfolio_alerts WHERE is_read = 0
-    `).get();
-    return result.count;
+  async getTotalUnreadAlertCount() {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT COUNT(*) as count FROM portfolio_alerts WHERE is_read = false
+    `);
+    return result.rows[0].count;
   }
 }
 
