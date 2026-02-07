@@ -93,7 +93,7 @@ class SignalOptimizer {
    * @param {number} lookbackDays - Days to look back for IC calculation
    * @returns {Object} Optimized weights
    */
-  calculateOptimalWeights(regime = null, lookbackDays = 90) {
+  async calculateOptimalWeights(regime = null, lookbackDays = 90) {
     const cacheKey = `${regime || 'ALL'}_${lookbackDays}`;
     const cached = this.weightCache.get(cacheKey);
 
@@ -102,7 +102,7 @@ class SignalOptimizer {
     }
 
     // Get IC for each signal type
-    const { weights: icWeights, ics } = this.tracker.getOptimalWeights(lookbackDays);
+    const { weights: icWeights, ics } = await this.tracker.getOptimalWeights(lookbackDays);
 
     // Check if we have enough data
     const icValues = Object.values(ics).filter(i => i.ic !== null);
@@ -118,7 +118,7 @@ class SignalOptimizer {
     const blendedWeights = this.blendWithBaseWeights(icWeights, this.baseBlendRatio);
 
     // NEW: Apply alpha validation gate (penalize signals without statistical significance)
-    const validatedWeights = this.applyAlphaValidationGate(blendedWeights, ics);
+    const validatedWeights = await this.applyAlphaValidationGate(blendedWeights, ics);
 
     // Apply regime-specific adjustments
     const regimeAdjusted = this.applyRegimeAdjustments(validatedWeights, regime);
@@ -158,7 +158,7 @@ class SignalOptimizer {
    * Penalizes signals that haven't demonstrated statistical significance
    * This prevents overfitting to noise
    */
-  applyAlphaValidationGate(weights, ics) {
+  async applyAlphaValidationGate(weights, ics) {
     if (!this.alphaValidationEnabled) {
       return weights;
     }
@@ -166,7 +166,7 @@ class SignalOptimizer {
     const validated = {};
 
     // Get stored IC summary from daily backtesting analysis
-    const icSummary = this.getStoredICAnalysis();
+    const icSummary = await this.getStoredICAnalysis();
 
     for (const signal of Object.keys(weights)) {
       const weight = weights[signal];
@@ -224,21 +224,21 @@ class SignalOptimizer {
   /**
    * Get stored IC analysis from daily backtesting job
    */
-  getStoredICAnalysis() {
+  async getStoredICAnalysis() {
     try {
-      const rows = this.db.prepare(`
+      const result = await this.db.query(`
         SELECT signal_type, optimal_horizon, optimal_ic, decay_rate, is_significant
         FROM signal_ic_summary
-        WHERE updated_at >= datetime('now', '-3 days')
-      `).all();
+        WHERE updated_at >= NOW() - INTERVAL '3 days'
+      `);
 
       const summary = {};
-      for (const row of rows) {
+      for (const row of result.rows) {
         summary[row.signal_type] = {
           optimal_horizon: row.optimal_horizon,
           optimal_ic: row.optimal_ic,
           decay_rate: row.decay_rate,
-          is_significant: row.is_significant === 1
+          is_significant: row.is_significant === true || row.is_significant === 1
         };
       }
       return summary;
@@ -303,9 +303,9 @@ class SignalOptimizer {
    * @param {string} regime - Market regime
    * @returns {Object} Optimized weights for the regime
    */
-  getWeightsForRegime(regime) {
+  async getWeightsForRegime(regime) {
     // Try to get stored optimized weights first
-    const stored = this.getStoredWeights(regime);
+    const stored = await this.getStoredWeights(regime);
 
     if (stored && !stored.isDefault) {
       // Check if weights are still valid
@@ -316,13 +316,13 @@ class SignalOptimizer {
     }
 
     // Calculate fresh weights
-    return this.calculateOptimalWeights(regime);
+    return await this.calculateOptimalWeights(regime);
   }
 
   /**
    * Daily recalculation job
    */
-  recalculateAllWeights() {
+  async recalculateAllWeights() {
     const regimes = ['BULL', 'BEAR', 'SIDEWAYS', 'HIGH_VOL', 'CRISIS', 'ALL'];
     const results = {};
 
@@ -332,10 +332,10 @@ class SignalOptimizer {
         this.weightCache.delete(`${regime}_90`);
 
         // Calculate new weights
-        const weights = this.calculateOptimalWeights(regime === 'ALL' ? null : regime, 90);
+        const weights = await this.calculateOptimalWeights(regime === 'ALL' ? null : regime, 90);
 
         // Store in database
-        this.storeOptimizedWeights(weights, regime);
+        await this.storeOptimizedWeights(weights, regime);
 
         results[regime] = { success: true, weights };
       } catch (error) {
@@ -350,9 +350,9 @@ class SignalOptimizer {
   /**
    * Store optimized weights in database
    */
-  storeOptimizedWeights(weights, regime) {
+  async storeOptimizedWeights(weights, regime) {
     // Calculate average IC for metadata
-    const { ics } = this.tracker.getOptimalWeights(90);
+    const { ics } = await this.tracker.getOptimalWeights(90);
     const icValues = Object.values(ics)
       .map(i => i.ic)
       .filter(ic => ic !== null && !isNaN(ic));
@@ -360,8 +360,8 @@ class SignalOptimizer {
       ? icValues.reduce((a, b) => a + b, 0) / icValues.length
       : null;
 
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO optimized_signal_weights (
+    await this.db.query(`
+      INSERT INTO optimized_signal_weights (
         regime,
         technical_weight,
         sentiment_weight,
@@ -375,10 +375,21 @@ class SignalOptimizer {
         avg_ic,
         calculated_at,
         valid_until
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+1 day'))
-    `);
-
-    stmt.run(
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW() + INTERVAL '1 day')
+      ON CONFLICT (regime) DO UPDATE SET
+        technical_weight = EXCLUDED.technical_weight,
+        sentiment_weight = EXCLUDED.sentiment_weight,
+        insider_weight = EXCLUDED.insider_weight,
+        fundamental_weight = EXCLUDED.fundamental_weight,
+        alternative_weight = EXCLUDED.alternative_weight,
+        valuation_weight = EXCLUDED.valuation_weight,
+        filing_13f_weight = EXCLUDED.filing_13f_weight,
+        earnings_weight = EXCLUDED.earnings_weight,
+        lookback_days = EXCLUDED.lookback_days,
+        avg_ic = EXCLUDED.avg_ic,
+        calculated_at = EXCLUDED.calculated_at,
+        valid_until = EXCLUDED.valid_until
+    `, [
       regime,
       weights.technical || this.baseWeights.technical,
       weights.sentiment || this.baseWeights.sentiment,
@@ -390,26 +401,28 @@ class SignalOptimizer {
       weights.earnings || this.baseWeights.earnings,
       90,
       avgIC
-    );
+    ]);
   }
 
   /**
    * Get stored weights from database
    */
-  getStoredWeights(regime) {
-    const row = this.db.prepare(`
+  async getStoredWeights(regime) {
+    const result = await this.db.query(`
       SELECT *
       FROM optimized_signal_weights
-      WHERE regime = ?
-    `).get(regime);
+      WHERE regime = $1
+    `, [regime]);
 
-    if (!row) {
+    if (result.rows.length === 0) {
       return {
         regime,
         weights: this.baseWeights,
         isDefault: true
       };
     }
+
+    const row = result.rows[0];
 
     return {
       regime,
@@ -434,14 +447,14 @@ class SignalOptimizer {
   /**
    * Get all stored weights
    */
-  getAllStoredWeights() {
-    const rows = this.db.prepare(`
+  async getAllStoredWeights() {
+    const result = await this.db.query(`
       SELECT *
       FROM optimized_signal_weights
       ORDER BY regime
-    `).all();
+    `);
 
-    return rows.map(row => ({
+    return result.rows.map(row => ({
       regime: row.regime,
       weights: {
         technical: row.technical_weight,
@@ -462,8 +475,8 @@ class SignalOptimizer {
   /**
    * Get weight comparison (base vs optimized)
    */
-  getWeightComparison(regime = 'ALL') {
-    const optimized = this.getStoredWeights(regime);
+  async getWeightComparison(regime = 'ALL') {
+    const optimized = await this.getStoredWeights(regime);
     const comparison = {};
 
     for (const signal of Object.keys(this.baseWeights)) {
@@ -496,29 +509,29 @@ class SignalOptimizer {
    * @param {number} runId - Optimization run ID (optional, uses most recent if not specified)
    * @returns {Object} Result with loaded weights
    */
-  useOptimizedWeightsFromRun(runId = null) {
+  async useOptimizedWeightsFromRun(runId = null) {
     try {
-      let weightData;
+      let result;
 
       if (runId) {
         // Get specific run
-        weightData = this.db.prepare(`
+        result = await this.db.query(`
           SELECT best_weights, best_alpha, walk_forward_efficiency
           FROM weight_optimization_runs
-          WHERE id = ? AND status = 'completed' AND best_weights IS NOT NULL
-        `).get(runId);
+          WHERE id = $1 AND status = 'completed' AND best_weights IS NOT NULL
+        `, [runId]);
       } else {
         // Get most recent successful run
-        weightData = this.db.prepare(`
+        result = await this.db.query(`
           SELECT id, best_weights, best_alpha, walk_forward_efficiency
           FROM weight_optimization_runs
           WHERE status = 'completed' AND best_weights IS NOT NULL
           ORDER BY completed_at DESC
           LIMIT 1
-        `).get();
+        `);
       }
 
-      if (!weightData || !weightData.best_weights) {
+      if (result.rows.length === 0 || !result.rows[0].best_weights) {
         return {
           success: false,
           error: 'No optimization run found with valid weights',
@@ -527,7 +540,10 @@ class SignalOptimizer {
         };
       }
 
-      const optimizedWeights = JSON.parse(weightData.best_weights);
+      const weightData = result.rows[0];
+      const optimizedWeights = typeof weightData.best_weights === 'string'
+        ? JSON.parse(weightData.best_weights)
+        : weightData.best_weights;
 
       // Map the 6 backtester signals to the 8 signalOptimizer signals
       // The backtester uses: technical, fundamental, sentiment, insider, valuation, factor
@@ -576,21 +592,23 @@ class SignalOptimizer {
    * @param {string} regime - Market regime
    * @returns {Object} Weights for the specified regime
    */
-  loadRegimeOptimizedWeights(regime) {
+  async loadRegimeOptimizedWeights(regime) {
     try {
-      const regimeData = this.db.prepare(`
+      const result = await this.db.query(`
         SELECT technical_weight, fundamental_weight, sentiment_weight,
                insider_weight, valuation_weight, factor_weight,
                alpha, sharpe_ratio, walk_forward_efficiency
         FROM regime_optimal_weights
-        WHERE regime = ? AND is_active = 1
+        WHERE regime = $1 AND is_active = true
         ORDER BY valid_from DESC
         LIMIT 1
-      `).get(regime);
+      `, [regime]);
 
-      if (!regimeData) {
+      if (result.rows.length === 0) {
         return null;
       }
+
+      const regimeData = result.rows[0];
 
       // Map to signalOptimizer format
       const weights = {
@@ -615,8 +633,8 @@ class SignalOptimizer {
    * Get signal contribution analysis
    * Shows how each signal contributes to overall performance
    */
-  getSignalContributionAnalysis(lookbackDays = 90) {
-    const { weights, ics } = this.tracker.getOptimalWeights(lookbackDays);
+  async getSignalContributionAnalysis(lookbackDays = 90) {
+    const { weights, ics } = await this.tracker.getOptimalWeights(lookbackDays);
 
     const contributions = {};
     let totalContribution = 0;

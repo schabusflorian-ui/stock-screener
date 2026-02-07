@@ -124,7 +124,6 @@ class TradingAgent {
     this.maxPositionSize = options.maxPositionSize || 0.10; // 10% max position
     this.maxSectorExposure = options.maxSectorExposure || 0.30; // 30% max sector
 
-    this._prepareStatements();
     console.log(`🤖 Trading Agent initialized (region: ${this.region}, 9 signals + IC-optimized weights + HMM regime + factors + probabilistic DCF + tax-aware)`);
   }
 
@@ -218,7 +217,7 @@ class TradingAgent {
    * @param {number} portfolioId - Portfolio ID (optional)
    * @returns {object} Tax impact analysis
    */
-  _calculateTaxImpact(symbol, shares, currentPrice, portfolioId = null) {
+  async _calculateTaxImpact(symbol, shares, currentPrice, portfolioId = null) {
     if (!this.taxAwareTrading) return null;
 
     const taxService = this._getPortfolioTaxService();
@@ -228,7 +227,7 @@ class TradingAgent {
 
     try {
       // Get tax impact from the service
-      const impact = taxService.calculateTradeImpact(
+      const impact = await taxService.calculateTradeImpact(
         portfolioId,
         symbol,
         shares,
@@ -338,172 +337,6 @@ class TradingAgent {
     return null;
   }
 
-  _prepareStatements() {
-    this.stmts = {
-      getCompany: this.db.prepare(`
-        SELECT id, symbol, name, sector, industry, market_cap
-        FROM companies WHERE LOWER(symbol) = LOWER(?)
-      `),
-
-      getCompanyById: this.db.prepare(`
-        SELECT id, symbol, name, sector, industry, market_cap
-        FROM companies WHERE id = ?
-      `),
-
-      getLatestPrice: this.db.prepare(`
-        SELECT close as price, date FROM daily_prices
-        WHERE company_id = ?
-        ORDER BY date DESC
-        LIMIT 1
-      `),
-
-      getPriceMetrics: this.db.prepare(`
-        SELECT * FROM price_metrics WHERE company_id = ?
-      `),
-
-      getCalculatedMetrics: this.db.prepare(`
-        SELECT * FROM calculated_metrics
-        WHERE company_id = ?
-        ORDER BY fiscal_period DESC
-        LIMIT 1
-      `),
-
-      getSentiment: this.db.prepare(`
-        SELECT * FROM combined_sentiment
-        WHERE company_id = ?
-        ORDER BY calculated_at DESC
-        LIMIT 1
-      `),
-
-      getSentimentByRegion: this.db.prepare(`
-        SELECT * FROM combined_sentiment
-        WHERE company_id = ? AND (region = ? OR region IS NULL)
-        ORDER BY calculated_at DESC
-        LIMIT 1
-      `),
-
-      getSentimentAllRegions: this.db.prepare(`
-        SELECT
-          company_id,
-          AVG(combined_score) as combined_score,
-          MAX(combined_signal) as combined_signal,
-          AVG(confidence) as confidence,
-          AVG(reddit_sentiment) as reddit_sentiment,
-          AVG(news_sentiment) as news_sentiment,
-          SUM(sources_used) as sources_used,
-          AVG(agreement_score) as agreement_score,
-          MAX(calculated_at) as calculated_at
-        FROM combined_sentiment
-        WHERE company_id = ?
-          AND calculated_at >= datetime('now', '-24 hours')
-        GROUP BY company_id
-      `),
-
-      getInsiderActivity: this.db.prepare(`
-        SELECT * FROM insider_activity_summary
-        WHERE company_id = ? AND period = '90d'
-      `),
-
-      getAnalystEstimates: this.db.prepare(`
-        SELECT * FROM analyst_estimates
-        WHERE company_id = ?
-      `),
-
-      // NEW: Alternative data signals
-      getAlternativeData: this.db.prepare(`
-        SELECT * FROM alternative_data_signals
-        WHERE company_id = ?
-        ORDER BY signal_date DESC
-        LIMIT 1
-      `),
-
-      // NEW: Intrinsic value / margin of safety
-      getIntrinsicValue: this.db.prepare(`
-        SELECT
-          weighted_intrinsic_value as intrinsic_value_per_share,
-          margin_of_safety,
-          valuation_signal,
-          CASE
-            WHEN dcf_confidence >= 0.5 THEN 'DCF'
-            WHEN graham_number IS NOT NULL THEN 'Graham'
-            WHEN epv_value IS NOT NULL THEN 'EPV'
-            ELSE 'Blended'
-          END as primary_method,
-          confidence_level as confidence_score
-        FROM intrinsic_value_estimates
-        WHERE company_id = ?
-        ORDER BY estimate_date DESC
-        LIMIT 1
-      `),
-
-      // NEW: Congressional trades summary for this symbol
-      getCongressTrades: this.db.prepare(`
-        SELECT
-          COUNT(CASE WHEN transaction_type = 'purchase' THEN 1 END) as buy_count,
-          COUNT(CASE WHEN transaction_type = 'sale' THEN 1 END) as sell_count,
-          SUM(CASE WHEN transaction_type = 'purchase' THEN (amount_min + COALESCE(amount_max, amount_min)) / 2 ELSE 0 END) as buy_amount,
-          SUM(CASE WHEN transaction_type = 'sale' THEN (amount_min + COALESCE(amount_max, amount_min)) / 2 ELSE 0 END) as sell_amount,
-          MAX(transaction_date) as last_trade_date
-        FROM congressional_trades
-        WHERE company_id = ?
-          AND transaction_date >= date('now', '-90 days')
-      `),
-
-      // NEW: Short interest data
-      getShortInterest: this.db.prepare(`
-        SELECT * FROM short_interest
-        WHERE company_id = ?
-        ORDER BY settlement_date DESC
-        LIMIT 1
-      `),
-
-      storeRecommendation: this.db.prepare(`
-        INSERT INTO agent_recommendations
-        (company_id, date, action, score, raw_score, confidence, position_size,
-         suggested_shares, suggested_value, reasoning, signals, regime_at_time,
-         price_at_time, portfolio_id)
-        VALUES (?, date('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `),
-
-      getRecommendationHistory: this.db.prepare(`
-        SELECT ar.*, c.symbol, c.name
-        FROM agent_recommendations ar
-        JOIN companies c ON ar.company_id = c.id
-        WHERE LOWER(c.symbol) = LOWER(?)
-        AND ar.date >= date('now', '-' || ? || ' days')
-        ORDER BY ar.created_at DESC
-      `),
-
-      getLatestRecommendation: this.db.prepare(`
-        SELECT ar.*, c.symbol, c.name
-        FROM agent_recommendations ar
-        JOIN companies c ON ar.company_id = c.id
-        WHERE LOWER(c.symbol) = LOWER(?)
-        ORDER BY ar.created_at DESC
-        LIMIT 1
-      `),
-
-      // Check for upcoming earnings
-      getUpcomingEarnings: this.db.prepare(`
-        SELECT next_earnings_date as report_date
-        FROM earnings_calendar
-        WHERE company_id = ?
-          AND next_earnings_date IS NOT NULL
-          AND next_earnings_date >= date('now')
-          AND next_earnings_date <= date('now', '+' || ? || ' days')
-        ORDER BY next_earnings_date ASC
-        LIMIT 1
-      `),
-
-      // Get average daily volume for liquidity check
-      getAverageDailyVolume: this.db.prepare(`
-        SELECT avg_volume_30d as avg_volume
-        FROM price_metrics
-        WHERE company_id = ?
-      `),
-    };
-  }
-
   /**
    * Generate trading recommendation for a symbol
    * @param {string} symbol - Stock symbol
@@ -512,13 +345,18 @@ class TradingAgent {
    * @returns {AgentRecommendation}
    */
   async getRecommendation(symbol, portfolioContext = null, regime = null) {
-    const company = this.stmts.getCompany.get(symbol);
+    const company = await this.db.oneOrNone(
+      `SELECT id, symbol, name, sector, industry, market_cap
+       FROM companies WHERE LOWER(symbol) = LOWER($1)`,
+      [symbol]
+    );
+
     if (!company) {
       throw new Error(`Company ${symbol} not found`);
     }
 
     // 0. Check earnings blackout period
-    const earningsCheck = this._checkEarningsBlackout(company.id);
+    const earningsCheck = await this._checkEarningsBlackout(company.id);
     if (earningsCheck.inBlackout && this.applyEarningsFilter) {
       return {
         symbol: company.symbol,
@@ -540,7 +378,7 @@ class TradingAgent {
           details: `Earnings report on ${earningsCheck.reportDate} (${earningsCheck.daysUntil} days) - avoiding pre-earnings volatility`,
         }],
         signals: {},
-        regime: regime || this._estimateRegime(),
+        regime: regime || await this._estimateRegime(),
         timestamp: new Date().toISOString(),
         skipped: true,
         skipReason: 'earnings_blackout',
@@ -549,23 +387,30 @@ class TradingAgent {
     }
 
     // 1. Get current price
-    const priceData = this.stmts.getLatestPrice.get(company.id);
+    const priceData = await this.db.oneOrNone(
+      `SELECT close as price, date FROM daily_prices
+       WHERE company_id = $1
+       ORDER BY date DESC
+       LIMIT 1`,
+      [company.id]
+    );
+
     const currentPrice = priceData?.price;
     if (!currentPrice) {
       throw new Error(`No price data for ${symbol}`);
     }
 
     // 1.5 Check liquidity
-    const liquidityCheck = this._checkLiquidity(company.id, currentPrice);
+    const liquidityCheck = await this._checkLiquidity(company.id, currentPrice);
 
     // 2. Gather all signals
     const signals = await this._gatherSignals(company.id);
 
     // 3. Get or estimate market regime
-    const marketRegime = regime || this._estimateRegime();
+    const marketRegime = regime || await this._estimateRegime();
 
     // 4. Calculate weighted score (with ML combiner, IC-optimized weights, or regime-adaptive)
-    const { score, contributions, weightsUsed, usingOptimizedWeights, usingMLCombiner } = this._calculateScore(signals, marketRegime, company);
+    const { score, contributions, weightsUsed, usingOptimizedWeights, usingMLCombiner } = await this._calculateScore(signals, marketRegime, company);
 
     // 5. Adjust for regime
     let adjustedScore = this._adjustForRegime(score, marketRegime);
@@ -596,7 +441,7 @@ class TradingAgent {
     }
 
     // 7. Calculate position size (now with valuation uncertainty adjustment)
-    const positionSize = this._calculatePositionSize(adjustedScore, portfolioContext, marketRegime, signals);
+    const positionSize = await this._calculatePositionSize(adjustedScore, portfolioContext, marketRegime, signals);
 
     // 8. Calculate suggested shares/value
     let suggestedShares = 0;
@@ -627,7 +472,7 @@ class TradingAgent {
         const analyzer = this._getFactorAnalyzer();
         if (analyzer) {
           // Quick summary is fast - full analysis could be expensive
-          factorExposure = analyzer.getQuickSummary(company.symbol);
+          factorExposure = await analyzer.getQuickSummary(company.symbol);
 
           // Add factor-based reasoning if significant exposures found
           if (factorExposure && factorExposure.dominantFactor) {
@@ -654,7 +499,7 @@ class TradingAgent {
           ? currentPosition.shares
           : Math.ceil(currentPosition.shares * 0.5); // Partial sell for regular sell
 
-        taxImpact = this._calculateTaxImpact(
+        taxImpact = await this._calculateTaxImpact(
           company.symbol,
           sharesToSell,
           currentPrice,
@@ -726,13 +571,13 @@ class TradingAgent {
     };
 
     // 11. Store recommendation in agent_recommendations
-    const recId = this._storeRecommendation(recommendation, portfolioContext?.portfolioId);
+    const recId = await this._storeRecommendation(recommendation, portfolioContext?.portfolioId);
     recommendation.id = recId;
 
     // 12. Track recommendation for outcome analysis (if enabled)
     if (this.trackRecommendations && action.action !== 'hold') {
       try {
-        const trackedId = this.recommendationTracker.trackRecommendation({
+        const trackedId = await this.recommendationTracker.trackRecommendation({
           symbol: company.symbol,
           companyId: company.id,
           action: action.action.toUpperCase(),
@@ -754,9 +599,20 @@ class TradingAgent {
   /**
    * Check if company is in earnings blackout period
    */
-  _checkEarningsBlackout(companyId) {
+  async _checkEarningsBlackout(companyId) {
     try {
-      const upcoming = this.stmts.getUpcomingEarnings.get(companyId, this.earningsBlackoutDays);
+      const upcoming = await this.db.oneOrNone(
+        `SELECT next_earnings_date as report_date
+         FROM earnings_calendar
+         WHERE company_id = $1
+           AND next_earnings_date IS NOT NULL
+           AND next_earnings_date >= CURRENT_DATE
+           AND next_earnings_date <= CURRENT_DATE + INTERVAL '1 day' * $2
+         ORDER BY next_earnings_date ASC
+         LIMIT 1`,
+        [companyId, this.earningsBlackoutDays]
+      );
+
       if (upcoming && upcoming.report_date) {
         const reportDate = new Date(upcoming.report_date);
         const today = new Date();
@@ -776,9 +632,15 @@ class TradingAgent {
   /**
    * Check liquidity and return confidence adjustment
    */
-  _checkLiquidity(companyId, currentPrice) {
+  async _checkLiquidity(companyId, currentPrice) {
     try {
-      const volumeData = this.stmts.getAverageDailyVolume.get(companyId);
+      const volumeData = await this.db.oneOrNone(
+        `SELECT avg_volume_30d as avg_volume
+         FROM price_metrics
+         WHERE company_id = $1`,
+        [companyId]
+      );
+
       if (volumeData && volumeData.avg_volume) {
         const avgVolume = volumeData.avg_volume;
         const avgDollarVolume = avgVolume * currentPrice;
@@ -833,7 +695,10 @@ class TradingAgent {
     };
 
     // Technical signal from price metrics
-    const priceMetrics = this.stmts.getPriceMetrics.get(companyId);
+    const priceMetrics = await this.db.oneOrNone(
+      `SELECT * FROM price_metrics WHERE company_id = $1`,
+      [companyId]
+    );
     if (priceMetrics) {
       signals.technical = this._buildTechnicalSignal(priceMetrics);
     }
@@ -842,55 +707,136 @@ class TradingAgent {
     let sentiment;
     if (this.region === 'all') {
       // Aggregate sentiment from all regions
-      sentiment = this.stmts.getSentimentAllRegions.get(companyId);
+      sentiment = await this.db.oneOrNone(
+        `SELECT
+          company_id,
+          AVG(combined_score) as combined_score,
+          MAX(combined_signal) as combined_signal,
+          AVG(confidence) as confidence,
+          AVG(reddit_sentiment) as reddit_sentiment,
+          AVG(news_sentiment) as news_sentiment,
+          SUM(sources_used) as sources_used,
+          AVG(agreement_score) as agreement_score,
+          MAX(calculated_at) as calculated_at
+        FROM combined_sentiment
+        WHERE company_id = $1
+          AND calculated_at >= NOW() - INTERVAL '24 hours'
+        GROUP BY company_id`,
+        [companyId]
+      );
     } else if (this.region && this.region !== 'US') {
       // Get region-specific sentiment (EU, UK)
-      sentiment = this.stmts.getSentimentByRegion.get(companyId, this.region);
+      sentiment = await this.db.oneOrNone(
+        `SELECT * FROM combined_sentiment
+         WHERE company_id = $1 AND (region = $2 OR region IS NULL)
+         ORDER BY calculated_at DESC
+         LIMIT 1`,
+        [companyId, this.region]
+      );
     } else {
       // Default to US or legacy data
-      sentiment = this.stmts.getSentimentByRegion.get(companyId, 'US');
+      sentiment = await this.db.oneOrNone(
+        `SELECT * FROM combined_sentiment
+         WHERE company_id = $1 AND (region = $2 OR region IS NULL)
+         ORDER BY calculated_at DESC
+         LIMIT 1`,
+        [companyId, 'US']
+      );
     }
     if (sentiment) {
       signals.sentiment = this._buildSentimentSignal(sentiment);
     }
 
     // Insider signal
-    const insider = this.stmts.getInsiderActivity.get(companyId);
+    const insider = await this.db.oneOrNone(
+      `SELECT * FROM insider_activity_summary
+       WHERE company_id = $1 AND period = '90d'`,
+      [companyId]
+    );
     if (insider) {
       signals.insider = this._buildInsiderSignal(insider);
     }
 
     // Fundamental signal from analyst estimates + calculated metrics
-    const analyst = this.stmts.getAnalystEstimates.get(companyId);
-    const metrics = this.stmts.getCalculatedMetrics.get(companyId);
+    const analyst = await this.db.oneOrNone(
+      `SELECT * FROM analyst_estimates WHERE company_id = $1`,
+      [companyId]
+    );
+    const metrics = await this.db.oneOrNone(
+      `SELECT * FROM calculated_metrics
+       WHERE company_id = $1
+       ORDER BY fiscal_period DESC
+       LIMIT 1`,
+      [companyId]
+    );
     signals.fundamental = this._buildFundamentalSignal(analyst, metrics);
 
     // NEW: Alternative data signal (congressional trades, short interest, contracts)
-    const altData = this.stmts.getAlternativeData.get(companyId);
-    const congressTrades = this.stmts.getCongressTrades.get(companyId);
-    const shortInterest = this.stmts.getShortInterest.get(companyId);
+    const altData = await this.db.oneOrNone(
+      `SELECT * FROM alternative_data_signals
+       WHERE company_id = $1
+       ORDER BY signal_date DESC
+       LIMIT 1`,
+      [companyId]
+    );
+    const congressTrades = await this.db.oneOrNone(
+      `SELECT
+        COUNT(CASE WHEN transaction_type = 'purchase' THEN 1 END) as buy_count,
+        COUNT(CASE WHEN transaction_type = 'sale' THEN 1 END) as sell_count,
+        SUM(CASE WHEN transaction_type = 'purchase' THEN (amount_min + COALESCE(amount_max, amount_min)) / 2 ELSE 0 END) as buy_amount,
+        SUM(CASE WHEN transaction_type = 'sale' THEN (amount_min + COALESCE(amount_max, amount_min)) / 2 ELSE 0 END) as sell_amount,
+        MAX(transaction_date) as last_trade_date
+      FROM congressional_trades
+      WHERE company_id = $1
+        AND transaction_date >= CURRENT_DATE - INTERVAL '90 days'`,
+      [companyId]
+    );
+    const shortInterest = await this.db.oneOrNone(
+      `SELECT * FROM short_interest
+       WHERE company_id = $1
+       ORDER BY settlement_date DESC
+       LIMIT 1`,
+      [companyId]
+    );
     signals.alternativeData = this._buildAlternativeDataSignal(altData, congressTrades, shortInterest);
 
     // NEW: Valuation signal (margin of safety from intrinsic value)
     // Enhanced with probabilistic DCF for probability-based conviction
-    const intrinsicValue = this.stmts.getIntrinsicValue.get(companyId);
+    const intrinsicValue = await this.db.oneOrNone(
+      `SELECT
+        weighted_intrinsic_value as intrinsic_value_per_share,
+        margin_of_safety,
+        valuation_signal,
+        CASE
+          WHEN dcf_confidence >= 0.5 THEN 'DCF'
+          WHEN graham_number IS NOT NULL THEN 'Graham'
+          WHEN epv_value IS NOT NULL THEN 'EPV'
+          ELSE 'Blended'
+        END as primary_method,
+        confidence_level as confidence_score
+      FROM intrinsic_value_estimates
+      WHERE company_id = $1
+      ORDER BY estimate_date DESC
+      LIMIT 1`,
+      [companyId]
+    );
     const probabilisticDCF = await this._getProbabilisticDCF(companyId);
     signals.valuation = this._buildValuationSignal(intrinsicValue, priceMetrics, probabilisticDCF);
 
     // NEW: 13F delta signal (super-investor position changes)
-    const thirteenFSignal = this.signalEnhancements.get13FSignal(companyId);
+    const thirteenFSignal = await this.signalEnhancements.get13FSignal(companyId);
     if (thirteenFSignal && thirteenFSignal.confidence > 0) {
       signals.thirteenF = thirteenFSignal;
     }
 
     // NEW: Earnings momentum signal (consecutive beats/misses)
-    const earningsSignal = this.signalEnhancements.getEarningsMomentumSignal(companyId);
+    const earningsSignal = await this.signalEnhancements.getEarningsMomentumSignal(companyId);
     if (earningsSignal && earningsSignal.confidence > 0) {
       signals.earningsMomentum = earningsSignal;
     }
 
     // ENHANCED: Use classified insider signal (open market buys weighted higher)
-    const classifiedInsider = this.signalEnhancements.getInsiderSignal(companyId);
+    const classifiedInsider = await this.signalEnhancements.getInsiderSignal(companyId);
     if (classifiedInsider && classifiedInsider.confidence > 0.3) {
       // Blend with basic insider signal, favor classified version
       const basicScore = signals.insider.score || 0;
@@ -909,7 +855,7 @@ class TradingAgent {
 
     // NEW: Value quality signal (Piotroski F-Score, Altman Z-Score, Contrarian)
     try {
-      const valueSignal = this.valueSignals.getCombinedValueSignal(companyId);
+      const valueSignal = await this.valueSignals.getCombinedValueSignal(companyId);
       if (valueSignal && valueSignal.confidence > 0) {
         signals.valueQuality = valueSignal;
       }
@@ -1443,29 +1389,29 @@ class TradingAgent {
    * Estimate market regime from available data
    * Enhanced with HMM probabilistic regime detection and macro signals
    */
-  _estimateRegime() {
+  async _estimateRegime() {
     // Try HMM-based regime detection first (if enabled and trained)
     if (this.useHMMRegime) {
-      const hmmResult = this._getHMMRegime();
+      const hmmResult = await this._getHMMRegime();
       if (hmmResult) {
         return hmmResult;
       }
     }
 
     // Fallback to threshold-based detection
-    return this._estimateRegimeFallback();
+    return await this._estimateRegimeFallback();
   }
 
   /**
    * Get regime from Hidden Markov Model
    * Uses probabilistic transition model for more robust detection
    */
-  _getHMMRegime() {
+  async _getHMMRegime() {
     try {
       const hmmService = this._getRegimeHMM();
       if (!hmmService) return null;
 
-      const result = hmmService.getCurrentRegime();
+      const result = await hmmService.getCurrentRegime();
       if (!result || !result.regime) return null;
 
       // Map HMM states to TradingAgent regime names
@@ -1494,7 +1440,7 @@ class TradingAgent {
       }
 
       // Get macro signals for additional context
-      const macroSignals = this._getMacroSignals();
+      const macroSignals = await this._getMacroSignals();
 
       // Apply macro adjustments (same as fallback)
       let adjustedRegime = regime;
@@ -1530,15 +1476,15 @@ class TradingAgent {
   /**
    * Fallback threshold-based regime detection
    */
-  _estimateRegimeFallback() {
+  async _estimateRegimeFallback() {
     // Try to get latest market sentiment for VIX/Fear & Greed
-    const marketData = this.db.prepare(`
-      SELECT indicator_type, indicator_value, indicator_label
-      FROM market_sentiment
-      WHERE indicator_type IN ('vix', 'cnn_fear_greed', 'overall_market')
-      ORDER BY fetched_at DESC
-      LIMIT 3
-    `).all();
+    const marketData = await this.db.manyOrNone(
+      `SELECT indicator_type, indicator_value, indicator_label
+       FROM market_sentiment
+       WHERE indicator_type IN ('vix', 'cnn_fear_greed', 'overall_market')
+       ORDER BY fetched_at DESC
+       LIMIT 3`
+    );
 
     let regime = 'SIDEWAYS';
     let confidence = 0.5;
@@ -1554,7 +1500,7 @@ class TradingAgent {
     }
 
     // Check for macro signals (yield curve inversion, unemployment, etc.)
-    const macroSignals = this._getMacroSignals();
+    const macroSignals = await this._getMacroSignals();
 
     // Base regime classification from VIX
     if (vix !== null) {
@@ -1613,7 +1559,7 @@ class TradingAgent {
   /**
    * Get macro signals from FRED data if available
    */
-  _getMacroSignals() {
+  async _getMacroSignals() {
     const signals = {
       yieldCurveInverted: false,
       unemploymentRising: false,
@@ -1625,15 +1571,13 @@ class TradingAgent {
 
     try {
       // Check for yield curve data (10Y-2Y spread)
-      const yieldSpread = this.db.prepare(`
-        SELECT
-          fi.value,
-          fi.observation_date
-        FROM fred_indicators fi
-        WHERE fi.series_id IN ('T10Y2Y', 'T10Y3M')
-        ORDER BY fi.observation_date DESC
-        LIMIT 1
-      `).get();
+      const yieldSpread = await this.db.oneOrNone(
+        `SELECT fi.value, fi.observation_date
+         FROM fred_indicators fi
+         WHERE fi.series_id IN ('T10Y2Y', 'T10Y3M')
+         ORDER BY fi.observation_date DESC
+         LIMIT 1`
+      );
 
       if (yieldSpread && yieldSpread.value !== null) {
         signals.spreadIndicator = yieldSpread.value;
@@ -1641,13 +1585,13 @@ class TradingAgent {
       }
 
       // Check unemployment trend
-      const unemployment = this.db.prepare(`
-        SELECT fi.value, fi.observation_date
-        FROM fred_indicators fi
-        WHERE fi.series_id = 'UNRATE'
-        ORDER BY fi.observation_date DESC
-        LIMIT 3
-      `).all();
+      const unemployment = await this.db.manyOrNone(
+        `SELECT fi.value, fi.observation_date
+         FROM fred_indicators fi
+         WHERE fi.series_id = 'UNRATE'
+         ORDER BY fi.observation_date DESC
+         LIMIT 3`
+      );
 
       if (unemployment.length >= 2) {
         signals.unemploymentRate = unemployment[0].value;
@@ -1657,13 +1601,13 @@ class TradingAgent {
       }
 
       // Check inflation (CPI YoY)
-      const cpi = this.db.prepare(`
-        SELECT fi.value, fi.observation_date
-        FROM fred_indicators fi
-        WHERE fi.series_id = 'CPIAUCSL'
-        ORDER BY fi.observation_date DESC
-        LIMIT 13
-      `).all();
+      const cpi = await this.db.manyOrNone(
+        `SELECT fi.value, fi.observation_date
+         FROM fred_indicators fi
+         WHERE fi.series_id = 'CPIAUCSL'
+         ORDER BY fi.observation_date DESC
+         LIMIT 13`
+      );
 
       if (cpi.length >= 13) {
         // Calculate YoY inflation
@@ -1698,26 +1642,26 @@ class TradingAgent {
    * Calculate weighted score from all signals
    * Uses ML combiner (gradient boosting) when enabled, otherwise IC-optimized or regime-adaptive weights
    */
-  _calculateScore(signals, regime, company = null) {
+  async _calculateScore(signals, regime, company = null) {
     // Try ML combiner first (if enabled and trained)
     if (this.useMLCombiner) {
-      const mlResult = this._getMLCombinedScore(signals, regime, company);
+      const mlResult = await this._getMLCombinedScore(signals, regime, company);
       if (mlResult) {
         return mlResult;
       }
     }
 
     // Fall back to linear weighted combination
-    return this._calculateLinearScore(signals, regime);
+    return await this._calculateLinearScore(signals, regime);
   }
 
   /**
    * Get ML-combined score using gradient boosting
    */
-  _getMLCombinedScore(signals, regime, company) {
+  async _getMLCombinedScore(signals, regime, company) {
     try {
       const mlCombiner = this._getMLCombiner();
-      if (!mlCombiner || !mlCombiner.isModelTrained()) {
+      if (!mlCombiner || !(await mlCombiner.isModelTrained())) {
         return null;
       }
 
@@ -1742,10 +1686,10 @@ class TradingAgent {
       };
 
       // Get ML prediction (21-day forward return prediction)
-      const mlScore = mlCombiner.combine(mlSignals, context, 21);
+      const mlScore = await mlCombiner.combine(mlSignals, context, 21);
 
       // Get feature importance for reasoning
-      const importance = mlCombiner.getFeatureImportance() || {};
+      const importance = (await mlCombiner.getFeatureImportance()) || {};
 
       // Build contributions from importance
       const contributions = [];
@@ -1800,7 +1744,7 @@ class TradingAgent {
   /**
    * Calculate linear weighted score (original method)
    */
-  _calculateLinearScore(signals, regime) {
+  async _calculateLinearScore(signals, regime) {
     const contributions = [];
     let totalScore = 0;
     let totalWeight = 0;
@@ -1810,7 +1754,7 @@ class TradingAgent {
     let activeWeights;
     if (this.useOptimizedWeights) {
       try {
-        activeWeights = this.signalOptimizer.getWeightsForRegime(regime?.regime || 'ALL');
+        activeWeights = await this.signalOptimizer.getWeightsForRegime(regime?.regime || 'ALL');
         // Map optimizer weight names to trading agent names
         activeWeights = {
           technical: activeWeights.technical || this.weights.technical,
@@ -2133,7 +2077,7 @@ class TradingAgent {
    * @param {object} regime - Market regime
    * @param {object} signals - All gathered signals (optional, for uncertainty adjustment)
    */
-  _calculatePositionSize(score, portfolioContext, regime, signals = null) {
+  async _calculatePositionSize(score, portfolioContext, regime, signals = null) {
     // Base size on conviction (score strength)
     let baseSize = Math.abs(score) * 0.05; // Max 5% for max conviction
 
@@ -2193,7 +2137,7 @@ class TradingAgent {
 
     // Apply capacity constraints from backtesting analysis
     if (portfolioContext.portfolioId) {
-      const capacityAdjustment = this._getCapacityAdjustment(portfolioContext.portfolioId);
+      const capacityAdjustment = await this._getCapacityAdjustment(portfolioContext.portfolioId);
       if (capacityAdjustment < 1.0) {
         baseSize *= capacityAdjustment;
       }
@@ -2207,14 +2151,15 @@ class TradingAgent {
    * Get capacity-based position size adjustment
    * Uses data from daily backtesting capacity analysis
    */
-  _getCapacityAdjustment(portfolioId) {
+  async _getCapacityAdjustment(portfolioId) {
     try {
-      const capacityData = this.db.prepare(`
-        SELECT scalability_ratio, liquidity_score, illiquid_positions
-        FROM portfolio_capacity_constraints
-        WHERE portfolio_id = ?
-          AND updated_at >= datetime('now', '-2 days')
-      `).get(portfolioId);
+      const capacityData = await this.db.oneOrNone(
+        `SELECT scalability_ratio, liquidity_score, illiquid_positions
+         FROM portfolio_capacity_constraints
+         WHERE portfolio_id = $1
+           AND updated_at >= NOW() - INTERVAL '2 days'`,
+        [portfolioId]
+      );
 
       if (!capacityData) {
         return 1.0; // No recent data, no adjustment
@@ -2418,31 +2363,48 @@ class TradingAgent {
   /**
    * Store recommendation in database
    */
-  _storeRecommendation(recommendation, portfolioId = null) {
-    const result = this.stmts.storeRecommendation.run(
-      recommendation.companyId,
-      recommendation.action,
-      recommendation.score,
-      recommendation.rawScore,
-      recommendation.confidence,
-      recommendation.positionSize,
-      recommendation.suggestedShares,
-      recommendation.suggestedValue,
-      JSON.stringify(recommendation.reasoning),
-      JSON.stringify(recommendation.signals),
-      recommendation.regime.regime,
-      recommendation.currentPrice,
-      portfolioId
+  async _storeRecommendation(recommendation, portfolioId = null) {
+    const result = await this.db.one(
+      `INSERT INTO agent_recommendations
+       (company_id, date, action, score, raw_score, confidence, position_size,
+        suggested_shares, suggested_value, reasoning, signals, regime_at_time,
+        price_at_time, portfolio_id)
+       VALUES ($1, CURRENT_DATE, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+       RETURNING id`,
+      [
+        recommendation.companyId,
+        recommendation.action,
+        recommendation.score,
+        recommendation.rawScore,
+        recommendation.confidence,
+        recommendation.positionSize,
+        recommendation.suggestedShares,
+        recommendation.suggestedValue,
+        JSON.stringify(recommendation.reasoning),
+        JSON.stringify(recommendation.signals),
+        recommendation.regime.regime,
+        recommendation.currentPrice,
+        portfolioId
+      ]
     );
 
-    return result.lastInsertRowid;
+    return result.id;
   }
 
   /**
    * Get recommendation history for a symbol
    */
-  getRecommendationHistory(symbol, days = 30) {
-    const rows = this.stmts.getRecommendationHistory.all(symbol, days);
+  async getRecommendationHistory(symbol, days = 30) {
+    const rows = await this.db.manyOrNone(
+      `SELECT ar.*, c.symbol, c.name
+       FROM agent_recommendations ar
+       JOIN companies c ON ar.company_id = c.id
+       WHERE LOWER(c.symbol) = LOWER($1)
+       AND ar.date >= CURRENT_DATE - INTERVAL '1 day' * $2
+       ORDER BY ar.created_at DESC`,
+      [symbol, days]
+    );
+
     return rows.map(row => ({
       ...row,
       reasoning: row.reasoning ? JSON.parse(row.reasoning) : [],
@@ -2453,8 +2415,17 @@ class TradingAgent {
   /**
    * Get latest recommendation for a symbol
    */
-  getLatestRecommendation(symbol) {
-    const row = this.stmts.getLatestRecommendation.get(symbol);
+  async getLatestRecommendation(symbol) {
+    const row = await this.db.oneOrNone(
+      `SELECT ar.*, c.symbol, c.name
+       FROM agent_recommendations ar
+       JOIN companies c ON ar.company_id = c.id
+       WHERE LOWER(c.symbol) = LOWER($1)
+       ORDER BY ar.created_at DESC
+       LIMIT 1`,
+      [symbol]
+    );
+
     if (!row) return null;
 
     return {
@@ -2469,7 +2440,7 @@ class TradingAgent {
    */
   async batchRecommendations(symbols, portfolioContext = null, regime = null) {
     const results = [];
-    const marketRegime = regime || this._estimateRegime();
+    const marketRegime = regime || await this._estimateRegime();
 
     for (const symbol of symbols) {
       try {
@@ -2513,7 +2484,7 @@ class TradingAgent {
    * @param {Object} options - Configuration options
    * @returns {Object} Confidence interval information
    */
-  calculateConfidenceInterval(symbol, signals, score, options = {}) {
+  async calculateConfidenceInterval(symbol, signals, score, options = {}) {
     const {
       confidenceLevels = [0.80, 0.90, 0.95],
       distributionType = 'studentT',
@@ -2530,7 +2501,7 @@ class TradingAgent {
 
     try {
       // Get historical recommendations for this symbol to estimate prediction error distribution
-      const history = this.stmts.getRecommendationHistory.all(symbol, lookbackDays);
+      const history = await this.getRecommendationHistory(symbol, lookbackDays);
 
       if (history.length < 10) {
         // Insufficient history - use default uncertainty based on signal confidence
@@ -2745,7 +2716,7 @@ class TradingAgent {
     // Calculate confidence intervals
     if (this.includeConfidenceIntervals) {
       try {
-        const ci = this.calculateConfidenceInterval(
+        const ci = await this.calculateConfidenceInterval(
           symbol,
           recommendation.signals,
           recommendation.score
@@ -2779,14 +2750,14 @@ class TradingAgent {
    * @param {number} minLoss - Minimum loss to consider (default $500)
    * @returns {Array} List of tax loss harvesting opportunities
    */
-  getTaxLossHarvestingOpportunities(portfolioId, currentPrices = {}, minLoss = 500) {
+  async getTaxLossHarvestingOpportunities(portfolioId, currentPrices = {}, minLoss = 500) {
     if (!this.taxAwareTrading) return [];
 
     const taxService = this._getPortfolioTaxService();
     if (!taxService) return [];
 
     try {
-      return taxService.getTaxLossHarvestingOpportunities(portfolioId, currentPrices, minLoss);
+      return await taxService.getTaxLossHarvestingOpportunities(portfolioId, currentPrices, minLoss);
     } catch (error) {
       console.warn('Failed to get tax loss harvesting opportunities:', error.message);
       return [];
@@ -2799,14 +2770,14 @@ class TradingAgent {
    * @param {number} year - Tax year (defaults to current year)
    * @returns {object} Tax summary with gains, losses, and tax liability
    */
-  getPortfolioTaxSummary(portfolioId, year = new Date().getFullYear()) {
+  async getPortfolioTaxSummary(portfolioId, year = new Date().getFullYear()) {
     if (!this.taxAwareTrading) return null;
 
     const taxService = this._getPortfolioTaxService();
     if (!taxService) return null;
 
     try {
-      return taxService.getYearEndSummary(portfolioId, year);
+      return await taxService.getYearEndSummary(portfolioId, year);
     } catch (error) {
       console.warn('Failed to get portfolio tax summary:', error.message);
       return null;

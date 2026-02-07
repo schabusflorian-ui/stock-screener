@@ -1,9 +1,11 @@
 // src/services/agent/signalPerformanceTracker.js
 // Comprehensive signal performance analysis with IC decay, regime stability, and hit rates
 
+const { getDatabase } = require('../../lib/db');
+
 class SignalPerformanceTracker {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    this.db = null;
 
     // All 9 signal types
     this.SIGNAL_TYPES = [
@@ -16,66 +18,17 @@ class SignalPerformanceTracker {
 
     // Market regimes
     this.REGIMES = ['BULL', 'BEAR', 'SIDEWAYS', 'HIGH_VOL', 'CRISIS'];
-
-    this._prepareStatements();
   }
 
-  _prepareStatements() {
-    this.stmts = {
-      getRecommendationsWithReturns: this.db.prepare(`
-        SELECT
-          ro.id,
-          ro.symbol,
-          ro.company_id,
-          ro.action,
-          ro.signal_score,
-          ro.signal_breakdown,
-          ro.regime,
-          ro.recommended_at,
-          ro.price_at_recommendation,
-          ro.return_1d,
-          ro.return_5d,
-          ro.return_21d,
-          ro.return_63d,
-          ro.outcome
-        FROM recommendation_outcomes ro
-        WHERE ro.signal_breakdown IS NOT NULL
-          AND ro.outcome != 'PENDING'
-          AND ro.recommended_at >= datetime('now', ? || ' days')
-        ORDER BY ro.recommended_at DESC
-      `),
+  async init() {
+    this.db = await getDatabase();
+  }
 
-      getExtendedReturns: this.db.prepare(`
-        SELECT
-          dp1.close as price_at_rec,
-          dp2.close as price_at_horizon,
-          dp2.date as horizon_date
-        FROM daily_prices dp1
-        JOIN daily_prices dp2 ON dp2.company_id = dp1.company_id
-        WHERE dp1.company_id = ?
-          AND dp1.date = (
-            SELECT MAX(date) FROM daily_prices
-            WHERE company_id = ? AND date <= date(?)
-          )
-          AND dp2.date = (
-            SELECT MIN(date) FROM daily_prices
-            WHERE company_id = ? AND date >= date(?, ? || ' days')
-          )
-      `),
-
-      getSignalHistory: this.db.prepare(`
-        SELECT
-          date(recommended_at) as date,
-          signal_breakdown,
-          return_21d,
-          regime
-        FROM recommendation_outcomes
-        WHERE signal_breakdown IS NOT NULL
-          AND return_21d IS NOT NULL
-          AND recommended_at >= datetime('now', ? || ' days')
-        ORDER BY recommended_at ASC
-      `),
-    };
+  getDatabaseAsync() {
+    if (!this.db) {
+      throw new Error('SignalPerformanceTracker not initialized. Call init() first.');
+    }
+    return this.db;
   }
 
   // ============================================
@@ -86,8 +39,31 @@ class SignalPerformanceTracker {
    * Calculate IC for each signal across different holding periods
    * Shows how predictive power decays over time
    */
-  getICDecay(lookbackDays = 180) {
-    const recommendations = this.stmts.getRecommendationsWithReturns.all(`-${lookbackDays}`);
+  async getICDecay(lookbackDays = 180) {
+    const db = this.getDatabaseAsync();
+
+    const recommendations = await db.query(`
+      SELECT
+        ro.id,
+        ro.symbol,
+        ro.company_id,
+        ro.action,
+        ro.signal_score,
+        ro.signal_breakdown,
+        ro.regime,
+        ro.recommended_at,
+        ro.price_at_recommendation,
+        ro.return_1d,
+        ro.return_5d,
+        ro.return_21d,
+        ro.return_63d,
+        ro.outcome
+      FROM recommendation_outcomes ro
+      WHERE ro.signal_breakdown IS NOT NULL
+        AND ro.outcome != 'PENDING'
+        AND ro.recommended_at >= NOW() - INTERVAL '${lookbackDays} days'
+      ORDER BY ro.recommended_at DESC
+    `);
 
     if (recommendations.length < 20) {
       return { error: 'Insufficient data', sampleSize: recommendations.length };
@@ -241,8 +217,31 @@ class SignalPerformanceTracker {
   /**
    * Calculate win rate for each signal across different holding periods
    */
-  getHitRatesByPeriod(lookbackDays = 180) {
-    const recommendations = this.stmts.getRecommendationsWithReturns.all(`-${lookbackDays}`);
+  async getHitRatesByPeriod(lookbackDays = 180) {
+    const db = this.getDatabaseAsync();
+
+    const recommendations = await db.query(`
+      SELECT
+        ro.id,
+        ro.symbol,
+        ro.company_id,
+        ro.action,
+        ro.signal_score,
+        ro.signal_breakdown,
+        ro.regime,
+        ro.recommended_at,
+        ro.price_at_recommendation,
+        ro.return_1d,
+        ro.return_5d,
+        ro.return_21d,
+        ro.return_63d,
+        ro.outcome
+      FROM recommendation_outcomes ro
+      WHERE ro.signal_breakdown IS NOT NULL
+        AND ro.outcome != 'PENDING'
+        AND ro.recommended_at >= NOW() - INTERVAL '${lookbackDays} days'
+      ORDER BY ro.recommended_at DESC
+    `);
 
     if (recommendations.length < 20) {
       return { error: 'Insufficient data', sampleSize: recommendations.length };
@@ -315,8 +314,31 @@ class SignalPerformanceTracker {
   /**
    * Analyze how signal performance varies across market regimes
    */
-  getRegimeStability(lookbackDays = 365) {
-    const recommendations = this.stmts.getRecommendationsWithReturns.all(`-${lookbackDays}`);
+  async getRegimeStability(lookbackDays = 365) {
+    const db = this.getDatabaseAsync();
+
+    const recommendations = await db.query(`
+      SELECT
+        ro.id,
+        ro.symbol,
+        ro.company_id,
+        ro.action,
+        ro.signal_score,
+        ro.signal_breakdown,
+        ro.regime,
+        ro.recommended_at,
+        ro.price_at_recommendation,
+        ro.return_1d,
+        ro.return_5d,
+        ro.return_21d,
+        ro.return_63d,
+        ro.outcome
+      FROM recommendation_outcomes ro
+      WHERE ro.signal_breakdown IS NOT NULL
+        AND ro.outcome != 'PENDING'
+        AND ro.recommended_at >= NOW() - INTERVAL '${lookbackDays} days'
+      ORDER BY ro.recommended_at DESC
+    `);
 
     if (recommendations.length < 30) {
       return { error: 'Insufficient data', sampleSize: recommendations.length };
@@ -427,8 +449,21 @@ class SignalPerformanceTracker {
   /**
    * Calculate rolling IC over time to detect signal degradation
    */
-  getRollingICTrend(signalType, windowDays = 60, stepDays = 7, lookbackDays = 365) {
-    const history = this.stmts.getSignalHistory.all(`-${lookbackDays}`);
+  async getRollingICTrend(signalType, windowDays = 60, stepDays = 7, lookbackDays = 365) {
+    const db = this.getDatabaseAsync();
+
+    const history = await db.query(`
+      SELECT
+        DATE(recommended_at) as date,
+        signal_breakdown,
+        return_21d,
+        regime
+      FROM recommendation_outcomes
+      WHERE signal_breakdown IS NOT NULL
+        AND return_21d IS NOT NULL
+        AND recommended_at >= NOW() - INTERVAL '${lookbackDays} days'
+      ORDER BY recommended_at ASC
+    `);
 
     if (history.length < windowDays) {
       return { error: 'Insufficient data', sampleSize: history.length };
@@ -499,10 +534,10 @@ class SignalPerformanceTracker {
   /**
    * Generate a comprehensive health report for all signals
    */
-  getSignalHealthReport(lookbackDays = 180) {
-    const icDecay = this.getICDecay(lookbackDays);
-    const hitRates = this.getHitRatesByPeriod(lookbackDays);
-    const regimeStability = this.getRegimeStability(lookbackDays);
+  async getSignalHealthReport(lookbackDays = 180) {
+    const icDecay = await this.getICDecay(lookbackDays);
+    const hitRates = await this.getHitRatesByPeriod(lookbackDays);
+    const regimeStability = await this.getRegimeStability(lookbackDays);
 
     if (icDecay.error || hitRates.error || regimeStability.error) {
       return {
@@ -678,25 +713,29 @@ class SignalPerformanceTracker {
   /**
    * Recalculate all signal performance metrics (for scheduler)
    */
-  recalculateAll() {
+  async recalculateAll() {
     console.log('📊 Recalculating signal performance metrics...');
 
     const results = {
       timestamp: new Date().toISOString(),
-      icDecay: this.getICDecay(180),
-      regimeStability: this.getRegimeStability(365),
-      healthReport: this.getSignalHealthReport(180),
+      icDecay: await this.getICDecay(180),
+      regimeStability: await this.getRegimeStability(365),
+      healthReport: await this.getSignalHealthReport(180),
     };
 
     // Store summary in database for historical tracking
-    this._storePerformanceSummary(results);
+    await this._storePerformanceSummary(results);
 
     return results;
   }
 
-  _storePerformanceSummary(results) {
+  async _storePerformanceSummary(results) {
+    const db = this.getDatabaseAsync();
+
     try {
-      const stmt = this.db.prepare(`
+      const health = results.healthReport;
+
+      await db.query(`
         INSERT INTO signal_performance_history (
           calculated_at,
           lookback_days,
@@ -706,12 +745,8 @@ class SignalPerformanceTracker {
           top_signals,
           weak_signals,
           full_report
-        ) VALUES (datetime('now'), ?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      const health = results.healthReport;
-
-      stmt.run(
+        ) VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7)
+      `, [
         180,
         health.totalSamples || 0,
         health.overallHealth?.averageScore || 0,
@@ -719,7 +754,7 @@ class SignalPerformanceTracker {
         JSON.stringify(health.topSignals || []),
         JSON.stringify(health.weakSignals || []),
         JSON.stringify(results)
-      );
+      ]);
     } catch (e) {
       // Table may not exist yet - that's OK
       console.log('Note: signal_performance_history table not found, skipping storage');
@@ -729,19 +764,21 @@ class SignalPerformanceTracker {
   /**
    * Get historical performance trends
    */
-  getHistoricalTrends(days = 90) {
+  async getHistoricalTrends(days = 90) {
+    const db = this.getDatabaseAsync();
+
     try {
-      const rows = this.db.prepare(`
+      const rows = await db.query(`
         SELECT
-          date(calculated_at) as date,
+          DATE(calculated_at) as date,
           overall_health_score,
           overall_status,
           top_signals,
           weak_signals
         FROM signal_performance_history
-        WHERE calculated_at >= datetime('now', ? || ' days')
+        WHERE calculated_at >= NOW() - INTERVAL '${days} days'
         ORDER BY calculated_at ASC
-      `).all(`-${days}`);
+      `);
 
       return rows.map(r => ({
         date: r.date,
