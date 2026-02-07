@@ -104,43 +104,6 @@ class SignalEnhancer {
   constructor(db, options = {}) {
     this.db = db;
     this.costParams = { ...DEFAULT_COST_PARAMS, ...options.costParams };
-    this._prepareStatements();
-  }
-
-  _prepareStatements() {
-    this.stmts = {
-      getSignalHistory: this.db.prepare(`
-        SELECT ar.*, c.symbol
-        FROM agent_recommendations ar
-        JOIN companies c ON ar.company_id = c.id
-        WHERE LOWER(c.symbol) = LOWER(?)
-        ORDER BY ar.created_at DESC
-        LIMIT 20
-      `),
-
-      getPriceVolatility: this.db.prepare(`
-        SELECT company_id,
-          AVG(ABS((close - open) / open)) * 100 as avg_daily_range,
-          COUNT(*) as days
-        FROM daily_prices
-        WHERE company_id = ?
-        AND date >= date('now', '-30 days')
-        GROUP BY company_id
-      `),
-
-      getAverageVolume: this.db.prepare(`
-        SELECT AVG(volume) as avg_volume
-        FROM daily_prices
-        WHERE company_id = ?
-        AND date >= date('now', '-30 days')
-      `),
-
-      storeSignalDecay: this.db.prepare(`
-        INSERT OR REPLACE INTO signal_decay_history
-        (company_id, signal_type, signal_date, original_strength, current_strength, days_aged)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `),
-    };
   }
 
   /**
@@ -205,27 +168,36 @@ class SignalEnhancer {
    * @param {string} symbol - Stock symbol
    * @param {number} lookbackDays - Days to analyze
    */
-  calculateSignalIC(symbol, lookbackDays = 60) {
-    const history = this.stmts.getSignalHistory.all(symbol);
+  async calculateSignalIC(symbol, lookbackDays = 60) {
+    const history = await this.db.query(`
+      SELECT ar.*, c.symbol
+      FROM agent_recommendations ar
+      JOIN companies c ON ar.company_id = c.id
+      WHERE LOWER(c.symbol) = LOWER($1)
+      ORDER BY ar.created_at DESC
+      LIMIT 20
+    `, [symbol]);
 
-    if (history.length < 5) {
+    if (history.rows.length < 5) {
       return {
         error: 'Insufficient history',
         minRequired: 5,
-        available: history.length,
+        available: history.rows.length,
       };
     }
 
     // Get price data for forward returns calculation
-    const company = this.db.prepare('SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)').get(symbol);
-    if (!company) return { error: 'Company not found' };
+    const companyResult = await this.db.query('SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)', [symbol]);
+    if (companyResult.rows.length === 0) return { error: 'Company not found' };
+    const company = companyResult.rows[0];
 
-    const prices = this.db.prepare(`
+    const pricesResult = await this.db.query(`
       SELECT date, close FROM daily_prices
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY date DESC
-      LIMIT ?
-    `).all(company.id, lookbackDays + 30);
+      LIMIT $2
+    `, [company.id, lookbackDays + 30]);
+    const prices = pricesResult.rows;
 
     if (prices.length < 20) {
       return { error: 'Insufficient price data' };
@@ -234,7 +206,7 @@ class SignalEnhancer {
     // Match signals to forward returns
     const signalReturns = [];
 
-    for (const rec of history) {
+    for (const rec of history.rows) {
       const signals = rec.signals ? JSON.parse(rec.signals) : null;
       if (!signals) continue;
 
@@ -448,15 +420,16 @@ class SignalEnhancer {
    * Get aggregate IC dashboard across all signals
    * Shows which signal types are most predictive
    */
-  getSignalICDashboard() {
+  async getSignalICDashboard() {
     // Get all recent recommendations
-    const recommendations = this.db.prepare(`
+    const recommendationsResult = await this.db.query(`
       SELECT ar.*, c.symbol
       FROM agent_recommendations ar
       JOIN companies c ON ar.company_id = c.id
-      WHERE ar.date >= date('now', '-90 days')
+      WHERE ar.date >= CURRENT_DATE - INTERVAL '90 days'
       ORDER BY ar.date DESC
-    `).all();
+    `);
+    const recommendations = recommendationsResult.rows;
 
     if (recommendations.length < 10) {
       return { error: 'Insufficient recommendation history', count: recommendations.length };
@@ -476,19 +449,21 @@ class SignalEnhancer {
       if (!signals) continue;
 
       // Get forward return (20-day)
-      const forwardPrice = this.db.prepare(`
+      const forwardPriceResult = await this.db.query(`
         SELECT close FROM daily_prices
-        WHERE company_id = ? AND date > ?
+        WHERE company_id = $1 AND date > $2
         ORDER BY date ASC LIMIT 1 OFFSET 19
-      `).get(rec.company_id, rec.date);
+      `, [rec.company_id, rec.date]);
 
-      const recPrice = this.db.prepare(`
+      const recPriceResult = await this.db.query(`
         SELECT close FROM daily_prices
-        WHERE company_id = ? AND date <= ?
+        WHERE company_id = $1 AND date <= $2
         ORDER BY date DESC LIMIT 1
-      `).get(rec.company_id, rec.date);
+      `, [rec.company_id, rec.date]);
 
-      if (!forwardPrice || !recPrice) continue;
+      if (forwardPriceResult.rows.length === 0 || recPriceResult.rows.length === 0) continue;
+      const forwardPrice = forwardPriceResult.rows[0];
+      const recPrice = recPriceResult.rows[0];
 
       const forwardReturn = (forwardPrice.close - recPrice.close) / recPrice.close;
 

@@ -2,6 +2,7 @@
 // Risk Manager - Validates trades against risk limits before execution
 // Enhanced with stress test integration from HF-style backtesting framework
 
+const { getDatabaseAsync } = require('../../database');
 const { VaRCalculator } = require('../portfolio/varCalculator');
 
 // Lazy load stress test module
@@ -18,8 +19,7 @@ function loadStressTestModule() {
 }
 
 class RiskManager {
-  constructor(db, config = {}) {
-    this.db = db;
+  constructor(config = {}) {
     this.varCalculator = new VaRCalculator();
     this.stressTestEnabled = loadStressTestModule();
 
@@ -42,47 +42,7 @@ class RiskManager {
     this.stressTestCache = new Map();
     this.stressCacheTTL = 24 * 60 * 60 * 1000; // 24 hours
 
-    this._prepareStatements();
     console.log('🛡️ Risk Manager initialized' + (this.stressTestEnabled ? ' (stress tests enabled)' : ''));
-  }
-
-  _prepareStatements() {
-    this.stmts = {
-      getPortfolio: this.db.prepare(`
-        SELECT * FROM portfolios WHERE id = ?
-      `),
-
-      getPositions: this.db.prepare(`
-        SELECT pp.*, c.symbol, c.sector, c.industry
-        FROM portfolio_positions pp
-        JOIN companies c ON pp.company_id = c.id
-        WHERE pp.portfolio_id = ?
-      `),
-
-      getCompanySector: this.db.prepare(`
-        SELECT sector, industry FROM companies WHERE id = ?
-      `),
-
-      getDailyTradeCount: this.db.prepare(`
-        SELECT COUNT(*) as count FROM portfolio_transactions
-        WHERE portfolio_id = ?
-        AND date(executed_at) = date('now')
-      `),
-
-      getPortfolioSnapshots: this.db.prepare(`
-        SELECT * FROM portfolio_snapshots
-        WHERE portfolio_id = ?
-        ORDER BY snapshot_date DESC
-        LIMIT 30
-      `),
-
-      storeRiskCheck: this.db.prepare(`
-        INSERT INTO risk_check_history
-        (recommendation_id, portfolio_id, company_id, approved, checks,
-         original_position_size, adjusted_position_size, warnings, blockers)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `),
-    };
   }
 
   /**
@@ -191,7 +151,7 @@ class RiskManager {
     };
 
     // Store risk check history
-    this._storeRiskCheck(recommendation, portfolioId, result);
+    await this._storeRiskCheck(recommendation, portfolioId, result);
 
     return result;
   }
@@ -200,10 +160,22 @@ class RiskManager {
    * Get portfolio state for risk calculations
    */
   async _getPortfolioState(portfolioId) {
-    const portfolio = this.stmts.getPortfolio.get(portfolioId);
+    const database = await getDatabaseAsync();
+
+    const portfolioResult = await database.query(
+      'SELECT * FROM portfolios WHERE id = $1',
+      [portfolioId]
+    );
+    const portfolio = portfolioResult.rows[0];
     if (!portfolio) return null;
 
-    const positions = this.stmts.getPositions.all(portfolioId);
+    const positionsResult = await database.query(`
+      SELECT pp.*, c.symbol, c.sector, c.industry
+      FROM portfolio_positions pp
+      JOIN companies c ON pp.company_id = c.id
+      WHERE pp.portfolio_id = $1
+    `, [portfolioId]);
+    const positions = positionsResult.rows;
 
     const totalPositionsValue = positions.reduce((sum, p) => sum + (p.current_value || 0), 0);
     const cash = portfolio.current_cash || 0;
@@ -261,8 +233,14 @@ class RiskManager {
    * Check sector concentration
    */
   async _checkSectorExposure(recommendation, portfolio) {
+    const database = await getDatabaseAsync();
+
     // Get sector of recommended stock
-    const company = this.stmts.getCompanySector.get(recommendation.companyId);
+    const companyResult = await database.query(
+      'SELECT sector, industry FROM companies WHERE id = $1',
+      [recommendation.companyId]
+    );
+    const company = companyResult.rows[0];
     const sector = company?.sector || 'Unknown';
 
     const currentSectorValue = portfolio.sectors[sector]?.value || 0;
@@ -290,8 +268,14 @@ class RiskManager {
    * Check daily trade limit
    */
   async _checkDailyTradeLimit(portfolioId) {
-    const result = this.stmts.getDailyTradeCount.get(portfolioId);
-    const count = result?.count || 0;
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT COUNT(*) as count FROM portfolio_transactions
+      WHERE portfolio_id = $1
+      AND DATE(executed_at) = CURRENT_DATE
+    `, [portfolioId]);
+    const count = parseInt(result.rows[0]?.count) || 0;
 
     const passed = count < this.limits.maxDailyTrades;
 
@@ -336,7 +320,15 @@ class RiskManager {
    * Check portfolio drawdown
    */
   async _checkDrawdown(portfolioId, portfolio) {
-    const snapshots = this.stmts.getPortfolioSnapshots.all(portfolioId);
+    const database = await getDatabaseAsync();
+
+    const snapshotsResult = await database.query(`
+      SELECT * FROM portfolio_snapshots
+      WHERE portfolio_id = $1
+      ORDER BY snapshot_date DESC
+      LIMIT 30
+    `, [portfolioId]);
+    const snapshots = snapshotsResult.rows;
 
     if (snapshots.length === 0) {
       return {
@@ -443,19 +435,26 @@ class RiskManager {
   /**
    * Store risk check in history
    */
-  _storeRiskCheck(recommendation, portfolioId, result) {
+  async _storeRiskCheck(recommendation, portfolioId, result) {
     try {
-      this.stmts.storeRiskCheck.run(
+      const database = await getDatabaseAsync();
+
+      await database.query(`
+        INSERT INTO risk_check_history
+        (recommendation_id, portfolio_id, company_id, approved, checks,
+         original_position_size, adjusted_position_size, warnings, blockers)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `, [
         recommendation.id || null,
         portfolioId,
         recommendation.companyId,
-        result.approved ? 1 : 0,
+        result.approved,
         JSON.stringify(result.checks),
         result.originalPositionSize,
         result.adjustedPositionSize,
         JSON.stringify(result.warnings),
         JSON.stringify(result.blockers)
-      );
+      ]);
     } catch (error) {
       console.error('Error storing risk check:', error.message);
     }
@@ -464,17 +463,19 @@ class RiskManager {
   /**
    * Get risk check history for a portfolio
    */
-  getRiskCheckHistory(portfolioId, limit = 50) {
-    const rows = this.db.prepare(`
+  async getRiskCheckHistory(portfolioId, limit = 50) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT rch.*, c.symbol, c.name
       FROM risk_check_history rch
       JOIN companies c ON rch.company_id = c.id
-      WHERE rch.portfolio_id = ?
+      WHERE rch.portfolio_id = $1
       ORDER BY rch.created_at DESC
-      LIMIT ?
-    `).all(portfolioId, limit);
+      LIMIT $2
+    `, [portfolioId, limit]);
 
-    return rows.map(row => ({
+    return result.rows.map(row => ({
       ...row,
       checks: row.checks ? JSON.parse(row.checks) : [],
       warnings: row.warnings ? JSON.parse(row.warnings) : [],
@@ -516,7 +517,15 @@ class RiskManager {
       }
 
       // Get portfolio returns from snapshots
-      const snapshots = this.stmts.getPortfolioSnapshots.all(portfolio.portfolio.id);
+      const database = await getDatabaseAsync();
+      const snapshotsResult = await database.query(`
+        SELECT * FROM portfolio_snapshots
+        WHERE portfolio_id = $1
+        ORDER BY snapshot_date DESC
+        LIMIT 30
+      `, [portfolio.portfolio.id]);
+      const snapshots = snapshotsResult.rows;
+
       if (snapshots.length < 30) {
         return null; // Not enough data for VaR
       }
@@ -697,12 +706,15 @@ class RiskManager {
    */
   async _getStockReturns(companyId) {
     try {
-      const prices = this.db.prepare(`
+      const database = await getDatabaseAsync();
+
+      const pricesResult = await database.query(`
         SELECT date, close FROM daily_prices
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY date DESC
         LIMIT 60
-      `).all(companyId);
+      `, [companyId]);
+      const prices = pricesResult.rows;
 
       if (prices.length < 21) return null;
 
@@ -790,13 +802,16 @@ class RiskManager {
 
     // Try to get from database (stored by OutcomeUpdater)
     try {
-      const dbResults = this.db.prepare(`
+      const database = await getDatabaseAsync();
+
+      const dbResultsQuery = await database.query(`
         SELECT scenario_name, portfolio_impact, position_impacts
         FROM stress_test_results
-        WHERE portfolio_id = ?
-          AND run_date >= datetime('now', '-2 days')
+        WHERE portfolio_id = $1
+          AND run_date >= NOW() - INTERVAL '2 days'
         ORDER BY run_date DESC
-      `).all(portfolioId);
+      `, [portfolioId]);
+      const dbResults = dbResultsQuery.rows;
 
       if (dbResults.length > 0) {
         const scenarios = {};
@@ -888,7 +903,15 @@ class RiskManager {
       return { error: 'Portfolio not found' };
     }
 
-    const snapshots = this.stmts.getPortfolioSnapshots.all(portfolioId);
+    const database = await getDatabaseAsync();
+    const snapshotsResult = await database.query(`
+      SELECT * FROM portfolio_snapshots
+      WHERE portfolio_id = $1
+      ORDER BY snapshot_date DESC
+      LIMIT 30
+    `, [portfolioId]);
+    const snapshots = snapshotsResult.rows;
+
     if (snapshots.length < 30) {
       return { error: 'Insufficient history for VaR calculation' };
     }
