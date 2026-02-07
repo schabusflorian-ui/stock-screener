@@ -1,7 +1,7 @@
 # PostgreSQL Conversion Progress Tracker
 
 **Last Updated**: 2026-02-07
-**Overall Progress**: 33 / 197 services (17%)
+**Overall Progress**: 34 / 197 services (17%)
 
 ---
 
@@ -36,6 +36,7 @@
 | portfolio/monteCarloEngine.js | High | 3h | ✅ | 10 DB calls, parametric distributions, VaR analysis |
 | portfolio/stressTestEngine.js | High | 3h | ✅ | 8 DB calls, 8 crisis scenarios, portfolio stress testing |
 | portfolio/alphaAnalytics.js | High | 4h | ✅ | 5 DB methods, Jensen's Alpha, multi-factor, skill vs luck |
+| portfolio/hedgeOptimizer.js | High | 3h | ✅ | 4 DB methods, tail risk hedging, VIX calls, sector protection |
 
 ---
 
@@ -75,7 +76,7 @@ Priority 1A is now complete! All Data Access Layer services have been converted.
 | 18 | portfolio/stressTestEngine.js | High | 5-6h | ✅ Complete | - |
 | 19 | portfolio/alphaAnalytics.js | High | 4-5h | ✅ Complete | - |
 | 20 | portfolio/exportService.js | Medium | 2-3h | ✅ Complete | - |
-| 21 | portfolio/hedgeOptimizer.js | High | 5-6h | ⏸️ Pending | - |
+| 21 | portfolio/hedgeOptimizer.js | High | 5-6h | ✅ Complete | - |
 | 22 | portfolio/whatIfAnalysis.js | Medium | 4-5h | ✅ Complete | - |
 | 23 | portfolio/portfolioAlerts.js | Medium | 3-4h | ✅ Complete | - |
 | 24 | portfolio/portfolioTaxService.js | Medium | 3-4h | ✅ Complete | - |
