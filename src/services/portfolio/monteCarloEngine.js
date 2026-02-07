@@ -2,14 +2,14 @@
 // Monte Carlo Simulation Engine (Agent 2)
 // Enhanced with Parametric Distribution Support
 
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 const { ParametricDistributions } = require('../statistics');
 
 const TRADING_DAYS_PER_YEAR = 252;
 
 class MonteCarloEngine {
   constructor() {
-    this.db = db.getDatabase();
+    // No database initialization needed for async pattern
     this.parametricDist = new ParametricDistributions();
     console.log('🎲 Monte Carlo Engine initialized with parametric distribution support');
   }
@@ -40,7 +40,7 @@ class MonteCarloEngine {
     // Get portfolio allocations
     let portfolioAllocations;
     if (portfolioId) {
-      portfolioAllocations = this._getPortfolioAllocations(portfolioId);
+      portfolioAllocations = await this._getPortfolioAllocations(portfolioId);
     } else if (allocations) {
       portfolioAllocations = allocations;
     } else {
@@ -158,7 +158,45 @@ class MonteCarloEngine {
     const executionTimeMs = Date.now() - startTime;
 
     // Save to database
+    const database = await getDatabaseAsync();
+    const insertResult = await database.query(`
+      INSERT INTO monte_carlo_runs (
+        name, config, portfolio_id, simulation_count, time_horizon_years,
+        return_model, initial_value, annual_contribution, annual_withdrawal,
+        inflation_rate, survival_rate, median_ending_value, mean_ending_value,
+        percentile_5, percentile_25, percentile_75, percentile_95,
+        median_depletion_year, percentile_paths, execution_time_ms
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
+      )
+      RETURNING id
+    `, [
+      name,
+      JSON.stringify(config),
+      portfolioId,
+      simulationCount,
+      timeHorizonYears,
+      returnModel,
+      initialValue,
+      annualContribution,
+      annualWithdrawal,
+      inflationRate,
+      survivalRate,
+      medianEndingValue,
+      meanEndingValue,
+      percentile5,
+      percentile25,
+      percentile75,
+      percentile95,
+      medianDepletionYear,
+      JSON.stringify(percentilePaths),
+      executionTimeMs
+    ]);
+
+    const simulationId = insertResult.rows[0].id;
+
     const result = {
+      id: simulationId,
       name,
       config: JSON.stringify(config),
       portfolioId,
@@ -180,25 +218,6 @@ class MonteCarloEngine {
       percentilePaths: JSON.stringify(percentilePaths),
       executionTimeMs
     };
-
-    const insertStmt = this.db.prepare(`
-      INSERT INTO monte_carlo_runs (
-        name, config, portfolio_id, simulation_count, time_horizon_years,
-        return_model, initial_value, annual_contribution, annual_withdrawal,
-        inflation_rate, survival_rate, median_ending_value, mean_ending_value,
-        percentile_5, percentile_25, percentile_75, percentile_95,
-        median_depletion_year, percentile_paths, execution_time_ms
-      ) VALUES (
-        @name, @config, @portfolioId, @simulationCount, @timeHorizonYears,
-        @returnModel, @initialValue, @annualContribution, @annualWithdrawal,
-        @inflationRate, @survivalRate, @medianEndingValue, @meanEndingValue,
-        @percentile5, @percentile25, @percentile75, @percentile95,
-        @medianDepletionYear, @percentilePaths, @executionTimeMs
-      )
-    `);
-
-    const insertResult = insertStmt.run(result);
-    result.id = insertResult.lastInsertRowid;
 
     // Calculate Cornish-Fisher VaR comparison if we have distribution moments
     let varComparison = null;
@@ -286,7 +305,7 @@ class MonteCarloEngine {
     // Get portfolio allocations
     let portfolioAllocations;
     if (portfolioId) {
-      portfolioAllocations = this._getPortfolioAllocations(portfolioId);
+      portfolioAllocations = await this._getPortfolioAllocations(portfolioId);
       console.log(`[DistributionAnalysis] Portfolio ${portfolioId} has ${portfolioAllocations.length} positions:`,
         portfolioAllocations.map(a => `${a.symbol} (${(a.weight * 100).toFixed(1)}%)`).join(', '));
     } else if (allocations) {
@@ -378,10 +397,13 @@ class MonteCarloEngine {
   // ============================================
   // Get Saved Simulation
   // ============================================
-  getSimulation(id) {
-    const simulation = this.db.prepare(`
-      SELECT * FROM monte_carlo_runs WHERE id = ?
-    `).get(id);
+  async getSimulation(id) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM monte_carlo_runs WHERE id = $1
+    `, [id]);
+
+    const simulation = result.rows[0];
 
     if (!simulation) {
       throw new Error(`Monte Carlo run ${id} not found`);
@@ -397,32 +419,37 @@ class MonteCarloEngine {
   // ============================================
   // List Simulations
   // ============================================
-  listSimulations(limit = 20) {
-    return this.db.prepare(`
+  async listSimulations(limit = 20) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         id, name, portfolio_id, simulation_count, time_horizon_years,
         initial_value, annual_withdrawal, survival_rate, median_ending_value,
         execution_time_ms, created_at
       FROM monte_carlo_runs
       ORDER BY created_at DESC
-      LIMIT ?
-    `).all(limit);
+      LIMIT $1
+    `, [limit]);
+
+    return result.rows;
   }
 
   // ============================================
   // Delete Simulation
   // ============================================
-  deleteSimulation(id) {
-    const result = this.db.prepare('DELETE FROM monte_carlo_runs WHERE id = ?').run(id);
-    return { deleted: result.changes > 0 };
+  async deleteSimulation(id) {
+    const database = await getDatabaseAsync();
+    const result = await database.query('DELETE FROM monte_carlo_runs WHERE id = $1', [id]);
+    return { deleted: result.rowCount > 0 };
   }
 
   // ============================================
   // Private Helper Methods
   // ============================================
 
-  _getPortfolioAllocations(portfolioId) {
-    const positions = this.db.prepare(`
+  async _getPortfolioAllocations(portfolioId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         pp.company_id,
         c.symbol,
@@ -436,8 +463,10 @@ class MonteCarloEngine {
         FROM daily_prices dp1
         WHERE date = (SELECT MAX(date) FROM daily_prices dp2 WHERE dp2.company_id = dp1.company_id)
       ) dp ON c.id = dp.company_id
-      WHERE pp.portfolio_id = ?
-    `).all(portfolioId);
+      WHERE pp.portfolio_id = $1
+    `, [portfolioId]);
+
+    const positions = result.rows;
 
     if (!positions || positions.length === 0) {
       throw new Error(`Portfolio ${portfolioId} has no positions`);
@@ -468,6 +497,7 @@ class MonteCarloEngine {
   }
 
   async _calculateHistoricalReturns(allocations, lookbackYears) {
+    const database = await getDatabaseAsync();
     const lookbackDays = lookbackYears * TRADING_DAYS_PER_YEAR;
     const endDate = new Date().toISOString().split('T')[0];
     const startDate = new Date();
@@ -483,21 +513,24 @@ class MonteCarloEngine {
 
       // Resolve symbol if needed
       if (!companyId && alloc.symbol) {
-        const company = this.db.prepare(`
-          SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
-        `).get(alloc.symbol);
+        const companyResult = await database.query(`
+          SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)
+        `, [alloc.symbol]);
+        const company = companyResult.rows[0];
         if (!company) continue;
         companyId = company.id;
       }
 
       if (!companyId) continue;
 
-      const prices = this.db.prepare(`
+      const pricesResult = await database.query(`
         SELECT date, adjusted_close, close
         FROM daily_prices
-        WHERE company_id = ? AND date >= ? AND date <= ?
+        WHERE company_id = $1 AND date >= $2 AND date <= $3
         ORDER BY date ASC
-      `).all(companyId, startDateStr, endDate);
+      `, [companyId, startDateStr, endDate]);
+
+      const prices = pricesResult.rows;
 
       priceData[companyId] = {};
       for (const price of prices) {
@@ -506,13 +539,26 @@ class MonteCarloEngine {
       }
     }
 
+    // Build companyId cache for symbols
+    const companyIdCache = {};
+    for (const alloc of allocations) {
+      if (alloc.companyId) {
+        companyIdCache[alloc.symbol || alloc.companyId] = alloc.companyId;
+      } else if (alloc.symbol && !companyIdCache[alloc.symbol]) {
+        const companyResult = await database.query(
+          'SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)', [alloc.symbol]
+        );
+        if (companyResult.rows[0]) {
+          companyIdCache[alloc.symbol] = companyResult.rows[0].id;
+        }
+      }
+    }
+
     // Filter to days where all positions have data
     const tradingDays = Array.from(tradingDaysSet).sort();
     const validDays = tradingDays.filter(day =>
       allocations.every(alloc => {
-        const companyId = alloc.companyId || this.db.prepare(
-          'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)'
-        ).get(alloc.symbol)?.id;
+        const companyId = alloc.companyId || companyIdCache[alloc.symbol];
         return priceData[companyId]?.[day];
       })
     );
@@ -523,9 +569,7 @@ class MonteCarloEngine {
       let portfolioReturn = 0;
 
       for (const alloc of allocations) {
-        const companyId = alloc.companyId || this.db.prepare(
-          'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)'
-        ).get(alloc.symbol)?.id;
+        const companyId = alloc.companyId || companyIdCache[alloc.symbol];
 
         if (!companyId) continue;
 
