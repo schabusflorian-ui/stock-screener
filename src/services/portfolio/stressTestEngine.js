@@ -1,7 +1,7 @@
 // src/services/portfolio/stressTestEngine.js
 // Stress Testing Engine - Historical Crisis Simulations (Agent 2)
 
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 
 // Built-in historical stress scenarios
 const STRESS_SCENARIOS = {
@@ -65,7 +65,6 @@ const STRESS_SCENARIOS = {
 
 class StressTestEngine {
   constructor() {
-    this.db = db.getDatabase();
     this.scenarios = STRESS_SCENARIOS;
     console.log('🔥 Stress Test Engine initialized');
   }
@@ -78,7 +77,7 @@ class StressTestEngine {
     const { save = true } = options;
 
     // Get portfolio allocations
-    const allocations = this._getPortfolioAllocations(portfolioId);
+    const allocations = await this._getPortfolioAllocations(portfolioId);
     if (allocations.length === 0) {
       throw new Error('Portfolio has no positions');
     }
@@ -133,7 +132,7 @@ class StressTestEngine {
 
     // Save to database if requested
     if (save && result.hasData) {
-      testResult.savedId = this._saveResult(portfolioId, scenario, result, benchmarkResult, testResult.comparison, executionTime);
+      testResult.savedId = await this._saveResult(portfolioId, scenario, result, benchmarkResult, testResult.comparison, executionTime);
     }
 
     return testResult;
@@ -220,24 +219,26 @@ class StressTestEngine {
   /**
    * Get saved stress test results for a portfolio
    */
-  getStressTestHistory(portfolioId, options = {}) {
+  async getStressTestHistory(portfolioId, options = {}) {
+    const database = await getDatabaseAsync();
     const { limit = 50, scenarioId = null } = options;
 
     let query = `
       SELECT * FROM stress_test_runs
-      WHERE portfolio_id = ?
+      WHERE portfolio_id = $1
     `;
     const params = [portfolioId];
 
     if (scenarioId) {
-      query += ' AND scenario_id = ?';
+      query += ' AND scenario_id = $2';
       params.push(scenarioId);
     }
 
-    query += ' ORDER BY created_at DESC LIMIT ?';
+    query += ` ORDER BY created_at DESC LIMIT $${params.length + 1}`;
     params.push(limit);
 
-    const results = this.db.prepare(query).all(...params);
+    const result = await database.query(query, params);
+    const results = result.rows;
 
     return results.map(r => ({
       id: r.id,
@@ -250,7 +251,7 @@ class StressTestEngine {
         endDate: r.scenario_end_date
       },
       portfolio: {
-        hasData: r.has_data === 1,
+        hasData: r.has_data === true,
         dataPoints: r.data_points,
         startValue: r.start_value,
         endValue: r.end_value,
@@ -272,7 +273,7 @@ class StressTestEngine {
       } : null,
       comparison: {
         relativeDrawdown: r.relative_drawdown,
-        outperformed: r.outperformed === 1,
+        outperformed: r.outperformed === true,
         betaEstimate: r.beta_estimate
       },
       executionTimeMs: r.execution_time_ms,
@@ -283,10 +284,14 @@ class StressTestEngine {
   /**
    * Get a specific saved stress test result
    */
-  getStressTestResult(resultId) {
-    const r = this.db.prepare(`
-      SELECT * FROM stress_test_runs WHERE id = ?
-    `).get(resultId);
+  async getStressTestResult(resultId) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT * FROM stress_test_runs WHERE id = $1
+    `, [resultId]);
+
+    const r = result.rows[0];
 
     if (!r) {
       return null;
@@ -303,7 +308,7 @@ class StressTestEngine {
         endDate: r.scenario_end_date
       },
       portfolio: {
-        hasData: r.has_data === 1,
+        hasData: r.has_data === true,
         dataPoints: r.data_points,
         startValue: r.start_value,
         endValue: r.end_value,
@@ -325,7 +330,7 @@ class StressTestEngine {
       } : null,
       comparison: {
         relativeDrawdown: r.relative_drawdown,
-        outperformed: r.outperformed === 1,
+        outperformed: r.outperformed === true,
         betaEstimate: r.beta_estimate
       },
       executionTimeMs: r.execution_time_ms,
@@ -336,12 +341,14 @@ class StressTestEngine {
   /**
    * Delete a saved stress test result
    */
-  deleteStressTestResult(resultId) {
-    const result = this.db.prepare(`
-      DELETE FROM stress_test_runs WHERE id = ?
-    `).run(resultId);
+  async deleteStressTestResult(resultId) {
+    const database = await getDatabaseAsync();
 
-    return { deleted: result.changes > 0 };
+    const result = await database.query(`
+      DELETE FROM stress_test_runs WHERE id = $1
+    `, [resultId]);
+
+    return { deleted: result.rowCount > 0 };
   }
 
   // ============================================
@@ -351,8 +358,10 @@ class StressTestEngine {
   /**
    * Save stress test result to database
    */
-  _saveResult(portfolioId, scenario, result, benchmarkResult, comparison, executionTime) {
-    const insertResult = this.db.prepare(`
+  async _saveResult(portfolioId, scenario, result, benchmarkResult, comparison, executionTime) {
+    const database = await getDatabaseAsync();
+
+    const insertResult = await database.query(`
       INSERT INTO stress_test_runs (
         portfolio_id, scenario_id, scenario_name, scenario_description,
         scenario_start_date, scenario_end_date, data_points, has_data,
@@ -362,8 +371,9 @@ class StressTestEngine {
         benchmark_symbol, benchmark_total_return, benchmark_max_drawdown,
         relative_drawdown, outperformed, beta_estimate,
         value_series, execution_time_ms
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+      RETURNING id
+    `, [
       portfolioId,
       scenario.id,
       scenario.name,
@@ -371,7 +381,7 @@ class StressTestEngine {
       scenario.startDate,
       scenario.endDate,
       result.dataPoints,
-      result.hasData ? 1 : 0,
+      result.hasData,
       result.startValue,
       result.endValue,
       result.totalReturn,
@@ -385,17 +395,19 @@ class StressTestEngine {
       benchmarkResult?.totalReturn,
       benchmarkResult?.maxDrawdown,
       comparison.relativeDrawdown,
-      comparison.outperformed ? 1 : 0,
+      comparison.outperformed,
       comparison.betaEstimate,
       result.valueSeries ? JSON.stringify(result.valueSeries) : null,
       executionTime
-    );
+    ]);
 
-    return insertResult.lastInsertRowid;
+    return insertResult.rows[0].id;
   }
 
-  _getPortfolioAllocations(portfolioId) {
-    const positions = this.db.prepare(`
+  async _getPortfolioAllocations(portfolioId) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT
         pp.company_id,
         c.symbol,
@@ -404,8 +416,10 @@ class StressTestEngine {
       FROM portfolio_positions pp
       JOIN companies c ON pp.company_id = c.id
       LEFT JOIN price_metrics pm ON c.id = pm.company_id
-      WHERE pp.portfolio_id = ?
-    `).all(portfolioId);
+      WHERE pp.portfolio_id = $1
+    `, [portfolioId]);
+
+    const positions = result.rows;
 
     // Calculate weights based on current values
     let totalValue = 0;
@@ -424,18 +438,21 @@ class StressTestEngine {
 
   async _simulateScenario(allocations, scenario) {
     const { startDate, endDate } = scenario;
+    const database = await getDatabaseAsync();
 
     // Load price data for each position
     const priceData = {};
     const tradingDaysSet = new Set();
 
     for (const alloc of allocations) {
-      const prices = this.db.prepare(`
+      const result = await database.query(`
         SELECT date, adjusted_close, close
         FROM daily_prices
-        WHERE company_id = ? AND date >= ? AND date <= ?
+        WHERE company_id = $1 AND date >= $2 AND date <= $3
         ORDER BY date ASC
-      `).all(alloc.companyId, startDate, endDate);
+      `, [alloc.companyId, startDate, endDate]);
+
+      const prices = result.rows;
 
       priceData[alloc.companyId] = {};
       for (const price of prices) {
@@ -548,22 +565,27 @@ class StressTestEngine {
 
   async _getBenchmarkPerformance(scenario) {
     const { startDate, endDate } = scenario;
+    const database = await getDatabaseAsync();
 
     // Get S&P 500 prices
-    const benchmarkIndex = this.db.prepare(`
+    const indexResult = await database.query(`
       SELECT id FROM market_indices WHERE symbol = '^GSPC' OR symbol = 'SPY' LIMIT 1
-    `).get();
+    `);
+
+    const benchmarkIndex = indexResult.rows[0];
 
     if (!benchmarkIndex) {
       return null;
     }
 
-    const prices = this.db.prepare(`
+    const pricesResult = await database.query(`
       SELECT date, close
       FROM market_index_prices
-      WHERE index_id = ? AND date >= ? AND date <= ?
+      WHERE index_id = $1 AND date >= $2 AND date <= $3
       ORDER BY date ASC
-    `).all(benchmarkIndex.id, startDate, endDate);
+    `, [benchmarkIndex.id, startDate, endDate]);
+
+    const prices = pricesResult.rows;
 
     if (prices.length < 2) {
       return null;
