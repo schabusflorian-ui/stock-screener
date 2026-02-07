@@ -1,202 +1,90 @@
 // src/services/portfolio/holdingsEngine.js
 // Holdings engine for managing portfolio positions, lots, and trades
 
+const { getDatabaseAsync } = require('../../database');
 const { TRANSACTION_TYPES, LOT_METHODS } = require('../../constants/portfolio');
 
 class HoldingsEngine {
-  constructor(db) {
-    this.db = db;
-    this._prepareStatements();
-  }
-
-  _prepareStatements() {
-    // Portfolio queries
-    this.stmts = {
-      getPortfolio: this.db.prepare(`
-        SELECT * FROM portfolios WHERE id = ?
-      `),
-
-      updatePortfolioCash: this.db.prepare(`
-        UPDATE portfolios
-        SET current_cash = ?,
-            current_value = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `),
-
-      updatePortfolioDeposited: this.db.prepare(`
-        UPDATE portfolios
-        SET current_cash = current_cash + ?,
-            total_deposited = total_deposited + ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `),
-
-      updatePortfolioWithdrawn: this.db.prepare(`
-        UPDATE portfolios
-        SET current_cash = current_cash - ?,
-            total_withdrawn = total_withdrawn + ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `),
-
-      // Position queries (filter out closed positions with 0 shares)
-      getPositions: this.db.prepare(`
-        SELECT pp.*, c.symbol, c.name as company_name, c.sector,
-               COALESCE(dm.dividend_yield, 0) as dividend_yield
-        FROM portfolio_positions pp
-        JOIN companies c ON pp.company_id = c.id
-        LEFT JOIN dividend_metrics dm ON dm.company_id = c.id
-        WHERE pp.portfolio_id = ? AND pp.shares > 0
-        ORDER BY pp.current_value DESC
-      `),
-
-      getPosition: this.db.prepare(`
-        SELECT pp.*, c.symbol, c.name as company_name
-        FROM portfolio_positions pp
-        JOIN companies c ON pp.company_id = c.id
-        WHERE pp.portfolio_id = ? AND pp.company_id = ?
-      `),
-
-      getPositionById: this.db.prepare(`
-        SELECT * FROM portfolio_positions WHERE id = ?
-      `),
-
-      createPosition: this.db.prepare(`
-        INSERT INTO portfolio_positions
-        (portfolio_id, company_id, shares, average_cost, cost_basis, first_bought_at, last_traded_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `),
-
-      updatePosition: this.db.prepare(`
-        UPDATE portfolio_positions
-        SET shares = ?,
-            average_cost = ?,
-            cost_basis = ?,
-            current_price = ?,
-            current_value = ?,
-            unrealized_pnl = ?,
-            unrealized_pnl_pct = ?,
-            last_traded_at = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `),
-
-      updatePositionRealized: this.db.prepare(`
-        UPDATE portfolio_positions
-        SET realized_pnl = realized_pnl + ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `),
-
-      deletePosition: this.db.prepare(`
-        DELETE FROM portfolio_positions WHERE id = ?
-      `),
-
-      // Lot queries
-      getLots: this.db.prepare(`
-        SELECT * FROM portfolio_lots
-        WHERE position_id = ?
-        ORDER BY acquired_at ASC
-      `),
-
-      getOpenLots: this.db.prepare(`
-        SELECT * FROM portfolio_lots
-        WHERE position_id = ? AND is_closed = 0
-        ORDER BY acquired_at ASC
-      `),
-
-      createLot: this.db.prepare(`
-        INSERT INTO portfolio_lots
-        (portfolio_id, position_id, company_id, shares_original, shares_remaining,
-         cost_per_share, total_cost, acquired_at, acquisition_type)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `),
-
-      updateLot: this.db.prepare(`
-        UPDATE portfolio_lots
-        SET shares_remaining = ?,
-            shares_sold = shares_sold + ?,
-            realized_pnl = realized_pnl + ?,
-            is_closed = ?,
-            closed_at = ?
-        WHERE id = ?
-      `),
-
-      // Transaction queries
-      createTransaction: this.db.prepare(`
-        INSERT INTO portfolio_transactions
-        (portfolio_id, company_id, position_id, lot_id, transaction_type,
-         shares, price_per_share, total_amount, fees, dividend_per_share,
-         cash_balance_after, position_shares_after, notes, order_id, executed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `),
-
-      getTransactions: this.db.prepare(`
-        SELECT pt.*, c.symbol, c.name as company_name
-        FROM portfolio_transactions pt
-        LEFT JOIN companies c ON pt.company_id = c.id
-        WHERE pt.portfolio_id = ?
-        ORDER BY pt.executed_at DESC
-        LIMIT ? OFFSET ?
-      `),
-
-      // Price queries
-      getLatestPrice: this.db.prepare(`
-        SELECT close as price, date
-        FROM daily_prices
-        WHERE company_id = ?
-        ORDER BY date DESC
-        LIMIT 1
-      `)
-    };
-  }
+  // No constructor needed - all methods will get database async
 
   // ============================================
   // Portfolio Methods
   // ============================================
 
-  getPortfolio(portfolioId) {
-    return this.stmts.getPortfolio.get(portfolioId);
+  async getPortfolio(portfolioId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query('SELECT * FROM portfolios WHERE id = $1', [portfolioId]);
+    return result.rows[0];
   }
 
   // ============================================
   // Position Methods
   // ============================================
 
-  getPositions(portfolioId) {
-    return this.stmts.getPositions.all(portfolioId);
+  async getPositions(portfolioId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT pp.*, c.symbol, c.name as company_name, c.sector,
+             COALESCE(dm.dividend_yield, 0) as dividend_yield
+      FROM portfolio_positions pp
+      JOIN companies c ON pp.company_id = c.id
+      LEFT JOIN dividend_metrics dm ON dm.company_id = c.id
+      WHERE pp.portfolio_id = $1 AND pp.shares > 0
+      ORDER BY pp.current_value DESC
+    `, [portfolioId]);
+    return result.rows;
   }
 
-  getPosition(portfolioId, companyId) {
-    return this.stmts.getPosition.get(portfolioId, companyId);
+  async getPosition(portfolioId, companyId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT pp.*, c.symbol, c.name as company_name
+      FROM portfolio_positions pp
+      JOIN companies c ON pp.company_id = c.id
+      WHERE pp.portfolio_id = $1 AND pp.company_id = $2
+    `, [portfolioId, companyId]);
+    return result.rows[0];
   }
 
-  getPositionById(positionId) {
-    return this.stmts.getPositionById.get(positionId);
+  async getPositionById(positionId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query('SELECT * FROM portfolio_positions WHERE id = $1', [positionId]);
+    return result.rows[0];
   }
 
   // ============================================
   // Lot Methods
   // ============================================
 
-  getLots(positionId, openOnly = false) {
+  async getLots(positionId, openOnly = false) {
+    const database = await getDatabaseAsync();
     if (openOnly) {
-      return this.stmts.getOpenLots.all(positionId);
+      const result = await database.query(`
+        SELECT * FROM portfolio_lots
+        WHERE position_id = $1 AND is_closed = false
+        ORDER BY acquired_at ASC
+      `, [positionId]);
+      return result.rows;
     }
-    return this.stmts.getLots.all(positionId);
+    const result = await database.query(`
+      SELECT * FROM portfolio_lots
+      WHERE position_id = $1
+      ORDER BY acquired_at ASC
+    `, [positionId]);
+    return result.rows;
   }
 
   // ============================================
   // Trading Methods
   // ============================================
 
-  executeBuy(portfolioId, { companyId, shares, pricePerShare, fees = 0, notes = null, executedAt = null, orderId = null }) {
+  async executeBuy(portfolioId, { companyId, shares, pricePerShare, fees = 0, notes = null, executedAt = null, orderId = null }) {
+    const database = await getDatabaseAsync();
     const execDate = executedAt || new Date().toISOString();
     const totalCost = (shares * pricePerShare) + fees;
 
     // Get portfolio
-    const portfolio = this.getPortfolio(portfolioId);
+    const portfolio = await this.getPortfolio(portfolioId);
     if (!portfolio) {
       throw new Error(`Portfolio ${portfolioId} not found`);
     }
@@ -207,9 +95,11 @@ class HoldingsEngine {
     }
 
     // Use transaction for atomic operation
-    const result = this.db.transaction(() => {
+    await database.query('BEGIN');
+
+    try {
       // Get or create position
-      const position = this.getPosition(portfolioId, companyId);
+      const position = await this.getPosition(portfolioId, companyId);
       let positionId;
       let newShares;
       let newCostBasis;
@@ -223,83 +113,76 @@ class HoldingsEngine {
         newAvgCost = newCostBasis / newShares;
       } else {
         // Create new position
-        const insertResult = this.stmts.createPosition.run(
-          portfolioId,
-          companyId,
-          shares,
-          pricePerShare,
-          shares * pricePerShare,
-          execDate,
-          execDate
-        );
-        positionId = insertResult.lastInsertRowid;
+        const insertResult = await database.query(`
+          INSERT INTO portfolio_positions (
+            portfolio_id, company_id, shares, average_cost, cost_basis,
+            first_bought_at, last_traded_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+          RETURNING id
+        `, [portfolioId, companyId, shares, pricePerShare, shares * pricePerShare, execDate, execDate]);
+        positionId = insertResult.rows[0].id;
         newShares = shares;
         newCostBasis = shares * pricePerShare;
         newAvgCost = pricePerShare;
       }
 
       // Create lot
-      const lotResult = this.stmts.createLot.run(
-        portfolioId,
-        positionId,
-        companyId,
-        shares,
-        shares,
-        pricePerShare,
-        shares * pricePerShare,
-        execDate,
-        'buy'
-      );
-      const lotId = lotResult.lastInsertRowid;
+      const lotResult = await database.query(`
+        INSERT INTO portfolio_lots (
+          portfolio_id, position_id, company_id, shares_original, shares_remaining,
+          cost_per_share, total_cost, acquired_at, acquisition_type
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        RETURNING id
+      `, [portfolioId, positionId, companyId, shares, shares, pricePerShare, shares * pricePerShare, execDate, 'buy']);
+      const lotId = lotResult.rows[0].id;
 
       // Update position with current values
-      const latestPrice = this.stmts.getLatestPrice.get(companyId);
+      const latestPriceResult = await database.query(`
+        SELECT close as price FROM daily_prices
+        WHERE company_id = $1
+        ORDER BY date DESC
+        LIMIT 1
+      `, [companyId]);
+      const latestPrice = latestPriceResult.rows[0];
       const currentPrice = latestPrice ? latestPrice.price : pricePerShare;
       const currentValue = newShares * currentPrice;
       const unrealizedPnl = currentValue - newCostBasis;
       const unrealizedPnlPct = newCostBasis > 0 ? (unrealizedPnl / newCostBasis) * 100 : 0;
 
-      this.stmts.updatePosition.run(
-        newShares,
-        newAvgCost,
-        newCostBasis,
-        currentPrice,
-        currentValue,
-        unrealizedPnl,
-        unrealizedPnlPct,
-        execDate,
-        positionId
-      );
+      await database.query(`
+        UPDATE portfolio_positions
+        SET shares = $1, average_cost = $2, cost_basis = $3, current_price = $4,
+            current_value = $5, unrealized_pnl = $6, unrealized_pnl_pct = $7,
+            last_traded_at = $8, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $9
+      `, [newShares, newAvgCost, newCostBasis, currentPrice, currentValue, unrealizedPnl, unrealizedPnlPct, execDate, positionId]);
 
       // Update portfolio cash
       const newCash = portfolio.current_cash - totalCost;
-      const positionsValue = this._calculatePositionsValue(portfolioId);
+      const positionsValue = await this._calculatePositionsValue(portfolioId);
       const totalValue = newCash + positionsValue;
-      this.stmts.updatePortfolioCash.run(newCash, totalValue, portfolioId);
+      await database.query(`
+        UPDATE portfolios
+        SET current_cash = $1, current_value = $2, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $3
+      `, [newCash, totalValue, portfolioId]);
 
       // Record transaction
-      const transactionResult = this.stmts.createTransaction.run(
-        portfolioId,
-        companyId,
-        positionId,
-        lotId,
-        TRANSACTION_TYPES.BUY,
-        shares,
-        pricePerShare,
-        totalCost,
-        fees,
-        null, // dividend_per_share
-        newCash,
-        newShares,
-        notes,
-        orderId,
-        execDate
-      );
-      const transactionId = transactionResult.lastInsertRowid;
+      const transactionResult = await database.query(`
+        INSERT INTO portfolio_transactions (
+          portfolio_id, company_id, position_id, lot_id, transaction_type,
+          shares, price_per_share, total_amount, fees, dividend_per_share,
+          cash_balance_after, position_shares_after, notes, order_id, executed_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        RETURNING id
+      `, [portfolioId, companyId, positionId, lotId, TRANSACTION_TYPES.BUY, shares, pricePerShare, totalCost, fees, null, newCash, newShares, notes, orderId, execDate]);
+      const transactionId = transactionResult.rows[0].id;
+
+      await database.query('COMMIT');
 
       return {
         success: true,
-        transactionId,  // Added for trade execution tracking
+        transactionId,
         positionId,
         lotId,
         shares,
@@ -308,24 +191,26 @@ class HoldingsEngine {
         newCashBalance: newCash,
         newPositionShares: newShares
       };
-    })();
-
-    return result;
+    } catch (error) {
+      await database.query('ROLLBACK');
+      throw error;
+    }
   }
 
-  executeSell(portfolioId, { companyId, shares, pricePerShare, fees = 0, notes = null, executedAt = null, orderId = null, lotMethod = LOT_METHODS.FIFO }) {
+  async executeSell(portfolioId, { companyId, shares, pricePerShare, fees = 0, notes = null, executedAt = null, orderId = null, lotMethod = LOT_METHODS.FIFO }) {
+    const database = await getDatabaseAsync();
     const execDate = executedAt || new Date().toISOString();
     const grossProceeds = shares * pricePerShare;
     const netProceeds = grossProceeds - fees;
 
     // Get portfolio
-    const portfolio = this.getPortfolio(portfolioId);
+    const portfolio = await this.getPortfolio(portfolioId);
     if (!portfolio) {
       throw new Error(`Portfolio ${portfolioId} not found`);
     }
 
     // Get position
-    const position = this.getPosition(portfolioId, companyId);
+    const position = await this.getPosition(portfolioId, companyId);
     if (!position) {
       throw new Error(`No position found for company ${companyId} in portfolio ${portfolioId}`);
     }
@@ -336,9 +221,11 @@ class HoldingsEngine {
     }
 
     // Use transaction for atomic operation
-    const result = this.db.transaction(() => {
+    await database.query('BEGIN');
+
+    try {
       // Get open lots
-      const openLots = this.getLots(position.id, true);
+      const openLots = await this.getLots(position.id, true);
 
       // Sort lots based on method
       switch (lotMethod) {
@@ -368,17 +255,18 @@ class HoldingsEngine {
         const lotPnl = lotProceeds - lotCost;
 
         const newRemaining = lot.shares_remaining - sharesToSellFromLot;
-        const isClosed = newRemaining <= 0 ? 1 : 0;
+        const isClosed = newRemaining <= 0 ? true : false;
         const closedAt = isClosed ? execDate : null;
 
-        this.stmts.updateLot.run(
-          newRemaining,
-          sharesToSellFromLot,
-          lotPnl,
-          isClosed,
-          closedAt,
-          lot.id
-        );
+        await database.query(`
+          UPDATE portfolio_lots
+          SET shares_remaining = $1,
+              shares_sold = COALESCE(shares_sold, 0) + $2,
+              realized_pnl = COALESCE(realized_pnl, 0) + $3,
+              is_closed = $4,
+              closed_at = $5
+          WHERE id = $6
+        `, [newRemaining, sharesToSellFromLot, lotPnl, isClosed, closedAt, lot.id]);
 
         totalRealizedPnl += lotPnl;
         sharesToSell -= sharesToSellFromLot;
@@ -397,63 +285,64 @@ class HoldingsEngine {
 
       if (!shouldDeletePosition) {
         // Recalculate cost basis from remaining lots
-        const remainingLots = this.getLots(position.id, true);
+        const remainingLots = await this.getLots(position.id, true);
         const newCostBasis = remainingLots.reduce((sum, lot) =>
           sum + (lot.shares_remaining * lot.cost_per_share), 0);
         const newAvgCost = newCostBasis / newShares;
 
-        const latestPrice = this.stmts.getLatestPrice.get(companyId);
+        const latestPriceResult = await database.query(`
+          SELECT close as price FROM daily_prices
+          WHERE company_id = $1
+          ORDER BY date DESC
+          LIMIT 1
+        `, [companyId]);
+        const latestPrice = latestPriceResult.rows[0];
         const currentPrice = latestPrice ? latestPrice.price : pricePerShare;
         const currentValue = newShares * currentPrice;
         const unrealizedPnl = currentValue - newCostBasis;
         const unrealizedPnlPct = newCostBasis > 0 ? (unrealizedPnl / newCostBasis) * 100 : 0;
 
-        this.stmts.updatePosition.run(
-          newShares,
-          newAvgCost,
-          newCostBasis,
-          currentPrice,
-          currentValue,
-          unrealizedPnl,
-          unrealizedPnlPct,
-          execDate,
-          position.id
-        );
+        await database.query(`
+          UPDATE portfolio_positions
+          SET shares = $1, average_cost = $2, cost_basis = $3, current_price = $4,
+              current_value = $5, unrealized_pnl = $6, unrealized_pnl_pct = $7,
+              last_traded_at = $8, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $9
+        `, [newShares, newAvgCost, newCostBasis, currentPrice, currentValue, unrealizedPnl, unrealizedPnlPct, execDate, position.id]);
 
         // Update realized P&L
-        this.stmts.updatePositionRealized.run(totalRealizedPnl, position.id);
+        await database.query(`
+          UPDATE portfolio_positions
+          SET realized_pnl = COALESCE(realized_pnl, 0) + $1
+          WHERE id = $2
+        `, [totalRealizedPnl, position.id]);
       }
 
       // Update portfolio cash
       const newCash = portfolio.current_cash + netProceeds;
-      const positionsValue = this._calculatePositionsValue(portfolioId);
+      const positionsValue = await this._calculatePositionsValue(portfolioId);
       const totalValue = newCash + positionsValue;
-      this.stmts.updatePortfolioCash.run(newCash, totalValue, portfolioId);
+      await database.query(`
+        UPDATE portfolios
+        SET current_cash = $1, current_value = $2, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $3
+      `, [newCash, totalValue, portfolioId]);
 
       // Record transaction (before deleting position to avoid FK constraint)
-      const transactionResult = this.stmts.createTransaction.run(
-        portfolioId,
-        companyId,
-        position.id,
-        null, // Multiple lots possible
-        TRANSACTION_TYPES.SELL,
-        shares,
-        pricePerShare,
-        netProceeds,
-        fees,
-        null,
-        newCash,
-        newShares,
-        notes,
-        orderId,
-        execDate
-      );
-      const transactionId = transactionResult.lastInsertRowid;
+      const transactionResult = await database.query(`
+        INSERT INTO portfolio_transactions (
+          portfolio_id, company_id, position_id, lot_id, transaction_type,
+          shares, price_per_share, total_amount, fees, dividend_per_share,
+          cash_balance_after, position_shares_after, notes, order_id, executed_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        RETURNING id
+      `, [portfolioId, companyId, position.id, null, TRANSACTION_TYPES.SELL, shares, pricePerShare, netProceeds, fees, null, newCash, newShares, notes, orderId, execDate]);
+      const transactionId = transactionResult.rows[0].id;
 
       // If position is fully sold, update to 0 shares rather than delete
       // (to preserve transaction history which references position_id)
       if (shouldDeletePosition) {
-        this.db.prepare(`
+        await database.query(`
           UPDATE portfolio_positions
           SET shares = 0,
               average_cost = 0,
@@ -461,15 +350,17 @@ class HoldingsEngine {
               current_value = 0,
               unrealized_pnl = 0,
               unrealized_pnl_pct = 0,
-              realized_pnl = realized_pnl + ?,
+              realized_pnl = COALESCE(realized_pnl, 0) + $1,
               updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `).run(totalRealizedPnl, position.id);
+          WHERE id = $2
+        `, [totalRealizedPnl, position.id]);
       }
+
+      await database.query('COMMIT');
 
       return {
         success: true,
-        transactionId,  // Added for trade execution tracking
+        transactionId,
         positionId: position.id,
         shares,
         pricePerShare,
@@ -482,49 +373,52 @@ class HoldingsEngine {
         newPositionShares: newShares,
         positionClosed: shouldDeletePosition
       };
-    })();
-
-    return result;
+    } catch (error) {
+      await database.query('ROLLBACK');
+      throw error;
+    }
   }
 
   // ============================================
   // Cash Management Methods
   // ============================================
 
-  deposit(portfolioId, amount, { date = null, notes = null } = {}) {
+  async deposit(portfolioId, amount, { date = null, notes = null } = {}) {
+    const database = await getDatabaseAsync();
     const execDate = date || new Date().toISOString();
 
-    const portfolio = this.getPortfolio(portfolioId);
+    const portfolio = await this.getPortfolio(portfolioId);
     if (!portfolio) {
       throw new Error(`Portfolio ${portfolioId} not found`);
     }
 
-    const result = this.db.transaction(() => {
+    await database.query('BEGIN');
+
+    try {
       // Update portfolio
-      this.stmts.updatePortfolioDeposited.run(amount, amount, portfolioId);
+      await database.query(`
+        UPDATE portfolios
+        SET current_cash = current_cash + $1,
+            current_value = current_value + $2,
+            total_deposited = COALESCE(total_deposited, 0) + $3,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $4
+      `, [amount, amount, amount, portfolioId]);
 
       // Get new cash balance
-      const updatedPortfolio = this.getPortfolio(portfolioId);
+      const updatedPortfolio = await this.getPortfolio(portfolioId);
       const newCash = updatedPortfolio.current_cash;
 
       // Record transaction
-      this.stmts.createTransaction.run(
-        portfolioId,
-        null, // no company
-        null, // no position
-        null, // no lot
-        TRANSACTION_TYPES.DEPOSIT,
-        null, // no shares
-        null, // no price
-        amount,
-        0, // no fees
-        null,
-        newCash,
-        null,
-        notes,
-        null,
-        execDate
-      );
+      await database.query(`
+        INSERT INTO portfolio_transactions (
+          portfolio_id, company_id, position_id, lot_id, transaction_type,
+          shares, price_per_share, total_amount, fees, dividend_per_share,
+          cash_balance_after, position_shares_after, notes, order_id, executed_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      `, [portfolioId, null, null, null, TRANSACTION_TYPES.DEPOSIT, null, null, amount, 0, null, newCash, null, notes, null, execDate]);
+
+      await database.query('COMMIT');
 
       return {
         success: true,
@@ -532,15 +426,17 @@ class HoldingsEngine {
         newCashBalance: newCash,
         totalDeposited: updatedPortfolio.total_deposited
       };
-    })();
-
-    return result;
+    } catch (error) {
+      await database.query('ROLLBACK');
+      throw error;
+    }
   }
 
-  withdraw(portfolioId, amount, { date = null, notes = null } = {}) {
+  async withdraw(portfolioId, amount, { date = null, notes = null } = {}) {
+    const database = await getDatabaseAsync();
     const execDate = date || new Date().toISOString();
 
-    const portfolio = this.getPortfolio(portfolioId);
+    const portfolio = await this.getPortfolio(portfolioId);
     if (!portfolio) {
       throw new Error(`Portfolio ${portfolioId} not found`);
     }
@@ -549,32 +445,33 @@ class HoldingsEngine {
       throw new Error(`Insufficient cash. Available: ${portfolio.current_cash.toFixed(2)}, Requested: ${amount.toFixed(2)}`);
     }
 
-    const result = this.db.transaction(() => {
+    await database.query('BEGIN');
+
+    try {
       // Update portfolio
-      this.stmts.updatePortfolioWithdrawn.run(amount, amount, portfolioId);
+      await database.query(`
+        UPDATE portfolios
+        SET current_cash = current_cash - $1,
+            current_value = current_value - $2,
+            total_withdrawn = COALESCE(total_withdrawn, 0) + $3,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $4
+      `, [amount, amount, amount, portfolioId]);
 
       // Get new cash balance
-      const updatedPortfolio = this.getPortfolio(portfolioId);
+      const updatedPortfolio = await this.getPortfolio(portfolioId);
       const newCash = updatedPortfolio.current_cash;
 
       // Record transaction
-      this.stmts.createTransaction.run(
-        portfolioId,
-        null,
-        null,
-        null,
-        TRANSACTION_TYPES.WITHDRAW,
-        null,
-        null,
-        -amount, // Negative for withdrawal
-        0,
-        null,
-        newCash,
-        null,
-        notes,
-        null,
-        execDate
-      );
+      await database.query(`
+        INSERT INTO portfolio_transactions (
+          portfolio_id, company_id, position_id, lot_id, transaction_type,
+          shares, price_per_share, total_amount, fees, dividend_per_share,
+          cash_balance_after, position_shares_after, notes, order_id, executed_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      `, [portfolioId, null, null, null, TRANSACTION_TYPES.WITHDRAW, null, null, -amount, 0, null, newCash, null, notes, null, execDate]);
+
+      await database.query('COMMIT');
 
       return {
         success: true,
@@ -582,57 +479,57 @@ class HoldingsEngine {
         newCashBalance: newCash,
         totalWithdrawn: updatedPortfolio.total_withdrawn
       };
-    })();
-
-    return result;
+    } catch (error) {
+      await database.query('ROLLBACK');
+      throw error;
+    }
   }
 
-  recordDividend(portfolioId, { companyId, amount, dividendPerShare = null, date = null, notes = null }) {
+  async recordDividend(portfolioId, { companyId, amount, dividendPerShare = null, date = null, notes = null }) {
+    const database = await getDatabaseAsync();
     const execDate = date || new Date().toISOString();
 
-    const portfolio = this.getPortfolio(portfolioId);
+    const portfolio = await this.getPortfolio(portfolioId);
     if (!portfolio) {
       throw new Error(`Portfolio ${portfolioId} not found`);
     }
 
-    const position = this.getPosition(portfolioId, companyId);
+    const position = await this.getPosition(portfolioId, companyId);
     if (!position) {
       throw new Error(`No position found for company ${companyId}`);
     }
 
-    const result = this.db.transaction(() => {
+    await database.query('BEGIN');
+
+    try {
       // Update portfolio cash
       const newCash = portfolio.current_cash + amount;
-      const positionsValue = this._calculatePositionsValue(portfolioId);
+      const positionsValue = await this._calculatePositionsValue(portfolioId);
       const totalValue = newCash + positionsValue;
-      this.stmts.updatePortfolioCash.run(newCash, totalValue, portfolioId);
+      await database.query(`
+        UPDATE portfolios
+        SET current_cash = $1, current_value = $2, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $3
+      `, [newCash, totalValue, portfolioId]);
 
       // Update position dividends
-      this.db.prepare(`
+      await database.query(`
         UPDATE portfolio_positions
-        SET total_dividends = total_dividends + ?,
+        SET total_dividends = COALESCE(total_dividends, 0) + $1,
             updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(amount, position.id);
+        WHERE id = $2
+      `, [amount, position.id]);
 
       // Record transaction
-      this.stmts.createTransaction.run(
-        portfolioId,
-        companyId,
-        position.id,
-        null,
-        TRANSACTION_TYPES.DIVIDEND,
-        position.shares,
-        null,
-        amount,
-        0,
-        dividendPerShare,
-        newCash,
-        position.shares,
-        notes,
-        null,
-        execDate
-      );
+      await database.query(`
+        INSERT INTO portfolio_transactions (
+          portfolio_id, company_id, position_id, lot_id, transaction_type,
+          shares, price_per_share, total_amount, fees, dividend_per_share,
+          cash_balance_after, position_shares_after, notes, order_id, executed_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      `, [portfolioId, companyId, position.id, null, TRANSACTION_TYPES.DIVIDEND, position.shares, null, amount, 0, dividendPerShare, newCash, position.shares, notes, null, execDate]);
+
+      await database.query('COMMIT');
 
       return {
         success: true,
@@ -640,15 +537,17 @@ class HoldingsEngine {
         dividendPerShare,
         newCashBalance: newCash
       };
-    })();
-
-    return result;
+    } catch (error) {
+      await database.query('ROLLBACK');
+      throw error;
+    }
   }
 
-  recordFee(portfolioId, { amount, notes = null, date = null }) {
+  async recordFee(portfolioId, { amount, notes = null, date = null }) {
+    const database = await getDatabaseAsync();
     const execDate = date || new Date().toISOString();
 
-    const portfolio = this.getPortfolio(portfolioId);
+    const portfolio = await this.getPortfolio(portfolioId);
     if (!portfolio) {
       throw new Error(`Portfolio ${portfolioId} not found`);
     }
@@ -657,50 +556,56 @@ class HoldingsEngine {
       throw new Error(`Insufficient cash for fee. Available: ${portfolio.current_cash.toFixed(2)}`);
     }
 
-    const result = this.db.transaction(() => {
-      const newCash = portfolio.current_cash - amount;
-      const positionsValue = this._calculatePositionsValue(portfolioId);
-      const totalValue = newCash + positionsValue;
-      this.stmts.updatePortfolioCash.run(newCash, totalValue, portfolioId);
+    await database.query('BEGIN');
 
-      this.stmts.createTransaction.run(
-        portfolioId,
-        null,
-        null,
-        null,
-        TRANSACTION_TYPES.FEE,
-        null,
-        null,
-        -amount,
-        amount,
-        null,
-        newCash,
-        null,
-        notes,
-        null,
-        execDate
-      );
+    try {
+      const newCash = portfolio.current_cash - amount;
+      const positionsValue = await this._calculatePositionsValue(portfolioId);
+      const totalValue = newCash + positionsValue;
+      await database.query(`
+        UPDATE portfolios
+        SET current_cash = $1, current_value = $2, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $3
+      `, [newCash, totalValue, portfolioId]);
+
+      await database.query(`
+        INSERT INTO portfolio_transactions (
+          portfolio_id, company_id, position_id, lot_id, transaction_type,
+          shares, price_per_share, total_amount, fees, dividend_per_share,
+          cash_balance_after, position_shares_after, notes, order_id, executed_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      `, [portfolioId, null, null, null, TRANSACTION_TYPES.FEE, null, null, -amount, amount, null, newCash, null, notes, null, execDate]);
+
+      await database.query('COMMIT');
 
       return {
         success: true,
         amount,
         newCashBalance: newCash
       };
-    })();
-
-    return result;
+    } catch (error) {
+      await database.query('ROLLBACK');
+      throw error;
+    }
   }
 
   // ============================================
   // Value Calculation Methods
   // ============================================
 
-  refreshPositionValues(portfolioId) {
-    const positions = this.getPositions(portfolioId);
+  async refreshPositionValues(portfolioId) {
+    const database = await getDatabaseAsync();
+    const positions = await this.getPositions(portfolioId);
     let totalPositionsValue = 0;
 
     for (const position of positions) {
-      const latestPrice = this.stmts.getLatestPrice.get(position.company_id);
+      const latestPriceResult = await database.query(`
+        SELECT close as price FROM daily_prices
+        WHERE company_id = $1
+        ORDER BY date DESC
+        LIMIT 1
+      `, [position.company_id]);
+      const latestPrice = latestPriceResult.rows[0];
       if (!latestPrice) continue;
 
       const currentPrice = latestPrice.price;
@@ -710,25 +615,25 @@ class HoldingsEngine {
         ? (unrealizedPnl / position.cost_basis) * 100
         : 0;
 
-      this.stmts.updatePosition.run(
-        position.shares,
-        position.average_cost,
-        position.cost_basis,
-        currentPrice,
-        currentValue,
-        unrealizedPnl,
-        unrealizedPnlPct,
-        position.last_traded_at,
-        position.id
-      );
+      await database.query(`
+        UPDATE portfolio_positions
+        SET shares = $1, average_cost = $2, cost_basis = $3, current_price = $4,
+            current_value = $5, unrealized_pnl = $6, unrealized_pnl_pct = $7,
+            last_traded_at = $8, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $9
+      `, [position.shares, position.average_cost, position.cost_basis, currentPrice, currentValue, unrealizedPnl, unrealizedPnlPct, position.last_traded_at, position.id]);
 
       totalPositionsValue += currentValue;
     }
 
     // Update portfolio total value
-    const portfolio = this.getPortfolio(portfolioId);
+    const portfolio = await this.getPortfolio(portfolioId);
     const totalValue = portfolio.current_cash + totalPositionsValue;
-    this.stmts.updatePortfolioCash.run(portfolio.current_cash, totalValue, portfolioId);
+    await database.query(`
+      UPDATE portfolios
+      SET current_cash = $1, current_value = $2, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $3
+    `, [portfolio.current_cash, totalValue, portfolioId]);
 
     return {
       positionsUpdated: positions.length,
@@ -738,13 +643,13 @@ class HoldingsEngine {
     };
   }
 
-  calculatePortfolioValue(portfolioId) {
-    const portfolio = this.getPortfolio(portfolioId);
+  async calculatePortfolioValue(portfolioId) {
+    const portfolio = await this.getPortfolio(portfolioId);
     if (!portfolio) {
       throw new Error(`Portfolio ${portfolioId} not found`);
     }
 
-    const positions = this.getPositions(portfolioId);
+    const positions = await this.getPositions(portfolioId);
     let positionsValue = 0;
     let totalCostBasis = 0;
     let unrealizedPnl = 0;
@@ -774,8 +679,8 @@ class HoldingsEngine {
     };
   }
 
-  _calculatePositionsValue(portfolioId) {
-    const positions = this.getPositions(portfolioId);
+  async _calculatePositionsValue(portfolioId) {
+    const positions = await this.getPositions(portfolioId);
     return positions.reduce((sum, pos) => sum + (pos.current_value || 0), 0);
   }
 
@@ -783,35 +688,53 @@ class HoldingsEngine {
   // Transaction History
   // ============================================
 
-  getTransactions(portfolioId, { limit = 50, offset = 0 } = {}) {
-    return this.stmts.getTransactions.all(portfolioId, limit, offset);
+  async getTransactions(portfolioId, { limit = 50, offset = 0 } = {}) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT pt.*, c.symbol, c.name as company_name
+      FROM portfolio_transactions pt
+      LEFT JOIN companies c ON pt.company_id = c.id
+      WHERE pt.portfolio_id = $1
+      ORDER BY pt.executed_at DESC, pt.id DESC
+      LIMIT $2 OFFSET $3
+    `, [portfolioId, limit, offset]);
+    return result.rows;
   }
 
   // ============================================
   // Dividend Processing with DRIP Support
   // ============================================
 
-  processDividend(portfolioId, { companyId, dividendPerShare, exDate = null, payDate = null }) {
+  async processDividend(portfolioId, { companyId, dividendPerShare, exDate = null, payDate = null }) {
+    const database = await getDatabaseAsync();
     const execDate = payDate || new Date().toISOString();
 
-    const portfolio = this.getPortfolio(portfolioId);
+    const portfolio = await this.getPortfolio(portfolioId);
     if (!portfolio) {
       throw new Error(`Portfolio ${portfolioId} not found`);
     }
 
-    const position = this.getPosition(portfolioId, companyId);
+    const position = await this.getPosition(portfolioId, companyId);
     if (!position) {
       throw new Error(`No position found for company ${companyId}`);
     }
 
     // Calculate total dividend
     const totalDividend = position.shares * dividendPerShare;
-    const isDRIP = portfolio.dividend_reinvest === 1;
+    const isDRIP = portfolio.dividend_reinvest === true;
 
-    const result = this.db.transaction(() => {
+    await database.query('BEGIN');
+
+    try {
       if (isDRIP) {
         // Reinvest dividend - buy more shares at current price
-        const latestPrice = this.stmts.getLatestPrice.get(companyId);
+        const latestPriceResult = await database.query(`
+          SELECT close as price FROM daily_prices
+          WHERE company_id = $1
+          ORDER BY date DESC
+          LIMIT 1
+        `, [companyId]);
+        const latestPrice = latestPriceResult.rows[0];
         if (!latestPrice) {
           throw new Error(`No price data available for company ${companyId}`);
         }
@@ -820,17 +743,13 @@ class HoldingsEngine {
         const sharesToBuy = totalDividend / currentPrice;
 
         // Create DRIP lot
-        const lotResult = this.stmts.createLot.run(
-          portfolioId,
-          position.id,
-          companyId,
-          sharesToBuy,
-          sharesToBuy,
-          currentPrice,
-          totalDividend,
-          execDate,
-          'drip'
-        );
+        const lotResult = await database.query(`
+          INSERT INTO portfolio_lots (
+            portfolio_id, position_id, company_id, shares_original, shares_remaining,
+            cost_per_share, total_cost, acquired_at, acquisition_type
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          RETURNING id
+        `, [portfolioId, position.id, companyId, sharesToBuy, sharesToBuy, currentPrice, totalDividend, execDate, 'drip']);
 
         // Update position
         const newShares = position.shares + sharesToBuy;
@@ -840,49 +759,41 @@ class HoldingsEngine {
         const unrealizedPnl = currentValue - newCostBasis;
         const unrealizedPnlPct = newCostBasis > 0 ? (unrealizedPnl / newCostBasis) * 100 : 0;
 
-        this.stmts.updatePosition.run(
-          newShares,
-          newAvgCost,
-          newCostBasis,
-          currentPrice,
-          currentValue,
-          unrealizedPnl,
-          unrealizedPnlPct,
-          execDate,
-          position.id
-        );
+        await database.query(`
+          UPDATE portfolio_positions
+          SET shares = $1, average_cost = $2, cost_basis = $3, current_price = $4,
+              current_value = $5, unrealized_pnl = $6, unrealized_pnl_pct = $7,
+              last_traded_at = $8, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $9
+        `, [newShares, newAvgCost, newCostBasis, currentPrice, currentValue, unrealizedPnl, unrealizedPnlPct, execDate, position.id]);
 
         // Update position dividends tracker
-        this.db.prepare(`
+        await database.query(`
           UPDATE portfolio_positions
-          SET total_dividends = total_dividends + ?,
+          SET total_dividends = COALESCE(total_dividends, 0) + $1,
               updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `).run(totalDividend, position.id);
+          WHERE id = $2
+        `, [totalDividend, position.id]);
 
         // Record DRIP transaction
-        this.stmts.createTransaction.run(
-          portfolioId,
-          companyId,
-          position.id,
-          lotResult.lastInsertRowid,
-          TRANSACTION_TYPES.DIVIDEND,
-          sharesToBuy,
-          currentPrice,
-          totalDividend,
-          0,
-          dividendPerShare,
-          portfolio.current_cash, // Cash unchanged
-          newShares,
-          `DRIP: ${sharesToBuy.toFixed(4)} shares at $${currentPrice.toFixed(2)}`,
-          null,
-          execDate
-        );
+        await database.query(`
+          INSERT INTO portfolio_transactions (
+            portfolio_id, company_id, position_id, lot_id, transaction_type,
+            shares, price_per_share, total_amount, fees, dividend_per_share,
+            cash_balance_after, position_shares_after, notes, order_id, executed_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        `, [portfolioId, companyId, position.id, lotResult.rows[0].id, TRANSACTION_TYPES.DIVIDEND, sharesToBuy, currentPrice, totalDividend, 0, dividendPerShare, portfolio.current_cash, newShares, `DRIP: ${sharesToBuy.toFixed(4)} shares at $${currentPrice.toFixed(2)}`, null, execDate]);
 
         // Update portfolio value (cash unchanged, positions value increased)
-        const positionsValue = this._calculatePositionsValue(portfolioId);
+        const positionsValue = await this._calculatePositionsValue(portfolioId);
         const totalValue = portfolio.current_cash + positionsValue;
-        this.stmts.updatePortfolioCash.run(portfolio.current_cash, totalValue, portfolioId);
+        await database.query(`
+          UPDATE portfolios
+          SET current_cash = $1, current_value = $2, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $3
+        `, [portfolio.current_cash, totalValue, portfolioId]);
+
+        await database.query('COMMIT');
 
         return {
           success: true,
@@ -898,36 +809,32 @@ class HoldingsEngine {
       } else {
         // Regular dividend - add to cash
         const newCash = portfolio.current_cash + totalDividend;
-        const positionsValue = this._calculatePositionsValue(portfolioId);
+        const positionsValue = await this._calculatePositionsValue(portfolioId);
         const totalValue = newCash + positionsValue;
-        this.stmts.updatePortfolioCash.run(newCash, totalValue, portfolioId);
+        await database.query(`
+          UPDATE portfolios
+          SET current_cash = $1, current_value = $2, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $3
+        `, [newCash, totalValue, portfolioId]);
 
         // Update position dividends tracker
-        this.db.prepare(`
+        await database.query(`
           UPDATE portfolio_positions
-          SET total_dividends = total_dividends + ?,
+          SET total_dividends = COALESCE(total_dividends, 0) + $1,
               updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `).run(totalDividend, position.id);
+          WHERE id = $2
+        `, [totalDividend, position.id]);
 
         // Record cash dividend transaction
-        this.stmts.createTransaction.run(
-          portfolioId,
-          companyId,
-          position.id,
-          null,
-          TRANSACTION_TYPES.DIVIDEND,
-          position.shares,
-          null,
-          totalDividend,
-          0,
-          dividendPerShare,
-          newCash,
-          position.shares,
-          `Cash dividend: $${dividendPerShare.toFixed(4)}/share`,
-          null,
-          execDate
-        );
+        await database.query(`
+          INSERT INTO portfolio_transactions (
+            portfolio_id, company_id, position_id, lot_id, transaction_type,
+            shares, price_per_share, total_amount, fees, dividend_per_share,
+            cash_balance_after, position_shares_after, notes, order_id, executed_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        `, [portfolioId, companyId, position.id, null, TRANSACTION_TYPES.DIVIDEND, position.shares, null, totalDividend, 0, dividendPerShare, newCash, position.shares, `Cash dividend: $${dividendPerShare.toFixed(4)}/share`, null, execDate]);
+
+        await database.query('COMMIT');
 
         return {
           success: true,
@@ -938,17 +845,19 @@ class HoldingsEngine {
           newCashBalance: newCash
         };
       }
-    })();
-
-    return result;
+    } catch (error) {
+      await database.query('ROLLBACK');
+      throw error;
+    }
   }
 
   // ============================================
   // Bulk Operations
   // ============================================
 
-  closePosition(portfolioId, companyId) {
-    const position = this.getPosition(portfolioId, companyId);
+  async closePosition(portfolioId, companyId) {
+    const database = await getDatabaseAsync();
+    const position = await this.getPosition(portfolioId, companyId);
     if (!position) {
       throw new Error(`No position found for company ${companyId} in portfolio ${portfolioId}`);
     }
@@ -958,13 +867,19 @@ class HoldingsEngine {
     }
 
     // Get current price
-    const latestPrice = this.stmts.getLatestPrice.get(companyId);
+    const latestPriceResult = await database.query(`
+      SELECT close as price FROM daily_prices
+      WHERE company_id = $1
+      ORDER BY date DESC
+      LIMIT 1
+    `, [companyId]);
+    const latestPrice = latestPriceResult.rows[0];
     if (!latestPrice) {
       throw new Error(`No price data available for company ${companyId}`);
     }
 
     // Sell all shares
-    return this.executeSell(portfolioId, {
+    return await this.executeSell(portfolioId, {
       companyId,
       shares: position.shares,
       pricePerShare: latestPrice.price,
@@ -973,18 +888,18 @@ class HoldingsEngine {
     });
   }
 
-  liquidatePortfolio(portfolioId) {
-    const portfolio = this.getPortfolio(portfolioId);
+  async liquidatePortfolio(portfolioId) {
+    const portfolio = await this.getPortfolio(portfolioId);
     if (!portfolio) {
       throw new Error(`Portfolio ${portfolioId} not found`);
     }
 
-    const positions = this.getPositions(portfolioId);
+    const positions = await this.getPositions(portfolioId);
     const results = [];
 
     for (const position of positions) {
       try {
-        const result = this.closePosition(portfolioId, position.company_id);
+        const result = await this.closePosition(portfolioId, position.company_id);
         results.push({
           symbol: position.symbol,
           companyId: position.company_id,
@@ -1002,7 +917,7 @@ class HoldingsEngine {
     }
 
     // Get final portfolio state
-    const updatedPortfolio = this.getPortfolio(portfolioId);
+    const updatedPortfolio = await this.getPortfolio(portfolioId);
 
     return {
       success: true,
@@ -1018,12 +933,13 @@ class HoldingsEngine {
   // Validation Helpers
   // ============================================
 
-  validateTrade(portfolioId, { companyId, side, shares, price }) {
+  async validateTrade(portfolioId, { companyId, side, shares, price }) {
+    const database = await getDatabaseAsync();
     const warnings = [];
     const errors = [];
 
     // Get portfolio
-    const portfolio = this.getPortfolio(portfolioId);
+    const portfolio = await this.getPortfolio(portfolioId);
     if (!portfolio) {
       return { valid: false, error: `Portfolio ${portfolioId} not found` };
     }
@@ -1060,14 +976,15 @@ class HoldingsEngine {
       }
 
       // Check if company exists
-      const company = this.db.prepare('SELECT id, symbol FROM companies WHERE id = ?').get(companyId);
+      const companyResult = await database.query('SELECT id, symbol FROM companies WHERE id = $1', [companyId]);
+      const company = companyResult.rows[0];
       if (!company) {
         return { valid: false, error: `Company ${companyId} not found`, warnings };
       }
 
     } else if (side === 'sell') {
       // Check position exists
-      const position = this.getPosition(portfolioId, companyId);
+      const position = await this.getPosition(portfolioId, companyId);
       if (!position) {
         return { valid: false, error: `No position found for company ${companyId}`, warnings };
       }
@@ -1082,7 +999,13 @@ class HoldingsEngine {
       }
 
       // Check if selling at loss (warning only)
-      const latestPrice = this.stmts.getLatestPrice.get(companyId);
+      const latestPriceResult = await database.query(`
+        SELECT close as price FROM daily_prices
+        WHERE company_id = $1
+        ORDER BY date DESC
+        LIMIT 1
+      `, [companyId]);
+      const latestPrice = latestPriceResult.rows[0];
       if (latestPrice && price < position.average_cost) {
         const lossPercent = ((position.average_cost - price) / position.average_cost * 100).toFixed(1);
         warnings.push(`Selling at ${lossPercent}% loss (avg cost: $${position.average_cost.toFixed(2)})`);
@@ -1105,7 +1028,8 @@ class HoldingsEngine {
    * @param {string} effectiveDate - The date the split takes effect
    * @returns {object} Summary of all affected portfolios
    */
-  processStockSplit(companyId, splitRatio, effectiveDate = null) {
+  async processStockSplit(companyId, splitRatio, effectiveDate = null) {
+    const database = await getDatabaseAsync();
     const execDate = effectiveDate || new Date().toISOString().split('T')[0];
 
     if (!splitRatio || splitRatio <= 0) {
@@ -1113,18 +1037,20 @@ class HoldingsEngine {
     }
 
     // Get company info
-    const company = this.db.prepare('SELECT id, symbol, name FROM companies WHERE id = ?').get(companyId);
+    const companyResult = await database.query('SELECT id, symbol, name FROM companies WHERE id = $1', [companyId]);
+    const company = companyResult.rows[0];
     if (!company) {
       throw new Error(`Company ${companyId} not found`);
     }
 
     // Find all positions for this company across all portfolios
-    const positions = this.db.prepare(`
+    const positionsResult = await database.query(`
       SELECT pp.*, p.id as portfolio_id, p.name as portfolio_name
       FROM portfolio_positions pp
       JOIN portfolios p ON pp.portfolio_id = p.id
-      WHERE pp.company_id = ? AND pp.shares > 0
-    `).all(companyId);
+      WHERE pp.company_id = $1 AND pp.shares > 0
+    `, [companyId]);
+    const positions = positionsResult.rows;
 
     if (positions.length === 0) {
       return {
@@ -1141,7 +1067,9 @@ class HoldingsEngine {
     const results = [];
 
     // Process each position in a transaction
-    const processResult = this.db.transaction(() => {
+    await database.query('BEGIN');
+
+    try {
       for (const position of positions) {
         try {
           // Calculate new values
@@ -1153,49 +1081,42 @@ class HoldingsEngine {
           // Cost basis stays the same, just spread across more shares
 
           // Update position
-          this.db.prepare(`
+          await database.query(`
             UPDATE portfolio_positions
-            SET shares = ?,
-                average_cost = ?,
+            SET shares = $1,
+                average_cost = $2,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-          `).run(newShares, newAvgCost, position.id);
+            WHERE id = $3
+          `, [newShares, newAvgCost, position.id]);
 
           // Update all open lots for this position
-          const lots = this.db.prepare(`
+          const lotsResult = await database.query(`
             SELECT * FROM portfolio_lots
-            WHERE position_id = ? AND is_closed = 0
-          `).all(position.id);
+            WHERE position_id = $1 AND is_closed = false
+          `, [position.id]);
+          const lots = lotsResult.rows;
 
           for (const lot of lots) {
             const newLotShares = lot.shares_remaining * splitRatio;
             const newLotOriginal = lot.shares_original * splitRatio;
             const newLotCost = lot.cost_per_share / splitRatio;
 
-            this.db.prepare(`
+            await database.query(`
               UPDATE portfolio_lots
-              SET shares_remaining = ?,
-                  shares_original = ?,
-                  cost_per_share = ?
-              WHERE id = ?
-            `).run(newLotShares, newLotOriginal, newLotCost, lot.id);
+              SET shares_remaining = $1,
+                  shares_original = $2,
+                  cost_per_share = $3
+              WHERE id = $4
+            `, [newLotShares, newLotOriginal, newLotCost, lot.id]);
           }
 
           // Record split transaction (no cash impact)
-          this.db.prepare(`
+          await database.query(`
             INSERT INTO portfolio_transactions
             (portfolio_id, company_id, position_id, transaction_type, shares,
              price_per_share, total_amount, notes, executed_at)
-            VALUES (?, ?, ?, 'split', ?, ?, 0, ?, ?)
-          `).run(
-            position.portfolio_id,
-            companyId,
-            position.id,
-            newShares - oldShares, // Net new shares
-            newAvgCost,
-            `Stock split ${splitRatio}:1 - ${oldShares.toFixed(4)} shares became ${newShares.toFixed(4)} shares`,
-            execDate
-          );
+            VALUES ($1, $2, $3, 'split', $4, $5, 0, $6, $7)
+          `, [position.portfolio_id, companyId, position.id, newShares - oldShares, newAvgCost, `Stock split ${splitRatio}:1 - ${oldShares.toFixed(4)} shares became ${newShares.toFixed(4)} shares`, execDate]);
 
           results.push({
             portfolioId: position.portfolio_id,
@@ -1216,8 +1137,12 @@ class HoldingsEngine {
           });
         }
       }
-      return results;
-    })();
+
+      await database.query('COMMIT');
+    } catch (error) {
+      await database.query('ROLLBACK');
+      throw error;
+    }
 
     return {
       success: true,
@@ -1226,9 +1151,9 @@ class HoldingsEngine {
       companyName: company.name,
       splitRatio,
       effectiveDate: execDate,
-      affectedPortfolios: processResult.filter(r => r.success).length,
-      failedPortfolios: processResult.filter(r => !r.success).length,
-      results: processResult
+      affectedPortfolios: results.filter(r => r.success).length,
+      failedPortfolios: results.filter(r => !r.success).length,
+      results: results
     };
   }
 
@@ -1240,14 +1165,15 @@ class HoldingsEngine {
    * @param {string} effectiveDate - The date the split takes effect
    * @returns {object} Result of the split processing
    */
-  processStockSplitForPortfolio(portfolioId, companyId, splitRatio, effectiveDate = null) {
+  async processStockSplitForPortfolio(portfolioId, companyId, splitRatio, effectiveDate = null) {
+    const database = await getDatabaseAsync();
     const execDate = effectiveDate || new Date().toISOString().split('T')[0];
 
     if (!splitRatio || splitRatio <= 0) {
       throw new Error('Split ratio must be positive');
     }
 
-    const position = this.getPosition(portfolioId, companyId);
+    const position = await this.getPosition(portfolioId, companyId);
     if (!position) {
       throw new Error(`No position found for company ${companyId} in portfolio ${portfolioId}`);
     }
@@ -1256,47 +1182,44 @@ class HoldingsEngine {
       throw new Error('Position has no shares');
     }
 
-    const company = this.db.prepare('SELECT symbol, name FROM companies WHERE id = ?').get(companyId);
+    const companyResult = await database.query('SELECT symbol, name FROM companies WHERE id = $1', [companyId]);
+    const company = companyResult.rows[0];
 
-    return this.db.transaction(() => {
+    await database.query('BEGIN');
+
+    try {
       const oldShares = position.shares;
       const newShares = oldShares * splitRatio;
       const oldAvgCost = position.average_cost;
       const newAvgCost = oldAvgCost / splitRatio;
 
       // Update position
-      this.db.prepare(`
+      await database.query(`
         UPDATE portfolio_positions
-        SET shares = ?,
-            average_cost = ?,
+        SET shares = $1,
+            average_cost = $2,
             updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(newShares, newAvgCost, position.id);
+        WHERE id = $3
+      `, [newShares, newAvgCost, position.id]);
 
       // Update all open lots
-      const lotsUpdated = this.db.prepare(`
+      const lotsUpdated = await database.query(`
         UPDATE portfolio_lots
-        SET shares_remaining = shares_remaining * ?,
-            shares_original = shares_original * ?,
-            cost_per_share = cost_per_share / ?
-        WHERE position_id = ? AND is_closed = 0
-      `).run(splitRatio, splitRatio, splitRatio, position.id);
+        SET shares_remaining = shares_remaining * $1,
+            shares_original = shares_original * $2,
+            cost_per_share = cost_per_share / $3
+        WHERE position_id = $4 AND is_closed = false
+      `, [splitRatio, splitRatio, splitRatio, position.id]);
 
       // Record transaction
-      this.db.prepare(`
+      await database.query(`
         INSERT INTO portfolio_transactions
         (portfolio_id, company_id, position_id, transaction_type, shares,
          price_per_share, total_amount, notes, executed_at)
-        VALUES (?, ?, ?, 'split', ?, ?, 0, ?, ?)
-      `).run(
-        portfolioId,
-        companyId,
-        position.id,
-        newShares - oldShares,
-        newAvgCost,
-        `Stock split ${splitRatio}:1 - ${oldShares.toFixed(4)} shares became ${newShares.toFixed(4)} shares`,
-        execDate
-      );
+        VALUES ($1, $2, $3, 'split', $4, $5, 0, $6, $7)
+      `, [portfolioId, companyId, position.id, newShares - oldShares, newAvgCost, `Stock split ${splitRatio}:1 - ${oldShares.toFixed(4)} shares became ${newShares.toFixed(4)} shares`, execDate]);
+
+      await database.query('COMMIT');
 
       return {
         success: true,
@@ -1309,9 +1232,12 @@ class HoldingsEngine {
         newShares,
         oldAvgCost,
         newAvgCost,
-        lotsUpdated: lotsUpdated.changes
+        lotsUpdated: lotsUpdated.rowCount
       };
-    })();
+    } catch (error) {
+      await database.query('ROLLBACK');
+      throw error;
+    }
   }
 }
 
