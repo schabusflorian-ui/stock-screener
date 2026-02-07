@@ -2,6 +2,8 @@
 // Correlation Manager - Simons-inspired diversification with correlation awareness
 // Manages position correlations to reduce idiosyncratic risk and avoid concentration
 
+const { getDatabaseAsync } = require('../../database');
+
 /**
  * CorrelationManager - Correlation-aware portfolio management
  *
@@ -12,91 +14,9 @@
  * - Portfolio correlation optimization
  */
 class CorrelationManager {
-  /**
-   * @param {Database} db - better-sqlite3 database instance
-   */
-  constructor(db) {
-    this.db = db;
+  constructor() {
     this.correlationCache = new Map();
-    this._initializeTables();
-    this._prepareStatements();
-    console.log('🔀 CorrelationManager initialized');
-  }
-
-  _initializeTables() {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS stock_correlations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        symbol1 TEXT NOT NULL,
-        symbol2 TEXT NOT NULL,
-        correlation REAL,
-        lookback_days INTEGER,
-        calculated_date TEXT,
-        created_at TEXT DEFAULT (datetime('now')),
-        UNIQUE(symbol1, symbol2, calculated_date)
-      );
-
-      CREATE TABLE IF NOT EXISTS sector_exposure (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        portfolio_id INTEGER,
-        date TEXT,
-        sector TEXT,
-        weight REAL,
-        position_count INTEGER,
-        created_at TEXT DEFAULT (datetime('now'))
-      );
-
-      CREATE TABLE IF NOT EXISTS correlation_adjustments (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        date TEXT,
-        symbol TEXT,
-        original_weight REAL,
-        adjusted_weight REAL,
-        adjustment_reason TEXT,
-        correlated_with TEXT,
-        created_at TEXT DEFAULT (datetime('now'))
-      );
-    `);
-  }
-
-  _prepareStatements() {
-    this.stmtGetCompanyId = this.db.prepare(`
-      SELECT id, sector FROM companies WHERE LOWER(symbol) = LOWER(?)
-    `);
-
-    this.stmtGetPriceHistory = this.db.prepare(`
-      SELECT date, close as price
-      FROM daily_prices
-      WHERE company_id = ?
-      ORDER BY date DESC
-      LIMIT ?
-    `);
-
-    this.stmtStoreCorrelation = this.db.prepare(`
-      INSERT OR REPLACE INTO stock_correlations (
-        symbol1, symbol2, correlation, lookback_days, calculated_date
-      ) VALUES (?, ?, ?, ?, ?)
-    `);
-
-    this.stmtGetCachedCorrelation = this.db.prepare(`
-      SELECT correlation
-      FROM stock_correlations
-      WHERE symbol1 = ? AND symbol2 = ?
-        AND calculated_date >= date('now', '-7 days')
-      ORDER BY calculated_date DESC
-      LIMIT 1
-    `);
-
-    this.stmtStoreSectorExposure = this.db.prepare(`
-      INSERT INTO sector_exposure (portfolio_id, date, sector, weight, position_count)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-
-    this.stmtStoreAdjustment = this.db.prepare(`
-      INSERT INTO correlation_adjustments (
-        date, symbol, original_weight, adjusted_weight, adjustment_reason, correlated_with
-      ) VALUES (?, ?, ?, ?, ?, ?)
-    `);
+    // Tables should already exist from migrations
   }
 
   /**
@@ -106,7 +26,9 @@ class CorrelationManager {
    * @param {number} lookback - Lookback period in days
    * @returns {number} Correlation coefficient
    */
-  calculatePairwiseCorrelation(symbol1, symbol2, lookback = 63) {
+  async calculatePairwiseCorrelation(symbol1, symbol2, lookback = 63) {
+    const database = await getDatabaseAsync();
+
     // Normalize symbol order for caching
     const [s1, s2] = [symbol1, symbol2].sort();
     const cacheKey = `${s1}_${s2}`;
@@ -120,7 +42,16 @@ class CorrelationManager {
     }
 
     // Check database cache
-    const dbCached = this.stmtGetCachedCorrelation.get(s1, s2);
+    const cachedResult = await database.query(`
+      SELECT correlation
+      FROM stock_correlations
+      WHERE symbol1 = $1 AND symbol2 = $2
+        AND calculated_date >= CURRENT_DATE - INTERVAL '7 days'
+      ORDER BY calculated_date DESC
+      LIMIT 1
+    `, [s1, s2]);
+    const dbCached = cachedResult.rows[0];
+
     if (dbCached) {
       this.correlationCache.set(cacheKey, {
         correlation: dbCached.correlation,
@@ -130,13 +61,35 @@ class CorrelationManager {
     }
 
     // Calculate fresh correlation
-    const company1 = this.stmtGetCompanyId.get(symbol1);
-    const company2 = this.stmtGetCompanyId.get(symbol2);
+    const company1Result = await database.query(`
+      SELECT id, sector FROM companies WHERE LOWER(symbol) = LOWER($1)
+    `, [symbol1]);
+    const company1 = company1Result.rows[0];
+
+    const company2Result = await database.query(`
+      SELECT id, sector FROM companies WHERE LOWER(symbol) = LOWER($1)
+    `, [symbol2]);
+    const company2 = company2Result.rows[0];
 
     if (!company1 || !company2) return 0;
 
-    const prices1 = this.stmtGetPriceHistory.all(company1.id, lookback);
-    const prices2 = this.stmtGetPriceHistory.all(company2.id, lookback);
+    const prices1Result = await database.query(`
+      SELECT date, close as price
+      FROM daily_prices
+      WHERE company_id = $1
+      ORDER BY date DESC
+      LIMIT $2
+    `, [company1.id, lookback]);
+    const prices1 = prices1Result.rows;
+
+    const prices2Result = await database.query(`
+      SELECT date, close as price
+      FROM daily_prices
+      WHERE company_id = $1
+      ORDER BY date DESC
+      LIMIT $2
+    `, [company2.id, lookback]);
+    const prices2 = prices2Result.rows;
 
     if (prices1.length < 30 || prices2.length < 30) return 0;
 
@@ -159,7 +112,14 @@ class CorrelationManager {
 
     // Store to database
     const date = new Date().toISOString().split('T')[0];
-    this.stmtStoreCorrelation.run(s1, s2, correlation, lookback, date);
+    await database.query(`
+      INSERT INTO stock_correlations (
+        symbol1, symbol2, correlation, lookback_days, calculated_date
+      ) VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (symbol1, symbol2, calculated_date) DO UPDATE SET
+        correlation = excluded.correlation,
+        lookback_days = excluded.lookback_days
+    `, [s1, s2, correlation, lookback, date]);
 
     return correlation;
   }
@@ -217,7 +177,7 @@ class CorrelationManager {
    * @param {Array} positions - Array of {symbol, ...}
    * @returns {Object} Correlation analysis
    */
-  calculatePortfolioCorrelationMatrix(positions) {
+  async calculatePortfolioCorrelationMatrix(positions) {
     const symbols = positions.map(p => p.symbol);
     const n = symbols.length;
     const matrix = [];
@@ -227,7 +187,7 @@ class CorrelationManager {
       matrix[i][i] = 1;
 
       for (let j = i + 1; j < n; j++) {
-        const corr = this.calculatePairwiseCorrelation(symbols[i], symbols[j]);
+        const corr = await this.calculatePairwiseCorrelation(symbols[i], symbols[j]);
         matrix[i][j] = corr;
         matrix[j][i] = corr;
       }
@@ -279,13 +239,13 @@ class CorrelationManager {
    * @param {number} threshold - Correlation threshold
    * @returns {Object} Recommendation
    */
-  checkNewPositionCorrelation(newSymbol, existingPositions, threshold = 0.7) {
+  async checkNewPositionCorrelation(newSymbol, existingPositions, threshold = 0.7) {
     const highlyCorrelatedWith = [];
     let sumCorrelation = 0;
     let count = 0;
 
     for (const position of existingPositions) {
-      const corr = this.calculatePairwiseCorrelation(newSymbol, position.symbol);
+      const corr = await this.calculatePairwiseCorrelation(newSymbol, position.symbol);
       sumCorrelation += corr;
       count++;
 
@@ -317,8 +277,9 @@ class CorrelationManager {
    * @param {Array} existingPositions - Current positions with sizes
    * @returns {Object} Size adjustments
    */
-  adjustSizeForCorrelation(baseSize, newSymbol, existingPositions) {
-    const correlationCheck = this.checkNewPositionCorrelation(newSymbol, existingPositions);
+  async adjustSizeForCorrelation(baseSize, newSymbol, existingPositions) {
+    const database = await getDatabaseAsync();
+    const correlationCheck = await this.checkNewPositionCorrelation(newSymbol, existingPositions);
     let adjustedNewSize = baseSize;
     const existingAdjustments = [];
 
@@ -353,14 +314,18 @@ class CorrelationManager {
     // Store adjustments
     const date = new Date().toISOString().split('T')[0];
     if (adjustedNewSize !== baseSize) {
-      this.stmtStoreAdjustment.run(
+      await database.query(`
+        INSERT INTO correlation_adjustments (
+          date, symbol, original_weight, adjusted_weight, adjustment_reason, correlated_with
+        ) VALUES ($1, $2, $3, $4, $5, $6)
+      `, [
         date,
         newSymbol,
         baseSize,
         adjustedNewSize,
         'High correlation with existing positions',
         JSON.stringify(correlationCheck.highlyCorrelatedWith.map(h => h.symbol))
-      );
+      ]);
     }
 
     return {
@@ -377,13 +342,17 @@ class CorrelationManager {
    * @param {Array} positions - Positions with sector info
    * @returns {Object} Sector analysis
    */
-  getSectorDiversification(positions) {
+  async getSectorDiversification(positions) {
+    const database = await getDatabaseAsync();
     const sectorWeights = {};
     const sectorCounts = {};
     let totalValue = 0;
 
     for (const pos of positions) {
-      const company = this.stmtGetCompanyId.get(pos.symbol);
+      const companyResult = await database.query(`
+        SELECT id, sector FROM companies WHERE LOWER(symbol) = LOWER($1)
+      `, [pos.symbol]);
+      const company = companyResult.rows[0];
       const sector = company?.sector || 'Unknown';
       const value = pos.value || pos.marketValue || 1;
 
@@ -428,12 +397,12 @@ class CorrelationManager {
    * @param {Object} newTrade - Proposed trade
    * @returns {Object} Constraint check result
    */
-  enforceDiversificationConstraints(positions, newTrade) {
+  async enforceDiversificationConstraints(positions, newTrade) {
     const violations = [];
     const adjustments = [];
 
     // 1. Check sector concentration
-    const sectorCheck = this.getSectorDiversification([...positions, {
+    const sectorCheck = await this.getSectorDiversification([...positions, {
       symbol: newTrade.symbol,
       value: newTrade.value || 10000
     }]);
@@ -455,7 +424,7 @@ class CorrelationManager {
     }
 
     // 2. Check correlation
-    const correlationCheck = this.checkNewPositionCorrelation(
+    const correlationCheck = await this.checkNewPositionCorrelation(
       newTrade.symbol,
       positions,
       0.7
@@ -469,7 +438,7 @@ class CorrelationManager {
       });
 
       // Add size adjustment
-      const sizeAdj = this.adjustSizeForCorrelation(
+      const sizeAdj = await this.adjustSizeForCorrelation(
         newTrade.size || 0.03,
         newTrade.symbol,
         positions
@@ -505,7 +474,7 @@ class CorrelationManager {
    * @param {number} targetCorrelation - Target average correlation
    * @returns {Array} Selected symbols
    */
-  optimizePortfolioCorrelation(candidates, maxPositions, targetCorrelation = 0.3) {
+  async optimizePortfolioCorrelation(candidates, maxPositions, targetCorrelation = 0.3) {
     // Sort by score descending
     const sorted = [...candidates].sort((a, b) => b.score - a.score);
     const selected = [];
@@ -524,7 +493,7 @@ class CorrelationManager {
       let highCorr = false;
 
       for (const sel of selected) {
-        const corr = this.calculatePairwiseCorrelation(candidate.symbol, sel.symbol);
+        const corr = await this.calculatePairwiseCorrelation(candidate.symbol, sel.symbol);
         sumCorr += corr;
         if (corr > 0.7) highCorr = true;
       }
@@ -544,8 +513,8 @@ class CorrelationManager {
   }
 }
 
-function createCorrelationManager(db) {
-  return new CorrelationManager(db);
+function createCorrelationManager() {
+  return new CorrelationManager();
 }
 
 module.exports = { CorrelationManager, createCorrelationManager };
