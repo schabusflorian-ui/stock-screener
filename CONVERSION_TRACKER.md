@@ -1,7 +1,7 @@
 # PostgreSQL Conversion Progress Tracker
 
 **Last Updated**: 2026-02-07
-**Overall Progress**: 35 / 197 services (18%) - **PRIORITY 1B COMPLETE! 🎉**
+**Overall Progress**: 39 / 197 services (20%) - **PRIORITY 1C COMPLETE! 🎉**
 
 ---
 
@@ -38,6 +38,10 @@
 | portfolio/alphaAnalytics.js | High | 4h | ✅ | 5 DB methods, Jensen's Alpha, multi-factor, skill vs luck |
 | portfolio/hedgeOptimizer.js | High | 3h | ✅ | 4 DB methods, tail risk hedging, VIX calls, sector protection |
 | portfolio/advancedKelly.js | High | 4h | ✅ | 4 DB methods, Kelly criterion, Taleb/Spitznagel safety, multi-asset optimization |
+| earningsCalendar.js | Medium | 2h | ✅ | 4 DB methods, Yahoo Finance integration, earnings tracking |
+| fiscalCalendar.js | Medium | 3h | ✅ | 11 DB methods, fiscal period mapping, calendar conversion |
+| insiderTracker.js | Medium | 4h | ✅ | 12 DB methods, SEC Form 4 parsing, insider signal calculation |
+| capitalAllocationTracker.js | Medium | 3h | ✅ | 9 DB methods, buyback tracking, dividend tracking, capital allocation |
 
 ---
 
@@ -92,12 +96,13 @@ Priority 1A is now complete! All Data Access Layer services have been converted.
 
 | # | Service | Complexity | Estimated | Status | Assignee |
 |---|---------|-----------|-----------|--------|----------|
-| 26 | earningsCalendar.js | Medium | 3-4h | ⏸️ Pending | - |
-| 27 | fiscalCalendar.js | Medium | 3-4h | ⏸️ Pending | - |
-| 28 | insiderTracker.js | Medium | 4-5h | ⏸️ Pending | - |
-| 29 | capitalAllocationTracker.js | Medium | 3-4h | ⏸️ Pending | - |
+| 26 | earningsCalendar.js | Medium | 3-4h | ✅ Complete | - |
+| 27 | fiscalCalendar.js | Medium | 3-4h | ✅ Complete | - |
+| 28 | insiderTracker.js | Medium | 4-5h | ✅ Complete | - |
+| 29 | capitalAllocationTracker.js | Medium | 3-4h | ✅ Complete | - |
 
 **Total Estimated**: 13-17 hours
+**✅ PRIORITY 1C COMPLETE!** All 4 Market Data services converted to PostgreSQL async!
 
 ---
 
