@@ -1,7 +1,7 @@
 // src/services/portfolio/backtestEngine.js
 // Backtest Engine for Portfolio Simulation (Agent 2)
 
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 
 const TRADING_DAYS_PER_YEAR = 252;
 const RISK_FREE_RATE = 0.05;
@@ -15,7 +15,7 @@ const DEFAULT_COSTS = {
 
 class BacktestEngine {
   constructor() {
-    this.db = db.getDatabase();
+    // No database initialization needed for async pattern
     console.log('📈 Backtest Engine initialized');
   }
 
@@ -99,7 +99,7 @@ class BacktestEngine {
     }
 
     // Load benchmark data
-    const benchmarkPrices = this._loadBenchmarkData(benchmarkIndexId, startDate, endDate);
+    const benchmarkPrices = await this._loadBenchmarkData(benchmarkIndexId, startDate, endDate);
 
     // Initialize portfolio
     const portfolio = this._initializePortfolio(positions, initialValue, tradingDays[0], priceData);
@@ -220,7 +220,56 @@ class BacktestEngine {
     } : null;
 
     // Save backtest to database
+    const database = await getDatabaseAsync();
+
+    const insertResult = await database.query(`
+      INSERT INTO backtests (
+        name, config, start_date, end_date, initial_value, benchmark_index_id,
+        rebalance_frequency, final_value, total_return_pct, cagr, volatility,
+        sharpe_ratio, sortino_ratio, max_drawdown, max_drawdown_start, max_drawdown_end,
+        calmar_ratio, benchmark_final_value, benchmark_cagr, alpha, beta,
+        tracking_error, information_ratio, total_trades, annual_returns,
+        value_series, drawdown_series, execution_time_ms
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+        $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28
+      )
+      RETURNING id
+    `, [
+      name,
+      JSON.stringify(config),
+      tradingDays[0],
+      tradingDays[tradingDays.length - 1],
+      initialValue,
+      benchmarkIndexId,
+      rebalanceFrequency,
+      finalValue,
+      totalReturnPct,
+      cagr,
+      volatility,
+      sharpeRatio,
+      sortinoRatio,
+      maxDrawdown * 100,
+      maxDrawdownStart,
+      maxDrawdownEnd,
+      calmarRatio,
+      benchmarkMetrics?.finalValue,
+      benchmarkMetrics?.cagr,
+      benchmarkMetrics?.alpha,
+      benchmarkMetrics?.beta,
+      benchmarkMetrics?.trackingError,
+      benchmarkMetrics?.informationRatio,
+      totalTrades,
+      JSON.stringify(annualReturnsList),
+      JSON.stringify(this._sampleSeries(valueSeries, 500)),
+      JSON.stringify(this._sampleSeries(drawdownSeries, 500)),
+      executionTimeMs
+    ]);
+
+    const backtestId = insertResult.rows[0].id;
+
     const result = {
+      id: backtestId,
       name,
       config: JSON.stringify(config),
       startDate: tradingDays[0],
@@ -252,27 +301,6 @@ class BacktestEngine {
       executionTimeMs
     };
 
-    const insertStmt = this.db.prepare(`
-      INSERT INTO backtests (
-        name, config, start_date, end_date, initial_value, benchmark_index_id,
-        rebalance_frequency, final_value, total_return_pct, cagr, volatility,
-        sharpe_ratio, sortino_ratio, max_drawdown, max_drawdown_start, max_drawdown_end,
-        calmar_ratio, benchmark_final_value, benchmark_cagr, alpha, beta,
-        tracking_error, information_ratio, total_trades, annual_returns,
-        value_series, drawdown_series, execution_time_ms
-      ) VALUES (
-        @name, @config, @startDate, @endDate, @initialValue, @benchmarkIndexId,
-        @rebalanceFrequency, @finalValue, @totalReturnPct, @cagr, @volatility,
-        @sharpeRatio, @sortinoRatio, @maxDrawdown, @maxDrawdownStart, @maxDrawdownEnd,
-        @calmarRatio, @benchmarkFinalValue, @benchmarkCagr, @alpha, @beta,
-        @trackingError, @informationRatio, @totalTrades, @annualReturns,
-        @valueSeries, @drawdownSeries, @executionTimeMs
-      )
-    `);
-
-    const insertResult = insertStmt.run(result);
-    result.id = insertResult.lastInsertRowid;
-
     // Return parsed data for API response
     return {
       ...result,
@@ -286,10 +314,13 @@ class BacktestEngine {
   // ============================================
   // Get Saved Backtest
   // ============================================
-  getBacktest(id) {
-    const backtest = this.db.prepare(`
-      SELECT * FROM backtests WHERE id = ?
-    `).get(id);
+  async getBacktest(id) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM backtests WHERE id = $1
+    `, [id]);
+
+    const backtest = result.rows[0];
 
     if (!backtest) {
       throw new Error(`Backtest ${id} not found`);
@@ -307,26 +338,28 @@ class BacktestEngine {
   // ============================================
   // List Backtests
   // ============================================
-  listBacktests(limit = 20) {
-    const backtests = this.db.prepare(`
+  async listBacktests(limit = 20) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         id, name, start_date, end_date, initial_value, final_value,
         total_return_pct, cagr, sharpe_ratio, max_drawdown,
         rebalance_frequency, execution_time_ms, created_at
       FROM backtests
       ORDER BY created_at DESC
-      LIMIT ?
-    `).all(limit);
+      LIMIT $1
+    `, [limit]);
 
-    return backtests;
+    return result.rows;
   }
 
   // ============================================
   // Delete Backtest
   // ============================================
-  deleteBacktest(id) {
-    const result = this.db.prepare('DELETE FROM backtests WHERE id = ?').run(id);
-    return { deleted: result.changes > 0 };
+  async deleteBacktest(id) {
+    const database = await getDatabaseAsync();
+    const result = await database.query('DELETE FROM backtests WHERE id = $1', [id]);
+    return { deleted: result.rowCount > 0 };
   }
 
   // ============================================
@@ -334,15 +367,18 @@ class BacktestEngine {
   // ============================================
 
   async _loadBacktestData(allocations, startDate, endDate) {
+    const database = await getDatabaseAsync();
     const positions = [];
     const priceData = {};
     const tradingDaysSet = new Set();
 
     for (const alloc of allocations) {
       // Resolve symbol to company ID
-      const company = this.db.prepare(`
-        SELECT id, symbol, name FROM companies WHERE LOWER(symbol) = LOWER(?)
-      `).get(alloc.symbol);
+      const companyResult = await database.query(`
+        SELECT id, symbol, name FROM companies WHERE LOWER(symbol) = LOWER($1)
+      `, [alloc.symbol]);
+
+      const company = companyResult.rows[0];
 
       if (!company) {
         throw new Error(`Symbol ${alloc.symbol} not found`);
@@ -356,12 +392,14 @@ class BacktestEngine {
       });
 
       // Load price data
-      const prices = this.db.prepare(`
+      const pricesResult = await database.query(`
         SELECT date, open, high, low, close, adjusted_close, volume
         FROM daily_prices
-        WHERE company_id = ? AND date >= ? AND date <= ?
+        WHERE company_id = $1 AND date >= $2 AND date <= $3
         ORDER BY date ASC
-      `).all(company.id, startDate, endDate);
+      `, [company.id, startDate, endDate]);
+
+      const prices = pricesResult.rows;
 
       priceData[company.id] = {};
       for (const price of prices) {
@@ -386,15 +424,16 @@ class BacktestEngine {
     return { positions, priceData, tradingDays: validDays };
   }
 
-  _loadBenchmarkData(benchmarkIndexId, startDate, endDate) {
-    const prices = this.db.prepare(`
+  async _loadBenchmarkData(benchmarkIndexId, startDate, endDate) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT date, close
       FROM market_index_prices
-      WHERE index_id = ? AND date >= ? AND date <= ?
+      WHERE index_id = $1 AND date >= $2 AND date <= $3
       ORDER BY date ASC
-    `).all(benchmarkIndexId, startDate, endDate);
+    `, [benchmarkIndexId, startDate, endDate]);
 
-    return prices;
+    return result.rows;
   }
 
   _initializePortfolio(positions, initialValue, startDate, priceData) {
