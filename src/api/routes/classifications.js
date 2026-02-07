@@ -355,14 +355,14 @@ router.get('/companies', async (req, res) => {
     const companies = result.rows;
 
     // Parse tags for each company
-    const result = companies.map(c => ({
+    const parsedCompanies = companies.map(c => ({
       ...c,
       user_tags: c.user_tags ? JSON.parse(c.user_tags) : []
     }));
 
     res.json({
-      companies: result,
-      count: result.length
+      companies: parsedCompanies,
+      count: parsedCompanies.length
     });
   } catch (error) {
     console.error('Error getting classified companies:', error);
