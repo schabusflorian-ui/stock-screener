@@ -1,7 +1,7 @@
 # PostgreSQL Conversion Progress Tracker
 
 **Last Updated**: 2026-02-07
-**Overall Progress**: 15 / 197 services (8%)
+**Overall Progress**: 18 / 197 services (9%)
 
 ---
 
@@ -18,7 +18,9 @@
 | etfService.js | Medium | 3h | ✅ | 15 methods, transactions, 47 params |
 | sectorAnalysisService.js | Medium | 3.5h | ✅ | 9 methods, aggregations, 31 params |
 | stockImporter.js | Medium | 3h | ✅ | 7 methods, 6 loops, 24 params per insert |
-| portfolio/index.js | High | 6h | 🔄 | 1027 lines, 71 params, 23 DB calls, lazy engines |
+| portfolio/index.js | High | 6h | ✅ | 1027 lines, 71 params, 23 DB calls, lazy engines |
+| portfolio/exportService.js | Medium | 2h | ✅ | 5 methods, 9 DB calls, 53 params, CSV exports |
+| portfolio/positionSizing.js | Low | 1h | ✅ | 4 DB calls, 8 params, volatility-based sizing |
 
 ---
 
@@ -26,7 +28,7 @@
 
 | Service | Assignee | Status | ETA | Blocker |
 |---------|----------|--------|-----|---------|
-| portfolio/index.js | Claude | Deploying | 5 min | - |
+| - | - | - | - | - |
 
 ---
 
@@ -42,7 +44,7 @@ Priority 1A is now complete! All Data Access Layer services have been converted.
 
 | # | Service | Complexity | Estimated | Status | Assignee |
 |---|---------|-----------|-----------|--------|----------|
-| 5 | portfolio/index.js | High | 6-8h | ⏸️ Pending | - |
+| 5 | portfolio/index.js | High | 6-8h | ✅ Complete | - |
 | 6 | portfolio/holdingsEngine.js | Medium | 4-5h | ⏸️ Pending | - |
 | 7 | portfolio/metricsEngine.js | High | 5-6h | ⏸️ Pending | - |
 | 8 | portfolio/performanceAttribution.js | High | 4-5h | ⏸️ Pending | - |
@@ -54,10 +56,10 @@ Priority 1A is now complete! All Data Access Layer services have been converted.
 | 14 | portfolio/advancedAnalytics.js | High | 5-6h | ⏸️ Pending | - |
 | 15 | portfolio/monteCarloEngine.js | High | 4-5h | ⏸️ Pending | - |
 | 16 | portfolio/orderEngine.js | Medium | 3-4h | ⏸️ Pending | - |
-| 17 | portfolio/positionSizing.js | Medium | 3-4h | ⏸️ Pending | - |
+| 17 | portfolio/positionSizing.js | Medium | 3-4h | ✅ Complete | - |
 | 18 | portfolio/stressTestEngine.js | High | 5-6h | ⏸️ Pending | - |
 | 19 | portfolio/alphaAnalytics.js | High | 4-5h | ⏸️ Pending | - |
-| 20 | portfolio/exportService.js | Low | 2-3h | ⏸️ Pending | - |
+| 20 | portfolio/exportService.js | Medium | 2-3h | ✅ Complete | - |
 | 21 | portfolio/hedgeOptimizer.js | High | 5-6h | ⏸️ Pending | - |
 | 22 | portfolio/whatIfAnalysis.js | Medium | 4-5h | ⏸️ Pending | - |
 | 23 | portfolio/portfolioAlerts.js | Medium | 3-4h | ⏸️ Pending | - |
