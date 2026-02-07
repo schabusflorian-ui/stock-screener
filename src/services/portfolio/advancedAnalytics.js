@@ -2,7 +2,7 @@
 // Advanced Portfolio Analytics - Correlation, Factors, Diversification (Agent 2)
 // Enhanced with Taleb/Spitznagel risk philosophy: tail dependence, crisis correlation, antifragility
 
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 
 const TRADING_DAYS_PER_YEAR = 252;
 
@@ -14,15 +14,15 @@ const CORRELATION_BREAKDOWN_THRESHOLD = 0.8; // Correlation above this in crisis
 
 class AdvancedAnalytics {
   constructor() {
-    this.db = db.getDatabase();
+    // No database initialization needed for async pattern
     console.log('📊 Advanced Analytics Engine initialized');
   }
 
   // ============================================
   // Correlation Matrix
   // ============================================
-  getCorrelationMatrix(portfolioId, period = '1y') {
-    const positions = this._getPortfolioPositions(portfolioId);
+  async getCorrelationMatrix(portfolioId, period = '1y') {
+    const positions = await this._getPortfolioPositions(portfolioId);
     if (positions.length < 2) {
       return {
         error: 'Need at least 2 positions for correlation analysis',
@@ -31,7 +31,7 @@ class AdvancedAnalytics {
     }
 
     const { startDate } = this._getPeriodDates(period);
-    const returns = this._loadReturnsForPositions(positions, startDate);
+    const returns = await this._loadReturnsForPositions(positions, startDate);
     const missingData = returns._missingData || [];
 
     // Check if we have enough data
@@ -107,8 +107,8 @@ class AdvancedAnalytics {
   // ============================================
   // Diversification Score
   // ============================================
-  getDiversificationScore(portfolioId) {
-    const positions = this._getPortfolioPositions(portfolioId);
+  async getDiversificationScore(portfolioId) {
+    const positions = await this._getPortfolioPositions(portfolioId);
     if (positions.length === 0) {
       return { error: 'Portfolio has no positions' };
     }
@@ -136,7 +136,7 @@ class AdvancedAnalytics {
     // 3. Correlation score (if we have enough data)
     let correlationScore = 50; // Default to neutral
     try {
-      const corrMatrix = this.getCorrelationMatrix(portfolioId, '1y');
+      const corrMatrix = await this.getCorrelationMatrix(portfolioId, '1y');
       if (corrMatrix.avgCorrelation !== null) {
         // Lower correlation = better diversification
         correlationScore = (1 - corrMatrix.avgCorrelation) * 100;
@@ -203,14 +203,14 @@ class AdvancedAnalytics {
   // ============================================
   // Factor Exposure Analysis
   // ============================================
-  getFactorExposure(portfolioId) {
-    const positions = this._getPortfolioPositions(portfolioId);
+  async getFactorExposure(portfolioId) {
+    const positions = await this._getPortfolioPositions(portfolioId);
     if (positions.length === 0) {
       return { error: 'Portfolio has no positions' };
     }
 
     // Get additional data for each position
-    const positionsWithData = this._enrichPositionsWithFactorData(positions);
+    const positionsWithData = await this._enrichPositionsWithFactorData(positions);
 
     // Calculate weights
     const totalValue = positionsWithData.reduce((sum, p) => sum + (p.value || 0), 0);
@@ -333,8 +333,8 @@ class AdvancedAnalytics {
   // ============================================
   // Covariance Matrix & Portfolio Variance
   // ============================================
-  getCovarianceMatrix(portfolioId, period = '1y') {
-    const positions = this._getPortfolioPositions(portfolioId);
+  async getCovarianceMatrix(portfolioId, period = '1y') {
+    const positions = await this._getPortfolioPositions(portfolioId);
     if (positions.length < 2) {
       return {
         error: 'Need at least 2 positions for covariance analysis',
@@ -343,7 +343,7 @@ class AdvancedAnalytics {
     }
 
     const { startDate } = this._getPeriodDates(period);
-    const returns = this._loadReturnsForPositions(positions, startDate);
+    const returns = await this._loadReturnsForPositions(positions, startDate);
     const symbols = positions.map(p => p.symbol);
 
     // Calculate weights
@@ -412,8 +412,8 @@ class AdvancedAnalytics {
   // ============================================
   // Marginal Risk Contribution
   // ============================================
-  getMarginalRiskContribution(portfolioId, period = '1y') {
-    const positions = this._getPortfolioPositions(portfolioId);
+  async getMarginalRiskContribution(portfolioId, period = '1y') {
+    const positions = await this._getPortfolioPositions(portfolioId);
     if (positions.length < 2) {
       return {
         error: 'Need at least 2 positions for risk contribution analysis',
@@ -421,7 +421,7 @@ class AdvancedAnalytics {
       };
     }
 
-    const covResult = this.getCovarianceMatrix(portfolioId, period);
+    const covResult = await this.getCovarianceMatrix(portfolioId, period);
     if (covResult.error) return covResult;
 
     const { covarianceMatrix, portfolioVolatility, symbols } = covResult;
@@ -489,8 +489,8 @@ class AdvancedAnalytics {
   // ============================================
   // Rolling Correlation
   // ============================================
-  getRollingCorrelation(portfolioId, period = '1y', windowDays = 60) {
-    const positions = this._getPortfolioPositions(portfolioId);
+  async getRollingCorrelation(portfolioId, period = '1y', windowDays = 60) {
+    const positions = await this._getPortfolioPositions(portfolioId);
     if (positions.length < 2) {
       return {
         error: 'Need at least 2 positions for rolling correlation',
@@ -499,11 +499,11 @@ class AdvancedAnalytics {
     }
 
     const { startDate } = this._getPeriodDates(period);
-    const returns = this._loadReturnsForPositions(positions, startDate);
+    const returns = await this._loadReturnsForPositions(positions, startDate);
     const symbols = positions.map(p => p.symbol);
 
     // Get aligned dates
-    const allDates = this._getAlignedDates(positions, startDate);
+    const allDates = await this._getAlignedDates(positions, startDate);
     if (allDates.length < windowDays + 10) {
       return {
         error: 'Insufficient data for rolling correlation',
@@ -585,8 +585,8 @@ class AdvancedAnalytics {
   // ============================================
   // Cluster Analysis (Hierarchical)
   // ============================================
-  getClusterAnalysis(portfolioId, period = '1y') {
-    const positions = this._getPortfolioPositions(portfolioId);
+  async getClusterAnalysis(portfolioId, period = '1y') {
+    const positions = await this._getPortfolioPositions(portfolioId);
     if (positions.length < 3) {
       return {
         error: 'Need at least 3 positions for cluster analysis',
@@ -594,7 +594,7 @@ class AdvancedAnalytics {
       };
     }
 
-    const corrResult = this.getCorrelationMatrix(portfolioId, period);
+    const corrResult = await this.getCorrelationMatrix(portfolioId, period);
     if (corrResult.error) return corrResult;
 
     const { matrix, symbols } = corrResult;
@@ -666,8 +666,8 @@ class AdvancedAnalytics {
   // Tail Dependence Analysis (Taleb/Spitznagel)
   // Measures how correlations behave in extreme events
   // ============================================
-  getTailDependence(portfolioId, period = '3y') {
-    const positions = this._getPortfolioPositions(portfolioId);
+  async getTailDependence(portfolioId, period = '3y') {
+    const positions = await this._getPortfolioPositions(portfolioId);
     if (positions.length < 2) {
       return {
         error: 'Need at least 2 positions for tail dependence analysis',
@@ -676,7 +676,7 @@ class AdvancedAnalytics {
     }
 
     const { startDate } = this._getPeriodDates(period);
-    const returns = this._loadReturnsForPositions(positions, startDate);
+    const returns = await this._loadReturnsForPositions(positions, startDate);
     const missingData = returns._missingData || [];
 
     const positionsWithData = Object.keys(returns).filter(k => k !== '_missingData').length;
@@ -723,7 +723,7 @@ class AdvancedAnalytics {
     }
 
     // Calculate regular correlation for comparison
-    const regularCorr = this.getCorrelationMatrix(portfolioId, period);
+    const regularCorr = await this.getCorrelationMatrix(portfolioId, period);
 
     // Compare average tail vs regular correlation
     let totalTail = 0, totalRegular = 0, count = 0;
@@ -768,19 +768,19 @@ class AdvancedAnalytics {
   // Crisis Correlation Analysis (Taleb/Spitznagel)
   // How do correlations behave specifically during market crashes?
   // ============================================
-  getCrisisCorrelation(portfolioId, period = '5y') {
-    const positions = this._getPortfolioPositions(portfolioId);
+  async getCrisisCorrelation(portfolioId, period = '5y') {
+    const positions = await this._getPortfolioPositions(portfolioId);
     if (positions.length < 2) {
       return { error: 'Need at least 2 positions for crisis correlation analysis' };
     }
 
     const { startDate } = this._getPeriodDates(period);
-    const returns = this._loadReturnsForPositions(positions, startDate);
+    const returns = await this._loadReturnsForPositions(positions, startDate);
     const symbols = positions.map(p => p.symbol);
 
     // Identify crisis days (market-wide negative returns > threshold)
-    const crisisDays = this._identifyCrisisDays(positions, returns, startDate);
-    const normalDays = this._identifyNormalDays(positions, returns, startDate);
+    const crisisDays = await this._identifyCrisisDays(positions, returns, startDate);
+    const normalDays = await this._identifyNormalDays(positions, returns, startDate);
 
     if (crisisDays.length < 20) {
       return {
@@ -791,8 +791,8 @@ class AdvancedAnalytics {
     }
 
     // Calculate correlation during crisis vs normal periods
-    const crisisMatrix = this._calculateCorrelationForDays(positions, returns, crisisDays);
-    const normalMatrix = this._calculateCorrelationForDays(positions, returns, normalDays);
+    const crisisMatrix = await this._calculateCorrelationForDays(positions, returns, crisisDays);
+    const normalMatrix = await this._calculateCorrelationForDays(positions, returns, normalDays);
 
     // Find pairs where correlation explodes during crisis
     const correlationBreakdown = [];
@@ -854,14 +854,14 @@ class AdvancedAnalytics {
   // Antifragility Score (Taleb/Spitznagel)
   // Does the portfolio benefit from volatility?
   // ============================================
-  getAntifragilityScore(portfolioId, period = '3y') {
-    const positions = this._getPortfolioPositions(portfolioId);
+  async getAntifragilityScore(portfolioId, period = '3y') {
+    const positions = await this._getPortfolioPositions(portfolioId);
     if (positions.length === 0) {
       return { error: 'Portfolio has no positions' };
     }
 
     const { startDate } = this._getPeriodDates(period);
-    const returns = this._loadReturnsForPositions(positions, startDate);
+    const returns = await this._loadReturnsForPositions(positions, startDate);
 
     // Calculate weights
     const totalValue = positions.reduce((sum, p) => sum + (p.value || 0), 0);
@@ -919,14 +919,14 @@ class AdvancedAnalytics {
   // Barbell Strategy Analysis (Spitznagel)
   // Analyze if portfolio follows barbell principle
   // ============================================
-  getBarbellAnalysis(portfolioId) {
-    const positions = this._getPortfolioPositions(portfolioId);
+  async getBarbellAnalysis(portfolioId) {
+    const positions = await this._getPortfolioPositions(portfolioId);
     if (positions.length === 0) {
       return { error: 'Portfolio has no positions' };
     }
 
     const { startDate } = this._getPeriodDates('3y');
-    const returns = this._loadReturnsForPositions(positions, startDate);
+    const returns = await this._loadReturnsForPositions(positions, startDate);
 
     // Classify each position
     const classified = positions.map(pos => {
@@ -1001,24 +1001,27 @@ class AdvancedAnalytics {
   // ============================================
   // Income Projection
   // ============================================
-  projectDividendIncome(portfolioId, years = 5, growthRate = 0.05) {
-    const positions = this._getPortfolioPositions(portfolioId);
+  async projectDividendIncome(portfolioId, years = 5, growthRate = 0.05) {
+    const positions = await this._getPortfolioPositions(portfolioId);
     if (positions.length === 0) {
       return { error: 'Portfolio has no positions' };
     }
 
     // Get dividend data for each position
+    const database = await getDatabaseAsync();
     const positionsWithDividends = [];
     let totalCurrentIncome = 0;
     let totalValue = 0;
 
     for (const pos of positions) {
       // Get latest dividend data from dividend_metrics table
-      const dividend = this.db.prepare(`
+      const dividendResult = await database.query(`
         SELECT dividend_yield, current_annual_dividend
         FROM dividend_metrics
-        WHERE company_id = ?
-      `).get(pos.company_id);
+        WHERE company_id = $1
+      `, [pos.company_id]);
+
+      const dividend = dividendResult.rows[0];
 
       // current_annual_dividend is already the annual amount per share
       const annualDividend = dividend?.current_annual_dividend
@@ -1057,11 +1060,13 @@ class AdvancedAnalytics {
     const currentYield = totalValue > 0 ? (totalCurrentIncome / totalValue) * 100 : 0;
 
     // Get cost basis for yield on cost
-    const costBasis = this.db.prepare(`
+    const costBasisResult = await database.query(`
       SELECT SUM(cost_basis) as total_cost
       FROM portfolio_positions
-      WHERE portfolio_id = ?
-    `).get(portfolioId)?.total_cost || totalValue;
+      WHERE portfolio_id = $1
+    `, [portfolioId]);
+
+    const costBasis = costBasisResult.rows[0]?.total_cost || totalValue;
 
     const yieldOnCost = costBasis > 0 ? (totalCurrentIncome / costBasis) * 100 : 0;
 
@@ -1095,8 +1100,9 @@ class AdvancedAnalytics {
   // Private Helper Methods
   // ============================================
 
-  _getPortfolioPositions(portfolioId) {
-    return this.db.prepare(`
+  async _getPortfolioPositions(portfolioId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         pp.company_id,
         pp.shares,
@@ -1112,30 +1118,39 @@ class AdvancedAnalytics {
       FROM portfolio_positions pp
       JOIN companies c ON pp.company_id = c.id
       LEFT JOIN price_metrics pm ON c.id = pm.company_id
-      WHERE pp.portfolio_id = ?
-    `).all(portfolioId).map(pos => ({
+      WHERE pp.portfolio_id = $1
+    `, [portfolioId]);
+
+    return result.rows.map(pos => ({
       ...pos,
       value: pos.shares * (pos.last_price || 0)
     }));
   }
 
-  _enrichPositionsWithFactorData(positions) {
-    return positions.map(pos => {
-      const metrics = this.db.prepare(`
+  async _enrichPositionsWithFactorData(positions) {
+    const database = await getDatabaseAsync();
+    const enriched = [];
+
+    for (const pos of positions) {
+      const result = await database.query(`
         SELECT roe, operating_margin, pe_ratio
         FROM calculated_metrics
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY fiscal_period DESC
         LIMIT 1
-      `).get(pos.company_id);
+      `, [pos.company_id]);
 
-      return {
+      const metrics = result.rows[0];
+
+      enriched.push({
         ...pos,
         roe: metrics?.roe,
         operating_margin: metrics?.operating_margin,
         pe_ratio: metrics?.pe_ratio
-      };
-    });
+      });
+    }
+
+    return enriched;
   }
 
   _getPeriodDates(period) {
@@ -1159,17 +1174,20 @@ class AdvancedAnalytics {
     };
   }
 
-  _loadReturnsForPositions(positions, startDate) {
+  async _loadReturnsForPositions(positions, startDate) {
+    const database = await getDatabaseAsync();
     const returns = {};
     const missingData = [];
 
     for (const pos of positions) {
-      const prices = this.db.prepare(`
+      const result = await database.query(`
         SELECT date, adjusted_close, close
         FROM daily_prices
-        WHERE company_id = ? AND date >= ?
+        WHERE company_id = $1 AND date >= $2
         ORDER BY date ASC
-      `).all(pos.company_id, startDate);
+      `, [pos.company_id, startDate]);
+
+      const prices = result.rows;
 
       if (prices.length < 2) {
         missingData.push(pos.symbol);
@@ -1330,18 +1348,19 @@ class AdvancedAnalytics {
     return covariance / (minLen - 1); // Sample covariance
   }
 
-  _getAlignedDates(positions, startDate) {
+  async _getAlignedDates(positions, startDate) {
     // Get all unique dates from the first position
     if (positions.length === 0) return [];
 
-    const dates = this.db.prepare(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT DISTINCT date
       FROM daily_prices
-      WHERE company_id = ? AND date >= ?
+      WHERE company_id = $1 AND date >= $2
       ORDER BY date ASC
-    `).all(positions[0].company_id, startDate).map(d => d.date);
+    `, [positions[0].company_id, startDate]);
 
-    return dates;
+    return result.rows.map(d => d.date);
   }
 
   _calculateRiskBalanceScore(riskContributions) {
@@ -1600,13 +1619,13 @@ class AdvancedAnalytics {
     };
   }
 
-  _identifyCrisisDays(positions, returns, startDate) {
+  async _identifyCrisisDays(positions, returns, startDate) {
     // Get all unique dates and calculate portfolio return for each
     const dateReturns = {};
 
     for (const pos of positions) {
       const posReturns = returns[pos.company_id] || [];
-      const dates = this._getPositionDates(pos, startDate);
+      const dates = await this._getPositionDates(pos, startDate);
 
       for (let i = 0; i < posReturns.length && i < dates.length; i++) {
         if (!dateReturns[dates[i]]) {
@@ -1628,12 +1647,12 @@ class AdvancedAnalytics {
     return crisisDays.sort((a, b) => a.avgReturn - b.avgReturn);
   }
 
-  _identifyNormalDays(positions, returns, startDate) {
+  async _identifyNormalDays(positions, returns, startDate) {
     const dateReturns = {};
 
     for (const pos of positions) {
       const posReturns = returns[pos.company_id] || [];
-      const dates = this._getPositionDates(pos, startDate);
+      const dates = await this._getPositionDates(pos, startDate);
 
       for (let i = 0; i < posReturns.length && i < dates.length; i++) {
         if (!dateReturns[dates[i]]) {
@@ -1655,15 +1674,18 @@ class AdvancedAnalytics {
     return normalDays;
   }
 
-  _getPositionDates(pos, startDate) {
-    return this.db.prepare(`
+  async _getPositionDates(pos, startDate) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT date FROM daily_prices
-      WHERE company_id = ? AND date >= ?
+      WHERE company_id = $1 AND date >= $2
       ORDER BY date ASC
-    `).all(pos.company_id, startDate).map(d => d.date);
+    `, [pos.company_id, startDate]);
+
+    return result.rows.map(d => d.date);
   }
 
-  _calculateCorrelationForDays(positions, returns, days) {
+  async _calculateCorrelationForDays(positions, returns, days) {
     const n = positions.length;
     const matrix = [];
 
@@ -1673,7 +1695,7 @@ class AdvancedAnalytics {
 
     for (const pos of positions) {
       const posReturns = returns[pos.company_id] || [];
-      const dates = this._getPositionDates(pos, days[0]?.date || '2000-01-01');
+      const dates = await this._getPositionDates(pos, days[0]?.date || '2000-01-01');
 
       filteredReturns[pos.company_id] = [];
       for (let i = 0; i < posReturns.length && i < dates.length; i++) {
