@@ -1,5 +1,5 @@
 // src/services/sectorAnalysisService.js
-const db = require('../database');
+const { getDatabaseAsync } = require('../database');
 
 /**
  * Sector Analysis Service
@@ -12,15 +12,13 @@ const db = require('../database');
  * Ratio metrics (ROIC, margins, PE, etc.) are already currency-agnostic.
  */
 class SectorAnalysisService {
-  constructor() {
-    this.db = db.getDatabase();
-    console.log('✅ Sector Analysis Service initialized');
-  }
+  // No constructor needed for PostgreSQL
 
   /**
    * Get all sectors with aggregate metrics
    */
-  getSectorOverview(periodType = 'annual') {
+  async getSectorOverview(periodType = 'annual') {
+    const database = await getDatabaseAsync();
     // Use bounded averages to exclude extreme outliers
     // Reasonable bounds: ROIC/ROE -100 to 200%, margins -100 to 100%, growth -100 to 500%
     const sql = `
@@ -36,12 +34,12 @@ class SectorAnalysisService {
         FROM calculated_metrics m
         JOIN companies c ON m.company_id = c.id
         LEFT JOIN price_metrics pm ON pm.company_id = c.id
-        WHERE m.period_type = ?
+        WHERE m.period_type = $1
           AND m.fiscal_period = (
             SELECT MAX(m2.fiscal_period)
             FROM calculated_metrics m2
             WHERE m2.company_id = m.company_id
-              AND m2.period_type = ?
+              AND m2.period_type = $2
           )
           AND c.sector IS NOT NULL
       )
@@ -87,11 +85,12 @@ class SectorAnalysisService {
       ORDER BY company_count DESC
     `;
 
-    const results = this.db.prepare(sql).all(periodType, periodType);
+    const result = await database.query(sql, [periodType, periodType]);
+    const results = result.rows;
 
     // Enhance with medians (more robust to outliers than averages)
-    return results.map(sector => {
-      const companies = this.getSectorCompaniesForMedian(sector.sector, periodType);
+    return Promise.all(results.map(async sector => {
+      const companies = await this.getSectorCompaniesForMedian(sector.sector, periodType);
       return {
         ...sector,
         median_roic: this.median(companies, 'roic'),
@@ -100,13 +99,14 @@ class SectorAnalysisService {
         median_pe_ratio: this.median(companies, 'pe_ratio'),
         median_revenue_growth: this.median(companies, 'revenue_growth')
       };
-    });
+    }));
   }
 
   /**
    * Get industries within a sector with aggregate metrics
    */
-  getIndustriesBySector(sector, periodType = 'annual') {
+  async getIndustriesBySector(sector, periodType = 'annual') {
+    const database = await getDatabaseAsync();
     const sql = `
       WITH latest_metrics AS (
         SELECT
@@ -120,14 +120,14 @@ class SectorAnalysisService {
         FROM calculated_metrics m
         JOIN companies c ON m.company_id = c.id
         LEFT JOIN price_metrics pm ON pm.company_id = c.id
-        WHERE m.period_type = ?
+        WHERE m.period_type = $1
           AND m.fiscal_period = (
             SELECT MAX(m2.fiscal_period)
             FROM calculated_metrics m2
             WHERE m2.company_id = m.company_id
-              AND m2.period_type = ?
+              AND m2.period_type = $2
           )
-          AND c.sector = ?
+          AND c.sector = $3
           AND c.industry IS NOT NULL
       )
       SELECT
@@ -166,13 +166,15 @@ class SectorAnalysisService {
       ORDER BY company_count DESC
     `;
 
-    return this.db.prepare(sql).all(periodType, periodType, sector);
+    const result = await database.query(sql, [periodType, periodType, sector]);
+    return result.rows;
   }
 
   /**
    * Get top performers by sector
    */
-  getTopPerformersBySector(metric = 'roic', limit = 5, periodType = 'annual') {
+  async getTopPerformersBySector(metric = 'roic', limit = 5, periodType = 'annual') {
+    const database = await getDatabaseAsync();
     // Validate metric to prevent SQL injection
     const validMetrics = [
       'roic', 'roe', 'roa', 'net_margin', 'operating_margin', 'gross_margin',
@@ -193,12 +195,12 @@ class SectorAnalysisService {
         FROM calculated_metrics m
         JOIN companies c ON m.company_id = c.id
         LEFT JOIN price_metrics pm ON c.id = pm.company_id
-        WHERE m.period_type = ?
+        WHERE m.period_type = $1
           AND m.fiscal_period = (
             SELECT MAX(m2.fiscal_period)
             FROM calculated_metrics m2
             WHERE m2.company_id = m.company_id
-              AND m2.period_type = ?
+              AND m2.period_type = $2
           )
           AND c.sector IS NOT NULL
           AND m.${safeMetric} IS NOT NULL
@@ -226,11 +228,12 @@ class SectorAnalysisService {
         fiscal_period,
         rank
       FROM ranked
-      WHERE rank <= ?
+      WHERE rank <= $3
       ORDER BY sector, rank
     `;
 
-    const results = this.db.prepare(sql).all(periodType, periodType, limit);
+    const result = await database.query(sql, [periodType, periodType, limit]);
+    const results = result.rows;
 
     // Group by sector
     const grouped = {};
@@ -247,29 +250,32 @@ class SectorAnalysisService {
   /**
    * Get sector rotation data - historical performance by sector
    */
-  getSectorRotation(periods = 4, periodType = 'annual') {
+  async getSectorRotation(periods = 4, periodType = 'annual') {
+    const database = await getDatabaseAsync();
     // First get the distinct periods that have actual data
     // Focus on main fiscal year endings with significant company counts
     const periodsQuery = `
       SELECT fiscal_period, COUNT(*) as company_count
       FROM calculated_metrics
-      WHERE period_type = ?
+      WHERE period_type = $1
         AND roic IS NOT NULL
-        AND fiscal_period <= date('now')
-        AND fiscal_period >= date('now', '-10 years')
+        AND fiscal_period <= CURRENT_DATE
+        AND fiscal_period >= CURRENT_DATE - INTERVAL '10 years'
       GROUP BY fiscal_period
       HAVING COUNT(*) >= 100
       ORDER BY fiscal_period DESC
-      LIMIT ?
+      LIMIT $2
     `;
-    const targetPeriods = this.db.prepare(periodsQuery).all(periodType, periods);
+    const periodsResult = await database.query(periodsQuery, [periodType, periods]);
+    const targetPeriods = periodsResult.rows;
 
     if (targetPeriods.length === 0) {
       return [];
     }
 
     const periodList = targetPeriods.map(p => p.fiscal_period);
-    const placeholders = periodList.map(() => '?').join(',');
+    let paramCounter = 2;
+    const placeholders = periodList.map(() => `$${paramCounter++}`).join(',');
 
     const sql = `
       WITH sector_periods AS (
@@ -284,7 +290,7 @@ class SectorAnalysisService {
           ROUND(AVG(CASE WHEN m.fcf_yield BETWEEN -100 AND 100 THEN m.fcf_yield END), 2) as avg_fcf_yield
         FROM calculated_metrics m
         JOIN companies c ON m.company_id = c.id
-        WHERE m.period_type = ?
+        WHERE m.period_type = $1
           AND c.sector IS NOT NULL
           AND m.fiscal_period IN (${placeholders})
         GROUP BY c.sector, m.fiscal_period
@@ -294,7 +300,8 @@ class SectorAnalysisService {
       ORDER BY sector, fiscal_period DESC
     `;
 
-    const results = this.db.prepare(sql).all(periodType, ...periodList);
+    const result = await database.query(sql, [periodType, ...periodList]);
+    const results = result.rows;
 
     // Group by sector with period history
     const grouped = {};
@@ -351,7 +358,8 @@ class SectorAnalysisService {
   /**
    * Compare margins across industries
    */
-  getIndustryMarginComparison(periodType = 'annual') {
+  async getIndustryMarginComparison(periodType = 'annual') {
+    const database = await getDatabaseAsync();
     const sql = `
       WITH latest_metrics AS (
         SELECT
@@ -361,12 +369,12 @@ class SectorAnalysisService {
           c.symbol
         FROM calculated_metrics m
         JOIN companies c ON m.company_id = c.id
-        WHERE m.period_type = ?
+        WHERE m.period_type = $1
           AND m.fiscal_period = (
             SELECT MAX(m2.fiscal_period)
             FROM calculated_metrics m2
             WHERE m2.company_id = m.company_id
-              AND m2.period_type = ?
+              AND m2.period_type = $2
           )
           AND c.industry IS NOT NULL
       )
@@ -392,17 +400,19 @@ class SectorAnalysisService {
 
       FROM latest_metrics
       GROUP BY sector, industry
-      HAVING company_count >= 2
+      HAVING COUNT(DISTINCT symbol) >= 2
       ORDER BY avg_net_margin DESC
     `;
 
-    return this.db.prepare(sql).all(periodType, periodType);
+    const result = await database.query(sql, [periodType, periodType]);
+    return result.rows;
   }
 
   /**
    * Get detailed sector data with all companies
    */
-  getSectorDetail(sector, periodType = 'annual') {
+  async getSectorDetail(sector, periodType = 'annual') {
+    const database = await getDatabaseAsync();
     const sql = `
       WITH latest_metrics AS (
         SELECT
@@ -482,7 +492,8 @@ class SectorAnalysisService {
       ORDER BY market_cap DESC
     `;
 
-    const companies = this.db.prepare(sql).all(periodType, periodType, sector);
+    const result = await database.query(sql, [periodType, periodType, sector]);
+    const companies = result.rows;
 
     // Calculate sector aggregates with both average and median
     const aggregate = {
@@ -516,7 +527,8 @@ class SectorAnalysisService {
   /**
    * Get industry detail with all companies
    */
-  getIndustryDetail(industry, periodType = 'annual') {
+  async getIndustryDetail(industry, periodType = 'annual') {
+    const database = await getDatabaseAsync();
     const sql = `
       WITH latest_metrics AS (
         SELECT
@@ -534,14 +546,14 @@ class SectorAnalysisService {
         FROM calculated_metrics m
         JOIN companies c ON m.company_id = c.id
         LEFT JOIN price_metrics pm ON pm.company_id = c.id
-        WHERE m.period_type = ?
+        WHERE m.period_type = $1
           AND m.fiscal_period = (
             SELECT MAX(m2.fiscal_period)
             FROM calculated_metrics m2
             WHERE m2.company_id = m.company_id
-              AND m2.period_type = ?
+              AND m2.period_type = $2
           )
-          AND c.industry = ?
+          AND c.industry = $3
       )
       SELECT
         symbol,
@@ -573,7 +585,8 @@ class SectorAnalysisService {
       ORDER BY market_cap DESC
     `;
 
-    const companies = this.db.prepare(sql).all(periodType, periodType, industry);
+    const result = await database.query(sql, [periodType, periodType, industry]);
+    const companies = result.rows;
 
     const aggregate = {
       company_count: companies.length,
@@ -607,8 +620,8 @@ class SectorAnalysisService {
   /**
    * Get sector rankings by various metrics
    */
-  getSectorRankings(periodType = 'annual') {
-    const sectors = this.getSectorOverview(periodType);
+  async getSectorRankings(periodType = 'annual') {
+    const sectors = await this.getSectorOverview(periodType);
 
     const rankings = {
       by_roic: [...sectors].sort((a, b) => (b.avg_roic || 0) - (a.avg_roic || 0)),
@@ -625,7 +638,8 @@ class SectorAnalysisService {
   /**
    * Get company metrics for a specific sector (used for median calculations)
    */
-  getSectorCompaniesForMedian(sector, periodType = 'annual') {
+  async getSectorCompaniesForMedian(sector, periodType = 'annual') {
+    const database = await getDatabaseAsync();
     const sql = `
       SELECT
         m.roic,
@@ -635,16 +649,17 @@ class SectorAnalysisService {
         m.revenue_growth_yoy as revenue_growth
       FROM calculated_metrics m
       JOIN companies c ON m.company_id = c.id
-      WHERE m.period_type = ?
-        AND c.sector = ?
+      WHERE m.period_type = $1
+        AND c.sector = $2
         AND m.fiscal_period = (
           SELECT MAX(m2.fiscal_period)
           FROM calculated_metrics m2
           WHERE m2.company_id = m.company_id
-            AND m2.period_type = ?
+            AND m2.period_type = $3
         )
     `;
-    return this.db.prepare(sql).all(periodType, sector, periodType);
+    const result = await database.query(sql, [periodType, sector, periodType]);
+    return result.rows;
   }
 
   // Helper methods
