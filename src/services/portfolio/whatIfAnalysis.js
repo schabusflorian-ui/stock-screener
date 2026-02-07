@@ -1,34 +1,31 @@
 // src/services/portfolio/whatIfAnalysis.js
 // What-If Analysis - Simulate portfolio changes without executing (Agent 2)
 
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 
 const TRADING_DAYS_PER_YEAR = 252;
 const RISK_FREE_RATE = 0.05;
 
 class WhatIfAnalysis {
-  constructor() {
-    this.db = db.getDatabase();
-    console.log('🔮 What-If Analysis Engine initialized');
-  }
+  // No constructor needed for PostgreSQL async pattern
 
   // ============================================
   // Simulate Portfolio Changes
   // ============================================
-  simulateChange(portfolioId, changes) {
+  async simulateChange(portfolioId, changes) {
     // changes: [{ companyId, action: 'add'|'remove'|'adjust', shares, weight, symbol }]
 
-    const portfolio = this._getPortfolioData(portfolioId);
+    const portfolio = await this._getPortfolioData(portfolioId);
     if (!portfolio) {
       throw new Error(`Portfolio ${portfolioId} not found`);
     }
 
     // Current state
-    const currentPositions = this._getCurrentPositions(portfolioId);
+    const currentPositions = await this._getCurrentPositions(portfolioId);
     const currentMetrics = this._calculateMetrics(currentPositions);
 
     // Apply changes
-    const newPositions = this._applyChanges(currentPositions, changes, portfolio.totalValue);
+    const newPositions = await this._applyChanges(currentPositions, changes, portfolio.totalValue);
 
     // Calculate new metrics
     const newMetrics = this._calculateMetrics(newPositions);
@@ -71,27 +68,27 @@ class WhatIfAnalysis {
   // ============================================
   // Simulate Weight Changes
   // ============================================
-  simulateWeightChange(portfolioId, targetWeights) {
+  async simulateWeightChange(portfolioId, targetWeights) {
     // targetWeights: [{ symbol, weight }] or [{ companyId, weight }]
 
-    const portfolio = this._getPortfolioData(portfolioId);
+    const portfolio = await this._getPortfolioData(portfolioId);
     if (!portfolio) {
       throw new Error(`Portfolio ${portfolioId} not found`);
     }
 
     // Convert target weights to changes
-    const currentPositions = this._getCurrentPositions(portfolioId);
+    const currentPositions = await this._getCurrentPositions(portfolioId);
     const changes = [];
 
     for (const target of targetWeights) {
-      const symbol = target.symbol || this._getSymbol(target.companyId);
-      const companyId = target.companyId || this._getCompanyId(target.symbol);
+      const symbol = target.symbol || await this._getSymbol(target.companyId);
+      const companyId = target.companyId || await this._getCompanyId(target.symbol);
 
       if (!companyId) continue;
 
       const currentPos = currentPositions.find(p => p.company_id === companyId);
       const targetValue = portfolio.totalValue * (target.weight / 100);
-      const price = this._getCurrentPrice(companyId);
+      const price = await this._getCurrentPrice(companyId);
       const targetShares = price > 0 ? Math.floor(targetValue / price) : 0;
 
       if (!currentPos) {
@@ -118,20 +115,20 @@ class WhatIfAnalysis {
       }
     }
 
-    return this.simulateChange(portfolioId, changes);
+    return await this.simulateChange(portfolioId, changes);
   }
 
   // ============================================
   // Compare Scenarios
   // ============================================
-  compareScenarios(portfolioId, scenarios) {
+  async compareScenarios(portfolioId, scenarios) {
     // scenarios: [{ name, changes: [...] }]
 
     const results = [];
 
     for (const scenario of scenarios) {
       try {
-        const result = this.simulateChange(portfolioId, scenario.changes);
+        const result = await this.simulateChange(portfolioId, scenario.changes);
         results.push({
           name: scenario.name,
           success: true,
@@ -168,19 +165,23 @@ class WhatIfAnalysis {
   // Private Helper Methods
   // ============================================
 
-  _getPortfolioData(portfolioId) {
-    const portfolio = this.db.prepare(`
-      SELECT * FROM portfolios WHERE id = ?
-    `).get(portfolioId);
+  async _getPortfolioData(portfolioId) {
+    const database = await getDatabaseAsync();
+
+    const portfolioResult = await database.query(`
+      SELECT * FROM portfolios WHERE id = $1
+    `, [portfolioId]);
+    const portfolio = portfolioResult.rows[0];
 
     if (!portfolio) return null;
 
-    const positions = this.db.prepare(`
+    const positionsResult = await database.query(`
       SELECT pp.*, pm.last_price
       FROM portfolio_positions pp
       LEFT JOIN price_metrics pm ON pp.company_id = pm.company_id
-      WHERE pp.portfolio_id = ?
-    `).all(portfolioId);
+      WHERE pp.portfolio_id = $1
+    `, [portfolioId]);
+    const positions = positionsResult.rows;
 
     const positionsValue = positions.reduce((sum, p) =>
       sum + p.shares * (p.last_price || p.average_cost), 0);
@@ -193,8 +194,10 @@ class WhatIfAnalysis {
     };
   }
 
-  _getCurrentPositions(portfolioId) {
-    const positions = this.db.prepare(`
+  async _getCurrentPositions(portfolioId) {
+    const database = await getDatabaseAsync();
+
+    const positionsResult = await database.query(`
       SELECT
         pp.company_id,
         pp.shares,
@@ -209,8 +212,9 @@ class WhatIfAnalysis {
       FROM portfolio_positions pp
       JOIN companies c ON pp.company_id = c.id
       LEFT JOIN price_metrics pm ON c.id = pm.company_id
-      WHERE pp.portfolio_id = ?
-    `).all(portfolioId);
+      WHERE pp.portfolio_id = $1
+    `, [portfolioId]);
+    const positions = positionsResult.rows;
 
     const totalValue = positions.reduce((sum, p) =>
       sum + p.shares * (p.last_price || p.average_cost), 0);
@@ -222,11 +226,11 @@ class WhatIfAnalysis {
     }));
   }
 
-  _applyChanges(currentPositions, changes, totalValue) {
+  async _applyChanges(currentPositions, changes, totalValue) {
     const newPositions = currentPositions.map(p => ({ ...p, change: 'unchanged' }));
 
     for (const change of changes) {
-      const companyId = change.companyId || this._getCompanyId(change.symbol);
+      const companyId = change.companyId || await this._getCompanyId(change.symbol);
       if (!companyId) continue;
 
       const existingIdx = newPositions.findIndex(p => p.company_id === companyId);
@@ -236,15 +240,15 @@ class WhatIfAnalysis {
           if (existingIdx >= 0) {
             // Increase existing position
             const pos = newPositions[existingIdx];
-            const addShares = change.shares || this._calculateSharesForWeight(companyId, change.weight, totalValue);
+            const addShares = change.shares || await this._calculateSharesForWeight(companyId, change.weight, totalValue);
             pos.shares += addShares;
             pos.value = pos.shares * (pos.last_price || pos.average_cost);
             pos.change = 'increased';
           } else {
             // New position
-            const company = this._getCompanyData(companyId);
-            const price = this._getCurrentPrice(companyId);
-            const shares = change.shares || this._calculateSharesForWeight(companyId, change.weight, totalValue);
+            const company = await this._getCompanyData(companyId);
+            const price = await this._getCurrentPrice(companyId);
+            const shares = change.shares || await this._calculateSharesForWeight(companyId, change.weight, totalValue);
             newPositions.push({
               company_id: companyId,
               symbol: company.symbol,
@@ -274,7 +278,7 @@ class WhatIfAnalysis {
             const pos = newPositions[existingIdx];
             const newShares = change.shares !== undefined
               ? change.shares
-              : this._calculateSharesForWeight(companyId, change.weight, totalValue);
+              : await this._calculateSharesForWeight(companyId, change.weight, totalValue);
             pos.change = newShares > pos.shares ? 'increased' : newShares < pos.shares ? 'decreased' : 'unchanged';
             pos.shares = newShares;
             pos.value = pos.shares * (pos.last_price || pos.average_cost);
@@ -468,38 +472,46 @@ class WhatIfAnalysis {
     };
   }
 
-  _getCompanyId(symbol) {
-    const company = this.db.prepare(`
-      SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
-    `).get(symbol);
+  async _getCompanyId(symbol) {
+    const database = await getDatabaseAsync();
+    const companyResult = await database.query(`
+      SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)
+    `, [symbol]);
+    const company = companyResult.rows[0];
     return company?.id;
   }
 
-  _getSymbol(companyId) {
-    const company = this.db.prepare(`
-      SELECT symbol FROM companies WHERE id = ?
-    `).get(companyId);
+  async _getSymbol(companyId) {
+    const database = await getDatabaseAsync();
+    const companyResult = await database.query(`
+      SELECT symbol FROM companies WHERE id = $1
+    `, [companyId]);
+    const company = companyResult.rows[0];
     return company?.symbol;
   }
 
-  _getCompanyData(companyId) {
-    return this.db.prepare(`
+  async _getCompanyData(companyId) {
+    const database = await getDatabaseAsync();
+    const companyResult = await database.query(`
       SELECT c.*, pm.volatility_30d as volatility, pm.beta
       FROM companies c
       LEFT JOIN price_metrics pm ON c.id = pm.company_id
-      WHERE c.id = ?
-    `).get(companyId) || {};
+      WHERE c.id = $1
+    `, [companyId]);
+    return companyResult.rows[0] || {};
   }
 
-  _getCurrentPrice(companyId) {
-    const price = this.db.prepare(`
-      SELECT last_price FROM price_metrics WHERE company_id = ?
-    `).get(companyId);
+  async _getCurrentPrice(companyId) {
+    const database = await getDatabaseAsync();
+    const priceResult = await database.query(`
+      SELECT last_price FROM price_metrics WHERE company_id = $1
+    `, [companyId]);
+    const price = priceResult.rows[0];
     return price?.last_price || 0;
   }
 
-  _calculateSharesForWeight(companyId, weight, totalValue) {
-    const price = this._getCurrentPrice(companyId);
+  async _calculateSharesForWeight(companyId, weight, totalValue) {
+    const price = await this._getCurrentPrice(companyId);
     if (price <= 0 || !weight) return 0;
     const targetValue = totalValue * (weight / 100);
     return Math.floor(targetValue / price);
