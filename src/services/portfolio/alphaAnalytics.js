@@ -1,14 +1,13 @@
 // src/services/portfolio/alphaAnalytics.js
 // Advanced Alpha Analytics - Multiple alpha calculation methods
 
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 
 const TRADING_DAYS_PER_YEAR = 252;
 const RISK_FREE_RATE = 0.05; // 5% annual
 
 class AlphaAnalytics {
   constructor() {
-    this.db = db.getDatabase();
     console.log('Alpha Analytics Engine initialized');
   }
 
@@ -16,13 +15,13 @@ class AlphaAnalytics {
   // Comprehensive Alpha Analysis
   // Multiple methods + attribution + consistency
   // ============================================
-  getComprehensiveAlpha(portfolioId, params = {}) {
+  async getComprehensiveAlpha(portfolioId, params = {}) {
     const {
       period = '3y',
       benchmarkSymbol = 'SPY'
     } = params;
 
-    const positions = this._getPortfolioPositions(portfolioId);
+    const positions = await this._getPortfolioPositions(portfolioId);
     if (positions.length === 0) {
       return { error: 'Portfolio has no positions' };
     }
@@ -30,8 +29,8 @@ class AlphaAnalytics {
     const { startDate } = this._getPeriodDates(period);
 
     // Load portfolio and benchmark returns
-    const portfolioReturns = this._loadPortfolioReturns(portfolioId, startDate);
-    const benchmarkReturns = this._loadBenchmarkReturns(benchmarkSymbol, startDate);
+    const portfolioReturns = await this._loadPortfolioReturns(portfolioId, startDate);
+    const benchmarkReturns = await this._loadBenchmarkReturns(benchmarkSymbol, startDate);
 
     if (portfolioReturns.length < 60) {
       return { error: 'Insufficient data for alpha analysis (need 60+ days)' };
@@ -44,7 +43,7 @@ class AlphaAnalytics {
     const jensensAlpha = this._calculateJensensAlpha(aligned);
     const multiFactor = this._calculateMultiFactorAlpha(positions, startDate, aligned);
     const rollingAlpha = this._calculateRollingAlpha(aligned);
-    const attribution = this._calculateAlphaAttribution(positions, startDate, aligned);
+    const attribution = await this._calculateAlphaAttribution(positions, startDate, aligned);
     const skillAnalysis = this._analyzeSkillVsLuck(aligned, rollingAlpha);
 
     return {
@@ -307,13 +306,13 @@ class AlphaAnalytics {
   // Alpha Attribution (By Position)
   // Which positions contributed alpha?
   // ============================================
-  _calculateAlphaAttribution(positions, startDate, aligned) {
+  async _calculateAlphaAttribution(positions, startDate, aligned) {
     const { portfolioReturns, benchmarkReturns, dates } = aligned;
 
     // Load individual position returns
     const positionReturns = {};
     for (const pos of positions) {
-      positionReturns[pos.symbol] = this._loadPositionReturns(pos.company_id, startDate, dates);
+      positionReturns[pos.symbol] = await this._loadPositionReturns(pos.company_id, startDate, dates);
     }
 
     // Calculate weights
@@ -479,8 +478,10 @@ class AlphaAnalytics {
   // Helper Methods
   // ============================================
 
-  _getPortfolioPositions(portfolioId) {
-    return this.db.prepare(`
+  async _getPortfolioPositions(portfolioId) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT
         pp.company_id,
         pp.shares,
@@ -495,8 +496,10 @@ class AlphaAnalytics {
       FROM portfolio_positions pp
       JOIN companies c ON pp.company_id = c.id
       LEFT JOIN price_metrics pm ON c.id = pm.company_id
-      WHERE pp.portfolio_id = ?
-    `).all(portfolioId).map(pos => ({
+      WHERE pp.portfolio_id = $1
+    `, [portfolioId]);
+
+    return result.rows.map(pos => ({
       ...pos,
       value: pos.shares * (pos.last_price || 0)
     }));
@@ -516,14 +519,18 @@ class AlphaAnalytics {
     };
   }
 
-  _loadPortfolioReturns(portfolioId, startDate) {
+  async _loadPortfolioReturns(portfolioId, startDate) {
+    const database = await getDatabaseAsync();
+
     // First try snapshots
-    const snapshots = this.db.prepare(`
+    const result = await database.query(`
       SELECT snapshot_date as date, total_value
       FROM portfolio_snapshots
-      WHERE portfolio_id = ? AND snapshot_date >= ?
+      WHERE portfolio_id = $1 AND snapshot_date >= $2
       ORDER BY snapshot_date ASC
-    `).all(portfolioId, startDate);
+    `, [portfolioId, startDate]);
+
+    const snapshots = result.rows;
 
     if (snapshots.length > 60) {
       const returns = [];
@@ -539,12 +546,14 @@ class AlphaAnalytics {
     }
 
     // Fallback: Calculate synthetic returns from positions' price history
-    return this._calculateSyntheticReturns(portfolioId, startDate);
+    return await this._calculateSyntheticReturns(portfolioId, startDate);
   }
 
-  _calculateSyntheticReturns(portfolioId, startDate) {
+  async _calculateSyntheticReturns(portfolioId, startDate) {
+    const database = await getDatabaseAsync();
+
     // Get portfolio positions with weights
-    const positions = this._getPortfolioPositions(portfolioId);
+    const positions = await this._getPortfolioPositions(portfolioId);
     if (positions.length === 0) return [];
 
     const totalValue = positions.reduce((sum, p) => sum + (p.value || 0), 0);
@@ -558,12 +567,14 @@ class AlphaAnalytics {
     const allDates = new Set();
 
     for (const pos of positions) {
-      const prices = this.db.prepare(`
+      const result = await database.query(`
         SELECT date, adjusted_close, close
         FROM daily_prices
-        WHERE company_id = ? AND date >= ?
+        WHERE company_id = $1 AND date >= $2
         ORDER BY date ASC
-      `).all(pos.company_id, startDate);
+      `, [pos.company_id, startDate]);
+
+      const prices = result.rows;
 
       allPrices[pos.company_id] = new Map();
       for (const p of prices) {
@@ -607,20 +618,26 @@ class AlphaAnalytics {
     return returns;
   }
 
-  _loadBenchmarkReturns(symbol, startDate) {
+  async _loadBenchmarkReturns(symbol, startDate) {
+    const database = await getDatabaseAsync();
+
     // Try to get benchmark from ETF/index prices
-    const company = this.db.prepare(`
-      SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
-    `).get(symbol);
+    const companyResult = await database.query(`
+      SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)
+    `, [symbol]);
+
+    const company = companyResult.rows[0];
 
     if (!company) {
       // Fallback: use S&P 500 index if available
-      const indexPrices = this.db.prepare(`
+      const indexResult = await database.query(`
         SELECT date, close
         FROM index_prices
-        WHERE index_id = 1 AND date >= ?
+        WHERE index_id = 1 AND date >= $1
         ORDER BY date ASC
-      `).all(startDate);
+      `, [startDate]);
+
+      const indexPrices = indexResult.rows;
 
       const returns = [];
       for (let i = 1; i < indexPrices.length; i++) {
@@ -634,12 +651,14 @@ class AlphaAnalytics {
       return returns;
     }
 
-    const prices = this.db.prepare(`
+    const pricesResult = await database.query(`
       SELECT date, adjusted_close, close
       FROM daily_prices
-      WHERE company_id = ? AND date >= ?
+      WHERE company_id = $1 AND date >= $2
       ORDER BY date ASC
-    `).all(company.id, startDate);
+    `, [company.id, startDate]);
+
+    const prices = pricesResult.rows;
 
     const returns = [];
     for (let i = 1; i < prices.length; i++) {
@@ -655,13 +674,17 @@ class AlphaAnalytics {
     return returns;
   }
 
-  _loadPositionReturns(companyId, startDate, targetDates) {
-    const prices = this.db.prepare(`
+  async _loadPositionReturns(companyId, startDate, targetDates) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT date, adjusted_close, close
       FROM daily_prices
-      WHERE company_id = ? AND date >= ?
+      WHERE company_id = $1 AND date >= $2
       ORDER BY date ASC
-    `).all(companyId, startDate);
+    `, [companyId, startDate]);
+
+    const prices = result.rows;
 
     const returns = [];
     for (let i = 1; i < prices.length; i++) {
@@ -891,12 +914,12 @@ class AlphaAnalytics {
   /**
    * Get only Jensen's Alpha analysis
    */
-  getJensensAlpha(portfolioId, params = {}) {
+  async getJensensAlpha(portfolioId, params = {}) {
     const { period = '1y', benchmarkSymbol = 'SPY' } = params;
     const { startDate } = this._getPeriodDates(period);
 
-    const portfolioReturns = this._loadPortfolioReturns(portfolioId, startDate);
-    const benchmarkReturns = this._loadBenchmarkReturns(benchmarkSymbol, startDate);
+    const portfolioReturns = await this._loadPortfolioReturns(portfolioId, startDate);
+    const benchmarkReturns = await this._loadBenchmarkReturns(benchmarkSymbol, startDate);
 
     if (portfolioReturns.length < 20) {
       return { error: 'Insufficient data for Jensen\'s alpha (need 20+ days)' };
@@ -917,16 +940,16 @@ class AlphaAnalytics {
   /**
    * Get multi-factor alpha analysis
    */
-  getMultiFactorAlpha(portfolioId, params = {}) {
+  async getMultiFactorAlpha(portfolioId, params = {}) {
     const { period = '1y', benchmarkSymbol = 'SPY' } = params;
-    const positions = this._getPortfolioPositions(portfolioId);
+    const positions = await this._getPortfolioPositions(portfolioId);
     if (positions.length === 0) {
       return { error: 'Portfolio has no positions' };
     }
 
     const { startDate } = this._getPeriodDates(period);
-    const portfolioReturns = this._loadPortfolioReturns(portfolioId, startDate);
-    const benchmarkReturns = this._loadBenchmarkReturns(benchmarkSymbol, startDate);
+    const portfolioReturns = await this._loadPortfolioReturns(portfolioId, startDate);
+    const benchmarkReturns = await this._loadBenchmarkReturns(benchmarkSymbol, startDate);
 
     if (portfolioReturns.length < 60) {
       return { error: 'Insufficient data for multi-factor analysis (need 60+ days)' };
@@ -947,12 +970,12 @@ class AlphaAnalytics {
   /**
    * Get rolling alpha analysis
    */
-  getRollingAlpha(portfolioId, params = {}) {
+  async getRollingAlpha(portfolioId, params = {}) {
     const { period = '1y', benchmarkSymbol = 'SPY', windowDays = 60 } = params;
     const { startDate } = this._getPeriodDates(period);
 
-    const portfolioReturns = this._loadPortfolioReturns(portfolioId, startDate);
-    const benchmarkReturns = this._loadBenchmarkReturns(benchmarkSymbol, startDate);
+    const portfolioReturns = await this._loadPortfolioReturns(portfolioId, startDate);
+    const benchmarkReturns = await this._loadBenchmarkReturns(benchmarkSymbol, startDate);
 
     if (portfolioReturns.length < windowDays + 20) {
       return { error: `Insufficient data for rolling alpha (need ${windowDays + 20}+ days)` };
@@ -973,23 +996,23 @@ class AlphaAnalytics {
   /**
    * Get alpha attribution by position
    */
-  getAlphaAttribution(portfolioId, params = {}) {
+  async getAlphaAttribution(portfolioId, params = {}) {
     const { period = '1y', benchmarkSymbol = 'SPY' } = params;
-    const positions = this._getPortfolioPositions(portfolioId);
+    const positions = await this._getPortfolioPositions(portfolioId);
     if (positions.length === 0) {
       return { error: 'Portfolio has no positions' };
     }
 
     const { startDate } = this._getPeriodDates(period);
-    const portfolioReturns = this._loadPortfolioReturns(portfolioId, startDate);
-    const benchmarkReturns = this._loadBenchmarkReturns(benchmarkSymbol, startDate);
+    const portfolioReturns = await this._loadPortfolioReturns(portfolioId, startDate);
+    const benchmarkReturns = await this._loadBenchmarkReturns(benchmarkSymbol, startDate);
 
     if (portfolioReturns.length < 20) {
       return { error: 'Insufficient data for attribution (need 20+ days)' };
     }
 
     const aligned = this._alignReturns(portfolioReturns, benchmarkReturns);
-    const result = this._calculateAlphaAttribution(positions, startDate, aligned);
+    const result = await this._calculateAlphaAttribution(positions, startDate, aligned);
 
     return {
       portfolioId,
@@ -1003,12 +1026,12 @@ class AlphaAnalytics {
   /**
    * Get skill vs luck analysis
    */
-  getSkillAnalysis(portfolioId, params = {}) {
+  async getSkillAnalysis(portfolioId, params = {}) {
     const { period = '1y', benchmarkSymbol = 'SPY' } = params;
     const { startDate } = this._getPeriodDates(period);
 
-    const portfolioReturns = this._loadPortfolioReturns(portfolioId, startDate);
-    const benchmarkReturns = this._loadBenchmarkReturns(benchmarkSymbol, startDate);
+    const portfolioReturns = await this._loadPortfolioReturns(portfolioId, startDate);
+    const benchmarkReturns = await this._loadBenchmarkReturns(benchmarkSymbol, startDate);
 
     if (portfolioReturns.length < 60) {
       return { error: 'Insufficient data for skill analysis (need 60+ days)' };
