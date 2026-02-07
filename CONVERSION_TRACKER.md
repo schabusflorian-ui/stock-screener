@@ -1,7 +1,7 @@
 # PostgreSQL Conversion Progress Tracker
 
 **Last Updated**: 2026-02-07
-**Overall Progress**: 27 / 197 services (14%)
+**Overall Progress**: 28 / 197 services (14%)
 
 ---
 
@@ -30,6 +30,7 @@
 | portfolio/portfolioAlerts.js | Medium | 3h | ✅ | 17 DB calls, 17 methods, alert monitoring |
 | portfolio/performanceAttribution.js | High | 3h | ✅ | 10 DB calls, Brinson-Fachler, factor attribution |
 | portfolio/holdingsEngine.js | High | 5h | ✅ | 60+ DB calls, 21 methods, buy/sell, DRIP, stock splits |
+| portfolio/metricsEngine.js | High | 3h | ✅ | 17 DB calls, analytics, snapshots, performance metrics |
 
 ---
 
@@ -55,7 +56,7 @@ Priority 1A is now complete! All Data Access Layer services have been converted.
 |---|---------|-----------|-----------|--------|----------|
 | 5 | portfolio/index.js | High | 6-8h | ✅ Complete | - |
 | 6 | portfolio/holdingsEngine.js | Medium | 4-5h | ✅ Complete | - |
-| 7 | portfolio/metricsEngine.js | High | 5-6h | ⏸️ Pending | - |
+| 7 | portfolio/metricsEngine.js | High | 5-6h | ✅ Complete | - |
 | 8 | portfolio/performanceAttribution.js | High | 4-5h | ✅ Complete | - |
 | 9 | portfolio/correlationManager.js | Medium | 3-4h | ✅ Complete | - |
 | 10 | portfolio/dividendProcessor.js | Medium | 3-4h | ✅ Complete | - |
