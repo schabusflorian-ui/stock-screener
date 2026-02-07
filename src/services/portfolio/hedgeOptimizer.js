@@ -2,103 +2,11 @@
 // Hedge optimization service for tail risk protection
 // Suggests protective hedges during high-risk market regimes
 
+const { getDatabaseAsync } = require('../../database');
+
 class HedgeOptimizer {
-  constructor(db) {
-    this.db = db;
-    this._prepareStatements();
-  }
-
-  _prepareStatements() {
-    this.stmts = {
-      // Get portfolio positions with betas
-      getPortfolioPositions: this.db.prepare(`
-        SELECT
-          pp.id,
-          pp.shares,
-          pp.current_value,
-          pp.average_cost,
-          c.symbol,
-          c.name,
-          c.sector,
-          pm.beta
-        FROM portfolio_positions pp
-        JOIN companies c ON pp.company_id = c.id
-        LEFT JOIN price_metrics pm ON pp.company_id = pm.company_id
-        WHERE pp.portfolio_id = ?
-          AND pp.shares > 0
-      `),
-
-      // Get portfolio summary
-      getPortfolioSummary: this.db.prepare(`
-        SELECT
-          current_value as total_value,
-          current_cash as total_cash,
-          (SELECT COUNT(*) FROM portfolio_positions WHERE portfolio_id = portfolios.id AND shares > 0) as position_count
-        FROM portfolios
-        WHERE id = ?
-      `),
-
-      // Get current VIX level
-      getVIXLevel: this.db.prepare(`
-        SELECT
-          indicator_value as vix,
-          fetched_at
-        FROM market_sentiment
-        WHERE indicator_type = 'vix'
-        ORDER BY fetched_at DESC
-        LIMIT 1
-      `),
-
-      // Get SPY price
-      getSPYPrice: this.db.prepare(`
-        SELECT dp.close as price
-        FROM daily_prices dp
-        JOIN companies c ON dp.company_id = c.id
-        WHERE c.symbol = 'SPY'
-        ORDER BY dp.date DESC
-        LIMIT 1
-      `),
-
-      // Store hedge suggestion
-      storeHedgeSuggestion: this.db.prepare(`
-        INSERT INTO hedge_suggestions (
-          portfolio_id,
-          regime,
-          vix_level,
-          portfolio_beta,
-          portfolio_var_95,
-          suggestion_type,
-          underlying,
-          action,
-          strike_type,
-          expiry_dte,
-          contracts,
-          estimated_cost,
-          target_cash_pct,
-          current_cash_pct,
-          hedge_ratio,
-          notional_hedged,
-          rationale
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `),
-
-      // Get recent hedge suggestions
-      getRecentSuggestions: this.db.prepare(`
-        SELECT *
-        FROM hedge_suggestions
-        WHERE portfolio_id = ?
-        ORDER BY created_at DESC
-        LIMIT ?
-      `),
-
-      // Update suggestion status
-      updateSuggestionStatus: this.db.prepare(`
-        UPDATE hedge_suggestions
-        SET status = ?,
-            implemented_at = CASE WHEN ? = 'implemented' THEN datetime('now') ELSE implemented_at END
-        WHERE id = ?
-      `),
-    };
+  constructor() {
+    // No longer needs db parameter - uses getDatabaseAsync()
   }
 
   /**
@@ -107,7 +15,9 @@ class HedgeOptimizer {
    * @param {Object} regime - Current market regime from RegimeDetector
    * @returns {Object} Hedge suggestions
    */
-  suggestHedges(portfolioId, regime) {
+  async suggestHedges(portfolioId, regime) {
+    const database = await getDatabaseAsync();
+
     // Only suggest hedges in high-risk regimes
     const shouldHedge = ['HIGH_VOL', 'CRISIS'].includes(regime?.regime);
 
@@ -121,7 +31,17 @@ class HedgeOptimizer {
     }
 
     // Get portfolio data
-    const portfolio = this.stmts.getPortfolioSummary.get(portfolioId);
+    const portfolioResult = await database.query(`
+      SELECT
+        current_value as total_value,
+        current_cash as total_cash,
+        (SELECT COUNT(*) FROM portfolio_positions WHERE portfolio_id = portfolios.id AND shares > 0) as position_count
+      FROM portfolios
+      WHERE id = $1
+    `, [portfolioId]);
+
+    const portfolio = portfolioResult.rows[0];
+
     if (!portfolio || portfolio.total_value <= 0) {
       return {
         needed: false,
@@ -130,14 +50,50 @@ class HedgeOptimizer {
       };
     }
 
-    const positions = this.stmts.getPortfolioPositions.all(portfolioId);
+    const positionsResult = await database.query(`
+      SELECT
+        pp.id,
+        pp.shares,
+        pp.current_value,
+        pp.average_cost,
+        c.symbol,
+        c.name,
+        c.sector,
+        pm.beta
+      FROM portfolio_positions pp
+      JOIN companies c ON pp.company_id = c.id
+      LEFT JOIN price_metrics pm ON pp.company_id = pm.company_id
+      WHERE pp.portfolio_id = $1
+        AND pp.shares > 0
+    `, [portfolioId]);
+
+    const positions = positionsResult.rows;
 
     // Calculate portfolio metrics
     const portfolioMetrics = this._calculatePortfolioMetrics(portfolio, positions);
 
     // Get market data
-    const vixData = this.stmts.getVIXLevel.get();
-    const spyData = this.stmts.getSPYPrice.get();
+    const vixResult = await database.query(`
+      SELECT
+        indicator_value as vix,
+        fetched_at
+      FROM market_sentiment
+      WHERE indicator_type = 'vix'
+      ORDER BY fetched_at DESC
+      LIMIT 1
+    `);
+
+    const spyResult = await database.query(`
+      SELECT dp.close as price
+      FROM daily_prices dp
+      JOIN companies c ON dp.company_id = c.id
+      WHERE c.symbol = 'SPY'
+      ORDER BY dp.date DESC
+      LIMIT 1
+    `);
+
+    const vixData = vixResult.rows[0];
+    const spyData = spyResult.rows[0];
 
     const vix = vixData?.vix || 20;
     const spyPrice = spyData?.price || 450;
@@ -163,7 +119,7 @@ class HedgeOptimizer {
 
     // Store suggestions
     for (const suggestion of suggestions) {
-      this._storeSuggestion(portfolioId, suggestion, portfolioMetrics, vix, regime);
+      await this._storeSuggestion(portfolioId, suggestion, portfolioMetrics, vix, regime);
     }
 
     return {
@@ -439,9 +395,31 @@ class HedgeOptimizer {
   /**
    * Store hedge suggestion in database
    */
-  _storeSuggestion(portfolioId, suggestion, metrics, vix, regime) {
+  async _storeSuggestion(portfolioId, suggestion, metrics, vix, regime) {
     try {
-      this.stmts.storeHedgeSuggestion.run(
+      const database = await getDatabaseAsync();
+
+      await database.query(`
+        INSERT INTO hedge_suggestions (
+          portfolio_id,
+          regime,
+          vix_level,
+          portfolio_beta,
+          portfolio_var_95,
+          suggestion_type,
+          underlying,
+          action,
+          strike_type,
+          expiry_dte,
+          contracts,
+          estimated_cost,
+          target_cash_pct,
+          current_cash_pct,
+          hedge_ratio,
+          notional_hedged,
+          rationale
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+      `, [
         portfolioId,
         regime?.regime || 'UNKNOWN',
         vix,
@@ -459,7 +437,7 @@ class HedgeOptimizer {
         suggestion.hedgeRatio,
         suggestion.notionalHedged,
         suggestion.rationale
-      );
+      ]);
     } catch (error) {
       console.warn('Failed to store hedge suggestion:', error.message);
     }
@@ -468,23 +446,41 @@ class HedgeOptimizer {
   /**
    * Get recent hedge suggestions for a portfolio
    */
-  getRecentSuggestions(portfolioId, limit = 10) {
-    return this.stmts.getRecentSuggestions.all(portfolioId, limit);
+  async getRecentSuggestions(portfolioId, limit = 10) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT *
+      FROM hedge_suggestions
+      WHERE portfolio_id = $1
+      ORDER BY created_at DESC
+      LIMIT $2
+    `, [portfolioId, limit]);
+
+    return result.rows;
   }
 
   /**
    * Mark suggestion as implemented or dismissed
    */
-  updateSuggestionStatus(suggestionId, status) {
-    this.stmts.updateSuggestionStatus.run(status, status, suggestionId);
+  async updateSuggestionStatus(suggestionId, status) {
+    const database = await getDatabaseAsync();
+
+    await database.query(`
+      UPDATE hedge_suggestions
+      SET status = $1,
+          implemented_at = CASE WHEN $2 = 'implemented' THEN CURRENT_TIMESTAMP ELSE implemented_at END
+      WHERE id = $3
+    `, [status, status, suggestionId]);
+
     return { success: true, status };
   }
 
   /**
    * Get hedge summary for portfolio
    */
-  getHedgeSummary(portfolioId) {
-    const suggestions = this.getRecentSuggestions(portfolioId, 20);
+  async getHedgeSummary(portfolioId) {
+    const suggestions = await this.getRecentSuggestions(portfolioId, 20);
 
     const summary = {
       totalSuggestions: suggestions.length,
