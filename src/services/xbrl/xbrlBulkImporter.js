@@ -10,6 +10,7 @@
  * Coverage: All EU + UK listed companies since 2021 (ESEF mandate)
  */
 
+const { getDatabaseAsync } = require('../../database');
 const { XBRLFilingsClient } = require('./xbrlFilingsClient');
 const { XBRLParser } = require('./xbrlParser');
 const { FundamentalStore } = require('./fundamentalStore');
@@ -41,14 +42,12 @@ const EU_UK_COUNTRIES = [
 class XBRLBulkImporter {
   /**
    * Create a new XBRLBulkImporter
-   * @param {Object} db - better-sqlite3 database instance
    * @param {Object} config - Configuration options
    */
-  constructor(db, config = {}) {
-    this.db = db;
+  constructor(config = {}) {
     this.client = new XBRLFilingsClient(config.clientConfig);
     this.parser = new XBRLParser(config.parserConfig);
-    this.store = new FundamentalStore(db);
+    this.store = new FundamentalStore();
 
     // Symbol resolver from Agent 11 (optional)
     this.symbolResolver = config.symbolResolver || null;
@@ -72,19 +71,20 @@ class XBRLBulkImporter {
    * Ensure sync_log table has resume capability columns
    * @private
    */
-  _ensureResumeColumns() {
+  async _ensureResumeColumns() {
+    const database = await getDatabaseAsync();
     try {
-      this.db.exec('ALTER TABLE xbrl_sync_log ADD COLUMN last_filing_hash TEXT');
+      await database.query('ALTER TABLE xbrl_sync_log ADD COLUMN last_filing_hash TEXT');
     } catch (e) {
       // Column may already exist
     }
     try {
-      this.db.exec('ALTER TABLE xbrl_sync_log ADD COLUMN current_page INTEGER DEFAULT 1');
+      await database.query('ALTER TABLE xbrl_sync_log ADD COLUMN current_page INTEGER DEFAULT 1');
     } catch (e) {
       // Column may already exist
     }
     try {
-      this.db.exec('ALTER TABLE xbrl_sync_log ADD COLUMN target_country TEXT');
+      await database.query('ALTER TABLE xbrl_sync_log ADD COLUMN target_country TEXT');
     } catch (e) {
       // Column may already exist
     }
@@ -112,12 +112,15 @@ class XBRLBulkImporter {
     this.isRunning = true;
     this.isPaused = false;
 
-    const logId = this.store.startSyncLog('country_backfill', countryCode);
+    const database = await getDatabaseAsync();
+    const logId = await this.store.startSyncLog('country_backfill', countryCode);
     this.currentJobId = logId;
 
     // Update with target country
-    this.db.prepare('UPDATE xbrl_sync_log SET target_country = ? WHERE id = ?')
-      .run(countryCode, logId);
+    await database.query(
+      'UPDATE xbrl_sync_log SET target_country = $1 WHERE id = $2',
+      [countryCode, logId]
+    );
 
     const stats = {
       country: countryCode,
@@ -178,7 +181,7 @@ class XBRLBulkImporter {
           }
 
           // Skip if already imported
-          const existing = this.store.getFilingByHash(filing.hash);
+          const existing = await this.store.getFilingByHash(filing.hash);
           if (existing) {
             stats.skipped++;
             continue;
@@ -186,7 +189,7 @@ class XBRLBulkImporter {
 
           try {
             // Store filing and identifier
-            const storedFiling = this.store.storeFiling(filing);
+            const storedFiling = await this.store.storeFiling(filing);
             stats.added++;
 
             // Fetch and parse xBRL-JSON
@@ -201,16 +204,16 @@ class XBRLBulkImporter {
                     const metrics = this.parser.toFlatRecord(parsed, periodKey);
 
                     if (metrics && storedFiling.identifierId) {
-                      this.store.storeMetrics(metrics, storedFiling.identifierId, storedFiling.id);
+                      await this.store.storeMetrics(metrics, storedFiling.identifierId, storedFiling.id);
                     }
                   }
                 }
 
-                this.store.markFilingParsed(storedFiling.id, true);
+                await this.store.markFilingParsed(storedFiling.id, true);
                 stats.parsed++;
               } catch (parseError) {
                 // Log parse error but don't fail the import
-                this.store.markFilingParsed(storedFiling.id, false, parseError.message);
+                await this.store.markFilingParsed(storedFiling.id, false, parseError.message);
                 console.warn(`    Parse error for ${filing.entityName}: ${parseError.message}`);
               }
             }
@@ -233,7 +236,7 @@ class XBRLBulkImporter {
           filingCount++;
 
           // Update progress
-          this._updateProgress(logId, page, filing.hash);
+          await this._updateProgress(logId, page, filing.hash);
 
           // Call progress callback
           if (progressCallback) {
@@ -256,7 +259,7 @@ class XBRLBulkImporter {
       }
 
       // Complete the sync log
-      this.store.completeSyncLog(logId, {
+      await this.store.completeSyncLog(logId, {
         processed: stats.processed,
         added: stats.added,
         updated: 0,
@@ -350,7 +353,9 @@ class XBRLBulkImporter {
    * @returns {Promise<Object>} - Import statistics
    */
   async resumeImport(syncLogId) {
-    const log = this.db.prepare('SELECT * FROM xbrl_sync_log WHERE id = ?').get(syncLogId);
+    const database = await getDatabaseAsync();
+    const result = await database.query('SELECT * FROM xbrl_sync_log WHERE id = $1', [syncLogId]);
+    const log = result.rows[0];
 
     if (!log) {
       throw new Error(`Sync log ${syncLogId} not found`);
@@ -387,15 +392,17 @@ class XBRLBulkImporter {
       return { linked: 0, failed: 0, skipped: 0 };
     }
 
+    const database = await getDatabaseAsync();
     let query = `
       SELECT * FROM company_identifiers
       WHERE company_id IS NULL AND lei IS NOT NULL
     `;
     if (limit) {
-      query += ` LIMIT ${limit}`;
+      query += ` LIMIT $1`;
     }
 
-    const unlinked = this.db.prepare(query).all();
+    const result = await database.query(query, limit ? [limit] : []);
+    const unlinked = result.rows;
     console.log(`\n🔗 Linking ${unlinked.length} unlinked identifiers...`);
 
     const stats = { linked: 0, failed: 0, skipped: 0 };
@@ -482,12 +489,13 @@ class XBRLBulkImporter {
    * Update progress in sync log
    * @private
    */
-  _updateProgress(logId, page, filingHash) {
-    this.db.prepare(`
+  async _updateProgress(logId, page, filingHash) {
+    const database = await getDatabaseAsync();
+    await database.query(`
       UPDATE xbrl_sync_log
-      SET current_page = ?, last_filing_hash = ?
-      WHERE id = ?
-    `).run(page, filingHash, logId);
+      SET current_page = $1, last_filing_hash = $2
+      WHERE id = $3
+    `, [page, filingHash, logId]);
   }
 }
 

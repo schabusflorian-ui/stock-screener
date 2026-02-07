@@ -1,5 +1,7 @@
 // src/services/xbrl/fundamentalStore.js
 
+const { getDatabaseAsync } = require('../../database');
+
 /**
  * Fundamental Store
  *
@@ -7,77 +9,8 @@
  * Manages company identifiers, filings, and fundamental metrics.
  */
 class FundamentalStore {
-  constructor(database) {
-    this.db = database;
-    this._prepareStatements();
+  constructor() {
     console.log('✅ FundamentalStore initialized');
-  }
-
-  /**
-   * Prepare SQL statements for better performance
-   * @private
-   */
-  _prepareStatements() {
-    // Company identifiers
-    this.stmtGetIdentifierByLEI = this.db.prepare(`
-      SELECT * FROM company_identifiers WHERE lei = ?
-    `);
-
-    this.stmtGetIdentifierByTicker = this.db.prepare(`
-      SELECT * FROM company_identifiers WHERE ticker = ? AND exchange = ?
-    `);
-
-    this.stmtInsertIdentifier = this.db.prepare(`
-      INSERT INTO company_identifiers (lei, isin, sedol, ticker, exchange, yahoo_symbol, country, legal_name, company_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    this.stmtUpdateIdentifier = this.db.prepare(`
-      UPDATE company_identifiers
-      SET isin = COALESCE(?, isin),
-          sedol = COALESCE(?, sedol),
-          ticker = COALESCE(?, ticker),
-          exchange = COALESCE(?, exchange),
-          yahoo_symbol = COALESCE(?, yahoo_symbol),
-          country = COALESCE(?, country),
-          legal_name = COALESCE(?, legal_name),
-          company_id = COALESCE(?, company_id),
-          updated_at = CURRENT_TIMESTAMP
-      WHERE lei = ?
-    `);
-
-    // Filings
-    this.stmtGetFilingByHash = this.db.prepare(`
-      SELECT * FROM xbrl_filings WHERE filing_hash = ?
-    `);
-
-    this.stmtInsertFiling = this.db.prepare(`
-      INSERT INTO xbrl_filings (filing_hash, identifier_id, lei, entity_name, country, period_end, period_start, filing_date, document_type, source, source_url, json_url, currency, parsed, raw_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    this.stmtUpdateFilingParsed = this.db.prepare(`
-      UPDATE xbrl_filings SET parsed = ?, parse_errors = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-    `);
-
-    // Fundamental metrics
-    this.stmtGetMetricsByIdentifier = this.db.prepare(`
-      SELECT * FROM xbrl_fundamental_metrics
-      WHERE identifier_id = ?
-      ORDER BY period_end DESC
-    `);
-
-    this.stmtGetMetricsByPeriod = this.db.prepare(`
-      SELECT * FROM xbrl_fundamental_metrics
-      WHERE identifier_id = ? AND period_end = ? AND period_type = ?
-    `);
-
-    this.stmtGetLatestMetrics = this.db.prepare(`
-      SELECT * FROM xbrl_fundamental_metrics
-      WHERE identifier_id = ?
-      ORDER BY period_end DESC
-      LIMIT 1
-    `);
   }
 
   // ========================================
@@ -89,7 +22,8 @@ class FundamentalStore {
    * @param {Object} data - Identifier data
    * @returns {Object} - Identifier record
    */
-  upsertIdentifier(data) {
+  async upsertIdentifier(data) {
+    const database = await getDatabaseAsync();
     const { lei, isin, sedol, ticker, exchange, yahooSymbol, country, companyName, legalName, companyId } = data;
     const name = legalName || companyName;
 
@@ -100,14 +34,28 @@ class FundamentalStore {
     // Check if exists
     let existing = null;
     if (lei) {
-      existing = this.stmtGetIdentifierByLEI.get(lei);
+      const result = await database.query('SELECT * FROM company_identifiers WHERE lei = $1', [lei]);
+      existing = result.rows[0];
     } else if (ticker && exchange) {
-      existing = this.stmtGetIdentifierByTicker.get(ticker, exchange);
+      const result = await database.query('SELECT * FROM company_identifiers WHERE ticker = $1 AND exchange = $2', [ticker, exchange]);
+      existing = result.rows[0];
     }
 
     if (existing) {
       // Update with any new data
-      this.stmtUpdateIdentifier.run(
+      await database.query(`
+        UPDATE company_identifiers
+        SET isin = COALESCE($1, isin),
+            sedol = COALESCE($2, sedol),
+            ticker = COALESCE($3, ticker),
+            exchange = COALESCE($4, exchange),
+            yahoo_symbol = COALESCE($5, yahoo_symbol),
+            country = COALESCE($6, country),
+            legal_name = COALESCE($7, legal_name),
+            company_id = COALESCE($8, company_id),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE lei = $9
+      `, [
         isin || null,
         sedol || null,
         ticker || null,
@@ -117,12 +65,17 @@ class FundamentalStore {
         name || null,
         companyId || null,
         lei
-      );
-      return this.stmtGetIdentifierByLEI.get(lei);
+      ]);
+      const result = await database.query('SELECT * FROM company_identifiers WHERE lei = $1', [lei]);
+      return result.rows[0];
     }
 
     // Insert new
-    const result = this.stmtInsertIdentifier.run(
+    const result = await database.query(`
+      INSERT INTO company_identifiers (lei, isin, sedol, ticker, exchange, yahoo_symbol, country, legal_name, company_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING id
+    `, [
       lei || null,
       isin || null,
       sedol || null,
@@ -132,9 +85,9 @@ class FundamentalStore {
       country || null,
       name || 'Unknown',
       companyId || null
-    );
+    ]);
 
-    return { id: result.lastInsertRowid, lei, legal_name: name, ...data };
+    return { id: result.rows[0].id, lei, legal_name: name, ...data };
   }
 
   /**
@@ -142,8 +95,10 @@ class FundamentalStore {
    * @param {string} lei - Legal Entity Identifier
    * @returns {Object|null} - Identifier record
    */
-  getIdentifierByLEI(lei) {
-    return this.stmtGetIdentifierByLEI.get(lei);
+  async getIdentifierByLEI(lei) {
+    const database = await getDatabaseAsync();
+    const result = await database.query('SELECT * FROM company_identifiers WHERE lei = $1', [lei]);
+    return result.rows[0] || null;
   }
 
   /**
@@ -152,8 +107,10 @@ class FundamentalStore {
    * @param {string} exchange - Exchange code
    * @returns {Object|null} - Identifier record
    */
-  getIdentifierByTicker(ticker, exchange) {
-    return this.stmtGetIdentifierByTicker.get(ticker.toUpperCase(), exchange.toUpperCase());
+  async getIdentifierByTicker(ticker, exchange) {
+    const database = await getDatabaseAsync();
+    const result = await database.query('SELECT * FROM company_identifiers WHERE ticker = $1 AND exchange = $2', [ticker.toUpperCase(), exchange.toUpperCase()]);
+    return result.rows[0] || null;
   }
 
   /**
@@ -161,10 +118,11 @@ class FundamentalStore {
    * @param {number} identifierId - Identifier ID
    * @param {number} companyId - Company ID from companies table
    */
-  linkToCompany(identifierId, companyId) {
-    this.db.prepare(`
-      UPDATE company_identifiers SET company_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-    `).run(companyId, identifierId);
+  async linkToCompany(identifierId, companyId) {
+    const database = await getDatabaseAsync();
+    await database.query(`
+      UPDATE company_identifiers SET company_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2
+    `, [companyId, identifierId]);
   }
 
   /**
@@ -173,13 +131,15 @@ class FundamentalStore {
    * @param {number} limit - Max results
    * @returns {Array} - Matching identifiers
    */
-  searchIdentifiers(query, limit = 20) {
-    return this.db.prepare(`
+  async searchIdentifiers(query, limit = 20) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT * FROM company_identifiers
-      WHERE legal_name LIKE ? OR ticker LIKE ?
+      WHERE legal_name ILIKE $1 OR ticker ILIKE $2
       ORDER BY legal_name
-      LIMIT ?
-    `).all(`%${query}%`, `%${query}%`, limit);
+      LIMIT $3
+    `, [`%${query}%`, `%${query}%`, limit]);
+    return result.rows;
   }
 
   /**
@@ -188,13 +148,15 @@ class FundamentalStore {
    * @param {number} limit - Max results
    * @returns {Array} - Identifiers
    */
-  getIdentifiersByCountry(country, limit = 100) {
-    return this.db.prepare(`
+  async getIdentifiersByCountry(country, limit = 100) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT * FROM company_identifiers
-      WHERE country = ?
+      WHERE country = $1
       ORDER BY legal_name
-      LIMIT ?
-    `).all(country.toUpperCase(), limit);
+      LIMIT $2
+    `, [country.toUpperCase(), limit]);
+    return result.rows;
   }
 
   // ========================================
@@ -206,20 +168,21 @@ class FundamentalStore {
    * @param {Object} filing - Filing data
    * @returns {Object} - Filing record
    */
-  storeFiling(filing) {
-    const existing = this.stmtGetFilingByHash.get(filing.hash);
-    if (existing) {
+  async storeFiling(filing) {
+    const database = await getDatabaseAsync();
+    const existing = await database.query('SELECT * FROM xbrl_filings WHERE filing_hash = $1', [filing.hash]);
+    if (existing.rows.length > 0) {
       // Normalize the return to include camelCase properties for consistency
       return {
-        ...existing,
-        identifierId: existing.identifier_id  // Add camelCase alias
+        ...existing.rows[0],
+        identifierId: existing.rows[0].identifier_id  // Add camelCase alias
       };
     }
 
     // Get or create identifier
     let identifierId = null;
     if (filing.entityLEI) {
-      const identifier = this.upsertIdentifier({
+      const identifier = await this.upsertIdentifier({
         lei: filing.entityLEI,
         country: filing.country,
         companyName: filing.entityName
@@ -227,7 +190,11 @@ class FundamentalStore {
       identifierId = identifier.id;
     }
 
-    const result = this.stmtInsertFiling.run(
+    const result = await database.query(`
+      INSERT INTO xbrl_filings (filing_hash, identifier_id, lei, entity_name, country, period_end, period_start, filing_date, document_type, source, source_url, json_url, currency, parsed, raw_json)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      RETURNING id
+    `, [
       filing.hash,
       identifierId,
       filing.entityLEI || null,
@@ -241,12 +208,12 @@ class FundamentalStore {
       filing.urls?.viewer || null,
       filing.jsonUrl || null,  // Store the json_url for fetching xBRL-JSON
       filing.currency || 'EUR',
-      0, // not parsed yet
+      false, // not parsed yet
       filing.rawJson ? JSON.stringify(filing.rawJson) : null
-    );
+    ]);
 
     return {
-      id: result.lastInsertRowid,
+      id: result.rows[0].id,
       ...filing,
       identifierId
     };
@@ -257,8 +224,10 @@ class FundamentalStore {
    * @param {string} filingHash - Filing hash
    * @returns {Object|null} - Filing record
    */
-  getFilingByHash(filingHash) {
-    return this.stmtGetFilingByHash.get(filingHash);
+  async getFilingByHash(filingHash) {
+    const database = await getDatabaseAsync();
+    const result = await database.query('SELECT * FROM xbrl_filings WHERE filing_hash = $1', [filingHash]);
+    return result.rows[0] || null;
   }
 
   /**
@@ -267,8 +236,11 @@ class FundamentalStore {
    * @param {boolean} success - Parse success
    * @param {string} errors - Error details if any
    */
-  markFilingParsed(filingId, success, errors = null) {
-    this.stmtUpdateFilingParsed.run(success ? 1 : 0, errors, filingId);
+  async markFilingParsed(filingId, success, errors = null) {
+    const database = await getDatabaseAsync();
+    await database.query(`
+      UPDATE xbrl_filings SET parsed = $1, parse_errors = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3
+    `, [success, errors, filingId]);
   }
 
   /**
@@ -276,13 +248,15 @@ class FundamentalStore {
    * @param {number} limit - Max results
    * @returns {Array} - Unparsed filings
    */
-  getUnparsedFilings(limit = 100) {
-    return this.db.prepare(`
+  async getUnparsedFilings(limit = 100) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT * FROM xbrl_filings
-      WHERE parsed = 0
+      WHERE parsed = false
       ORDER BY period_end DESC
-      LIMIT ?
-    `).all(limit);
+      LIMIT $1
+    `, [limit]);
+    return result.rows;
   }
 
   /**
@@ -290,12 +264,14 @@ class FundamentalStore {
    * @param {number} identifierId - Identifier ID
    * @returns {Array} - Filings
    */
-  getFilingsByIdentifier(identifierId) {
-    return this.db.prepare(`
+  async getFilingsByIdentifier(identifierId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT * FROM xbrl_filings
-      WHERE identifier_id = ?
+      WHERE identifier_id = $1
       ORDER BY period_end DESC
-    `).all(identifierId);
+    `, [identifierId]);
+    return result.rows;
   }
 
   // ========================================
@@ -310,59 +286,67 @@ class FundamentalStore {
    * @param {number} companyId - Company ID (optional)
    * @returns {Object} - Stored record
    */
-  storeMetrics(data, identifierId, filingId, companyId = null) {
+  async storeMetrics(data, identifierId, filingId, companyId = null) {
+    const database = await getDatabaseAsync();
     if (!identifierId || !data.period_end) {
       throw new Error('Identifier ID and period_end are required');
     }
 
     // Check if already exists (matching identifier, period_end, AND period_type)
     const periodType = data.period_type || 'annual';
-    const existing = this.stmtGetMetricsByPeriod.get(identifierId, data.period_end, periodType);
-    if (existing) {
+    const existing = await database.query(`
+      SELECT * FROM xbrl_fundamental_metrics
+      WHERE identifier_id = $1 AND period_end = $2 AND period_type = $3
+    `, [identifierId, data.period_end, periodType]);
+    if (existing.rows.length > 0) {
       // Update existing record
-      return this._updateMetrics(existing.id, data);
+      return this._updateMetrics(existing.rows[0].id, data);
     }
 
     // Build insert statement dynamically
     const fields = Object.keys(data).filter(k => data[k] !== undefined);
     const allFields = ['identifier_id', 'filing_id', 'company_id', ...fields];
-    const placeholders = allFields.map(() => '?').join(', ');
+    const placeholders = allFields.map((_, i) => `$${i + 1}`).join(', ');
     const values = [identifierId, filingId, companyId, ...fields.map(f => data[f])];
 
-    const stmt = this.db.prepare(`
+    const result = await database.query(`
       INSERT INTO xbrl_fundamental_metrics (${allFields.join(', ')})
       VALUES (${placeholders})
-    `);
+      RETURNING id
+    `, values);
 
-    const result = stmt.run(...values);
-    return { id: result.lastInsertRowid, identifierId, ...data };
+    return { id: result.rows[0].id, identifierId, ...data };
   }
 
   /**
    * Update existing metrics record
    * @private
    */
-  _updateMetrics(id, data) {
+  async _updateMetrics(id, data) {
+    const database = await getDatabaseAsync();
     const updates = [];
     const values = [];
+    let paramCount = 1;
 
     for (const [key, value] of Object.entries(data)) {
       if (value !== undefined && key !== 'period_end') {
-        updates.push(`${key} = ?`);
+        updates.push(`${key} = $${paramCount}`);
         values.push(value);
+        paramCount++;
       }
     }
 
     if (updates.length > 0) {
-      updates.push('updated_at = CURRENT_TIMESTAMP');
+      updates.push(`updated_at = CURRENT_TIMESTAMP`);
       values.push(id);
 
-      this.db.prepare(`
-        UPDATE xbrl_fundamental_metrics SET ${updates.join(', ')} WHERE id = ?
-      `).run(...values);
+      await database.query(`
+        UPDATE xbrl_fundamental_metrics SET ${updates.join(', ')} WHERE id = $${paramCount}
+      `, values);
     }
 
-    return this.db.prepare('SELECT * FROM xbrl_fundamental_metrics WHERE id = ?').get(id);
+    const result = await database.query('SELECT * FROM xbrl_fundamental_metrics WHERE id = $1', [id]);
+    return result.rows[0];
   }
 
   /**
@@ -370,8 +354,14 @@ class FundamentalStore {
    * @param {number} identifierId - Identifier ID
    * @returns {Array} - Metrics by period
    */
-  getMetricsByIdentifier(identifierId) {
-    return this.stmtGetMetricsByIdentifier.all(identifierId);
+  async getMetricsByIdentifier(identifierId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM xbrl_fundamental_metrics
+      WHERE identifier_id = $1
+      ORDER BY period_end DESC
+    `, [identifierId]);
+    return result.rows;
   }
 
   /**
@@ -379,8 +369,15 @@ class FundamentalStore {
    * @param {number} identifierId - Identifier ID
    * @returns {Object|null} - Latest metrics
    */
-  getLatestMetrics(identifierId) {
-    return this.stmtGetLatestMetrics.get(identifierId);
+  async getLatestMetrics(identifierId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM xbrl_fundamental_metrics
+      WHERE identifier_id = $1
+      ORDER BY period_end DESC
+      LIMIT 1
+    `, [identifierId]);
+    return result.rows[0] || null;
   }
 
   /**
@@ -389,8 +386,13 @@ class FundamentalStore {
    * @param {string} periodEnd - Period end date
    * @returns {Object|null} - Metrics
    */
-  getMetricsByPeriod(identifierId, periodEnd, periodType = 'annual') {
-    return this.stmtGetMetricsByPeriod.get(identifierId, periodEnd, periodType);
+  async getMetricsByPeriod(identifierId, periodEnd, periodType = 'annual') {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM xbrl_fundamental_metrics
+      WHERE identifier_id = $1 AND period_end = $2 AND period_type = $3
+    `, [identifierId, periodEnd, periodType]);
+    return result.rows[0] || null;
   }
 
   /**
@@ -398,45 +400,48 @@ class FundamentalStore {
    * @param {number} companyId - Company ID
    * @returns {Array} - Metrics
    */
-  getMetricsByCompanyId(companyId) {
-    return this.db.prepare(`
+  async getMetricsByCompanyId(companyId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT m.* FROM xbrl_fundamental_metrics m
       JOIN company_identifiers ci ON m.identifier_id = ci.id
-      WHERE ci.company_id = ?
+      WHERE ci.company_id = $1
       ORDER BY m.period_end DESC
-    `).all(companyId);
+    `, [companyId]);
+    return result.rows;
   }
 
   /**
    * Get aggregate stats for all XBRL data
    * @returns {Object} - Statistics
    */
-  getStats() {
-    const identifierCount = this.db.prepare('SELECT COUNT(*) as count FROM company_identifiers').get();
-    const filingCount = this.db.prepare('SELECT COUNT(*) as count FROM xbrl_filings').get();
-    const parsedFilingCount = this.db.prepare('SELECT COUNT(*) as count FROM xbrl_filings WHERE parsed = 1').get();
-    const metricsCount = this.db.prepare('SELECT COUNT(*) as count FROM xbrl_fundamental_metrics').get();
+  async getStats() {
+    const database = await getDatabaseAsync();
+    const identifierCount = await database.query('SELECT COUNT(*) as count FROM company_identifiers');
+    const filingCount = await database.query('SELECT COUNT(*) as count FROM xbrl_filings');
+    const parsedFilingCount = await database.query('SELECT COUNT(*) as count FROM xbrl_filings WHERE parsed = true');
+    const metricsCount = await database.query('SELECT COUNT(*) as count FROM xbrl_fundamental_metrics');
 
-    const countryCounts = this.db.prepare(`
+    const countryCounts = await database.query(`
       SELECT country, COUNT(*) as count FROM company_identifiers
       GROUP BY country ORDER BY count DESC LIMIT 10
-    `).all();
+    `);
 
-    const latestFiling = this.db.prepare(`
+    const latestFiling = await database.query(`
       SELECT period_end, entity_name FROM xbrl_filings
       ORDER BY period_end DESC LIMIT 1
-    `).get();
+    `);
 
     return {
-      identifiers: identifierCount.count,
+      identifiers: parseInt(identifierCount.rows[0].count),
       filings: {
-        total: filingCount.count,
-        parsed: parsedFilingCount.count,
-        pending: filingCount.count - parsedFilingCount.count
+        total: parseInt(filingCount.rows[0].count),
+        parsed: parseInt(parsedFilingCount.rows[0].count),
+        pending: parseInt(filingCount.rows[0].count) - parseInt(parsedFilingCount.rows[0].count)
       },
-      metrics: metricsCount.count,
-      countryCoverage: countryCounts,
-      latestFiling
+      metrics: parseInt(metricsCount.rows[0].count),
+      countryCoverage: countryCounts.rows,
+      latestFiling: latestFiling.rows[0]
     };
   }
 
@@ -450,13 +455,15 @@ class FundamentalStore {
    * @param {string} country - Country being synced (optional)
    * @returns {number} - Sync log ID
    */
-  startSyncLog(syncType, country = null) {
-    const result = this.db.prepare(`
+  async startSyncLog(syncType, country = null) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       INSERT INTO xbrl_sync_log (sync_type, country, status)
-      VALUES (?, ?, 'running')
-    `).run(syncType, country);
+      VALUES ($1, $2, 'running')
+      RETURNING id
+    `, [syncType, country]);
 
-    return result.lastInsertRowid;
+    return result.rows[0].id;
   }
 
   /**
@@ -464,18 +471,19 @@ class FundamentalStore {
    * @param {number} logId - Sync log ID
    * @param {Object} stats - Sync statistics
    */
-  completeSyncLog(logId, stats) {
-    this.db.prepare(`
+  async completeSyncLog(logId, stats) {
+    const database = await getDatabaseAsync();
+    await database.query(`
       UPDATE xbrl_sync_log SET
         completed_at = CURRENT_TIMESTAMP,
-        filings_processed = ?,
-        filings_added = ?,
-        filings_updated = ?,
-        errors = ?,
-        error_details = ?,
-        status = ?
-      WHERE id = ?
-    `).run(
+        filings_processed = $1,
+        filings_added = $2,
+        filings_updated = $3,
+        errors = $4,
+        error_details = $5,
+        status = $6
+      WHERE id = $7
+    `, [
       stats.processed || 0,
       stats.added || 0,
       stats.updated || 0,
@@ -483,7 +491,7 @@ class FundamentalStore {
       stats.errorDetails || null,
       stats.errors > 0 ? 'completed_with_errors' : 'completed',
       logId
-    );
+    ]);
   }
 
   /**
@@ -491,10 +499,12 @@ class FundamentalStore {
    * @param {number} limit - Max results
    * @returns {Array} - Sync logs
    */
-  getSyncLogs(limit = 20) {
-    return this.db.prepare(`
-      SELECT * FROM xbrl_sync_log ORDER BY started_at DESC LIMIT ?
-    `).all(limit);
+  async getSyncLogs(limit = 20) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM xbrl_sync_log ORDER BY started_at DESC LIMIT $1
+    `, [limit]);
+    return result.rows;
   }
 }
 

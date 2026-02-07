@@ -1,4 +1,5 @@
 // src/services/xbrl/dataSyncService.js
+const { getDatabaseAsync } = require('../../database');
 const { XBRLFilingsClient } = require('./xbrlFilingsClient');
 const { CompaniesHouseClient } = require('./companiesHouseClient');
 const { XBRLParser } = require('./xbrlParser');
@@ -15,8 +16,8 @@ const { FundamentalStore } = require('./fundamentalStore');
  * - Tracking sync progress and errors
  */
 class DataSyncService {
-  constructor(database, config = {}) {
-    this.db = database;
+  constructor(config = {}) {
+    this.database = null;
     this.config = {
       countries: config.countries || ['GB', 'DE', 'FR', 'NL', 'ES', 'IT', 'SE', 'BE', 'AT', 'CH'],
       batchSize: config.batchSize || 50,
@@ -25,17 +26,24 @@ class DataSyncService {
       ...config
     };
 
-    // Initialize components
+    // Initialize components (store is initialized after database is set)
     this.filingsClient = new XBRLFilingsClient(config.filingsClient);
     this.companiesHouseClient = new CompaniesHouseClient(config.companiesHouse);
     this.parser = new XBRLParser(config.parser);
-    this.store = new FundamentalStore(database);
+    this.store = null;
 
     // Sync state
     this.isRunning = false;
     this.currentSync = null;
     this.abortController = null;
+  }
 
+  /**
+   * Initialize async resources
+   */
+  async init() {
+    this.database = await getDatabaseAsync();
+    this.store = new FundamentalStore();
     console.log('✅ DataSyncService initialized');
   }
 
@@ -91,7 +99,7 @@ class DataSyncService {
    * @returns {Object} - Sync results for this country
    */
   async syncCountry(countryCode) {
-    const logId = this.store.startSyncLog('country', countryCode);
+    const logId = await this.store.startSyncLog('country', countryCode);
     this.currentSync = { country: countryCode, logId };
 
     const result = {
@@ -156,7 +164,7 @@ class DataSyncService {
     }
 
     // Update sync log
-    this.store.completeSyncLog(logId, {
+    await this.store.completeSyncLog(logId, {
       processed: result.processed,
       added: result.added,
       updated: result.updated,
@@ -204,7 +212,7 @@ class DataSyncService {
    * @returns {Object} - Processing results
    */
   async processUnparsedFilings(limit = 100) {
-    const unparsed = this.store.getUnparsedFilings(limit);
+    const unparsed = await this.store.getUnparsedFilings(limit);
     console.log(`\n🔄 Processing ${unparsed.length} unparsed filings...`);
 
     const result = {
@@ -230,15 +238,15 @@ class DataSyncService {
 
         if (metrics) {
           // Store metrics
-          this.store.storeMetrics(metrics, filing.identifier_id, filing.id);
+          await this.store.storeMetrics(metrics, filing.identifier_id, filing.id);
         }
 
         // Mark as parsed
-        this.store.markFilingParsed(filing.id, true);
+        await this.store.markFilingParsed(filing.id, true);
         result.success++;
 
       } catch (error) {
-        this.store.markFilingParsed(filing.id, false, error.message);
+        await this.store.markFilingParsed(filing.id, false, error.message);
         result.failed++;
         console.error(`   ❌ Failed to parse ${filing.filing_hash}: ${error.message}`);
       }
@@ -256,13 +264,13 @@ class DataSyncService {
    */
   async _processFiling(filing) {
     // Check if already exists
-    const existing = this.store.getFilingByHash(filing.hash);
+    const existing = await this.store.getFilingByHash(filing.hash);
     if (existing && existing.parsed) {
       return { isNew: false, updated: false };
     }
 
     // Store filing metadata
-    const storedFiling = this.store.storeFiling(filing);
+    const storedFiling = await this.store.storeFiling(filing);
     const isNew = !existing;
 
     // Fetch xBRL-JSON
@@ -271,7 +279,7 @@ class DataSyncService {
       xbrlJson = await this.filingsClient.getXBRLJson(filing.hash);
     } catch (error) {
       // xBRL-JSON not available for this filing
-      this.store.markFilingParsed(storedFiling.id, false, `xBRL-JSON not available: ${error.message}`);
+      await this.store.markFilingParsed(storedFiling.id, false, `xBRL-JSON not available: ${error.message}`);
       return { isNew, updated: false };
     }
 
@@ -288,14 +296,14 @@ class DataSyncService {
         const metrics = this.parser.toFlatRecord(parsed, periodKey);
         if (metrics) {
           metrics.data_quality_score = qualityScore;
-          this.store.storeMetrics(metrics, storedFiling.identifierId, storedFiling.id);
+          await this.store.storeMetrics(metrics, storedFiling.identifierId, storedFiling.id);
           metricsStored++;
         }
       }
     }
 
     // Mark filing as parsed
-    this.store.markFilingParsed(storedFiling.id, true);
+    await this.store.markFilingParsed(storedFiling.id, true);
 
     console.log(`   📄 ${filing.entityName}: ${metricsStored} periods stored (quality: ${qualityScore.toFixed(0)}%)`);
 
@@ -336,12 +344,12 @@ class DataSyncService {
    * Get sync status
    * @returns {Object} - Current status
    */
-  getStatus() {
+  async getStatus() {
     return {
       isRunning: this.isRunning,
       currentSync: this.currentSync,
-      stats: this.store.getStats(),
-      recentLogs: this.store.getSyncLogs(5)
+      stats: await this.store.getStats(),
+      recentLogs: await this.store.getSyncLogs(5)
     };
   }
 

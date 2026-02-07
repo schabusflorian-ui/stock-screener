@@ -1,5 +1,7 @@
 // src/services/xbrl/valuationService.js
 
+const { getDatabaseAsync } = require('../../database');
+
 /**
  * Valuation Service
  *
@@ -13,19 +15,17 @@
  */
 
 class ValuationService {
-  constructor(database) {
-    this.db = database;
-    this._prepareStatements();
+  constructor() {
     console.log('✅ ValuationService initialized');
   }
 
   /**
-   * Prepare SQL statements
+   * Get companies needing valuation update
    * @private
    */
-  _prepareStatements() {
-    // Get XBRL companies with fundamental data but missing valuation
-    this.stmtGetCompaniesNeedingValuation = this.db.prepare(`
+  async getCompaniesNeedingValuation() {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT DISTINCT
         c.id as company_id,
         c.symbol,
@@ -50,36 +50,65 @@ class ValuationService {
         AND (xfm.eps_basic IS NOT NULL OR xfm.total_equity IS NOT NULL)
       ORDER BY xfm.period_end DESC
     `);
+    return result.rows;
+  }
 
-    // Get price data for a company
-    this.stmtGetPriceData = this.db.prepare(`
+  /**
+   * Get price data for a company
+   * @private
+   */
+  async getPriceData(companyId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         last_price,
         market_cap,
         enterprise_value
       FROM price_metrics
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY updated_at DESC
       LIMIT 1
-    `);
+    `, [companyId]);
+    return result.rows[0] || null;
+  }
 
-    // Update calculated_metrics with valuation ratios
-    this.stmtUpdateValuation = this.db.prepare(`
+  /**
+   * Ensure metrics row exists
+   * @private
+   */
+  async ensureMetricsRow(companyId, periodEnd) {
+    const database = await getDatabaseAsync();
+    await database.query(`
+      INSERT INTO calculated_metrics (company_id, fiscal_period, period_type, data_source)
+      VALUES ($1, $2, 'annual', 'xbrl')
+      ON CONFLICT (company_id, fiscal_period) DO NOTHING
+    `, [companyId, periodEnd]);
+  }
+
+  /**
+   * Update valuation metrics
+   * @private
+   */
+  async updateValuation(companyId, periodEnd, valuation) {
+    const database = await getDatabaseAsync();
+    await database.query(`
       UPDATE calculated_metrics
       SET
-        pe_ratio = ?,
-        pb_ratio = ?,
-        ps_ratio = ?,
-        ev_ebitda = ?,
-        earnings_yield = ?
-      WHERE company_id = ? AND fiscal_period = ?
-    `);
-
-    // Insert if not exists, then update
-    this.stmtEnsureMetricsRow = this.db.prepare(`
-      INSERT OR IGNORE INTO calculated_metrics (company_id, fiscal_period, period_type, data_source)
-      VALUES (?, ?, 'annual', 'xbrl')
-    `);
+        pe_ratio = $1,
+        pb_ratio = $2,
+        ps_ratio = $3,
+        ev_ebitda = $4,
+        earnings_yield = $5
+      WHERE company_id = $6 AND fiscal_period = $7
+    `, [
+      valuation.pe_ratio,
+      valuation.pb_ratio,
+      valuation.ps_ratio,
+      valuation.ev_ebitda,
+      valuation.earnings_yield,
+      companyId,
+      periodEnd
+    ]);
   }
 
   /**
@@ -157,8 +186,8 @@ class ValuationService {
    * Update valuation for all EU/UK companies
    * @returns {Object} - Summary { processed, updated, skipped, errors }
    */
-  updateAllValuations() {
-    const companies = this.stmtGetCompaniesNeedingValuation.all();
+  async updateAllValuations() {
+    const companies = await this.getCompaniesNeedingValuation();
     console.log(`Found ${companies.length} company-periods needing valuation update`);
 
     const summary = {
@@ -174,7 +203,7 @@ class ValuationService {
 
       try {
         // Get price data
-        const priceData = this.stmtGetPriceData.get(company.company_id);
+        const priceData = await this.getPriceData(company.company_id);
 
         if (!priceData || !priceData.last_price) {
           summary.noPrice++;
@@ -190,18 +219,10 @@ class ValuationService {
         }
 
         // Ensure metrics row exists
-        this.stmtEnsureMetricsRow.run(company.company_id, company.period_end);
+        await this.ensureMetricsRow(company.company_id, company.period_end);
 
         // Update valuation
-        this.stmtUpdateValuation.run(
-          valuation.pe_ratio,
-          valuation.pb_ratio,
-          valuation.ps_ratio,
-          valuation.ev_ebitda,
-          valuation.earnings_yield,
-          company.company_id,
-          company.period_end
-        );
+        await this.updateValuation(company.company_id, company.period_end, valuation);
 
         summary.updated++;
       } catch (error) {
@@ -219,8 +240,9 @@ class ValuationService {
    * @param {string} symbol - Company symbol
    * @returns {Object} - Update result
    */
-  updateCompanyValuation(symbol) {
-    const company = this.db.prepare(`
+  async updateCompanyValuation(symbol) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         c.id as company_id,
         c.symbol,
@@ -236,16 +258,17 @@ class ValuationService {
       FROM companies c
       JOIN company_identifiers ci ON c.id = ci.company_id
       JOIN xbrl_fundamental_metrics xfm ON ci.id = xfm.identifier_id
-      WHERE c.symbol = ?
+      WHERE c.symbol = $1
       ORDER BY xfm.period_end DESC
       LIMIT 1
-    `).get(symbol);
+    `, [symbol]);
 
+    const company = result.rows[0];
     if (!company) {
       return { success: false, error: 'Company not found' };
     }
 
-    const priceData = this.stmtGetPriceData.get(company.company_id);
+    const priceData = await this.getPriceData(company.company_id);
     if (!priceData) {
       return { success: false, error: 'No price data' };
     }
@@ -255,16 +278,8 @@ class ValuationService {
       return valuation;
     }
 
-    this.stmtEnsureMetricsRow.run(company.company_id, company.period_end);
-    this.stmtUpdateValuation.run(
-      valuation.pe_ratio,
-      valuation.pb_ratio,
-      valuation.ps_ratio,
-      valuation.ev_ebitda,
-      valuation.earnings_yield,
-      company.company_id,
-      company.period_end
-    );
+    await this.ensureMetricsRow(company.company_id, company.period_end);
+    await this.updateValuation(company.company_id, company.period_end, valuation);
 
     return {
       success: true,
@@ -278,36 +293,43 @@ class ValuationService {
    * Get valuation statistics
    * @returns {Object} - Statistics
    */
-  getStats() {
-    const euCompanies = this.db.prepare(`
+  async getStats() {
+    const database = await getDatabaseAsync();
+
+    const euCompaniesResult = await database.query(`
       SELECT COUNT(DISTINCT c.id) as count
       FROM companies c
-      WHERE c.country NOT IN ('US', 'USA', 'CA') AND c.is_active = 1
-    `).get();
+      WHERE c.country NOT IN ('US', 'USA', 'CA') AND c.is_active = true
+    `);
 
-    const withPE = this.db.prepare(`
+    const withPEResult = await database.query(`
       SELECT COUNT(DISTINCT cm.company_id) as count
       FROM calculated_metrics cm
       JOIN companies c ON cm.company_id = c.id
       WHERE c.country NOT IN ('US', 'USA', 'CA')
         AND cm.pe_ratio IS NOT NULL
-    `).get();
+    `);
 
-    const withPB = this.db.prepare(`
+    const withPBResult = await database.query(`
       SELECT COUNT(DISTINCT cm.company_id) as count
       FROM calculated_metrics cm
       JOIN companies c ON cm.company_id = c.id
       WHERE c.country NOT IN ('US', 'USA', 'CA')
         AND cm.pb_ratio IS NOT NULL
-    `).get();
+    `);
 
-    const withPrice = this.db.prepare(`
+    const withPriceResult = await database.query(`
       SELECT COUNT(DISTINCT pm.company_id) as count
       FROM price_metrics pm
       JOIN companies c ON pm.company_id = c.id
       WHERE c.country NOT IN ('US', 'USA', 'CA')
         AND pm.last_price IS NOT NULL
-    `).get();
+    `);
+
+    const euCompanies = euCompaniesResult.rows[0];
+    const withPE = withPEResult.rows[0];
+    const withPB = withPBResult.rows[0];
+    const withPrice = withPriceResult.rows[0];
 
     return {
       totalEUCompanies: euCompanies.count,

@@ -10,36 +10,11 @@
  */
 
 const axios = require('axios');
+const { getDatabaseAsync } = require('../../database');
 
 class EnrichmentService {
-  constructor(database) {
-    this.db = database;
-    this._prepareStatements();
+  constructor() {
     console.log('✅ EnrichmentService initialized');
-  }
-
-  /**
-   * Prepare SQL statements
-   * @private
-   */
-  _prepareStatements() {
-    this.stmtGetCompaniesWithoutSector = this.db.prepare(`
-      SELECT id, symbol, name, country, lei, isin
-      FROM companies
-      WHERE (sector IS NULL OR sector = '')
-        AND is_active = 1
-      ORDER BY id
-    `);
-
-    this.stmtUpdateCompanySector = this.db.prepare(`
-      UPDATE companies
-      SET sector = ?, industry = ?, last_updated = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `);
-
-    this.stmtGetCompanyBySymbol = this.db.prepare(`
-      SELECT id, symbol, name, country FROM companies WHERE symbol = ?
-    `);
   }
 
   /**
@@ -123,7 +98,11 @@ class EnrichmentService {
 
       if (sector || industry) {
         // Update the database
-        this.stmtUpdateCompanySector.run(sector, industry, id);
+        const database = await getDatabaseAsync();
+        await database.query(
+          'UPDATE companies SET sector = $1, industry = $2, last_updated = CURRENT_TIMESTAMP WHERE id = $3',
+          [sector, industry, id]
+        );
 
         return {
           success: true,
@@ -259,7 +238,16 @@ class EnrichmentService {
   async enrichAllWithoutSector(options = {}) {
     const { limit = 100, delay = 1000 } = options;
 
-    const companies = this.stmtGetCompaniesWithoutSector.all();
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT id, symbol, name, country, lei, isin
+      FROM companies
+      WHERE (sector IS NULL OR sector = '')
+        AND is_active = true
+      ORDER BY id
+    `);
+
+    const companies = result.rows;
     const toProcess = companies.slice(0, limit);
 
     console.log(`Found ${companies.length} companies without sector, processing ${toProcess.length}`);
@@ -299,28 +287,40 @@ class EnrichmentService {
    * Get enrichment statistics
    * @returns {Object} - Statistics
    */
-  getStats() {
-    const total = this.db.prepare('SELECT COUNT(*) as count FROM companies WHERE is_active = 1').get();
-    const withSector = this.db.prepare('SELECT COUNT(*) as count FROM companies WHERE sector IS NOT NULL AND LENGTH(sector) > 0 AND is_active = 1').get();
-    const withIndustry = this.db.prepare('SELECT COUNT(*) as count FROM companies WHERE industry IS NOT NULL AND LENGTH(industry) > 0 AND is_active = 1').get();
+  async getStats() {
+    const database = await getDatabaseAsync();
 
-    const byCountry = this.db.prepare(`
+    const totalResult = await database.query('SELECT COUNT(*) as count FROM companies WHERE is_active = true');
+    const total = totalResult.rows[0];
+
+    const withSectorResult = await database.query(
+      'SELECT COUNT(*) as count FROM companies WHERE sector IS NOT NULL AND CHAR_LENGTH(sector) > 0 AND is_active = true'
+    );
+    const withSector = withSectorResult.rows[0];
+
+    const withIndustryResult = await database.query(
+      'SELECT COUNT(*) as count FROM companies WHERE industry IS NOT NULL AND CHAR_LENGTH(industry) > 0 AND is_active = true'
+    );
+    const withIndustry = withIndustryResult.rows[0];
+
+    const byCountryResult = await database.query(`
       SELECT
         country,
         COUNT(*) as total,
-        SUM(CASE WHEN sector IS NOT NULL AND LENGTH(sector) > 0 THEN 1 ELSE 0 END) as with_sector
+        SUM(CASE WHEN sector IS NOT NULL AND CHAR_LENGTH(sector) > 0 THEN 1 ELSE 0 END) as with_sector
       FROM companies
-      WHERE is_active = 1
+      WHERE is_active = true
       GROUP BY country
       ORDER BY total DESC
       LIMIT 20
-    `).all();
+    `);
+    const byCountry = byCountryResult.rows;
 
     return {
-      totalCompanies: total.count,
-      withSector: withSector.count,
-      withIndustry: withIndustry.count,
-      withoutSector: total.count - withSector.count,
+      totalCompanies: parseInt(total.count, 10),
+      withSector: parseInt(withSector.count, 10),
+      withIndustry: parseInt(withIndustry.count, 10),
+      withoutSector: parseInt(total.count, 10) - parseInt(withSector.count, 10),
       coverageByCountry: byCountry
     };
   }

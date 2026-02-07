@@ -12,11 +12,11 @@
  * This is the critical integration layer that makes XBRL data seamless.
  */
 
+const { getDatabaseAsync } = require('../../database');
 const { SymbolResolver } = require('../identifiers/symbolResolver');
 
 class XBRLSyncService {
-  constructor(database, options = {}) {
-    this.db = database;
+  constructor(options = {}) {
     this.options = {
       autoResolveTickers: true,  // Auto-resolve tickers for new companies
       ...options
@@ -24,88 +24,13 @@ class XBRLSyncService {
 
     // Initialize SymbolResolver for ticker resolution
     try {
-      this.symbolResolver = new SymbolResolver(database);
+      this.symbolResolver = new SymbolResolver();
     } catch (error) {
       console.warn('⚠️ SymbolResolver initialization failed, ticker auto-resolution disabled:', error.message);
       this.symbolResolver = null;
     }
 
-    this._prepareStatements();
     console.log('✅ XBRLSyncService initialized');
-  }
-
-  /**
-   * Prepare SQL statements for performance
-   * @private
-   */
-  _prepareStatements() {
-    // Check if company exists by symbol
-    this.stmtGetCompanyBySymbol = this.db.prepare(`
-      SELECT id, symbol, name, country FROM companies WHERE symbol = ?
-    `);
-
-    // Check if company exists by LEI
-    this.stmtGetCompanyByLEI = this.db.prepare(`
-      SELECT id, symbol, name, country FROM companies WHERE lei = ?
-    `);
-
-    // Insert new company
-    this.stmtInsertCompany = this.db.prepare(`
-      INSERT INTO companies (symbol, name, sector, industry, exchange, country, lei, isin, is_active)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
-    `);
-
-    // Update company with LEI/ISIN
-    this.stmtUpdateCompanyIdentifiers = this.db.prepare(`
-      UPDATE companies SET
-        lei = COALESCE(?, lei),
-        isin = COALESCE(?, isin),
-        country = COALESCE(?, country),
-        last_updated = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `);
-
-    // Link company_identifiers to companies
-    this.stmtLinkIdentifier = this.db.prepare(`
-      UPDATE company_identifiers SET company_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-    `);
-
-    // Get unlinked identifiers
-    this.stmtGetUnlinkedIdentifiers = this.db.prepare(`
-      SELECT * FROM company_identifiers WHERE company_id IS NULL
-    `);
-
-    // Update company_identifiers with resolved ticker
-    this.stmtUpdateIdentifierTicker = this.db.prepare(`
-      UPDATE company_identifiers
-      SET ticker = ?, yahoo_symbol = ?, figi = ?, isin = COALESCE(?, isin),
-          link_status = 'linked', updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `);
-
-    // Get pending identifiers (need ticker resolution)
-    this.stmtGetPendingIdentifiers = this.db.prepare(`
-      SELECT * FROM company_identifiers
-      WHERE link_status = 'pending'
-      AND lei IS NOT NULL AND lei != ''
-      AND (ticker IS NULL OR ticker = '')
-      ORDER BY created_at DESC
-      LIMIT ?
-    `);
-
-    // Check existing calculated_metrics
-    this.stmtGetCalculatedMetric = this.db.prepare(`
-      SELECT id FROM calculated_metrics WHERE company_id = ? AND fiscal_period = ? AND period_type = ?
-    `);
-
-    // Get XBRL metrics for syncing
-    this.stmtGetXBRLMetrics = this.db.prepare(`
-      SELECT xfm.*, ci.company_id
-      FROM xbrl_fundamental_metrics xfm
-      JOIN company_identifiers ci ON xfm.identifier_id = ci.id
-      WHERE ci.company_id IS NOT NULL
-      ORDER BY xfm.period_end DESC
-    `);
   }
 
   // ========================================
@@ -116,9 +41,10 @@ class XBRLSyncService {
    * Link XBRL company to main companies table
    * Creates new company if doesn't exist, or links to existing
    * @param {Object} identifier - Record from company_identifiers
-   * @returns {Object} - { companyId, created, linked }
+   * @returns {Promise<Object>} - { companyId, created, linked }
    */
-  linkCompany(identifier) {
+  async linkCompany(identifier) {
+    const database = await getDatabaseAsync();
     const { id: identifierId, lei, ticker, yahoo_symbol, legal_name, country, exchange, isin } = identifier;
 
     // Try to find existing company
@@ -127,19 +53,38 @@ class XBRLSyncService {
 
     // First try by LEI (most reliable)
     if (lei) {
-      company = this.stmtGetCompanyByLEI.get(lei);
+      const result = await database.query(
+        'SELECT id, symbol, name, country FROM companies WHERE lei = $1',
+        [lei]
+      );
+      company = result.rows[0];
     }
 
     // Then try by symbol
     if (!company && symbol) {
-      company = this.stmtGetCompanyBySymbol.get(symbol);
+      const result = await database.query(
+        'SELECT id, symbol, name, country FROM companies WHERE symbol = $1',
+        [symbol]
+      );
+      company = result.rows[0];
     }
 
     if (company) {
       // Update existing company with identifiers if missing
-      this.stmtUpdateCompanyIdentifiers.run(lei, isin, country, company.id);
+      await database.query(
+        `UPDATE companies SET
+          lei = COALESCE($1, lei),
+          isin = COALESCE($2, isin),
+          country = COALESCE($3, country),
+          last_updated = CURRENT_TIMESTAMP
+        WHERE id = $4`,
+        [lei, isin, country, company.id]
+      );
       // Link the identifier
-      this.stmtLinkIdentifier.run(company.id, identifierId);
+      await database.query(
+        'UPDATE company_identifiers SET company_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+        [company.id, identifierId]
+      );
 
       return { companyId: company.id, created: false, linked: true };
     }
@@ -153,30 +98,44 @@ class XBRLSyncService {
     }
 
     try {
-      const result = this.stmtInsertCompany.run(
-        effectiveSymbol,
-        legal_name || effectiveSymbol,
-        null, // sector - will be enriched later
-        null, // industry
-        exchange || this._inferExchange(country),
-        country || 'EU',
-        lei,
-        isin
+      const result = await database.query(
+        `INSERT INTO companies (symbol, name, sector, industry, exchange, country, lei, isin, is_active)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
+        RETURNING id`,
+        [
+          effectiveSymbol,
+          legal_name || effectiveSymbol,
+          null, // sector - will be enriched later
+          null, // industry
+          exchange || this._inferExchange(country),
+          country || 'EU',
+          lei,
+          isin
+        ]
       );
 
-      const companyId = result.lastInsertRowid;
+      const companyId = result.rows[0].id;
 
       // Link the identifier
-      this.stmtLinkIdentifier.run(companyId, identifierId);
+      await database.query(
+        'UPDATE company_identifiers SET company_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+        [companyId, identifierId]
+      );
 
       return { companyId, created: true, linked: true };
     } catch (error) {
       // Handle unique constraint violation (symbol already exists)
-      if (error.message.includes('UNIQUE constraint failed')) {
-        const existing = this.stmtGetCompanyBySymbol.get(effectiveSymbol);
-        if (existing) {
-          this.stmtLinkIdentifier.run(existing.id, identifierId);
-          return { companyId: existing.id, created: false, linked: true };
+      if (error.message.includes('duplicate key')) {
+        const existing = await database.query(
+          'SELECT id FROM companies WHERE symbol = $1',
+          [effectiveSymbol]
+        );
+        if (existing.rows.length > 0) {
+          await database.query(
+            'UPDATE company_identifiers SET company_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+            [existing.rows[0].id, identifierId]
+          );
+          return { companyId: existing.rows[0].id, created: false, linked: true };
         }
       }
       throw error;
@@ -185,20 +144,24 @@ class XBRLSyncService {
 
   /**
    * Link all unlinked XBRL companies to main companies table
-   * @returns {Object} - Summary { processed, created, linked, errors }
+   * @returns {Promise<Object>} - Summary { processed, created, linked, errors }
    */
-  linkAllUnlinkedCompanies() {
-    const unlinked = this.stmtGetUnlinkedIdentifiers.all();
+  async linkAllUnlinkedCompanies() {
+    const database = await getDatabaseAsync();
+    const result = await database.query(
+      'SELECT * FROM company_identifiers WHERE company_id IS NULL'
+    );
+    const unlinked = result.rows;
     console.log(`Found ${unlinked.length} unlinked XBRL companies`);
 
     const summary = { processed: 0, created: 0, linked: 0, errors: 0 };
 
     for (const identifier of unlinked) {
       try {
-        const result = this.linkCompany(identifier);
+        const linkResult = await this.linkCompany(identifier);
         summary.processed++;
-        if (result.created) summary.created++;
-        if (result.linked) summary.linked++;
+        if (linkResult.created) summary.created++;
+        if (linkResult.linked) summary.linked++;
       } catch (error) {
         console.error(`Error linking identifier ${identifier.id}:`, error.message);
         summary.errors++;
@@ -222,6 +185,7 @@ class XBRLSyncService {
       return { resolved: false, error: 'SymbolResolver not available' };
     }
 
+    const database = await getDatabaseAsync();
     const { id, lei, legal_name } = identifier;
 
     if (!lei) {
@@ -229,18 +193,18 @@ class XBRLSyncService {
     }
 
     try {
-      const result = await this.symbolResolver.resolveFromLEI(lei);
+      const resolutionResult = await this.symbolResolver.resolveFromLEI(lei);
 
-      if (result && result.primaryListing) {
-        const { ticker, yahooSymbol, figi, isin } = result.primaryListing;
+      if (resolutionResult && resolutionResult.primaryListing) {
+        const { ticker, yahooSymbol, figi, isin } = resolutionResult.primaryListing;
 
         // Update company_identifiers with resolved data
-        this.stmtUpdateIdentifierTicker.run(
-          ticker,
-          yahooSymbol,
-          figi || null,
-          isin || null,
-          id
+        await database.query(
+          `UPDATE company_identifiers
+          SET ticker = $1, yahoo_symbol = $2, figi = $3, isin = COALESCE($4, isin),
+              link_status = 'linked', updated_at = CURRENT_TIMESTAMP
+          WHERE id = $5`,
+          [ticker, yahooSymbol, figi || null, isin || null, id]
         );
 
         console.log(`  ✓ Resolved ${legal_name?.substring(0, 30) || lei} → ${yahooSymbol}`);
@@ -251,18 +215,18 @@ class XBRLSyncService {
           yahooSymbol,
           figi,
           isin,
-          companyName: result.companyName
+          companyName: resolutionResult.companyName
         };
-      } else if (result && result.listings && result.listings.length > 0) {
+      } else if (resolutionResult && resolutionResult.listings && resolutionResult.listings.length > 0) {
         // Use first available listing if no primary
-        const listing = result.listings[0];
+        const listing = resolutionResult.listings[0];
 
-        this.stmtUpdateIdentifierTicker.run(
-          listing.ticker,
-          listing.yahooSymbol,
-          listing.figi || null,
-          listing.isin || null,
-          id
+        await database.query(
+          `UPDATE company_identifiers
+          SET ticker = $1, yahoo_symbol = $2, figi = $3, isin = COALESCE($4, isin),
+              link_status = 'linked', updated_at = CURRENT_TIMESTAMP
+          WHERE id = $5`,
+          [listing.ticker, listing.yahooSymbol, listing.figi || null, listing.isin || null, id]
         );
 
         console.log(`  ✓ Resolved (alt) ${legal_name?.substring(0, 30) || lei} → ${listing.yahooSymbol}`);
@@ -295,16 +259,26 @@ class XBRLSyncService {
       return { processed: 0, resolved: 0, failed: 0, skipped: true };
     }
 
-    const pending = this.stmtGetPendingIdentifiers.all(limit);
+    const database = await getDatabaseAsync();
+    const result = await database.query(
+      `SELECT * FROM company_identifiers
+      WHERE link_status = 'pending'
+      AND lei IS NOT NULL AND lei != ''
+      AND (ticker IS NULL OR ticker = '')
+      ORDER BY created_at DESC
+      LIMIT $1`,
+      [limit]
+    );
+    const pending = result.rows;
     console.log(`\n🔍 Resolving tickers for ${pending.length} pending companies...`);
 
     const summary = { processed: 0, resolved: 0, failed: 0 };
 
     for (const identifier of pending) {
-      const result = await this.resolveTickerForIdentifier(identifier);
+      const resolutionResult = await this.resolveTickerForIdentifier(identifier);
       summary.processed++;
 
-      if (result.resolved) {
+      if (resolutionResult.resolved) {
         summary.resolved++;
       } else {
         summary.failed++;
@@ -364,7 +338,11 @@ class XBRLSyncService {
       delayMs = 300
     } = options;
 
-    const unlinked = this.stmtGetUnlinkedIdentifiers.all();
+    const database = await getDatabaseAsync();
+    const result = await database.query(
+      'SELECT * FROM company_identifiers WHERE company_id IS NULL'
+    );
+    const unlinked = result.rows;
     console.log(`Found ${unlinked.length} unlinked XBRL companies`);
 
     const summary = {
@@ -385,12 +363,12 @@ class XBRLSyncService {
           !identifier.ticker &&
           identifier.lei;
 
-        const result = await this.linkCompanyWithResolution(identifier, shouldResolve);
+        const linkResult = await this.linkCompanyWithResolution(identifier, shouldResolve);
 
         summary.processed++;
-        if (result.created) summary.created++;
-        if (result.linked) summary.linked++;
-        if (result.tickerResolved) {
+        if (linkResult.created) summary.created++;
+        if (linkResult.linked) summary.linked++;
+        if (linkResult.tickerResolved) {
           summary.tickersResolved++;
           resolutionsAttempted++;
 
@@ -415,22 +393,31 @@ class XBRLSyncService {
   /**
    * Sync XBRL metrics to calculated_metrics table
    * @param {number} identifierId - Optional: sync specific identifier
-   * @returns {Object} - Summary { synced, skipped, errors }
+   * @returns {Promise<Object>} - Summary { synced, skipped, errors }
    */
-  syncMetrics(identifierId = null) {
-    let metrics;
+  async syncMetrics(identifierId = null) {
+    const database = await getDatabaseAsync();
+    let metricsResult;
 
     if (identifierId) {
-      metrics = this.db.prepare(`
-        SELECT xfm.*, ci.company_id
+      metricsResult = await database.query(
+        `SELECT xfm.*, ci.company_id
         FROM xbrl_fundamental_metrics xfm
         JOIN company_identifiers ci ON xfm.identifier_id = ci.id
-        WHERE xfm.identifier_id = ? AND ci.company_id IS NOT NULL
-        ORDER BY xfm.period_end DESC
-      `).all(identifierId);
+        WHERE xfm.identifier_id = $1 AND ci.company_id IS NOT NULL
+        ORDER BY xfm.period_end DESC`,
+        [identifierId]
+      );
     } else {
-      metrics = this.stmtGetXBRLMetrics.all();
+      metricsResult = await database.query(
+        `SELECT xfm.*, ci.company_id
+        FROM xbrl_fundamental_metrics xfm
+        JOIN company_identifiers ci ON xfm.identifier_id = ci.id
+        WHERE ci.company_id IS NOT NULL
+        ORDER BY xfm.period_end DESC`
+      );
     }
+    const metrics = metricsResult.rows;
 
     console.log(`Syncing ${metrics.length} XBRL metrics records to calculated_metrics`);
 
@@ -451,54 +438,6 @@ class XBRLSyncService {
       priorYearData[key].sort((a, b) => b.period_end.localeCompare(a.period_end));
     }
 
-    const insertOrUpdate = this.db.prepare(`
-      INSERT INTO calculated_metrics (
-        company_id, fiscal_period, period_type, data_source,
-        -- Profitability
-        roic, roe, roa, roce, gross_margin, operating_margin, net_margin,
-        -- DuPont Analysis
-        equity_multiplier, dupont_roe,
-        -- Cash Flow
-        fcf, fcf_yield, fcf_margin, fcf_per_share,
-        -- Financial Health
-        debt_to_equity, debt_to_assets, current_ratio, quick_ratio, interest_coverage,
-        -- Efficiency
-        asset_turnover,
-        -- Growth
-        revenue_growth_yoy, earnings_growth_yoy, fcf_growth_yoy,
-        -- Valuation (will be calculated with price data)
-        pe_ratio, pb_ratio,
-        -- Other
-        data_quality_score
-      )
-      VALUES (?, ?, ?, 'xbrl', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(company_id, fiscal_period, period_type)
-      DO UPDATE SET
-        data_source = 'xbrl',
-        roic = excluded.roic,
-        roe = excluded.roe,
-        roa = excluded.roa,
-        roce = excluded.roce,
-        gross_margin = excluded.gross_margin,
-        operating_margin = excluded.operating_margin,
-        net_margin = excluded.net_margin,
-        equity_multiplier = excluded.equity_multiplier,
-        dupont_roe = excluded.dupont_roe,
-        fcf = excluded.fcf,
-        fcf_yield = excluded.fcf_yield,
-        fcf_margin = excluded.fcf_margin,
-        fcf_per_share = excluded.fcf_per_share,
-        debt_to_equity = excluded.debt_to_equity,
-        debt_to_assets = excluded.debt_to_assets,
-        current_ratio = excluded.current_ratio,
-        quick_ratio = excluded.quick_ratio,
-        interest_coverage = excluded.interest_coverage,
-        asset_turnover = excluded.asset_turnover,
-        revenue_growth_yoy = excluded.revenue_growth_yoy,
-        earnings_growth_yoy = excluded.earnings_growth_yoy,
-        fcf_growth_yoy = excluded.fcf_growth_yoy,
-        data_quality_score = excluded.data_quality_score
-    `);
 
     for (const m of metrics) {
       if (!m.company_id) {
@@ -622,43 +561,75 @@ class XBRLSyncService {
         if (calculatedDebtToEquity !== null && m.debt_to_equity === null) qualityScore += 5; // We derived D/E
         if (calculatedFCF !== null && m.free_cash_flow === null) qualityScore += 5; // We derived FCF
 
-        insertOrUpdate.run(
-          m.company_id,
-          m.period_end,
-          m.period_type || 'annual',
-          // Profitability (using capped values)
-          cappedROIC,
-          cappedROE,
-          cappedROA,
-          cappedROCE,
-          cappedGrossMargin,
-          cappedOpMargin,
-          cappedNetMargin,
-          // DuPont Analysis
-          cappedEquityMultiplier,
-          cappedDupontROE,
-          // Cash Flow (using calculated FCF)
-          calculatedFCF,
-          fcfYield,
-          fcfMargin,
-          fcfPerShare,
-          // Financial Health (using calculated debt/equity)
-          calculatedDebtToEquity,
-          m.debt_to_assets,
-          m.current_ratio,
-          m.quick_ratio,
-          m.interest_coverage,
-          // Efficiency
-          m.asset_turnover,
-          // Growth
-          revenueGrowthYoY,
-          earningsGrowthYoY,
-          fcfGrowthYoY,
-          // Valuation (PE and PB require price data)
-          null, // pe_ratio
-          null, // pb_ratio
-          // Quality (use calculated score)
-          qualityScore
+        await database.query(
+          `INSERT INTO calculated_metrics (
+            company_id, fiscal_period, period_type, data_source,
+            roic, roe, roa, roce, gross_margin, operating_margin, net_margin,
+            equity_multiplier, dupont_roe,
+            fcf, fcf_yield, fcf_margin, fcf_per_share,
+            debt_to_equity, debt_to_assets, current_ratio, quick_ratio, interest_coverage,
+            asset_turnover,
+            revenue_growth_yoy, earnings_growth_yoy, fcf_growth_yoy,
+            pe_ratio, pb_ratio,
+            data_quality_score
+          )
+          VALUES ($1, $2, $3, 'xbrl', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+          ON CONFLICT(company_id, fiscal_period, period_type)
+          DO UPDATE SET
+            data_source = 'xbrl',
+            roic = excluded.roic,
+            roe = excluded.roe,
+            roa = excluded.roa,
+            roce = excluded.roce,
+            gross_margin = excluded.gross_margin,
+            operating_margin = excluded.operating_margin,
+            net_margin = excluded.net_margin,
+            equity_multiplier = excluded.equity_multiplier,
+            dupont_roe = excluded.dupont_roe,
+            fcf = excluded.fcf,
+            fcf_yield = excluded.fcf_yield,
+            fcf_margin = excluded.fcf_margin,
+            fcf_per_share = excluded.fcf_per_share,
+            debt_to_equity = excluded.debt_to_equity,
+            debt_to_assets = excluded.debt_to_assets,
+            current_ratio = excluded.current_ratio,
+            quick_ratio = excluded.quick_ratio,
+            interest_coverage = excluded.interest_coverage,
+            asset_turnover = excluded.asset_turnover,
+            revenue_growth_yoy = excluded.revenue_growth_yoy,
+            earnings_growth_yoy = excluded.earnings_growth_yoy,
+            fcf_growth_yoy = excluded.fcf_growth_yoy,
+            data_quality_score = excluded.data_quality_score`,
+          [
+            m.company_id,
+            m.period_end,
+            m.period_type || 'annual',
+            cappedROIC,
+            cappedROE,
+            cappedROA,
+            cappedROCE,
+            cappedGrossMargin,
+            cappedOpMargin,
+            cappedNetMargin,
+            cappedEquityMultiplier,
+            cappedDupontROE,
+            calculatedFCF,
+            fcfYield,
+            fcfMargin,
+            fcfPerShare,
+            calculatedDebtToEquity,
+            m.debt_to_assets,
+            m.current_ratio,
+            m.quick_ratio,
+            m.interest_coverage,
+            m.asset_turnover,
+            revenueGrowthYoY,
+            earningsGrowthYoY,
+            fcfGrowthYoY,
+            null, // pe_ratio
+            null, // pb_ratio
+            qualityScore
+          ]
         );
 
         summary.synced++;
@@ -675,59 +646,24 @@ class XBRLSyncService {
    * Sync XBRL raw financials to financial_data table
    * This bridges EU/UK company data to the same table used by US companies
    * Enables consistent API access to financial statements for all companies
-   * @returns {Object} - Summary { synced, skipped, errors }
+   * @returns {Promise<Object>} - Summary { synced, skipped, errors }
    */
-  syncFinancialData() {
+  async syncFinancialData() {
+    const database = await getDatabaseAsync();
     // Get all XBRL metrics with linked companies
-    const metrics = this.db.prepare(`
+    const metricsResult = await database.query(`
       SELECT xfm.*, ci.company_id, c.reporting_currency
       FROM xbrl_fundamental_metrics xfm
       JOIN company_identifiers ci ON xfm.identifier_id = ci.id
       JOIN companies c ON ci.company_id = c.id
       WHERE ci.company_id IS NOT NULL
       ORDER BY xfm.period_end DESC
-    `).all();
+    `);
+    const metrics = metricsResult.rows;
 
     console.log(`Syncing ${metrics.length} XBRL records to financial_data table`);
 
     const summary = { synced: 0, skipped: 0, errors: 0 };
-
-    // Prepare statements for each financial statement type
-    const insertStatement = this.db.prepare(`
-      INSERT INTO financial_data (
-        company_id, statement_type, fiscal_date_ending, fiscal_year,
-        period_type, data,
-        -- Balance sheet fields
-        total_assets, total_liabilities, shareholder_equity,
-        current_assets, current_liabilities, cash_and_equivalents,
-        long_term_debt, short_term_debt,
-        -- Income statement fields
-        total_revenue, net_income, operating_income, cost_of_revenue, gross_profit,
-        -- Cash flow fields
-        operating_cashflow, capital_expenditures, shares_outstanding
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(company_id, statement_type, fiscal_date_ending, period_type)
-      DO UPDATE SET
-        data = excluded.data,
-        total_assets = excluded.total_assets,
-        total_liabilities = excluded.total_liabilities,
-        shareholder_equity = excluded.shareholder_equity,
-        current_assets = excluded.current_assets,
-        current_liabilities = excluded.current_liabilities,
-        cash_and_equivalents = excluded.cash_and_equivalents,
-        long_term_debt = excluded.long_term_debt,
-        short_term_debt = excluded.short_term_debt,
-        total_revenue = excluded.total_revenue,
-        net_income = excluded.net_income,
-        operating_income = excluded.operating_income,
-        cost_of_revenue = excluded.cost_of_revenue,
-        gross_profit = excluded.gross_profit,
-        operating_cashflow = excluded.operating_cashflow,
-        capital_expenditures = excluded.capital_expenditures,
-        shares_outstanding = excluded.shares_outstanding,
-        updated_at = CURRENT_TIMESTAMP
-    `);
 
     for (const m of metrics) {
       if (!m.company_id) {
@@ -757,12 +693,33 @@ class XBRLSyncService {
             _source: 'xbrl'
           });
 
-          insertStatement.run(
-            m.company_id, 'income_statement', m.period_end, fiscalYear,
-            periodType, incomeData,
-            null, null, null, null, null, null, null, null, // balance sheet fields
-            m.revenue, m.net_income, m.operating_income, m.cost_of_sales, m.gross_profit,
-            null, null, m.shares_outstanding
+          await database.query(
+            `INSERT INTO financial_data (
+              company_id, statement_type, fiscal_date_ending, fiscal_year,
+              period_type, data,
+              total_assets, total_liabilities, shareholder_equity,
+              current_assets, current_liabilities, cash_and_equivalents,
+              long_term_debt, short_term_debt,
+              total_revenue, net_income, operating_income, cost_of_revenue, gross_profit,
+              operating_cashflow, capital_expenditures, shares_outstanding
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+            ON CONFLICT(company_id, statement_type, fiscal_date_ending, period_type)
+            DO UPDATE SET
+              data = excluded.data,
+              total_revenue = excluded.total_revenue,
+              net_income = excluded.net_income,
+              operating_income = excluded.operating_income,
+              cost_of_revenue = excluded.cost_of_revenue,
+              gross_profit = excluded.gross_profit,
+              updated_at = CURRENT_TIMESTAMP`,
+            [
+              m.company_id, 'income_statement', m.period_end, fiscalYear,
+              periodType, incomeData,
+              null, null, null, null, null, null, null, null,
+              m.revenue, m.net_income, m.operating_income, m.cost_of_sales, m.gross_profit,
+              null, null, m.shares_outstanding
+            ]
           );
           summary.synced++;
         }
@@ -789,14 +746,38 @@ class XBRLSyncService {
             _source: 'xbrl'
           });
 
-          insertStatement.run(
-            m.company_id, 'balance_sheet', m.period_end, fiscalYear,
-            periodType, balanceData,
-            m.total_assets, m.total_liabilities, m.total_equity,
-            m.current_assets, m.current_liabilities, m.cash_and_equivalents,
-            m.long_term_debt, m.short_term_debt,
-            null, null, null, null, null, // income statement fields
-            null, null, m.shares_outstanding
+          await database.query(
+            `INSERT INTO financial_data (
+              company_id, statement_type, fiscal_date_ending, fiscal_year,
+              period_type, data,
+              total_assets, total_liabilities, shareholder_equity,
+              current_assets, current_liabilities, cash_and_equivalents,
+              long_term_debt, short_term_debt,
+              total_revenue, net_income, operating_income, cost_of_revenue, gross_profit,
+              operating_cashflow, capital_expenditures, shares_outstanding
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+            ON CONFLICT(company_id, statement_type, fiscal_date_ending, period_type)
+            DO UPDATE SET
+              data = excluded.data,
+              total_assets = excluded.total_assets,
+              total_liabilities = excluded.total_liabilities,
+              shareholder_equity = excluded.shareholder_equity,
+              current_assets = excluded.current_assets,
+              current_liabilities = excluded.current_liabilities,
+              cash_and_equivalents = excluded.cash_and_equivalents,
+              long_term_debt = excluded.long_term_debt,
+              short_term_debt = excluded.short_term_debt,
+              updated_at = CURRENT_TIMESTAMP`,
+            [
+              m.company_id, 'balance_sheet', m.period_end, fiscalYear,
+              periodType, balanceData,
+              m.total_assets, m.total_liabilities, m.total_equity,
+              m.current_assets, m.current_liabilities, m.cash_and_equivalents,
+              m.long_term_debt, m.short_term_debt,
+              null, null, null, null, null,
+              null, null, m.shares_outstanding
+            ]
           );
           summary.synced++;
         }
@@ -816,12 +797,30 @@ class XBRLSyncService {
             _source: 'xbrl'
           });
 
-          insertStatement.run(
-            m.company_id, 'cash_flow', m.period_end, fiscalYear,
-            periodType, cashFlowData,
-            null, null, null, null, null, null, null, null, // balance sheet fields
-            null, null, null, null, null, // income statement fields
-            m.operating_cash_flow, m.capital_expenditure, null
+          await database.query(
+            `INSERT INTO financial_data (
+              company_id, statement_type, fiscal_date_ending, fiscal_year,
+              period_type, data,
+              total_assets, total_liabilities, shareholder_equity,
+              current_assets, current_liabilities, cash_and_equivalents,
+              long_term_debt, short_term_debt,
+              total_revenue, net_income, operating_income, cost_of_revenue, gross_profit,
+              operating_cashflow, capital_expenditures, shares_outstanding
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+            ON CONFLICT(company_id, statement_type, fiscal_date_ending, period_type)
+            DO UPDATE SET
+              data = excluded.data,
+              operating_cashflow = excluded.operating_cashflow,
+              capital_expenditures = excluded.capital_expenditures,
+              updated_at = CURRENT_TIMESTAMP`,
+            [
+              m.company_id, 'cash_flow', m.period_end, fiscalYear,
+              periodType, cashFlowData,
+              null, null, null, null, null, null, null, null,
+              null, null, null, null, null,
+              m.operating_cash_flow, m.capital_expenditure, null
+            ]
           );
           summary.synced++;
         }
@@ -837,24 +836,24 @@ class XBRLSyncService {
 
   /**
    * Full sync: link companies + sync metrics (synchronous, no ticker resolution)
-   * @returns {Object} - Combined summary
+   * @returns {Promise<Object>} - Combined summary
    */
-  fullSync() {
+  async fullSync() {
     console.log('\n📊 Starting full XBRL sync...\n');
 
     // Step 1: Link all unlinked companies
     console.log('Step 1: Linking XBRL companies to main database...');
-    const linkSummary = this.linkAllUnlinkedCompanies();
+    const linkSummary = await this.linkAllUnlinkedCompanies();
     console.log(`   Companies: ${linkSummary.created} created, ${linkSummary.linked} linked, ${linkSummary.errors} errors`);
 
     // Step 2: Sync metrics
     console.log('\nStep 2: Syncing metrics to calculated_metrics...');
-    const metricsSummary = this.syncMetrics();
+    const metricsSummary = await this.syncMetrics();
     console.log(`   Metrics: ${metricsSummary.synced} synced, ${metricsSummary.skipped} skipped, ${metricsSummary.errors} errors`);
 
     // Step 3: Sync financial_data (raw financials for API compatibility)
     console.log('\nStep 3: Syncing raw financials to financial_data...');
-    const financialDataSummary = this.syncFinancialData();
+    const financialDataSummary = await this.syncFinancialData();
     console.log(`   Financial data: ${financialDataSummary.synced} synced, ${financialDataSummary.skipped} skipped, ${financialDataSummary.errors} errors`);
 
     console.log('\n✅ Full sync complete!\n');
@@ -883,17 +882,17 @@ class XBRLSyncService {
 
     // Step 2: Link all unlinked companies (with any newly resolved tickers)
     console.log('\nStep 2: Linking XBRL companies to main database...');
-    const linkSummary = this.linkAllUnlinkedCompanies();
+    const linkSummary = await this.linkAllUnlinkedCompanies();
     console.log(`   Companies: ${linkSummary.created} created, ${linkSummary.linked} linked, ${linkSummary.errors} errors`);
 
     // Step 3: Sync metrics
     console.log('\nStep 3: Syncing metrics to calculated_metrics...');
-    const metricsSummary = this.syncMetrics();
+    const metricsSummary = await this.syncMetrics();
     console.log(`   Metrics: ${metricsSummary.synced} synced, ${metricsSummary.skipped} skipped, ${metricsSummary.errors} errors`);
 
     // Step 4: Sync financial_data (raw financials for API compatibility)
     console.log('\nStep 4: Syncing raw financials to financial_data...');
-    const financialDataSummary = this.syncFinancialData();
+    const financialDataSummary = await this.syncFinancialData();
     console.log(`   Financial data: ${financialDataSummary.synced} synced, ${financialDataSummary.skipped} skipped, ${financialDataSummary.errors} errors`);
 
     console.log('\n✅ Full sync with resolution complete!\n');
@@ -909,23 +908,26 @@ class XBRLSyncService {
   /**
    * Sync a single company by LEI
    * @param {string} lei - Legal Entity Identifier
-   * @returns {Object} - Sync result
+   * @returns {Promise<Object>} - Sync result
    */
   async syncByLEI(lei) {
+    const database = await getDatabaseAsync();
     // Get identifier
-    const identifier = this.db.prepare(`
-      SELECT * FROM company_identifiers WHERE lei = ?
-    `).get(lei);
+    const result = await database.query(
+      'SELECT * FROM company_identifiers WHERE lei = $1',
+      [lei]
+    );
+    const identifier = result.rows[0];
 
     if (!identifier) {
       throw new Error(`No identifier found for LEI: ${lei}`);
     }
 
     // Link company
-    const linkResult = this.linkCompany(identifier);
+    const linkResult = await this.linkCompany(identifier);
 
     // Sync metrics for this identifier
-    const metricsResult = this.syncMetrics(identifier.id);
+    const metricsResult = await this.syncMetrics(identifier.id);
 
     return {
       lei,
@@ -968,29 +970,39 @@ class XBRLSyncService {
 
   /**
    * Get sync statistics
-   * @returns {Object} - Statistics
+   * @returns {Promise<Object>} - Statistics
    */
-  getStats() {
-    const totalIdentifiers = this.db.prepare('SELECT COUNT(*) as count FROM company_identifiers').get();
-    const linkedIdentifiers = this.db.prepare('SELECT COUNT(*) as count FROM company_identifiers WHERE company_id IS NOT NULL').get();
-    const xbrlMetrics = this.db.prepare('SELECT COUNT(*) as count FROM xbrl_fundamental_metrics').get();
-    const calculatedMetrics = this.db.prepare('SELECT COUNT(*) as count FROM calculated_metrics').get();
+  async getStats() {
+    const database = await getDatabaseAsync();
 
-    const euCompanies = this.db.prepare(`
+    const totalIdentifiersResult = await database.query('SELECT COUNT(*) as count FROM company_identifiers');
+    const totalIdentifiers = totalIdentifiersResult.rows[0];
+
+    const linkedIdentifiersResult = await database.query('SELECT COUNT(*) as count FROM company_identifiers WHERE company_id IS NOT NULL');
+    const linkedIdentifiers = linkedIdentifiersResult.rows[0];
+
+    const xbrlMetricsResult = await database.query('SELECT COUNT(*) as count FROM xbrl_fundamental_metrics');
+    const xbrlMetrics = xbrlMetricsResult.rows[0];
+
+    const calculatedMetricsResult = await database.query('SELECT COUNT(*) as count FROM calculated_metrics');
+    const calculatedMetrics = calculatedMetricsResult.rows[0];
+
+    const euCompaniesResult = await database.query(`
       SELECT country, COUNT(*) as count FROM companies
       WHERE country NOT IN ('US', 'USA', 'CA')
       GROUP BY country ORDER BY count DESC LIMIT 10
-    `).all();
+    `);
+    const euCompanies = euCompaniesResult.rows;
 
     return {
       identifiers: {
-        total: totalIdentifiers.count,
-        linked: linkedIdentifiers.count,
-        unlinked: totalIdentifiers.count - linkedIdentifiers.count
+        total: parseInt(totalIdentifiers.count),
+        linked: parseInt(linkedIdentifiers.count),
+        unlinked: parseInt(totalIdentifiers.count) - parseInt(linkedIdentifiers.count)
       },
       metrics: {
-        xbrl: xbrlMetrics.count,
-        calculated: calculatedMetrics.count
+        xbrl: parseInt(xbrlMetrics.count),
+        calculated: parseInt(calculatedMetrics.count)
       },
       euCompanies
     };
