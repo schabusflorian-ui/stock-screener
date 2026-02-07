@@ -1,6 +1,8 @@
 // src/services/factors/factorSignalGenerator.js
 // Factor Signal Generator - Generates actionable buy/sell signals from factor analysis
 
+const { getDatabaseAsync } = require('../../database');
+
 /**
  * FactorSignalGenerator
  *
@@ -11,20 +13,20 @@
  * - Includes factor breakdown for each signal
  */
 class FactorSignalGenerator {
-  constructor(db, options = {}) {
-    this.db = db.getDatabase ? db.getDatabase() : db;
+  constructor(options = {}) {
     this.options = {
       defaultTopN: 10,
       defaultMinMarketCap: 1e9,
       ...options
     };
-
-    this._prepareStatements();
   }
 
-  _prepareStatements() {
-    // Get most recent factor scores
-    this.stmtGetLatestScores = this.db.prepare(`
+  /**
+   * Get most recent factor scores
+   */
+  async _getLatestScores(minMarketCap) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         sfs.symbol,
         sfs.company_id,
@@ -42,36 +44,49 @@ class FactorSignalGenerator {
       FROM stock_factor_scores sfs
       JOIN companies c ON sfs.company_id = c.id
       WHERE sfs.score_date = (
-        SELECT MAX(score_date) FROM stock_factor_scores WHERE score_date <= date('now')
+        SELECT MAX(score_date) FROM stock_factor_scores WHERE score_date <= CURRENT_TIMESTAMP
       )
-      AND c.market_cap >= ?
+      AND c.market_cap >= $1
       AND c.symbol IS NOT NULL
       AND c.symbol NOT LIKE 'CIK%'
-    `);
+    `, [minMarketCap]);
+    return result.rows;
+  }
 
-    // Get current price
-    this.stmtGetCurrentPrice = this.db.prepare(`
+  /**
+   * Get current price
+   */
+  async _getCurrentPrice(symbol) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT dp.close, dp.date
       FROM daily_prices dp
       JOIN companies c ON dp.company_id = c.id
-      WHERE LOWER(c.symbol) = LOWER(?)
+      WHERE LOWER(c.symbol) = LOWER($1)
       ORDER BY dp.date DESC
       LIMIT 1
-    `);
+    `, [symbol]);
+    return result.rows[0];
+  }
 
-    // Get price change (momentum)
-    this.stmtGetPriceChange = this.db.prepare(`
+  /**
+   * Get price change (momentum)
+   */
+  async _getPriceChange(symbol) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         (SELECT close FROM daily_prices dp
          JOIN companies c ON dp.company_id = c.id
-         WHERE LOWER(c.symbol) = LOWER(?)
+         WHERE LOWER(c.symbol) = LOWER($1)
          ORDER BY dp.date DESC LIMIT 1) as current_price,
         (SELECT close FROM daily_prices dp
          JOIN companies c ON dp.company_id = c.id
-         WHERE LOWER(c.symbol) = LOWER(?)
-         AND dp.date <= date('now', '-30 days')
+         WHERE LOWER(c.symbol) = LOWER($2)
+         AND dp.date <= CURRENT_TIMESTAMP - INTERVAL '30 days'
          ORDER BY dp.date DESC LIMIT 1) as price_30d_ago
-    `);
+    `, [symbol, symbol]);
+    return result.rows[0];
   }
 
   /**
@@ -98,7 +113,7 @@ class FactorSignalGenerator {
     const normalizedWeights = this._normalizeWeights(factorWeights);
 
     // Get latest factor scores
-    const scores = this.stmtGetLatestScores.all(minMarketCap);
+    const scores = await this._getLatestScores(minMarketCap);
 
     if (scores.length === 0) {
       return {
@@ -122,34 +137,38 @@ class FactorSignalGenerator {
       .sort((a, b) => b.combinedScore - a.combinedScore);
 
     // Get top N (buy signals)
-    const buySignals = rankedStocks.slice(0, topN).map((stock, rank) => ({
-      rank: rank + 1,
-      symbol: stock.symbol,
-      name: stock.name,
-      sector: stock.sector,
-      industry: stock.industry,
-      marketCap: stock.marketCap,
-      combinedScore: Math.round(stock.combinedScore * 10) / 10,
-      signal: 'BUY',
-      strength: this._getSignalStrength(stock.combinedScore),
-      factorScores: stock.factorScores,
-      priceInfo: this._getPriceInfo(stock.symbol)
-    }));
+    const buySignals = await Promise.all(
+      rankedStocks.slice(0, topN).map(async (stock, rank) => ({
+        rank: rank + 1,
+        symbol: stock.symbol,
+        name: stock.name,
+        sector: stock.sector,
+        industry: stock.industry,
+        marketCap: stock.marketCap,
+        combinedScore: Math.round(stock.combinedScore * 10) / 10,
+        signal: 'BUY',
+        strength: this._getSignalStrength(stock.combinedScore),
+        factorScores: stock.factorScores,
+        priceInfo: await this._getPriceInfo(stock.symbol)
+      }))
+    );
 
     // Get bottom N (sell signals / avoid)
-    const sellSignals = rankedStocks.slice(-topN).reverse().map((stock, rank) => ({
-      rank: rank + 1,
-      symbol: stock.symbol,
-      name: stock.name,
-      sector: stock.sector,
-      industry: stock.industry,
-      marketCap: stock.marketCap,
-      combinedScore: Math.round(stock.combinedScore * 10) / 10,
-      signal: 'AVOID',
-      strength: this._getSignalStrength(100 - stock.combinedScore),
-      factorScores: stock.factorScores,
-      priceInfo: this._getPriceInfo(stock.symbol)
-    }));
+    const sellSignals = await Promise.all(
+      rankedStocks.slice(-topN).reverse().map(async (stock, rank) => ({
+        rank: rank + 1,
+        symbol: stock.symbol,
+        name: stock.name,
+        sector: stock.sector,
+        industry: stock.industry,
+        marketCap: stock.marketCap,
+        combinedScore: Math.round(stock.combinedScore * 10) / 10,
+        signal: 'AVOID',
+        strength: this._getSignalStrength(100 - stock.combinedScore),
+        factorScores: stock.factorScores,
+        priceInfo: await this._getPriceInfo(stock.symbol)
+      }))
+    );
 
     // Calculate sector distribution of buy signals
     const sectorDistribution = this._calculateSectorDistribution(buySignals);
@@ -182,7 +201,7 @@ class FactorSignalGenerator {
     const normalizedWeights = this._normalizeWeights(factorWeights);
 
     // Get factor scores for this stock
-    const scores = this.stmtGetLatestScores.all(0);
+    const scores = await this._getLatestScores(0);
     const stock = scores.find(s => s.symbol.toUpperCase() === symbol.toUpperCase());
 
     if (!stock) {
@@ -211,7 +230,7 @@ class FactorSignalGenerator {
       strength: this._getSignalStrength(scored.combinedScore),
       factorScores: scored.factorScores,
       factorWeights: normalizedWeights,
-      priceInfo: this._getPriceInfo(symbol),
+      priceInfo: await this._getPriceInfo(symbol),
       scoreDate: stock.score_date
     };
   }
@@ -290,10 +309,10 @@ class FactorSignalGenerator {
   /**
    * Get current price info for a symbol
    */
-  _getPriceInfo(symbol) {
+  async _getPriceInfo(symbol) {
     try {
-      const priceData = this.stmtGetCurrentPrice.get(symbol);
-      const changeData = this.stmtGetPriceChange.get(symbol, symbol);
+      const priceData = await this._getCurrentPrice(symbol);
+      const changeData = await this._getPriceChange(symbol);
 
       if (!priceData) return null;
 
