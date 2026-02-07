@@ -1,5 +1,5 @@
 // src/services/screeningService.js
-const db = require('../database');
+const { getDatabaseAsync } = require('../database');
 const { FREDService } = require('./dataProviders');
 
 // Valid sortable columns to prevent SQL injection
@@ -25,12 +25,11 @@ const VALID_SORT_COLUMNS = [
  */
 class ScreeningService {
   constructor() {
-    this.db = db.getDatabase();
     // Cache for filter options (rarely changes, 5-minute TTL)
     this._filterOptionsCache = null;
     this._filterOptionsCacheTime = 0;
     this._filterOptionsCacheTTL = 5 * 60 * 1000; // 5 minutes
-    console.log('✅ Screening Service initialized');
+    console.log('✅ Screening Service initialized (PostgreSQL mode)');
   }
 
   /**
@@ -45,25 +44,30 @@ class ScreeningService {
    * Get available filter options (sectors, industries, date ranges)
    * Results are cached for 5 minutes to avoid redundant DB queries
    */
-  getFilterOptions() {
+  async getFilterOptions() {
     // Return cached result if still valid
     const now = Date.now();
     if (this._filterOptionsCache && (now - this._filterOptionsCacheTime) < this._filterOptionsCacheTTL) {
       return this._filterOptionsCache;
     }
-    const sectors = this.db.prepare(`
+
+    const database = await getDatabaseAsync();
+
+    const sectorsResult = await database.query(`
       SELECT DISTINCT sector
       FROM companies
       WHERE sector IS NOT NULL
       ORDER BY sector
-    `).all().map(r => r.sector);
+    `);
+    const sectors = sectorsResult.rows.map(r => r.sector);
 
-    const industries = this.db.prepare(`
+    const industriesResult = await database.query(`
       SELECT DISTINCT industry, sector
       FROM companies
       WHERE industry IS NOT NULL
       ORDER BY sector, industry
-    `).all();
+    `);
+    const industries = industriesResult.rows;
 
     // Group industries by sector
     const industriesBySector = {};
@@ -74,15 +78,16 @@ class ScreeningService {
       industriesBySector[sector].push(industry);
     });
 
-    const periodRanges = this.db.prepare(`
+    const periodRangesResult = await database.query(`
       SELECT
         MIN(fiscal_period) as min_date,
         MAX(fiscal_period) as max_date
       FROM calculated_metrics
       WHERE fiscal_period BETWEEN '2010-01-01' AND '2030-12-31'
-    `).get();
+    `);
+    const periodRanges = periodRangesResult.rows[0];
 
-    const availablePeriods = this.db.prepare(`
+    const availablePeriodsResult = await database.query(`
       SELECT DISTINCT
         fiscal_period,
         period_type,
@@ -90,23 +95,25 @@ class ScreeningService {
       FROM calculated_metrics
       WHERE fiscal_period BETWEEN '2015-01-01' AND '2030-12-31'
       GROUP BY fiscal_period, period_type
-      HAVING company_count >= 5
+      HAVING COUNT(DISTINCT company_id) >= 5
       ORDER BY fiscal_period DESC
       LIMIT 50
-    `).all();
+    `);
+    const availablePeriods = availablePeriodsResult.rows;
 
     // Get available countries with company counts
-    const countryCounts = this.db.prepare(`
+    const countryCountsResult = await database.query(`
       SELECT
         c.country,
         COUNT(DISTINCT c.id) as company_count
       FROM companies c
       JOIN calculated_metrics cm ON c.id = cm.company_id
-      WHERE c.country IS NOT NULL AND c.is_active = 1
+      WHERE c.country IS NOT NULL AND c.is_active = true
       GROUP BY c.country
-      HAVING company_count >= 1
-      ORDER BY company_count DESC
-    `).all();
+      HAVING COUNT(DISTINCT c.id) >= 1
+      ORDER BY COUNT(DISTINCT c.id) DESC
+    `);
+    const countryCounts = countryCountsResult.rows;
 
     // Available regions for convenience filtering
     const availableRegions = [
@@ -141,7 +148,7 @@ class ScreeningService {
   /**
    * Advanced screen with comprehensive criteria
    */
-  screen(criteria = {}) {
+  async screen(criteria = {}) {
     const {
       // Profitability criteria
       minROIC, maxROIC,
@@ -242,18 +249,19 @@ class ScreeningService {
     // Build WHERE clauses
     const where = [];
     const params = [];
+    let paramCounter = 1;
 
     // Period/date filtering
     if (asOfDate) {
       // Historical screening: get metrics closest to asOfDate
-      where.push('m.fiscal_period <= ?');
+      where.push(`m.fiscal_period <= $${paramCounter++}`);
       params.push(asOfDate);
       where.push(`m.fiscal_period = (
         SELECT MAX(m2.fiscal_period)
         FROM calculated_metrics m2
         WHERE m2.company_id = m.company_id
-          AND m2.fiscal_period <= ?
-          AND m2.period_type = ?
+          AND m2.fiscal_period <= $${paramCounter++}
+          AND m2.period_type = $${paramCounter++}
       )`);
       params.push(asOfDate, periodType);
     } else if (lookbackYears) {
@@ -261,14 +269,14 @@ class ScreeningService {
       const targetDate = new Date();
       targetDate.setFullYear(targetDate.getFullYear() - lookbackYears);
       const dateStr = targetDate.toISOString().split('T')[0];
-      where.push('m.fiscal_period <= ?');
+      where.push(`m.fiscal_period <= $${paramCounter++}`);
       params.push(dateStr);
       where.push(`m.fiscal_period = (
         SELECT MAX(m2.fiscal_period)
         FROM calculated_metrics m2
         WHERE m2.company_id = m.company_id
-          AND m2.fiscal_period <= ?
-          AND m2.period_type = ?
+          AND m2.fiscal_period <= $${paramCounter++}
+          AND m2.period_type = $${paramCounter++}
       )`);
       params.push(dateStr, periodType);
     } else {
@@ -277,23 +285,23 @@ class ScreeningService {
         SELECT MAX(m2.fiscal_period)
         FROM calculated_metrics m2
         WHERE m2.company_id = m.company_id
-          AND m2.period_type = ?
+          AND m2.period_type = $${paramCounter++}
       )`);
       params.push(periodType);
     }
 
     // Period type filter
-    where.push('m.period_type = ?');
+    where.push(`m.period_type = $${paramCounter++}`);
     params.push(periodType);
 
     // Helper function to add range criteria
     const addRangeCriteria = (column, minVal, maxVal) => {
       if (minVal !== undefined && minVal !== null && minVal !== '') {
-        where.push(`m.${column} >= ?`);
+        where.push(`m.${column} >= $${paramCounter++}`);
         params.push(parseFloat(minVal));
       }
       if (maxVal !== undefined && maxVal !== null && maxVal !== '') {
-        where.push(`m.${column} <= ?`);
+        where.push(`m.${column} <= $${paramCounter++}`);
         params.push(parseFloat(maxVal));
       }
     };
@@ -338,11 +346,11 @@ class ScreeningService {
     // Alpha criteria (vs SPY benchmark) - these are in price_metrics table so need special handling
     const addAlphaCriteria = (column, minVal, maxVal) => {
       if (minVal !== undefined && minVal !== null && minVal !== '') {
-        where.push(`pm.${column} >= ?`);
+        where.push(`pm.${column} >= $${paramCounter++}`);
         params.push(parseFloat(minVal));
       }
       if (maxVal !== undefined && maxVal !== null && maxVal !== '') {
-        where.push(`pm.${column} <= ?`);
+        where.push(`pm.${column} <= $${paramCounter++}`);
         params.push(parseFloat(maxVal));
       }
     };
@@ -354,11 +362,11 @@ class ScreeningService {
     // PRISM Score criteria (from prism_scores table)
     const addPrismCriteria = (column, minVal, maxVal) => {
       if (minVal !== undefined && minVal !== null && minVal !== '') {
-        where.push(`ps.${column} >= ?`);
+        where.push(`ps.${column} >= $${paramCounter++}`);
         params.push(parseFloat(minVal));
       }
       if (maxVal !== undefined && maxVal !== null && maxVal !== '') {
-        where.push(`ps.${column} <= ?`);
+        where.push(`ps.${column} <= $${paramCounter++}`);
         params.push(parseFloat(maxVal));
       }
     };
@@ -366,19 +374,21 @@ class ScreeningService {
 
     // Quality score
     if (minQualityScore !== undefined && minQualityScore !== null) {
-      where.push('m.data_quality_score >= ?');
+      where.push(`m.data_quality_score >= $${paramCounter++}`);
       params.push(parseInt(minQualityScore));
     }
 
     // Sector filter
     if (sectors.length > 0) {
-      where.push(`c.sector IN (${sectors.map(() => '?').join(',')})`);
+      const placeholders = sectors.map(() => `$${paramCounter++}`).join(',');
+      where.push(`c.sector IN (${placeholders})`);
       params.push(...sectors);
     }
 
     // Industry filter
     if (industries.length > 0) {
-      where.push(`c.industry IN (${industries.map(() => '?').join(',')})`);
+      const placeholders = industries.map(() => `$${paramCounter++}`).join(',');
+      where.push(`c.industry IN (${placeholders})`);
       params.push(...industries);
     }
 
@@ -406,34 +416,36 @@ class ScreeningService {
     countryList = [...new Set(countryList)];
 
     if (countryList.length > 0) {
-      where.push(`c.country IN (${countryList.map(() => '?').join(',')})`);
+      const placeholders = countryList.map(() => `$${paramCounter++}`).join(',');
+      where.push(`c.country IN (${placeholders})`);
       params.push(...countryList);
     }
 
     // Exclude specific countries
     if (excludeCountries.length > 0) {
-      where.push(`c.country NOT IN (${excludeCountries.map(() => '?').join(',')})`);
+      const placeholders = excludeCountries.map(() => `$${paramCounter++}`).join(',');
+      where.push(`c.country NOT IN (${placeholders})`);
       params.push(...excludeCountries);
     }
 
     // Market cap filter (convert from billions to actual value)
     // Use market_cap_usd for cross-currency comparison (normalized to USD)
     if (minMarketCap !== undefined && minMarketCap !== null && minMarketCap !== '') {
-      where.push('COALESCE(pm.market_cap_usd, pm.market_cap) >= ?');
+      where.push(`COALESCE(pm.market_cap_usd, pm.market_cap) >= $${paramCounter++}`);
       params.push(parseFloat(minMarketCap) * 1e9);
     }
     if (maxMarketCap !== undefined && maxMarketCap !== null && maxMarketCap !== '') {
-      where.push('COALESCE(pm.market_cap_usd, pm.market_cap) <= ?');
+      where.push(`COALESCE(pm.market_cap_usd, pm.market_cap) <= $${paramCounter++}`);
       params.push(parseFloat(maxMarketCap) * 1e9);
     }
 
     // Volume filters
     if (minAvgVolume !== undefined && minAvgVolume !== null && minAvgVolume !== '') {
-      where.push('pm.avg_volume_30d >= ?');
+      where.push(`pm.avg_volume_30d >= $${paramCounter++}`);
       params.push(parseInt(minAvgVolume));
     }
     if (maxAvgVolume !== undefined && maxAvgVolume !== null && maxAvgVolume !== '') {
-      where.push('pm.avg_volume_30d <= ?');
+      where.push(`pm.avg_volume_30d <= $${paramCounter++}`);
       params.push(parseInt(maxAvgVolume));
     }
 
@@ -441,13 +453,13 @@ class ScreeningService {
     if (maxDistanceFrom52wHigh !== undefined && maxDistanceFrom52wHigh !== null && maxDistanceFrom52wHigh !== '') {
       // Calculate distance: ((high_52w - last_price) / high_52w) * 100 <= maxDistance
       // Rearranged: last_price >= high_52w * (1 - maxDistance/100)
-      where.push('pm.last_price >= pm.high_52w * (1 - ? / 100.0)');
+      where.push(`pm.last_price >= pm.high_52w * (1 - $${paramCounter++} / 100.0)`);
       params.push(parseFloat(maxDistanceFrom52wHigh));
     }
     if (minDistanceFrom52wLow !== undefined && minDistanceFrom52wLow !== null && minDistanceFrom52wLow !== '') {
       // Calculate distance: ((last_price - low_52w) / low_52w) * 100 >= minDistance
       // Rearranged: last_price >= low_52w * (1 + minDistance/100)
-      where.push('pm.last_price >= pm.low_52w * (1 + ? / 100.0)');
+      where.push(`pm.last_price >= pm.low_52w * (1 + $${paramCounter++} / 100.0)`);
       params.push(parseFloat(minDistanceFrom52wLow));
     }
 
@@ -457,14 +469,14 @@ class ScreeningService {
       where.push(`(
         EXISTS (
           SELECT 1 FROM insiders i
-          WHERE i.company_id = c.id AND i.is_ten_percent_owner = 1
+          WHERE i.company_id = c.id AND i.is_ten_percent_owner = true
         ) OR
         (
           SELECT COUNT(*) FROM insider_transactions it
           WHERE it.company_id = c.id
-            AND it.transaction_date >= date('now', '-365 days')
+            AND it.transaction_date >= CURRENT_DATE - INTERVAL '365 days'
             AND it.transaction_type IN ('P', 'Purchase', 'BUY')
-        ) >= ?
+        ) >= $${paramCounter++}
       )`);
       // Require at least 5 purchases for non-10% owner companies
       params.push(Math.max(5, parseFloat(minInsiderOwnership) / 2));
@@ -475,7 +487,7 @@ class ScreeningService {
       where.push(`EXISTS (
         SELECT 1 FROM insider_transactions it
         WHERE it.company_id = c.id
-          AND it.transaction_date >= date('now', '-90 days')
+          AND it.transaction_date >= CURRENT_DATE - INTERVAL '90 days'
           AND it.transaction_type IN ('P', 'Purchase', 'BUY')
           AND it.shares > 0
       )`);
@@ -486,7 +498,7 @@ class ScreeningService {
       const cutoffDate = new Date();
       cutoffDate.setFullYear(cutoffDate.getFullYear() - maxDataAge);
       const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
-      where.push('m.fiscal_period >= ?');
+      where.push(`m.fiscal_period >= $${paramCounter++}`);
       params.push(cutoffDateStr);
     }
 
@@ -497,7 +509,7 @@ class ScreeningService {
 
     // Only include active companies (not flagged as inactive/delisted)
     if (activeOnly) {
-      where.push('c.is_active = 1');
+      where.push('c.is_active = true');
     }
 
     // Validate sort column to prevent SQL injection
@@ -523,7 +535,7 @@ class ScreeningService {
     }
 
     // Build LIMIT/OFFSET clause conditionally
-    const limitClause = limit ? 'LIMIT ? OFFSET ?' : '';
+    const limitClause = limit ? `LIMIT $${paramCounter++} OFFSET $${paramCounter++}` : '';
 
     const sql = `
       SELECT
@@ -600,8 +612,11 @@ class ScreeningService {
       params.push(parseInt(limit), parseInt(offset));
     }
 
+    const database = await getDatabaseAsync();
+
     const startTime = Date.now();
-    const results = this.db.prepare(sql).all(...params);
+    const resultsQuery = await database.query(sql, params);
+    const results = resultsQuery.rows;
     const duration = Date.now() - startTime;
 
     // Get total count for pagination
@@ -615,7 +630,8 @@ class ScreeningService {
     `;
     // Remove limit and offset params if they were added
     const countParams = limit ? params.slice(0, -2) : params;
-    const totalCount = this.db.prepare(countSql).get(...countParams)?.total || 0;
+    const countQuery = await database.query(countSql, countParams);
+    const totalCount = countQuery.rows[0]?.total || 0;
 
     console.log(`\n📊 Screen completed in ${duration}ms`);
     console.log(`   Found ${results.length} of ${totalCount} matches\n`);
@@ -633,11 +649,11 @@ class ScreeningService {
    * Buffett-style: Quality companies
    * High ROIC, low debt, positive FCF
    */
-  buffettQuality(limit) {
+  async buffettQuality(limit) {
     console.log('\n🎯 BUFFETT QUALITY SCREEN');
     console.log('   Criteria: ROIC > 15%, Debt/Equity < 0.5, FCF Yield > 0%\n');
 
-    const result = this.screen({
+    const result = await this.screen({
       minROIC: 15,
       maxDebtToEquity: 0.5,
       minFCFYield: 0,
@@ -652,11 +668,11 @@ class ScreeningService {
   /**
    * Graham-style: Deep value
    */
-  deepValue(limit) {
+  async deepValue(limit) {
     console.log('\n🎯 DEEP VALUE SCREEN (Graham)');
     console.log('   Criteria: P/E < 15, P/B < 1.5, Positive ROE\n');
 
-    const result = this.screen({
+    const result = await this.screen({
       maxPERatio: 15,
       maxPBRatio: 1.5,
       minROIC: 0,
@@ -672,11 +688,11 @@ class ScreeningService {
   /**
    * Magic Formula (Greenblatt)
    */
-  magicFormula(limit) {
+  async magicFormula(limit) {
     console.log('\n🎯 MAGIC FORMULA SCREEN (Greenblatt)');
     console.log('   Criteria: High ROIC + Low P/E\n');
 
-    const result = this.screen({
+    const result = await this.screen({
       minROIC: 15,
       maxPERatio: 25,
       sortBy: 'roic',
@@ -690,11 +706,11 @@ class ScreeningService {
   /**
    * High quality, any price
    */
-  qualityAtAnyPrice(limit) {
+  async qualityAtAnyPrice(limit) {
     console.log('\n🎯 QUALITY AT ANY PRICE');
     console.log('   Criteria: ROIC > 20%, Low debt\n');
 
-    const result = this.screen({
+    const result = await this.screen({
       minROIC: 20,
       maxDebtToEquity: 1.0,
       sortBy: 'roic',
@@ -708,11 +724,11 @@ class ScreeningService {
   /**
    * High growth companies
    */
-  highGrowth(limit) {
+  async highGrowth(limit) {
     console.log('\n🎯 HIGH GROWTH SCREEN');
     console.log('   Criteria: Revenue Growth > 15%, Earnings Growth > 15%\n');
 
-    const result = this.screen({
+    const result = await this.screen({
       minRevenueGrowth: 15,
       minEarningsGrowth: 15,
       sortBy: 'revenue_growth_yoy',
@@ -727,11 +743,11 @@ class ScreeningService {
    * Dividend value
    * Companies with strong free cash flow yield and financial stability
    */
-  dividendValue(limit) {
+  async dividendValue(limit) {
     console.log('\n🎯 DIVIDEND VALUE SCREEN');
     console.log('   Criteria: FCF Yield > 8%, Low Debt, Positive Growth\n');
 
-    const result = this.screen({
+    const result = await this.screen({
       minFCFYield: 8,        // Strong FCF yield (now available with market cap data)
       minFCFMargin: 10,      // Also require good FCF margin
       maxDebtToEquity: 1.0,  // Financial stability
@@ -748,11 +764,11 @@ class ScreeningService {
   /**
    * Financial fortress (strong balance sheet)
    */
-  financialFortress(limit) {
+  async financialFortress(limit) {
     console.log('\n🎯 FINANCIAL FORTRESS SCREEN');
     console.log('   Criteria: Low Debt, High Current Ratio, Net Margin > 5%\n');
 
-    const result = this.screen({
+    const result = await this.screen({
       maxDebtToEquity: 0.3,
       minCurrentRatio: 2,
       minNetMargin: 5,      // Use Net Margin instead of FCF Yield
@@ -768,11 +784,11 @@ class ScreeningService {
    * Graham Cigar Butts - Deep value / "net-net" style
    * Companies trading below liquidation value with some profitability
    */
-  grahamCigarButts(limit) {
+  async grahamCigarButts(limit) {
     console.log('\n🎯 GRAHAM CIGAR BUTTS SCREEN');
     console.log('   Criteria: P/B < 0.8, P/E < 8, Current Ratio > 1.5, Some profit\n');
 
-    const result = this.screen({
+    const result = await this.screen({
       maxPBRatio: 0.8,        // Trading below book value
       maxPERatio: 8,          // Very cheap earnings
       minCurrentRatio: 1.5,   // Some liquidity
@@ -790,11 +806,11 @@ class ScreeningService {
    * Akre Compounders - High quality compounders with aligned management
    * Looks for high ROCE, low debt, and insider alignment
    */
-  akreCompounders(limit) {
+  async akreCompounders(limit) {
     console.log('\n🎯 AKRE COMPOUNDERS SCREEN');
     console.log('   Criteria: ROCE > 20%, Debt/Equity < 0.5, Strong margins, Insider ownership\n');
 
-    const result = this.screen({
+    const result = await this.screen({
       minROIC: 20,            // High returns on capital (using ROIC as proxy for ROCE)
       maxDebtToEquity: 0.5,   // Conservative debt levels
       minNetMargin: 10,       // Quality earnings
@@ -811,9 +827,11 @@ class ScreeningService {
    * Sleep Well Flywheel - Compounders passing savings to customers
    * Companies with revenue growth but stable/improving efficiency
    */
-  sleepWellFlywheel(limit) {
+  async sleepWellFlywheel(limit) {
     console.log('\n🎯 SLEEP WELL FLYWHEEL SCREEN');
     console.log('   Criteria: Revenue CAGR > 10%, High Gross Margin, Rising ROIC\n');
+
+    const database = await getDatabaseAsync();
 
     // Use 5-year CAGR where available, otherwise YoY growth
     const sql = `
@@ -829,18 +847,19 @@ class ScreeningService {
       FROM calculated_metrics m
       JOIN companies c ON m.company_id = c.id
       WHERE m.period_type = 'annual'
-        AND c.is_active = 1
+        AND c.is_active = true
         AND c.symbol NOT LIKE 'CIK_%'
-        AND m.fiscal_period >= date('now', '-2 years')
+        AND m.fiscal_period >= CURRENT_DATE - INTERVAL '2 years'
         AND (m.revenue_cagr_5y >= 10 OR m.revenue_growth_yoy >= 10)
         AND m.gross_margin >= 30
         AND m.roic >= 12
       ORDER BY m.roic DESC
-      ${limit ? 'LIMIT ?' : ''}
+      ${limit ? 'LIMIT $1' : ''}
     `;
 
     const params = limit ? [parseInt(limit)] : [];
-    const results = this.db.prepare(sql).all(...params);
+    const resultsQuery = await database.query(sql, params);
+    const results = resultsQuery.rows;
 
     console.log(`   Found ${results.length} matches\n`);
     return results;
@@ -850,9 +869,11 @@ class ScreeningService {
    * Forensic Quality - High earnings quality, low accounting red flags
    * CFO/Net Income > 1 means cash earnings exceed accrual earnings
    */
-  forensicQuality(limit) {
+  async forensicQuality(limit) {
     console.log('\n🎯 FORENSIC QUALITY SCREEN');
     console.log('   Criteria: CFO/Net Income > 1.0, Strong margins, Low debt\n');
+
+    const database = await getDatabaseAsync();
 
     // Custom query to calculate CFO/Net Income ratio
     // JOIN cash_flow for operating_cashflow and income_statement for net_income
@@ -875,20 +896,21 @@ class ScreeningService {
         AND inc.fiscal_date_ending = m.fiscal_period
         AND inc.statement_type = 'income_statement'
       WHERE m.period_type = 'annual'
-        AND c.is_active = 1
+        AND c.is_active = true
         AND c.symbol NOT LIKE 'CIK_%'
-        AND m.fiscal_period >= date('now', '-2 years')
+        AND m.fiscal_period >= CURRENT_DATE - INTERVAL '2 years'
         AND m.net_margin > 5
         AND m.debt_to_equity < 1.0
         AND inc.net_income > 0
         AND cf.operating_cashflow IS NOT NULL
         AND cf.operating_cashflow / inc.net_income >= 1.0
       ORDER BY (cf.operating_cashflow / inc.net_income) DESC
-      ${limit ? 'LIMIT ?' : ''}
+      ${limit ? 'LIMIT $1' : ''}
     `;
 
     const params = limit ? [parseInt(limit)] : [];
-    const results = this.db.prepare(sql).all(...params);
+    const resultsQuery = await database.query(sql, params);
+    const results = resultsQuery.rows;
 
     console.log(`   Found ${results.length} matches\n`);
     return results;
@@ -898,11 +920,11 @@ class ScreeningService {
    * Pabrai Asymmetry - Low risk, high reward situations
    * Cheap stocks with quality characteristics, beaten-down prices, and insider conviction
    */
-  pabraiAsymmetry(limit) {
+  async pabraiAsymmetry(limit) {
     console.log('\n🎯 PABRAI ASYMMETRY SCREEN');
     console.log('   Criteria: P/E < 10, ROIC > 12%, Low debt, Near 52w lows, Insider buying\n');
 
-    const result = this.screen({
+    const result = await this.screen({
       maxPERatio: 10,             // Very cheap
       minROIC: 12,                // Quality business
       maxDebtToEquity: 0.8,       // Not overleveraged
@@ -923,11 +945,11 @@ class ScreeningService {
    * Pat Dorsey / Morningstar Moats - Companies with competitive advantages
    * High and stable returns on capital, pricing power
    */
-  dorseyMoats(limit) {
+  async dorseyMoats(limit) {
     console.log('\n🎯 PAT DORSEY MOATS SCREEN');
     console.log('   Criteria: ROIC > 15%, Gross Margin > 40%, Stable margins\n');
 
-    const result = this.screen({
+    const result = await this.screen({
       minROIC: 15,            // Excess returns suggest moat
       minGrossMargin: 40,     // Pricing power
       minOperatingMargin: 15, // Operational efficiency
@@ -948,7 +970,7 @@ class ScreeningService {
   /**
    * Get current macro context for screening decisions
    */
-  getMacroContext() {
+  async getMacroContext() {
     try {
       const fredService = new FREDService(this.db);
       return fredService.getMacroSignals();
@@ -962,7 +984,7 @@ class ScreeningService {
    * Recession-Resistant Value Screen
    * Defensive sectors when yield curve is flat/inverted or VIX elevated
    */
-  recessionResistantValue(limit) {
+  async recessionResistantValue(limit) {
     console.log('\n🎯 RECESSION-RESISTANT VALUE SCREEN');
     console.log('   Criteria: Defensive sectors, FCF Yield > 5%, Low debt\n');
 
@@ -972,7 +994,7 @@ class ScreeningService {
                   `2s10s Spread ${macro.yieldCurve?.spread2s10s?.toFixed(2) || 'N/A'}%\n`);
     }
 
-    const result = this.screen({
+    const result = await this.screen({
       sectors: ['Consumer Staples', 'Healthcare', 'Utilities'],
       minFCFYield: 5,
       maxDebtToEquity: 1.0,
@@ -993,7 +1015,7 @@ class ScreeningService {
    * Deep Value with Safe Macro
    * Only buy deep value when yield curve is not inverted
    */
-  deepValueSafeMacro(limit) {
+  async deepValueSafeMacro(limit) {
     console.log('\n🎯 DEEP VALUE + SAFE MACRO SCREEN');
 
     const macro = this.getMacroContext();
@@ -1007,7 +1029,7 @@ class ScreeningService {
 
     console.log('   Criteria: P/E < 12, FCF Yield > 8%, Low debt\n');
 
-    const result = this.screen({
+    const result = await this.screen({
       maxPERatio: 12,
       minFCFYield: 8,
       maxDebtToEquity: 0.5,
@@ -1028,7 +1050,7 @@ class ScreeningService {
    * Quality at Reasonable Price (GARP) with Low Volatility
    * Buy quality when VIX is calm
    */
-  garpLowVol(limit) {
+  async garpLowVol(limit) {
     console.log('\n🎯 GARP + LOW VOLATILITY SCREEN');
 
     const macro = this.getMacroContext();
@@ -1043,7 +1065,7 @@ class ScreeningService {
 
     console.log('   Criteria: ROIC > 15%, P/E < 25, Revenue Growth > 5%\n');
 
-    const result = this.screen({
+    const result = await this.screen({
       minROIC: 15,
       maxPERatio: 25,
       minRevenueGrowth: 5,
@@ -1066,7 +1088,7 @@ class ScreeningService {
    * Cyclical Value Screen
    * Buy cyclicals when curve is steep (early cycle)
    */
-  cyclicalValue(limit) {
+  async cyclicalValue(limit) {
     console.log('\n🎯 CYCLICAL VALUE SCREEN');
 
     const macro = this.getMacroContext();
@@ -1081,7 +1103,7 @@ class ScreeningService {
 
     console.log('   Criteria: Cyclical sectors, P/E < 15, ROIC > 10%\n');
 
-    const result = this.screen({
+    const result = await this.screen({
       sectors: ['Materials', 'Industrials', 'Consumer Discretionary', 'Energy', 'Financials'],
       maxPERatio: 15,
       minROIC: 10,
@@ -1106,7 +1128,7 @@ class ScreeningService {
    * Fear Buying Screen
    * Aggressive buying during high VIX (crisis) periods
    */
-  fearBuying(limit) {
+  async fearBuying(limit) {
     console.log('\n🎯 FEAR BUYING SCREEN');
 
     const macro = this.getMacroContext();
@@ -1121,7 +1143,7 @@ class ScreeningService {
 
     console.log('   Criteria: High quality companies at any reasonable price\n');
 
-    const result = this.screen({
+    const result = await this.screen({
       minROIC: 20,
       minNetMargin: 10,
       maxDebtToEquity: 0.5,
@@ -1146,7 +1168,7 @@ class ScreeningService {
    * Credit Stress Opportunities
    * Special situations when credit spreads widen
    */
-  creditStressOpportunities(limit) {
+  async creditStressOpportunities(limit) {
     console.log('\n🎯 CREDIT STRESS OPPORTUNITIES SCREEN');
 
     const macro = this.getMacroContext();
@@ -1162,7 +1184,7 @@ class ScreeningService {
     console.log('   Criteria: Strong balance sheets that can weather credit stress\n');
 
     // Look for companies with fortress balance sheets during stress
-    const result = this.screen({
+    const result = await this.screen({
       maxDebtToEquity: 0.3,
       minCurrentRatio: 2.0,
       minInterestCoverage: 10,
@@ -1187,7 +1209,7 @@ class ScreeningService {
    * Comprehensive Value Investing Screen with Macro Overlay
    * Combines fundamental quality with macro context
    */
-  valueInvestingWithMacro(limit) {
+  async valueInvestingWithMacro(limit) {
     console.log('\n🎯 VALUE INVESTING + MACRO OVERLAY SCREEN');
 
     const macro = this.getMacroContext();
@@ -1278,7 +1300,7 @@ class ScreeningService {
         };
     }
 
-    const result = this.screen(criteria);
+    const result = await this.screen(criteria);
 
     return {
       results: result.results,
