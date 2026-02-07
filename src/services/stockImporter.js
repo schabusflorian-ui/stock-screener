@@ -1,5 +1,5 @@
 // src/services/stockImporter-v2.js
-const db = require('../database');
+const { getDatabaseAsync } = require('../database');
 
 /**
  * Stock Importer V2
@@ -77,7 +77,6 @@ function normalizeCountry(country) {
 class StockImporter {
   constructor(dataProvider) {
     this.provider = dataProvider;
-    this.db = db.getDatabase();
 
     console.log('✅ Stock Importer V2 initialized');
 
@@ -110,16 +109,16 @@ class StockImporter {
 
       // Step 2: Store company information
       console.log('\n💾 Step 2: Storing company information...');
-      const companyId = this.storeCompany(symbol, data.overview);
+      const companyId = await this.storeCompany(symbol, data.overview);
       console.log(`   ✓ Company stored with ID: ${companyId}`);
 
       // Step 3: Store financial statements
       console.log('\n💾 Step 3: Storing financial statements...');
-      const financialsCount = this.storeFinancialStatements(companyId, data);
+      const financialsCount = await this.storeFinancialStatements(companyId, data);
       console.log(`   ✓ Stored ${financialsCount} financial reports`);
 
       // Step 4: Log successful import
-      this.logImport(companyId, 'complete', true, null);
+      await this.logImport(companyId, 'complete', true, null);
 
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
 
@@ -144,7 +143,7 @@ class StockImporter {
       console.log(`   Error: ${error.message}`);
       console.log('='.repeat(60) + '\n');
 
-      this.logImport(null, 'complete', false, error.message);
+      await this.logImport(null, 'complete', false, error.message);
 
       return {
         success: false,
@@ -157,13 +156,15 @@ class StockImporter {
   /**
    * Store company information in database
    */
-  storeCompany(symbol, overview) {
-    const stmt = this.db.prepare(`
+  async storeCompany(symbol, overview) {
+    const database = await getDatabaseAsync();
+
+    await database.query(`
       INSERT INTO companies (
-        symbol, name, sector, industry, exchange, 
+        symbol, name, sector, industry, exchange,
         country, market_cap, description
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       ON CONFLICT(symbol) DO UPDATE SET
         name = excluded.name,
         sector = excluded.sector,
@@ -172,9 +173,7 @@ class StockImporter {
         market_cap = excluded.market_cap,
         description = excluded.description,
         last_updated = CURRENT_TIMESTAMP
-    `);
-
-    stmt.run(
+    `, [
       symbol.toUpperCase(),
       overview.name || null,
       overview.sector || null,
@@ -183,10 +182,10 @@ class StockImporter {
       normalizeCountry(overview.country),
       overview.marketCap || null,
       overview.description || null
-    );
+    ]);
 
-    const company = this.db.prepare('SELECT id FROM companies WHERE symbol = ?')
-      .get(symbol.toUpperCase());
+    const result = await database.query('SELECT id FROM companies WHERE symbol = $1', [symbol.toUpperCase()]);
+    const company = result.rows[0];
 
     return company.id;
   }
@@ -195,10 +194,11 @@ class StockImporter {
    * Store financial statements in database
    * Handles both SEC and Alpha Vantage data formats
    */
-  storeFinancialStatements(companyId, data) {
+  async storeFinancialStatements(companyId, data) {
+    const database = await getDatabaseAsync();
     let count = 0;
 
-    const stmt = this.db.prepare(`
+    const sql = `
       INSERT INTO financial_data (
         company_id, statement_type, fiscal_date_ending,
         fiscal_year, period_type, fiscal_period, form, filed_date,
@@ -210,7 +210,7 @@ class StockImporter {
         cost_of_revenue, gross_profit,
         operating_cashflow, capital_expenditures
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
       ON CONFLICT(company_id, statement_type, fiscal_date_ending, period_type)
       DO UPDATE SET
         fiscal_period = excluded.fiscal_period,
@@ -233,7 +233,7 @@ class StockImporter {
         operating_cashflow = excluded.operating_cashflow,
         capital_expenditures = excluded.capital_expenditures,
         updated_at = CURRENT_TIMESTAMP
-    `);
+    `;
 
     // Store balance sheets (annual)
     console.log('   • Balance sheets (annual)...');
@@ -244,7 +244,7 @@ class StockImporter {
       const form = report.form || null;
       const filedDate = report.filed || null;
 
-      stmt.run(
+      await database.query(sql, [
         companyId,
         'balance_sheet',
         report.fiscalDateEnding,
@@ -263,7 +263,7 @@ class StockImporter {
         report.longTermDebt,
         report.shortTermDebt,
         null, null, null, null, null, null, null // Income/CF fields
-      );
+      ]);
       count++;
     }
 
@@ -275,7 +275,7 @@ class StockImporter {
       const form = report.form || null;
       const filedDate = report.filed || null;
 
-      stmt.run(
+      await database.query(sql, [
         companyId,
         'balance_sheet',
         report.fiscalDateEnding,
@@ -294,7 +294,7 @@ class StockImporter {
         report.longTermDebt,
         report.shortTermDebt,
         null, null, null, null, null, null, null // Income/CF fields
-      );
+      ]);
       count++;
     }
 
@@ -306,7 +306,7 @@ class StockImporter {
       const form = report.form || null;
       const filedDate = report.filed || null;
 
-      stmt.run(
+      await database.query(sql, [
         companyId,
         'income_statement',
         report.fiscalDateEnding,
@@ -323,7 +323,7 @@ class StockImporter {
         report.costOfRevenue,
         report.grossProfit,
         null, null // CF fields
-      );
+      ]);
       count++;
     }
 
@@ -335,7 +335,7 @@ class StockImporter {
       const form = report.form || null;
       const filedDate = report.filed || null;
 
-      stmt.run(
+      await database.query(sql, [
         companyId,
         'income_statement',
         report.fiscalDateEnding,
@@ -352,7 +352,7 @@ class StockImporter {
         report.costOfRevenue,
         report.grossProfit,
         null, null // CF fields
-      );
+      ]);
       count++;
     }
 
@@ -364,7 +364,7 @@ class StockImporter {
       const form = report.form || null;
       const filedDate = report.filed || null;
 
-      stmt.run(
+      await database.query(sql, [
         companyId,
         'cash_flow',
         report.fiscalDateEnding,
@@ -378,7 +378,7 @@ class StockImporter {
         null, null, null, null, null, // Income fields
         report.operatingCashflow,
         report.capitalExpenditures
-      );
+      ]);
       count++;
     }
 
@@ -390,7 +390,7 @@ class StockImporter {
       const form = report.form || null;
       const filedDate = report.filed || null;
 
-      stmt.run(
+      await database.query(sql, [
         companyId,
         'cash_flow',
         report.fiscalDateEnding,
@@ -404,7 +404,7 @@ class StockImporter {
         null, null, null, null, null, // Income fields
         report.operatingCashflow,
         report.capitalExpenditures
-      );
+      ]);
       count++;
     }
 
@@ -414,41 +414,45 @@ class StockImporter {
   /**
    * Log import activity
    */
-  logImport(companyId, endpointType, success, errorMessage) {
-    const stmt = this.db.prepare(`
+  async logImport(companyId, endpointType, success, errorMessage) {
+    const database = await getDatabaseAsync();
+
+    await database.query(`
       INSERT INTO data_fetch_log (
         company_id, endpoint_type, success, error_message
       )
-      VALUES (?, ?, ?, ?)
-    `);
-
-    stmt.run(companyId, endpointType, success ? 1 : 0, errorMessage);
+      VALUES ($1, $2, $3, $4)
+    `, [companyId, endpointType, success ? true : false, errorMessage]);
   }
 
   /**
    * Get company data from database
    */
-  getCompanyData(symbol) {
-    const company = this.db.prepare(`
-      SELECT * FROM companies WHERE LOWER(symbol) = LOWER(?)
-    `).get(symbol.toUpperCase());
+  async getCompanyData(symbol) {
+    const database = await getDatabaseAsync();
+
+    const companyResult = await database.query(`
+      SELECT * FROM companies WHERE LOWER(symbol) = LOWER($1)
+    `, [symbol.toUpperCase()]);
+
+    const company = companyResult.rows[0];
 
     if (!company) {
       return null;
     }
 
-    const financials = this.db.prepare(`
-      SELECT 
+    const financialsResult = await database.query(`
+      SELECT
         statement_type,
         fiscal_date_ending,
         period_type,
         data
       FROM financial_data
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY fiscal_date_ending DESC
-    `).all(company.id);
+    `, [company.id]);
 
-    const parsed = financials.map(f => ({
+    const parsed = financialsResult.rows.map(f => ({
       ...f,
       data: JSON.parse(f.data)
     }));
@@ -462,42 +466,46 @@ class StockImporter {
   /**
    * List all imported companies
    */
-  listImportedCompanies() {
-    const companies = this.db.prepare(`
-      SELECT 
+  async listImportedCompanies() {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT
         c.*,
         COUNT(DISTINCT f.fiscal_date_ending) as years_of_data
       FROM companies c
       LEFT JOIN financial_data f ON c.id = f.company_id
-      WHERE c.is_active = 1
+      WHERE c.is_active = true
       GROUP BY c.id
       ORDER BY c.symbol
-    `).all();
+    `);
 
-    return companies;
+    return result.rows;
   }
 
   /**
    * Get import statistics
    */
-  getImportStats() {
-    const stats = this.db.prepare(`
-      SELECT 
+  async getImportStats() {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT
         COUNT(DISTINCT c.id) as total_companies,
         COUNT(DISTINCT f.id) as total_financial_reports,
         COUNT(DISTINCT CASE WHEN f.statement_type = 'balance_sheet' THEN f.id END) as balance_sheets,
         COUNT(DISTINCT CASE WHEN f.statement_type = 'income_statement' THEN f.id END) as income_statements,
         COUNT(DISTINCT CASE WHEN f.statement_type = 'cash_flow' THEN f.id END) as cash_flows,
         COUNT(DISTINCT l.id) as total_api_calls,
-        SUM(CASE WHEN l.success = 1 THEN 1 ELSE 0 END) as successful_calls,
-        SUM(CASE WHEN l.success = 0 THEN 1 ELSE 0 END) as failed_calls
+        SUM(CASE WHEN l.success = true THEN 1 ELSE 0 END) as successful_calls,
+        SUM(CASE WHEN l.success = false THEN 1 ELSE 0 END) as failed_calls
       FROM companies c
       LEFT JOIN financial_data f ON c.id = f.company_id
       LEFT JOIN data_fetch_log l ON c.id = l.company_id
-      WHERE c.is_active = 1
-    `).get();
+      WHERE c.is_active = true
+    `);
 
-    return stats;
+    return result.rows[0];
   }
 
   /**
@@ -579,12 +587,14 @@ class StockImporter {
   /**
    * Check if a company exists in database
    */
-  companyExists(symbol) {
-    const company = this.db.prepare(`
-      SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
-    `).get(symbol.toUpperCase());
+  async companyExists(symbol) {
+    const database = await getDatabaseAsync();
 
-    return !!company;
+    const result = await database.query(`
+      SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)
+    `, [symbol.toUpperCase()]);
+
+    return result.rows.length > 0;
   }
 
   /**

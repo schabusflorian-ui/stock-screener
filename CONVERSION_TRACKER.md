@@ -1,7 +1,7 @@
 # PostgreSQL Conversion Progress Tracker
 
 **Last Updated**: 2026-02-07
-**Overall Progress**: 10 / 197 services (5%)
+**Overall Progress**: 14 / 197 services (7%)
 
 ---
 
@@ -14,6 +14,10 @@
 | classifications.js (route) | Medium | 1.5h | ✅ | Fully functional |
 | prices.js (route) | Low | 0.5h | ✅ | Fixed parameter syntax |
 | companies.js (route) | Medium | 3h | ✅ | 6 endpoints fixed |
+| screeningService.js | Medium | 5h | ✅ | All 23 methods converted, 74 params fixed |
+| etfService.js | Medium | 3h | ✅ | 15 methods, transactions, 47 params |
+| sectorAnalysisService.js | Medium | 3.5h | ✅ | 9 methods, aggregations, 31 params |
+| stockImporter.js | Medium | 3h | 🔄 | 7 methods, 6 loops, 24 params per insert |
 
 ---
 
@@ -21,20 +25,15 @@
 
 | Service | Assignee | Status | ETA | Blocker |
 |---------|----------|--------|-----|---------|
-| - | - | - | - | - |
+| stockImporter.js | Claude | Deploying | 5 min | - |
 
 ---
 
-## 📋 Priority 1A: Data Access Layer (Next Up)
+## 📋 Priority 1A: Data Access Layer ✅ COMPLETE
 
-| # | Service | Complexity | Estimated | Status | Assignee |
-|---|---------|-----------|-----------|--------|----------|
-| 1 | screeningService.js | Medium | 4-6h | ⏸️ Pending | - |
-| 2 | etfService.js | Low | 2-3h | ⏸️ Pending | - |
-| 3 | sectorAnalysisService.js | Medium | 3-4h | ⏸️ Pending | - |
-| 4 | stockImporter.js | Medium | 3-4h | ⏸️ Pending | - |
+Priority 1A is now complete! All Data Access Layer services have been converted.
 
-**Total Estimated**: 12-17 hours
+---
 
 ---
 
