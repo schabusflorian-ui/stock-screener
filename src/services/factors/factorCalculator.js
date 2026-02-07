@@ -1,6 +1,9 @@
 // src/services/factors/factorCalculator.js
 // Calculates factor scores for individual stocks
 
+const crypto = require('crypto');
+const { getDatabaseAsync } = require('../../database');
+
 /**
  * FactorCalculator
  *
@@ -13,8 +16,8 @@
  * - Volatility: Price volatility, beta
  */
 class FactorCalculator {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No db needed - using getDatabaseAsync()
   }
 
   /**
@@ -28,7 +31,7 @@ class FactorCalculator {
     }
 
     // Get all stocks with metrics at this date
-    const stocks = this._getStocksWithMetrics(scoreDate, universeFilter);
+    const stocks = await this._getStocksWithMetrics(scoreDate, universeFilter);
 
     if (stocks.length === 0) {
       if (verbose) console.log('  No stocks with metrics found');
@@ -40,7 +43,11 @@ class FactorCalculator {
     }
 
     // Calculate raw factor values
-    const factorValues = stocks.map(stock => this._calculateRawFactors(stock, scoreDate));
+    const factorValues = [];
+    for (const stock of stocks) {
+      const factors = await this._calculateRawFactors(stock, scoreDate);
+      factorValues.push(factors);
+    }
 
     // Calculate percentile ranks for each factor
     const rankedFactors = this._calculatePercentileRanks(factorValues);
@@ -49,42 +56,79 @@ class FactorCalculator {
     const finalScores = rankedFactors.map(stock => this._calculateCompositeScores(stock));
 
     // Store scores in database
-    const insertStmt = this.db.prepare(`
-      INSERT OR REPLACE INTO stock_factor_scores (
-        company_id, symbol, score_date,
-        value_score, size_score, momentum_score,
-        quality_score, profitability_score, investment_score,
-        growth_score, volatility_score, beta,
-        dividend_score, leverage_score, liquidity_score,
-        value_growth_blend, defensive_score,
-        value_percentile, quality_percentile, momentum_percentile,
-        growth_percentile, size_percentile,
-        universe_size, calculation_version, created_at
-      ) VALUES (
-        @company_id, @symbol, @score_date,
-        @value_score, @size_score, @momentum_score,
-        @quality_score, @profitability_score, @investment_score,
-        @growth_score, @volatility_score, @beta,
-        @dividend_score, @leverage_score, @liquidity_score,
-        @value_growth_blend, @defensive_score,
-        @value_percentile, @quality_percentile, @momentum_percentile,
-        @growth_percentile, @size_percentile,
-        @universe_size, @calculation_version, datetime('now')
-      )
-    `);
-
-    const transaction = this.db.transaction(() => {
-      for (const score of finalScores) {
-        insertStmt.run({
-          ...score,
-          score_date: scoreDate,
-          universe_size: stocks.length,
-          calculation_version: '1.0'
-        });
-      }
-    });
-
-    transaction();
+    const database = await getDatabaseAsync();
+    for (const score of finalScores) {
+      await database.query(`
+        INSERT INTO stock_factor_scores (
+          company_id, symbol, score_date,
+          value_score, size_score, momentum_score,
+          quality_score, profitability_score, investment_score,
+          growth_score, volatility_score, beta,
+          dividend_score, leverage_score, liquidity_score,
+          value_growth_blend, defensive_score,
+          value_percentile, quality_percentile, momentum_percentile,
+          growth_percentile, size_percentile,
+          universe_size, calculation_version, created_at
+        ) VALUES (
+          $1, $2, $3,
+          $4, $5, $6,
+          $7, $8, $9,
+          $10, $11, $12,
+          $13, $14, $15,
+          $16, $17,
+          $18, $19, $20,
+          $21, $22,
+          $23, $24, CURRENT_TIMESTAMP
+        )
+        ON CONFLICT (company_id, score_date) DO UPDATE SET
+          value_score = EXCLUDED.value_score,
+          size_score = EXCLUDED.size_score,
+          momentum_score = EXCLUDED.momentum_score,
+          quality_score = EXCLUDED.quality_score,
+          profitability_score = EXCLUDED.profitability_score,
+          investment_score = EXCLUDED.investment_score,
+          growth_score = EXCLUDED.growth_score,
+          volatility_score = EXCLUDED.volatility_score,
+          beta = EXCLUDED.beta,
+          dividend_score = EXCLUDED.dividend_score,
+          leverage_score = EXCLUDED.leverage_score,
+          liquidity_score = EXCLUDED.liquidity_score,
+          value_growth_blend = EXCLUDED.value_growth_blend,
+          defensive_score = EXCLUDED.defensive_score,
+          value_percentile = EXCLUDED.value_percentile,
+          quality_percentile = EXCLUDED.quality_percentile,
+          momentum_percentile = EXCLUDED.momentum_percentile,
+          growth_percentile = EXCLUDED.growth_percentile,
+          size_percentile = EXCLUDED.size_percentile,
+          universe_size = EXCLUDED.universe_size,
+          calculation_version = EXCLUDED.calculation_version
+      `, [
+        score.company_id,
+        score.symbol,
+        scoreDate,
+        score.value_score,
+        score.size_score,
+        score.momentum_score,
+        score.quality_score,
+        score.profitability_score,
+        score.investment_score,
+        score.growth_score,
+        score.volatility_score,
+        score.beta,
+        score.dividend_score,
+        score.leverage_score,
+        score.liquidity_score,
+        score.value_growth_blend,
+        score.defensive_score,
+        score.value_score,
+        score.quality_score,
+        score.momentum_score,
+        score.growth_score,
+        score.size_score,
+        stocks.length,
+        '1.0'
+      ]);
+    }
 
     if (verbose) {
       console.log(`  ✅ Calculated ${finalScores.length} factor scores`);
@@ -96,7 +140,9 @@ class FactorCalculator {
   /**
    * Get stocks with metrics at a specific date
    */
-  _getStocksWithMetrics(scoreDate, universeFilter = null) {
+  async _getStocksWithMetrics(scoreDate, universeFilter = null) {
+    const database = await getDatabaseAsync();
+
     let query = `
       SELECT
         c.id as company_id,
@@ -128,41 +174,50 @@ class FactorCalculator {
       FROM companies c
       JOIN calculated_metrics cm ON c.id = cm.company_id
       LEFT JOIN price_metrics pm ON c.id = pm.company_id
-      WHERE cm.fiscal_period <= ?
+      WHERE cm.fiscal_period <= $1
         AND c.market_cap IS NOT NULL
         AND c.market_cap > 0
     `;
 
     const params = [scoreDate];
+    let paramCount = 1;
 
     if (universeFilter) {
       if (universeFilter.minMarketCap) {
-        query += ' AND c.market_cap >= ?';
+        paramCount++;
+        query += ` AND c.market_cap >= $${paramCount}`;
         params.push(universeFilter.minMarketCap);
       }
       if (universeFilter.sector) {
-        query += ' AND c.sector = ?';
+        paramCount++;
+        query += ` AND c.sector = $${paramCount}`;
         params.push(universeFilter.sector);
       }
     }
 
     query += `
-      GROUP BY c.id
+      GROUP BY c.id, c.symbol, c.sector, c.market_cap, cm.pe_ratio, cm.pb_ratio, cm.ps_ratio,
+               cm.earnings_yield, cm.fcf_yield, cm.dividend_yield, cm.roe, cm.roic, cm.roa,
+               cm.gross_margin, cm.operating_margin, cm.net_margin, cm.revenue_growth_yoy,
+               cm.earnings_growth_yoy, cm.fcf_growth_yoy, cm.debt_to_equity, cm.debt_to_assets,
+               cm.current_ratio, cm.interest_coverage, cm.asset_turnover, pm.avg_volume_30d,
+               pm.last_price, cm.fiscal_period
       HAVING cm.fiscal_period = MAX(cm.fiscal_period)
     `;
 
-    return this.db.prepare(query).all(...params);
+    const result = await database.query(query, params);
+    return result.rows;
   }
 
   /**
    * Calculate raw factor values for a single stock
    */
-  _calculateRawFactors(stock, scoreDate) {
+  async _calculateRawFactors(stock, scoreDate) {
     // Get momentum data
-    const momentum = this._calculateMomentum(stock.company_id, scoreDate);
+    const momentum = await this._calculateMomentum(stock.company_id, scoreDate);
 
     // Get volatility data
-    const volatility = this._calculateVolatility(stock.company_id, scoreDate);
+    const volatility = await this._calculateVolatility(stock.company_id, scoreDate);
 
     // Calculate liquidity metrics
     const liquidity = this._calculateLiquidity(stock);
@@ -245,16 +300,20 @@ class FactorCalculator {
   /**
    * Calculate momentum metrics for a stock
    */
-  _calculateMomentum(companyId, scoreDate) {
+  async _calculateMomentum(companyId, scoreDate) {
+    const database = await getDatabaseAsync();
+
     // Get price returns
-    const prices = this.db.prepare(`
+    const result = await database.query(`
       SELECT date, close
       FROM daily_prices
-      WHERE company_id = ?
-        AND date <= ?
+      WHERE company_id = $1
+        AND date <= $2
       ORDER BY date DESC
       LIMIT 252
-    `).all(companyId, scoreDate);
+    `, [companyId, scoreDate]);
+
+    const prices = result.rows;
 
     if (prices.length < 20) {
       return { return_1m: null, return_3m: null, return_6m: null, return_12m: null };
@@ -277,16 +336,20 @@ class FactorCalculator {
   /**
    * Calculate volatility metrics for a stock
    */
-  _calculateVolatility(companyId, scoreDate) {
+  async _calculateVolatility(companyId, scoreDate) {
+    const database = await getDatabaseAsync();
+
     // Get daily returns for volatility calculation
-    const prices = this.db.prepare(`
+    const result = await database.query(`
       SELECT date, close
       FROM daily_prices
-      WHERE company_id = ?
-        AND date <= ?
+      WHERE company_id = $1
+        AND date <= $2
       ORDER BY date DESC
       LIMIT 252
-    `).all(companyId, scoreDate);
+    `, [companyId, scoreDate]);
+
+    const prices = result.rows;
 
     if (prices.length < 60) {
       return { volatility_60d: null, volatility_252d: null, beta: null };
@@ -308,7 +371,7 @@ class FactorCalculator {
     };
 
     // Calculate beta against S&P 500
-    const beta = this._calculateBeta(companyId, scoreDate, prices);
+    const beta = await this._calculateBeta(companyId, scoreDate, prices);
 
     return {
       volatility_60d: returns.length >= 60 ? calcStdDev(returns.slice(0, 60)) * 100 : null,
@@ -321,17 +384,20 @@ class FactorCalculator {
    * Calculate beta (market sensitivity) for a stock
    * Beta = Covariance(stock returns, market returns) / Variance(market returns)
    */
-  _calculateBeta(companyId, scoreDate, stockPrices = null) {
+  async _calculateBeta(companyId, scoreDate, stockPrices = null) {
+    const database = await getDatabaseAsync();
+
     // Get stock prices if not provided
     if (!stockPrices) {
-      stockPrices = this.db.prepare(`
+      const result = await database.query(`
         SELECT date, close
         FROM daily_prices
-        WHERE company_id = ?
-          AND date <= ?
+        WHERE company_id = $1
+          AND date <= $2
         ORDER BY date DESC
         LIMIT 252
-      `).all(companyId, scoreDate);
+      `, [companyId, scoreDate]);
+      stockPrices = result.rows;
     }
 
     if (stockPrices.length < 60) {
@@ -340,14 +406,16 @@ class FactorCalculator {
 
     // Get S&P 500 (index_id = 1) prices for the same period
     const oldestStockDate = stockPrices[stockPrices.length - 1].date;
-    const marketPrices = this.db.prepare(`
+    const marketResult = await database.query(`
       SELECT date, close
       FROM market_index_prices
-      WHERE index_id = 1
-        AND date <= ?
-        AND date >= ?
+      WHERE index_id = $1
+        AND date <= $2
+        AND date >= $3
       ORDER BY date DESC
-    `).all(scoreDate, oldestStockDate);
+    `, [1, scoreDate, oldestStockDate]);
+
+    const marketPrices = marketResult.rows;
 
     if (marketPrices.length < 60) {
       return null; // Need sufficient market data
@@ -400,7 +468,7 @@ class FactorCalculator {
     }
 
     covariance /= stockReturns.length;
-    marketVariance /= marketReturns.length;
+    marketVariance /= stockReturns.length;
 
     if (marketVariance === 0) {
       return null; // Cannot calculate beta if market has no variance
@@ -652,50 +720,59 @@ class FactorCalculator {
   /**
    * Get factor scores for a specific stock at a date
    */
-  getFactorScores(symbol, scoreDate = null) {
+  async getFactorScores(symbol, scoreDate = null) {
+    const database = await getDatabaseAsync();
+
     let query = `
       SELECT * FROM stock_factor_scores
-      WHERE symbol = ?
+      WHERE symbol = $1
     `;
     const params = [symbol];
 
     if (scoreDate) {
-      query += ' AND score_date <= ? ORDER BY score_date DESC LIMIT 1';
+      query += ' AND score_date <= $2 ORDER BY score_date DESC LIMIT 1';
       params.push(scoreDate);
     } else {
       query += ' ORDER BY score_date DESC LIMIT 1';
     }
 
-    return this.db.prepare(query).get(...params);
+    const result = await database.query(query, params);
+    return result.rows[0];
   }
 
   /**
    * Get factor score history for a stock
    */
-  getFactorScoreHistory(symbol, options = {}) {
+  async getFactorScoreHistory(symbol, options = {}) {
+    const database = await getDatabaseAsync();
     const { limit = 12, startDate = null } = options;
 
     let query = `
       SELECT * FROM stock_factor_scores
-      WHERE symbol = ?
+      WHERE symbol = $1
     `;
     const params = [symbol];
+    let paramCount = 1;
 
     if (startDate) {
-      query += ' AND score_date >= ?';
+      paramCount++;
+      query += ` AND score_date >= $${paramCount}`;
       params.push(startDate);
     }
 
-    query += ' ORDER BY score_date DESC LIMIT ?';
+    paramCount++;
+    query += ` ORDER BY score_date DESC LIMIT $${paramCount}`;
     params.push(limit);
 
-    return this.db.prepare(query).all(...params);
+    const result = await database.query(query, params);
+    return result.rows;
   }
 
   /**
    * Get top stocks by a specific factor
    */
-  getTopByFactor(factor, scoreDate, options = {}) {
+  async getTopByFactor(factor, scoreDate, options = {}) {
+    const database = await getDatabaseAsync();
     const { limit = 20, minMarketCap = null, sector = null } = options;
 
     const factorColumn = `${factor}_score`;
@@ -704,51 +781,59 @@ class FactorCalculator {
       SELECT sfs.*, c.sector, c.industry, c.market_cap
       FROM stock_factor_scores sfs
       JOIN companies c ON sfs.company_id = c.id
-      WHERE sfs.score_date = ?
+      WHERE sfs.score_date = $1
         AND sfs.${factorColumn} IS NOT NULL
     `;
     const params = [scoreDate];
+    let paramCount = 1;
 
     if (minMarketCap) {
-      query += ' AND c.market_cap >= ?';
+      paramCount++;
+      query += ` AND c.market_cap >= $${paramCount}`;
       params.push(minMarketCap);
     }
 
     if (sector) {
-      query += ' AND c.sector = ?';
+      paramCount++;
+      query += ` AND c.sector = $${paramCount}`;
       params.push(sector);
     }
 
-    query += ` ORDER BY sfs.${factorColumn} DESC LIMIT ?`;
+    paramCount++;
+    query += ` ORDER BY sfs.${factorColumn} DESC LIMIT $${paramCount}`;
     params.push(limit);
 
-    return this.db.prepare(query).all(...params);
+    const result = await database.query(query, params);
+    return result.rows;
   }
 
   /**
    * Calculate factor scores for historical dates (batch)
    */
   async calculateHistoricalFactorScores(options = {}) {
+    const database = await getDatabaseAsync();
     const { startDate = null, endDate = null, frequency = 'monthly', verbose = false } = options;
 
     // Get list of dates to calculate
     let dates;
     if (frequency === 'monthly') {
-      dates = this.db.prepare(`
-        SELECT DISTINCT strftime('%Y-%m-01', fiscal_period) as score_date
+      const result = await database.query(`
+        SELECT DISTINCT to_char(fiscal_period::date, 'YYYY-MM-01') as score_date
         FROM calculated_metrics
-        WHERE fiscal_period >= COALESCE(?, '2015-01-01')
-          AND fiscal_period <= COALESCE(?, date('now'))
+        WHERE fiscal_period >= COALESCE($1, '2015-01-01')
+          AND fiscal_period <= COALESCE($2, CURRENT_DATE)
         ORDER BY score_date
-      `).all(startDate, endDate).map(d => d.score_date);
+      `, [startDate, endDate]);
+      dates = result.rows.map(d => d.score_date);
     } else {
-      dates = this.db.prepare(`
+      const result = await database.query(`
         SELECT DISTINCT fiscal_period as score_date
         FROM calculated_metrics
-        WHERE fiscal_period >= COALESCE(?, '2015-01-01')
-          AND fiscal_period <= COALESCE(?, date('now'))
+        WHERE fiscal_period >= COALESCE($1, '2015-01-01')
+          AND fiscal_period <= COALESCE($2, CURRENT_DATE)
         ORDER BY score_date
-      `).all(startDate, endDate).map(d => d.score_date);
+      `, [startDate, endDate]);
+      dates = result.rows.map(d => d.score_date);
     }
 
     if (verbose) {
