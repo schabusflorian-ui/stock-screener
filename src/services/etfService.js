@@ -1,13 +1,10 @@
 // src/services/etfService.js
 // ETF Basket Service - Create portfolios based on ETF allocations
 
-const db = require('../database');
+const { getDatabaseAsync } = require('../database');
 
 class EtfService {
-  constructor() {
-    this.db = db.getDatabase();
-    console.log('📊 ETF Service initialized');
-  }
+  // No constructor needed for PostgreSQL
 
   // ============================================
   // ETF Definitions
@@ -16,73 +13,83 @@ class EtfService {
   /**
    * Get all ETF definitions
    */
-  getAllEtfs(options = {}) {
+  async getAllEtfs(options = {}) {
     const { category, assetClass, issuer, limit = 100 } = options;
 
+    const database = await getDatabaseAsync();
     let query = `
       SELECT * FROM etf_definitions
-      WHERE is_active = 1
+      WHERE is_active = true
     `;
     const params = [];
+    let paramCounter = 1;
 
     if (category) {
-      query += ' AND category = ?';
+      query += ` AND category = $${paramCounter++}`;
       params.push(category);
     }
     if (assetClass) {
-      query += ' AND asset_class = ?';
+      query += ` AND asset_class = $${paramCounter++}`;
       params.push(assetClass);
     }
     if (issuer) {
-      query += ' AND issuer = ?';
+      query += ` AND issuer = $${paramCounter++}`;
       params.push(issuer);
     }
 
-    query += ' ORDER BY symbol ASC LIMIT ?';
+    query += ` ORDER BY symbol ASC LIMIT $${paramCounter++}`;
     params.push(limit);
 
-    return this.db.prepare(query).all(...params);
+    const result = await database.query(query, params);
+    return result.rows;
   }
 
   /**
    * Get ETF by symbol
    */
-  getEtfBySymbol(symbol) {
-    return this.db.prepare(`
-      SELECT * FROM etf_definitions WHERE LOWER(symbol) = LOWER(?)
-    `).get(symbol);
+  async getEtfBySymbol(symbol) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM etf_definitions WHERE LOWER(symbol) = LOWER($1)
+    `, [symbol]);
+    return result.rows[0];
   }
 
   /**
    * Get ETF categories
    */
-  getCategories() {
-    return this.db.prepare(`
+  async getCategories() {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT DISTINCT category, COUNT(*) as count
       FROM etf_definitions
-      WHERE is_active = 1 AND category IS NOT NULL
+      WHERE is_active = true AND category IS NOT NULL
       GROUP BY category
       ORDER BY count DESC
-    `).all();
+    `);
+    return result.rows;
   }
 
   /**
    * Get ETF holdings for an ETF
    */
-  getEtfHoldings(etfIdOrSymbol, options = {}) {
+  async getEtfHoldings(etfIdOrSymbol, options = {}) {
     const { limit = 50 } = options;
+
+    const database = await getDatabaseAsync();
 
     // Get ETF ID if symbol provided
     let etfId = etfIdOrSymbol;
     if (typeof etfIdOrSymbol === 'string') {
-      const etf = this.getEtfBySymbol(etfIdOrSymbol);
+      const etf = await this.getEtfBySymbol(etfIdOrSymbol);
       if (!etf) return { holdings: [], etf: null };
       etfId = etf.id;
     }
 
-    const etf = this.db.prepare('SELECT * FROM etf_definitions WHERE id = ?').get(etfId);
+    const etfResult = await database.query('SELECT * FROM etf_definitions WHERE id = $1', [etfId]);
+    const etf = etfResult.rows[0];
 
-    const holdings = this.db.prepare(`
+    const holdingsResult = await database.query(`
       SELECT
         eh.*,
         c.name as company_name,
@@ -91,10 +98,11 @@ class EtfService {
       FROM etf_holdings eh
       LEFT JOIN companies c ON eh.company_id = c.id
       LEFT JOIN price_metrics pm ON c.id = pm.company_id
-      WHERE eh.etf_id = ?
+      WHERE eh.etf_id = $1
       ORDER BY eh.weight DESC
-      LIMIT ?
-    `).all(etfId, limit);
+      LIMIT $2
+    `, [etfId, limit]);
+    const holdings = holdingsResult.rows;
 
     return { etf, holdings };
   }
@@ -108,8 +116,10 @@ class EtfService {
     const { getYFinanceETFFetcher } = require('./yfinanceETFFetcher');
     const fetcher = getYFinanceETFFetcher();
 
+    const database = await getDatabaseAsync();
+
     // Get ETF ID
-    const etf = this.getEtfBySymbol(symbol);
+    const etf = await this.getEtfBySymbol(symbol);
     if (!etf) {
       throw new Error(`ETF not found: ${symbol}`);
     }
@@ -121,36 +131,36 @@ class EtfService {
     }
 
     // Delete existing holdings for this ETF
-    this.db.prepare('DELETE FROM etf_holdings WHERE etf_id = ?').run(etf.id);
+    await database.query('DELETE FROM etf_holdings WHERE etf_id = $1', [etf.id]);
 
     // Insert new holdings
-    const insertStmt = this.db.prepare(`
-      INSERT INTO etf_holdings (etf_id, symbol, security_name, weight, company_id, as_of_date)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-
     let insertedCount = 0;
     for (const holding of holdingsData.holdings) {
       // Try to find matching company
-      const company = this.db.prepare(
-        'SELECT id FROM companies WHERE symbol = ?'
-      ).get(holding.symbol?.toUpperCase());
+      const companyResult = await database.query(
+        'SELECT id FROM companies WHERE symbol = $1',
+        [holding.symbol?.toUpperCase()]
+      );
+      const company = companyResult.rows[0];
 
-      insertStmt.run(
+      await database.query(`
+        INSERT INTO etf_holdings (etf_id, symbol, security_name, weight, company_id, as_of_date)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `, [
         etf.id,
         holding.symbol || 'UNKNOWN',
         holding.name || holding.symbol,
         holding.weight,
         company?.id || null,
         holdingsData.asOfDate
-      );
+      ]);
       insertedCount++;
     }
 
     // Update last_holdings_update timestamp
-    this.db.prepare(`
-      UPDATE etf_definitions SET last_holdings_update = CURRENT_TIMESTAMP WHERE id = ?
-    `).run(etf.id);
+    await database.query(`
+      UPDATE etf_definitions SET last_holdings_update = CURRENT_TIMESTAMP WHERE id = $1
+    `, [etf.id]);
 
     return {
       success: true,
@@ -172,7 +182,7 @@ class EtfService {
     const { forceRefresh = false, limit = 50 } = options;
 
     // Check existing holdings
-    const existing = this.getEtfHoldings(symbol, { limit });
+    const existing = await this.getEtfHoldings(symbol, { limit });
 
     // If we have recent holdings and not forcing refresh, return them
     if (existing.holdings.length > 0 && !forceRefresh) {
@@ -182,7 +192,7 @@ class EtfService {
     // Fetch from Yahoo Finance
     try {
       await this.fetchAndStoreHoldings(symbol);
-      return this.getEtfHoldings(symbol, { limit });
+      return await this.getEtfHoldings(symbol, { limit });
     } catch (error) {
       console.error(`Failed to fetch holdings for ${symbol}:`, error.message);
       return existing; // Return whatever we have
@@ -196,41 +206,45 @@ class EtfService {
   /**
    * Get all model portfolios
    */
-  getAllModelPortfolios() {
-    const models = this.db.prepare(`
+  async getAllModelPortfolios() {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         mp.*,
         COUNT(mpa.id) as etf_count,
         SUM(mpa.target_weight) as total_weight
       FROM model_portfolios mp
       LEFT JOIN model_portfolio_allocations mpa ON mp.id = mpa.model_id
-      WHERE mp.is_active = 1
+      WHERE mp.is_active = true
       GROUP BY mp.id
       ORDER BY mp.name
-    `).all();
+    `);
 
-    return models;
+    return result.rows;
   }
 
   /**
    * Get model portfolio details with allocations
    */
-  getModelPortfolio(modelIdOrName) {
+  async getModelPortfolio(modelIdOrName) {
+    const database = await getDatabaseAsync();
     let model;
 
     if (typeof modelIdOrName === 'string') {
-      model = this.db.prepare(`
-        SELECT * FROM model_portfolios WHERE name = ?
-      `).get(modelIdOrName);
+      const result = await database.query(`
+        SELECT * FROM model_portfolios WHERE name = $1
+      `, [modelIdOrName]);
+      model = result.rows[0];
     } else {
-      model = this.db.prepare(`
-        SELECT * FROM model_portfolios WHERE id = ?
-      `).get(modelIdOrName);
+      const result = await database.query(`
+        SELECT * FROM model_portfolios WHERE id = $1
+      `, [modelIdOrName]);
+      model = result.rows[0];
     }
 
     if (!model) return null;
 
-    const allocations = this.db.prepare(`
+    const allocResult = await database.query(`
       SELECT
         mpa.*,
         e.symbol,
@@ -240,9 +254,10 @@ class EtfService {
         e.expense_ratio
       FROM model_portfolio_allocations mpa
       JOIN etf_definitions e ON mpa.etf_id = e.id
-      WHERE mpa.model_id = ?
+      WHERE mpa.model_id = $1
       ORDER BY mpa.target_weight DESC
-    `).all(model.id);
+    `, [model.id]);
+    const allocations = allocResult.rows;
 
     // Calculate weighted expense ratio
     const weightedExpenseRatio = allocations.reduce((sum, a) =>
@@ -259,7 +274,7 @@ class EtfService {
   /**
    * Create a custom model portfolio
    */
-  createModelPortfolio(name, description, allocations, options = {}) {
+  async createModelPortfolio(name, description, allocations, options = {}) {
     const { riskLevel, investmentStyle } = options;
 
     // Validate allocations sum to ~100%
@@ -268,35 +283,47 @@ class EtfService {
       throw new Error(`Allocations must sum to 100%, got ${totalWeight}%`);
     }
 
-    const insertModel = this.db.prepare(`
-      INSERT INTO model_portfolios (name, description, risk_level, investment_style)
-      VALUES (?, ?, ?, ?)
-    `);
+    const database = await getDatabaseAsync();
 
-    const insertAlloc = this.db.prepare(`
-      INSERT INTO model_portfolio_allocations (model_id, etf_id, target_weight)
-      VALUES (?, ?, ?)
-    `);
+    try {
+      // Begin transaction
+      await database.query('BEGIN');
 
-    const getEtfId = this.db.prepare('SELECT id FROM etf_definitions WHERE LOWER(symbol) = LOWER(?)');
+      // Insert model portfolio
+      const modelResult = await database.query(`
+        INSERT INTO model_portfolios (name, description, risk_level, investment_style)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id
+      `, [name, description, riskLevel || null, investmentStyle || null]);
+      const modelId = modelResult.rows[0].id;
 
-    const transaction = this.db.transaction(() => {
-      const result = insertModel.run(name, description, riskLevel || null, investmentStyle || null);
-      const modelId = result.lastInsertRowid;
-
+      // Insert allocations
       for (const alloc of allocations) {
-        const etf = getEtfId.get(alloc.symbol);
+        const etfResult = await database.query(
+          'SELECT id FROM etf_definitions WHERE LOWER(symbol) = LOWER($1)',
+          [alloc.symbol]
+        );
+        const etf = etfResult.rows[0];
+
         if (!etf) {
           throw new Error(`ETF not found: ${alloc.symbol}`);
         }
-        insertAlloc.run(modelId, etf.id, alloc.weight);
+
+        await database.query(`
+          INSERT INTO model_portfolio_allocations (model_id, etf_id, target_weight)
+          VALUES ($1, $2, $3)
+        `, [modelId, etf.id, alloc.weight]);
       }
 
-      return modelId;
-    });
+      // Commit transaction
+      await database.query('COMMIT');
 
-    const modelId = transaction();
-    return this.getModelPortfolio(modelId);
+      return await this.getModelPortfolio(modelId);
+    } catch (error) {
+      // Rollback on error
+      await database.query('ROLLBACK');
+      throw error;
+    }
   }
 
   // ============================================
@@ -307,10 +334,11 @@ class EtfService {
    * Prepare trades to create a portfolio from a model
    * Returns the trades needed - actual portfolio creation is done by PortfolioService
    */
-  preparePortfolioFromModel(modelIdOrName, amount, options = {}) {
+  async preparePortfolioFromModel(modelIdOrName, amount, options = {}) {
     const { excludeEtfs = [], minAllocation = 0 } = options;
 
-    const model = this.getModelPortfolio(modelIdOrName);
+    const database = await getDatabaseAsync();
+    const model = await this.getModelPortfolio(modelIdOrName);
     if (!model) {
       throw new Error(`Model portfolio not found: ${modelIdOrName}`);
     }
@@ -332,14 +360,15 @@ class EtfService {
       const targetValue = amount * normalizedWeight;
 
       // Try to find ETF in companies table for price
-      const company = this.db.prepare(`
+      const companyResult = await database.query(`
         SELECT c.id, pm.last_price
         FROM companies c
         LEFT JOIN price_metrics pm ON c.id = pm.company_id
-        WHERE LOWER(c.symbol) = LOWER(?)
-      `).get(alloc.symbol);
+        WHERE LOWER(c.symbol) = LOWER($1)
+      `, [alloc.symbol]);
+      const company = companyResult.rows[0];
 
-      const estimatedPrice = company?.last_price || this._getEstimatedEtfPrice(alloc.symbol);
+      const estimatedPrice = company?.last_price || await this._getEstimatedEtfPrice(alloc.symbol);
       const shares = Math.floor(targetValue / estimatedPrice);
       const actualValue = shares * estimatedPrice;
 
@@ -382,7 +411,7 @@ class EtfService {
   /**
    * Prepare trades to create a portfolio from multiple ETFs
    */
-  preparePortfolioFromEtfs(etfAllocations, amount) {
+  async preparePortfolioFromEtfs(etfAllocations, amount) {
     // etfAllocations: [{ symbol, weight }]
 
     // Validate weights
@@ -391,11 +420,12 @@ class EtfService {
       throw new Error(`Weights must sum to 100%, got ${totalWeight}%`);
     }
 
+    const database = await getDatabaseAsync();
     const trades = [];
     let cashNeeded = 0;
 
     for (const alloc of etfAllocations) {
-      const etf = this.getEtfBySymbol(alloc.symbol);
+      const etf = await this.getEtfBySymbol(alloc.symbol);
       if (!etf) {
         throw new Error(`ETF not found: ${alloc.symbol}`);
       }
@@ -404,14 +434,15 @@ class EtfService {
       const targetValue = amount * normalizedWeight;
 
       // Get price
-      const company = this.db.prepare(`
+      const companyResult = await database.query(`
         SELECT c.id, pm.last_price
         FROM companies c
         LEFT JOIN price_metrics pm ON c.id = pm.company_id
-        WHERE LOWER(c.symbol) = LOWER(?)
-      `).get(alloc.symbol);
+        WHERE LOWER(c.symbol) = LOWER($1)
+      `, [alloc.symbol]);
+      const company = companyResult.rows[0];
 
-      const estimatedPrice = company?.last_price || this._getEstimatedEtfPrice(alloc.symbol);
+      const estimatedPrice = company?.last_price || await this._getEstimatedEtfPrice(alloc.symbol);
       const shares = Math.floor(targetValue / estimatedPrice);
       const actualValue = shares * estimatedPrice;
 
@@ -451,24 +482,26 @@ class EtfService {
   /**
    * Compare multiple ETFs
    */
-  compareEtfs(symbols) {
-    const etfs = symbols.map(symbol => {
-      const etf = this.getEtfBySymbol(symbol);
+  async compareEtfs(symbols) {
+    const database = await getDatabaseAsync();
+    const etfs = await Promise.all(symbols.map(async symbol => {
+      const etf = await this.getEtfBySymbol(symbol);
       if (!etf) return { symbol, error: 'Not found' };
 
       // Get price data if available
-      const priceData = this.db.prepare(`
+      const priceResult = await database.query(`
         SELECT pm.*
         FROM companies c
         JOIN price_metrics pm ON c.id = pm.company_id
-        WHERE LOWER(c.symbol) = LOWER(?)
-      `).get(symbol);
+        WHERE LOWER(c.symbol) = LOWER($1)
+      `, [symbol]);
+      const priceData = priceResult.rows[0];
 
       return {
         ...etf,
         priceData: priceData || null
       };
-    });
+    }));
 
     // Find common metrics for comparison
     return {
@@ -491,8 +524,8 @@ class EtfService {
   /**
    * Analyze asset allocation of a model portfolio
    */
-  analyzeModelAllocation(modelIdOrName) {
-    const model = this.getModelPortfolio(modelIdOrName);
+  async analyzeModelAllocation(modelIdOrName) {
+    const model = await this.getModelPortfolio(modelIdOrName);
     if (!model) return null;
 
     const byAssetClass = {};
@@ -537,11 +570,11 @@ class EtfService {
   /**
    * Calculate rebalancing trades for an ETF-based portfolio
    */
-  calculateRebalanceTrades(currentHoldings, targetModel, portfolioValue) {
+  async calculateRebalanceTrades(currentHoldings, targetModel, portfolioValue) {
     // currentHoldings: [{ symbol, shares, currentValue }]
     // targetModel: model ID or name
 
-    const model = this.getModelPortfolio(targetModel);
+    const model = await this.getModelPortfolio(targetModel);
     if (!model) {
       throw new Error(`Model not found: ${targetModel}`);
     }
@@ -556,7 +589,7 @@ class EtfService {
       const currentValue = current?.currentValue || 0;
 
       const valueDiff = targetValue - currentValue;
-      const estimatedPrice = this._getEstimatedEtfPrice(alloc.symbol);
+      const estimatedPrice = await this._getEstimatedEtfPrice(alloc.symbol);
       const shareDiff = Math.floor(valueDiff / estimatedPrice);
 
       if (Math.abs(shareDiff) > 0) {
@@ -577,7 +610,7 @@ class EtfService {
 
     // Any remaining holdings need to be sold (not in target)
     for (const [symbol, holding] of currentBySymbol) {
-      const estimatedPrice = this._getEstimatedEtfPrice(symbol);
+      const estimatedPrice = await this._getEstimatedEtfPrice(symbol);
       trades.push({
         symbol,
         action: 'sell',
@@ -616,14 +649,16 @@ class EtfService {
   // Private Helpers
   // ============================================
 
-  _getEstimatedEtfPrice(symbol) {
+  async _getEstimatedEtfPrice(symbol) {
     // Try to get from companies/price_metrics first
-    const company = this.db.prepare(`
+    const database = await getDatabaseAsync();
+    const companyResult = await database.query(`
       SELECT pm.last_price
       FROM companies c
       JOIN price_metrics pm ON c.id = pm.company_id
-      WHERE LOWER(c.symbol) = LOWER(?)
-    `).get(symbol);
+      WHERE LOWER(c.symbol) = LOWER($1)
+    `, [symbol]);
+    const company = companyResult.rows[0];
 
     if (company?.last_price) {
       return company.last_price;
