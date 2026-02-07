@@ -1,18 +1,15 @@
 // src/services/portfolio/rebalanceCalculator.js
 // Rebalancing Calculator - Drift detection and trade calculation (Agent 2)
 
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 
 class RebalanceCalculator {
-  constructor() {
-    this.db = db.getDatabase();
-    console.log('⚖️ Rebalance Calculator initialized');
-  }
+  // No constructor needed for PostgreSQL async pattern
 
   // ============================================
   // Calculate Rebalance Trades
   // ============================================
-  calculateRebalanceTrades(portfolioId, targetAllocation, options = {}) {
+  async calculateRebalanceTrades(portfolioId, targetAllocation, options = {}) {
     // targetAllocation: [{ companyId or symbol, targetWeight }]
     // options: { minTradeValue, roundLots, useCurrentCash }
 
@@ -22,20 +19,20 @@ class RebalanceCalculator {
       useCurrentCash = true
     } = options;
 
-    const portfolio = this._getPortfolioData(portfolioId);
+    const portfolio = await this._getPortfolioData(portfolioId);
     if (!portfolio) {
       throw new Error(`Portfolio ${portfolioId} not found`);
     }
 
-    const currentPositions = this._getCurrentPositions(portfolioId);
+    const currentPositions = await this._getCurrentPositions(portfolioId);
 
     // Normalize target weights
     const totalTargetWeight = targetAllocation.reduce((sum, t) => sum + (t.targetWeight || t.weight || 0), 0);
-    const normalizedTargets = targetAllocation.map(t => ({
-      companyId: t.companyId || this._getCompanyId(t.symbol),
-      symbol: t.symbol || this._getSymbol(t.companyId),
+    const normalizedTargets = await Promise.all(targetAllocation.map(async t => ({
+      companyId: t.companyId || await this._getCompanyId(t.symbol),
+      symbol: t.symbol || await this._getSymbol(t.companyId),
       targetWeight: ((t.targetWeight || t.weight || 0) / totalTargetWeight)
-    }));
+    })));
 
     // Calculate target values
     const rebalanceValue = useCurrentCash
@@ -54,7 +51,7 @@ class RebalanceCalculator {
       const currentValue = currentPos ? currentPos.value : 0;
       const currentWeight = currentPos ? currentPos.weight : 0;
       const targetValue = rebalanceValue * target.targetWeight;
-      const price = this._getCurrentPrice(target.companyId) ||
+      const price = await this._getCurrentPrice(target.companyId) ||
                    (currentPos?.last_price) ||
                    (currentPos?.average_cost);
 
@@ -163,8 +160,8 @@ class RebalanceCalculator {
   // ============================================
   // Check if Rebalancing is Needed
   // ============================================
-  checkRebalanceNeeded(portfolioId, threshold = 5, targetAllocation = null) {
-    const currentPositions = this._getCurrentPositions(portfolioId);
+  async checkRebalanceNeeded(portfolioId, threshold = 5, targetAllocation = null) {
+    const currentPositions = await this._getCurrentPositions(portfolioId);
 
     if (currentPositions.length === 0) {
       return {
@@ -192,7 +189,7 @@ class RebalanceCalculator {
     let maxDrift = 0;
 
     for (const target of normalizedTargets) {
-      const companyId = target.companyId || this._getCompanyId(target.symbol);
+      const companyId = target.companyId || await this._getCompanyId(target.symbol);
       const currentPos = currentPositions.find(p => p.company_id === companyId);
       const currentWeight = currentPos ? currentPos.weight : 0;
       const drift = (currentWeight - target.targetWeight) * 100;
@@ -307,8 +304,9 @@ class RebalanceCalculator {
   // ============================================
   // Apply Template
   // ============================================
-  applyTemplate(portfolioId, templateId) {
-    const currentPositions = this._getCurrentPositions(portfolioId);
+  async applyTemplate(portfolioId, templateId) {
+    const database = await getDatabaseAsync();
+    const currentPositions = await this._getCurrentPositions(portfolioId);
     const template = this.getRebalanceTemplates().find(t => t.id === templateId);
 
     if (!template) {
@@ -316,21 +314,23 @@ class RebalanceCalculator {
     }
 
     // Enrich positions with data needed for templates
-    const enrichedPositions = currentPositions.map(pos => {
-      const company = this.db.prepare(`
-        SELECT market_cap FROM companies WHERE id = ?
-      `).get(pos.company_id);
+    const enrichedPositions = await Promise.all(currentPositions.map(async pos => {
+      const companyResult = await database.query(`
+        SELECT market_cap FROM companies WHERE id = $1
+      `, [pos.company_id]);
+      const company = companyResult.rows[0];
 
-      const metrics = this.db.prepare(`
-        SELECT volatility_30d as volatility FROM price_metrics WHERE company_id = ?
-      `).get(pos.company_id);
+      const metricsResult = await database.query(`
+        SELECT volatility_30d as volatility FROM price_metrics WHERE company_id = $1
+      `, [pos.company_id]);
+      const metrics = metricsResult.rows[0];
 
       return {
         ...pos,
         market_cap: company?.market_cap,
         volatility: metrics?.volatility
       };
-    });
+    }));
 
     const targetAllocation = template.calculate(enrichedPositions);
 
@@ -341,7 +341,7 @@ class RebalanceCalculator {
         symbol: t.symbol,
         targetWeight: Math.round(t.targetWeight * 10000) / 100
       })),
-      trades: this.calculateRebalanceTrades(portfolioId, targetAllocation)
+      trades: await this.calculateRebalanceTrades(portfolioId, targetAllocation)
     };
   }
 
@@ -349,19 +349,23 @@ class RebalanceCalculator {
   // Private Helper Methods
   // ============================================
 
-  _getPortfolioData(portfolioId) {
-    const portfolio = this.db.prepare(`
-      SELECT * FROM portfolios WHERE id = ?
-    `).get(portfolioId);
+  async _getPortfolioData(portfolioId) {
+    const database = await getDatabaseAsync();
+
+    const portfolioResult = await database.query(`
+      SELECT * FROM portfolios WHERE id = $1
+    `, [portfolioId]);
+    const portfolio = portfolioResult.rows[0];
 
     if (!portfolio) return null;
 
-    const positions = this.db.prepare(`
+    const positionsResult = await database.query(`
       SELECT pp.*, pm.last_price
       FROM portfolio_positions pp
       LEFT JOIN price_metrics pm ON pp.company_id = pm.company_id
-      WHERE pp.portfolio_id = ?
-    `).all(portfolioId);
+      WHERE pp.portfolio_id = $1
+    `, [portfolioId]);
+    const positions = positionsResult.rows;
 
     const positionsValue = positions.reduce((sum, p) =>
       sum + p.shares * (p.last_price || p.average_cost), 0);
@@ -374,8 +378,10 @@ class RebalanceCalculator {
     };
   }
 
-  _getCurrentPositions(portfolioId) {
-    const positions = this.db.prepare(`
+  async _getCurrentPositions(portfolioId) {
+    const database = await getDatabaseAsync();
+
+    const positionsResult = await database.query(`
       SELECT
         pp.company_id,
         pp.shares,
@@ -386,8 +392,9 @@ class RebalanceCalculator {
       FROM portfolio_positions pp
       JOIN companies c ON pp.company_id = c.id
       LEFT JOIN price_metrics pm ON c.id = pm.company_id
-      WHERE pp.portfolio_id = ?
-    `).all(portfolioId);
+      WHERE pp.portfolio_id = $1
+    `, [portfolioId]);
+    const positions = positionsResult.rows;
 
     const totalValue = positions.reduce((sum, p) =>
       sum + p.shares * (p.last_price || p.average_cost), 0);
@@ -399,26 +406,32 @@ class RebalanceCalculator {
     }));
   }
 
-  _getCompanyId(symbol) {
+  async _getCompanyId(symbol) {
     if (!symbol) return null;
-    const company = this.db.prepare(`
-      SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
-    `).get(symbol);
+    const database = await getDatabaseAsync();
+    const companyResult = await database.query(`
+      SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)
+    `, [symbol]);
+    const company = companyResult.rows[0];
     return company?.id;
   }
 
-  _getSymbol(companyId) {
+  async _getSymbol(companyId) {
     if (!companyId) return null;
-    const company = this.db.prepare(`
-      SELECT symbol FROM companies WHERE id = ?
-    `).get(companyId);
+    const database = await getDatabaseAsync();
+    const companyResult = await database.query(`
+      SELECT symbol FROM companies WHERE id = $1
+    `, [companyId]);
+    const company = companyResult.rows[0];
     return company?.symbol;
   }
 
-  _getCurrentPrice(companyId) {
-    const price = this.db.prepare(`
-      SELECT last_price FROM price_metrics WHERE company_id = ?
-    `).get(companyId);
+  async _getCurrentPrice(companyId) {
+    const database = await getDatabaseAsync();
+    const priceResult = await database.query(`
+      SELECT last_price FROM price_metrics WHERE company_id = $1
+    `, [companyId]);
+    const price = priceResult.rows[0];
     return price?.last_price || 0;
   }
 
