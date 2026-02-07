@@ -33,41 +33,42 @@ class CustomFactorCalculator {
   /**
    * Get list of available metrics for factor construction
    */
-  getAvailableMetrics() {
+  async getAvailableMetrics() {
     if (this.availableMetrics) {
       return this.availableMetrics;
     }
 
-    const metrics = this.db.prepare(`
+    const { rows } = await this.db.query(`
       SELECT metric_code, metric_name, category, description, higher_is_better
       FROM available_metrics
-      WHERE is_active = 1
+      WHERE is_active = true
       ORDER BY category, metric_name
-    `).all();
+    `);
 
-    this.availableMetrics = metrics;
-    return metrics;
+    this.availableMetrics = rows;
+    return rows;
   }
 
   /**
    * Get available metric codes
    */
-  getMetricCodes() {
-    return this.getAvailableMetrics().map(m => m.metric_code);
+  async getMetricCodes() {
+    const metrics = await this.getAvailableMetrics();
+    return metrics.map(m => m.metric_code);
   }
 
   /**
    * Validate a factor formula
    */
-  validateFormula(formula) {
-    const availableCodes = this.getMetricCodes();
+  async validateFormula(formula) {
+    const availableCodes = await this.getMetricCodes();
     return validateFormula(formula, availableCodes);
   }
 
   /**
    * Calculate factor values for all stocks at a given date
    */
-  calculateFactorValues(factorId, formula, options = {}) {
+  async calculateFactorValues(factorId, formula, options = {}) {
     const {
       asOfDate = new Date().toISOString().split('T')[0],
       transformations = {},
@@ -89,7 +90,7 @@ class CustomFactorCalculator {
     const requiredMetrics = parser.getRequiredMetrics();
 
     // Build query to get all stocks with required metrics
-    const stocks = this._getStocksWithMetrics(requiredMetrics, asOfDate, {
+    const stocks = await this._getStocksWithMetrics(requiredMetrics, asOfDate, {
       universe,
       minMarketCap,
       qualityFilters,
@@ -131,7 +132,7 @@ class CustomFactorCalculator {
 
     // Store results if requested
     if (storeResults && factorId) {
-      this._storeFactorValues(factorId, asOfDate, transformedValues);
+      await this._storeFactorValues(factorId, asOfDate, transformedValues);
     }
 
     return {
@@ -164,7 +165,7 @@ class CustomFactorCalculator {
     } = options;
 
     // Get dates to calculate
-    const dates = this._getCalculationDates(startDate, endDate, frequency);
+    const dates = await this._getCalculationDates(startDate, endDate, frequency);
 
     if (verbose) {
       console.log(`📊 Calculating factor for ${dates.length} dates...`);
@@ -175,7 +176,7 @@ class CustomFactorCalculator {
     for (let i = 0; i < dates.length; i++) {
       const date = dates[i];
 
-      const result = this.calculateFactorValues(factorId, formula, {
+      const result = await this.calculateFactorValues(factorId, formula, {
         asOfDate: date,
         transformations,
         universe,
@@ -202,7 +203,7 @@ class CustomFactorCalculator {
   /**
    * Get factor values for specific stocks
    */
-  getFactorValuesForStocks(formula, symbols, asOfDate = null) {
+  async getFactorValuesForStocks(formula, symbols, asOfDate = null) {
     const parser = createParser(formula);
     if (parser.error) {
       throw new Error(`Formula parse error: ${parser.error}`);
@@ -214,7 +215,7 @@ class CustomFactorCalculator {
     const results = [];
 
     for (const symbol of symbols) {
-      const stock = this._getStockMetrics(symbol, requiredMetrics, date);
+      const stock = await this._getStockMetrics(symbol, requiredMetrics, date);
       if (!stock) continue;
 
       const metricValues = {};
@@ -239,7 +240,7 @@ class CustomFactorCalculator {
   /**
    * Preview factor values (limited sample)
    */
-  previewFactorValues(formula, options = {}) {
+  async previewFactorValues(formula, options = {}) {
     const { sampleSize = 20, asOfDate } = options;
 
     const calcOptions = { storeResults: false };
@@ -247,7 +248,7 @@ class CustomFactorCalculator {
       calcOptions.asOfDate = asOfDate;
     }
 
-    const result = this.calculateFactorValues(null, formula, calcOptions);
+    const result = await this.calculateFactorValues(null, formula, calcOptions);
 
     // Sort by value and take top and bottom samples
     const sorted = result.values.sort((a, b) => b.zscoreValue - a.zscoreValue);
@@ -266,7 +267,7 @@ class CustomFactorCalculator {
   /**
    * Get stocks with required metrics at a date
    */
-  _getStocksWithMetrics(requiredMetrics, asOfDate, options = {}) {
+  async _getStocksWithMetrics(requiredMetrics, asOfDate, options = {}) {
     const {
       universe = 'ALL',
       minMarketCap = null,
@@ -304,7 +305,7 @@ class CustomFactorCalculator {
           SELECT company_id, MAX(fiscal_period) as latest_period
           FROM calculated_metrics
           WHERE fiscal_period NOT LIKE 'TTM%'
-            AND fiscal_period <= ?
+            AND fiscal_period <= $1
           GROUP BY company_id
         ) latest ON cm1.company_id = latest.company_id AND cm1.fiscal_period = latest.latest_period
       ) cm ON c.id = cm.company_id
@@ -314,43 +315,50 @@ class CustomFactorCalculator {
         INNER JOIN (
           SELECT company_id, MAX(score_date) as latest_score
           FROM stock_factor_scores
-          WHERE score_date <= ?
+          WHERE score_date <= $2
           GROUP BY company_id
         ) latest ON sfs1.company_id = latest.company_id AND sfs1.score_date = latest.latest_score
       ) sfs ON c.id = sfs.company_id
       LEFT JOIN price_metrics pm ON c.id = pm.company_id
-      WHERE c.is_active = 1
+      WHERE c.is_active = true
     `;
 
     const params = [asOfDate, asOfDate];
+    let paramIndex = 3;
 
     // Add quality filters to exclude garbage stocks
     if (!disableQualityFilters && qualityFilters) {
       if (qualityFilters.minMarketCap) {
-        query += ' AND (pm.market_cap_usd IS NULL OR pm.market_cap_usd >= ?)';
+        query += ` AND (pm.market_cap_usd IS NULL OR pm.market_cap_usd >= $${paramIndex})`;
         params.push(qualityFilters.minMarketCap);
+        paramIndex++;
       }
       if (qualityFilters.minAvgVolume) {
-        query += ' AND (pm.avg_volume_30d IS NULL OR pm.avg_volume_30d >= ?)';
+        query += ` AND (pm.avg_volume_30d IS NULL OR pm.avg_volume_30d >= $${paramIndex})`;
         params.push(qualityFilters.minAvgVolume);
+        paramIndex++;
       }
       if (qualityFilters.minPrice) {
-        query += ' AND (pm.last_price IS NULL OR pm.last_price >= ?)';
+        query += ` AND (pm.last_price IS NULL OR pm.last_price >= $${paramIndex})`;
         params.push(qualityFilters.minPrice);
+        paramIndex++;
       }
       if (qualityFilters.maxDebtToEquity) {
-        query += ' AND (cm.debt_to_equity IS NULL OR cm.debt_to_equity <= ?)';
+        query += ` AND (cm.debt_to_equity IS NULL OR cm.debt_to_equity <= $${paramIndex})`;
         params.push(qualityFilters.maxDebtToEquity);
+        paramIndex++;
       }
       if (qualityFilters.minDataQualityScore) {
-        query += ' AND (cm.data_quality_score IS NULL OR cm.data_quality_score >= ?)';
+        query += ` AND (cm.data_quality_score IS NULL OR cm.data_quality_score >= $${paramIndex})`;
         params.push(qualityFilters.minDataQualityScore);
+        paramIndex++;
       }
     }
 
     if (minMarketCap) {
-      query += ' AND c.market_cap >= ?';
+      query += ` AND c.market_cap >= $${paramIndex}`;
       params.push(minMarketCap);
+      paramIndex++;
     }
 
     if (universe === 'SP500') {
@@ -362,7 +370,7 @@ class CustomFactorCalculator {
     // Add a reasonable limit to prevent memory issues
     query += ' LIMIT 10000';
 
-    const rows = this.db.prepare(query).all(...params);
+    const { rows } = await this.db.query(query, params);
 
     // Log filter statistics
     if (!disableQualityFilters && qualityFilters) {
@@ -438,7 +446,7 @@ class CustomFactorCalculator {
   /**
    * Get metrics for a single stock
    */
-  _getStockMetrics(symbol, requiredMetrics, asOfDate) {
+  async _getStockMetrics(symbol, requiredMetrics, asOfDate) {
     const metricSelects = requiredMetrics.map(m => this._getMetricColumn(m)).filter(Boolean);
 
     const query = `
@@ -451,14 +459,15 @@ class CustomFactorCalculator {
       FROM companies c
       LEFT JOIN calculated_metrics cm ON c.id = cm.company_id
       LEFT JOIN stock_factor_scores sfs ON c.id = sfs.company_id
-      WHERE c.symbol = ?
-        AND (cm.fiscal_period IS NULL OR cm.fiscal_period <= ?)
-        AND (sfs.score_date IS NULL OR sfs.score_date <= ?)
+      WHERE c.symbol = $1
+        AND (cm.fiscal_period IS NULL OR cm.fiscal_period <= $2)
+        AND (sfs.score_date IS NULL OR sfs.score_date <= $3)
       ORDER BY cm.fiscal_period DESC, sfs.score_date DESC
       LIMIT 1
     `;
 
-    return this.db.prepare(query).get(symbol, asOfDate, asOfDate);
+    const { rows } = await this.db.query(query, [symbol, asOfDate, asOfDate]);
+    return rows[0] || null;
   }
 
   /**
@@ -560,16 +569,26 @@ class CustomFactorCalculator {
   /**
    * Store factor values in cache table
    */
-  _storeFactorValues(factorId, date, values) {
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO factor_values_cache
+  async _storeFactorValues(factorId, date, values) {
+    const query = `
+      INSERT INTO factor_values_cache
       (factor_id, symbol, date, raw_value, zscore_value, percentile_value, component_values, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    `);
+      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+      ON CONFLICT (factor_id, symbol, date)
+      DO UPDATE SET
+        raw_value = EXCLUDED.raw_value,
+        zscore_value = EXCLUDED.zscore_value,
+        percentile_value = EXCLUDED.percentile_value,
+        component_values = EXCLUDED.component_values,
+        created_at = EXCLUDED.created_at
+    `;
 
-    const transaction = this.db.transaction(() => {
+    const client = await this.db.connect();
+    try {
+      await client.query('BEGIN');
+
       for (const v of values) {
-        stmt.run(
+        await client.query(query, [
           factorId,
           v.symbol,
           date,
@@ -577,17 +596,22 @@ class CustomFactorCalculator {
           v.zscoreValue,
           v.percentileValue,
           JSON.stringify(v.componentValues)
-        );
+        ]);
       }
-    });
 
-    transaction();
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   /**
    * Get calculation dates for historical analysis
    */
-  _getCalculationDates(startDate, endDate, frequency) {
+  async _getCalculationDates(startDate, endDate, frequency) {
     let interval;
     switch (frequency) {
       case 'daily':
@@ -607,12 +631,14 @@ class CustomFactorCalculator {
     }
 
     // Get distinct dates from factor scores table (which has data)
-    const dates = this.db.prepare(`
+    const { rows } = await this.db.query(`
       SELECT DISTINCT score_date
       FROM stock_factor_scores
-      WHERE score_date >= ? AND score_date <= ?
+      WHERE score_date >= $1 AND score_date <= $2
       ORDER BY score_date
-    `).all(startDate, endDate).map(d => d.score_date);
+    `, [startDate, endDate]);
+
+    const dates = rows.map(d => d.score_date);
 
     // Filter based on frequency
     if (frequency === 'monthly') {
