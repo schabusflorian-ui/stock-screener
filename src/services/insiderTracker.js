@@ -9,7 +9,7 @@
  */
 
 const Form4Parser = require('./form4Parser');
-const db = require('../database');
+const { getDatabaseAsync } = require('../database');
 
 // Signal calculation weights
 const SIGNAL_WEIGHTS = {
@@ -43,7 +43,6 @@ const EVENT_TYPES = {
 
 class InsiderTracker {
   constructor(secFilingFetcher) {
-    this.db = db.getDatabase();
     this.secFetcher = secFilingFetcher;
     this.form4Parser = new Form4Parser();
   }
@@ -109,13 +108,13 @@ class InsiderTracker {
       if (!ownerData) continue;
 
       // Upsert insider record
-      const insiderId = this.upsertInsider(companyId, ownerData);
+      const insiderId = await this.upsertInsider(companyId, ownerData);
 
       // Store each transaction
       for (const tx of transactions) {
         if (tx.isHolding) continue; // Skip holdings, only store actual transactions
 
-        const stored = this.storeTransaction(companyId, insiderId, filing, tx, ownerData);
+        const stored = await this.storeTransaction(companyId, insiderId, filing, tx, ownerData);
         if (stored) {
           // Check for alerts
           await this.checkForAlerts(companyId, { ...stored, ...tx }, { id: insiderId, ...ownerData });
@@ -135,66 +134,74 @@ class InsiderTracker {
   /**
    * Upsert an insider record
    */
-  upsertInsider(companyId, ownerData) {
+  async upsertInsider(companyId, ownerData) {
+    const database = await getDatabaseAsync();
+
     // Try to find existing insider by CIK
     let insider = null;
     if (ownerData.cik) {
-      insider = this.db.prepare(`
-        SELECT id FROM insiders WHERE company_id = ? AND cik = ?
-      `).get(companyId, ownerData.cik);
+      const result = await database.query(`
+        SELECT id FROM insiders WHERE company_id = $1 AND cik = $2
+      `, [companyId, ownerData.cik]);
+      insider = result.rows[0];
     }
 
     if (insider) {
       // Update existing
-      this.db.prepare(`
+      await database.query(`
         UPDATE insiders SET
-          name = COALESCE(?, name),
-          title = COALESCE(?, title),
-          is_officer = ?,
-          is_director = ?,
-          is_ten_percent_owner = ?
-        WHERE id = ?
-      `).run(
+          name = COALESCE($1, name),
+          title = COALESCE($2, title),
+          is_officer = $3,
+          is_director = $4,
+          is_ten_percent_owner = $5
+        WHERE id = $6
+      `, [
         ownerData.name,
         ownerData.officerTitle,
-        ownerData.isOfficer ? 1 : 0,
-        ownerData.isDirector ? 1 : 0,
-        ownerData.isTenPercentOwner ? 1 : 0,
+        ownerData.isOfficer ? true : false,
+        ownerData.isDirector ? true : false,
+        ownerData.isTenPercentOwner ? true : false,
         insider.id
-      );
+      ]);
       return insider.id;
     } else {
       // Insert new
-      const result = this.db.prepare(`
+      const result = await database.query(`
         INSERT INTO insiders (company_id, cik, name, title, is_officer, is_director, is_ten_percent_owner, first_filing_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, date('now'))
-      `).run(
+        VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE)
+        RETURNING id
+      `, [
         companyId,
         ownerData.cik,
         ownerData.name,
         ownerData.officerTitle,
-        ownerData.isOfficer ? 1 : 0,
-        ownerData.isDirector ? 1 : 0,
-        ownerData.isTenPercentOwner ? 1 : 0
-      );
-      return result.lastInsertRowid;
+        ownerData.isOfficer ? true : false,
+        ownerData.isDirector ? true : false,
+        ownerData.isTenPercentOwner ? true : false
+      ]);
+      return result.rows[0].id;
     }
   }
 
   /**
    * Store a single transaction
    */
-  storeTransaction(companyId, insiderId, filing, tx, ownerData) {
+  async storeTransaction(companyId, insiderId, filing, tx, ownerData) {
     try {
-      const result = this.db.prepare(`
-        INSERT OR IGNORE INTO insider_transactions (
+      const database = await getDatabaseAsync();
+
+      const result = await database.query(`
+        INSERT INTO insider_transactions (
           company_id, insider_id, accession_number, filing_date,
           transaction_date, transaction_code, transaction_type,
           shares_transacted, shares_owned_after, price_per_share, total_value,
           is_derivative, derivative_security, exercise_price, expiration_date, underlying_shares,
           acquisition_disposition, direct_indirect
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        ON CONFLICT (company_id, insider_id, transaction_date, accession_number) DO NOTHING
+        RETURNING id
+      `, [
         companyId,
         insiderId,
         filing.accessionNumber,
@@ -206,24 +213,24 @@ class InsiderTracker {
         tx.sharesOwnedAfter,
         tx.pricePerShare,
         tx.totalValue,
-        tx.isDerivative ? 1 : 0,
+        tx.isDerivative ? true : false,
         tx.securityTitle,
         tx.conversionOrExercisePrice || tx.exercisePrice,
         tx.expirationDate,
         tx.underlyingShares,
         tx.acquisitionDisposition,
         tx.directIndirect
-      );
+      ]);
 
-      if (result.changes > 0) {
+      if (result.rowCount > 0) {
         return {
-          id: result.lastInsertRowid,
+          id: result.rows[0].id,
           ...tx,
         };
       }
     } catch (error) {
       // Likely duplicate, ignore
-      if (!error.message.includes('UNIQUE constraint')) {
+      if (!error.message.includes('duplicate key')) {
         console.error('Error storing transaction:', error.message);
       }
     }
@@ -234,14 +241,15 @@ class InsiderTracker {
   /**
    * Calculate insider activity summary and signal for a company
    */
-  calculateSummary(companyId, period = '90d') {
+  async calculateSummary(companyId, period = '90d') {
+    const database = await getDatabaseAsync();
     const days = this.parsePeriod(period);
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
     const cutoffStr = cutoffDate.toISOString().split('T')[0];
 
     // Get all transactions in period
-    const transactions = this.db.prepare(`
+    const result = await database.query(`
       SELECT
         t.*,
         i.name as insider_name,
@@ -251,12 +259,14 @@ class InsiderTracker {
         i.is_ten_percent_owner
       FROM insider_transactions t
       JOIN insiders i ON t.insider_id = i.id
-      WHERE t.company_id = ?
-        AND t.transaction_date >= ?
+      WHERE t.company_id = $1
+        AND t.transaction_date >= $2
         AND t.transaction_type IN ('buy', 'sell')
-        AND t.is_derivative = 0
+        AND t.is_derivative = false
       ORDER BY t.transaction_date DESC
-    `).all(companyId, cutoffStr);
+    `, [companyId, cutoffStr]);
+
+    const transactions = result.rows;
 
     // Separate buys and sells
     const buys = transactions.filter(t => t.transaction_type === 'buy');
@@ -306,7 +316,7 @@ class InsiderTracker {
     summary.signalScore = signal.score;
 
     // Store summary
-    this.storeSummary(companyId, summary);
+    await this.storeSummary(companyId, summary);
 
     return summary;
   }
@@ -391,17 +401,34 @@ class InsiderTracker {
   /**
    * Store summary in database
    */
-  storeSummary(companyId, summary) {
-    this.db.prepare(`
-      INSERT OR REPLACE INTO insider_activity_summary (
+  async storeSummary(companyId, summary) {
+    const database = await getDatabaseAsync();
+
+    await database.query(`
+      INSERT INTO insider_activity_summary (
         company_id, period,
         buy_count, buy_shares, buy_value, unique_buyers,
         sell_count, sell_shares, sell_value, unique_sellers,
         net_shares, net_value,
         insider_signal, signal_strength, signal_score,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    `).run(
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_TIMESTAMP)
+      ON CONFLICT (company_id, period) DO UPDATE SET
+        buy_count = EXCLUDED.buy_count,
+        buy_shares = EXCLUDED.buy_shares,
+        buy_value = EXCLUDED.buy_value,
+        unique_buyers = EXCLUDED.unique_buyers,
+        sell_count = EXCLUDED.sell_count,
+        sell_shares = EXCLUDED.sell_shares,
+        sell_value = EXCLUDED.sell_value,
+        unique_sellers = EXCLUDED.unique_sellers,
+        net_shares = EXCLUDED.net_shares,
+        net_value = EXCLUDED.net_value,
+        insider_signal = EXCLUDED.insider_signal,
+        signal_strength = EXCLUDED.signal_strength,
+        signal_score = EXCLUDED.signal_score,
+        updated_at = CURRENT_TIMESTAMP
+    `, [
       companyId,
       summary.period,
       summary.buyCount,
@@ -417,34 +444,36 @@ class InsiderTracker {
       summary.signal,
       summary.signalStrength,
       summary.signalScore
-    );
+    ]);
   }
 
   /**
    * Get insider activity for a company
    */
-  getInsiderActivity(companyId, options = {}) {
+  async getInsiderActivity(companyId, options = {}) {
+    const database = await getDatabaseAsync();
     const { limit = 50, transactionType, insiderType } = options;
 
-    let whereClause = 'WHERE t.company_id = ?';
+    let whereClause = 'WHERE t.company_id = $1';
     const params = [companyId];
+    let paramCounter = 2;
 
     if (transactionType) {
-      whereClause += ' AND t.transaction_type = ?';
+      whereClause += ` AND t.transaction_type = $${paramCounter++}`;
       params.push(transactionType);
     }
 
     if (insiderType === 'officer') {
-      whereClause += ' AND i.is_officer = 1';
+      whereClause += ' AND i.is_officer = true';
     } else if (insiderType === 'director') {
-      whereClause += ' AND i.is_director = 1';
+      whereClause += ' AND i.is_director = true';
     } else if (insiderType === 'owner') {
-      whereClause += ' AND i.is_ten_percent_owner = 1';
+      whereClause += ' AND i.is_ten_percent_owner = true';
     }
 
     params.push(limit);
 
-    const transactions = this.db.prepare(`
+    const result = await database.query(`
       SELECT
         t.*,
         i.name as insider_name,
@@ -456,17 +485,19 @@ class InsiderTracker {
       JOIN insiders i ON t.insider_id = i.id
       ${whereClause}
       ORDER BY t.transaction_date DESC
-      LIMIT ?
-    `).all(...params);
+      LIMIT $${paramCounter}
+    `, params);
 
-    return transactions;
+    return result.rows;
   }
 
   /**
    * Get all insiders for a company
    */
-  getInsiders(companyId) {
-    return this.db.prepare(`
+  async getInsiders(companyId) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT
         i.*,
         COUNT(t.id) as transaction_count,
@@ -475,20 +506,26 @@ class InsiderTracker {
         MAX(t.transaction_date) as last_transaction_date
       FROM insiders i
       LEFT JOIN insider_transactions t ON i.id = t.insider_id
-      WHERE i.company_id = ?
+      WHERE i.company_id = $1
       GROUP BY i.id
       ORDER BY last_transaction_date DESC
-    `).all(companyId);
+    `, [companyId]);
+
+    return result.rows;
   }
 
   /**
    * Get activity summary from database
    */
-  getSummary(companyId, period = '90d') {
-    return this.db.prepare(`
+  async getSummary(companyId, period = '90d') {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT * FROM insider_activity_summary
-      WHERE company_id = ? AND period = ?
-    `).get(companyId, period);
+      WHERE company_id = $1 AND period = $2
+    `, [companyId, period]);
+
+    return result.rows[0];
   }
 
   /**
@@ -544,7 +581,7 @@ class InsiderTracker {
 
     // Store alerts
     for (const alert of alerts) {
-      this.storeAlert(companyId, transaction, insider, alert);
+      await this.storeAlert(companyId, transaction, insider, alert);
     }
 
     return alerts;
@@ -553,15 +590,17 @@ class InsiderTracker {
   /**
    * Store an alert event
    */
-  storeAlert(companyId, transaction, insider, alert) {
+  async storeAlert(companyId, transaction, insider, alert) {
     try {
-      this.db.prepare(`
+      const database = await getDatabaseAsync();
+
+      await database.query(`
         INSERT INTO significant_events (
           company_id, event_type, event_date, headline,
           value, value_formatted, significance_score, is_positive,
           source_type, accession_number, insider_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'form4', ?, ?)
-      `).run(
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'form4', $9, $10)
+      `, [
         companyId,
         alert.eventType,
         transaction.transactionDate,
@@ -569,10 +608,10 @@ class InsiderTracker {
         transaction.totalValue,
         `$${this.formatValue(transaction.totalValue)}`,
         alert.significance,
-        alert.isPositive ? 1 : 0,
+        alert.isPositive ? true : false,
         transaction.accessionNumber,
         insider.id
-      );
+      ]);
     } catch (error) {
       // Ignore duplicate events
     }
@@ -581,32 +620,38 @@ class InsiderTracker {
   /**
    * Get significant events for a company
    */
-  getSignificantEvents(companyId, options = {}) {
+  async getSignificantEvents(companyId, options = {}) {
+    const database = await getDatabaseAsync();
     const { limit = 20, eventType } = options;
 
-    let whereClause = 'WHERE company_id = ?';
+    let whereClause = 'WHERE company_id = $1';
     const params = [companyId];
+    let paramCounter = 2;
 
     if (eventType) {
-      whereClause += ' AND event_type = ?';
+      whereClause += ` AND event_type = $${paramCounter++}`;
       params.push(eventType);
     }
 
     params.push(limit);
 
-    return this.db.prepare(`
+    const result = await database.query(`
       SELECT * FROM significant_events
       ${whereClause}
       ORDER BY event_date DESC, significance_score DESC
-      LIMIT ?
-    `).all(...params);
+      LIMIT $${paramCounter}
+    `, params);
+
+    return result.rows;
   }
 
   /**
    * Get companies with strongest insider buying signals
    */
-  getTopInsiderBuying(limit = 20, period = '90d') {
-    return this.db.prepare(`
+  async getTopInsiderBuying(limit = 20, period = '90d') {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT
         s.*,
         c.symbol,
@@ -615,11 +660,13 @@ class InsiderTracker {
         c.industry
       FROM insider_activity_summary s
       JOIN companies c ON s.company_id = c.id
-      WHERE s.period = ?
+      WHERE s.period = $1
         AND s.insider_signal IN ('bullish', 'slightly_bullish')
       ORDER BY s.signal_score DESC, s.buy_value DESC
-      LIMIT ?
-    `).all(period, limit);
+      LIMIT $2
+    `, [period, limit]);
+
+    return result.rows;
   }
 
   // Helper methods
