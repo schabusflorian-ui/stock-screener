@@ -1,6 +1,8 @@
 // src/services/factors/factorExposure.js
 // Factor Exposure Analysis - Decompose returns into factor contributions
 
+const { getDatabaseAsync } = require('../../database');
+
 /**
  * FactorExposureAnalyzer - Analyze portfolio factor exposures
  *
@@ -20,11 +22,9 @@
 
 class FactorExposureAnalyzer {
   /**
-   * @param {Database} db better-sqlite3 database instance
    * @param {Object} config Configuration options
    */
-  constructor(db, config = {}) {
-    this.db = db;
+  constructor(config = {}) {
     this.config = {
       lookbackDays: config.lookbackDays || 252, // 1 year
       riskFreeRate: config.riskFreeRate || 0.05, // 5% annual
@@ -42,16 +42,21 @@ class FactorExposureAnalyzer {
       'investment'   // CMA (Conservative minus Aggressive investment)
     ];
 
-    this._initStatements();
-
     console.log('📊 Factor Exposure Analyzer initialized');
   }
 
-  _initStatements() {
-    // Get company metrics for factor calculation
-    // Note: calculated_metrics uses pb_ratio (not price_to_book), net_margin (not profit_margin),
-    // and revenue_growth_yoy (not revenue_growth)
-    this.stmtGetCompanyMetrics = this.db.prepare(`
+  /**
+   * Calculate factor exposures for a single stock
+   * @param {string} symbol Stock symbol
+   * @param {number} lookbackDays Analysis period
+   * @returns {Object} Factor exposures and statistics
+   */
+  async analyzeStock(symbol, lookbackDays = null) {
+    const database = await getDatabaseAsync();
+    const days = lookbackDays || this.config.lookbackDays;
+
+    // Get stock data
+    const metricsResult = await database.query(`
       SELECT
         c.id,
         c.symbol,
@@ -65,12 +70,15 @@ class FactorExposureAnalyzer {
         cm.debt_to_equity
       FROM companies c
       LEFT JOIN calculated_metrics cm ON cm.company_id = c.id
-      WHERE c.symbol = ?
-    `);
+      WHERE c.symbol = $1
+    `, [symbol]);
 
-    // Get price returns for a company
-    // Note: daily_prices uses 'date' column, not 'price_date'
-    this.stmtGetReturns = this.db.prepare(`
+    const metrics = metricsResult.rows[0];
+    if (!metrics) {
+      throw new Error(`Company not found: ${symbol}`);
+    }
+
+    const returnsResult = await database.query(`
       SELECT
         date as price_date,
         close,
@@ -79,60 +87,12 @@ class FactorExposureAnalyzer {
         LAG(close, 63) OVER (ORDER BY date) as prev_63d,
         LAG(close, 252) OVER (ORDER BY date) as prev_252d
       FROM daily_prices
-      WHERE company_id = (SELECT id FROM companies WHERE symbol = ?)
-        AND date >= date('now', '-' || ? || ' days')
+      WHERE company_id = (SELECT id FROM companies WHERE symbol = $1)
+        AND date >= CURRENT_TIMESTAMP - INTERVAL '1 day' * $2
       ORDER BY date
-    `);
+    `, [symbol, days]);
 
-    // Get market returns (SPY proxy)
-    this.stmtGetMarketReturns = this.db.prepare(`
-      SELECT
-        date as price_date,
-        close,
-        LAG(close, 1) OVER (ORDER BY date) as prev_close
-      FROM daily_prices
-      WHERE company_id = (SELECT id FROM companies WHERE symbol = 'SPY')
-        AND date >= date('now', '-' || ? || ' days')
-      ORDER BY date
-    `);
-
-    // Get universe of companies for factor construction
-    this.stmtGetUniverse = this.db.prepare(`
-      SELECT
-        c.id,
-        c.symbol,
-        c.market_cap,
-        c.sector,
-        cm.pe_ratio,
-        cm.pb_ratio as price_to_book,
-        cm.roe,
-        cm.net_margin as profit_margin,
-        cm.revenue_growth_yoy as revenue_growth
-      FROM companies c
-      LEFT JOIN calculated_metrics cm ON cm.company_id = c.id
-      WHERE c.market_cap > 1000000000
-        AND cm.pe_ratio IS NOT NULL
-      ORDER BY c.market_cap DESC
-      LIMIT 500
-    `);
-  }
-
-  /**
-   * Calculate factor exposures for a single stock
-   * @param {string} symbol Stock symbol
-   * @param {number} lookbackDays Analysis period
-   * @returns {Object} Factor exposures and statistics
-   */
-  analyzeStock(symbol, lookbackDays = null) {
-    const days = lookbackDays || this.config.lookbackDays;
-
-    // Get stock data
-    const metrics = this.stmtGetCompanyMetrics.get(symbol);
-    if (!metrics) {
-      throw new Error(`Company not found: ${symbol}`);
-    }
-
-    const returns = this.stmtGetReturns.all(symbol, days);
+    const returns = returnsResult.rows;
     if (returns.length < this.config.minDataPoints) {
       throw new Error(`Insufficient price data for ${symbol}`);
     }
@@ -148,7 +108,18 @@ class FactorExposureAnalyzer {
       }));
 
     // Get market returns
-    const marketData = this.stmtGetMarketReturns.all(days);
+    const marketDataResult = await database.query(`
+      SELECT
+        date as price_date,
+        close,
+        LAG(close, 1) OVER (ORDER BY date) as prev_close
+      FROM daily_prices
+      WHERE company_id = (SELECT id FROM companies WHERE symbol = 'SPY')
+        AND date >= CURRENT_TIMESTAMP - INTERVAL '1 day' * $1
+      ORDER BY date
+    `, [days]);
+
+    const marketData = marketDataResult.rows;
     const marketReturns = new Map(
       marketData
         .filter(r => r.prev_close)
@@ -159,7 +130,7 @@ class FactorExposureAnalyzer {
     const factorScores = this._calculateFactorScores(metrics);
 
     // Calculate regression-based exposures
-    const regressionResults = this._runFactorRegression(stockReturns, marketReturns);
+    const regressionResults = await this._runFactorRegression(stockReturns, marketReturns);
 
     // Calculate factor contributions
     const contributions = this._calculateContributions(
@@ -202,17 +173,21 @@ class FactorExposureAnalyzer {
    * @param {number} portfolioId Portfolio ID
    * @returns {Object} Portfolio factor analysis
    */
-  analyzePortfolio(portfolioId) {
+  async analyzePortfolio(portfolioId) {
+    const database = await getDatabaseAsync();
+
     // Get portfolio positions
-    const positions = this.db.prepare(`
+    const positionsResult = await database.query(`
       SELECT
         pp.symbol,
         pp.quantity,
         pp.current_price,
         pp.quantity * pp.current_price as market_value
       FROM portfolio_positions pp
-      WHERE pp.portfolio_id = ?
-    `).all(portfolioId);
+      WHERE pp.portfolio_id = $1
+    `, [portfolioId]);
+
+    const positions = positionsResult.rows;
 
     if (positions.length === 0) {
       throw new Error('Portfolio has no positions');
@@ -243,7 +218,7 @@ class FactorExposureAnalyzer {
 
     for (const position of positions) {
       try {
-        const analysis = this.analyzeStock(position.symbol);
+        const analysis = await this.analyzeStock(position.symbol);
         const weight = weights.get(position.symbol);
 
         positionAnalyses.push({
@@ -384,7 +359,9 @@ class FactorExposureAnalyzer {
   /**
    * Run factor regression to get exposure betas
    */
-  _runFactorRegression(stockReturns, marketReturns) {
+  async _runFactorRegression(stockReturns, marketReturns) {
+    const database = await getDatabaseAsync();
+
     // Align stock and market returns
     const aligned = stockReturns.filter(r => marketReturns.has(r.date));
 
@@ -403,12 +380,14 @@ class FactorExposureAnalyzer {
     const minDate = dates[0];
     const maxDate = dates[dates.length - 1];
 
-    const factorReturns = this.db.prepare(`
+    const factorReturnsResult = await database.query(`
       SELECT date, mkt_rf, smb, hml, umd, qmj
       FROM daily_factor_returns
-      WHERE date >= ? AND date <= ?
+      WHERE date >= $1 AND date <= $2
       ORDER BY date
-    `).all(minDate, maxDate);
+    `, [minDate, maxDate]);
+
+    const factorReturns = factorReturnsResult.rows;
 
     // Create factor returns map
     const factorMap = new Map();
@@ -798,9 +777,9 @@ class FactorExposureAnalyzer {
   /**
    * Get factor exposure summary for quick assessment
    */
-  getQuickSummary(symbol) {
+  async getQuickSummary(symbol) {
     try {
-      const analysis = this.analyzeStock(symbol);
+      const analysis = await this.analyzeStock(symbol);
 
       // Determine dominant factor and style
       const factorScores = analysis.factorScores;
