@@ -1,0 +1,41 @@
+{
+  "timestamp": "2026-02-07T20:43:35.112Z",
+  "duration": 3013,
+  "options": {
+    "verbose": false,
+    "stopOnError": false,
+    "priority": null,
+    "filter": null
+  },
+  "results": [
+    {
+      "name": "CurrencyService",
+      "service": "CurrencyService",
+      "total": 9,
+      "passed": 8,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 529,
+      "success": false
+    },
+    {
+      "name": "ScreeningService",
+      "service": "ScreeningService",
+      "total": 10,
+      "passed": 3,
+      "failed": 7,
+      "skipped": 0,
+      "duration": 2446,
+      "success": false
+    }
+  ],
+  "summary": {
+    "totalSuites": 2,
+    "passedSuites": 0,
+    "failedSuites": 2,
+    "totalTests": 19,
+    "passedTests": 11,
+    "failedTests": 8,
+    "skippedTests": 0
+  }
+}
