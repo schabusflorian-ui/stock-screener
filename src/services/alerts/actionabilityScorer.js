@@ -1,6 +1,7 @@
 // src/services/alerts/actionabilityScorer.js
 // Scores alerts by actionability - "What can the user DO about this?"
 
+const { getDatabaseAsync } = require('../../database');
 const { getActionabilityBase } = require('./alertDefinitions');
 
 /**
@@ -148,8 +149,7 @@ const ACTION_SUGGESTIONS = {
 };
 
 class ActionabilityScorer {
-  constructor(db) {
-    this.db = db;
+  constructor() {
     this.baseScores = BASE_ACTIONABILITY_SCORES;
     this.actionSuggestions = ACTION_SUGGESTIONS;
   }
@@ -281,35 +281,40 @@ class ActionabilityScorer {
     if (!companyId) return context;
 
     try {
-      // Check if company is in watchlist
-      const watchlistEntry = this.db.prepare(`
-        SELECT 1 FROM watchlist
-        WHERE company_id = ? AND (user_id = ? OR user_id IS NULL)
-        LIMIT 1
-      `).get(companyId, userId);
+      const database = await getDatabaseAsync();
 
-      context.isWatchlist = !!watchlistEntry;
+      // Check if company is in watchlist
+      const watchlistResult = await database.query(`
+        SELECT 1 FROM watchlist
+        WHERE company_id = $1 AND (user_id = $2 OR user_id IS NULL)
+        LIMIT 1
+      `, [companyId, userId]);
+
+      context.isWatchlist = watchlistResult.rows.length > 0;
 
       // Check portfolio position
-      const position = this.db.prepare(`
+      const positionResult = await database.query(`
         SELECT
           pp.shares * pp.current_price as value,
           p.current_value as portfolio_value
         FROM portfolio_positions pp
         JOIN portfolios p ON pp.portfolio_id = p.id
-        WHERE pp.company_id = ? AND p.user_id = ?
+        WHERE pp.company_id = $1 AND p.user_id = $2
         LIMIT 1
-      `).get(companyId, userId);
+      `, [companyId, userId]);
 
-      if (position && position.portfolio_value > 0) {
-        const weight = position.value / position.portfolio_value;
-        context.positionSize = weight;
+      if (positionResult.rows.length > 0) {
+        const position = positionResult.rows[0];
+        if (position.portfolio_value > 0) {
+          const weight = position.value / position.portfolio_value;
+          context.positionSize = weight;
 
-        // Calculate portfolio relevance multiplier
-        if (weight >= 0.10) context.portfolioRelevance = 2.0;
-        else if (weight >= 0.05) context.portfolioRelevance = 1.5;
-        else if (weight >= 0.02) context.portfolioRelevance = 1.2;
-        else context.portfolioRelevance = 1.0;
+          // Calculate portfolio relevance multiplier
+          if (weight >= 0.10) context.portfolioRelevance = 2.0;
+          else if (weight >= 0.05) context.portfolioRelevance = 1.5;
+          else if (weight >= 0.02) context.portfolioRelevance = 1.2;
+          else context.portfolioRelevance = 1.0;
+        }
       }
 
     } catch (err) {

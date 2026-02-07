@@ -2,14 +2,14 @@
 // AI-powered alert summarization for "What Matters Today" feature
 
 const Anthropic = require('@anthropic-ai/sdk');
+const { getDatabaseAsync } = require('../../database');
 
 const MODEL = 'claude-sonnet-4-20250514';
 const MAX_TOKENS = 500;
 const TEMPERATURE = 0.3; // Lower temperature for more focused summaries
 
 class AlertAISummarizer {
-  constructor(db) {
-    this.db = db;
+  constructor() {
     this.client = null;
     this.initialized = false;
 
@@ -309,43 +309,45 @@ Signal type meanings:
     };
 
     try {
+      const database = await getDatabaseAsync();
+
       // Get current market regime
-      const regime = this.db.prepare(`
+      const regimeResult = await database.query(`
         SELECT * FROM market_regime_history
         ORDER BY detected_at DESC
         LIMIT 1
-      `).get();
+      `);
 
-      if (regime) {
-        context.regime = regime;
+      if (regimeResult.rows.length > 0) {
+        context.regime = regimeResult.rows[0];
       }
 
       // Get user's portfolio positions
-      const positions = this.db.prepare(`
+      const positionsResult = await database.query(`
         SELECT
           c.symbol,
           pp.shares * pp.current_price / p.current_value * 100 as weight
         FROM portfolio_positions pp
         JOIN portfolios p ON pp.portfolio_id = p.id
         JOIN companies c ON pp.company_id = c.id
-        WHERE p.user_id = ?
+        WHERE p.user_id = $1
         ORDER BY weight DESC
         LIMIT 20
-      `).all(userId);
+      `, [userId]);
 
-      context.portfolioPositions = positions;
+      context.portfolioPositions = positionsResult.rows;
 
       // Get user's watchlist
-      const watchlist = this.db.prepare(`
+      const watchlistResult = await database.query(`
         SELECT c.symbol
         FROM watchlist w
         JOIN companies c ON w.company_id = c.id
-        WHERE w.user_id = ? OR w.user_id IS NULL
+        WHERE w.user_id = $1 OR w.user_id IS NULL
         ORDER BY w.created_at DESC
         LIMIT 20
-      `).all(userId);
+      `, [userId]);
 
-      context.watchlist = watchlist.map(w => w.symbol);
+      context.watchlist = watchlistResult.rows.map(w => w.symbol);
 
     } catch (err) {
       console.warn('[AlertAISummarizer] Error fetching context:', err.message);
@@ -359,19 +361,23 @@ Signal type meanings:
    */
   async generateWhatMattersToday(userId = 'default') {
     try {
+      const database = await getDatabaseAsync();
+
       // Get recent alerts
-      const alerts = this.db.prepare(`
+      const alertsResult = await database.query(`
         SELECT
           a.*,
           c.symbol,
           c.name as company_name
         FROM alerts a
         JOIN companies c ON a.company_id = c.id
-        WHERE a.triggered_at > datetime('now', '-24 hours')
-          AND a.is_dismissed = 0
+        WHERE a.triggered_at > CURRENT_TIMESTAMP - INTERVAL '24 hours'
+          AND a.is_dismissed = false
         ORDER BY a.priority DESC, a.triggered_at DESC
         LIMIT 50
-      `).all();
+      `);
+
+      const alerts = alertsResult.rows;
 
       if (alerts.length === 0) {
         return {

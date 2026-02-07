@@ -1,6 +1,8 @@
 // src/services/alerts/digestManager.js
 // Manages configurable digest modes for intelligent alert delivery
 
+const { getDatabaseAsync } = require('../../database');
+
 /**
  * Digest Modes:
  * - realtime_critical: Only P5 critical alerts in real-time, everything else batched daily
@@ -37,8 +39,7 @@ const DIGEST_MODES = {
 };
 
 class DigestManager {
-  constructor(db, notificationService = null) {
-    this.db = db;
+  constructor(notificationService = null) {
     this.notificationService = notificationService;
     this.modes = DIGEST_MODES;
   }
@@ -46,10 +47,13 @@ class DigestManager {
   /**
    * Get user's digest preferences
    */
-  getDigestPreferences(userId = 'default') {
-    const prefs = this.db.prepare(`
-      SELECT * FROM user_digest_preferences WHERE user_id = ?
-    `).get(userId);
+  async getDigestPreferences(userId = 'default') {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM user_digest_preferences WHERE user_id = $1
+    `, [userId]);
+
+    const prefs = result.rows[0];
 
     if (!prefs) {
       // Return defaults
@@ -76,9 +80,9 @@ class DigestManager {
       weeklyDigestTime: prefs.weekly_digest_time,
       timezone: prefs.timezone,
       minPriorityRealtime: prefs.min_priority_realtime,
-      watchlistOnly: prefs.watchlist_only === 1,
-      portfolioOnly: prefs.portfolio_only === 1,
-      includeAISummary: prefs.include_ai_summary === 1,
+      watchlistOnly: prefs.watchlist_only === true,
+      portfolioOnly: prefs.portfolio_only === true,
+      includeAISummary: prefs.include_ai_summary === true,
       maxAlertsInSummary: prefs.max_alerts_in_summary
     };
   }
@@ -86,17 +90,18 @@ class DigestManager {
   /**
    * Update user's digest preferences
    */
-  updateDigestPreferences(userId, updates) {
-    const current = this.getDigestPreferences(userId);
+  async updateDigestPreferences(userId, updates) {
+    const current = await this.getDigestPreferences(userId);
     const merged = { ...current, ...updates };
 
-    this.db.prepare(`
+    const database = await getDatabaseAsync();
+    await database.query(`
       INSERT INTO user_digest_preferences (
         user_id, digest_mode, daily_digest_time, weekly_digest_day,
         weekly_digest_time, timezone, min_priority_realtime,
         watchlist_only, portfolio_only, include_ai_summary,
         max_alerts_in_summary, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
       ON CONFLICT(user_id) DO UPDATE SET
         digest_mode = excluded.digest_mode,
         daily_digest_time = excluded.daily_digest_time,
@@ -108,8 +113,8 @@ class DigestManager {
         portfolio_only = excluded.portfolio_only,
         include_ai_summary = excluded.include_ai_summary,
         max_alerts_in_summary = excluded.max_alerts_in_summary,
-        updated_at = datetime('now')
-    `).run(
+        updated_at = CURRENT_TIMESTAMP
+    `, [
       userId,
       merged.digestMode,
       merged.dailyDigestTime,
@@ -117,11 +122,11 @@ class DigestManager {
       merged.weeklyDigestTime,
       merged.timezone,
       merged.minPriorityRealtime,
-      merged.watchlistOnly ? 1 : 0,
-      merged.portfolioOnly ? 1 : 0,
-      merged.includeAISummary ? 1 : 0,
+      merged.watchlistOnly,
+      merged.portfolioOnly,
+      merged.includeAISummary,
       merged.maxAlertsInSummary
-    );
+    ]);
 
     return this.getDigestPreferences(userId);
   }
@@ -130,8 +135,8 @@ class DigestManager {
    * Process an alert according to user's digest mode
    * Returns: { delivery: 'realtime' | 'queued', queuedFor: 'daily' | 'weekly' | null }
    */
-  processAlert(alert, userId = 'default') {
-    const prefs = this.getDigestPreferences(userId);
+  async processAlert(alert, userId = 'default') {
+    const prefs = await this.getDigestPreferences(userId);
     const modeConfig = this.modes[prefs.digestMode] || this.modes.realtime_important;
 
     // Check if alert passes the real-time filter
@@ -140,7 +145,7 @@ class DigestManager {
     }
 
     // Queue for digest
-    this.queueForDigest(alert, userId, modeConfig.digestFrequency);
+    await this.queueForDigest(alert, userId, modeConfig.digestFrequency);
 
     return {
       delivery: 'queued',
@@ -151,27 +156,31 @@ class DigestManager {
   /**
    * Queue an alert for digest delivery
    */
-  queueForDigest(alert, userId, digestType = 'daily') {
+  async queueForDigest(alert, userId, digestType = 'daily') {
     try {
-      // Check if digest_queue table exists
-      const tableExists = this.db.prepare(`
-        SELECT name FROM sqlite_master WHERE type='table' AND name='digest_queue'
-      `).get();
+      const database = await getDatabaseAsync();
 
-      if (!tableExists) {
+      // Check if digest_queue table exists
+      const tableResult = await database.query(`
+        SELECT EXISTS(
+          SELECT 1 FROM information_schema.tables
+          WHERE table_name = 'digest_queue'
+        ) AS exists
+      `);
+
+      if (!tableResult.rows[0].exists) {
         console.warn('[DigestManager] digest_queue table not found, skipping queue');
         return null;
       }
 
-      const stmt = this.db.prepare(`
+      const result = await database.query(`
         INSERT INTO digest_queue (
           user_id, alert_id, notification_id, company_id, symbol,
           alert_code, alert_type, signal_type, priority,
           title, description, data, digest_type, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-      `);
-
-      const result = stmt.run(
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
+        RETURNING id
+      `, [
         userId,
         alert.id || null,
         alert.notification_id || null,
@@ -185,9 +194,9 @@ class DigestManager {
         alert.description,
         JSON.stringify(alert.data || {}),
         digestType
-      );
+      ]);
 
-      return result.lastInsertRowid;
+      return result.rows[0]?.id || null;
     } catch (err) {
       console.error('[DigestManager] Error queuing alert for digest:', err.message);
       return null;
@@ -197,22 +206,26 @@ class DigestManager {
   /**
    * Get pending digest items for a user
    */
-  getPendingDigestItems(userId = 'default', digestType = null) {
+  async getPendingDigestItems(userId = 'default', digestType = null) {
     let sql = `
       SELECT * FROM digest_queue
-      WHERE user_id = ? AND sent = 0
+      WHERE user_id = $1 AND sent = false
     `;
     const params = [userId];
+    let paramIndex = 2;
 
     if (digestType) {
-      sql += ' AND digest_type = ?';
+      sql += ` AND digest_type = $${paramIndex}`;
       params.push(digestType);
+      paramIndex++;
     }
 
     sql += ' ORDER BY priority DESC, created_at ASC';
 
     try {
-      return this.db.prepare(sql).all(...params);
+      const database = await getDatabaseAsync();
+      const result = await database.query(sql, params);
+      return result.rows;
     } catch (err) {
       console.warn('[DigestManager] Error getting pending digest items:', err.message);
       return [];
@@ -223,8 +236,8 @@ class DigestManager {
    * Generate a daily digest for a user
    */
   async generateDailyDigest(userId = 'default') {
-    const prefs = this.getDigestPreferences(userId);
-    const pending = this.getPendingDigestItems(userId, 'daily');
+    const prefs = await this.getDigestPreferences(userId);
+    const pending = await this.getPendingDigestItems(userId, 'daily');
 
     if (pending.length === 0) {
       return null;
@@ -295,13 +308,14 @@ class DigestManager {
   /**
    * Mark digest items as sent
    */
-  markDigestSent(userId, digestType = 'daily') {
+  async markDigestSent(userId, digestType = 'daily') {
     try {
-      this.db.prepare(`
+      const database = await getDatabaseAsync();
+      await database.query(`
         UPDATE digest_queue
-        SET sent = 1, sent_at = datetime('now')
-        WHERE user_id = ? AND digest_type = ? AND sent = 0
-      `).run(userId, digestType);
+        SET sent = true, sent_at = CURRENT_TIMESTAMP
+        WHERE user_id = $1 AND digest_type = $2 AND sent = false
+      `, [userId, digestType]);
     } catch (err) {
       console.error('[DigestManager] Error marking digest as sent:', err.message);
     }
@@ -310,12 +324,14 @@ class DigestManager {
   /**
    * Clean up old digest queue entries
    */
-  cleanupOldEntries(daysToKeep = 30) {
+  async cleanupOldEntries(daysToKeep = 30) {
     try {
-      const cutoff = new Date(Date.now() - daysToKeep * 24 * 60 * 60 * 1000).toISOString();
-      this.db.prepare(`
-        DELETE FROM digest_queue WHERE created_at < ? AND sent = 1
-      `).run(cutoff);
+      const database = await getDatabaseAsync();
+      await database.query(`
+        DELETE FROM digest_queue
+        WHERE created_at < CURRENT_TIMESTAMP - INTERVAL '${daysToKeep} days'
+        AND sent = true
+      `);
     } catch (err) {
       console.error('[DigestManager] Error cleaning up old entries:', err.message);
     }
@@ -324,20 +340,21 @@ class DigestManager {
   /**
    * Get users who need their digest generated
    */
-  getUsersNeedingDigest(digestType = 'daily') {
-    const prefs = this.db.prepare(`
+  async getUsersNeedingDigest(digestType = 'daily') {
+    const database = await getDatabaseAsync();
+    const prefResult = await database.query(`
       SELECT user_id, daily_digest_time, weekly_digest_day, weekly_digest_time, timezone
       FROM user_digest_preferences
-      WHERE digest_mode IN (?, 'realtime_critical', 'realtime_important')
-    `).all(digestType === 'daily' ? 'daily_digest' : 'weekly_digest');
+      WHERE digest_mode IN ($1, 'realtime_critical', 'realtime_important')
+    `, [digestType === 'daily' ? 'daily_digest' : 'weekly_digest']);
 
     // For now, return all users with pending items
-    const usersWithPending = this.db.prepare(`
+    const usersWithPending = await database.query(`
       SELECT DISTINCT user_id FROM digest_queue
-      WHERE sent = 0 AND digest_type = ?
-    `).all(digestType);
+      WHERE sent = false AND digest_type = $1
+    `, [digestType]);
 
-    return usersWithPending.map(u => u.user_id);
+    return usersWithPending.rows.map(u => u.user_id);
   }
 
   /**

@@ -2,10 +2,10 @@
 // Detects price-based alerts (52w lows, RSI, SMA crossings)
 
 const { ALERT_DEFINITIONS } = require('../alertDefinitions');
+const { getDatabaseAsync } = require('../../../database');
 
 class PriceDetector {
-  constructor(db) {
-    this.db = db;
+  constructor() {
     this.definitions = ALERT_DEFINITIONS.price;
   }
 
@@ -14,7 +14,7 @@ class PriceDetector {
     const prev = previousState || {};
 
     // Get current price metrics
-    const metrics = this.getPriceMetrics(company.id);
+    const metrics = await this.getPriceMetrics(company.id);
     if (!metrics || !metrics.lastPrice) return alerts;
 
     // Near 52-week low (within 10%)
@@ -86,8 +86,9 @@ class PriceDetector {
     return alerts;
   }
 
-  getPriceMetrics(companyId) {
-    const row = this.db.prepare(`
+  async getPriceMetrics(companyId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         last_price as lastPrice,
         high_52w as high52w,
@@ -101,17 +102,17 @@ class PriceDetector {
         change_3m as change3m,
         volatility_30d as volatility
       FROM price_metrics
-      WHERE company_id = ?
-    `).get(companyId);
+      WHERE company_id = $1
+    `, [companyId]);
 
-    return row;
+    return result.rows[0];
   }
 
   /**
    * Get current state for updating alert_state table
    */
-  getCurrentState(companyId) {
-    const metrics = this.getPriceMetrics(companyId);
+  async getCurrentState(companyId) {
+    const metrics = await this.getPriceMetrics(companyId);
     if (!metrics) return {};
 
     const pctFromLow = metrics.low52w > 0
@@ -123,11 +124,11 @@ class PriceDetector {
       : null;
 
     return {
-      price_near_52w_low: pctFromLow !== null && pctFromLow <= 10 ? 1 : 0,
-      price_near_52w_high: pctFromHigh !== null && pctFromHigh <= 5 ? 1 : 0,
-      below_sma_200: metrics.sma200 > 0 && metrics.lastPrice < metrics.sma200 ? 1 : 0,
-      rsi_oversold: metrics.rsi14 !== null && metrics.rsi14 < 30 ? 1 : 0,
-      rsi_overbought: metrics.rsi14 !== null && metrics.rsi14 > 70 ? 1 : 0
+      price_near_52w_low: pctFromLow !== null && pctFromLow <= 10,
+      price_near_52w_high: pctFromHigh !== null && pctFromHigh <= 5,
+      below_sma_200: metrics.sma200 > 0 && metrics.lastPrice < metrics.sma200,
+      rsi_oversold: metrics.rsi14 !== null && metrics.rsi14 < 30,
+      rsi_overbought: metrics.rsi14 !== null && metrics.rsi14 > 70
     };
   }
 

@@ -1,6 +1,7 @@
 // src/services/alerts/index.js
 // Main Alert Service - coordinates detection, processing, and storage
 
+const { getDatabaseAsync } = require('../../database');
 const ValuationDetector = require('./detectors/valuationDetector');
 const FundamentalDetector = require('./detectors/fundamentalDetector');
 const PriceDetector = require('./detectors/priceDetector');
@@ -18,8 +19,7 @@ const {
 } = require('./alertDefinitions');
 
 class AlertService {
-  constructor(db, options = {}) {
-    this.db = db;
+  constructor(options = {}) {
     this.options = {
       // Legacy fallback - now uses per-alert-code cooldowns
       dedupeWindowHours: 24,
@@ -35,22 +35,23 @@ class AlertService {
       ...options
     };
 
-    // Initialize detectors
+    // Initialize detectors - will be set up in async init if needed
     this.detectors = {
-      valuation: new ValuationDetector(db),
-      fundamental: new FundamentalDetector(db),
-      price: new PriceDetector(db),
-      filing: new FilingDetector(db),
-      composite: new CompositeDetector(db)
+      valuation: new ValuationDetector(),
+      fundamental: new FundamentalDetector(),
+      price: new PriceDetector(),
+      filing: new FilingDetector(),
+      composite: new CompositeDetector()
     };
 
-    this.clusterProcessor = new ClusterProcessor(db);
+    this.clusterProcessor = new ClusterProcessor();
   }
 
   /**
    * Main entry point - run detection for specified companies
    */
   async runDetection(trigger, companyIds = null) {
+    const database = await getDatabaseAsync();
     const startTime = Date.now();
     const results = {
       trigger,
@@ -63,20 +64,20 @@ class AlertService {
     try {
       // Get companies to evaluate
       const companies = companyIds
-        ? this.getCompaniesById(companyIds)
-        : this.getCompaniesForTrigger(trigger);
+        ? await this.getCompaniesById(database, companyIds)
+        : await this.getCompaniesForTrigger(database, trigger);
 
       results.companiesEvaluated = companies.length;
 
       // Get watchlist for priority boosting
-      const watchlistIds = new Set(this.getWatchlistCompanyIds());
+      const watchlistIds = new Set(await this.getWatchlistCompanyIds(database));
 
       // Run appropriate detectors
       const candidateAlerts = [];
 
       for (const company of companies) {
         try {
-          const companyAlerts = await this.detectForCompany(company, trigger);
+          const companyAlerts = await this.detectForCompany(database, company, trigger);
 
           // Boost priority for watchlist companies
           if (watchlistIds.has(company.id)) {
@@ -93,7 +94,7 @@ class AlertService {
       }
 
       // Deduplicate
-      const dedupedAlerts = this.deduplicateAlerts(candidateAlerts);
+      const dedupedAlerts = await this.deduplicateAlerts(database, candidateAlerts);
 
       // Cluster related alerts
       const { alerts: finalAlerts, clusters } = this.clusterProcessor.process(dedupedAlerts);
@@ -101,7 +102,7 @@ class AlertService {
       // Save clusters first to get IDs
       const clusterIdMap = {};
       for (const cluster of clusters) {
-        const clusterId = this.saveCluster(cluster);
+        const clusterId = await this.saveCluster(database, cluster);
         clusterIdMap[cluster._tempId] = clusterId;
       }
 
@@ -110,11 +111,11 @@ class AlertService {
         if (alert._clusterId && clusterIdMap[alert._clusterId]) {
           alert.cluster_id = clusterIdMap[alert._clusterId];
         }
-        this.saveAlert(alert);
+        await this.saveAlert(database, alert);
       }
 
       // Update alert states
-      this.updateAlertStates(companies);
+      await this.updateAlertStates(database, companies);
 
       results.alertsGenerated = finalAlerts.length;
       results.alertsClustered = clusters.length;
@@ -130,9 +131,9 @@ class AlertService {
   /**
    * Detect alerts for a single company
    */
-  async detectForCompany(company, trigger) {
+  async detectForCompany(database, company, trigger) {
     const alerts = [];
-    const previousState = this.getAlertState(company.id);
+    const previousState = await this.getAlertState(database, company.id);
 
     // Run detectors based on trigger type
     const detectorsToRun = this.getDetectorsForTrigger(trigger);
@@ -141,7 +142,7 @@ class AlertService {
       const detector = this.detectors[detectorName];
       if (detector) {
         try {
-          const detectorAlerts = await detector.detect(company, previousState);
+          const detectorAlerts = await detector.detect(database, company, previousState);
           alerts.push(...detectorAlerts.filter(Boolean));
         } catch (err) {
           console.error(`Error in ${detectorName} detector for ${company.symbol}:`, err.message);
@@ -152,7 +153,7 @@ class AlertService {
     // Always run composite detector last (needs results from others)
     if (detectorsToRun.length > 0 && !detectorsToRun.includes('composite')) {
       try {
-        const compositeAlerts = await this.detectors.composite.detect(company, previousState, alerts);
+        const compositeAlerts = await this.detectors.composite.detect(database, company, previousState, alerts);
         alerts.push(...compositeAlerts.filter(Boolean));
       } catch (err) {
         console.error(`Error in composite detector for ${company.symbol}:`, err.message);
@@ -184,67 +185,67 @@ class AlertService {
    * Check if an alert is on cooldown
    * Uses per-alert-code cooldown settings from alertDefinitions
    */
-  isOnCooldown(companyId, alertCode) {
+  async isOnCooldown(database, companyId, alertCode) {
     if (!this.options.enableSmartCooldowns) {
       // Fall back to legacy 24-hour window
       const cutoff = new Date(Date.now() - this.options.dedupeWindowHours * 60 * 60 * 1000).toISOString();
-      const existing = this.db.prepare(`
+      const result = await database.query(`
         SELECT id FROM alerts
-        WHERE company_id = ? AND alert_code = ? AND triggered_at > ? AND is_dismissed = 0
+        WHERE company_id = $1 AND alert_code = $2 AND triggered_at > $3 AND is_dismissed = false
         LIMIT 1
-      `).get(companyId, alertCode, cutoff);
-      return !!existing;
+      `, [companyId, alertCode, cutoff]);
+      return result.rows.length > 0;
     }
 
     // Get alert-specific cooldown
     const cooldownHours = getCooldownHours(alertCode);
     const cutoff = new Date(Date.now() - cooldownHours * 60 * 60 * 1000).toISOString();
 
-    const existing = this.db.prepare(`
+    const result = await database.query(`
       SELECT id FROM alerts
-      WHERE company_id = ?
-        AND alert_code = ?
-        AND triggered_at > ?
-        AND is_dismissed = 0
+      WHERE company_id = $1
+        AND alert_code = $2
+        AND triggered_at > $3
+        AND is_dismissed = false
       LIMIT 1
-    `).get(companyId, alertCode, cutoff);
+    `, [companyId, alertCode, cutoff]);
 
-    return !!existing;
+    return result.rows.length > 0;
   }
 
   /**
    * Check if symbol has hit weekly alert cap
    */
-  isAtWeeklyCap(companyId) {
+  async isAtWeeklyCap(database, companyId) {
     if (!this.options.enableWeeklyCap) return false;
 
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const count = this.db.prepare(`
+    const result = await database.query(`
       SELECT COUNT(*) as count FROM alerts
-      WHERE company_id = ?
-        AND triggered_at > ?
-        AND is_dismissed = 0
-    `).get(companyId, weekAgo);
+      WHERE company_id = $1
+        AND triggered_at > $2
+        AND is_dismissed = false
+    `, [companyId, weekAgo]);
 
-    return count.count >= this.options.maxAlertsPerSymbolPerWeek;
+    return parseInt(result.rows[0].count, 10) >= this.options.maxAlertsPerSymbolPerWeek;
   }
 
   /**
    * Get weekly alert count for a company
    */
-  getWeeklyAlertCount(companyId) {
+  async getWeeklyAlertCount(database, companyId) {
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const result = this.db.prepare(`
+    const result = await database.query(`
       SELECT COUNT(*) as count FROM alerts
-      WHERE company_id = ? AND triggered_at > ?
-    `).get(companyId, weekAgo);
-    return result.count;
+      WHERE company_id = $1 AND triggered_at > $2
+    `, [companyId, weekAgo]);
+    return parseInt(result.rows[0].count, 10);
   }
 
   /**
    * Deduplicate alerts - use per-alert-code cooldowns and weekly caps
    */
-  deduplicateAlerts(alerts) {
+  async deduplicateAlerts(database, alerts) {
     const deduped = [];
     const skipped = { cooldown: 0, weeklyCap: 0, duplicate: 0 };
 
@@ -261,13 +262,13 @@ class AlertService {
       }
 
       // Check per-alert-code cooldown
-      if (this.isOnCooldown(alert.company_id, alert.alert_code)) {
+      if (await this.isOnCooldown(database, alert.company_id, alert.alert_code)) {
         skipped.cooldown++;
         continue;
       }
 
       // Check weekly cap (but allow P5 critical alerts through)
-      if (alert.priority < 5 && this.isAtWeeklyCap(alert.company_id)) {
+      if (alert.priority < 5 && await this.isAtWeeklyCap(database, alert.company_id)) {
         skipped.weeklyCap++;
         continue;
       }
@@ -342,7 +343,7 @@ class AlertService {
   /**
    * Save alert to database with smart features
    */
-  saveAlert(alert) {
+  async saveAlert(database, alert) {
     // Calculate expiry time based on alert definition
     const expiryHours = getExpiryHours(alert.alert_code);
     const expiresAt = alert.expires_at ||
@@ -360,16 +361,15 @@ class AlertService {
       actionSuggestions: actionSuggestions.length > 0 ? actionSuggestions : undefined
     };
 
-    const stmt = this.db.prepare(`
+    const result = await database.query(`
       INSERT INTO alerts (
         company_id, alert_type, alert_code, signal_type, priority,
         title, description, data, cluster_id, is_cluster_primary,
         triggered_by, source_record_id, triggered_at, expires_at,
         actionability_score, action_suggestions, adjusted_priority
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const result = stmt.run(
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+      RETURNING id
+    `, [
       alert.company_id,
       alert.alert_type,
       alert.alert_code,
@@ -379,7 +379,7 @@ class AlertService {
       alert.description,
       JSON.stringify(alertData),
       alert.cluster_id || null,
-      alert.is_cluster_primary || 0,
+      alert.is_cluster_primary || false,
       alert.triggered_by,
       alert.source_record_id || null,
       alert.triggered_at || new Date().toISOString(),
@@ -387,41 +387,44 @@ class AlertService {
       actionabilityScore,
       actionSuggestions.length > 0 ? JSON.stringify(actionSuggestions) : null,
       alert.adjusted_priority || alert.priority
-    );
+    ]);
 
     // Update cooldown tracking
-    this.updateCooldownTracking(alert.company_id, alert.alert_code);
+    await this.updateCooldownTracking(database, alert.company_id, alert.alert_code);
 
-    return result.lastInsertRowid;
+    return result.rows[0].id;
   }
 
   /**
    * Update cooldown tracking after saving an alert
    */
-  updateCooldownTracking(companyId, alertCode) {
+  async updateCooldownTracking(database, companyId, alertCode) {
     try {
       // Check if alert_cooldowns table exists
-      const tableExists = this.db.prepare(`
-        SELECT name FROM sqlite_master WHERE type='table' AND name='alert_cooldowns'
-      `).get();
+      const tableCheck = await database.query(`
+        SELECT EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_name = 'alert_cooldowns'
+        ) as exists
+      `);
 
-      if (tableExists) {
-        this.db.prepare(`
+      if (tableCheck.rows[0].exists) {
+        await database.query(`
           INSERT INTO alert_cooldowns (company_id, alert_code, last_triggered_at, trigger_count_7d)
-          VALUES (?, ?, datetime('now'), 1)
+          VALUES ($1, $2, CURRENT_TIMESTAMP, 1)
           ON CONFLICT(company_id, alert_code) DO UPDATE SET
-            last_triggered_at = datetime('now'),
+            last_triggered_at = CURRENT_TIMESTAMP,
             trigger_count_7d = trigger_count_7d + 1
-        `).run(companyId, alertCode);
+        `, [companyId, alertCode]);
       }
 
       // Also update alert_state
-      this.db.prepare(`
+      await database.query(`
         UPDATE alert_state
-        SET last_alert_at = datetime('now'),
+        SET last_alert_at = CURRENT_TIMESTAMP,
             alert_count_7d = COALESCE(alert_count_7d, 0) + 1
-        WHERE company_id = ?
-      `).run(companyId);
+        WHERE company_id = $1
+      `, [companyId]);
     } catch (err) {
       // Ignore errors - cooldown tracking is optional enhancement
       console.warn('[AlertService] Could not update cooldown tracking:', err.message);
@@ -431,15 +434,14 @@ class AlertService {
   /**
    * Save cluster to database
    */
-  saveCluster(cluster) {
-    const stmt = this.db.prepare(`
+  async saveCluster(database, cluster) {
+    const result = await database.query(`
       INSERT INTO alert_clusters (
         company_id, cluster_type, title, description,
         alert_count, signal_type, priority
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const result = stmt.run(
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING id
+    `, [
       cluster.company_id,
       cluster.cluster_type,
       cluster.title,
@@ -447,31 +449,25 @@ class AlertService {
       cluster.alert_count,
       cluster.signal_type,
       cluster.priority
-    );
+    ]);
 
-    return result.lastInsertRowid;
+    return result.rows[0].id;
   }
 
   /**
    * Get alert state for a company
    */
-  getAlertState(companyId) {
-    return this.db.prepare(`
-      SELECT * FROM alert_state WHERE company_id = ?
-    `).get(companyId);
+  async getAlertState(database, companyId) {
+    const result = await database.query(`
+      SELECT * FROM alert_state WHERE company_id = $1
+    `, [companyId]);
+    return result.rows[0] || null;
   }
 
   /**
    * Update alert state after detection
    */
-  updateAlertStates(companies) {
-    const upsertStmt = this.db.prepare(`
-      INSERT INTO alert_state (company_id, last_evaluated_at)
-      VALUES (?, datetime('now'))
-      ON CONFLICT(company_id) DO UPDATE SET
-        last_evaluated_at = datetime('now')
-    `);
-
+  async updateAlertStates(database, companies) {
     for (const company of companies) {
       try {
         // Get current states from all detectors
@@ -485,18 +481,24 @@ class AlertService {
         // Update state
         const columns = Object.keys(state);
         if (columns.length > 0) {
-          const setClause = columns.map(c => `${c} = ?`).join(', ');
+          const placeholders = columns.map((_, i) => `$${i + 2}`).join(', ');
+          const setClause = columns.map((c, i) => `${c} = $${i + 2 + columns.length}`).join(', ');
           const values = columns.map(c => state[c]);
 
-          this.db.prepare(`
+          await database.query(`
             INSERT INTO alert_state (company_id, ${columns.join(', ')}, last_evaluated_at)
-            VALUES (?, ${columns.map(() => '?').join(', ')}, datetime('now'))
+            VALUES ($1, ${placeholders}, CURRENT_TIMESTAMP)
             ON CONFLICT(company_id) DO UPDATE SET
               ${setClause},
-              last_evaluated_at = datetime('now')
-          `).run(company.id, ...values, ...values);
+              last_evaluated_at = CURRENT_TIMESTAMP
+          `, [company.id, ...values, ...values]);
         } else {
-          upsertStmt.run(company.id);
+          await database.query(`
+            INSERT INTO alert_state (company_id, last_evaluated_at)
+            VALUES ($1, CURRENT_TIMESTAMP)
+            ON CONFLICT(company_id) DO UPDATE SET
+              last_evaluated_at = CURRENT_TIMESTAMP
+          `, [company.id]);
         }
       } catch (err) {
         // Continue with other companies
@@ -507,25 +509,26 @@ class AlertService {
   /**
    * Get companies by ID
    */
-  getCompaniesById(companyIds) {
+  async getCompaniesById(database, companyIds) {
     if (!companyIds || companyIds.length === 0) return [];
 
-    const placeholders = companyIds.map(() => '?').join(',');
-    return this.db.prepare(`
+    const placeholders = companyIds.map((_, i) => `$${i + 1}`).join(',');
+    const result = await database.query(`
       SELECT id, symbol, name FROM companies
       WHERE id IN (${placeholders})
         AND symbol IS NOT NULL
         AND symbol NOT LIKE 'CIK_%'
-    `).all(...companyIds);
+    `, companyIds);
+    return result.rows;
   }
 
   /**
    * Get companies for a trigger type
    */
-  getCompaniesForTrigger(trigger) {
+  async getCompaniesForTrigger(database, trigger) {
     // For daily scan, get all companies with price metrics
     if (trigger === 'daily_scan' || trigger === 'manual') {
-      return this.db.prepare(`
+      const result = await database.query(`
         SELECT c.id, c.symbol, c.name
         FROM companies c
         JOIN price_metrics pm ON c.id = pm.company_id
@@ -533,19 +536,21 @@ class AlertService {
           AND c.symbol NOT LIKE 'CIK_%'
           AND pm.last_price IS NOT NULL
         LIMIT 1000
-      `).all();
+      `);
+      return result.rows;
     }
 
     // For price updates, get recently updated companies
     if (trigger === 'price_update') {
-      return this.db.prepare(`
+      const result = await database.query(`
         SELECT c.id, c.symbol, c.name
         FROM companies c
         JOIN price_metrics pm ON c.id = pm.company_id
         WHERE c.symbol IS NOT NULL
-          AND pm.updated_at >= datetime('now', '-1 hour')
+          AND pm.updated_at >= CURRENT_TIMESTAMP - INTERVAL '1 hour'
         LIMIT 500
-      `).all();
+      `);
+      return result.rows;
     }
 
     return [];
@@ -554,11 +559,11 @@ class AlertService {
   /**
    * Get watchlist company IDs
    */
-  getWatchlistCompanyIds() {
-    const rows = this.db.prepare(`
+  async getWatchlistCompanyIds(database) {
+    const result = await database.query(`
       SELECT company_id FROM watchlist
-    `).all();
-    return rows.map(r => r.company_id);
+    `);
+    return result.rows.map(r => r.company_id);
   }
 
   // ==========================================
@@ -568,50 +573,55 @@ class AlertService {
   /**
    * Get alerts for dashboard (top priority, unread)
    */
-  getDashboardAlerts(limit = 10) {
-    return this.db.prepare(`
+  async getDashboardAlerts(database, limit = 10) {
+    const result = await database.query(`
       SELECT
         a.*,
         c.symbol,
         c.name as company_name,
-        CASE WHEN w.id IS NOT NULL THEN 1 ELSE 0 END as is_watchlist
+        CASE WHEN w.id IS NOT NULL THEN true ELSE false END as is_watchlist
       FROM alerts a
       JOIN companies c ON a.company_id = c.id
       LEFT JOIN watchlist w ON c.id = w.company_id
-      WHERE a.is_dismissed = 0
-        AND (a.expires_at IS NULL OR a.expires_at > datetime('now'))
+      WHERE a.is_dismissed = false
+        AND (a.expires_at IS NULL OR a.expires_at > CURRENT_TIMESTAMP)
       ORDER BY
         a.is_read ASC,
         a.priority DESC,
         a.triggered_at DESC
-      LIMIT ?
-    `).all(limit);
+      LIMIT $1
+    `, [limit]);
+    return result.rows;
   }
 
   /**
    * Get alerts for a specific company
    */
-  getCompanyAlerts(companyId, options = {}) {
+  async getCompanyAlerts(database, companyId, options = {}) {
     const { limit = 20, includeRead = true, includeDismissed = false } = options;
 
     let sql = `
       SELECT a.*
       FROM alerts a
-      WHERE a.company_id = ?
+      WHERE a.company_id = $1
     `;
 
-    if (!includeRead) sql += ' AND a.is_read = 0';
-    if (!includeDismissed) sql += ' AND a.is_dismissed = 0';
+    const params = [companyId];
 
-    sql += ' ORDER BY a.triggered_at DESC LIMIT ?';
+    if (!includeRead) sql += ' AND a.is_read = false';
+    if (!includeDismissed) sql += ' AND a.is_dismissed = false';
 
-    return this.db.prepare(sql).all(companyId, limit);
+    sql += ' ORDER BY a.triggered_at DESC LIMIT $2';
+    params.push(limit);
+
+    const result = await database.query(sql, params);
+    return result.rows;
   }
 
   /**
    * Get all alerts with filters
    */
-  getAlerts(filters = {}) {
+  async getAlerts(database, filters = {}) {
     const {
       alertTypes = null,
       signalTypes = null,
@@ -630,29 +640,36 @@ class AlertService {
         a.*,
         c.symbol,
         c.name as company_name,
-        CASE WHEN w.id IS NOT NULL THEN 1 ELSE 0 END as is_watchlist
+        CASE WHEN w.id IS NOT NULL THEN true ELSE false END as is_watchlist
       FROM alerts a
       JOIN companies c ON a.company_id = c.id
       LEFT JOIN watchlist w ON c.id = w.company_id
-      WHERE a.is_dismissed = 0
-        AND a.priority >= ?
+      WHERE a.is_dismissed = false
+        AND a.priority >= $1
     `;
 
     const params = [minPriority];
+    let paramIndex = 2;
 
     if (alertTypes && alertTypes.length > 0) {
-      sql += ` AND a.alert_type IN (${alertTypes.map(() => '?').join(',')})`;
+      const placeholders = alertTypes.map((_, i) => `$${paramIndex + i}`).join(',');
+      sql += ` AND a.alert_type IN (${placeholders})`;
       params.push(...alertTypes);
+      paramIndex += alertTypes.length;
     }
 
     if (signalTypes && signalTypes.length > 0) {
-      sql += ` AND a.signal_type IN (${signalTypes.map(() => '?').join(',')})`;
+      const placeholders = signalTypes.map((_, i) => `$${paramIndex + i}`).join(',');
+      sql += ` AND a.signal_type IN (${placeholders})`;
       params.push(...signalTypes);
+      paramIndex += signalTypes.length;
     }
 
     if (companyIds && companyIds.length > 0) {
-      sql += ` AND a.company_id IN (${companyIds.map(() => '?').join(',')})`;
+      const placeholders = companyIds.map((_, i) => `$${paramIndex + i}`).join(',');
+      sql += ` AND a.company_id IN (${placeholders})`;
       params.push(...companyIds);
+      paramIndex += companyIds.length;
     }
 
     if (watchlistOnly) {
@@ -660,95 +677,100 @@ class AlertService {
     }
 
     if (unreadOnly) {
-      sql += ' AND a.is_read = 0';
+      sql += ' AND a.is_read = false';
     }
 
     if (startDate) {
-      sql += ' AND a.triggered_at >= ?';
+      sql += ` AND a.triggered_at >= $${paramIndex}`;
       params.push(startDate);
+      paramIndex++;
     }
 
     if (endDate) {
-      sql += ' AND a.triggered_at <= ?';
+      sql += ` AND a.triggered_at <= $${paramIndex}`;
       params.push(endDate);
+      paramIndex++;
     }
 
-    sql += ' ORDER BY a.triggered_at DESC LIMIT ? OFFSET ?';
+    sql += ` ORDER BY a.triggered_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
     params.push(limit, offset);
 
-    return this.db.prepare(sql).all(...params);
+    const result = await database.query(sql, params);
+    return result.rows;
   }
 
   /**
    * Get alert summary counts
    */
-  getAlertSummary() {
-    return this.db.prepare(`
+  async getAlertSummary(database) {
+    const result = await database.query(`
       SELECT
         COUNT(*) as total,
-        SUM(CASE WHEN is_read = 0 THEN 1 ELSE 0 END) as unread,
-        SUM(CASE WHEN signal_type = 'strong_buy' AND is_read = 0 THEN 1 ELSE 0 END) as strong_buy_unread,
-        SUM(CASE WHEN signal_type = 'buy' AND is_read = 0 THEN 1 ELSE 0 END) as buy_unread,
-        SUM(CASE WHEN signal_type = 'warning' AND is_read = 0 THEN 1 ELSE 0 END) as warning_unread,
+        SUM(CASE WHEN is_read = false THEN 1 ELSE 0 END) as unread,
+        SUM(CASE WHEN signal_type = 'strong_buy' AND is_read = false THEN 1 ELSE 0 END) as strong_buy_unread,
+        SUM(CASE WHEN signal_type = 'buy' AND is_read = false THEN 1 ELSE 0 END) as buy_unread,
+        SUM(CASE WHEN signal_type = 'warning' AND is_read = false THEN 1 ELSE 0 END) as warning_unread,
         SUM(CASE WHEN signal_type IN ('strong_buy', 'buy') THEN 1 ELSE 0 END) as total_buy_signals
       FROM alerts
-      WHERE is_dismissed = 0
-        AND triggered_at > datetime('now', '-7 days')
-    `).get();
+      WHERE is_dismissed = false
+        AND triggered_at > CURRENT_TIMESTAMP - INTERVAL '7 days'
+    `);
+    return result.rows[0] || null;
   }
 
   /**
    * Mark alert as read
    */
-  markAsRead(alertId) {
-    return this.db.prepare(`
+  async markAsRead(database, alertId) {
+    return await database.query(`
       UPDATE alerts
-      SET is_read = 1, read_at = datetime('now')
-      WHERE id = ?
-    `).run(alertId);
+      SET is_read = true, read_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [alertId]);
   }
 
   /**
    * Mark all alerts as read
    */
-  markAllAsRead(filters = {}) {
-    let sql = 'UPDATE alerts SET is_read = 1, read_at = datetime(\'now\') WHERE is_read = 0';
+  async markAllAsRead(database, filters = {}) {
+    let sql = 'UPDATE alerts SET is_read = true, read_at = CURRENT_TIMESTAMP WHERE is_read = false';
     const params = [];
 
     if (filters.companyId) {
-      sql += ' AND company_id = ?';
+      sql += ' AND company_id = $1';
       params.push(filters.companyId);
     }
 
-    return this.db.prepare(sql).run(...params);
+    return await database.query(sql, params);
   }
 
   /**
    * Dismiss alert
    */
-  dismissAlert(alertId) {
-    return this.db.prepare(`
+  async dismissAlert(database, alertId) {
+    return await database.query(`
       UPDATE alerts
-      SET is_dismissed = 1, dismissed_at = datetime('now')
-      WHERE id = ?
-    `).run(alertId);
+      SET is_dismissed = true, dismissed_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [alertId]);
   }
 
   /**
    * Get clusters
    */
-  getClusters(limit = 20) {
-    return this.db.prepare(`
+  async getClusters(database, limit = 20) {
+    const result = await database.query(`
       SELECT
         ac.*,
         c.symbol,
         c.name as company_name
       FROM alert_clusters ac
       LEFT JOIN companies c ON ac.company_id = c.id
-      WHERE ac.is_dismissed = 0
+      WHERE ac.is_dismissed = false
       ORDER BY ac.created_at DESC
-      LIMIT ?
-    `).all(limit);
+      LIMIT $1
+    `, [limit]);
+    return result.rows;
   }
 }
 

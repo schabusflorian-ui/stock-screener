@@ -1,6 +1,8 @@
 // src/services/alerts/regimeThresholds.js
 // Regime-aware threshold adjustments for smart alert filtering
 
+const { getDatabaseAsync } = require('../../database');
+
 /**
  * Market Regimes:
  * - BULL: Strong uptrend, low volatility
@@ -228,15 +230,17 @@ function applyRegimeAdjustments(alert, regime, context = {}) {
 /**
  * Get the current market regime from the database
  */
-function getCurrentRegime(db) {
+async function getCurrentRegime() {
   try {
-    const regime = db.prepare(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT * FROM market_regime_history
-      WHERE valid_until IS NULL OR valid_until > datetime('now')
+      WHERE valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP
       ORDER BY detected_at DESC
       LIMIT 1
-    `).get();
+    `);
 
+    const regime = result.rows[0];
     if (regime) {
       return {
         regime: regime.regime,
@@ -264,7 +268,7 @@ function getCurrentRegime(db) {
 /**
  * Record a new regime detection
  */
-function recordRegime(db, regimeData) {
+async function recordRegime(regimeData) {
   const {
     regime,
     regimeScore = null,
@@ -275,21 +279,23 @@ function recordRegime(db, regimeData) {
   } = regimeData;
 
   try {
+    const database = await getDatabaseAsync();
+
     // Invalidate previous regime
-    db.prepare(`
+    await database.query(`
       UPDATE market_regime_history
-      SET valid_until = datetime('now')
+      SET valid_until = CURRENT_TIMESTAMP
       WHERE valid_until IS NULL
-    `).run();
+    `);
 
     // Insert new regime
-    db.prepare(`
+    await database.query(`
       INSERT INTO market_regime_history (
         regime, regime_score, vix,
         sp500_change_1w, sp500_change_1m, breadth_ratio,
         detected_at
-      ) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-    `).run(regime, regimeScore, vix, sp500Change1w, sp500Change1m, breadthRatio);
+      ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+    `, [regime, regimeScore, vix, sp500Change1w, sp500Change1m, breadthRatio]);
 
     return true;
   } catch (err) {

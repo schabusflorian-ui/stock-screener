@@ -1,11 +1,11 @@
 // src/services/alerts/detectors/compositeDetector.js
 // Detects composite alerts (combinations of multiple signals)
 
+const { getDatabaseAsync } = require('../../../database');
 const { ALERT_DEFINITIONS } = require('../alertDefinitions');
 
 class CompositeDetector {
-  constructor(db) {
-    this.db = db;
+  constructor() {
     this.definitions = ALERT_DEFINITIONS.composite;
   }
 
@@ -14,7 +14,7 @@ class CompositeDetector {
     const prev = previousState || {};
 
     // Get comprehensive metrics
-    const metrics = this.getCompositeMetrics(company.id);
+    const metrics = await this.getCompositeMetrics(company.id);
     if (!metrics) return alerts;
 
     // Count buy signals from other alerts
@@ -51,7 +51,7 @@ class CompositeDetector {
     }
 
     // Accumulation Zone (oversold + insider buying + quality)
-    if (this.isAccumulationZone(metrics, company.id)) {
+    if (await this.isAccumulationZone(metrics, company.id)) {
       alerts.push(this.createAlert(company, 'accumulation_zone', {
         rsi: metrics.rsi,
         roic: metrics.roic,
@@ -70,8 +70,9 @@ class CompositeDetector {
     return alerts;
   }
 
-  getCompositeMetrics(companyId) {
-    const row = this.db.prepare(`
+  async getCompositeMetrics(companyId) {
+    const database = getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         cm.roic,
         cm.operating_margin as operatingMargin,
@@ -99,12 +100,12 @@ class CompositeDetector {
       LEFT JOIN calculated_metrics cm ON c.id = cm.company_id AND cm.period_type = 'annual'
       LEFT JOIN price_metrics pm ON c.id = pm.company_id
       LEFT JOIN dcf_valuations dcf ON c.id = dcf.company_id
-      WHERE c.id = ?
+      WHERE c.id = $1
       ORDER BY cm.fiscal_period DESC
       LIMIT 1
-    `).get(companyId);
+    `, [companyId]);
 
-    return row;
+    return result.rows[0];
   }
 
   /**
@@ -140,7 +141,7 @@ class CompositeDetector {
   /**
    * Accumulation Zone: RSI oversold + insider buying + quality
    */
-  isAccumulationZone(metrics, companyId) {
+  async isAccumulationZone(metrics, companyId) {
     // RSI oversold
     if (!metrics.rsi || metrics.rsi >= 30) return false;
 
@@ -148,7 +149,7 @@ class CompositeDetector {
     if (!metrics.roic || metrics.roic < 12) return false;
 
     // Recent insider buying
-    const insiderBuying = this.hasRecentInsiderBuying(companyId);
+    const insiderBuying = await this.hasRecentInsiderBuying(companyId);
 
     return insiderBuying;
   }
@@ -156,28 +157,30 @@ class CompositeDetector {
   /**
    * Check for recent insider buying activity
    */
-  hasRecentInsiderBuying(companyId) {
-    const row = this.db.prepare(`
+  async hasRecentInsiderBuying(companyId) {
+    const database = getDatabaseAsync();
+    const result = await database.query(`
       SELECT COUNT(*) as count
       FROM insider_transactions
-      WHERE company_id = ?
+      WHERE company_id = $1
         AND transaction_type = 'Buy'
-        AND transaction_date >= date('now', '-30 days')
-    `).get(companyId);
+        AND transaction_date >= CURRENT_DATE - INTERVAL '30 days'
+    `, [companyId]);
 
+    const row = result.rows[0];
     return row && row.count >= 2;
   }
 
   /**
    * Get current state for updating alert_state table
    */
-  getCurrentState(companyId) {
-    const metrics = this.getCompositeMetrics(companyId);
+  async getCurrentState(companyId) {
+    const metrics = await this.getCompositeMetrics(companyId);
     if (!metrics) return {};
 
     return {
-      quality_and_value: this.isQualityValueConvergence(metrics) ? 1 : 0,
-      fallen_angel: this.isFallenAngel(metrics, companyId) ? 1 : 0
+      quality_and_value: this.isQualityValueConvergence(metrics),
+      fallen_angel: this.isFallenAngel(metrics, companyId)
     };
   }
 

@@ -1,9 +1,10 @@
 // src/services/alerts/processors/clusterProcessor.js
 // Smart clustering to reduce noise while preserving important signals
 
+const { getDatabaseAsync } = require('../../../database');
+
 class ClusterProcessor {
-  constructor(db, options = {}) {
-    this.db = db;
+  constructor(options = {}) {
     this.options = {
       // Cluster low-priority (P1-P3) alerts more aggressively
       lowPriorityClusterThreshold: 2,
@@ -17,7 +18,7 @@ class ClusterProcessor {
     };
   }
 
-  process(alerts) {
+  async process(alerts) {
     const clusters = [];
     const processedAlerts = [...alerts];
 
@@ -26,7 +27,7 @@ class ClusterProcessor {
 
     for (const [companyId, companyAlerts] of Object.entries(byCompany)) {
       // Smart clustering based on alert priorities
-      const cluster = this.createSmartCluster(parseInt(companyId), companyAlerts);
+      const cluster = await this.createSmartCluster(parseInt(companyId), companyAlerts);
       if (cluster) {
         clusters.push(cluster);
 
@@ -34,7 +35,7 @@ class ClusterProcessor {
         const clusteredAlerts = cluster._clusteredAlerts || companyAlerts;
         clusteredAlerts.forEach((alert, idx) => {
           alert._clusterId = cluster._tempId;
-          alert.is_cluster_primary = idx === 0 ? 1 : 0;
+          alert.is_cluster_primary = idx === 0 ? true : false;
         });
       }
     }
@@ -46,12 +47,12 @@ class ClusterProcessor {
 
       for (const [screenerName, screenAlerts] of Object.entries(byScreener)) {
         if (screenAlerts.length >= 3 && screenerName) {
-          const cluster = this.createScreenerCluster(screenerName, screenAlerts);
+          const cluster = await this.createScreenerCluster(screenerName, screenAlerts);
           if (cluster) {
             clusters.push(cluster);
             screenAlerts.forEach((alert, idx) => {
               alert._clusterId = cluster._tempId;
-              alert.is_cluster_primary = idx === 0 ? 1 : 0;
+              alert.is_cluster_primary = idx === 0 ? true : false;
             });
           }
         }
@@ -64,11 +65,14 @@ class ClusterProcessor {
   /**
    * Smart clustering that treats high-priority and low-priority alerts differently
    */
-  createSmartCluster(companyId, alerts) {
-    const company = this.db.prepare(`
-      SELECT symbol, name FROM companies WHERE id = ?
-    `).get(companyId);
+  async createSmartCluster(companyId, alerts) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(
+      `SELECT symbol, name FROM companies WHERE id = $1`,
+      [companyId]
+    );
 
+    const company = result.rows[0];
     if (!company) return null;
 
     // Separate alerts by priority
@@ -194,15 +198,20 @@ class ClusterProcessor {
    * Legacy method - now delegates to createSmartCluster
    * Kept for backwards compatibility
    */
-  createCompanyCluster(companyId, alerts) {
-    return this.createSmartCluster(companyId, alerts);
+  async createCompanyCluster(companyId, alerts) {
+    return await this.createSmartCluster(companyId, alerts);
   }
 
-  createScreenerCluster(screenerName, alerts) {
-    const symbols = alerts.map(a => {
-      const company = this.db.prepare('SELECT symbol FROM companies WHERE id = ?').get(a.company_id);
-      return company?.symbol;
-    }).filter(Boolean);
+  async createScreenerCluster(screenerName, alerts) {
+    const database = await getDatabaseAsync();
+    const symbols = [];
+    for (const a of alerts) {
+      const result = await database.query('SELECT symbol FROM companies WHERE id = $1', [a.company_id]);
+      const company = result.rows[0];
+      if (company?.symbol) {
+        symbols.push(company.symbol);
+      }
+    }
 
     return {
       _tempId: `screener_${screenerName}_${Date.now()}`,

@@ -1,11 +1,11 @@
 // src/services/alerts/detectors/fundamentalDetector.js
 // Detects fundamental alerts (ROIC, margins, debt, FCF)
 
+const { getDatabaseAsync } = require('../../../database');
 const { ALERT_DEFINITIONS } = require('../alertDefinitions');
 
 class FundamentalDetector {
-  constructor(db) {
-    this.db = db;
+  constructor() {
     this.definitions = ALERT_DEFINITIONS.fundamental;
   }
 
@@ -14,7 +14,7 @@ class FundamentalDetector {
     const prev = previousState || {};
 
     // Get current and previous fundamental metrics
-    const metrics = this.getFundamentalMetrics(company.id);
+    const metrics = await this.getFundamentalMetrics(company.id);
     if (!metrics.current) return alerts;
 
     const current = metrics.current;
@@ -110,9 +110,10 @@ class FundamentalDetector {
     return alerts;
   }
 
-  getFundamentalMetrics(companyId) {
+  async getFundamentalMetrics(companyId) {
     // Get current and previous period metrics
-    const rows = this.db.prepare(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         roic,
         operating_margin as operatingMargin,
@@ -122,12 +123,13 @@ class FundamentalDetector {
         fcf_yield as fcfYield,
         fiscal_period
       FROM calculated_metrics
-      WHERE company_id = ?
+      WHERE company_id = $1
         AND period_type = 'annual'
       ORDER BY fiscal_period DESC
       LIMIT 2
-    `).all(companyId);
+    `, [companyId]);
 
+    const rows = result.rows;
     return {
       current: rows[0] || null,
       previous: rows[1] || null
@@ -137,20 +139,20 @@ class FundamentalDetector {
   /**
    * Get current state for updating alert_state table
    */
-  getCurrentState(companyId) {
-    const { current, previous } = this.getFundamentalMetrics(companyId);
+  async getCurrentState(companyId) {
+    const { current, previous } = await this.getFundamentalMetrics(companyId);
     if (!current) return {};
 
     const marginExpanding = previous && current.operatingMargin > previous.operatingMargin * 1.1;
     const marginContracting = previous && current.operatingMargin < previous.operatingMargin * 0.85;
 
     return {
-      roic_above_15: current.roic >= 15 ? 1 : 0,
-      roic_above_20: current.roic >= 20 ? 1 : 0,
-      debt_equity_below_05: current.debtEquity !== null && current.debtEquity < 0.5 ? 1 : 0,
-      fcf_positive: current.fcf !== null && current.fcf > 0 ? 1 : 0,
-      margin_expanding: marginExpanding ? 1 : 0,
-      margin_contracting: marginContracting ? 1 : 0
+      roic_above_15: current.roic >= 15 ? true : false,
+      roic_above_20: current.roic >= 20 ? true : false,
+      debt_equity_below_05: current.debtEquity !== null && current.debtEquity < 0.5 ? true : false,
+      fcf_positive: current.fcf !== null && current.fcf > 0 ? true : false,
+      margin_expanding: marginExpanding ? true : false,
+      margin_contracting: marginContracting ? true : false
     };
   }
 

@@ -1,11 +1,11 @@
 // src/services/alerts/detectors/filingDetector.js
 // Detects filing-related alerts (insider transactions)
 
+const { getDatabaseAsync } = require('../../../database');
 const { ALERT_DEFINITIONS } = require('../alertDefinitions');
 
 class FilingDetector {
-  constructor(db) {
-    this.db = db;
+  constructor() {
     this.definitions = ALERT_DEFINITIONS.filing;
   }
 
@@ -13,7 +13,7 @@ class FilingDetector {
     const alerts = [];
 
     // Check insider transactions
-    const insiderActivity = this.getRecentInsiderActivity(company.id);
+    const insiderActivity = await this.getRecentInsiderActivity(company.id);
 
     // Insider buying cluster (3+ buyers in 30 days)
     if (insiderActivity.buyCount >= 3) {
@@ -25,7 +25,7 @@ class FilingDetector {
     }
 
     // Large individual insider buy (>$500K)
-    const largeBuys = this.getLargeInsiderBuys(company.id);
+    const largeBuys = await this.getLargeInsiderBuys(company.id);
     for (const buy of largeBuys) {
       if (buy.value >= 500000) {
         alerts.push(this.createAlert(company, 'large_insider_buy', {
@@ -39,7 +39,7 @@ class FilingDetector {
 
     // Individual insider buys (>$100K, not already covered by cluster or large)
     if (insiderActivity.buyCount < 3) {
-      const recentBuys = this.getRecentInsiderBuys(company.id);
+      const recentBuys = await this.getRecentInsiderBuys(company.id);
       for (const buy of recentBuys) {
         if (buy.value >= 100000 && buy.value < 500000) {
           alerts.push(this.createAlert(company, 'insider_buying', {
@@ -64,23 +64,26 @@ class FilingDetector {
     return alerts;
   }
 
-  getRecentInsiderActivity(companyId) {
-    const row = this.db.prepare(`
+  async getRecentInsiderActivity(companyId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
-        SUM(CASE WHEN transaction_type = 'Buy' OR transaction_code = 'P' THEN 1 ELSE 0 END) as buyCount,
-        SUM(CASE WHEN transaction_type = 'Buy' OR transaction_code = 'P' THEN COALESCE(total_value, 0) ELSE 0 END) as buyValue,
-        SUM(CASE WHEN transaction_type = 'Sell' OR transaction_code = 'S' THEN 1 ELSE 0 END) as sellCount,
-        SUM(CASE WHEN transaction_type = 'Sell' OR transaction_code = 'S' THEN COALESCE(total_value, 0) ELSE 0 END) as sellValue
+        SUM(CASE WHEN transaction_type = 'Buy' OR transaction_code = 'P' THEN 1 ELSE 0 END) as "buyCount",
+        SUM(CASE WHEN transaction_type = 'Buy' OR transaction_code = 'P' THEN COALESCE(total_value, 0) ELSE 0 END) as "buyValue",
+        SUM(CASE WHEN transaction_type = 'Sell' OR transaction_code = 'S' THEN 1 ELSE 0 END) as "sellCount",
+        SUM(CASE WHEN transaction_type = 'Sell' OR transaction_code = 'S' THEN COALESCE(total_value, 0) ELSE 0 END) as "sellValue"
       FROM insider_transactions
-      WHERE company_id = ?
-        AND transaction_date >= date('now', '-30 days')
-    `).get(companyId);
+      WHERE company_id = $1
+        AND transaction_date >= CURRENT_DATE - INTERVAL '30 days'
+    `, [companyId]);
 
+    const row = result.rows[0];
     return row || { buyCount: 0, buyValue: 0, sellCount: 0, sellValue: 0 };
   }
 
-  getLargeInsiderBuys(companyId) {
-    return this.db.prepare(`
+  async getLargeInsiderBuys(companyId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         i.name as insider_name,
         i.title as insider_title,
@@ -89,17 +92,20 @@ class FilingDetector {
         it.transaction_date
       FROM insider_transactions it
       JOIN insiders i ON it.insider_id = i.id
-      WHERE it.company_id = ?
+      WHERE it.company_id = $1
         AND (it.transaction_type = 'Buy' OR it.transaction_code = 'P')
         AND it.total_value >= 500000
-        AND it.transaction_date >= date('now', '-7 days')
+        AND it.transaction_date >= CURRENT_DATE - INTERVAL '7 days'
       ORDER BY it.total_value DESC
       LIMIT 5
-    `).all(companyId);
+    `, [companyId]);
+
+    return result.rows;
   }
 
-  getRecentInsiderBuys(companyId) {
-    return this.db.prepare(`
+  async getRecentInsiderBuys(companyId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         i.name as insider_name,
         i.title as insider_title,
@@ -108,13 +114,15 @@ class FilingDetector {
         it.transaction_date
       FROM insider_transactions it
       JOIN insiders i ON it.insider_id = i.id
-      WHERE it.company_id = ?
+      WHERE it.company_id = $1
         AND (it.transaction_type = 'Buy' OR it.transaction_code = 'P')
         AND it.total_value >= 100000
-        AND it.transaction_date >= date('now', '-7 days')
+        AND it.transaction_date >= CURRENT_DATE - INTERVAL '7 days'
       ORDER BY it.transaction_date DESC
       LIMIT 5
-    `).all(companyId);
+    `, [companyId]);
+
+    return result.rows;
   }
 
   createAlert(company, alertCode, data) {

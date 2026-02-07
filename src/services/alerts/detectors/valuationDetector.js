@@ -1,11 +1,11 @@
 // src/services/alerts/detectors/valuationDetector.js
 // Detects valuation-based alerts (DCF, P/E, P/B, FCF Yield)
 
+const { getDatabaseAsync } = require('../../../database');
 const { ALERT_DEFINITIONS } = require('../alertDefinitions');
 
 class ValuationDetector {
-  constructor(db) {
-    this.db = db;
+  constructor() {
     this.definitions = ALERT_DEFINITIONS.valuation;
   }
 
@@ -14,7 +14,7 @@ class ValuationDetector {
     const prev = previousState || {};
 
     // Get current valuation metrics
-    const metrics = this.getCurrentMetrics(company.id);
+    const metrics = await this.getCurrentMetrics(company.id);
     if (!metrics) return alerts;
 
     // DCF Undervaluation checks
@@ -91,48 +91,49 @@ class ValuationDetector {
     return alerts;
   }
 
-  getCurrentMetrics(companyId) {
+  async getCurrentMetrics(companyId) {
     // Join DCF valuations, price metrics, and get most recent non-null calculated metrics
-    const row = this.db.prepare(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
-        pm.last_price as currentPrice,
-        dcf.intrinsic_value_per_share as intrinsicValue,
+        pm.last_price as "currentPrice",
+        dcf.intrinsic_value_per_share as "intrinsicValue",
         CASE
           WHEN dcf.intrinsic_value_per_share > 0 AND pm.last_price > 0
           THEN ((dcf.intrinsic_value_per_share - pm.last_price) / dcf.intrinsic_value_per_share * 100)
           ELSE NULL
-        END as dcfDiscount,
-        (SELECT pe_ratio FROM calculated_metrics WHERE company_id = c.id AND pe_ratio IS NOT NULL ORDER BY fiscal_period DESC LIMIT 1) as pe,
-        (SELECT pb_ratio FROM calculated_metrics WHERE company_id = c.id AND pb_ratio IS NOT NULL ORDER BY fiscal_period DESC LIMIT 1) as pb,
-        (SELECT fcf_yield FROM calculated_metrics WHERE company_id = c.id AND fcf_yield IS NOT NULL ORDER BY fiscal_period DESC LIMIT 1) as fcfYield,
-        (SELECT roic FROM calculated_metrics WHERE company_id = c.id AND roic IS NOT NULL ORDER BY fiscal_period DESC LIMIT 1) as roic,
-        (SELECT debt_to_equity FROM calculated_metrics WHERE company_id = c.id AND debt_to_equity IS NOT NULL ORDER BY fiscal_period DESC LIMIT 1) as debtEquity
+        END as "dcfDiscount",
+        (SELECT pe_ratio FROM calculated_metrics WHERE company_id = c.id AND pe_ratio IS NOT NULL ORDER BY fiscal_period DESC LIMIT 1) as "pe",
+        (SELECT pb_ratio FROM calculated_metrics WHERE company_id = c.id AND pb_ratio IS NOT NULL ORDER BY fiscal_period DESC LIMIT 1) as "pb",
+        (SELECT fcf_yield FROM calculated_metrics WHERE company_id = c.id AND fcf_yield IS NOT NULL ORDER BY fiscal_period DESC LIMIT 1) as "fcfYield",
+        (SELECT roic FROM calculated_metrics WHERE company_id = c.id AND roic IS NOT NULL ORDER BY fiscal_period DESC LIMIT 1) as "roic",
+        (SELECT debt_to_equity FROM calculated_metrics WHERE company_id = c.id AND debt_to_equity IS NOT NULL ORDER BY fiscal_period DESC LIMIT 1) as "debtEquity"
       FROM companies c
       LEFT JOIN price_metrics pm ON c.id = pm.company_id
       LEFT JOIN dcf_valuations dcf ON c.id = dcf.company_id
-      WHERE c.id = ?
+      WHERE c.id = $1
       ORDER BY dcf.calculated_at DESC
       LIMIT 1
-    `).get(companyId);
+    `, [companyId]);
 
-    return row;
+    return result.rows[0];
   }
 
   /**
    * Get current state for updating alert_state table
    */
-  getCurrentState(companyId) {
-    const metrics = this.getCurrentMetrics(companyId);
+  async getCurrentState(companyId) {
+    const metrics = await this.getCurrentMetrics(companyId);
     if (!metrics) return {};
 
     return {
-      dcf_undervalued_25: metrics.dcfDiscount >= 25 ? 1 : 0,
-      dcf_undervalued_50: metrics.dcfDiscount >= 50 ? 1 : 0,
-      pe_below_15: metrics.pe > 0 && metrics.pe < 15 ? 1 : 0,
-      pe_below_10: metrics.pe > 0 && metrics.pe < 10 ? 1 : 0,
-      pb_below_1: metrics.pb > 0 && metrics.pb < 1 ? 1 : 0,
-      fcf_yield_above_10: metrics.fcfYield > 10 ? 1 : 0,
-      fcf_yield_above_15: metrics.fcfYield > 15 ? 1 : 0
+      dcf_undervalued_25: metrics.dcfDiscount >= 25,
+      dcf_undervalued_50: metrics.dcfDiscount >= 50,
+      pe_below_15: metrics.pe > 0 && metrics.pe < 15,
+      pe_below_10: metrics.pe > 0 && metrics.pe < 10,
+      pb_below_1: metrics.pb > 0 && metrics.pb < 1,
+      fcf_yield_above_10: metrics.fcfYield > 10,
+      fcf_yield_above_15: metrics.fcfYield > 15
     };
   }
 
