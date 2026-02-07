@@ -2,6 +2,7 @@
 // CRUD operations for user-defined factors
 
 const crypto = require('crypto');
+const { getDatabaseAsync } = require('../../database');
 const { validateFormula } = require('./factorFormulaParser');
 
 /**
@@ -13,26 +14,27 @@ const { validateFormula } = require('./factorFormulaParser');
  * - Track factor performance over time
  */
 class FactorRepository {
-  constructor(db) {
-    this.db = db;
+  constructor() {
     this._availableMetrics = null;
   }
 
   /**
    * Get available metrics for factor construction
    */
-  getAvailableMetrics() {
+  async getAvailableMetrics() {
     if (this._availableMetrics) {
       return this._availableMetrics;
     }
 
     try {
-      this._availableMetrics = this.db.prepare(`
+      const database = await getDatabaseAsync();
+      const result = await database.query(`
         SELECT metric_code, metric_name, category, description, higher_is_better
         FROM available_metrics
-        WHERE is_active = 1
+        WHERE is_active = true
         ORDER BY category, metric_name
-      `).all();
+      `);
+      this._availableMetrics = result.rows;
     } catch (err) {
       // Table might not exist yet
       this._availableMetrics = [];
@@ -44,14 +46,15 @@ class FactorRepository {
   /**
    * Get metric codes only
    */
-  getMetricCodes() {
-    return this.getAvailableMetrics().map(m => m.metric_code);
+  async getMetricCodes() {
+    const metrics = await this.getAvailableMetrics();
+    return metrics.map(m => m.metric_code);
   }
 
   /**
    * Create a new user-defined factor
    */
-  createFactor(data) {
+  async createFactor(data) {
     const {
       userId = null,
       name,
@@ -62,7 +65,7 @@ class FactorRepository {
     } = data;
 
     // Validate formula
-    const availableMetrics = this.getMetricCodes();
+    const availableMetrics = await this.getMetricCodes();
     const validation = validateFormula(formula, availableMetrics);
 
     if (!validation.valid) {
@@ -76,26 +79,27 @@ class FactorRepository {
     const id = crypto.randomUUID();
 
     try {
-      this.db.prepare(`
+      const database = await getDatabaseAsync();
+      await database.query(`
         INSERT INTO user_factors (
           id, user_id, name, formula, description,
           higher_is_better, required_metrics, transformations,
           is_valid, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))
-      `).run(
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `, [
         id,
         userId,
         name,
         formula,
         description,
-        higherIsBetter ? 1 : 0,
+        higherIsBetter,
         JSON.stringify(validation.requiredMetrics),
         JSON.stringify(transformations)
-      );
+      ]);
 
       return {
         success: true,
-        factor: this.getFactorById(id)
+        factor: await this.getFactorById(id)
       };
     } catch (err) {
       return {
@@ -108,29 +112,30 @@ class FactorRepository {
   /**
    * Get factor by ID
    */
-  getFactorById(id) {
-    const factor = this.db.prepare(`
-      SELECT * FROM user_factors WHERE id = ?
-    `).get(id);
+  async getFactorById(id) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM user_factors WHERE id = $1
+    `, [id]);
 
-    if (!factor) return null;
+    if (result.rows.length === 0) return null;
 
-    return this._formatFactor(factor);
+    return this._formatFactor(result.rows[0]);
   }
 
   /**
    * Get all factors for a user
    */
-  getUserFactors(userId, options = {}) {
+  async getUserFactors(userId, options = {}) {
     const { includeInactive = false, sortBy = 'created_at', order = 'DESC' } = options;
 
     let query = `
       SELECT * FROM user_factors
-      WHERE user_id = ? OR user_id IS NULL
+      WHERE user_id = $1 OR user_id IS NULL
     `;
 
     if (!includeInactive) {
-      query += ' AND is_valid = 1';
+      query += ' AND is_valid = true';
     }
 
     // Validate sort column to prevent SQL injection
@@ -140,32 +145,36 @@ class FactorRepository {
 
     query += ` ORDER BY ${sortColumn} ${sortOrder}`;
 
-    const factors = this.db.prepare(query).all(userId);
-    return factors.map(f => this._formatFactor(f));
+    const database = await getDatabaseAsync();
+    const result = await database.query(query, [userId]);
+    return result.rows.map(f => this._formatFactor(f));
   }
 
   /**
    * Get all active factors (for combining)
    */
-  getActiveFactors(userId = null) {
+  async getActiveFactors(userId = null) {
+    const database = await getDatabaseAsync();
     let query = `
       SELECT * FROM user_factors
-      WHERE is_active = 1 AND is_valid = 1
+      WHERE is_active = true AND is_valid = true
     `;
 
     if (userId) {
-      query += ' AND (user_id = ? OR user_id IS NULL)';
-      return this.db.prepare(query).all(userId).map(f => this._formatFactor(f));
+      query += ' AND (user_id = $1 OR user_id IS NULL)';
+      const result = await database.query(query, [userId]);
+      return result.rows.map(f => this._formatFactor(f));
     }
 
-    return this.db.prepare(query).all().map(f => this._formatFactor(f));
+    const result = await database.query(query);
+    return result.rows.map(f => this._formatFactor(f));
   }
 
   /**
    * Update a factor
    */
-  updateFactor(id, updates) {
-    const factor = this.getFactorById(id);
+  async updateFactor(id, updates) {
+    const factor = await this.getFactorById(id);
     if (!factor) {
       return { success: false, error: 'Factor not found' };
     }
@@ -173,18 +182,18 @@ class FactorRepository {
     const allowedUpdates = ['name', 'description', 'higher_is_better', 'transformations', 'is_active', 'notes'];
     const setClauses = [];
     const params = [];
+    let paramIndex = 1;
 
     for (const [key, value] of Object.entries(updates)) {
       const dbKey = key.replace(/([A-Z])/g, '_$1').toLowerCase(); // camelCase to snake_case
       if (allowedUpdates.includes(dbKey)) {
-        setClauses.push(`${dbKey} = ?`);
+        setClauses.push(`${dbKey} = $${paramIndex}`);
         if (typeof value === 'object') {
           params.push(JSON.stringify(value));
-        } else if (typeof value === 'boolean') {
-          params.push(value ? 1 : 0);
         } else {
           params.push(value);
         }
+        paramIndex++;
       }
     }
 
@@ -192,15 +201,16 @@ class FactorRepository {
       return { success: false, error: 'No valid updates provided' };
     }
 
-    setClauses.push('updated_at = datetime(\'now\')');
+    setClauses.push(`updated_at = CURRENT_TIMESTAMP`);
     params.push(id);
 
     try {
-      this.db.prepare(`
-        UPDATE user_factors SET ${setClauses.join(', ')} WHERE id = ?
-      `).run(...params);
+      const database = await getDatabaseAsync();
+      await database.query(`
+        UPDATE user_factors SET ${setClauses.join(', ')} WHERE id = $${paramIndex}
+      `, params);
 
-      return { success: true, factor: this.getFactorById(id) };
+      return { success: true, factor: await this.getFactorById(id) };
     } catch (err) {
       return { success: false, error: err.message };
     }
@@ -209,8 +219,8 @@ class FactorRepository {
   /**
    * Update factor formula (requires re-validation)
    */
-  updateFactorFormula(id, formula) {
-    const availableMetrics = this.getMetricCodes();
+  async updateFactorFormula(id, formula) {
+    const availableMetrics = await this.getMetricCodes();
     const validation = validateFormula(formula, availableMetrics);
 
     if (!validation.valid) {
@@ -222,38 +232,42 @@ class FactorRepository {
     }
 
     try {
+      const database = await getDatabaseAsync();
+
       // Get current formula to detect changes
-      const current = this.db.prepare('SELECT formula FROM user_factors WHERE id = ?').get(id);
-      if (!current) {
+      const currentResult = await database.query('SELECT formula FROM user_factors WHERE id = $1', [id]);
+      if (currentResult.rows.length === 0) {
         return { success: false, error: 'Factor not found' };
       }
 
+      const current = currentResult.rows[0];
       const formulaChanged = current.formula.trim() !== formula.trim();
 
       // Update formula and reset stats
-      this.db.prepare(`
+      await database.query(`
         UPDATE user_factors SET
-          formula = ?,
-          required_metrics = ?,
-          is_valid = 1,
+          formula = $1,
+          required_metrics = $2,
+          is_valid = true,
           validation_error = NULL,
           ic_stats = NULL,
           wfe = NULL,
           uniqueness_score = NULL,
           last_analyzed_at = NULL,
-          updated_at = datetime('now')
-        WHERE id = ?
-      `).run(formula, JSON.stringify(validation.requiredMetrics), id);
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $3
+      `, [formula, JSON.stringify(validation.requiredMetrics), id]);
 
       // CRITICAL: Clear cached values if formula changed
       let cachedValuesRemoved = 0;
       if (formulaChanged) {
         try {
-          const deleteResult = this.db.prepare(
-            'DELETE FROM factor_values_cache WHERE factor_id = ?'
-          ).run(id);
+          const deleteResult = await database.query(
+            'DELETE FROM factor_values_cache WHERE factor_id = $1',
+            [id]
+          );
 
-          cachedValuesRemoved = deleteResult.changes;
+          cachedValuesRemoved = deleteResult.rowCount;
           console.log(`[Cache Invalidation] Cleared ${cachedValuesRemoved} cached values for factor ${id}`);
         } catch (cacheErr) {
           console.warn(`[Cache Warning] Could not clear cache for factor ${id}:`, cacheErr.message);
@@ -263,7 +277,7 @@ class FactorRepository {
 
       return {
         success: true,
-        factor: this.getFactorById(id),
+        factor: await this.getFactorById(id),
         cacheCleared: formulaChanged,
         cachedValuesRemoved
       };
@@ -275,11 +289,13 @@ class FactorRepository {
   /**
    * Delete a factor
    */
-  deleteFactor(id) {
+  async deleteFactor(id) {
     try {
+      const database = await getDatabaseAsync();
+
       // Check if factor exists first
-      const factor = this.db.prepare('SELECT id FROM user_factors WHERE id = ?').get(id);
-      if (!factor) {
+      const checkResult = await database.query('SELECT id FROM user_factors WHERE id = $1', [id]);
+      if (checkResult.rows.length === 0) {
         return { success: false, error: 'Factor not found' };
       }
 
@@ -293,7 +309,7 @@ class FactorRepository {
 
       for (const table of relatedTables) {
         try {
-          this.db.prepare(`DELETE FROM ${table} WHERE factor_id = ?`).run(id);
+          await database.query(`DELETE FROM ${table} WHERE factor_id = $1`, [id]);
         } catch (tableErr) {
           // Table might not exist - that's OK, continue
           console.warn(`Could not delete from ${table}: ${tableErr.message}`);
@@ -301,9 +317,9 @@ class FactorRepository {
       }
 
       // Delete factor
-      const result = this.db.prepare('DELETE FROM user_factors WHERE id = ?').run(id);
+      const result = await database.query('DELETE FROM user_factors WHERE id = $1', [id]);
 
-      if (result.changes === 0) {
+      if (result.rowCount === 0) {
         return { success: false, error: 'Factor could not be deleted' };
       }
 
@@ -316,7 +332,7 @@ class FactorRepository {
   /**
    * Update factor statistics after IC analysis
    */
-  updateFactorStats(id, stats) {
+  async updateFactorStats(id, stats) {
     const {
       icStats = null,
       icTstat = null,
@@ -327,18 +343,19 @@ class FactorRepository {
     } = stats;
 
     try {
-      this.db.prepare(`
+      const database = await getDatabaseAsync();
+      await database.query(`
         UPDATE user_factors SET
-          ic_stats = ?,
-          ic_tstat = ?,
-          ic_ir = ?,
-          wfe = ?,
-          uniqueness_score = ?,
-          turnover_monthly = ?,
-          last_analyzed_at = datetime('now'),
-          updated_at = datetime('now')
-        WHERE id = ?
-      `).run(
+          ic_stats = $1,
+          ic_tstat = $2,
+          ic_ir = $3,
+          wfe = $4,
+          uniqueness_score = $5,
+          turnover_monthly = $6,
+          last_analyzed_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $7
+      `, [
         icStats ? JSON.stringify(icStats) : null,
         icTstat,
         icIr,
@@ -346,7 +363,7 @@ class FactorRepository {
         uniquenessScore,
         turnoverMonthly,
         id
-      );
+      ]);
 
       return { success: true };
     } catch (err) {
@@ -357,11 +374,12 @@ class FactorRepository {
   /**
    * Toggle factor active status
    */
-  toggleActive(id, active) {
+  async toggleActive(id, active) {
     try {
-      this.db.prepare(`
-        UPDATE user_factors SET is_active = ?, updated_at = datetime('now') WHERE id = ?
-      `).run(active ? 1 : 0, id);
+      const database = await getDatabaseAsync();
+      await database.query(`
+        UPDATE user_factors SET is_active = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2
+      `, [active, id]);
 
       return { success: true };
     } catch (err) {
@@ -372,7 +390,7 @@ class FactorRepository {
   /**
    * Store IC history for a factor
    */
-  storeICHistory(factorId, data) {
+  async storeICHistory(factorId, data) {
     const {
       calculationDate,
       ic1d, ic5d, ic21d, ic63d, ic126d, ic252d,
@@ -381,19 +399,31 @@ class FactorRepository {
     } = data;
 
     try {
-      this.db.prepare(`
-        INSERT OR REPLACE INTO factor_ic_history (
+      const database = await getDatabaseAsync();
+      await database.query(`
+        INSERT INTO factor_ic_history (
           factor_id, calculation_date,
           ic_1d, ic_5d, ic_21d, ic_63d, ic_126d, ic_252d,
           tstat_21d, pvalue_21d,
           universe_size, universe_type, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-      `).run(
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP)
+        ON CONFLICT (factor_id, calculation_date) DO UPDATE SET
+          ic_1d = EXCLUDED.ic_1d,
+          ic_5d = EXCLUDED.ic_5d,
+          ic_21d = EXCLUDED.ic_21d,
+          ic_63d = EXCLUDED.ic_63d,
+          ic_126d = EXCLUDED.ic_126d,
+          ic_252d = EXCLUDED.ic_252d,
+          tstat_21d = EXCLUDED.tstat_21d,
+          pvalue_21d = EXCLUDED.pvalue_21d,
+          universe_size = EXCLUDED.universe_size,
+          universe_type = EXCLUDED.universe_type
+      `, [
         factorId, calculationDate,
         ic1d, ic5d, ic21d, ic63d, ic126d, ic252d,
         tstat21d, pvalue21d,
         universeSize, universeType
-      );
+      ]);
 
       return { success: true };
     } catch (err) {
@@ -404,30 +434,34 @@ class FactorRepository {
   /**
    * Get IC history for a factor
    */
-  getICHistory(factorId, options = {}) {
+  async getICHistory(factorId, options = {}) {
     const { limit = 100, universeType = null } = options;
 
     let query = `
       SELECT * FROM factor_ic_history
-      WHERE factor_id = ?
+      WHERE factor_id = $1
     `;
     const params = [factorId];
+    let paramIndex = 2;
 
     if (universeType) {
-      query += ' AND universe_type = ?';
+      query += ` AND universe_type = $${paramIndex}`;
       params.push(universeType);
+      paramIndex++;
     }
 
-    query += ' ORDER BY calculation_date DESC LIMIT ?';
+    query += ` ORDER BY calculation_date DESC LIMIT $${paramIndex}`;
     params.push(limit);
 
-    return this.db.prepare(query).all(...params);
+    const database = await getDatabaseAsync();
+    const result = await database.query(query, params);
+    return result.rows;
   }
 
   /**
    * Store factor correlations
    */
-  storeCorrelations(factorId, data) {
+  async storeCorrelations(factorId, data) {
     const {
       calculationDate,
       corrValue, corrQuality, corrMomentum, corrGrowth, corrSize, corrVolatility,
@@ -438,17 +472,29 @@ class FactorRepository {
     } = data;
 
     try {
-      this.db.prepare(`
-        INSERT OR REPLACE INTO factor_correlations (
+      const database = await getDatabaseAsync();
+      await database.query(`
+        INSERT INTO factor_correlations (
           factor_id, calculation_date,
           corr_value, corr_quality, corr_momentum, corr_growth, corr_size, corr_volatility,
           user_factor_correlations, vif, uniqueness_score, most_similar_factor, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-      `).run(
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP)
+        ON CONFLICT (factor_id, calculation_date) DO UPDATE SET
+          corr_value = EXCLUDED.corr_value,
+          corr_quality = EXCLUDED.corr_quality,
+          corr_momentum = EXCLUDED.corr_momentum,
+          corr_growth = EXCLUDED.corr_growth,
+          corr_size = EXCLUDED.corr_size,
+          corr_volatility = EXCLUDED.corr_volatility,
+          user_factor_correlations = EXCLUDED.user_factor_correlations,
+          vif = EXCLUDED.vif,
+          uniqueness_score = EXCLUDED.uniqueness_score,
+          most_similar_factor = EXCLUDED.most_similar_factor
+      `, [
         factorId, calculationDate,
         corrValue, corrQuality, corrMomentum, corrGrowth, corrSize, corrVolatility,
         JSON.stringify(userFactorCorrelations), vif, uniquenessScore, mostSimilarFactor
-      );
+      ]);
 
       return { success: true };
     } catch (err) {
@@ -459,7 +505,7 @@ class FactorRepository {
   /**
    * Store backtest run
    */
-  storeBacktestRun(data) {
+  async storeBacktestRun(data) {
     const {
       factorId,
       userId,
@@ -470,15 +516,16 @@ class FactorRepository {
     const id = crypto.randomUUID();
 
     try {
-      this.db.prepare(`
+      const database = await getDatabaseAsync();
+      await database.query(`
         INSERT INTO factor_backtest_runs (
           id, factor_id, user_id, config,
           total_return, annualized_return, sharpe_ratio, max_drawdown,
           alpha, beta, is_ic, oos_ic, wfe,
           overfitting_flags, deflated_sharpe,
           equity_curve, period_returns, run_at, run_duration_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
-      `).run(
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, CURRENT_TIMESTAMP, $18)
+      `, [
         id,
         factorId,
         userId,
@@ -497,7 +544,7 @@ class FactorRepository {
         results.equityCurve ? JSON.stringify(results.equityCurve) : null,
         results.periodReturns ? JSON.stringify(results.periodReturns) : null,
         results.runDurationMs
-      );
+      ]);
 
       return { success: true, id };
     } catch (err) {
@@ -508,15 +555,16 @@ class FactorRepository {
   /**
    * Get backtest runs for a factor
    */
-  getBacktestRuns(factorId, limit = 10) {
-    const runs = this.db.prepare(`
+  async getBacktestRuns(factorId, limit = 10) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT * FROM factor_backtest_runs
-      WHERE factor_id = ?
+      WHERE factor_id = $1
       ORDER BY run_at DESC
-      LIMIT ?
-    `).all(factorId, limit);
+      LIMIT $2
+    `, [factorId, limit]);
 
-    return runs.map(r => ({
+    return result.rows.map(r => ({
       ...r,
       config: JSON.parse(r.config || '{}'),
       overfittingFlags: JSON.parse(r.overfitting_flags || '[]'),
@@ -535,7 +583,7 @@ class FactorRepository {
       name: row.name,
       formula: row.formula,
       description: row.description,
-      higherIsBetter: row.higher_is_better === 1,
+      higherIsBetter: row.higher_is_better === true,
       requiredMetrics: JSON.parse(row.required_metrics || '[]'),
       transformations: JSON.parse(row.transformations || '{}'),
       icStats: JSON.parse(row.ic_stats || 'null'),
@@ -544,8 +592,8 @@ class FactorRepository {
       wfe: row.wfe,
       uniquenessScore: row.uniqueness_score,
       turnoverMonthly: row.turnover_monthly,
-      isActive: row.is_active === 1,
-      isValid: row.is_valid === 1,
+      isActive: row.is_active === true,
+      isValid: row.is_valid === true,
       validationError: row.validation_error,
       notes: row.notes,
       createdAt: row.created_at,
