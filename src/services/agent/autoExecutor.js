@@ -8,7 +8,6 @@ class AutoExecutor {
   constructor(db) {
     this.db = db;
     this.portfolioService = null; // Lazy loaded to avoid circular dependency
-    this._prepareStatements();
   }
 
   /**
@@ -21,218 +20,87 @@ class AutoExecutor {
     return this.portfolioService;
   }
 
-  _prepareStatements() {
-    this.stmts = {
-      // Get portfolio execution settings
-      getPortfolioSettings: this.db.prepare(`
-        SELECT
-          id,
-          name,
-          auto_execute,
-          execution_threshold,
-          max_auto_position_pct,
-          require_confirmation,
-          auto_execute_actions
-        FROM portfolios
-        WHERE id = ?
-      `),
-
-      // Get portfolio summary for position sizing
-      getPortfolioSummary: this.db.prepare(`
-        SELECT
-          current_value as total_value,
-          current_cash as total_cash,
-          (SELECT COUNT(*) FROM portfolio_positions WHERE portfolio_id = portfolios.id AND shares > 0) as position_count
-        FROM portfolios
-        WHERE id = ?
-      `),
-
-      // Check existing position
-      getExistingPosition: this.db.prepare(`
-        SELECT
-          id,
-          shares,
-          average_cost,
-          current_value
-        FROM portfolio_positions
-        WHERE portfolio_id = ?
-          AND company_id = ?
-          AND shares > 0
-      `),
-
-      // Get current price
-      getCurrentPrice: this.db.prepare(`
-        SELECT close as price
-        FROM daily_prices
-        WHERE company_id = ?
-        ORDER BY date DESC
-        LIMIT 1
-      `),
-
-      // Queue pending execution
-      queueExecution: this.db.prepare(`
-        INSERT INTO pending_executions (
-          portfolio_id,
-          recommendation_outcome_id,
-          symbol,
-          company_id,
-          action,
-          shares,
-          estimated_price,
-          estimated_value,
-          signal_score,
-          confidence,
-          regime,
-          position_pct,
-          status,
-          expires_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now', '+24 hours'))
-      `),
-
-      // Get pending executions
-      getPendingExecutions: this.db.prepare(`
-        SELECT
-          pe.*,
-          c.name as company_name,
-          p.name as portfolio_name
-        FROM pending_executions pe
-        LEFT JOIN companies c ON pe.company_id = c.id
-        LEFT JOIN portfolios p ON pe.portfolio_id = p.id
-        WHERE pe.portfolio_id = ?
-          AND pe.status = 'pending'
-        ORDER BY pe.created_at DESC
-      `),
-
-      // Get all pending executions
-      getAllPendingExecutions: this.db.prepare(`
-        SELECT
-          pe.*,
-          c.name as company_name,
-          p.name as portfolio_name
-        FROM pending_executions pe
-        LEFT JOIN companies c ON pe.company_id = c.id
-        LEFT JOIN portfolios p ON pe.portfolio_id = p.id
-        WHERE pe.status = 'pending'
-        ORDER BY pe.created_at DESC
-      `),
-
-      // Update execution status
-      updateExecutionStatus: this.db.prepare(`
-        UPDATE pending_executions
-        SET status = ?,
-            decided_at = datetime('now'),
-            decided_by = ?
-        WHERE id = ?
-      `),
-
-      // Reject execution
-      rejectExecution: this.db.prepare(`
-        UPDATE pending_executions
-        SET status = 'rejected',
-            decided_at = datetime('now'),
-            decided_by = ?,
-            rejection_reason = ?
-        WHERE id = ?
-      `),
-
-      // Mark as executed
-      markExecuted: this.db.prepare(`
-        UPDATE pending_executions
-        SET status = 'executed',
-            executed_at = datetime('now'),
-            executed_price = ?,
-            executed_shares = ?
-        WHERE id = ?
-      `),
-
-      // Expire old pending executions
-      expireOldExecutions: this.db.prepare(`
-        UPDATE pending_executions
-        SET status = 'expired'
-        WHERE status = 'pending'
-          AND expires_at < datetime('now')
-      `),
-
-      // Get execution by ID
-      getExecution: this.db.prepare(`
-        SELECT
-          pe.*,
-          c.name as company_name,
-          c.symbol,
-          p.name as portfolio_name
-        FROM pending_executions pe
-        LEFT JOIN companies c ON pe.company_id = c.id
-        LEFT JOIN portfolios p ON pe.portfolio_id = p.id
-        WHERE pe.id = ?
-      `),
-
-      // Update portfolio execution settings
-      updatePortfolioSettings: this.db.prepare(`
-        UPDATE portfolios
-        SET auto_execute = ?,
-            execution_threshold = ?,
-            max_auto_position_pct = ?,
-            require_confirmation = ?,
-            auto_execute_actions = ?
-        WHERE id = ?
-      `),
-
-      // Get company by symbol
-      getCompany: this.db.prepare(`
-        SELECT id, symbol, name FROM companies WHERE LOWER(symbol) = LOWER(?)
-      `),
-    };
-  }
-
   /**
    * Process a recommendation for auto-execution
    * @param {Object} recommendation - The trading recommendation
    * @param {number} portfolioId - Portfolio ID
    * @returns {Object} Result of processing
    */
-  processRecommendation(recommendation, portfolioId) {
+  async processRecommendation(recommendation, portfolioId) {
     // Get portfolio settings
-    const settings = this.stmts.getPortfolioSettings.get(portfolioId);
-    if (!settings) {
+    const settings = await this.db.query(
+      `SELECT
+        id,
+        name,
+        auto_execute,
+        execution_threshold,
+        max_auto_position_pct,
+        require_confirmation,
+        auto_execute_actions
+      FROM portfolios
+      WHERE id = $1`,
+      [portfolioId]
+    );
+
+    if (!settings.rows[0]) {
       return { processed: false, error: 'Portfolio not found' };
     }
+    const settingsRow = settings.rows[0];
 
     // Check if auto-execute is enabled
-    if (!settings.auto_execute) {
+    if (!settingsRow.auto_execute) {
       return { processed: false, reason: 'Auto-execute disabled for this portfolio' };
     }
 
     // Check if action is allowed
-    const allowedActions = (settings.auto_execute_actions || 'buy,sell').toLowerCase().split(',');
+    const allowedActions = (settingsRow.auto_execute_actions || 'buy,sell').toLowerCase().split(',');
     const action = recommendation.action.toLowerCase().replace('strong_', '');
     if (!allowedActions.includes(action)) {
       return { processed: false, reason: `Action '${action}' not allowed for auto-execute` };
     }
 
     // Check score threshold
-    if (Math.abs(recommendation.score) < settings.execution_threshold) {
+    if (Math.abs(recommendation.score) < settingsRow.execution_threshold) {
       return {
         processed: false,
-        reason: `Score ${recommendation.score.toFixed(3)} below threshold ${settings.execution_threshold}`,
+        reason: `Score ${recommendation.score.toFixed(3)} below threshold ${settingsRow.execution_threshold}`,
       };
     }
 
     // Get portfolio summary
-    const portfolio = this.stmts.getPortfolioSummary.get(portfolioId);
-    if (!portfolio) {
+    const portfolioResult = await this.db.query(
+      `SELECT
+        current_value as total_value,
+        current_cash as total_cash,
+        (SELECT COUNT(*) FROM portfolio_positions WHERE portfolio_id = portfolios.id AND shares > 0) as position_count
+      FROM portfolios
+      WHERE id = $1`,
+      [portfolioId]
+    );
+
+    if (!portfolioResult.rows[0]) {
       return { processed: false, error: 'Could not get portfolio summary' };
     }
+    const portfolio = portfolioResult.rows[0];
 
     // Calculate position size
-    const totalValue = portfolio.total_value + portfolio.total_cash;
-    const maxPositionValue = totalValue * settings.max_auto_position_pct;
+    const totalValue = parseFloat(portfolio.total_value) + parseFloat(portfolio.total_cash);
+    const maxPositionValue = totalValue * settingsRow.max_auto_position_pct;
 
     // Get current price
-    const priceData = this.stmts.getCurrentPrice.get(recommendation.companyId);
-    if (!priceData) {
+    const priceResult = await this.db.query(
+      `SELECT close as price
+      FROM daily_prices
+      WHERE company_id = $1
+      ORDER BY date DESC
+      LIMIT 1`,
+      [recommendation.companyId]
+    );
+
+    if (!priceResult.rows[0]) {
       return { processed: false, error: 'No price data available' };
     }
-    const currentPrice = priceData.price;
+    const currentPrice = parseFloat(priceResult.rows[0].price);
 
     // Calculate shares
     let shares;
@@ -244,16 +112,28 @@ class AutoExecutor {
       positionValue = Math.min(
         recommendation.suggestedValue || maxPositionValue,
         maxPositionValue,
-        portfolio.total_cash // Can't buy more than available cash
+        parseFloat(portfolio.total_cash) // Can't buy more than available cash
       );
       shares = Math.floor(positionValue / currentPrice);
     } else {
       // For sells, get existing position
-      const position = this.stmts.getExistingPosition.get(portfolioId, recommendation.companyId);
-      if (!position || position.shares <= 0) {
+      const positionResult = await this.db.query(
+        `SELECT
+          id,
+          shares,
+          average_cost,
+          current_value
+        FROM portfolio_positions
+        WHERE portfolio_id = $1
+          AND company_id = $2
+          AND shares > 0`,
+        [portfolioId, recommendation.companyId]
+      );
+
+      if (!positionResult.rows[0] || positionResult.rows[0].shares <= 0) {
         return { processed: false, reason: 'No existing position to sell' };
       }
-      shares = position.shares;
+      shares = parseFloat(positionResult.rows[0].shares);
       positionValue = shares * currentPrice;
     }
 
@@ -262,14 +142,14 @@ class AutoExecutor {
     }
 
     // Risk check
-    const riskCheck = this._performRiskCheck(recommendation, portfolio, settings, shares, currentPrice);
+    const riskCheck = this._performRiskCheck(recommendation, portfolio, settingsRow, shares, currentPrice);
     if (!riskCheck.approved) {
       return { processed: false, reason: riskCheck.reason, riskCheck };
     }
 
     // Queue or execute based on confirmation setting
-    if (settings.require_confirmation) {
-      const queuedId = this._queueForApproval(recommendation, portfolioId, shares, currentPrice, positionValue);
+    if (settingsRow.require_confirmation) {
+      const queuedId = await this._queueForApproval(recommendation, portfolioId, shares, currentPrice, positionValue);
       return {
         processed: true,
         queued: true,
@@ -280,7 +160,7 @@ class AutoExecutor {
       };
     } else {
       // Execute immediately
-      const result = this._executeImmediately(recommendation, portfolioId, shares, currentPrice);
+      const result = await this._executeImmediately(recommendation, portfolioId, shares, currentPrice);
       return {
         processed: true,
         executed: true,
@@ -294,7 +174,7 @@ class AutoExecutor {
    */
   _performRiskCheck(recommendation, portfolio, settings, shares, price) {
     const tradeValue = shares * price;
-    const totalValue = portfolio.total_value + portfolio.total_cash;
+    const totalValue = parseFloat(portfolio.total_value) + parseFloat(portfolio.total_cash);
 
     // Check position concentration
     const positionPct = tradeValue / totalValue;
@@ -307,10 +187,10 @@ class AutoExecutor {
 
     // Check if buying with enough cash
     const isBuy = recommendation.action.toLowerCase().includes('buy');
-    if (isBuy && tradeValue > portfolio.total_cash) {
+    if (isBuy && tradeValue > parseFloat(portfolio.total_cash)) {
       return {
         approved: false,
-        reason: `Insufficient cash: need $${tradeValue.toFixed(2)}, have $${portfolio.total_cash.toFixed(2)}`,
+        reason: `Insufficient cash: need $${tradeValue.toFixed(2)}, have $${parseFloat(portfolio.total_cash).toFixed(2)}`,
       };
     }
 
@@ -328,37 +208,72 @@ class AutoExecutor {
   /**
    * Queue trade for user approval
    */
-  _queueForApproval(recommendation, portfolioId, shares, price, value) {
-    const result = this.stmts.queueExecution.run(
-      portfolioId,
-      recommendation.trackedOutcomeId || null,
-      recommendation.symbol,
-      recommendation.companyId,
-      recommendation.action.toUpperCase(),
-      shares,
-      price,
-      value,
-      recommendation.score,
-      recommendation.confidence,
-      recommendation.regime?.regime || 'UNKNOWN',
-      value / ((this.stmts.getPortfolioSummary.get(portfolioId)?.total_value || 1) +
-               (this.stmts.getPortfolioSummary.get(portfolioId)?.total_cash || 0))
+  async _queueForApproval(recommendation, portfolioId, shares, price, value) {
+    const portfolioResult = await this.db.query(
+      `SELECT current_value as total_value, current_cash as total_cash
+      FROM portfolios
+      WHERE id = $1`,
+      [portfolioId]
     );
 
-    return result.lastInsertRowid;
+    const portfolioData = portfolioResult.rows[0] || { total_value: 1, total_cash: 0 };
+    const positionPct = value / (parseFloat(portfolioData.total_value) + parseFloat(portfolioData.total_cash));
+
+    const result = await this.db.query(
+      `INSERT INTO pending_executions (
+        portfolio_id,
+        recommendation_outcome_id,
+        symbol,
+        company_id,
+        action,
+        shares,
+        estimated_price,
+        estimated_value,
+        signal_score,
+        confidence,
+        regime,
+        position_pct,
+        status,
+        expires_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending', CURRENT_TIMESTAMP + INTERVAL '24 hours')
+      RETURNING id`,
+      [
+        portfolioId,
+        recommendation.trackedOutcomeId || null,
+        recommendation.symbol,
+        recommendation.companyId,
+        recommendation.action.toUpperCase(),
+        shares,
+        price,
+        value,
+        recommendation.score,
+        recommendation.confidence,
+        recommendation.regime?.regime || 'UNKNOWN',
+        positionPct
+      ]
+    );
+
+    return result.rows[0].id;
   }
 
   /**
    * Execute trade immediately (paper trading)
    * Adds position to portfolio via trade
    */
-  _executeImmediately(recommendation, portfolioId, shares, price) {
+  async _executeImmediately(recommendation, portfolioId, shares, price) {
     // This would integrate with portfolio service to execute
     // For now, we queue with auto-approval
-    const queuedId = this._queueForApproval(recommendation, portfolioId, shares, price, shares * price);
+    const queuedId = await this._queueForApproval(recommendation, portfolioId, shares, price, shares * price);
 
     // Auto-approve
-    this.stmts.updateExecutionStatus.run('approved', 'auto', queuedId);
+    await this.db.query(
+      `UPDATE pending_executions
+      SET status = $1,
+          decided_at = CURRENT_TIMESTAMP,
+          decided_by = $2
+      WHERE id = $3`,
+      ['approved', 'auto', queuedId]
+    );
 
     return {
       pendingExecutionId: queuedId,
@@ -372,17 +287,37 @@ class AutoExecutor {
   /**
    * Approve a pending execution
    */
-  approveExecution(executionId, approvedBy = 'user') {
-    const execution = this.stmts.getExecution.get(executionId);
-    if (!execution) {
+  async approveExecution(executionId, approvedBy = 'user') {
+    const result = await this.db.query(
+      `SELECT
+        pe.*,
+        c.name as company_name,
+        c.symbol,
+        p.name as portfolio_name
+      FROM pending_executions pe
+      LEFT JOIN companies c ON pe.company_id = c.id
+      LEFT JOIN portfolios p ON pe.portfolio_id = p.id
+      WHERE pe.id = $1`,
+      [executionId]
+    );
+
+    if (!result.rows[0]) {
       return { success: false, error: 'Execution not found' };
     }
+    const execution = result.rows[0];
 
     if (execution.status !== 'pending') {
       return { success: false, error: `Execution already ${execution.status}` };
     }
 
-    this.stmts.updateExecutionStatus.run('approved', approvedBy, executionId);
+    await this.db.query(
+      `UPDATE pending_executions
+      SET status = $1,
+          decided_at = CURRENT_TIMESTAMP,
+          decided_by = $2
+      WHERE id = $3`,
+      ['approved', approvedBy, executionId]
+    );
 
     return {
       success: true,
@@ -400,17 +335,38 @@ class AutoExecutor {
   /**
    * Reject a pending execution
    */
-  rejectExecution(executionId, reason = null, rejectedBy = 'user') {
-    const execution = this.stmts.getExecution.get(executionId);
-    if (!execution) {
+  async rejectExecution(executionId, reason = null, rejectedBy = 'user') {
+    const result = await this.db.query(
+      `SELECT
+        pe.*,
+        c.name as company_name,
+        c.symbol,
+        p.name as portfolio_name
+      FROM pending_executions pe
+      LEFT JOIN companies c ON pe.company_id = c.id
+      LEFT JOIN portfolios p ON pe.portfolio_id = p.id
+      WHERE pe.id = $1`,
+      [executionId]
+    );
+
+    if (!result.rows[0]) {
       return { success: false, error: 'Execution not found' };
     }
+    const execution = result.rows[0];
 
     if (execution.status !== 'pending') {
       return { success: false, error: `Execution already ${execution.status}` };
     }
 
-    this.stmts.rejectExecution.run(rejectedBy, reason, executionId);
+    await this.db.query(
+      `UPDATE pending_executions
+      SET status = 'rejected',
+          decided_at = CURRENT_TIMESTAMP,
+          decided_by = $1,
+          rejection_reason = $2
+      WHERE id = $3`,
+      [rejectedBy, reason, executionId]
+    );
 
     return {
       success: true,
@@ -428,18 +384,31 @@ class AutoExecutor {
    * Execute an approved trade
    * Integrates with portfolio service to add/remove positions
    */
-  executeApprovedTrade(executionId, actualPrice = null, actualShares = null) {
-    const execution = this.stmts.getExecution.get(executionId);
-    if (!execution) {
+  async executeApprovedTrade(executionId, actualPrice = null, actualShares = null) {
+    const result = await this.db.query(
+      `SELECT
+        pe.*,
+        c.name as company_name,
+        c.symbol,
+        p.name as portfolio_name
+      FROM pending_executions pe
+      LEFT JOIN companies c ON pe.company_id = c.id
+      LEFT JOIN portfolios p ON pe.portfolio_id = p.id
+      WHERE pe.id = $1`,
+      [executionId]
+    );
+
+    if (!result.rows[0]) {
       return { success: false, error: 'Execution not found' };
     }
+    const execution = result.rows[0];
 
     if (execution.status !== 'approved') {
       return { success: false, error: `Execution must be approved first (current: ${execution.status})` };
     }
 
-    const price = actualPrice || execution.estimated_price;
-    const shares = actualShares || execution.shares;
+    const price = actualPrice || parseFloat(execution.estimated_price);
+    const shares = actualShares || parseFloat(execution.shares);
     const portfolioService = this._getPortfolioService();
 
     try {
@@ -449,7 +418,7 @@ class AutoExecutor {
 
       if (isBuy) {
         // Execute buy through portfolio service
-        tradeResult = portfolioService.executeBuy(execution.portfolio_id, {
+        tradeResult = await portfolioService.executeBuy(execution.portfolio_id, {
           companyId: execution.company_id,
           shares: shares,
           pricePerShare: price,
@@ -458,7 +427,7 @@ class AutoExecutor {
         });
       } else {
         // Execute sell through portfolio service
-        tradeResult = portfolioService.executeSell(execution.portfolio_id, {
+        tradeResult = await portfolioService.executeSell(execution.portfolio_id, {
           companyId: execution.company_id,
           shares: shares,
           pricePerShare: price,
@@ -468,11 +437,19 @@ class AutoExecutor {
       }
 
       // Mark as executed in pending_executions table
-      this.stmts.markExecuted.run(price, shares, executionId);
+      await this.db.query(
+        `UPDATE pending_executions
+        SET status = 'executed',
+            executed_at = CURRENT_TIMESTAMP,
+            executed_price = $1,
+            executed_shares = $2
+        WHERE id = $3`,
+        [price, shares, executionId]
+      );
 
       // Link the recommendation outcome if available
       if (execution.recommendation_outcome_id) {
-        this._updateRecommendationOutcome(execution.recommendation_outcome_id, {
+        await this._updateRecommendationOutcome(execution.recommendation_outcome_id, {
           executed: true,
           executedAt: new Date().toISOString(),
           executedPrice: price,
@@ -501,12 +478,13 @@ class AutoExecutor {
       };
     } catch (error) {
       // Mark as failed
-      this.db.prepare(`
-        UPDATE pending_executions
+      await this.db.query(
+        `UPDATE pending_executions
         SET status = 'failed',
-            notes = ?
-        WHERE id = ?
-      `).run(`Execution failed: ${error.message}`, executionId);
+            notes = $1
+        WHERE id = $2`,
+        [`Execution failed: ${error.message}`, executionId]
+      );
 
       return {
         success: false,
@@ -519,22 +497,23 @@ class AutoExecutor {
   /**
    * Update recommendation outcome with execution details
    */
-  _updateRecommendationOutcome(outcomeId, details) {
+  async _updateRecommendationOutcome(outcomeId, details) {
     try {
-      this.db.prepare(`
-        UPDATE recommendation_outcomes
-        SET executed = 1,
-            executed_at = ?,
-            executed_price = ?,
-            executed_shares = ?,
-            transaction_id = ?
-        WHERE id = ?
-      `).run(
-        details.executedAt,
-        details.executedPrice,
-        details.executedShares,
-        details.transactionId,
-        outcomeId
+      await this.db.query(
+        `UPDATE recommendation_outcomes
+        SET executed = true,
+            executed_at = $1,
+            executed_price = $2,
+            executed_shares = $3,
+            transaction_id = $4
+        WHERE id = $5`,
+        [
+          details.executedAt,
+          details.executedPrice,
+          details.executedShares,
+          details.transactionId,
+          outcomeId
+        ]
       );
     } catch (error) {
       // Non-critical - log but don't fail the trade
@@ -545,21 +524,59 @@ class AutoExecutor {
   /**
    * Get pending executions for a portfolio
    */
-  getPendingExecutions(portfolioId = null) {
+  async getPendingExecutions(portfolioId = null) {
     if (portfolioId) {
-      return this.stmts.getPendingExecutions.all(portfolioId);
+      const result = await this.db.query(
+        `SELECT
+          pe.*,
+          c.name as company_name,
+          p.name as portfolio_name
+        FROM pending_executions pe
+        LEFT JOIN companies c ON pe.company_id = c.id
+        LEFT JOIN portfolios p ON pe.portfolio_id = p.id
+        WHERE pe.portfolio_id = $1
+          AND pe.status = 'pending'
+        ORDER BY pe.created_at DESC`,
+        [portfolioId]
+      );
+      return result.rows;
     }
-    return this.stmts.getAllPendingExecutions.all();
+    const result = await this.db.query(
+      `SELECT
+        pe.*,
+        c.name as company_name,
+        p.name as portfolio_name
+      FROM pending_executions pe
+      LEFT JOIN companies c ON pe.company_id = c.id
+      LEFT JOIN portfolios p ON pe.portfolio_id = p.id
+      WHERE pe.status = 'pending'
+      ORDER BY pe.created_at DESC`
+    );
+    return result.rows;
   }
 
   /**
    * Get execution settings for a portfolio
    */
-  getPortfolioSettings(portfolioId) {
-    const settings = this.stmts.getPortfolioSettings.get(portfolioId);
-    if (!settings) {
+  async getPortfolioSettings(portfolioId) {
+    const result = await this.db.query(
+      `SELECT
+        id,
+        name,
+        auto_execute,
+        execution_threshold,
+        max_auto_position_pct,
+        require_confirmation,
+        auto_execute_actions
+      FROM portfolios
+      WHERE id = $1`,
+      [portfolioId]
+    );
+
+    if (!result.rows[0]) {
       return null;
     }
+    const settings = result.rows[0];
 
     return {
       portfolioId: settings.id,
@@ -575,7 +592,7 @@ class AutoExecutor {
   /**
    * Update execution settings for a portfolio
    */
-  updatePortfolioSettings(portfolioId, settings) {
+  async updatePortfolioSettings(portfolioId, settings) {
     const {
       autoExecute,
       executionThreshold,
@@ -584,13 +601,22 @@ class AutoExecutor {
       autoExecuteActions,
     } = settings;
 
-    this.stmts.updatePortfolioSettings.run(
-      autoExecute ? 1 : 0,
-      executionThreshold || 0.3,
-      maxAutoPositionPct || 0.05,
-      requireConfirmation !== false ? 1 : 0,
-      Array.isArray(autoExecuteActions) ? autoExecuteActions.join(',') : (autoExecuteActions || 'buy,sell'),
-      portfolioId
+    await this.db.query(
+      `UPDATE portfolios
+      SET auto_execute = $1,
+          execution_threshold = $2,
+          max_auto_position_pct = $3,
+          require_confirmation = $4,
+          auto_execute_actions = $5
+      WHERE id = $6`,
+      [
+        autoExecute ? true : false,
+        executionThreshold || 0.3,
+        maxAutoPositionPct || 0.05,
+        requireConfirmation !== false ? true : false,
+        Array.isArray(autoExecuteActions) ? autoExecuteActions.join(',') : (autoExecuteActions || 'buy,sell'),
+        portfolioId
+      ]
     );
 
     return this.getPortfolioSettings(portfolioId);
@@ -599,12 +625,12 @@ class AutoExecutor {
   /**
    * Approve all pending executions for a portfolio
    */
-  approveAllPending(portfolioId, approvedBy = 'user') {
-    const pending = this.getPendingExecutions(portfolioId);
+  async approveAllPending(portfolioId, approvedBy = 'user') {
+    const pending = await this.getPendingExecutions(portfolioId);
     const results = [];
 
     for (const exec of pending) {
-      const result = this.approveExecution(exec.id, approvedBy);
+      const result = await this.approveExecution(exec.id, approvedBy);
       results.push({
         id: exec.id,
         symbol: exec.symbol,
@@ -622,12 +648,12 @@ class AutoExecutor {
   /**
    * Reject all pending executions for a portfolio
    */
-  rejectAllPending(portfolioId, reason = 'Batch rejection', rejectedBy = 'user') {
-    const pending = this.getPendingExecutions(portfolioId);
+  async rejectAllPending(portfolioId, reason = 'Batch rejection', rejectedBy = 'user') {
+    const pending = await this.getPendingExecutions(portfolioId);
     const results = [];
 
     for (const exec of pending) {
-      const result = this.rejectExecution(exec.id, reason, rejectedBy);
+      const result = await this.rejectExecution(exec.id, reason, rejectedBy);
       results.push({
         id: exec.id,
         symbol: exec.symbol,
@@ -645,46 +671,53 @@ class AutoExecutor {
   /**
    * Expire old pending executions
    */
-  expireOldExecutions() {
-    const result = this.stmts.expireOldExecutions.run();
-    return { expired: result.changes };
+  async expireOldExecutions() {
+    const result = await this.db.query(
+      `UPDATE pending_executions
+      SET status = 'expired'
+      WHERE status = 'pending'
+        AND expires_at < CURRENT_TIMESTAMP`
+    );
+    return { expired: result.rowCount };
   }
 
   /**
    * Get execution history for a portfolio
    */
-  getExecutionHistory(portfolioId, limit = 50) {
-    const stmt = this.db.prepare(`
-      SELECT
+  async getExecutionHistory(portfolioId, limit = 50) {
+    const result = await this.db.query(
+      `SELECT
         pe.*,
         c.name as company_name,
         c.symbol
       FROM pending_executions pe
       LEFT JOIN companies c ON pe.company_id = c.id
-      WHERE pe.portfolio_id = ?
+      WHERE pe.portfolio_id = $1
         AND pe.status IN ('executed', 'rejected', 'expired')
       ORDER BY pe.decided_at DESC, pe.created_at DESC
-      LIMIT ?
-    `);
+      LIMIT $2`,
+      [portfolioId, limit]
+    );
 
-    return stmt.all(portfolioId, limit);
+    return result.rows;
   }
 
   /**
    * Get execution statistics for a portfolio
    */
-  getExecutionStats(portfolioId) {
-    const stmt = this.db.prepare(`
-      SELECT
+  async getExecutionStats(portfolioId) {
+    const result = await this.db.query(
+      `SELECT
         status,
         COUNT(*) as count,
         SUM(CASE WHEN status = 'executed' THEN executed_shares * executed_price ELSE 0 END) as total_value
       FROM pending_executions
-      WHERE portfolio_id = ?
-      GROUP BY status
-    `);
+      WHERE portfolio_id = $1
+      GROUP BY status`,
+      [portfolioId]
+    );
 
-    const rows = stmt.all(portfolioId);
+    const rows = result.rows;
     const stats = {
       pending: 0,
       approved: 0,
@@ -695,9 +728,9 @@ class AutoExecutor {
     };
 
     for (const row of rows) {
-      stats[row.status] = row.count;
+      stats[row.status] = parseInt(row.count);
       if (row.status === 'executed') {
-        stats.totalExecutedValue = row.total_value || 0;
+        stats.totalExecutedValue = parseFloat(row.total_value) || 0;
       }
     }
 
@@ -709,28 +742,29 @@ class AutoExecutor {
    * @param {number|null} portfolioId - Portfolio ID or null for all
    * @returns {Object} Execution results
    */
-  executeAllApproved(portfolioId = null) {
+  async executeAllApproved(portfolioId = null) {
     // Get approved executions
-    const stmt = portfolioId
-      ? this.db.prepare(`
-          SELECT id FROM pending_executions
-          WHERE portfolio_id = ? AND status = 'approved'
-          ORDER BY created_at ASC
-        `)
-      : this.db.prepare(`
-          SELECT id FROM pending_executions
+    const result = portfolioId
+      ? await this.db.query(
+          `SELECT id FROM pending_executions
+          WHERE portfolio_id = $1 AND status = 'approved'
+          ORDER BY created_at ASC`,
+          [portfolioId]
+        )
+      : await this.db.query(
+          `SELECT id FROM pending_executions
           WHERE status = 'approved'
-          ORDER BY created_at ASC
-        `);
+          ORDER BY created_at ASC`
+        );
 
-    const approved = portfolioId ? stmt.all(portfolioId) : stmt.all();
+    const approved = result.rows;
     const results = [];
 
     for (const exec of approved) {
-      const result = this.executeApprovedTrade(exec.id);
+      const execResult = await this.executeApprovedTrade(exec.id);
       results.push({
         executionId: exec.id,
-        ...result,
+        ...execResult,
       });
     }
 
@@ -750,7 +784,7 @@ class AutoExecutor {
    * @param {Object} recommendation - The trading recommendation
    * @returns {Object} Result of submission
    */
-  submitRecommendation(recommendation) {
+  async submitRecommendation(recommendation) {
     const {
       portfolioId,
       symbol,
@@ -778,33 +812,53 @@ class AutoExecutor {
     // Get company ID if not provided
     let resolvedCompanyId = companyId;
     if (!resolvedCompanyId) {
-      const company = this.stmts.getCompany.get(symbol);
-      if (!company) {
+      const companyResult = await this.db.query(
+        `SELECT id, symbol, name FROM companies WHERE LOWER(symbol) = LOWER($1)`,
+        [symbol]
+      );
+      if (!companyResult.rows[0]) {
         return { success: false, error: `Company not found: ${symbol}` };
       }
-      resolvedCompanyId = company.id;
+      resolvedCompanyId = companyResult.rows[0].id;
     }
 
     // Get current price if not provided
     let resolvedPrice = price;
     if (!resolvedPrice) {
-      const priceData = this.stmts.getCurrentPrice.get(resolvedCompanyId);
-      if (!priceData) {
+      const priceResult = await this.db.query(
+        `SELECT close as price
+        FROM daily_prices
+        WHERE company_id = $1
+        ORDER BY date DESC
+        LIMIT 1`,
+        [resolvedCompanyId]
+      );
+      if (!priceResult.rows[0]) {
         return { success: false, error: `No price data for ${symbol}` };
       }
-      resolvedPrice = priceData.price;
+      resolvedPrice = parseFloat(priceResult.rows[0].price);
     }
 
     // Calculate shares if not provided
     let resolvedShares = shares;
     if (!resolvedShares) {
-      const portfolio = this.stmts.getPortfolioSummary.get(portfolioId);
-      if (!portfolio) {
+      const portfolioResult = await this.db.query(
+        `SELECT current_value as total_value, current_cash as total_cash
+        FROM portfolios
+        WHERE id = $1`,
+        [portfolioId]
+      );
+      if (!portfolioResult.rows[0]) {
         return { success: false, error: 'Portfolio not found' };
       }
-      const settings = this.stmts.getPortfolioSettings.get(portfolioId);
-      const maxPositionPct = settings?.max_auto_position_pct || 0.05;
-      const totalValue = portfolio.total_value + portfolio.total_cash;
+      const portfolio = portfolioResult.rows[0];
+
+      const settingsResult = await this.db.query(
+        `SELECT max_auto_position_pct FROM portfolios WHERE id = $1`,
+        [portfolioId]
+      );
+      const maxPositionPct = settingsResult.rows[0]?.max_auto_position_pct || 0.05;
+      const totalValue = parseFloat(portfolio.total_value) + parseFloat(portfolio.total_cash);
       const maxValue = totalValue * maxPositionPct;
       resolvedShares = Math.floor(maxValue / resolvedPrice);
     }
@@ -829,7 +883,7 @@ class AutoExecutor {
     };
 
     // Process through the standard flow
-    const result = this.processRecommendation(fullRecommendation, portfolioId);
+    const result = await this.processRecommendation(fullRecommendation, portfolioId);
 
     return {
       success: result.processed,
@@ -849,26 +903,29 @@ class AutoExecutor {
   /**
    * Get approved executions waiting to be executed
    */
-  getApprovedExecutions(portfolioId = null) {
-    const stmt = portfolioId
-      ? this.db.prepare(`
-          SELECT pe.*, c.name as company_name, p.name as portfolio_name
-          FROM pending_executions pe
-          LEFT JOIN companies c ON pe.company_id = c.id
-          LEFT JOIN portfolios p ON pe.portfolio_id = p.id
-          WHERE pe.portfolio_id = ? AND pe.status = 'approved'
-          ORDER BY pe.created_at DESC
-        `)
-      : this.db.prepare(`
-          SELECT pe.*, c.name as company_name, p.name as portfolio_name
-          FROM pending_executions pe
-          LEFT JOIN companies c ON pe.company_id = c.id
-          LEFT JOIN portfolios p ON pe.portfolio_id = p.id
-          WHERE pe.status = 'approved'
-          ORDER BY pe.created_at DESC
-        `);
+  async getApprovedExecutions(portfolioId = null) {
+    if (portfolioId) {
+      const result = await this.db.query(
+        `SELECT pe.*, c.name as company_name, p.name as portfolio_name
+        FROM pending_executions pe
+        LEFT JOIN companies c ON pe.company_id = c.id
+        LEFT JOIN portfolios p ON pe.portfolio_id = p.id
+        WHERE pe.portfolio_id = $1 AND pe.status = 'approved'
+        ORDER BY pe.created_at DESC`,
+        [portfolioId]
+      );
+      return result.rows;
+    }
 
-    return portfolioId ? stmt.all(portfolioId) : stmt.all();
+    const result = await this.db.query(
+      `SELECT pe.*, c.name as company_name, p.name as portfolio_name
+      FROM pending_executions pe
+      LEFT JOIN companies c ON pe.company_id = c.id
+      LEFT JOIN portfolios p ON pe.portfolio_id = p.id
+      WHERE pe.status = 'approved'
+      ORDER BY pe.created_at DESC`
+    );
+    return result.rows;
   }
 }
 

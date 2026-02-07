@@ -40,9 +40,6 @@ class ConfigurableStrategyAgent {
     // Initialize congressional trading signals
     this.congressionalSignals = new CongressionalTradingSignals(db);
 
-    // Prepare statements
-    this._prepareStatements();
-
     console.log(`🤖 ConfigurableStrategyAgent initialized: "${this.config.name}"`);
     console.log(`   Mode: ${this.config.mode}`);
     console.log(`   Weights: ${JSON.stringify(this.config.weights)}`);
@@ -70,8 +67,15 @@ class ConfigurableStrategyAgent {
    * @param {number} companyId - Company ID
    * @returns {Object|null} Price data
    */
-  _getPrice(companyId) {
-    return this.stmtGetPriceAsOf.get(companyId, this._getEffectiveDate());
+  async _getPrice(companyId) {
+    const result = await this.db.query(`
+      SELECT close as price, date, volume
+      FROM daily_prices
+      WHERE company_id = $1 AND date <= $2
+      ORDER BY date DESC
+      LIMIT 1
+    `, [companyId, this._getEffectiveDate()]);
+    return result.rows[0] || null;
   }
 
   /**
@@ -80,73 +84,78 @@ class ConfigurableStrategyAgent {
    * @param {number} days - Number of days of history
    * @returns {Array} Price history
    */
-  _getPriceHistory(companyId, days) {
-    return this.stmtGetPriceHistoryAsOf.all(companyId, this._getEffectiveDate(), days);
+  async _getPriceHistory(companyId, days) {
+    const result = await this.db.query(`
+      SELECT close as price, date, volume
+      FROM daily_prices
+      WHERE company_id = $1 AND date <= $2
+      ORDER BY date DESC
+      LIMIT $3
+    `, [companyId, this._getEffectiveDate(), days]);
+    return result.rows;
   }
 
-  _prepareStatements() {
-    this.stmtGetCompany = this.db.prepare(`
+  async _getCompany(symbol) {
+    const result = await this.db.query(`
       SELECT id, symbol, name, sector, market_cap
-      FROM companies WHERE LOWER(symbol) = LOWER(?)
-    `);
+      FROM companies WHERE LOWER(symbol) = LOWER($1)
+    `, [symbol]);
+    return result.rows[0] || null;
+  }
 
-    this.stmtGetCompanyById = this.db.prepare(`
+  async _getCompanyById(companyId) {
+    const result = await this.db.query(`
       SELECT id, symbol, name, sector, market_cap
-      FROM companies WHERE id = ?
-    `);
+      FROM companies WHERE id = $1
+    `, [companyId]);
+    return result.rows[0] || null;
+  }
 
-    // Date-aware price query - requires date parameter for backtesting
-    this.stmtGetPriceAsOf = this.db.prepare(`
-      SELECT close as price, date, volume
-      FROM daily_prices
-      WHERE company_id = ? AND date <= ?
-      ORDER BY date DESC
-      LIMIT 1
-    `);
-
-    // Date-aware price history
-    this.stmtGetPriceHistoryAsOf = this.db.prepare(`
-      SELECT close as price, date, volume
-      FROM daily_prices
-      WHERE company_id = ? AND date <= ?
-      ORDER BY date DESC
-      LIMIT ?
-    `);
-
-    this.stmtGetMetrics = this.db.prepare(`
+  async _getMetrics(companyId, date) {
+    const result = await this.db.query(`
       SELECT * FROM calculated_metrics
-      WHERE company_id = ? AND fiscal_period <= ?
+      WHERE company_id = $1 AND fiscal_period <= $2
       ORDER BY fiscal_period DESC
       LIMIT 1
-    `);
+    `, [companyId, date]);
+    return result.rows[0] || null;
+  }
 
-    this.stmtGetSentiment = this.db.prepare(`
+  async _getSentiment(companyId, date) {
+    const result = await this.db.query(`
       SELECT * FROM combined_sentiment
-      WHERE company_id = ? AND calculated_at <= ?
+      WHERE company_id = $1 AND calculated_at <= $2
       ORDER BY calculated_at DESC
       LIMIT 1
-    `);
+    `, [companyId, date]);
+    return result.rows[0] || null;
+  }
 
-    this.stmtGetFactorScores = this.db.prepare(`
+  async _getFactorScores(companyId, date) {
+    const result = await this.db.query(`
       SELECT * FROM stock_factor_scores
-      WHERE company_id = ? AND score_date <= ?
+      WHERE company_id = $1 AND score_date <= $2
       ORDER BY score_date DESC
       LIMIT 1
-    `);
+    `, [companyId, date]);
+    return result.rows[0] || null;
+  }
 
-    this.stmtGetIntrinsic = this.db.prepare(`
+  async _getIntrinsic(companyId, date) {
+    const result = await this.db.query(`
       SELECT * FROM intrinsic_value_estimates
-      WHERE company_id = ? AND created_at <= ?
+      WHERE company_id = $1 AND created_at <= $2
       ORDER BY created_at DESC
       LIMIT 1
-    `);
+    `, [companyId, date]);
+    return result.rows[0] || null;
   }
 
   /**
    * Get the universe of stocks to consider based on config
    * @returns {Array} Filtered universe of companies
    */
-  getUniverse() {
+  async getUniverse() {
     const { universe } = this.config;
     let query = `
       SELECT c.id, c.symbol, c.name, c.sector, c.market_cap
@@ -154,27 +163,30 @@ class ConfigurableStrategyAgent {
       WHERE c.market_cap > 0
     `;
     const params = [];
+    let paramCounter = 1;
 
     // Market cap filter
     if (universe.minMarketCap) {
-      query += ' AND c.market_cap >= ?';
+      query += ` AND c.market_cap >= $${paramCounter++}`;
       params.push(universe.minMarketCap);
     }
     if (universe.maxMarketCap) {
-      query += ' AND c.market_cap <= ?';
+      query += ` AND c.market_cap <= $${paramCounter++}`;
       params.push(universe.maxMarketCap);
     }
 
     // Sector filters
     if (universe.sectors && universe.sectors.length > 0) {
-      const placeholders = universe.sectors.map(() => '?').join(',');
+      const placeholders = universe.sectors.map((_, i) => `$${paramCounter + i}`).join(',');
       query += ` AND c.sector IN (${placeholders})`;
       params.push(...universe.sectors);
+      paramCounter += universe.sectors.length;
     }
     if (universe.excludedSectors && universe.excludedSectors.length > 0) {
-      const placeholders = universe.excludedSectors.map(() => '?').join(',');
+      const placeholders = universe.excludedSectors.map((_, i) => `$${paramCounter + i}`).join(',');
       query += ` AND c.sector NOT IN (${placeholders})`;
       params.push(...universe.excludedSectors);
+      paramCounter += universe.excludedSectors.length;
     }
 
     // Country filter (if implemented in companies table)
@@ -185,13 +197,14 @@ class ConfigurableStrategyAgent {
 
     query += ' ORDER BY c.market_cap DESC LIMIT 500';
 
-    let stocks = this.db.prepare(query).all(...params);
+    const result = await this.db.query(query, params);
+    let stocks = result.rows;
 
     // Add custom symbols if specified
     if (universe.customSymbols && universe.customSymbols.length > 0) {
-      const customStocks = universe.customSymbols
-        .map(symbol => this.stmtGetCompany.get(symbol))
-        .filter(Boolean);
+      const customStocksPromises = universe.customSymbols.map(symbol => this._getCompany(symbol));
+      const customStocksResults = await Promise.all(customStocksPromises);
+      const customStocks = customStocksResults.filter(Boolean);
 
       // Merge, avoiding duplicates
       const existingIds = new Set(stocks.map(s => s.id));
@@ -204,12 +217,16 @@ class ConfigurableStrategyAgent {
 
     // Volume filter (if configured)
     if (universe.minAvgVolume) {
-      stocks = stocks.filter(stock => {
-        const history = this._getPriceHistory(stock.id, 20);
-        if (history.length < 5) return false;
+      const filteredStocks = [];
+      for (const stock of stocks) {
+        const history = await this._getPriceHistory(stock.id, 20);
+        if (history.length < 5) continue;
         const avgVolume = history.reduce((sum, h) => sum + (h.volume || 0), 0) / history.length;
-        return avgVolume >= universe.minAvgVolume;
-      });
+        if (avgVolume >= universe.minAvgVolume) {
+          filteredStocks.push(stock);
+        }
+      }
+      stocks = filteredStocks;
     }
 
     return stocks;
@@ -221,11 +238,11 @@ class ConfigurableStrategyAgent {
    * @param {Map} currentPositions - Current portfolio positions
    * @returns {Object|null} Signal or null if no signal
    */
-  generateSignal(stock, currentPositions = new Map()) {
+  async generateSignal(stock, currentPositions = new Map()) {
     const { weights, thresholds, regime, risk } = this.config;
 
     // Get current price (as of simulation date if set)
-    const priceData = this._getPrice(stock.id);
+    const priceData = await this._getPrice(stock.id);
     if (!priceData) return null;
 
     // Calculate component scores based on configured weights
@@ -235,7 +252,7 @@ class ConfigurableStrategyAgent {
 
     // Technical score
     if (weights.technical > 0) {
-      const techScore = this._calculateTechnicalScore(stock.id);
+      const techScore = await this._calculateTechnicalScore(stock.id);
       if (techScore !== null) {
         scores.technical = techScore;
         weightedScore += techScore * weights.technical;
@@ -245,7 +262,7 @@ class ConfigurableStrategyAgent {
 
     // Fundamental score
     if (weights.fundamental > 0) {
-      const fundScore = this._calculateFundamentalScore(stock.id);
+      const fundScore = await this._calculateFundamentalScore(stock.id);
       if (fundScore !== null) {
         scores.fundamental = fundScore;
         weightedScore += fundScore * weights.fundamental;
@@ -255,7 +272,7 @@ class ConfigurableStrategyAgent {
 
     // Sentiment score
     if (weights.sentiment > 0) {
-      const sentScore = this._calculateSentimentScore(stock.id);
+      const sentScore = await this._calculateSentimentScore(stock.id);
       if (sentScore !== null) {
         scores.sentiment = sentScore;
         weightedScore += sentScore * weights.sentiment;
@@ -265,7 +282,7 @@ class ConfigurableStrategyAgent {
 
     // Momentum score
     if (weights.momentum > 0) {
-      const momScore = this._calculateMomentumScore(stock.id);
+      const momScore = await this._calculateMomentumScore(stock.id);
       if (momScore !== null) {
         scores.momentum = momScore;
         weightedScore += momScore * weights.momentum;
@@ -275,7 +292,7 @@ class ConfigurableStrategyAgent {
 
     // Value score
     if (weights.value > 0) {
-      const valScore = this._calculateValueScore(stock.id, priceData.price);
+      const valScore = await this._calculateValueScore(stock.id, priceData.price);
       if (valScore !== null) {
         scores.value = valScore;
         weightedScore += valScore * weights.value;
@@ -285,7 +302,7 @@ class ConfigurableStrategyAgent {
 
     // Quality/Moat score
     if (weights.quality > 0) {
-      const qualScore = this._calculateQualityScore(stock.id);
+      const qualScore = await this._calculateQualityScore(stock.id);
       if (qualScore !== null) {
         scores.quality = qualScore;
         weightedScore += qualScore * weights.quality;
@@ -295,7 +312,7 @@ class ConfigurableStrategyAgent {
 
     // Insider trading score
     if (weights.insider > 0) {
-      const insiderScore = this._calculateInsiderScore(stock.id);
+      const insiderScore = await this._calculateInsiderScore(stock.id);
       if (insiderScore !== null) {
         scores.insider = insiderScore;
         weightedScore += insiderScore * weights.insider;
@@ -305,7 +322,7 @@ class ConfigurableStrategyAgent {
 
     // Congressional trading score
     if (weights.congressional > 0) {
-      const congressionalScore = this._calculateCongressionalScore(stock.id);
+      const congressionalScore = await this._calculateCongressionalScore(stock.id);
       if (congressionalScore !== null) {
         scores.congressional = congressionalScore;
         weightedScore += congressionalScore * weights.congressional;
@@ -500,8 +517,8 @@ class ConfigurableStrategyAgent {
 
   // ========== Signal Calculation Methods ==========
 
-  _calculateTechnicalScore(companyId) {
-    const history = this._getPriceHistory(companyId, 200);
+  async _calculateTechnicalScore(companyId) {
+    const history = await this._getPriceHistory(companyId, 200);
     if (history.length < 50) return null;
 
     const prices = history.map(h => h.price).reverse();
@@ -538,8 +555,8 @@ class ConfigurableStrategyAgent {
     return Math.max(-1, Math.min(1, score));
   }
 
-  _calculateFundamentalScore(companyId) {
-    const metrics = this.stmtGetMetrics.get(companyId, this._getEffectiveDate());
+  async _calculateFundamentalScore(companyId) {
+    const metrics = await this._getMetrics(companyId, this._getEffectiveDate());
     if (!metrics) return null;
 
     let score = 0;
@@ -570,8 +587,8 @@ class ConfigurableStrategyAgent {
     return Math.max(-1, Math.min(1, score));
   }
 
-  _calculateSentimentScore(companyId) {
-    const sentiment = this.stmtGetSentiment.get(companyId, this._getEffectiveDate());
+  async _calculateSentimentScore(companyId) {
+    const sentiment = await this._getSentiment(companyId, this._getEffectiveDate());
     if (!sentiment) return null;
 
     // Combined score is typically 0-100
@@ -579,8 +596,8 @@ class ConfigurableStrategyAgent {
     return (combined - 50) / 50; // Normalize to -1 to 1
   }
 
-  _calculateMomentumScore(companyId) {
-    const history = this._getPriceHistory(companyId, 252);
+  async _calculateMomentumScore(companyId) {
+    const history = await this._getPriceHistory(companyId, 252);
     if (history.length < 63) return null;
 
     const prices = history.map(h => h.price).reverse();
@@ -624,10 +641,12 @@ class ConfigurableStrategyAgent {
     return Math.max(-1, Math.min(1, score));
   }
 
-  _calculateValueScore(companyId, currentPrice) {
+  async _calculateValueScore(companyId, currentPrice) {
     const effectiveDate = this._getEffectiveDate();
-    const metrics = this.stmtGetMetrics.get(companyId, effectiveDate);
-    const intrinsic = this.stmtGetIntrinsic.get(companyId, effectiveDate);
+    const [metrics, intrinsic] = await Promise.all([
+      this._getMetrics(companyId, effectiveDate),
+      this._getIntrinsic(companyId, effectiveDate)
+    ]);
 
     if (!metrics && !intrinsic) return null;
 
@@ -673,9 +692,9 @@ class ConfigurableStrategyAgent {
     return Math.max(-1, Math.min(1, score / (components * 0.3)));
   }
 
-  _calculateQualityScore(companyId) {
+  async _calculateQualityScore(companyId) {
     try {
-      const moatScore = this.quantSystem.moatScorer.calculateMoatScore(companyId);
+      const moatScore = await this.quantSystem.moatScorer.calculateMoatScore(companyId);
       if (moatScore.error) return null;
 
       // Convert moat strength to score
@@ -692,10 +711,10 @@ class ConfigurableStrategyAgent {
     }
   }
 
-  _calculateInsiderScore(companyId) {
+  async _calculateInsiderScore(companyId) {
     try {
       // Get insider trading signal as of effective date
-      const signal = this.insiderSignals.generateSignal(companyId, this._getEffectiveDate());
+      const signal = await this.insiderSignals.generateSignal(companyId, this._getEffectiveDate());
       if (!signal) return null;
 
       // Insider signal already provides score 0-1, convert to -1 to 1 range
@@ -727,10 +746,10 @@ class ConfigurableStrategyAgent {
     }
   }
 
-  _calculateCongressionalScore(companyId) {
+  async _calculateCongressionalScore(companyId) {
     try {
       // Get congressional trading signal as of effective date
-      const signal = this.congressionalSignals.generateSignal(companyId, this._getEffectiveDate());
+      const signal = await this.congressionalSignals.generateSignal(companyId, this._getEffectiveDate());
       if (!signal) return null;
 
       // Congressional signal provides score 0-1, convert to our scoring range

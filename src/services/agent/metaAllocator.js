@@ -22,17 +22,20 @@ class MetaAllocator {
 
     this.configManager = new StrategyConfigManager(db);
     this.quantSystem = new EnhancedQuantSystem(db);
+  }
 
+  async initialize() {
     // Load the multi-strategy config
-    this.parentConfig = this.configManager.getStrategy(multiStrategyId);
+    this.parentConfig = await this.configManager.getStrategy(this.multiStrategyId);
     if (!this.parentConfig || this.parentConfig.mode !== 'multi') {
-      throw new Error(`Strategy ${multiStrategyId} is not a multi-strategy`);
+      throw new Error(`Strategy ${this.multiStrategyId} is not a multi-strategy`);
     }
 
     // Initialize child strategy agents
     this.childAgents = new Map();
     for (const alloc of this.parentConfig.allocations) {
-      const agent = new ConfigurableStrategyAgent(db, alloc.child_strategy_id);
+      const agent = new ConfigurableStrategyAgent(this.db, alloc.child_strategy_id);
+      await agent.initialize();
       this.childAgents.set(alloc.child_strategy_id, {
         agent,
         config: alloc,
@@ -40,44 +43,30 @@ class MetaAllocator {
       });
     }
 
-    this._prepareStatements();
+    await this._ensureSchema();
 
     console.log(`🎯 MetaAllocator initialized: "${this.parentConfig.name}"`);
     console.log(`   Child strategies: ${this.childAgents.size}`);
   }
 
-  _prepareStatements() {
-    // Create decision history table if not exists (MUST happen BEFORE prepare statements)
-    this.db.exec(`
+  async _ensureSchema() {
+    await this.db.query(`
       CREATE TABLE IF NOT EXISTS meta_allocation_decisions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         parent_strategy_id INTEGER NOT NULL,
-        decision_date TEXT NOT NULL,
+        decision_date DATE NOT NULL,
         market_regime TEXT,
         risk_level TEXT,
-        allocations_json TEXT NOT NULL,
+        allocations_json JSONB NOT NULL,
         reasoning TEXT,
         total_rebalance_pct REAL,
-        created_at TEXT DEFAULT (datetime('now')),
-        FOREIGN KEY (parent_strategy_id) REFERENCES strategy_configs(id)
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (parent_strategy_id) REFERENCES strategy_configs(id),
+        UNIQUE (parent_strategy_id, decision_date)
       );
 
       CREATE INDEX IF NOT EXISTS idx_meta_decisions_date
         ON meta_allocation_decisions(parent_strategy_id, decision_date);
-    `);
-
-    this.stmtGetStrategyPerformance = this.db.prepare(`
-      SELECT * FROM strategy_performance
-      WHERE strategy_id = ?
-      ORDER BY date DESC
-      LIMIT ?
-    `);
-
-    this.stmtStoreAllocationDecision = this.db.prepare(`
-      INSERT INTO meta_allocation_decisions (
-        parent_strategy_id, decision_date, market_regime, risk_level,
-        allocations_json, reasoning, total_rebalance_pct
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
   }
 
@@ -85,13 +74,13 @@ class MetaAllocator {
    * Calculate optimal allocations based on current conditions
    * @returns {Object} Allocation recommendations with reasoning
    */
-  calculateOptimalAllocations() {
-    const marketAssessment = this.quantSystem.getMarketAssessment();
+  async calculateOptimalAllocations() {
+    const marketAssessment = await this.quantSystem.getMarketAssessment();
     const regime = marketAssessment.economicRegime.regime;
     const riskLevel = marketAssessment.overallRisk;
 
     // Get strategy characteristics and recent performance
-    const strategyAnalysis = this._analyzeStrategies();
+    const strategyAnalysis = await this._analyzeStrategies();
 
     // Calculate regime-adjusted target allocations
     const allocations = this._calculateRegimeAdjustedAllocations(
@@ -127,7 +116,7 @@ class MetaAllocator {
   /**
    * Analyze each child strategy's characteristics and performance
    */
-  _analyzeStrategies() {
+  async _analyzeStrategies() {
     const analysis = {};
 
     for (const [strategyId, { agent, config, name }] of this.childAgents) {
@@ -137,7 +126,14 @@ class MetaAllocator {
       const style = this._categorizeStrategy(agentConfig.weights);
 
       // Get recent performance
-      const performance = this.stmtGetStrategyPerformance.all(strategyId, 30);
+      const performanceResult = await this.db.query(
+        `SELECT * FROM strategy_performance
+         WHERE strategy_id = $1
+         ORDER BY date DESC
+         LIMIT $2`,
+        [strategyId, 30]
+      );
+      const performance = performanceResult.rows;
       const recentReturn = performance.length > 0
         ? performance.reduce((sum, p) => sum + (p.daily_return || 0), 0)
         : 0;
@@ -461,8 +457,8 @@ class MetaAllocator {
    * @param {Object} currentAllocations - Current allocations by strategy ID
    * @returns {Object} Rebalance instructions
    */
-  calculateRebalance(portfolioValue, currentAllocations = {}) {
-    const optimal = this.calculateOptimalAllocations();
+  async calculateRebalance(portfolioValue, currentAllocations = {}) {
+    const optimal = await this.calculateOptimalAllocations();
     const instructions = [];
     let totalRebalancePct = 0;
 
@@ -488,17 +484,24 @@ class MetaAllocator {
     // Store decision
     const date = new Date().toISOString().split('T')[0];
     try {
-      this.stmtStoreAllocationDecision.run(
-        this.multiStrategyId,
-        date,
-        optimal.marketContext.regime,
-        optimal.marketContext.riskLevel,
-        JSON.stringify(optimal.allocations),
-        optimal.reasoning,
-        totalRebalancePct
+      await this.db.query(
+        `INSERT INTO meta_allocation_decisions (
+          parent_strategy_id, decision_date, market_regime, risk_level,
+          allocations_json, reasoning, total_rebalance_pct
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (parent_strategy_id, decision_date) DO NOTHING`,
+        [
+          this.multiStrategyId,
+          date,
+          optimal.marketContext.regime,
+          optimal.marketContext.riskLevel,
+          JSON.stringify(optimal.allocations),
+          optimal.reasoning,
+          totalRebalancePct
+        ]
       );
     } catch (e) {
-      // Ignore duplicate date
+      // Ignore errors
     }
 
     return {
@@ -515,18 +518,18 @@ class MetaAllocator {
    * @param {Map} currentPositions - Current portfolio positions
    * @returns {Array} Combined signals with allocation weights
    */
-  getWeightedSignals(currentPositions = new Map()) {
-    const optimal = this.calculateOptimalAllocations();
+  async getWeightedSignals(currentPositions = new Map()) {
+    const optimal = await this.calculateOptimalAllocations();
     const allSignals = [];
 
     for (const [strategyId, { agent }] of this.childAgents) {
       const allocation = optimal.allocations[strategyId]?.allocation || 0;
       if (allocation < 0.05) continue; // Skip strategies with <5% allocation
 
-      const universe = agent.getUniverse();
+      const universe = await agent.getUniverse();
 
       for (const stock of universe) {
-        const signal = agent.generateSignal(stock, currentPositions);
+        const signal = await agent.generateSignal(stock, currentPositions);
         if (signal) {
           allSignals.push({
             ...signal,
@@ -608,8 +611,8 @@ class MetaAllocator {
   /**
    * Get summary of meta-allocator state
    */
-  getSummary() {
-    const optimal = this.calculateOptimalAllocations();
+  async getSummary() {
+    const optimal = await this.calculateOptimalAllocations();
 
     // Get ML model binding info from the parent strategy
     const featureFlags = this.parentConfig?.feature_flags ?

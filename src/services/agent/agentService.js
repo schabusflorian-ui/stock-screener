@@ -2,15 +2,8 @@
 // Service for managing Trading Agents as first-class entities
 // Pattern follows investorService.js for consistency
 
-const db = require('../../database').db;
+const { getDatabaseAsync } = require('../../database');
 const { agent: logger } = require('../../utils/logger');
-
-// Ensure region column exists (for existing databases)
-try {
-  db.exec('ALTER TABLE trading_agents ADD COLUMN region TEXT DEFAULT \'US\'');
-} catch (e) {
-  // Column already exists
-}
 
 /**
  * Default Signal Weights - Multi-Factor Model Configuration
@@ -85,13 +78,6 @@ function safeJsonParse(jsonString, context = 'unknown') {
   }
 }
 
-// Ensure unified_strategy_id column exists (for existing databases)
-try {
-  db.exec('ALTER TABLE trading_agents ADD COLUMN unified_strategy_id INTEGER REFERENCES unified_strategies(id)');
-} catch (e) {
-  // Column already exists
-}
-
 // Strategy presets
 const STRATEGY_PRESETS = {
   technical: {
@@ -158,31 +144,34 @@ const STRATEGY_PRESETS = {
 /**
  * Get all trading agents
  */
-function getAllAgents() {
-  const stmt = db.prepare(`
+async function getAllAgents() {
+  const database = await getDatabaseAsync();
+  const result = await database.query(`
     SELECT
       ta.*,
-      (SELECT COUNT(*) FROM agent_portfolios ap WHERE ap.agent_id = ta.id AND ap.is_active = 1) as portfolio_count,
+      (SELECT COUNT(*) FROM agent_portfolios ap WHERE ap.agent_id = ta.id AND ap.is_active = true) as portfolio_count,
       (SELECT COUNT(*) FROM agent_signals asig WHERE asig.agent_id = ta.id AND asig.status = 'pending') as pending_signals
     FROM trading_agents ta
-    WHERE ta.is_active = 1
+    WHERE ta.is_active = true
     ORDER BY ta.updated_at DESC
   `);
-  return stmt.all();
+  return result.rows;
 }
 
 /**
  * Get single agent by ID with stats
  */
-function getAgent(id) {
-  const agent = db.prepare(`
-    SELECT * FROM trading_agents WHERE id = ?
-  `).get(id);
+async function getAgent(id) {
+  const database = await getDatabaseAsync();
+  const agentResult = await database.query(`
+    SELECT * FROM trading_agents WHERE id = $1
+  `, [id]);
 
+  const agent = agentResult.rows[0];
   if (!agent) return null;
 
   // Get managed portfolios
-  const portfolios = db.prepare(`
+  const portfoliosResult = await database.query(`
     SELECT
       ap.*,
       p.name as portfolio_name,
@@ -191,26 +180,26 @@ function getAgent(id) {
       p.portfolio_type
     FROM agent_portfolios ap
     JOIN portfolios p ON ap.portfolio_id = p.id
-    WHERE ap.agent_id = ? AND ap.is_active = 1
+    WHERE ap.agent_id = $1 AND ap.is_active = true
     ORDER BY ap.created_at DESC
-  `).all(id);
+  `, [id]);
 
   // Get pending signals count
-  const pendingSignals = db.prepare(`
+  const pendingSignalsResult = await database.query(`
     SELECT COUNT(*) as count FROM agent_signals
-    WHERE agent_id = ? AND status = 'pending'
-  `).get(id);
+    WHERE agent_id = $1 AND status = 'pending'
+  `, [id]);
 
   // Get recent activity
-  const recentActivity = db.prepare(`
+  const recentActivityResult = await database.query(`
     SELECT * FROM agent_activity_log
-    WHERE agent_id = ?
+    WHERE agent_id = $1
     ORDER BY created_at DESC
     LIMIT 10
-  `).all(id);
+  `, [id]);
 
   // Get signal stats
-  const signalStats = db.prepare(`
+  const signalStatsResult = await database.query(`
     SELECT
       COUNT(*) as total_signals,
       SUM(CASE WHEN status = 'executed' THEN 1 ELSE 0 END) as executed_count,
@@ -221,22 +210,22 @@ function getAgent(id) {
       SUM(CASE WHEN status = 'executed' AND actual_return > 0 THEN 1 ELSE 0 END) as winning_trades,
       SUM(CASE WHEN status = 'executed' AND actual_return IS NOT NULL THEN 1 ELSE 0 END) as total_tracked_trades
     FROM agent_signals
-    WHERE agent_id = ?
-  `).get(id);
+    WHERE agent_id = $1
+  `, [id]);
 
   return {
     ...agent,
-    portfolios,
-    pendingSignalsCount: pendingSignals?.count || 0,
-    recentActivity,
-    signalStats
+    portfolios: portfoliosResult.rows,
+    pendingSignalsCount: pendingSignalsResult.rows[0]?.count || 0,
+    recentActivity: recentActivityResult.rows,
+    signalStats: signalStatsResult.rows[0]
   };
 }
 
 /**
  * Create a new trading agent
  */
-function createAgent(config) {
+async function createAgent(config) {
   const {
     name,
     description = '',
@@ -262,22 +251,22 @@ function createAgent(config) {
     max_correlation = 0.70,
     max_daily_trades = 10,
     // Regime behavior
-    regime_scaling_enabled = 1,
-    vix_scaling_enabled = 1,
+    regime_scaling_enabled = true,
+    vix_scaling_enabled = true,
     vix_threshold = 25,
-    pause_in_crisis = 1,
+    pause_in_crisis = true,
     // Execution settings
-    auto_execute = 0,
+    auto_execute = false,
     execution_threshold = 0.8,
-    require_confirmation = 1,
+    require_confirmation = true,
     allowed_actions = '["buy","sell"]',
     // Feature flags
-    use_optimized_weights = 1,
-    use_hmm_regime = 1,
-    use_ml_combiner = 0,
-    use_factor_exposure = 1,
-    use_probabilistic_dcf = 1,
-    apply_earnings_filter = 1,
+    use_optimized_weights = true,
+    use_hmm_regime = true,
+    use_ml_combiner = false,
+    use_factor_exposure = true,
+    use_probabilistic_dcf = true,
+    apply_earnings_filter = true,
     earnings_blackout_days = 7,
     // Universe
     universe_type = 'all',
@@ -333,7 +322,8 @@ function createAgent(config) {
     };
   }
 
-  const stmt = db.prepare(`
+  const database = await getDatabaseAsync();
+  const result = await database.query(`
     INSERT INTO trading_agents (
       name, description, strategy_type,
       technical_weight, sentiment_weight, insider_weight, fundamental_weight,
@@ -346,20 +336,19 @@ function createAgent(config) {
       apply_earnings_filter, earnings_blackout_days,
       universe_type, universe_filter, region, unified_strategy_id
     ) VALUES (
-      ?, ?, ?,
-      ?, ?, ?, ?,
-      ?, ?, ?, ?, ?,
-      ?, ?,
-      ?, ?, ?, ?, ?, ?,
-      ?, ?, ?, ?,
-      ?, ?, ?, ?,
-      ?, ?, ?, ?, ?,
-      ?, ?,
-      ?, ?, ?, ?
+      $1, $2, $3,
+      $4, $5, $6, $7,
+      $8, $9, $10, $11, $12,
+      $13, $14,
+      $15, $16, $17, $18, $19, $20,
+      $21, $22, $23, $24,
+      $25, $26, $27, $28,
+      $29, $30, $31, $32, $33,
+      $34, $35,
+      $36, $37, $38, $39
     )
-  `);
-
-  const result = stmt.run(
+    RETURNING id
+  `, [
     name, description, strategy_type,
     weights.technical_weight, weights.sentiment_weight, weights.insider_weight, weights.fundamental_weight,
     weights.alternative_weight, weights.valuation_weight, weights.thirteenf_weight, weights.earnings_weight, weights.value_quality_weight,
@@ -370,18 +359,20 @@ function createAgent(config) {
     use_optimized_weights, use_hmm_regime, use_ml_combiner, use_factor_exposure, use_probabilistic_dcf,
     apply_earnings_filter, earnings_blackout_days,
     universe_type, universe_filter, region, unified_strategy_id
-  );
+  ]);
+
+  const agentId = result.rows[0].id;
 
   // Log activity
-  logActivity(result.lastInsertRowid, null, 'agent_started', `Agent "${name}" created`);
+  await logActivity(agentId, null, 'agent_started', `Agent "${name}" created`);
 
-  return getAgent(result.lastInsertRowid);
+  return await getAgent(agentId);
 }
 
 /**
  * Update an existing agent
  */
-function updateAgent(id, updates) {
+async function updateAgent(id, updates) {
   const allowedFields = [
     'name', 'description', 'strategy_type',
     'technical_weight', 'sentiment_weight', 'insider_weight', 'fundamental_weight',
@@ -397,13 +388,13 @@ function updateAgent(id, updates) {
 
   const fieldsToUpdate = Object.keys(updates).filter(key => allowedFields.includes(key));
   if (fieldsToUpdate.length === 0) {
-    return getAgent(id);
+    return await getAgent(id);
   }
 
-  const setClause = fieldsToUpdate.map(field => `${field} = ?`).join(', ');
+  const setClause = fieldsToUpdate.map((field, idx) => `${field} = $${idx + 1}`).join(', ');
   const values = fieldsToUpdate.map(field => {
     const value = updates[field];
-    // Convert arrays to JSON strings for SQLite storage
+    // Convert arrays to JSON strings for PostgreSQL storage
     if (field === 'allowed_actions' && Array.isArray(value)) {
       return JSON.stringify(value);
     }
@@ -411,49 +402,49 @@ function updateAgent(id, updates) {
     if (field === 'universe_filter' && typeof value === 'object' && value !== null) {
       return JSON.stringify(value);
     }
-    // Convert booleans to integers for SQLite
-    if (typeof value === 'boolean') {
-      return value ? 1 : 0;
-    }
     return value;
   });
 
-  const stmt = db.prepare(`
+  const database = await getDatabaseAsync();
+  await database.query(`
     UPDATE trading_agents
     SET ${setClause}, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `);
+    WHERE id = $${values.length + 1}
+  `, [...values, id]);
 
-  stmt.run(...values, id);
+  await logActivity(id, null, 'settings_updated', `Agent settings updated: ${fieldsToUpdate.join(', ')}`);
 
-  logActivity(id, null, 'settings_updated', `Agent settings updated: ${fieldsToUpdate.join(', ')}`);
-
-  return getAgent(id);
+  return await getAgent(id);
 }
 
 /**
  * Delete (soft delete) an agent
  * Uses transaction to ensure atomic deactivation of agent and portfolios
  */
-function deleteAgent(id) {
-  const deleteTransaction = db.transaction(() => {
-    db.prepare(`
+async function deleteAgent(id) {
+  const database = await getDatabaseAsync();
+
+  await database.query('BEGIN');
+  try {
+    await database.query(`
       UPDATE trading_agents
-      SET is_active = 0, status = 'paused', updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(id);
+      SET is_active = false, status = 'paused', updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [id]);
 
     // Deactivate all agent portfolios
-    db.prepare(`
+    await database.query(`
       UPDATE agent_portfolios
-      SET is_active = 0, deactivated_at = CURRENT_TIMESTAMP
-      WHERE agent_id = ?
-    `).run(id);
+      SET is_active = false, deactivated_at = CURRENT_TIMESTAMP
+      WHERE agent_id = $1
+    `, [id]);
 
+    await database.query('COMMIT');
     return { success: true };
-  });
-
-  return deleteTransaction();
+  } catch (error) {
+    await database.query('ROLLBACK');
+    throw error;
+  }
 }
 
 // ============================================
@@ -463,95 +454,97 @@ function deleteAgent(id) {
 /**
  * Start an agent (set to running)
  */
-function startAgent(id) {
-  const stmt = db.prepare(`
+async function startAgent(id) {
+  const database = await getDatabaseAsync();
+  await database.query(`
     UPDATE trading_agents
     SET status = 'running', updated_at = CURRENT_TIMESTAMP, error_message = NULL
-    WHERE id = ? AND is_active = 1
-  `);
-  stmt.run(id);
+    WHERE id = $1 AND is_active = true
+  `, [id]);
 
-  logActivity(id, null, 'agent_resumed', 'Agent started');
+  await logActivity(id, null, 'agent_resumed', 'Agent started');
 
-  return getAgentStatus(id);
+  return await getAgentStatus(id);
 }
 
 /**
  * Pause an agent
  */
-function pauseAgent(id) {
-  const stmt = db.prepare(`
+async function pauseAgent(id) {
+  const database = await getDatabaseAsync();
+  await database.query(`
     UPDATE trading_agents
     SET status = 'paused', updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `);
-  stmt.run(id);
+    WHERE id = $1
+  `, [id]);
 
-  logActivity(id, null, 'agent_paused', 'Agent paused');
+  await logActivity(id, null, 'agent_paused', 'Agent paused');
 
-  return getAgentStatus(id);
+  return await getAgentStatus(id);
 }
 
 /**
  * Get agent status
  */
-function getAgentStatus(id) {
-  const agent = db.prepare(`
+async function getAgentStatus(id) {
+  const database = await getDatabaseAsync();
+  const agentResult = await database.query(`
     SELECT
       id, name, status, is_active,
       last_scan_at, next_scan_at, error_message,
       total_signals_generated, total_trades_executed, win_rate
     FROM trading_agents
-    WHERE id = ?
-  `).get(id);
+    WHERE id = $1
+  `, [id]);
 
+  const agent = agentResult.rows[0];
   if (!agent) return null;
 
   // Get pending signals count
-  const pending = db.prepare(`
+  const pendingResult = await database.query(`
     SELECT COUNT(*) as count FROM agent_signals
-    WHERE agent_id = ? AND status = 'pending'
-  `).get(id);
+    WHERE agent_id = $1 AND status = 'pending'
+  `, [id]);
 
   // Get today's activity count
-  const todayActivity = db.prepare(`
+  const todayActivityResult = await database.query(`
     SELECT COUNT(*) as count FROM agent_activity_log
-    WHERE agent_id = ? AND DATE(created_at) = DATE('now')
-  `).get(id);
+    WHERE agent_id = $1 AND DATE(created_at) = CURRENT_DATE
+  `, [id]);
 
   return {
     ...agent,
-    pendingSignals: pending?.count || 0,
-    todayActivityCount: todayActivity?.count || 0
+    pendingSignals: pendingResult.rows[0]?.count || 0,
+    todayActivityCount: todayActivityResult.rows[0]?.count || 0
   };
 }
 
 /**
  * Update last scan time
  */
-function updateLastScan(id, nextScanAt = null) {
-  const stmt = db.prepare(`
+async function updateLastScan(id, nextScanAt = null) {
+  const database = await getDatabaseAsync();
+  await database.query(`
     UPDATE trading_agents
     SET last_scan_at = CURRENT_TIMESTAMP,
-        next_scan_at = ?,
+        next_scan_at = $1,
         updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `);
-  stmt.run(nextScanAt, id);
+    WHERE id = $2
+  `, [nextScanAt, id]);
 }
 
 /**
  * Set agent error state
  */
-function setAgentError(id, errorMessage) {
-  const stmt = db.prepare(`
+async function setAgentError(id, errorMessage) {
+  const database = await getDatabaseAsync();
+  await database.query(`
     UPDATE trading_agents
-    SET status = 'error', error_message = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `);
-  stmt.run(errorMessage, id);
+    SET status = 'error', error_message = $1, updated_at = CURRENT_TIMESTAMP
+    WHERE id = $2
+  `, [errorMessage, id]);
 
-  logActivity(id, null, 'agent_error', errorMessage);
+  await logActivity(id, null, 'agent_error', errorMessage);
 }
 
 // ============================================
@@ -562,7 +555,7 @@ function setAgentError(id, errorMessage) {
  * Create a new signal for an agent
  * Uses transaction to ensure atomic signal creation + stats update
  */
-function createSignal(agentId, signalData) {
+async function createSignal(agentId, signalData) {
   const {
     symbol,
     company_id,
@@ -588,8 +581,11 @@ function createSignal(agentId, signalData) {
     portfolio_id = null  // Added to ensure signals have portfolio context
   } = signalData;
 
-  const createSignalTransaction = db.transaction(() => {
-    const stmt = db.prepare(`
+  const database = await getDatabaseAsync();
+
+  await database.query('BEGIN');
+  try {
+    const result = await database.query(`
       INSERT INTO agent_signals (
         agent_id, symbol, company_id, signal_date, action,
         overall_score, confidence, raw_score, signals,
@@ -598,16 +594,15 @@ function createSignal(agentId, signalData) {
         risk_approved, risk_checks, risk_warnings, risk_blockers,
         reasoning, expires_at, portfolio_id
       ) VALUES (
-        ?, ?, ?, CURRENT_TIMESTAMP, ?,
-        ?, ?, ?, ?,
-        ?, ?, ?, ?, ?,
-        ?, ?, ?,
-        ?, ?, ?, ?,
-        ?, ?, ?
+        $1, $2, $3, CURRENT_TIMESTAMP, $4,
+        $5, $6, $7, $8,
+        $9, $10, $11, $12, $13,
+        $14, $15, $16,
+        $17, $18, $19, $20,
+        $21, $22, $23
       )
-    `);
-
-    const result = stmt.run(
+      RETURNING id
+    `, [
       agentId, symbol, company_id, action,
       overall_score, confidence, raw_score, typeof signals === 'object' ? JSON.stringify(signals) : signals,
       regime, regime_confidence, price_at_signal, market_cap_at_signal, sector,
@@ -616,30 +611,34 @@ function createSignal(agentId, signalData) {
       typeof risk_warnings === 'object' ? JSON.stringify(risk_warnings) : risk_warnings,
       typeof risk_blockers === 'object' ? JSON.stringify(risk_blockers) : risk_blockers,
       typeof reasoning === 'object' ? JSON.stringify(reasoning) : reasoning, expires_at, portfolio_id
-    );
+    ]);
+
+    const signalId = result.rows[0].id;
 
     // Update agent stats
-    db.prepare(`
+    await database.query(`
       UPDATE trading_agents
       SET total_signals_generated = total_signals_generated + 1, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(agentId);
+      WHERE id = $1
+    `, [agentId]);
 
     // Log activity
-    logActivity(agentId, null, 'signal_generated', `Signal generated: ${action.toUpperCase()} ${symbol} (${(confidence * 100).toFixed(0)}% confidence)`, null, result.lastInsertRowid);
+    await logActivity(agentId, null, 'signal_generated', `Signal generated: ${action.toUpperCase()} ${symbol} (${(confidence * 100).toFixed(0)}% confidence)`, null, signalId);
 
-    return result.lastInsertRowid;
-  });
-
-  const signalId = createSignalTransaction();
-  return getSignal(signalId);
+    await database.query('COMMIT');
+    return await getSignal(signalId);
+  } catch (error) {
+    await database.query('ROLLBACK');
+    throw error;
+  }
 }
 
 /**
  * Get a single signal by ID
  */
-function getSignal(signalId) {
-  const signal = db.prepare(`
+async function getSignal(signalId) {
+  const database = await getDatabaseAsync();
+  const result = await database.query(`
     SELECT
       asig.*,
       c.name as company_name,
@@ -648,9 +647,10 @@ function getSignal(signalId) {
     FROM agent_signals asig
     LEFT JOIN companies c ON asig.company_id = c.id
     LEFT JOIN trading_agents ta ON asig.agent_id = ta.id
-    WHERE asig.id = ?
-  `).get(signalId);
+    WHERE asig.id = $1
+  `, [signalId]);
 
+  const signal = result.rows[0];
   if (!signal) return null;
 
   // Parse JSON fields safely with logging
@@ -673,7 +673,7 @@ function getSignal(signalId) {
 /**
  * Get signals for an agent
  */
-function getSignals(agentId, options = {}) {
+async function getSignals(agentId, options = {}) {
   const {
     status = null,
     limit = 50,
@@ -682,11 +682,11 @@ function getSignals(agentId, options = {}) {
     sortOrder = 'DESC'
   } = options;
 
-  let whereClause = 'WHERE asig.agent_id = ?';
+  let whereClause = 'WHERE asig.agent_id = $1';
   const params = [agentId];
 
   if (status) {
-    whereClause += ' AND asig.status = ?';
+    whereClause += ' AND asig.status = $2';
     params.push(status);
   }
 
@@ -701,7 +701,8 @@ function getSignals(agentId, options = {}) {
     ? `ORDER BY ABS(asig.overall_score) ${order}, asig.confidence DESC`
     : `ORDER BY asig.${sortColumn} ${order}`;
 
-  const signals = db.prepare(`
+  const database = await getDatabaseAsync();
+  const result = await database.query(`
     SELECT
       asig.*,
       c.name as company_name,
@@ -710,11 +711,11 @@ function getSignals(agentId, options = {}) {
     LEFT JOIN companies c ON asig.company_id = c.id
     ${whereClause}
     ${orderClause}
-    LIMIT ? OFFSET ?
-  `).all(...params);
+    LIMIT $${params.length - 1} OFFSET $${params.length}
+  `, params);
 
   // Parse JSON fields safely
-  return signals.map(signal => {
+  return result.rows.map(signal => {
     if (signal.signals) {
       const parsed = safeJsonParse(signal.signals, 'signals.signals');
       if (parsed !== null) signal.signals = parsed;
@@ -726,16 +727,16 @@ function getSignals(agentId, options = {}) {
 /**
  * Get pending signals for an agent
  */
-function getPendingSignals(agentId) {
-  return getSignals(agentId, { status: 'pending', limit: 100 });
+async function getPendingSignals(agentId) {
+  return await getSignals(agentId, { status: 'pending', limit: 100 });
 }
 
 /**
  * Approve a signal
  * Also creates a pending_executions entry for the autoExecutor to process
  */
-function approveSignal(signalId, portfolioId = null) {
-  const signal = getSignal(signalId);
+async function approveSignal(signalId, portfolioId = null) {
+  const signal = await getSignal(signalId);
   if (!signal) return null;
 
   // Validate signal has required fields
@@ -743,9 +744,12 @@ function approveSignal(signalId, portfolioId = null) {
     throw new Error(`Invalid signal data: missing action or symbol for signal ${signalId}`);
   }
 
+  const database = await getDatabaseAsync();
+
   // P1 FIX: Enforce agent's configured thresholds (Expert Panel Recommendation)
   // Get the agent's threshold configuration
-  const agent = db.prepare('SELECT min_confidence, min_signal_score FROM trading_agents WHERE id = ?').get(signal.agent_id);
+  const agentResult = await database.query('SELECT min_confidence, min_signal_score FROM trading_agents WHERE id = $1', [signal.agent_id]);
+  const agent = agentResult.rows[0];
   if (agent) {
     const minConfidence = agent.min_confidence || 0.6;
     const minScore = agent.min_signal_score || 0.3;
@@ -761,30 +765,30 @@ function approveSignal(signalId, portfolioId = null) {
   // If no portfolioId provided, try to get from agent's linked portfolios
   let resolvedPortfolioId = portfolioId;
   if (!resolvedPortfolioId) {
-    const portfolios = getAgentPortfolios(signal.agent_id);
+    const portfolios = await getAgentPortfolios(signal.agent_id);
     if (portfolios && portfolios.length > 0) {
       resolvedPortfolioId = portfolios[0].portfolio_id;
     }
   }
 
   // Update signal status to approved
-  const stmt = db.prepare(`
+  await database.query(`
     UPDATE agent_signals
-    SET status = 'approved', portfolio_id = ?
-    WHERE id = ?
-  `);
-  stmt.run(resolvedPortfolioId, signalId);
+    SET status = 'approved', portfolio_id = $1
+    WHERE id = $2
+  `, [resolvedPortfolioId, signalId]);
 
-  logActivity(signal.agent_id, resolvedPortfolioId, 'signal_approved', `Signal approved: ${signal.action.toUpperCase()} ${signal.symbol}`, null, signalId);
+  await logActivity(signal.agent_id, resolvedPortfolioId, 'signal_approved', `Signal approved: ${signal.action.toUpperCase()} ${signal.symbol}`, null, signalId);
 
   // Create pending_execution entry for autoExecutor to process
   if (resolvedPortfolioId) {
     try {
       // Get portfolio value for position sizing
-      const portfolio = db.prepare(`
-        SELECT current_value, current_cash FROM portfolios WHERE id = ?
-      `).get(resolvedPortfolioId);
+      const portfolioResult = await database.query(`
+        SELECT current_value, current_cash FROM portfolios WHERE id = $1
+      `, [resolvedPortfolioId]);
 
+      const portfolio = portfolioResult.rows[0];
       const totalValue = (portfolio?.current_value || 0) + (portfolio?.current_cash || 0);
       const positionPct = totalValue > 0 ? (signal.position_value || 0) / totalValue : 0;
 
@@ -797,7 +801,7 @@ function approveSignal(signalId, portfolioId = null) {
       };
       const normalizedAction = actionMap[signal.action.toLowerCase()] || signal.action.toUpperCase();
 
-      db.prepare(`
+      await database.query(`
         INSERT INTO pending_executions (
           portfolio_id,
           symbol,
@@ -812,8 +816,8 @@ function approveSignal(signalId, portfolioId = null) {
           position_pct,
           status,
           expires_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now', '+24 hours'))
-      `).run(
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending', CURRENT_TIMESTAMP + INTERVAL '24 hours')
+      `, [
         resolvedPortfolioId,
         signal.symbol,
         signal.company_id,
@@ -825,9 +829,9 @@ function approveSignal(signalId, portfolioId = null) {
         signal.confidence || null,
         signal.regime || null,
         positionPct
-      );
+      ]);
 
-      logActivity(signal.agent_id, resolvedPortfolioId, 'execution_queued',
+      await logActivity(signal.agent_id, resolvedPortfolioId, 'execution_queued',
         `Execution queued: ${normalizedAction} ${signal.symbol}`, null, signalId);
     } catch (err) {
       console.warn(`Could not create pending_execution for signal ${signalId}: ${err.message}`);
@@ -835,33 +839,33 @@ function approveSignal(signalId, portfolioId = null) {
     }
   }
 
-  return getSignal(signalId);
+  return await getSignal(signalId);
 }
 
 /**
  * Reject a signal
  */
-function rejectSignal(signalId, reason = null) {
-  const signal = getSignal(signalId);
+async function rejectSignal(signalId, reason = null) {
+  const signal = await getSignal(signalId);
   if (!signal) return null;
 
-  const stmt = db.prepare(`
+  const database = await getDatabaseAsync();
+  await database.query(`
     UPDATE agent_signals
     SET status = 'rejected'
-    WHERE id = ?
-  `);
-  stmt.run(signalId);
+    WHERE id = $1
+  `, [signalId]);
 
-  logActivity(signal.agent_id, null, 'signal_rejected', `Signal rejected: ${signal.action.toUpperCase()} ${signal.symbol}${reason ? ` - ${reason}` : ''}`, null, signalId);
+  await logActivity(signal.agent_id, null, 'signal_rejected', `Signal rejected: ${signal.action.toUpperCase()} ${signal.symbol}${reason ? ` - ${reason}` : ''}`, null, signalId);
 
-  return getSignal(signalId);
+  return await getSignal(signalId);
 }
 
 /**
  * Mark signal as executed
  * Uses transaction to ensure atomic signal update + stats update
  */
-function markSignalExecuted(signalId, executionData) {
+async function markSignalExecuted(signalId, executionData) {
   const {
     executed_price,
     executed_shares,
@@ -869,44 +873,50 @@ function markSignalExecuted(signalId, executionData) {
     portfolio_id
   } = executionData;
 
-  const signal = getSignal(signalId);
+  const signal = await getSignal(signalId);
   if (!signal) return null;
 
-  const executeTransaction = db.transaction(() => {
-    db.prepare(`
+  const database = await getDatabaseAsync();
+
+  await database.query('BEGIN');
+  try {
+    await database.query(`
       UPDATE agent_signals
       SET status = 'executed',
           executed_at = CURRENT_TIMESTAMP,
-          executed_price = ?,
-          executed_shares = ?,
-          executed_value = ?,
-          portfolio_id = ?
-      WHERE id = ?
-    `).run(executed_price, executed_shares, executed_value, portfolio_id, signalId);
+          executed_price = $1,
+          executed_shares = $2,
+          executed_value = $3,
+          portfolio_id = $4
+      WHERE id = $5
+    `, [executed_price, executed_shares, executed_value, portfolio_id, signalId]);
 
     // Update agent stats
-    db.prepare(`
+    await database.query(`
       UPDATE trading_agents
       SET total_trades_executed = total_trades_executed + 1, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(signal.agent_id);
+      WHERE id = $1
+    `, [signal.agent_id]);
 
-    logActivity(signal.agent_id, portfolio_id, 'trade_executed', `Trade executed: ${signal.action.toUpperCase()} ${signal.symbol} @ $${executed_price}`, null, signalId);
-  });
+    await logActivity(signal.agent_id, portfolio_id, 'trade_executed', `Trade executed: ${signal.action.toUpperCase()} ${signal.symbol} @ $${executed_price}`, null, signalId);
 
-  executeTransaction();
-  return getSignal(signalId);
+    await database.query('COMMIT');
+    return await getSignal(signalId);
+  } catch (error) {
+    await database.query('ROLLBACK');
+    throw error;
+  }
 }
 
 /**
  * Bulk approve signals
  */
-function approveAllPendingSignals(agentId, portfolioId = null) {
-  const pendingSignals = getPendingSignals(agentId);
+async function approveAllPendingSignals(agentId, portfolioId = null) {
+  const pendingSignals = await getPendingSignals(agentId);
   const approved = [];
 
   for (const signal of pendingSignals) {
-    approved.push(approveSignal(signal.id, portfolioId));
+    approved.push(await approveSignal(signal.id, portfolioId));
   }
 
   return approved;
@@ -920,132 +930,151 @@ function approveAllPendingSignals(agentId, portfolioId = null) {
  * Create a portfolio for an agent
  * Uses transaction to ensure atomic portfolio + link creation
  */
-function createPortfolioForAgent(agentId, portfolioConfig) {
+async function createPortfolioForAgent(agentId, portfolioConfig) {
   const {
     name,
     initial_capital,
     mode = 'paper'
   } = portfolioConfig;
 
-  // Use transaction for atomic portfolio creation and linking
-  const createTransaction = db.transaction(() => {
+  const database = await getDatabaseAsync();
+
+  await database.query('BEGIN');
+  try {
     // Create the portfolio
     // Set total_deposited to initial_capital so return calculations work correctly
-    const portfolioResult = db.prepare(`
+    const portfolioResult = await database.query(`
       INSERT INTO portfolios (name, initial_cash, current_cash, current_value, total_deposited, portfolio_type, agent_id)
-      VALUES (?, ?, ?, ?, ?, 'agent_managed', ?)
-    `).run(name, initial_capital, initial_capital, initial_capital, initial_capital, agentId);
+      VALUES ($1, $2, $3, $4, $5, 'agent_managed', $6)
+      RETURNING id
+    `, [name, initial_capital, initial_capital, initial_capital, initial_capital, agentId]);
 
-    const portfolioId = portfolioResult.lastInsertRowid;
+    const portfolioId = portfolioResult.rows[0].id;
 
     // Link it to the agent
-    db.prepare(`
+    await database.query(`
       INSERT INTO agent_portfolios (agent_id, portfolio_id, mode, initial_capital, activated_at)
-      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `).run(agentId, portfolioId, mode, initial_capital);
+      VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+    `, [agentId, portfolioId, mode, initial_capital]);
 
-    return portfolioId;
-  });
+    await database.query('COMMIT');
 
-  const portfolioId = createTransaction();
-
-  // If paper trading mode, create a paper trading account
-  if (mode === 'paper') {
-    try {
-      const { PaperTradingEngine } = require('../trading/paperTrading');
-      const paperEngine = new PaperTradingEngine(db);
-      const accountName = `portfolio_${portfolioId}`;
-
-      // Check if account already exists
-      let account;
+    // If paper trading mode, create a paper trading account
+    if (mode === 'paper') {
       try {
-        account = paperEngine.getAccount(accountName);
+        const { PaperTradingEngine } = require('../trading/paperTrading');
+        const paperEngine = new PaperTradingEngine();
+        const accountName = `portfolio_${portfolioId}`;
+
+        // Check if account already exists
+        let account;
+        try {
+          account = paperEngine.getAccount(accountName);
+        } catch (err) {
+          // Create new paper trading account
+          account = paperEngine.createAccount(accountName, initial_capital);
+        }
+
+        // Paper account linked via agent_portfolios table (mode column)
+
+        // Paper account creation is logged as part of portfolio attachment below
       } catch (err) {
-        // Create new paper trading account
-        account = paperEngine.createAccount(accountName, initial_capital);
+        logger.error('Error creating paper trading account', { error: err.message });
+        // Non-fatal - portfolio still created
       }
-
-      // Paper account linked via agent_portfolios table (mode column)
-
-      // Paper account creation is logged as part of portfolio attachment below
-    } catch (err) {
-      logger.error('Error creating paper trading account', { error: err.message });
-      // Non-fatal - portfolio still created
     }
+
+    await logActivity(agentId, portfolioId, 'portfolio_attached', `Portfolio "${name}" created and attached (${mode} mode)`);
+
+    return { portfolio_id: portfolioId, portfolios: await getAgentPortfolios(agentId) };
+  } catch (error) {
+    await database.query('ROLLBACK');
+    throw error;
   }
-
-  logActivity(agentId, portfolioId, 'portfolio_attached', `Portfolio "${name}" created and attached (${mode} mode)`);
-
-  return { portfolio_id: portfolioId, portfolios: getAgentPortfolios(agentId) };
 }
 
 /**
  * Attach an existing portfolio to an agent
  * Uses transaction to ensure atomic link creation + portfolio update
  */
-function attachPortfolio(agentId, portfolioId, mode = 'paper') {
-  const attachTransaction = db.transaction(() => {
+async function attachPortfolio(agentId, portfolioId, mode = 'paper') {
+  const database = await getDatabaseAsync();
+
+  await database.query('BEGIN');
+  try {
     // Check if already attached
-    const existing = db.prepare(`
-      SELECT * FROM agent_portfolios WHERE agent_id = ? AND portfolio_id = ?
-    `).get(agentId, portfolioId);
+    const existingResult = await database.query(`
+      SELECT * FROM agent_portfolios WHERE agent_id = $1 AND portfolio_id = $2
+    `, [agentId, portfolioId]);
+
+    const existing = existingResult.rows[0];
 
     if (existing) {
       // Reactivate if previously deactivated
-      db.prepare(`
+      await database.query(`
         UPDATE agent_portfolios
-        SET is_active = 1, mode = ?, activated_at = CURRENT_TIMESTAMP, deactivated_at = NULL
-        WHERE agent_id = ? AND portfolio_id = ?
-      `).run(mode, agentId, portfolioId);
+        SET is_active = true, mode = $1, activated_at = CURRENT_TIMESTAMP, deactivated_at = NULL
+        WHERE agent_id = $2 AND portfolio_id = $3
+      `, [mode, agentId, portfolioId]);
     } else {
       // Create new link
-      db.prepare(`
+      await database.query(`
         INSERT INTO agent_portfolios (agent_id, portfolio_id, mode, activated_at)
-        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-      `).run(agentId, portfolioId, mode);
+        VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+      `, [agentId, portfolioId, mode]);
     }
 
     // Update portfolio's agent_id
-    db.prepare(`
-      UPDATE portfolios SET agent_id = ?, portfolio_type = 'agent_managed' WHERE id = ?
-    `).run(agentId, portfolioId);
+    await database.query(`
+      UPDATE portfolios SET agent_id = $1, portfolio_type = 'agent_managed' WHERE id = $2
+    `, [agentId, portfolioId]);
 
-    logActivity(agentId, portfolioId, 'portfolio_attached', `Portfolio attached (${mode} mode)`);
-  });
+    await logActivity(agentId, portfolioId, 'portfolio_attached', `Portfolio attached (${mode} mode)`);
 
-  attachTransaction();
-  return getAgentPortfolios(agentId);
+    await database.query('COMMIT');
+    return await getAgentPortfolios(agentId);
+  } catch (error) {
+    await database.query('ROLLBACK');
+    throw error;
+  }
 }
 
 /**
  * Detach a portfolio from an agent
  * Uses transaction to ensure atomic portfolio unlinking
  */
-function detachPortfolio(agentId, portfolioId) {
-  const detachTransaction = db.transaction(() => {
-    db.prepare(`
+async function detachPortfolio(agentId, portfolioId) {
+  const database = await getDatabaseAsync();
+
+  await database.query('BEGIN');
+  try {
+    await database.query(`
       UPDATE agent_portfolios
-      SET is_active = 0, deactivated_at = CURRENT_TIMESTAMP
-      WHERE agent_id = ? AND portfolio_id = ?
-    `).run(agentId, portfolioId);
+      SET is_active = false, deactivated_at = CURRENT_TIMESTAMP
+      WHERE agent_id = $1 AND portfolio_id = $2
+    `, [agentId, portfolioId]);
 
     // Remove agent reference from portfolio but keep as manual
-    db.prepare(`
-      UPDATE portfolios SET agent_id = NULL, portfolio_type = 'manual' WHERE id = ?
-    `).run(portfolioId);
+    await database.query(`
+      UPDATE portfolios SET agent_id = NULL, portfolio_type = 'manual' WHERE id = $1
+    `, [portfolioId]);
 
-    logActivity(agentId, portfolioId, 'portfolio_detached', 'Portfolio detached from agent');
-  });
+    await logActivity(agentId, portfolioId, 'portfolio_detached', 'Portfolio detached from agent');
 
-  detachTransaction();
-  return { success: true };
+    await database.query('COMMIT');
+    return { success: true };
+  } catch (error) {
+    await database.query('ROLLBACK');
+    throw error;
+  }
 }
 
 /**
  * Get all portfolios managed by an agent
  */
-function getAgentPortfolios(agentId) {
-  return db.prepare(`
+async function getAgentPortfolios(agentId) {
+  const database = await getDatabaseAsync();
+  const result = await database.query(`
     SELECT
       ap.*,
       p.name as portfolio_name,
@@ -1056,9 +1085,10 @@ function getAgentPortfolios(agentId) {
       (p.current_value - p.initial_cash) as total_pnl
     FROM agent_portfolios ap
     JOIN portfolios p ON ap.portfolio_id = p.id
-    WHERE ap.agent_id = ? AND ap.is_active = 1
+    WHERE ap.agent_id = $1 AND ap.is_active = true
     ORDER BY ap.created_at DESC
-  `).all(agentId);
+  `, [agentId]);
+  return result.rows;
 }
 
 // ============================================
@@ -1068,9 +1098,11 @@ function getAgentPortfolios(agentId) {
 /**
  * Get agent performance metrics
  */
-function getAgentPerformance(agentId) {
+async function getAgentPerformance(agentId) {
+  const database = await getDatabaseAsync();
+
   // Get overall stats
-  const stats = db.prepare(`
+  const statsResult = await database.query(`
     SELECT
       total_signals_generated,
       total_trades_executed,
@@ -1080,11 +1112,11 @@ function getAgentPerformance(agentId) {
       sharpe_ratio,
       max_drawdown_actual
     FROM trading_agents
-    WHERE id = ?
-  `).get(agentId);
+    WHERE id = $1
+  `, [agentId]);
 
   // Get signal performance by type
-  const signalPerformance = db.prepare(`
+  const signalPerformanceResult = await database.query(`
     SELECT
       action,
       COUNT(*) as count,
@@ -1092,12 +1124,12 @@ function getAgentPerformance(agentId) {
       SUM(CASE WHEN actual_return > 0 THEN 1 ELSE 0 END) as wins,
       SUM(CASE WHEN actual_return <= 0 THEN 1 ELSE 0 END) as losses
     FROM agent_signals
-    WHERE agent_id = ? AND status = 'executed' AND actual_return IS NOT NULL
+    WHERE agent_id = $1 AND status = 'executed' AND actual_return IS NOT NULL
     GROUP BY action
-  `).all(agentId);
+  `, [agentId]);
 
   // Get recent returns (last 30 signals)
-  const recentReturns = db.prepare(`
+  const recentReturnsResult = await database.query(`
     SELECT
       signal_date,
       symbol,
@@ -1105,44 +1137,47 @@ function getAgentPerformance(agentId) {
       actual_return,
       holding_period_days
     FROM agent_signals
-    WHERE agent_id = ? AND status = 'executed' AND actual_return IS NOT NULL
+    WHERE agent_id = $1 AND status = 'executed' AND actual_return IS NOT NULL
     ORDER BY exit_date DESC
     LIMIT 30
-  `).all(agentId);
+  `, [agentId]);
 
   return {
-    ...stats,
-    signalPerformance,
-    recentReturns
+    ...statsResult.rows[0],
+    signalPerformance: signalPerformanceResult.rows,
+    recentReturns: recentReturnsResult.rows
   };
 }
 
 /**
  * Update agent performance stats (called after tracking outcomes)
  */
-function updateAgentPerformance(agentId) {
-  const stats = db.prepare(`
+async function updateAgentPerformance(agentId) {
+  const database = await getDatabaseAsync();
+
+  const statsResult = await database.query(`
     SELECT
       COUNT(*) as total_tracked,
       SUM(CASE WHEN actual_return > 0 THEN 1 ELSE 0 END) as wins,
       AVG(actual_return) as avg_return,
       SUM(actual_return) as total_return
     FROM agent_signals
-    WHERE agent_id = ? AND status = 'executed' AND actual_return IS NOT NULL
-  `).get(agentId);
+    WHERE agent_id = $1 AND status = 'executed' AND actual_return IS NOT NULL
+  `, [agentId]);
 
+  const stats = statsResult.rows[0];
   const winRate = stats.total_tracked > 0 ? (stats.wins / stats.total_tracked) : null;
 
-  db.prepare(`
+  await database.query(`
     UPDATE trading_agents
     SET
-      win_rate = ?,
-      avg_return = ?,
-      total_return = ?,
-      total_trades_won = ?,
+      win_rate = $1,
+      avg_return = $2,
+      total_return = $3,
+      total_trades_won = $4,
       updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).run(winRate, stats.avg_return, stats.total_return, stats.wins, agentId);
+    WHERE id = $5
+  `, [winRate, stats.avg_return, stats.total_return, stats.wins, agentId]);
 }
 
 // ============================================
@@ -1152,27 +1187,30 @@ function updateAgentPerformance(agentId) {
 /**
  * Log an activity
  */
-function logActivity(agentId, portfolioId, activityType, description, details = null, signalId = null) {
-  db.prepare(`
+async function logActivity(agentId, portfolioId, activityType, description, details = null, signalId = null) {
+  const database = await getDatabaseAsync();
+  await database.query(`
     INSERT INTO agent_activity_log (agent_id, portfolio_id, activity_type, description, details, signal_id)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(agentId, portfolioId, activityType, description, details, signalId);
+    VALUES ($1, $2, $3, $4, $5, $6)
+  `, [agentId, portfolioId, activityType, description, details, signalId]);
 }
 
 /**
  * Get activity log for an agent
  */
-function getActivityLog(agentId, limit = 50) {
-  return db.prepare(`
+async function getActivityLog(agentId, limit = 50) {
+  const database = await getDatabaseAsync();
+  const result = await database.query(`
     SELECT
       aal.*,
       p.name as portfolio_name
     FROM agent_activity_log aal
     LEFT JOIN portfolios p ON aal.portfolio_id = p.id
-    WHERE aal.agent_id = ?
+    WHERE aal.agent_id = $1
     ORDER BY aal.created_at DESC
-    LIMIT ?
-  `).all(agentId, limit);
+    LIMIT $2
+  `, [agentId, limit]);
+  return result.rows;
 }
 
 // ============================================
@@ -1185,14 +1223,16 @@ function getActivityLog(agentId, limit = 50) {
  */
 async function detectCurrentRegime() {
   try {
+    const database = await getDatabaseAsync();
     // Get VIX and fear/greed indicators
-    const indicators = db.prepare(`
+    const indicatorsResult = await database.query(`
       SELECT indicator_type, indicator_value
       FROM market_sentiment
       WHERE indicator_type IN ('vix', 'cnn_fear_greed')
       ORDER BY fetched_at DESC
-    `).all();
+    `);
 
+    const indicators = indicatorsResult.rows;
     let vix = null;
     let fearGreed = null;
 
@@ -1227,14 +1267,17 @@ async function detectCurrentRegime() {
 /**
  * Get agent configuration as object for TradingAgent
  */
-function getAgentConfig(agentId) {
-  const agent = db.prepare('SELECT * FROM trading_agents WHERE id = ?').get(agentId);
+async function getAgentConfig(agentId) {
+  const database = await getDatabaseAsync();
+  const agentResult = await database.query('SELECT * FROM trading_agents WHERE id = $1', [agentId]);
+  const agent = agentResult.rows[0];
   if (!agent) return null;
 
   // Get user's global tax settings
   let taxSettings = null;
   try {
-    taxSettings = db.prepare('SELECT * FROM user_tax_settings WHERE id = 1').get();
+    const taxResult = await database.query('SELECT * FROM user_tax_settings WHERE id = 1');
+    taxSettings = taxResult.rows[0];
   } catch (e) {
     // Table may not exist yet
   }
@@ -1292,14 +1335,15 @@ function getStrategyPresets() {
 /**
  * Get beginner strategy presets from database
  */
-function getBeginnerPresets() {
-  const presets = db.prepare(`
+async function getBeginnerPresets() {
+  const database = await getDatabaseAsync();
+  const result = await database.query(`
     SELECT * FROM strategy_presets_v2
     WHERE name LIKE 'Simple:%'
     ORDER BY sort_order, name
-  `).all();
+  `);
 
-  return presets.map(p => ({
+  return result.rows.map(p => ({
     id: p.id,
     name: p.name.replace('Simple: ', ''),
     fullName: p.name,
@@ -1315,7 +1359,7 @@ function getBeginnerPresets() {
 /**
  * Create a new beginner strategy agent
  */
-function createBeginnerAgent({ name, description, portfolioId, strategyType, config }) {
+async function createBeginnerAgent({ name, description, portfolioId, strategyType, config }) {
   // Build beginner_config JSON
   const beginnerConfig = {
     strategy_type: strategyType,
@@ -1323,8 +1367,10 @@ function createBeginnerAgent({ name, description, portfolioId, strategyType, con
     next_contribution_date: config.next_contribution_date || calculateNextContributionDate(config)
   };
 
+  const database = await getDatabaseAsync();
+
   // Insert the agent with beginner category
-  const result = db.prepare(`
+  const result = await database.query(`
     INSERT INTO trading_agents (
       name,
       description,
@@ -1339,24 +1385,25 @@ function createBeginnerAgent({ name, description, portfolioId, strategyType, con
       require_confirmation,
       is_active,
       created_at
-    ) VALUES (?, ?, 'custom', 'beginner', ?, 1.0, 0, 0.25, 0.40, 0, 1, 1, CURRENT_TIMESTAMP)
-  `).run(
+    ) VALUES ($1, $2, 'custom', 'beginner', $3, 1.0, 0, 0.25, 0.40, false, true, true, CURRENT_TIMESTAMP)
+    RETURNING id
+  `, [
     name,
     description || '',
     JSON.stringify(beginnerConfig)
-  );
+  ]);
 
-  const agentId = result.lastInsertRowid;
+  const agentId = result.rows[0].id;
 
   // Attach portfolio if provided
   if (portfolioId) {
-    attachPortfolio(agentId, portfolioId, 'paper');
+    await attachPortfolio(agentId, portfolioId, 'paper');
   }
 
   // Log activity
-  logActivity(agentId, portfolioId || null, 'agent_created', `Beginner agent "${name}" created with ${strategyType} strategy`);
+  await logActivity(agentId, portfolioId || null, 'agent_created', `Beginner agent "${name}" created with ${strategyType} strategy`);
 
-  return getAgent(agentId);
+  return await getAgent(agentId);
 }
 
 /**
@@ -1399,8 +1446,10 @@ function calculateNextContributionDate(config) {
 /**
  * Get the universe of symbols to scan for an agent
  */
-function getAgentUniverse(agentId) {
-  const agent = db.prepare('SELECT * FROM trading_agents WHERE id = ?').get(agentId);
+async function getAgentUniverse(agentId) {
+  const database = await getDatabaseAsync();
+  const agentResult = await database.query('SELECT * FROM trading_agents WHERE id = $1', [agentId]);
+  const agent = agentResult.rows[0];
   if (!agent) return [];
 
   const universeType = agent.universe_type || 'all';
@@ -1415,23 +1464,25 @@ function getAgentUniverse(agentId) {
   switch (universeType) {
     case 'watchlist':
       // Get symbols from user's watchlist
-      symbols = db.prepare(`
+      const watchlistResult = await database.query(`
         SELECT DISTINCT c.symbol
         FROM watchlist_items wi
         JOIN companies c ON wi.company_id = c.id
         ORDER BY c.symbol
-      `).all().map(r => r.symbol);
+      `);
+      symbols = watchlistResult.rows.map(r => r.symbol);
       break;
 
     case 'sector':
       // Get symbols from specific sectors
       if (universeFilter?.sectors?.length > 0) {
-        const placeholders = universeFilter.sectors.map(() => '?').join(',');
-        symbols = db.prepare(`
+        const placeholders = universeFilter.sectors.map((_, idx) => `$${idx + 1}`).join(',');
+        const sectorResult = await database.query(`
           SELECT symbol FROM companies
           WHERE sector IN (${placeholders})
           ORDER BY symbol
-        `).all(...universeFilter.sectors).map(r => r.symbol);
+        `, universeFilter.sectors);
+        symbols = sectorResult.rows.map(r => r.symbol);
       }
       break;
 
@@ -1446,34 +1497,37 @@ function getAgentUniverse(agentId) {
     default:
       // Get all active companies with actual trading data
       // Filter for valid symbols with price data, ordered by market cap
-      symbols = db.prepare(`
+      const allResult = await database.query(`
         SELECT c.symbol
         FROM companies c
-        WHERE c.is_active = 1
+        WHERE c.is_active = true
           AND LENGTH(c.symbol) <= 5
           AND c.symbol NOT LIKE '%=%'
           AND c.symbol NOT LIKE '%.%'
-          AND c.symbol NOT GLOB '*[0-9][0-9][0-9][0-9][0-9]*'
+          AND c.symbol !~ '[0-9]{5,}'
           AND EXISTS (
             SELECT 1 FROM daily_prices dp
             WHERE dp.company_id = c.id
-            AND dp.date >= date('now', '-30 days')
+            AND dp.date >= CURRENT_DATE - INTERVAL '30 days'
           )
         ORDER BY c.market_cap DESC NULLS LAST
         LIMIT 500
-      `).all().map(r => r.symbol);
+      `);
+      symbols = allResult.rows.map(r => r.symbol);
       break;
   }
 
   // Apply market cap filter if specified
-  if (universeFilter?.min_market_cap) {
+  if (universeFilter?.min_market_cap && symbols.length > 0) {
     const minCap = universeFilter.min_market_cap;
-    symbols = db.prepare(`
+    const placeholders = symbols.map((_, idx) => `$${idx + 1}`).join(',');
+    const filteredResult = await database.query(`
       SELECT c.symbol FROM companies c
-      WHERE c.symbol IN (${symbols.map(() => '?').join(',')})
-        AND c.market_cap >= ?
+      WHERE c.symbol IN (${placeholders})
+        AND c.market_cap >= $${symbols.length + 1}
       ORDER BY c.symbol
-    `).all(...symbols, minCap).map(r => r.symbol);
+    `, [...symbols, minCap]);
+    symbols = filteredResult.rows.map(r => r.symbol);
   }
 
   return symbols;
@@ -1483,7 +1537,9 @@ function getAgentUniverse(agentId) {
  * Generate signals for an agent by running the TradingAgent on its universe
  */
 async function generateSignals(agentId) {
-  const agent = db.prepare('SELECT * FROM trading_agents WHERE id = ?').get(agentId);
+  const database = await getDatabaseAsync();
+  const agentResult = await database.query('SELECT * FROM trading_agents WHERE id = $1', [agentId]);
+  const agent = agentResult.rows[0];
   if (!agent) {
     throw new Error(`Agent ${agentId} not found`);
   }
@@ -1497,7 +1553,7 @@ async function generateSignals(agentId) {
     const regime = await detectCurrentRegime();
     if (regime === 'CRISIS') {
       console.log(`Agent ${agent.name}: Pausing signal generation during CRISIS regime`);
-      logActivity(agentId, null, 'scan_skipped', 'Signal generation paused: CRISIS regime detected');
+      await logActivity(agentId, null, 'scan_skipped', 'Signal generation paused: CRISIS regime detected');
       return {
         signalsGenerated: 0,
         errors: 0,
@@ -1509,39 +1565,39 @@ async function generateSignals(agentId) {
   }
 
   // Update status to running
-  db.prepare(`
-    UPDATE trading_agents SET status = 'running', updated_at = CURRENT_TIMESTAMP WHERE id = ?
-  `).run(agentId);
+  await database.query(`
+    UPDATE trading_agents SET status = 'running', updated_at = CURRENT_TIMESTAMP WHERE id = $1
+  `, [agentId]);
 
-  logActivity(agentId, null, 'scan_started', 'Signal generation scan started');
+  await logActivity(agentId, null, 'scan_started', 'Signal generation scan started');
 
   try {
     // Get agent config for TradingAgent
-    const config = getAgentConfig(agentId);
+    const config = await getAgentConfig(agentId);
 
     // Import TradingAgent (lazy to avoid circular deps)
     const { TradingAgent } = require('./tradingAgent');
-    const tradingAgent = new TradingAgent(db, config);
+    const tradingAgent = new TradingAgent(config);
 
     // Get universe of symbols to scan
-    const symbols = getAgentUniverse(agentId);
+    const symbols = await getAgentUniverse(agentId);
 
     if (symbols.length === 0) {
-      logActivity(agentId, null, 'scan_completed', 'No symbols in universe to scan');
-      updateLastScan(agentId);
+      await logActivity(agentId, null, 'scan_completed', 'No symbols in universe to scan');
+      await updateLastScan(agentId);
       return { signalsGenerated: 0, errors: 0, symbols: 0 };
     }
 
     // Get portfolio context if agent has an active portfolio
-    const portfolios = getAgentPortfolios(agentId);
+    const portfolios = await getAgentPortfolios(agentId);
     let portfolioContext = null;
 
     // Validate agent has at least one linked portfolio - required for signal execution
     if (!portfolios || portfolios.length === 0) {
       console.warn(`Agent ${agent.name} (${agentId}) has no linked portfolio. Skipping signal generation.`);
-      logActivity(agentId, null, 'scan_skipped', 'No linked portfolio - cannot execute signals');
-      updateLastScan(agentId);
-      db.prepare(`UPDATE trading_agents SET status = 'idle' WHERE id = ?`).run(agentId);
+      await logActivity(agentId, null, 'scan_skipped', 'No linked portfolio - cannot execute signals');
+      await updateLastScan(agentId);
+      await database.query(`UPDATE trading_agents SET status = 'idle' WHERE id = $1`, [agentId]);
       return {
         signalsGenerated: 0,
         errors: 0,
@@ -1616,7 +1672,7 @@ async function generateSignals(agentId) {
       }
 
       // Create signal in database with portfolio context
-      createSignal(agentId, {
+      await createSignal(agentId, {
         symbol: rec.symbol,
         company_id: rec.companyId,
         action: action,
@@ -1641,26 +1697,27 @@ async function generateSignals(agentId) {
       // Auto-approve only STRONG tier signals if confidence exceeds threshold
       if (agent.auto_execute && tier === 'STRONG' && rec.confidence >= agent.execution_threshold) {
         // Get the last inserted signal and approve it
-        const lastSignal = db.prepare(`
-          SELECT id FROM agent_signals WHERE agent_id = ? ORDER BY id DESC LIMIT 1
-        `).get(agentId);
+        const lastSignalResult = await database.query(`
+          SELECT id FROM agent_signals WHERE agent_id = $1 ORDER BY id DESC LIMIT 1
+        `, [agentId]);
+        const lastSignal = lastSignalResult.rows[0];
         if (lastSignal) {
-          approveSignal(lastSignal.id, portfolioContext?.portfolioId);
+          await approveSignal(lastSignal.id, portfolioContext?.portfolioId);
         }
       }
     }
 
     // Update scan timestamp
-    updateLastScan(agentId);
+    await updateLastScan(agentId);
 
     // Log completion
-    logActivity(agentId, null, 'scan_completed',
+    await logActivity(agentId, null, 'scan_completed',
       `Scan completed: ${symbols.length} symbols scanned, ${signalsGenerated} signals generated, ${errors} errors`);
 
     // Set status back to idle (or running if scheduled)
-    db.prepare(`
-      UPDATE trading_agents SET status = 'idle', updated_at = CURRENT_TIMESTAMP WHERE id = ?
-    `).run(agentId);
+    await database.query(`
+      UPDATE trading_agents SET status = 'idle', updated_at = CURRENT_TIMESTAMP WHERE id = $1
+    `, [agentId]);
 
     return {
       signalsGenerated,
@@ -1670,7 +1727,7 @@ async function generateSignals(agentId) {
     };
 
   } catch (error) {
-    setAgentError(agentId, error.message);
+    await setAgentError(agentId, error.message);
     throw error;
   }
 }
@@ -1679,7 +1736,7 @@ async function generateSignals(agentId) {
  * Run an immediate scan for an agent
  */
 async function runScan(agentId) {
-  return generateSignals(agentId);
+  return await generateSignals(agentId);
 }
 
 // ============================================
@@ -1690,45 +1747,51 @@ async function runScan(agentId) {
  * Get all executions for an agent (pending, approved, and executed)
  * Returns data formatted for the 3-column ExecutionTab
  */
-function getExecutions(agentId) {
+async function getExecutions(agentId) {
+  const database = await getDatabaseAsync();
+
   // Pending approvals (signals that need user approval)
-  const pending = db.prepare(`
+  const pendingResult = await database.query(`
     SELECT
       s.*,
       c.name as company_name,
       c.sector
     FROM agent_signals s
     LEFT JOIN companies c ON s.company_id = c.id
-    WHERE s.agent_id = ? AND s.status = 'pending'
+    WHERE s.agent_id = $1 AND s.status = 'pending'
     ORDER BY s.created_at DESC
     LIMIT 50
-  `).all(agentId);
+  `, [agentId]);
 
   // Approved (ready to execute)
-  const approved = db.prepare(`
+  const approvedResult = await database.query(`
     SELECT
       s.*,
       c.name as company_name,
       c.sector
     FROM agent_signals s
     LEFT JOIN companies c ON s.company_id = c.id
-    WHERE s.agent_id = ? AND s.status = 'approved'
+    WHERE s.agent_id = $1 AND s.status = 'approved'
     ORDER BY s.created_at DESC
     LIMIT 50
-  `).all(agentId);
+  `, [agentId]);
 
   // Recently executed (for history)
-  const executed = db.prepare(`
+  const executedResult = await database.query(`
     SELECT
       s.*,
       c.name as company_name,
       c.sector
     FROM agent_signals s
     LEFT JOIN companies c ON s.company_id = c.id
-    WHERE s.agent_id = ? AND s.status = 'executed'
+    WHERE s.agent_id = $1 AND s.status = 'executed'
     ORDER BY s.executed_at DESC NULLS LAST, s.created_at DESC
     LIMIT 50
-  `).all(agentId);
+  `, [agentId]);
+
+  const pending = pendingResult.rows;
+  const approved = approvedResult.rows;
+  const executed = executedResult.rows;
 
   return {
     pending,
@@ -1745,41 +1808,47 @@ function getExecutions(agentId) {
 /**
  * Approve an execution (move signal from pending to approved)
  */
-function approveExecution(signalId) {
-  const signal = db.prepare('SELECT * FROM agent_signals WHERE id = ?').get(signalId);
+async function approveExecution(signalId) {
+  const database = await getDatabaseAsync();
+  const signalResult = await database.query('SELECT * FROM agent_signals WHERE id = $1', [signalId]);
+  const signal = signalResult.rows[0];
   if (!signal || signal.status !== 'pending') return null;
 
   const now = new Date().toISOString();
-  db.prepare(`
+  await database.query(`
     UPDATE agent_signals
-    SET status = 'approved', updated_at = ?
-    WHERE id = ?
-  `).run(now, signalId);
+    SET status = 'approved', updated_at = $1
+    WHERE id = $2
+  `, [now, signalId]);
 
   // Log activity
-  logActivity(signal.agent_id, null, 'signal_approved', `Approved ${signal.action.toUpperCase()} ${signal.symbol}`);
+  await logActivity(signal.agent_id, null, 'signal_approved', `Approved ${signal.action.toUpperCase()} ${signal.symbol}`);
 
-  return db.prepare('SELECT * FROM agent_signals WHERE id = ?').get(signalId);
+  const updatedResult = await database.query('SELECT * FROM agent_signals WHERE id = $1', [signalId]);
+  return updatedResult.rows[0];
 }
 
 /**
  * Reject an execution
  */
-function rejectExecution(signalId, reason = null) {
-  const signal = db.prepare('SELECT * FROM agent_signals WHERE id = ?').get(signalId);
+async function rejectExecution(signalId, reason = null) {
+  const database = await getDatabaseAsync();
+  const signalResult = await database.query('SELECT * FROM agent_signals WHERE id = $1', [signalId]);
+  const signal = signalResult.rows[0];
   if (!signal) return null;
 
   const now = new Date().toISOString();
-  db.prepare(`
+  await database.query(`
     UPDATE agent_signals
-    SET status = 'rejected', rejection_reason = ?, updated_at = ?
-    WHERE id = ?
-  `).run(reason, now, signalId);
+    SET status = 'rejected', rejection_reason = $1, updated_at = $2
+    WHERE id = $3
+  `, [reason, now, signalId]);
 
   // Log activity
-  logActivity(signal.agent_id, null, 'signal_rejected', `Rejected ${signal.action.toUpperCase()} ${signal.symbol}${reason ? ': ' + reason : ''}`);
+  await logActivity(signal.agent_id, null, 'signal_rejected', `Rejected ${signal.action.toUpperCase()} ${signal.symbol}${reason ? ': ' + reason : ''}`);
 
-  return db.prepare('SELECT * FROM agent_signals WHERE id = ?').get(signalId);
+  const updatedResult = await database.query('SELECT * FROM agent_signals WHERE id = $1', [signalId]);
+  return updatedResult.rows[0];
 }
 
 /**
@@ -1787,12 +1856,14 @@ function rejectExecution(signalId, reason = null) {
  * This is where the actual trade execution happens
  */
 async function executeApproved(signalId) {
-  const signal = db.prepare('SELECT * FROM agent_signals WHERE id = ?').get(signalId);
+  const database = await getDatabaseAsync();
+  const signalResult = await database.query('SELECT * FROM agent_signals WHERE id = $1', [signalId]);
+  const signal = signalResult.rows[0];
   if (!signal || signal.status !== 'approved') return null;
 
   // Get agent and portfolio
-  const agent = getAgent(signal.agent_id);
-  const portfolios = getAgentPortfolios(signal.agent_id);
+  const agent = await getAgent(signal.agent_id);
+  const portfolios = await getAgentPortfolios(signal.agent_id);
 
   if (portfolios.length === 0) {
     throw new Error('No portfolio attached to agent');
@@ -1806,7 +1877,7 @@ async function executeApproved(signalId) {
     if (portfolio.mode === 'paper') {
       // Paper trading execution
       const { PaperTradingEngine } = require('../trading/paperTrading');
-      const paperEngine = new PaperTradingEngine(db);
+      const paperEngine = new PaperTradingEngine();
 
       // Get or create paper account for this portfolio
       const accountName = `portfolio_${portfolio.portfolio_id}`;
@@ -1832,17 +1903,17 @@ async function executeApproved(signalId) {
       });
 
       // Update signal status
-      db.prepare(`
+      await database.query(`
         UPDATE agent_signals
         SET status = 'executed',
-            executed_at = ?,
-            executed_price = ?,
-            executed_shares = ?
-        WHERE id = ?
-      `).run(now, tradeResult.avgFillPrice || tradeResult.fillPrice, tradeResult.filledQuantity || shares, signalId);
+            executed_at = $1,
+            executed_price = $2,
+            executed_shares = $3
+        WHERE id = $4
+      `, [now, tradeResult.avgFillPrice || tradeResult.fillPrice, tradeResult.filledQuantity || shares, signalId]);
 
       // Log activity
-      logActivity(signal.agent_id, portfolio.portfolio_id, 'trade_executed',
+      await logActivity(signal.agent_id, portfolio.portfolio_id, 'trade_executed',
         `Executed ${signal.action.toUpperCase()} ${tradeResult.filledQuantity || shares} shares of ${signal.symbol} @ $${(tradeResult.avgFillPrice || tradeResult.fillPrice)?.toFixed(2)}`, null, signalId);
 
       return {
@@ -1859,7 +1930,7 @@ async function executeApproved(signalId) {
     }
   } catch (error) {
     // Log error (using 'trade_failed' which is in the allowed CHECK constraint)
-    logActivity(signal.agent_id, portfolio?.portfolio_id || null, 'trade_failed', `Failed to execute ${signal.symbol}: ${error.message}`, null, signalId);
+    await logActivity(signal.agent_id, portfolio?.portfolio_id || null, 'trade_failed', `Failed to execute ${signal.symbol}: ${error.message}`, null, signalId);
     throw error;
   }
 }
@@ -1867,15 +1938,16 @@ async function executeApproved(signalId) {
 /**
  * Approve all pending executions for an agent
  */
-function approveAllExecutions(agentId) {
-  const pending = db.prepare(`
+async function approveAllExecutions(agentId) {
+  const database = await getDatabaseAsync();
+  const pendingResult = await database.query(`
     SELECT id FROM agent_signals
-    WHERE agent_id = ? AND status = 'pending'
-  `).all(agentId);
+    WHERE agent_id = $1 AND status = 'pending'
+  `, [agentId]);
 
   const approved = [];
-  for (const signal of pending) {
-    const result = approveExecution(signal.id);
+  for (const signal of pendingResult.rows) {
+    const result = await approveExecution(signal.id);
     if (result) approved.push(result);
   }
 
@@ -1886,13 +1958,14 @@ function approveAllExecutions(agentId) {
  * Execute all approved trades for an agent
  */
 async function executeAllApproved(agentId) {
-  const approved = db.prepare(`
+  const database = await getDatabaseAsync();
+  const approvedResult = await database.query(`
     SELECT id FROM agent_signals
-    WHERE agent_id = ? AND status = 'approved'
-  `).all(agentId);
+    WHERE agent_id = $1 AND status = 'approved'
+  `, [agentId]);
 
   const executed = [];
-  for (const signal of approved) {
+  for (const signal of approvedResult.rows) {
     try {
       const result = await executeApproved(signal.id);
       if (result) executed.push(result);
@@ -1907,8 +1980,10 @@ async function executeAllApproved(agentId) {
 /**
  * Update agent settings
  */
-function updateAgentSettings(agentId, settings) {
-  const agent = db.prepare('SELECT * FROM trading_agents WHERE id = ?').get(agentId);
+async function updateAgentSettings(agentId, settings) {
+  const database = await getDatabaseAsync();
+  const agentResult = await database.query('SELECT * FROM trading_agents WHERE id = $1', [agentId]);
+  const agent = agentResult.rows[0];
   if (!agent) return null;
 
   // Build update query dynamically based on provided settings
@@ -1926,9 +2001,10 @@ function updateAgentSettings(agentId, settings) {
     'use_probabilistic_dcf', 'universe_type', 'universe_filter', 'strategy_type'
   ];
 
+  let paramIndex = 1;
   for (const field of settableFields) {
     if (settings[field] !== undefined) {
-      updates.push(`${field} = ?`);
+      updates.push(`${field} = $${paramIndex++}`);
       values.push(typeof settings[field] === 'object' ? JSON.stringify(settings[field]) : settings[field]);
     }
   }
@@ -1937,71 +2013,76 @@ function updateAgentSettings(agentId, settings) {
     return agent;
   }
 
-  updates.push('updated_at = ?');
+  updates.push(`updated_at = $${paramIndex++}`);
   values.push(new Date().toISOString());
   values.push(agentId);
 
-  db.prepare(`
+  await database.query(`
     UPDATE trading_agents
     SET ${updates.join(', ')}
-    WHERE id = ?
-  `).run(...values);
+    WHERE id = $${paramIndex}
+  `, values);
 
   // Log activity
-  logActivity(agentId, null, 'settings_updated', 'Agent settings updated');
+  await logActivity(agentId, null, 'settings_updated', 'Agent settings updated');
 
-  return getAgent(agentId);
+  return await getAgent(agentId);
 }
 
 /**
  * Link an agent to a unified strategy
  * This allows the agent to use the unified strategy engine for signal generation
  */
-function linkToUnifiedStrategy(agentId, strategyId) {
-  const stmt = db.prepare(`
+async function linkToUnifiedStrategy(agentId, strategyId) {
+  const database = await getDatabaseAsync();
+  await database.query(`
     UPDATE trading_agents
-    SET unified_strategy_id = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `);
-  stmt.run(strategyId, agentId);
+    SET unified_strategy_id = $1, updated_at = CURRENT_TIMESTAMP
+    WHERE id = $2
+  `, [strategyId, agentId]);
 
-  logActivity(agentId, null, 'settings_updated', `Linked to unified strategy #${strategyId}`);
+  await logActivity(agentId, null, 'settings_updated', `Linked to unified strategy #${strategyId}`);
 
-  return getAgent(agentId);
+  return await getAgent(agentId);
 }
 
 /**
  * Unlink an agent from a unified strategy
  */
-function unlinkUnifiedStrategy(agentId) {
-  const stmt = db.prepare(`
+async function unlinkUnifiedStrategy(agentId) {
+  const database = await getDatabaseAsync();
+  await database.query(`
     UPDATE trading_agents
     SET unified_strategy_id = NULL, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `);
-  stmt.run(agentId);
+    WHERE id = $1
+  `, [agentId]);
 
-  logActivity(agentId, null, 'settings_updated', 'Unlinked from unified strategy');
+  await logActivity(agentId, null, 'settings_updated', 'Unlinked from unified strategy');
 
-  return getAgent(agentId);
+  return await getAgent(agentId);
 }
 
 /**
  * Get agent's linked unified strategy
  */
-function getLinkedStrategy(agentId) {
-  const agent = db.prepare(`
-    SELECT unified_strategy_id FROM trading_agents WHERE id = ?
-  `).get(agentId);
+async function getLinkedStrategy(agentId) {
+  const database = await getDatabaseAsync();
+  const agentResult = await database.query(`
+    SELECT unified_strategy_id FROM trading_agents WHERE id = $1
+  `, [agentId]);
+
+  const agent = agentResult.rows[0];
 
   if (!agent || !agent.unified_strategy_id) {
     return null;
   }
 
   // Get strategy details
-  const strategy = db.prepare(`
-    SELECT * FROM unified_strategies WHERE id = ?
-  `).get(agent.unified_strategy_id);
+  const strategyResult = await database.query(`
+    SELECT * FROM unified_strategies WHERE id = $1
+  `, [agent.unified_strategy_id]);
+
+  const strategy = strategyResult.rows[0];
 
   if (!strategy) {
     return null;
@@ -2021,27 +2102,31 @@ function getLinkedStrategy(agentId) {
 /**
  * Get all agents using a specific unified strategy
  */
-function getAgentsByStrategy(strategyId) {
-  return db.prepare(`
+async function getAgentsByStrategy(strategyId) {
+  const database = await getDatabaseAsync();
+  const result = await database.query(`
     SELECT * FROM trading_agents
-    WHERE unified_strategy_id = ? AND is_active = 1
+    WHERE unified_strategy_id = $1 AND is_active = true
     ORDER BY name
-  `).all(strategyId);
+  `, [strategyId]);
+  return result.rows;
 }
 
 /**
  * Get lightweight live status for polling
  */
-function getLiveStatus(agentId) {
-  const agent = db.prepare(`
+async function getLiveStatus(agentId) {
+  const database = await getDatabaseAsync();
+  const result = await database.query(`
     SELECT
       id, status, last_scan_at, next_scan_at,
-      (SELECT COUNT(*) FROM agent_signals WHERE agent_id = ? AND status = 'pending') as pending_count,
-      (SELECT COUNT(*) FROM agent_signals WHERE agent_id = ? AND status = 'approved') as approved_count
+      (SELECT COUNT(*) FROM agent_signals WHERE agent_id = $1 AND status = 'pending') as pending_count,
+      (SELECT COUNT(*) FROM agent_signals WHERE agent_id = $2 AND status = 'approved') as approved_count
     FROM trading_agents
-    WHERE id = ?
-  `).get(agentId, agentId, agentId);
+    WHERE id = $3
+  `, [agentId, agentId, agentId]);
 
+  const agent = result.rows[0];
   if (!agent) return null;
 
   return {

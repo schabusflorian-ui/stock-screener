@@ -2,11 +2,12 @@
 // Opportunity Scanner - Surfaces best trading candidates from the stock universe
 // Enhanced with alt data, 13F delta, open market buys, and earnings momentum
 
+const { getDatabase } = require('../../lib/db');
 const { SignalEnhancements } = require('../signalEnhancements');
 
 class OpportunityScanner {
-  constructor(db, options = {}) {
-    this.db = db;
+  constructor(options = {}) {
+    this.db = null;
     this.options = {
       maxOpportunities: options.maxOpportunities || 50,
       minSignificanceScore: options.minSignificanceScore || 6,
@@ -20,232 +21,23 @@ class OpportunityScanner {
       ...options,
     };
 
-    // Initialize signal enhancements for 13F, insider classification, earnings
-    this.signalEnhancements = new SignalEnhancements(db);
+    // Signal enhancements will be initialized in init()
+    this.signalEnhancements = null;
 
-    this._prepareStatements();
     console.log('🔍 Opportunity Scanner initialized (13 opportunity types)');
   }
 
-  _prepareStatements() {
-    this.stmts = {
-      // Significant events
-      getSignificantEvents: this.db.prepare(`
-        SELECT e.*, c.symbol, c.name, c.sector
-        FROM significant_events e
-        JOIN companies c ON e.company_id = c.id
-        WHERE e.event_date >= date('now', '-' || ? || ' days')
-        AND e.significance_score >= ?
-        AND c.symbol NOT LIKE 'CIK_%'
-        ORDER BY e.significance_score DESC, e.event_date DESC
-        LIMIT ?
-      `),
+  async init() {
+    this.db = await getDatabase();
+    this.signalEnhancements = new SignalEnhancements();
+    await this.signalEnhancements.init();
+  }
 
-      // Strong sentiment signals
-      getSentimentSignals: this.db.prepare(`
-        SELECT c.symbol, c.name, c.sector, cs.combined_score, cs.combined_signal,
-               cs.confidence, cs.sources_used, cs.agreement_score, cs.calculated_at
-        FROM combined_sentiment cs
-        JOIN companies c ON cs.company_id = c.id
-        WHERE cs.calculated_at >= datetime('now', '-' || ? || ' days')
-        AND cs.combined_signal IN ('strong_buy', 'buy', 'strong_sell', 'sell')
-        AND cs.confidence >= 0.5
-        AND c.symbol NOT LIKE 'CIK_%'
-        ORDER BY ABS(cs.combined_score) DESC
-        LIMIT ?
-      `),
-
-      // Insider activity
-      getInsiderActivity: this.db.prepare(`
-        SELECT c.symbol, c.name, c.sector, i.insider_signal, i.buy_value, i.sell_value,
-               i.net_value, i.unique_buyers, i.unique_sellers, i.signal_strength
-        FROM insider_activity_summary i
-        JOIN companies c ON i.company_id = c.id
-        WHERE i.period = ?
-        AND i.insider_signal IN ('strong_buy', 'buy', 'bullish')
-        AND i.buy_value >= 50000
-        AND c.symbol NOT LIKE 'CIK_%'
-        ORDER BY i.buy_value DESC
-        LIMIT ?
-      `),
-
-      // Analyst upgrades/strong buys
-      getAnalystOpportunities: this.db.prepare(`
-        SELECT c.symbol, c.name, c.sector, ae.recommendation_key, ae.recommendation_mean,
-               ae.upside_potential, ae.number_of_analysts, ae.target_mean, ae.current_price,
-               ae.signal, ae.signal_strength
-        FROM analyst_estimates ae
-        JOIN companies c ON ae.company_id = c.id
-        WHERE ae.recommendation_key IN ('strong_buy', 'buy')
-        AND ae.upside_potential >= 15
-        AND ae.number_of_analysts >= 3
-        AND c.symbol NOT LIKE 'CIK_%'
-        ORDER BY ae.upside_potential DESC
-        LIMIT ?
-      `),
-
-      // Technical breakouts (near 52w low with improving momentum)
-      getTechnicalBreakouts: this.db.prepare(`
-        SELECT c.symbol, c.name, c.sector, pm.last_price, pm.high_52w, pm.low_52w,
-               pm.change_1w, pm.change_1m, pm.alpha_1m, pm.alpha_3m,
-               CASE
-                 WHEN pm.high_52w > pm.low_52w THEN
-                   (pm.last_price - pm.low_52w) / (pm.high_52w - pm.low_52w) * 100
-                 ELSE 50
-               END as position_52w_pct
-        FROM price_metrics pm
-        JOIN companies c ON pm.company_id = c.id
-        WHERE pm.last_price IS NOT NULL
-        AND pm.high_52w IS NOT NULL
-        AND pm.low_52w IS NOT NULL
-        AND (
-          -- Near 52w low (bottom 25%) with positive recent momentum
-          ((pm.last_price - pm.low_52w) / NULLIF(pm.high_52w - pm.low_52w, 0) < 0.25 AND pm.change_1w > 0)
-          OR
-          -- Breaking out with volume (strong recent alpha)
-          (pm.alpha_1m > 5 AND pm.change_1w > 3)
-        )
-        AND c.symbol NOT LIKE 'CIK_%'
-        ORDER BY pm.alpha_1m DESC NULLS LAST
-        LIMIT ?
-      `),
-
-      // Alerts from alert system
-      getRecentAlerts: this.db.prepare(`
-        SELECT a.*, c.symbol, c.name, c.sector
-        FROM alerts a
-        JOIN companies c ON a.company_id = c.id
-        WHERE a.triggered_at >= datetime('now', '-3 days')
-        AND a.signal_type IN ('strong_buy', 'buy')
-        AND a.is_dismissed = 0
-        AND a.priority >= 3
-        AND c.symbol NOT LIKE 'CIK_%'
-        ORDER BY a.priority DESC, a.triggered_at DESC
-        LIMIT ?
-      `),
-
-      // Value opportunities (low P/E, high ROIC)
-      getValueOpportunities: this.db.prepare(`
-        SELECT c.symbol, c.name, c.sector, cm.pe_ratio, cm.roic, cm.fcf_yield,
-               cm.debt_to_equity, cm.revenue_growth_yoy, pm.last_price, pm.alpha_1m
-        FROM calculated_metrics cm
-        JOIN companies c ON cm.company_id = c.id
-        LEFT JOIN price_metrics pm ON pm.company_id = c.id
-        WHERE cm.fiscal_period = (
-          SELECT MAX(cm2.fiscal_period) FROM calculated_metrics cm2
-          WHERE cm2.company_id = cm.company_id AND cm2.period_type = 'annual'
-        )
-        AND cm.period_type = 'annual'
-        AND cm.pe_ratio > 0 AND cm.pe_ratio < 15
-        AND cm.roic > 12
-        AND cm.debt_to_equity < 1.0
-        AND c.symbol NOT LIKE 'CIK_%'
-        AND c.is_active = 1
-        ORDER BY cm.roic DESC
-        LIMIT ?
-      `),
-
-      // NEW: Congressional trading activity (net buying)
-      getCongressBuying: this.db.prepare(`
-        SELECT
-          c.symbol, c.name, c.sector,
-          COUNT(CASE WHEN ct.transaction_type = 'purchase' THEN 1 END) as buy_count,
-          COUNT(CASE WHEN ct.transaction_type = 'sale' THEN 1 END) as sell_count,
-          SUM(CASE WHEN ct.transaction_type = 'purchase' THEN (ct.amount_min + COALESCE(ct.amount_max, ct.amount_min)) / 2 ELSE 0 END) as buy_amount,
-          SUM(CASE WHEN ct.transaction_type = 'sale' THEN (ct.amount_min + COALESCE(ct.amount_max, ct.amount_min)) / 2 ELSE 0 END) as sell_amount,
-          MAX(ct.transaction_date) as last_trade,
-          pm.last_price,
-          pm.market_cap
-        FROM congressional_trades ct
-        JOIN companies c ON ct.company_id = c.id
-        LEFT JOIN price_metrics pm ON pm.company_id = c.id
-        WHERE ct.transaction_date >= date('now', '-' || ? || ' days')
-          AND c.symbol NOT LIKE 'CIK_%'
-        GROUP BY c.id
-        HAVING buy_count > sell_count  -- Net buyers
-           AND buy_amount >= 15000     -- Meaningful amount
-        ORDER BY buy_amount DESC
-        LIMIT ?
-      `),
-
-      // NEW: Short squeeze candidates
-      getSqueezeCandidates: this.db.prepare(`
-        SELECT
-          c.symbol, c.name, c.sector,
-          si.short_pct_float,
-          si.days_to_cover,
-          si.short_interest,
-          pm.last_price,
-          pm.change_1w,
-          pm.change_1m,
-          pm.alpha_1m,
-          pm.market_cap
-        FROM short_interest si
-        JOIN companies c ON si.company_id = c.id
-        LEFT JOIN price_metrics pm ON pm.company_id = c.id
-        WHERE si.settlement_date = (
-          SELECT MAX(si2.settlement_date) FROM short_interest si2
-          WHERE si2.company_id = si.company_id
-        )
-          AND si.short_pct_float >= ?
-          AND si.days_to_cover >= 3
-          AND c.symbol NOT LIKE 'CIK_%'
-        ORDER BY si.short_pct_float DESC
-        LIMIT ?
-      `),
-
-      // NEW: Undervalued stocks (margin of safety > threshold)
-      getUndervalued: this.db.prepare(`
-        SELECT
-          c.symbol, c.name, c.sector,
-          ive.weighted_intrinsic_value as intrinsic_value_per_share,
-          ive.margin_of_safety,
-          ive.valuation_signal,
-          CASE
-            WHEN ive.dcf_confidence >= 0.5 THEN 'DCF'
-            WHEN ive.graham_number IS NOT NULL THEN 'Graham'
-            WHEN ive.epv_value IS NOT NULL THEN 'EPV'
-            ELSE 'Blended'
-          END as primary_method,
-          ive.confidence_level as confidence_score,
-          pm.last_price,
-          pm.market_cap,
-          pm.alpha_1m
-        FROM intrinsic_value_estimates ive
-        JOIN companies c ON ive.company_id = c.id
-        LEFT JOIN price_metrics pm ON pm.company_id = c.id
-        WHERE ive.margin_of_safety >= ?
-          AND ive.confidence_level >= 0.5
-          AND pm.last_price IS NOT NULL
-          AND c.symbol NOT LIKE 'CIK_%'
-        ORDER BY ive.margin_of_safety DESC
-        LIMIT ?
-      `),
-
-      // NEW: Government contracts opportunities
-      getContractWinners: this.db.prepare(`
-        SELECT
-          c.symbol, c.name, c.sector,
-          SUM(gc.amount) as total_contract_value,
-          COUNT(*) as contract_count,
-          MAX(gc.award_date) as last_award,
-          pm.last_price,
-          pm.market_cap,
-          CASE WHEN pm.market_cap > 0
-            THEN SUM(gc.amount) / pm.market_cap * 100
-            ELSE NULL
-          END as contracts_to_mcap_pct
-        FROM government_contracts gc
-        JOIN companies c ON gc.company_id = c.id
-        LEFT JOIN price_metrics pm ON pm.company_id = c.id
-        WHERE gc.award_date >= date('now', '-365 days')
-          AND c.symbol NOT LIKE 'CIK_%'
-        GROUP BY c.id
-        HAVING total_contract_value >= 10000000  -- $10M+ contracts
-        ORDER BY contracts_to_mcap_pct DESC
-        LIMIT ?
-      `),
-    };
+  getDatabaseAsync() {
+    if (!this.db) {
+      throw new Error('OpportunityScanner not initialized. Call init() first.');
+    }
+    return this.db;
   }
 
   /**
@@ -370,20 +162,26 @@ class OpportunityScanner {
   }
 
   async _scanSignificantEvents() {
-    const events = this.stmts.getSignificantEvents.all(
-      this.options.eventLookbackDays,
-      this.options.minSignificanceScore,
-      this.options.maxOpportunities
-    );
+    const db = this.getDatabaseAsync();
+    const result = await db.query(`
+      SELECT e.*, c.symbol, c.name, c.sector
+      FROM significant_events e
+      JOIN companies c ON e.company_id = c.id
+      WHERE e.event_date >= CURRENT_DATE - INTERVAL '$1 days'
+      AND e.significance_score >= $2
+      AND c.symbol NOT LIKE 'CIK_%'
+      ORDER BY e.significance_score DESC, e.event_date DESC
+      LIMIT $3
+    `, [this.options.eventLookbackDays, this.options.minSignificanceScore, this.options.maxOpportunities]);
 
-    return events.map(e => ({
+    return result.rows.map(e => ({
       symbol: e.symbol,
       name: e.name,
       sector: e.sector,
       type: 'event',
       subtype: e.event_type,
       trigger: e.headline,
-      score: e.significance_score / 10, // Normalize to 0-1
+      score: parseFloat(e.significance_score) / 10, // Normalize to 0-1
       direction: e.is_positive ? 'bullish' : 'bearish',
       timestamp: e.event_date,
       details: {
@@ -395,159 +193,237 @@ class OpportunityScanner {
   }
 
   async _scanSentimentSignals() {
-    const signals = this.stmts.getSentimentSignals.all(
-      this.options.sentimentLookbackDays,
-      this.options.maxOpportunities
-    );
+    const db = this.getDatabaseAsync();
+    const result = await db.query(`
+      SELECT c.symbol, c.name, c.sector, cs.combined_score, cs.combined_signal,
+             cs.confidence, cs.sources_used, cs.agreement_score, cs.calculated_at
+      FROM combined_sentiment cs
+      JOIN companies c ON cs.company_id = c.id
+      WHERE cs.calculated_at >= NOW() - INTERVAL '$1 days'
+      AND cs.combined_signal IN ('strong_buy', 'buy', 'strong_sell', 'sell')
+      AND cs.confidence >= 0.5
+      AND c.symbol NOT LIKE 'CIK_%'
+      ORDER BY ABS(cs.combined_score) DESC
+      LIMIT $2
+    `, [this.options.sentimentLookbackDays, this.options.maxOpportunities]);
 
-    return signals.map(s => ({
+    return result.rows.map(s => ({
       symbol: s.symbol,
       name: s.name,
       sector: s.sector,
       type: 'sentiment',
       subtype: 'combined',
       trigger: `Sentiment: ${s.combined_signal}`,
-      score: Math.abs(s.combined_score),
-      direction: s.combined_score > 0 ? 'bullish' : 'bearish',
+      score: Math.abs(parseFloat(s.combined_score)),
+      direction: parseFloat(s.combined_score) > 0 ? 'bullish' : 'bearish',
       timestamp: s.calculated_at,
       details: {
         signal: s.combined_signal,
-        confidence: s.confidence,
-        sourcesUsed: s.sources_used,
-        agreement: s.agreement_score,
+        confidence: parseFloat(s.confidence),
+        sourcesUsed: parseInt(s.sources_used),
+        agreement: parseFloat(s.agreement_score),
       },
     }));
   }
 
   async _scanInsiderActivity() {
-    const activity = this.stmts.getInsiderActivity.all(
-      this.options.insiderLookbackPeriod,
-      this.options.maxOpportunities
-    );
+    const db = this.getDatabaseAsync();
+    const result = await db.query(`
+      SELECT c.symbol, c.name, c.sector, i.insider_signal, i.buy_value, i.sell_value,
+             i.net_value, i.unique_buyers, i.unique_sellers, i.signal_strength
+      FROM insider_activity_summary i
+      JOIN companies c ON i.company_id = c.id
+      WHERE i.period = $1
+      AND i.insider_signal IN ('strong_buy', 'buy', 'bullish')
+      AND i.buy_value >= 50000
+      AND c.symbol NOT LIKE 'CIK_%'
+      ORDER BY i.buy_value DESC
+      LIMIT $2
+    `, [this.options.insiderLookbackPeriod, this.options.maxOpportunities]);
 
-    return activity.map(i => ({
+    return result.rows.map(i => ({
       symbol: i.symbol,
       name: i.name,
       sector: i.sector,
       type: 'insider',
       subtype: 'buying',
-      trigger: `${i.unique_buyers} insiders bought $${(i.buy_value / 1000).toFixed(0)}K`,
-      score: Math.min(i.buy_value / 1000000, 1), // Normalize: $1M = max score
+      trigger: `${i.unique_buyers} insiders bought $${(parseFloat(i.buy_value) / 1000).toFixed(0)}K`,
+      score: Math.min(parseFloat(i.buy_value) / 1000000, 1), // Normalize: $1M = max score
       direction: 'bullish',
       timestamp: new Date().toISOString(),
       details: {
         signal: i.insider_signal,
-        buyValue: i.buy_value,
-        netValue: i.net_value,
-        uniqueBuyers: i.unique_buyers,
-        signalStrength: i.signal_strength,
+        buyValue: parseFloat(i.buy_value),
+        netValue: parseFloat(i.net_value),
+        uniqueBuyers: parseInt(i.unique_buyers),
+        signalStrength: parseFloat(i.signal_strength),
       },
     }));
   }
 
   async _scanAnalystOpportunities() {
-    const opportunities = this.stmts.getAnalystOpportunities.all(
-      this.options.maxOpportunities
-    );
+    const db = this.getDatabaseAsync();
+    const result = await db.query(`
+      SELECT c.symbol, c.name, c.sector, ae.recommendation_key, ae.recommendation_mean,
+             ae.upside_potential, ae.number_of_analysts, ae.target_mean, ae.current_price,
+             ae.signal, ae.signal_strength
+      FROM analyst_estimates ae
+      JOIN companies c ON ae.company_id = c.id
+      WHERE ae.recommendation_key IN ('strong_buy', 'buy')
+      AND ae.upside_potential >= 15
+      AND ae.number_of_analysts >= 3
+      AND c.symbol NOT LIKE 'CIK_%'
+      ORDER BY ae.upside_potential DESC
+      LIMIT $1
+    `, [this.options.maxOpportunities]);
 
-    return opportunities.map(a => ({
+    return result.rows.map(a => ({
       symbol: a.symbol,
       name: a.name,
       sector: a.sector,
       type: 'analyst',
       subtype: 'consensus',
-      trigger: `Analyst ${a.recommendation_key}: ${a.upside_potential?.toFixed(0)}% upside`,
-      score: Math.min((a.upside_potential || 0) / 50, 1), // 50% upside = max score
+      trigger: `Analyst ${a.recommendation_key}: ${a.upside_potential ? parseFloat(a.upside_potential).toFixed(0) : '?'}% upside`,
+      score: Math.min((parseFloat(a.upside_potential) || 0) / 50, 1), // 50% upside = max score
       direction: 'bullish',
       timestamp: new Date().toISOString(),
       details: {
         recommendation: a.recommendation_key,
-        recommendationMean: a.recommendation_mean,
-        upsidePotential: a.upside_potential,
-        numberOfAnalysts: a.number_of_analysts,
-        targetPrice: a.target_mean,
-        currentPrice: a.current_price,
+        recommendationMean: parseFloat(a.recommendation_mean),
+        upsidePotential: parseFloat(a.upside_potential),
+        numberOfAnalysts: parseInt(a.number_of_analysts),
+        targetPrice: parseFloat(a.target_mean),
+        currentPrice: parseFloat(a.current_price),
       },
     }));
   }
 
   async _scanTechnicalBreakouts() {
-    const breakouts = this.stmts.getTechnicalBreakouts.all(
-      this.options.maxOpportunities
-    );
+    const db = this.getDatabaseAsync();
+    const result = await db.query(`
+      SELECT c.symbol, c.name, c.sector, pm.last_price, pm.high_52w, pm.low_52w,
+             pm.change_1w, pm.change_1m, pm.alpha_1m, pm.alpha_3m,
+             CASE
+               WHEN pm.high_52w > pm.low_52w THEN
+                 (pm.last_price - pm.low_52w) / (pm.high_52w - pm.low_52w) * 100
+               ELSE 50
+             END as position_52w_pct
+      FROM price_metrics pm
+      JOIN companies c ON pm.company_id = c.id
+      WHERE pm.last_price IS NOT NULL
+      AND pm.high_52w IS NOT NULL
+      AND pm.low_52w IS NOT NULL
+      AND (
+        -- Near 52w low (bottom 25%) with positive recent momentum
+        ((pm.last_price - pm.low_52w) / NULLIF(pm.high_52w - pm.low_52w, 0) < 0.25 AND pm.change_1w > 0)
+        OR
+        -- Breaking out with volume (strong recent alpha)
+        (pm.alpha_1m > 5 AND pm.change_1w > 3)
+      )
+      AND c.symbol NOT LIKE 'CIK_%'
+      ORDER BY pm.alpha_1m DESC NULLS LAST
+      LIMIT $1
+    `, [this.options.maxOpportunities]);
 
-    return breakouts.map(b => ({
+    return result.rows.map(b => ({
       symbol: b.symbol,
       name: b.name,
       sector: b.sector,
       type: 'technical',
-      subtype: b.position_52w_pct < 25 ? 'near_low' : 'breakout',
-      trigger: b.position_52w_pct < 25
-        ? `Near 52W low (${b.position_52w_pct?.toFixed(0)}%), momentum turning`
-        : `Breakout: +${b.alpha_1m?.toFixed(1)}% alpha (1M)`,
-      score: 0.6 + (Math.abs(b.alpha_1m || 0) / 50), // Base 0.6 + alpha contribution
+      subtype: parseFloat(b.position_52w_pct) < 25 ? 'near_low' : 'breakout',
+      trigger: parseFloat(b.position_52w_pct) < 25
+        ? `Near 52W low (${parseFloat(b.position_52w_pct).toFixed(0)}%), momentum turning`
+        : `Breakout: +${b.alpha_1m ? parseFloat(b.alpha_1m).toFixed(1) : '?'}% alpha (1M)`,
+      score: 0.6 + (Math.abs(parseFloat(b.alpha_1m) || 0) / 50), // Base 0.6 + alpha contribution
       direction: 'bullish',
       timestamp: new Date().toISOString(),
       details: {
-        lastPrice: b.last_price,
-        high52w: b.high_52w,
-        low52w: b.low_52w,
-        position52wPct: b.position_52w_pct,
-        change1w: b.change_1w,
-        change1m: b.change_1m,
-        alpha1m: b.alpha_1m,
-        alpha3m: b.alpha_3m,
+        lastPrice: parseFloat(b.last_price),
+        high52w: parseFloat(b.high_52w),
+        low52w: parseFloat(b.low_52w),
+        position52wPct: parseFloat(b.position_52w_pct),
+        change1w: parseFloat(b.change_1w),
+        change1m: parseFloat(b.change_1m),
+        alpha1m: parseFloat(b.alpha_1m),
+        alpha3m: parseFloat(b.alpha_3m),
       },
     }));
   }
 
   async _scanAlerts() {
-    const alerts = this.stmts.getRecentAlerts.all(
-      this.options.maxOpportunities
-    );
+    const db = this.getDatabaseAsync();
+    const result = await db.query(`
+      SELECT a.*, c.symbol, c.name, c.sector
+      FROM alerts a
+      JOIN companies c ON a.company_id = c.id
+      WHERE a.triggered_at >= NOW() - INTERVAL '3 days'
+      AND a.signal_type IN ('strong_buy', 'buy')
+      AND a.is_dismissed = false
+      AND a.priority >= 3
+      AND c.symbol NOT LIKE 'CIK_%'
+      ORDER BY a.priority DESC, a.triggered_at DESC
+      LIMIT $1
+    `, [this.options.maxOpportunities]);
 
-    return alerts.map(a => ({
+    return result.rows.map(a => ({
       symbol: a.symbol,
       name: a.name,
       sector: a.sector,
       type: 'alert',
       subtype: a.alert_type,
       trigger: a.title,
-      score: a.priority / 5, // Priority 1-5 → 0.2-1.0
+      score: parseInt(a.priority) / 5, // Priority 1-5 → 0.2-1.0
       direction: 'bullish',
       timestamp: a.triggered_at,
       details: {
         alertType: a.alert_type,
         alertCode: a.alert_code,
         signalType: a.signal_type,
-        priority: a.priority,
+        priority: parseInt(a.priority),
         description: a.description,
       },
     }));
   }
 
   async _scanValueOpportunities() {
-    const opportunities = this.stmts.getValueOpportunities.all(
-      this.options.maxOpportunities
-    );
+    const db = this.getDatabaseAsync();
+    const result = await db.query(`
+      SELECT c.symbol, c.name, c.sector, cm.pe_ratio, cm.roic, cm.fcf_yield,
+             cm.debt_to_equity, cm.revenue_growth_yoy, pm.last_price, pm.alpha_1m
+      FROM calculated_metrics cm
+      JOIN companies c ON cm.company_id = c.id
+      LEFT JOIN price_metrics pm ON pm.company_id = c.id
+      WHERE cm.fiscal_period = (
+        SELECT MAX(cm2.fiscal_period) FROM calculated_metrics cm2
+        WHERE cm2.company_id = cm.company_id AND cm2.period_type = 'annual'
+      )
+      AND cm.period_type = 'annual'
+      AND cm.pe_ratio > 0 AND cm.pe_ratio < 15
+      AND cm.roic > 12
+      AND cm.debt_to_equity < 1.0
+      AND c.symbol NOT LIKE 'CIK_%'
+      AND c.is_active = true
+      ORDER BY cm.roic DESC
+      LIMIT $1
+    `, [this.options.maxOpportunities]);
 
-    return opportunities.map(v => ({
+    return result.rows.map(v => ({
       symbol: v.symbol,
       name: v.name,
       sector: v.sector,
       type: 'value',
       subtype: 'quality_value',
-      trigger: `Quality value: P/E ${v.pe_ratio?.toFixed(1)}, ROIC ${v.roic?.toFixed(1)}%`,
-      score: 0.5 + (v.roic || 0) / 50, // Higher ROIC = higher score
+      trigger: `Quality value: P/E ${v.pe_ratio ? parseFloat(v.pe_ratio).toFixed(1) : '?'}, ROIC ${v.roic ? parseFloat(v.roic).toFixed(1) : '?'}%`,
+      score: 0.5 + (parseFloat(v.roic) || 0) / 50, // Higher ROIC = higher score
       direction: 'bullish',
       timestamp: new Date().toISOString(),
       details: {
-        peRatio: v.pe_ratio,
-        roic: v.roic,
-        fcfYield: v.fcf_yield,
-        debtToEquity: v.debt_to_equity,
-        revenueGrowth: v.revenue_growth_yoy,
-        alpha1m: v.alpha_1m,
+        peRatio: parseFloat(v.pe_ratio),
+        roic: parseFloat(v.roic),
+        fcfYield: parseFloat(v.fcf_yield),
+        debtToEquity: parseFloat(v.debt_to_equity),
+        revenueGrowth: parseFloat(v.revenue_growth_yoy),
+        alpha1m: parseFloat(v.alpha_1m),
       },
     }));
   }
@@ -558,14 +434,36 @@ class OpportunityScanner {
    */
   async _scanCongressBuying() {
     try {
-      const activity = this.stmts.getCongressBuying.all(
-        this.options.congressLookbackDays,
-        this.options.maxOpportunities
-      );
+      const db = this.getDatabaseAsync();
+      const result = await db.query(`
+        SELECT
+          c.symbol, c.name, c.sector,
+          COUNT(CASE WHEN ct.transaction_type = 'purchase' THEN 1 END) as buy_count,
+          COUNT(CASE WHEN ct.transaction_type = 'sale' THEN 1 END) as sell_count,
+          SUM(CASE WHEN ct.transaction_type = 'purchase' THEN (ct.amount_min + COALESCE(ct.amount_max, ct.amount_min)) / 2 ELSE 0 END) as buy_amount,
+          SUM(CASE WHEN ct.transaction_type = 'sale' THEN (ct.amount_min + COALESCE(ct.amount_max, ct.amount_min)) / 2 ELSE 0 END) as sell_amount,
+          MAX(ct.transaction_date) as last_trade,
+          pm.last_price,
+          pm.market_cap
+        FROM congressional_trades ct
+        JOIN companies c ON ct.company_id = c.id
+        LEFT JOIN price_metrics pm ON pm.company_id = c.id
+        WHERE ct.transaction_date >= CURRENT_DATE - INTERVAL '$1 days'
+          AND c.symbol NOT LIKE 'CIK_%'
+        GROUP BY c.id, c.symbol, c.name, c.sector, pm.last_price, pm.market_cap
+        HAVING COUNT(CASE WHEN ct.transaction_type = 'purchase' THEN 1 END) > COUNT(CASE WHEN ct.transaction_type = 'sale' THEN 1 END)
+           AND SUM(CASE WHEN ct.transaction_type = 'purchase' THEN (ct.amount_min + COALESCE(ct.amount_max, ct.amount_min)) / 2 ELSE 0 END) >= 15000
+        ORDER BY SUM(CASE WHEN ct.transaction_type = 'purchase' THEN (ct.amount_min + COALESCE(ct.amount_max, ct.amount_min)) / 2 ELSE 0 END) DESC
+        LIMIT $2
+      `, [this.options.congressLookbackDays, this.options.maxOpportunities]);
 
-      return activity.map(c => {
-        const netCount = c.buy_count - c.sell_count;
-        const netAmount = c.buy_amount - c.sell_amount;
+      return result.rows.map(c => {
+        const buyCount = parseInt(c.buy_count);
+        const sellCount = parseInt(c.sell_count);
+        const buyAmount = parseFloat(c.buy_amount);
+        const sellAmount = parseFloat(c.sell_amount);
+        const netCount = buyCount - sellCount;
+        const netAmount = buyAmount - sellAmount;
 
         // Score based on conviction (more buys, larger amounts = higher score)
         let score = 0.5;
@@ -579,18 +477,18 @@ class OpportunityScanner {
           sector: c.sector,
           type: 'congress',
           subtype: 'net_buying',
-          trigger: `${c.buy_count} congress buys vs ${c.sell_count} sells ($${(netAmount/1000).toFixed(0)}K net)`,
+          trigger: `${buyCount} congress buys vs ${sellCount} sells ($${(netAmount/1000).toFixed(0)}K net)`,
           score: Math.min(1, score),
           direction: 'bullish',
           timestamp: c.last_trade,
           details: {
-            buyCount: c.buy_count,
-            sellCount: c.sell_count,
-            buyAmount: c.buy_amount,
-            sellAmount: c.sell_amount,
+            buyCount,
+            sellCount,
+            buyAmount,
+            sellAmount,
             netAmount,
             lastTrade: c.last_trade,
-            marketCap: c.market_cap,
+            marketCap: parseFloat(c.market_cap),
           },
         };
       });
@@ -607,21 +505,46 @@ class OpportunityScanner {
    */
   async _scanSqueezeCandidates() {
     try {
-      const candidates = this.stmts.getSqueezeCandidates.all(
-        this.options.minShortPctFloat,
-        this.options.maxOpportunities
-      );
+      const db = this.getDatabaseAsync();
+      const result = await db.query(`
+        SELECT
+          c.symbol, c.name, c.sector,
+          si.short_pct_float,
+          si.days_to_cover,
+          si.short_interest,
+          pm.last_price,
+          pm.change_1w,
+          pm.change_1m,
+          pm.alpha_1m,
+          pm.market_cap
+        FROM short_interest si
+        JOIN companies c ON si.company_id = c.id
+        LEFT JOIN price_metrics pm ON pm.company_id = c.id
+        WHERE si.settlement_date = (
+          SELECT MAX(si2.settlement_date) FROM short_interest si2
+          WHERE si2.company_id = si.company_id
+        )
+          AND si.short_pct_float >= $1
+          AND si.days_to_cover >= 3
+          AND c.symbol NOT LIKE 'CIK_%'
+        ORDER BY si.short_pct_float DESC
+        LIMIT $2
+      `, [this.options.minShortPctFloat, this.options.maxOpportunities]);
 
-      return candidates.map(s => {
+      return result.rows.map(s => {
+        const shortPctFloat = parseFloat(s.short_pct_float);
+        const daysToCover = parseFloat(s.days_to_cover);
+        const change1w = parseFloat(s.change_1w);
+
         // Score based on squeeze potential
         // Higher short %, higher days to cover, positive momentum = higher score
         let score = 0.5;
-        if (s.short_pct_float > 0.25) score += 0.15;   // Very high short interest
-        if (s.days_to_cover > 5) score += 0.15;        // Hard to cover
-        if (s.days_to_cover > 10) score += 0.1;        // Very hard to cover
-        if (s.change_1w > 0) score += 0.1;             // Positive momentum starting
+        if (shortPctFloat > 0.25) score += 0.15;   // Very high short interest
+        if (daysToCover > 5) score += 0.15;        // Hard to cover
+        if (daysToCover > 10) score += 0.1;        // Very hard to cover
+        if (change1w > 0) score += 0.1;            // Positive momentum starting
 
-        const shortPct = (s.short_pct_float * 100).toFixed(1);
+        const shortPct = (shortPctFloat * 100).toFixed(1);
 
         return {
           symbol: s.symbol,
@@ -629,18 +552,18 @@ class OpportunityScanner {
           sector: s.sector,
           type: 'squeeze',
           subtype: 'short_squeeze',
-          trigger: `Squeeze candidate: ${shortPct}% short, ${s.days_to_cover?.toFixed(1)} days to cover`,
+          trigger: `Squeeze candidate: ${shortPct}% short, ${daysToCover.toFixed(1)} days to cover`,
           score: Math.min(1, score),
           direction: 'bullish', // Squeeze is inherently bullish
           timestamp: new Date().toISOString(),
           details: {
-            shortPctFloat: s.short_pct_float,
-            daysToCover: s.days_to_cover,
-            shortInterest: s.short_interest,
-            change1w: s.change_1w,
-            change1m: s.change_1m,
-            alpha1m: s.alpha_1m,
-            marketCap: s.market_cap,
+            shortPctFloat,
+            daysToCover,
+            shortInterest: parseFloat(s.short_interest),
+            change1w,
+            change1m: parseFloat(s.change_1m),
+            alpha1m: parseFloat(s.alpha_1m),
+            marketCap: parseFloat(s.market_cap),
           },
         };
       });
@@ -656,15 +579,38 @@ class OpportunityScanner {
    */
   async _scanUndervalued() {
     try {
-      const undervalued = this.stmts.getUndervalued.all(
-        this.options.minMarginOfSafety,
-        this.options.maxOpportunities
-      );
+      const db = this.getDatabaseAsync();
+      const result = await db.query(`
+        SELECT
+          c.symbol, c.name, c.sector,
+          ive.weighted_intrinsic_value as intrinsic_value_per_share,
+          ive.margin_of_safety,
+          ive.valuation_signal,
+          CASE
+            WHEN ive.dcf_confidence >= 0.5 THEN 'DCF'
+            WHEN ive.graham_number IS NOT NULL THEN 'Graham'
+            WHEN ive.epv_value IS NOT NULL THEN 'EPV'
+            ELSE 'Blended'
+          END as primary_method,
+          ive.confidence_level as confidence_score,
+          pm.last_price,
+          pm.market_cap,
+          pm.alpha_1m
+        FROM intrinsic_value_estimates ive
+        JOIN companies c ON ive.company_id = c.id
+        LEFT JOIN price_metrics pm ON pm.company_id = c.id
+        WHERE ive.margin_of_safety >= $1
+          AND ive.confidence_level >= 0.5
+          AND pm.last_price IS NOT NULL
+          AND c.symbol NOT LIKE 'CIK_%'
+        ORDER BY ive.margin_of_safety DESC
+        LIMIT $2
+      `, [this.options.minMarginOfSafety, this.options.maxOpportunities]);
 
-      return undervalued.map(u => {
+      return result.rows.map(u => {
         // Score based on margin of safety and confidence
-        const mos = u.margin_of_safety || 0;
-        const conf = u.confidence_score || 0.5;
+        const mos = parseFloat(u.margin_of_safety) || 0;
+        const conf = parseFloat(u.confidence_score) || 0.5;
 
         // Higher MoS and confidence = higher score
         let score = 0.4 + (mos * 0.8); // 20% MoS = 0.56, 40% = 0.72, 60% = 0.88
@@ -678,19 +624,19 @@ class OpportunityScanner {
           sector: u.sector,
           type: 'undervalued',
           subtype: u.valuation_signal || 'margin_of_safety',
-          trigger: `${mosPct}% margin of safety (${u.primary_method}): IV $${u.intrinsic_value_per_share?.toFixed(2)} vs $${u.last_price?.toFixed(2)}`,
+          trigger: `${mosPct}% margin of safety (${u.primary_method}): IV $${u.intrinsic_value_per_share ? parseFloat(u.intrinsic_value_per_share).toFixed(2) : '?'} vs $${u.last_price ? parseFloat(u.last_price).toFixed(2) : '?'}`,
           score: Math.min(1, score),
           direction: 'bullish',
           timestamp: new Date().toISOString(),
           details: {
-            intrinsicValue: u.intrinsic_value_per_share,
-            currentPrice: u.last_price,
+            intrinsicValue: parseFloat(u.intrinsic_value_per_share),
+            currentPrice: parseFloat(u.last_price),
             marginOfSafety: mos,
             valuationSignal: u.valuation_signal,
             primaryMethod: u.primary_method,
             confidence: conf,
-            marketCap: u.market_cap,
-            alpha1m: u.alpha_1m,
+            marketCap: parseFloat(u.market_cap),
+            alpha1m: parseFloat(u.alpha_1m),
           },
         };
       });
@@ -706,19 +652,43 @@ class OpportunityScanner {
    */
   async _scanContractWinners() {
     try {
-      const winners = this.stmts.getContractWinners.all(
-        this.options.maxOpportunities
-      );
+      const db = this.getDatabaseAsync();
+      const result = await db.query(`
+        SELECT
+          c.symbol, c.name, c.sector,
+          SUM(gc.amount) as total_contract_value,
+          COUNT(*) as contract_count,
+          MAX(gc.award_date) as last_award,
+          pm.last_price,
+          pm.market_cap,
+          CASE WHEN pm.market_cap > 0
+            THEN SUM(gc.amount) / pm.market_cap * 100
+            ELSE NULL
+          END as contracts_to_mcap_pct
+        FROM government_contracts gc
+        JOIN companies c ON gc.company_id = c.id
+        LEFT JOIN price_metrics pm ON pm.company_id = c.id
+        WHERE gc.award_date >= CURRENT_DATE - INTERVAL '365 days'
+          AND c.symbol NOT LIKE 'CIK_%'
+        GROUP BY c.id, c.symbol, c.name, c.sector, pm.last_price, pm.market_cap
+        HAVING SUM(gc.amount) >= 10000000
+        ORDER BY (SUM(gc.amount) / NULLIF(pm.market_cap, 0)) DESC NULLS LAST
+        LIMIT $1
+      `, [this.options.maxOpportunities]);
 
-      return winners.map(w => {
+      return result.rows.map(w => {
+        const contractsToMcapPct = parseFloat(w.contracts_to_mcap_pct);
+        const contractCount = parseInt(w.contract_count);
+        const totalContractValue = parseFloat(w.total_contract_value);
+
         // Score based on contract significance relative to market cap
         let score = 0.4;
-        if (w.contracts_to_mcap_pct > 1) score += 0.15;  // >1% of market cap
-        if (w.contracts_to_mcap_pct > 5) score += 0.15;  // >5% significant
-        if (w.contracts_to_mcap_pct > 10) score += 0.1;  // >10% very significant
-        if (w.contract_count > 3) score += 0.1;          // Multiple contracts
+        if (contractsToMcapPct > 1) score += 0.15;  // >1% of market cap
+        if (contractsToMcapPct > 5) score += 0.15;  // >5% significant
+        if (contractsToMcapPct > 10) score += 0.1;  // >10% very significant
+        if (contractCount > 3) score += 0.1;        // Multiple contracts
 
-        const millions = (w.total_contract_value / 1000000).toFixed(1);
+        const millions = (totalContractValue / 1000000).toFixed(1);
 
         return {
           symbol: w.symbol,
@@ -726,16 +696,16 @@ class OpportunityScanner {
           sector: w.sector,
           type: 'contracts',
           subtype: 'govt_contract',
-          trigger: `$${millions}M in govt contracts (${w.contracts_to_mcap_pct?.toFixed(1)}% of market cap)`,
+          trigger: `$${millions}M in govt contracts (${contractsToMcapPct ? contractsToMcapPct.toFixed(1) : '?'}% of market cap)`,
           score: Math.min(1, score),
           direction: 'bullish', // Contract wins are bullish for revenue
           timestamp: w.last_award,
           details: {
-            totalContractValue: w.total_contract_value,
-            contractCount: w.contract_count,
+            totalContractValue,
+            contractCount,
             lastAward: w.last_award,
-            contractsToMcapPct: w.contracts_to_mcap_pct,
-            marketCap: w.market_cap,
+            contractsToMcapPct,
+            marketCap: parseFloat(w.market_cap),
           },
         };
       });
@@ -751,7 +721,7 @@ class OpportunityScanner {
    */
   async _scan13FNewPositions() {
     try {
-      const opps = this.signalEnhancements.getTop13FOpportunities(this.options.maxOpportunities);
+      const opps = await this.signalEnhancements.getTop13FOpportunities(this.options.maxOpportunities);
 
       const results = [];
 
@@ -816,7 +786,7 @@ class OpportunityScanner {
    */
   async _scanOpenMarketBuys() {
     try {
-      const buys = this.signalEnhancements.getTopOpenMarketBuys(this.options.maxOpportunities);
+      const buys = await this.signalEnhancements.getTopOpenMarketBuys(this.options.maxOpportunities);
 
       return buys.map(b => {
         // Weight by seniority and value
@@ -858,7 +828,7 @@ class OpportunityScanner {
    */
   async _scanEarningsMomentum() {
     try {
-      const momentum = this.signalEnhancements.getEarningsMomentumOpportunities(
+      const momentum = await this.signalEnhancements.getEarningsMomentumOpportunities(
         this.options.minConsecutiveBeats,
         this.options.maxOpportunities
       );
@@ -973,60 +943,76 @@ class OpportunityScanner {
    * Get opportunities for specific symbols
    */
   async scanSymbols(symbols, options = {}) {
+    const db = this.getDatabaseAsync();
     const results = [];
 
     for (const symbol of symbols) {
       try {
         // Get company ID
-        const company = this.db.prepare(`
-          SELECT id, symbol, name, sector FROM companies WHERE LOWER(symbol) = LOWER(?)
-        `).get(symbol);
+        const companyResult = await db.query(`
+          SELECT id, symbol, name, sector FROM companies WHERE LOWER(symbol) = LOWER($1)
+        `, [symbol]);
 
-        if (!company) continue;
+        if (companyResult.rows.length === 0) continue;
 
+        const company = companyResult.rows[0];
         const opportunities = [];
 
         // Check each source for this symbol
-        const sentiment = this.db.prepare(`
+        const sentimentResult = await db.query(`
           SELECT * FROM combined_sentiment
-          WHERE company_id = ?
+          WHERE company_id = $1
           ORDER BY calculated_at DESC LIMIT 1
-        `).get(company.id);
+        `, [company.id]);
 
-        if (sentiment && Math.abs(sentiment.combined_score) > 0.2) {
-          opportunities.push({
-            type: 'sentiment',
-            score: Math.abs(sentiment.combined_score),
-            signal: sentiment.combined_signal,
-            direction: sentiment.combined_score > 0 ? 'bullish' : 'bearish',
-          });
+        if (sentimentResult.rows.length > 0) {
+          const sentiment = sentimentResult.rows[0];
+          const combinedScore = parseFloat(sentiment.combined_score);
+          if (Math.abs(combinedScore) > 0.2) {
+            opportunities.push({
+              type: 'sentiment',
+              score: Math.abs(combinedScore),
+              signal: sentiment.combined_signal,
+              direction: combinedScore > 0 ? 'bullish' : 'bearish',
+            });
+          }
         }
 
-        const insider = this.db.prepare(`
+        const insiderResult = await db.query(`
           SELECT * FROM insider_activity_summary
-          WHERE company_id = ? AND period = '90d'
-        `).get(company.id);
+          WHERE company_id = $1 AND period = '90d'
+        `, [company.id]);
 
-        if (insider && (insider.buy_value > 50000 || insider.sell_value > 100000)) {
-          opportunities.push({
-            type: 'insider',
-            score: Math.min(Math.abs(insider.net_value) / 500000, 1),
-            signal: insider.insider_signal,
-            direction: insider.net_value > 0 ? 'bullish' : 'bearish',
-          });
+        if (insiderResult.rows.length > 0) {
+          const insider = insiderResult.rows[0];
+          const buyValue = parseFloat(insider.buy_value);
+          const sellValue = parseFloat(insider.sell_value);
+          const netValue = parseFloat(insider.net_value);
+          if (buyValue > 50000 || sellValue > 100000) {
+            opportunities.push({
+              type: 'insider',
+              score: Math.min(Math.abs(netValue) / 500000, 1),
+              signal: insider.insider_signal,
+              direction: netValue > 0 ? 'bullish' : 'bearish',
+            });
+          }
         }
 
-        const analyst = this.db.prepare(`
-          SELECT * FROM analyst_estimates WHERE company_id = ?
-        `).get(company.id);
+        const analystResult = await db.query(`
+          SELECT * FROM analyst_estimates WHERE company_id = $1
+        `, [company.id]);
 
-        if (analyst && analyst.upside_potential) {
-          opportunities.push({
-            type: 'analyst',
-            score: Math.min(Math.abs(analyst.upside_potential) / 50, 1),
-            signal: analyst.recommendation_key,
-            direction: analyst.upside_potential > 0 ? 'bullish' : 'bearish',
-          });
+        if (analystResult.rows.length > 0) {
+          const analyst = analystResult.rows[0];
+          const upsidePotential = parseFloat(analyst.upside_potential);
+          if (analyst.upside_potential) {
+            opportunities.push({
+              type: 'analyst',
+              score: Math.min(Math.abs(upsidePotential) / 50, 1),
+              signal: analyst.recommendation_key,
+              direction: upsidePotential > 0 ? 'bullish' : 'bearish',
+            });
+          }
         }
 
         results.push({
