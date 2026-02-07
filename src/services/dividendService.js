@@ -2,33 +2,16 @@
  * Dividend Service - Provides dividend data and analytics
  */
 
-const { getDatabase, isPostgres } = require('../database');
+const { getDatabaseAsync } = require('../database');
 
 class DividendService {
-  constructor() {
-    this.isPostgres = isPostgres;
-
-    // In SQLite mode, initialize synchronously
-    if (!isPostgres) {
-      try {
-        this.db = getDatabase();
-      } catch (err) {
-        console.warn('[DividendService] Database initialization failed:', err.message);
-        this.db = null;
-      }
-    } else {
-      // In PostgreSQL mode, db will be initialized when needed
-      this.db = null;
-      console.log('[DividendService] PostgreSQL mode - async initialization required');
-    }
-  }
-
   /**
    * Get dividend metrics for a company
    * @param {number} companyId - Company ID
-   * @returns {Object} Dividend metrics
+   * @returns {Promise<Object>} Dividend metrics
    */
-  getDividendMetrics(companyId) {
+  async getDividendMetrics(companyId) {
+    const database = await getDatabaseAsync();
     const sql = `
       SELECT
         dm.*,
@@ -37,18 +20,20 @@ class DividendService {
         c.sector
       FROM dividend_metrics dm
       JOIN companies c ON dm.company_id = c.id
-      WHERE dm.company_id = ?
+      WHERE dm.company_id = $1
     `;
 
-    return this.db.prepare(sql).get(companyId);
+    const result = await database.query(sql, [companyId]);
+    return result.rows[0];
   }
 
   /**
    * Get dividend metrics by symbol
    * @param {string} symbol - Stock symbol
-   * @returns {Object} Dividend metrics
+   * @returns {Promise<Object>} Dividend metrics
    */
-  getDividendMetricsBySymbol(symbol) {
+  async getDividendMetricsBySymbol(symbol) {
+    const database = await getDatabaseAsync();
     const sql = `
       SELECT
         dm.*,
@@ -57,19 +42,21 @@ class DividendService {
         c.sector
       FROM dividend_metrics dm
       JOIN companies c ON dm.company_id = c.id
-      WHERE c.symbol = ?
+      WHERE c.symbol = $1
     `;
 
-    return this.db.prepare(sql).get(symbol);
+    const result = await database.query(sql, [symbol]);
+    return result.rows[0];
   }
 
   /**
    * Get dividend history for a company
    * @param {number} companyId - Company ID
    * @param {number} limit - Max records to return
-   * @returns {Array} Dividend history
+   * @returns {Promise<Array>} Dividend history
    */
-  getDividendHistory(companyId, limit = 40) {
+  async getDividendHistory(companyId, limit = 40) {
+    const database = await getDatabaseAsync();
     const sql = `
       SELECT
         ex_date,
@@ -77,20 +64,22 @@ class DividendService {
         amount,
         frequency
       FROM dividend_history
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY ex_date DESC
-      LIMIT ?
+      LIMIT $2
     `;
 
-    return this.db.prepare(sql).all(companyId, limit);
+    const result = await database.query(sql, [companyId, limit]);
+    return result.rows;
   }
 
   /**
    * Get top dividend yielders
    * @param {Object} options - Filter options
-   * @returns {Array} Companies sorted by dividend yield
+   * @returns {Promise<Array>} Companies sorted by dividend yield
    */
-  getTopDividendYielders(options = {}) {
+  async getTopDividendYielders(options = {}) {
+    const database = await getDatabaseAsync();
     const {
       minYield = 0,
       maxYield = 20,
@@ -117,29 +106,32 @@ class DividendService {
         dm.ex_dividend_date
       FROM dividend_metrics dm
       JOIN companies c ON dm.company_id = c.id
-      WHERE dm.dividend_yield >= ?
-        AND dm.dividend_yield <= ?
-        AND dm.years_of_growth >= ?
+      WHERE dm.dividend_yield >= $1
+        AND dm.dividend_yield <= $2
+        AND dm.years_of_growth >= $3
     `;
 
     const params = [minYield, maxYield, minYearsGrowth];
+    let paramCounter = 4;
 
     if (sector) {
-      sql += ' AND c.sector = ?';
+      sql += ` AND c.sector = $${paramCounter++}`;
       params.push(sector);
     }
 
-    sql += ' ORDER BY dm.dividend_yield DESC LIMIT ?';
+    sql += ` ORDER BY dm.dividend_yield DESC LIMIT $${paramCounter++}`;
     params.push(limit);
 
-    return this.db.prepare(sql).all(...params);
+    const result = await database.query(sql, params);
+    return result.rows;
   }
 
   /**
    * Get dividend aristocrats (25+ years of consecutive dividend growth)
-   * @returns {Array} Dividend aristocrats
+   * @returns {Promise<Array>} Dividend aristocrats
    */
-  getDividendAristocrats() {
+  async getDividendAristocrats() {
+    const database = await getDatabaseAsync();
     const sql = `
       SELECT
         c.id,
@@ -159,14 +151,16 @@ class DividendService {
       ORDER BY dm.years_of_growth DESC, dm.dividend_yield DESC
     `;
 
-    return this.db.prepare(sql).all();
+    const result = await database.query(sql);
+    return result.rows;
   }
 
   /**
    * Get dividend kings (50+ years of consecutive dividend growth)
-   * @returns {Array} Dividend kings
+   * @returns {Promise<Array>} Dividend kings
    */
-  getDividendKings() {
+  async getDividendKings() {
+    const database = await getDatabaseAsync();
     const sql = `
       SELECT
         c.id,
@@ -186,15 +180,17 @@ class DividendService {
       ORDER BY dm.years_of_growth DESC, dm.dividend_yield DESC
     `;
 
-    return this.db.prepare(sql).all();
+    const result = await database.query(sql);
+    return result.rows;
   }
 
   /**
    * Get upcoming ex-dividend dates
    * @param {number} days - Days ahead to look
-   * @returns {Array} Companies with upcoming ex-dividend dates
+   * @returns {Promise<Array>} Companies with upcoming ex-dividend dates
    */
-  getUpcomingExDividends(days = 14) {
+  async getUpcomingExDividends(days = 14) {
+    const database = await getDatabaseAsync();
     const sql = `
       SELECT
         c.id,
@@ -207,21 +203,23 @@ class DividendService {
         ROUND(dm.current_annual_dividend / 4, 4) as est_quarterly_dividend
       FROM dividend_metrics dm
       JOIN companies c ON dm.company_id = c.id
-      WHERE dm.ex_dividend_date >= date('now')
-        AND dm.ex_dividend_date <= date('now', '+' || ? || ' days')
+      WHERE dm.ex_dividend_date >= CURRENT_DATE
+        AND dm.ex_dividend_date <= CURRENT_DATE + INTERVAL '$1 days'
       ORDER BY dm.ex_dividend_date ASC
     `;
 
-    return this.db.prepare(sql).all(days);
+    const result = await database.query(sql, [days]);
+    return result.rows;
   }
 
   /**
    * Get dividend growth leaders
    * @param {string} period - Growth period ('1y', '3y', '5y', '10y')
    * @param {number} limit - Max results
-   * @returns {Array} Companies with highest dividend growth
+   * @returns {Promise<Array>} Companies with highest dividend growth
    */
-  getDividendGrowthLeaders(period = '5y', limit = 50) {
+  async getDividendGrowthLeaders(period = '5y', limit = 50) {
+    const database = await getDatabaseAsync();
     const growthColumn = {
       '1y': 'dividend_growth_1y',
       '3y': 'dividend_growth_3y',
@@ -247,17 +245,19 @@ class DividendService {
         AND dm.${growthColumn} > 0
         AND dm.dividend_yield > 0
       ORDER BY dm.${growthColumn} DESC
-      LIMIT ?
+      LIMIT $1
     `;
 
-    return this.db.prepare(sql).all(limit);
+    const result = await database.query(sql, [limit]);
+    return result.rows;
   }
 
   /**
    * Get dividend statistics by sector
-   * @returns {Array} Sector dividend statistics
+   * @returns {Promise<Array>} Sector dividend statistics
    */
-  getDividendsBySector() {
+  async getDividendsBySector() {
+    const database = await getDatabaseAsync();
     const sql = `
       SELECT
         c.sector,
@@ -276,14 +276,16 @@ class DividendService {
       ORDER BY avg_yield DESC
     `;
 
-    return this.db.prepare(sql).all();
+    const result = await database.query(sql);
+    return result.rows;
   }
 
   /**
    * Get dividend summary statistics
-   * @returns {Object} Overall dividend statistics
+   * @returns {Promise<Object>} Overall dividend statistics
    */
-  getDividendSummary() {
+  async getDividendSummary() {
+    const database = await getDatabaseAsync();
     const sql = `
       SELECT
         COUNT(*) as total_dividend_payers,
@@ -298,15 +300,17 @@ class DividendService {
       WHERE dividend_yield > 0
     `;
 
-    return this.db.prepare(sql).get();
+    const result = await database.query(sql);
+    return result.rows[0];
   }
 
   /**
    * Screen for dividend stocks based on criteria
    * @param {Object} criteria - Screening criteria
-   * @returns {Array} Matching stocks
+   * @returns {Promise<Array>} Matching stocks
    */
-  screenDividendStocks(criteria = {}) {
+  async screenDividendStocks(criteria = {}) {
+    const database = await getDatabaseAsync();
     const {
       minYield = null,
       maxYield = null,
@@ -347,33 +351,34 @@ class DividendService {
     `;
 
     const params = [];
+    let paramCounter = 1;
 
     if (minYield !== null) {
-      sql += ' AND dm.dividend_yield >= ?';
+      sql += ` AND dm.dividend_yield >= $${paramCounter++}`;
       params.push(minYield);
     }
     if (maxYield !== null) {
-      sql += ' AND dm.dividend_yield <= ?';
+      sql += ` AND dm.dividend_yield <= $${paramCounter++}`;
       params.push(maxYield);
     }
     if (minPayoutRatio !== null) {
-      sql += ' AND dm.payout_ratio >= ?';
+      sql += ` AND dm.payout_ratio >= $${paramCounter++}`;
       params.push(minPayoutRatio);
     }
     if (maxPayoutRatio !== null) {
-      sql += ' AND dm.payout_ratio <= ?';
+      sql += ` AND dm.payout_ratio <= $${paramCounter++}`;
       params.push(maxPayoutRatio);
     }
     if (minYearsGrowth !== null) {
-      sql += ' AND dm.years_of_growth >= ?';
+      sql += ` AND dm.years_of_growth >= $${paramCounter++}`;
       params.push(minYearsGrowth);
     }
     if (minGrowth5y !== null) {
-      sql += ' AND dm.dividend_growth_5y >= ?';
+      sql += ` AND dm.dividend_growth_5y >= $${paramCounter++}`;
       params.push(minGrowth5y);
     }
     if (sector) {
-      sql += ' AND c.sector = ?';
+      sql += ` AND c.sector = $${paramCounter++}`;
       params.push(sector);
     }
     if (sp500Only) {
@@ -394,10 +399,11 @@ class DividendService {
     const sortColumn = validSortColumns.includes(sortBy) ? sortBy : 'dividend_yield';
     const order = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
-    sql += ` ORDER BY dm.${sortColumn} ${order} NULLS LAST LIMIT ?`;
+    sql += ` ORDER BY dm.${sortColumn} ${order} NULLS LAST LIMIT $${paramCounter++}`;
     params.push(limit);
 
-    return this.db.prepare(sql).all(...params);
+    const result = await database.query(sql, params);
+    return result.rows;
   }
 }
 

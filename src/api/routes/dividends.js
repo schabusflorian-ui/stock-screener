@@ -11,9 +11,9 @@ const DividendService = require('../../services/dividendService');
  * GET /api/dividends/summary
  * Get overall dividend statistics
  */
-router.get('/summary', (req, res) => {
+router.get('/summary', async (req, res) => {
   try {
-    const summary = DividendService.getDividendSummary();
+    const summary = await DividendService.getDividendSummary();
     res.json({
       success: true,
       data: summary
@@ -31,11 +31,11 @@ router.get('/summary', (req, res) => {
  * GET /api/dividends/top-yielders
  * Get stocks with highest dividend yields
  */
-router.get('/top-yielders', (req, res) => {
+router.get('/top-yielders', async (req, res) => {
   try {
     const { minYield, maxYield, sector, minYearsGrowth, limit } = req.query;
 
-    const yielders = DividendService.getTopDividendYielders({
+    const yielders = await DividendService.getTopDividendYielders({
       minYield: minYield ? parseFloat(minYield) : 0,
       maxYield: maxYield ? parseFloat(maxYield) : 20,
       sector: sector || null,
@@ -61,9 +61,9 @@ router.get('/top-yielders', (req, res) => {
  * GET /api/dividends/aristocrats
  * Get dividend aristocrats (25+ years growth)
  */
-router.get('/aristocrats', (req, res) => {
+router.get('/aristocrats', async (req, res) => {
   try {
-    const aristocrats = DividendService.getDividendAristocrats();
+    const aristocrats = await DividendService.getDividendAristocrats();
     res.json({
       success: true,
       count: aristocrats.length,
@@ -82,9 +82,9 @@ router.get('/aristocrats', (req, res) => {
  * GET /api/dividends/kings
  * Get dividend kings (50+ years growth)
  */
-router.get('/kings', (req, res) => {
+router.get('/kings', async (req, res) => {
   try {
-    const kings = DividendService.getDividendKings();
+    const kings = await DividendService.getDividendKings();
     res.json({
       success: true,
       count: kings.length,
@@ -103,10 +103,10 @@ router.get('/kings', (req, res) => {
  * GET /api/dividends/upcoming
  * Get upcoming ex-dividend dates
  */
-router.get('/upcoming', (req, res) => {
+router.get('/upcoming', async (req, res) => {
   try {
     const { days } = req.query;
-    const upcoming = DividendService.getUpcomingExDividends(
+    const upcoming = await DividendService.getUpcomingExDividends(
       days ? parseInt(days) : 14
     );
     res.json({
@@ -127,10 +127,10 @@ router.get('/upcoming', (req, res) => {
  * GET /api/dividends/growth-leaders
  * Get companies with highest dividend growth
  */
-router.get('/growth-leaders', (req, res) => {
+router.get('/growth-leaders', async (req, res) => {
   try {
     const { period, limit } = req.query;
-    const leaders = DividendService.getDividendGrowthLeaders(
+    const leaders = await DividendService.getDividendGrowthLeaders(
       period || '5y',
       limit ? parseInt(limit) : 50
     );
@@ -152,9 +152,9 @@ router.get('/growth-leaders', (req, res) => {
  * GET /api/dividends/by-sector
  * Get dividend statistics grouped by sector
  */
-router.get('/by-sector', (req, res) => {
+router.get('/by-sector', async (req, res) => {
   try {
-    const sectors = DividendService.getDividendsBySector();
+    const sectors = await DividendService.getDividendsBySector();
     res.json({
       success: true,
       data: sectors
@@ -172,7 +172,7 @@ router.get('/by-sector', (req, res) => {
  * GET /api/dividends/screen
  * Screen dividend stocks based on criteria
  */
-router.get('/screen', (req, res) => {
+router.get('/screen', async (req, res) => {
   try {
     const {
       minYield, maxYield,
@@ -183,7 +183,7 @@ router.get('/screen', (req, res) => {
       sortBy, sortOrder, limit
     } = req.query;
 
-    const results = DividendService.screenDividendStocks({
+    const results = await DividendService.screenDividendStocks({
       minYield: minYield ? parseFloat(minYield) : null,
       maxYield: maxYield ? parseFloat(maxYield) : null,
       minPayoutRatio: minPayoutRatio ? parseFloat(minPayoutRatio) : null,
@@ -217,10 +217,10 @@ router.get('/screen', (req, res) => {
  * GET /api/dividends/company/:symbol
  * Get dividend metrics for a specific company
  */
-router.get('/company/:symbol', (req, res) => {
+router.get('/company/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
-    const metrics = DividendService.getDividendMetricsBySymbol(symbol.toUpperCase());
+    const metrics = await DividendService.getDividendMetricsBySymbol(symbol.toUpperCase());
 
     if (!metrics) {
       return res.status(404).json({
@@ -246,14 +246,16 @@ router.get('/company/:symbol', (req, res) => {
  * GET /api/dividends/company/:symbol/history
  * Get dividend payment history for a specific company
  */
-router.get('/company/:symbol/history', (req, res) => {
+router.get('/company/:symbol/history', async (req, res) => {
   try {
     const { symbol } = req.params;
     const { limit } = req.query;
 
     // First get company ID
-    const db = require('../../database').getDatabase();
-    const company = db.prepare('SELECT id FROM companies WHERE symbol = ?').get(symbol.toUpperCase());
+    const { getDatabaseAsync } = require('../../database');
+    const database = await getDatabaseAsync();
+    const result = await database.query('SELECT id FROM companies WHERE symbol = $1', [symbol.toUpperCase()]);
+    const company = result.rows[0];
 
     if (!company) {
       return res.status(404).json({
@@ -262,7 +264,7 @@ router.get('/company/:symbol/history', (req, res) => {
       });
     }
 
-    const history = DividendService.getDividendHistory(
+    const history = await DividendService.getDividendHistory(
       company.id,
       limit ? parseInt(limit) : 40
     );
