@@ -1,7 +1,7 @@
 # PostgreSQL Conversion Progress Tracker
 
 **Last Updated**: 2026-02-07
-**Overall Progress**: 75 / 197 services (38%) - **ALL BACKTESTING SERVICES COMPLETE! 🎉**
+**Overall Progress**: 86 / 197 services (44%) - **ALL ALERT SERVICES COMPLETE! 🎉**
 
 ---
 
@@ -87,6 +87,17 @@
 | backtesting/varBacktest.js | High | 4h | ✅ | VaR backtesting with exceptions |
 | backtesting/walkForwardEngine.js | High | 4h | ✅ | Walk-forward & CPCV analysis |
 | backtesting/weightOptimizer.js | High | 4h | ✅ | Signal weight optimization |
+| alerts/actionabilityScorer.js | Medium | 2h | ✅ | Alert actionability scoring, user context |
+| alerts/aiSummarizer.js | Medium | 2h | ✅ | AI alert summarization, context generation |
+| alerts/digestManager.js | Medium | 3h | ✅ | 8 methods, digest preferences, queueing |
+| alerts/regimeThresholds.js | Medium | 2h | ✅ | Regime threshold adjustments |
+| alerts/index.js | High | 5h | ✅ | 26 methods, main AlertService |
+| alerts/processors/clusterProcessor.js | Medium | 2h | ✅ | Alert clustering processor |
+| alerts/detectors/compositeDetector.js | Medium | 3h | ✅ | Composite signal detection |
+| alerts/detectors/filingDetector.js | Medium | 2h | ✅ | SEC filing & insider activity detection |
+| alerts/detectors/fundamentalDetector.js | Medium | 3h | ✅ | Fundamental metrics analysis |
+| alerts/detectors/priceDetector.js | Medium | 2h | ✅ | Price breakout & technical detection |
+| alerts/detectors/valuationDetector.js | Medium | 3h | ✅ | Valuation metrics, deep value detection |
 
 ---
 
@@ -233,6 +244,27 @@ Priority 1A is now complete! All Data Access Layer services have been converted.
 
 **Total Estimated**: 76-94 hours
 **✅ PRIORITY 1G COMPLETE!** All 20 Backtesting Services converted to PostgreSQL async!
+
+---
+
+## 📋 Priority 1H: Alert Services
+
+| # | Service | Complexity | Estimated | Status | Assignee |
+|---|---------|-----------|-----------|--------|----------|
+| 75 | alerts/actionabilityScorer.js | Medium | 2-3h | ✅ Complete | - |
+| 76 | alerts/aiSummarizer.js | Medium | 2-3h | ✅ Complete | - |
+| 77 | alerts/digestManager.js | Medium | 3-4h | ✅ Complete | - |
+| 78 | alerts/regimeThresholds.js | Medium | 2-3h | ✅ Complete | - |
+| 79 | alerts/index.js | High | 5-6h | ✅ Complete | - |
+| 80 | alerts/processors/clusterProcessor.js | Medium | 2-3h | ✅ Complete | - |
+| 81 | alerts/detectors/compositeDetector.js | Medium | 3-4h | ✅ Complete | - |
+| 82 | alerts/detectors/filingDetector.js | Medium | 2-3h | ✅ Complete | - |
+| 83 | alerts/detectors/fundamentalDetector.js | Medium | 3-4h | ✅ Complete | - |
+| 84 | alerts/detectors/priceDetector.js | Medium | 2-3h | ✅ Complete | - |
+| 85 | alerts/detectors/valuationDetector.js | Medium | 3-4h | ✅ Complete | - |
+
+**Total Estimated**: 29-38 hours
+**✅ PRIORITY 1H COMPLETE!** All 11 Alert Services converted to PostgreSQL async!
 
 ---
 
