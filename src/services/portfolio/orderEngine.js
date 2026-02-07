@@ -1,124 +1,19 @@
 // src/services/portfolio/orderEngine.js
 // Order engine for managing standing orders (stop loss, limit, trailing stop)
 
+const { getDatabaseAsync } = require('../../database');
 const { ORDER_TYPES, ORDER_STATUS } = require('../../constants/portfolio');
 
 class OrderEngine {
-  constructor(db, holdingsEngine) {
-    this.db = db;
+  constructor(holdingsEngine) {
     this.holdingsEngine = holdingsEngine;
-    this._prepareStatements();
-  }
-
-  _prepareStatements() {
-    this.stmts = {
-      // Order queries
-      getOrder: this.db.prepare(`
-        SELECT po.*, c.symbol, c.name as company_name
-        FROM portfolio_orders po
-        JOIN companies c ON po.company_id = c.id
-        WHERE po.id = ?
-      `),
-
-      getActiveOrders: this.db.prepare(`
-        SELECT po.*, c.symbol, c.name as company_name
-        FROM portfolio_orders po
-        JOIN companies c ON po.company_id = c.id
-        WHERE po.portfolio_id = ? AND po.status = 'active'
-        ORDER BY po.created_at DESC
-      `),
-
-      getAllActiveOrders: this.db.prepare(`
-        SELECT po.*, c.symbol, c.name as company_name, p.name as portfolio_name
-        FROM portfolio_orders po
-        JOIN companies c ON po.company_id = c.id
-        JOIN portfolios p ON po.portfolio_id = p.id
-        WHERE po.status = 'active'
-        ORDER BY po.company_id, po.created_at DESC
-      `),
-
-      getActiveOrdersByCompany: this.db.prepare(`
-        SELECT po.*, c.symbol, c.name as company_name, p.name as portfolio_name
-        FROM portfolio_orders po
-        JOIN companies c ON po.company_id = c.id
-        JOIN portfolios p ON po.portfolio_id = p.id
-        WHERE po.status = 'active' AND po.company_id = ?
-        ORDER BY po.created_at DESC
-      `),
-
-      getOrderHistory: this.db.prepare(`
-        SELECT po.*, c.symbol, c.name as company_name
-        FROM portfolio_orders po
-        JOIN companies c ON po.company_id = c.id
-        WHERE po.portfolio_id = ?
-        ORDER BY po.created_at DESC
-        LIMIT ? OFFSET ?
-      `),
-
-      createOrder: this.db.prepare(`
-        INSERT INTO portfolio_orders
-        (portfolio_id, company_id, position_id, order_type, order_side,
-         trigger_price, trigger_comparison, limit_price, trailing_pct,
-         trailing_high_price, trailing_trigger_price, shares, shares_pct,
-         valid_until, status, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `),
-
-      updateOrder: this.db.prepare(`
-        UPDATE portfolio_orders
-        SET trigger_price = ?,
-            trailing_high_price = ?,
-            trailing_trigger_price = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `),
-
-      cancelOrder: this.db.prepare(`
-        UPDATE portfolio_orders
-        SET status = 'cancelled',
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `),
-
-      triggerOrder: this.db.prepare(`
-        UPDATE portfolio_orders
-        SET status = 'triggered',
-            triggered_at = ?,
-            triggered_price = ?,
-            execution_transaction_id = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `),
-
-      expireOrders: this.db.prepare(`
-        UPDATE portfolio_orders
-        SET status = 'expired',
-            updated_at = CURRENT_TIMESTAMP
-        WHERE status = 'active' AND valid_until < date('now')
-      `),
-
-      // Price queries
-      getLatestPrice: this.db.prepare(`
-        SELECT close as price, date
-        FROM daily_prices
-        WHERE company_id = ?
-        ORDER BY date DESC
-        LIMIT 1
-      `),
-
-      // Position queries
-      getPosition: this.db.prepare(`
-        SELECT * FROM portfolio_positions
-        WHERE portfolio_id = ? AND company_id = ?
-      `)
-    };
   }
 
   // ============================================
   // Order Creation
   // ============================================
 
-  createOrder(portfolioId, {
+  async createOrder(portfolioId, {
     companyId,
     orderType,
     triggerPrice,
@@ -129,6 +24,8 @@ class OrderEngine {
     validUntil = null,
     notes = null
   }) {
+    const database = await getDatabaseAsync();
+
     // Validate order type
     const validOrderTypes = Object.values(ORDER_TYPES);
     if (!validOrderTypes.includes(orderType)) {
@@ -175,7 +72,12 @@ class OrderEngine {
     // For sell orders, verify position exists
     let position = null;
     if (orderSide === 'sell') {
-      position = this.stmts.getPosition.get(portfolioId, companyId);
+      const positionResult = await database.query(`
+        SELECT * FROM portfolio_positions
+        WHERE portfolio_id = $1 AND company_id = $2
+      `, [portfolioId, companyId]);
+      position = positionResult.rows[0];
+
       if (!position) {
         throw new Error(`No position found for company ${companyId} in portfolio ${portfolioId}`);
       }
@@ -189,7 +91,15 @@ class OrderEngine {
     let trailingTriggerPrice = null;
 
     if (orderType === ORDER_TYPES.TRAILING_STOP) {
-      const latestPrice = this.stmts.getLatestPrice.get(companyId);
+      const latestPriceResult = await database.query(`
+        SELECT close as price, date
+        FROM daily_prices
+        WHERE company_id = $1
+        ORDER BY date DESC
+        LIMIT 1
+      `, [companyId]);
+      const latestPrice = latestPriceResult.rows[0];
+
       if (!latestPrice) {
         throw new Error(`No price data available for company ${companyId}`);
       }
@@ -199,7 +109,15 @@ class OrderEngine {
       triggerPrice = trailingTriggerPrice;
     }
 
-    const result = this.stmts.createOrder.run(
+    const result = await database.query(`
+      INSERT INTO portfolio_orders
+      (portfolio_id, company_id, position_id, order_type, order_side,
+       trigger_price, trigger_comparison, limit_price, trailing_pct,
+       trailing_high_price, trailing_trigger_price, shares, shares_pct,
+       valid_until, status, notes)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+      RETURNING id
+    `, [
       portfolioId,
       companyId,
       position ? position.id : null,
@@ -216,11 +134,11 @@ class OrderEngine {
       validUntil,
       ORDER_STATUS.ACTIVE,
       notes
-    );
+    ]);
 
     return {
       success: true,
-      orderId: result.lastInsertRowid,
+      orderId: result.rows[0].id,
       orderType,
       orderSide,
       triggerPrice,
@@ -234,28 +152,62 @@ class OrderEngine {
   // Order Retrieval
   // ============================================
 
-  getOrder(orderId) {
-    return this.stmts.getOrder.get(orderId);
+  async getOrder(orderId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT po.*, c.symbol, c.name as company_name
+      FROM portfolio_orders po
+      JOIN companies c ON po.company_id = c.id
+      WHERE po.id = $1
+    `, [orderId]);
+    return result.rows[0];
   }
 
-  getActiveOrders(portfolioId) {
-    return this.stmts.getActiveOrders.all(portfolioId);
+  async getActiveOrders(portfolioId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT po.*, c.symbol, c.name as company_name
+      FROM portfolio_orders po
+      JOIN companies c ON po.company_id = c.id
+      WHERE po.portfolio_id = $1 AND po.status = 'active'
+      ORDER BY po.created_at DESC
+    `, [portfolioId]);
+    return result.rows;
   }
 
-  getAllActiveOrders() {
-    return this.stmts.getAllActiveOrders.all();
+  async getAllActiveOrders() {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT po.*, c.symbol, c.name as company_name, p.name as portfolio_name
+      FROM portfolio_orders po
+      JOIN companies c ON po.company_id = c.id
+      JOIN portfolios p ON po.portfolio_id = p.id
+      WHERE po.status = 'active'
+      ORDER BY po.company_id, po.created_at DESC
+    `);
+    return result.rows;
   }
 
-  getOrderHistory(portfolioId, { limit = 50, offset = 0 } = {}) {
-    return this.stmts.getOrderHistory.all(portfolioId, limit, offset);
+  async getOrderHistory(portfolioId, { limit = 50, offset = 0 } = {}) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT po.*, c.symbol, c.name as company_name
+      FROM portfolio_orders po
+      JOIN companies c ON po.company_id = c.id
+      WHERE po.portfolio_id = $1
+      ORDER BY po.created_at DESC
+      LIMIT $2 OFFSET $3
+    `, [portfolioId, limit, offset]);
+    return result.rows;
   }
 
   // ============================================
   // Order Management
   // ============================================
 
-  cancelOrder(orderId) {
-    const order = this.getOrder(orderId);
+  async cancelOrder(orderId) {
+    const database = await getDatabaseAsync();
+    const order = await this.getOrder(orderId);
     if (!order) {
       throw new Error(`Order ${orderId} not found`);
     }
@@ -263,25 +215,39 @@ class OrderEngine {
       throw new Error(`Order ${orderId} is not active (status: ${order.status})`);
     }
 
-    this.stmts.cancelOrder.run(orderId);
+    await database.query(`
+      UPDATE portfolio_orders
+      SET status = 'cancelled',
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [orderId]);
+
     return { success: true, orderId };
   }
 
-  expireOrders() {
-    const result = this.stmts.expireOrders.run();
-    return { expiredCount: result.changes };
+  async expireOrders() {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      UPDATE portfolio_orders
+      SET status = 'expired',
+          updated_at = CURRENT_TIMESTAMP
+      WHERE status = 'active' AND valid_until < CURRENT_DATE
+    `);
+    return { expiredCount: result.rowCount };
   }
 
   // ============================================
   // Order Execution
   // ============================================
 
-  checkAndExecuteOrders() {
+  async checkAndExecuteOrders() {
+    const database = await getDatabaseAsync();
+
     // First expire any orders past their valid_until date
-    this.expireOrders();
+    await this.expireOrders();
 
     // Get all active orders grouped by company
-    const activeOrders = this.getAllActiveOrders();
+    const activeOrders = await this.getAllActiveOrders();
     const triggeredOrders = [];
     const errors = [];
 
@@ -296,16 +262,24 @@ class OrderEngine {
 
     // Check each company's orders
     for (const [companyId, orders] of Object.entries(ordersByCompany)) {
-      const latestPrice = this.stmts.getLatestPrice.get(Number(companyId));
+      const latestPriceResult = await database.query(`
+        SELECT close as price, date
+        FROM daily_prices
+        WHERE company_id = $1
+        ORDER BY date DESC
+        LIMIT 1
+      `, [Number(companyId)]);
+      const latestPrice = latestPriceResult.rows[0];
+
       if (!latestPrice) continue;
 
       const currentPrice = latestPrice.price;
 
       for (const order of orders) {
         try {
-          const triggered = this._checkOrder(order, currentPrice);
+          const triggered = await this._checkOrder(order, currentPrice);
           if (triggered) {
-            const result = this._executeOrder(order, currentPrice);
+            const result = await this._executeOrder(order, currentPrice);
             triggeredOrders.push({
               orderId: order.id,
               orderType: order.order_type,
@@ -332,10 +306,10 @@ class OrderEngine {
     };
   }
 
-  _checkOrder(order, currentPrice) {
+  async _checkOrder(order, currentPrice) {
     // Handle trailing stop specially
     if (order.order_type === ORDER_TYPES.TRAILING_STOP) {
-      return this._checkTrailingStop(order, currentPrice);
+      return await this._checkTrailingStop(order, currentPrice);
     }
 
     // Check trigger condition
@@ -353,18 +327,21 @@ class OrderEngine {
     }
   }
 
-  _checkTrailingStop(order, currentPrice) {
+  async _checkTrailingStop(order, currentPrice) {
     // If price is higher than trailing_high_price, update the trailing stop
     if (currentPrice > order.trailing_high_price) {
+      const database = await getDatabaseAsync();
       const newHighPrice = currentPrice;
       const newTriggerPrice = newHighPrice * (1 - order.trailing_pct / 100);
 
-      this.stmts.updateOrder.run(
-        newTriggerPrice,
-        newHighPrice,
-        newTriggerPrice,
-        order.id
-      );
+      await database.query(`
+        UPDATE portfolio_orders
+        SET trigger_price = $1,
+            trailing_high_price = $2,
+            trailing_trigger_price = $3,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $4
+      `, [newTriggerPrice, newHighPrice, newTriggerPrice, order.id]);
 
       // Not triggered yet, just updated
       return false;
@@ -374,13 +351,19 @@ class OrderEngine {
     return currentPrice <= order.trailing_trigger_price;
   }
 
-  _executeOrder(order, currentPrice) {
+  async _executeOrder(order, currentPrice) {
+    const database = await getDatabaseAsync();
     const executedAt = new Date().toISOString();
 
     // Determine shares to trade
     let sharesToTrade = order.shares;
     if (!sharesToTrade && order.shares_pct) {
-      const position = this.stmts.getPosition.get(order.portfolio_id, order.company_id);
+      const positionResult = await database.query(`
+        SELECT * FROM portfolio_positions
+        WHERE portfolio_id = $1 AND company_id = $2
+      `, [order.portfolio_id, order.company_id]);
+      const position = positionResult.rows[0];
+
       if (!position) {
         throw new Error('Position no longer exists');
       }
@@ -396,7 +379,7 @@ class OrderEngine {
 
     let result;
     if (order.order_side === 'sell') {
-      result = this.holdingsEngine.executeSell(order.portfolio_id, {
+      result = await this.holdingsEngine.executeSell(order.portfolio_id, {
         companyId: order.company_id,
         shares: sharesToTrade,
         pricePerShare: executionPrice,
@@ -406,7 +389,7 @@ class OrderEngine {
         orderId: order.id
       });
     } else {
-      result = this.holdingsEngine.executeBuy(order.portfolio_id, {
+      result = await this.holdingsEngine.executeBuy(order.portfolio_id, {
         companyId: order.company_id,
         shares: sharesToTrade,
         pricePerShare: executionPrice,
@@ -418,12 +401,15 @@ class OrderEngine {
     }
 
     // Mark order as triggered
-    this.stmts.triggerOrder.run(
-      executedAt,
-      currentPrice,
-      null, // transaction_id - could link if needed
-      order.id
-    );
+    await database.query(`
+      UPDATE portfolio_orders
+      SET status = 'triggered',
+          triggered_at = $1,
+          triggered_price = $2,
+          execution_transaction_id = $3,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $4
+    `, [executedAt, currentPrice, null, order.id]);
 
     return result;
   }
@@ -432,30 +418,44 @@ class OrderEngine {
   // Helper Methods
   // ============================================
 
-  updateTrailingStops() {
+  async updateTrailingStops() {
+    const database = await getDatabaseAsync();
+
     // Update all trailing stops based on current prices
-    const trailingOrders = this.db.prepare(`
+    const trailingOrdersResult = await database.query(`
       SELECT po.*, c.symbol
       FROM portfolio_orders po
       JOIN companies c ON po.company_id = c.id
       WHERE po.status = 'active' AND po.order_type = 'trailing_stop'
-    `).all();
+    `);
+    const trailingOrders = trailingOrdersResult.rows;
 
     let updated = 0;
     for (const order of trailingOrders) {
-      const latestPrice = this.stmts.getLatestPrice.get(order.company_id);
+      const latestPriceResult = await database.query(`
+        SELECT close as price, date
+        FROM daily_prices
+        WHERE company_id = $1
+        ORDER BY date DESC
+        LIMIT 1
+      `, [order.company_id]);
+      const latestPrice = latestPriceResult.rows[0];
+
       if (!latestPrice) continue;
 
       if (latestPrice.price > order.trailing_high_price) {
         const newHighPrice = latestPrice.price;
         const newTriggerPrice = newHighPrice * (1 - order.trailing_pct / 100);
 
-        this.stmts.updateOrder.run(
-          newTriggerPrice,
-          newHighPrice,
-          newTriggerPrice,
-          order.id
-        );
+        await database.query(`
+          UPDATE portfolio_orders
+          SET trigger_price = $1,
+              trailing_high_price = $2,
+              trailing_trigger_price = $3,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $4
+        `, [newTriggerPrice, newHighPrice, newTriggerPrice, order.id]);
+
         updated++;
       }
     }
@@ -463,8 +463,8 @@ class OrderEngine {
     return { trailingOrdersChecked: trailingOrders.length, updated };
   }
 
-  getOrderSummary(portfolioId) {
-    const activeOrders = this.getActiveOrders(portfolioId);
+  async getOrderSummary(portfolioId) {
+    const activeOrders = await this.getActiveOrders(portfolioId);
 
     const summary = {
       total: activeOrders.length,
