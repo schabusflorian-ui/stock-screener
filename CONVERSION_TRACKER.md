@@ -1,7 +1,7 @@
 # PostgreSQL Conversion Progress Tracker
 
 **Last Updated**: 2026-02-07
-**Overall Progress**: 55 / 197 services (28%) - **ALL AGENT SERVICES COMPLETE! 🎉**
+**Overall Progress**: 75 / 197 services (38%) - **ALL BACKTESTING SERVICES COMPLETE! 🎉**
 
 ---
 
@@ -67,6 +67,26 @@
 | agent/signalPerformanceTracker.js | Medium | 2h | ✅ | 5 DB methods, signal performance tracking |
 | agent/strategyConfig.js | Medium | 2h | ✅ | 12 DB methods, strategy configuration |
 | agent/tradingAgent.js | High | 6h | ✅ | 24 DB methods, trading recommendation engine |
+| backtesting/alphaValidation.js | High | 4h | ✅ | Alpha validation testing, IC analysis |
+| backtesting/capacityAnalysis.js | Medium | 3h | ✅ | Capacity estimation, liquidity-adjusted returns |
+| backtesting/enhancedBacktestRunner.js | High | 4h | ✅ | Enhanced backtest runner with database injection |
+| backtesting/executionSimulator.js | Medium | 3h | ✅ | Execution cost analysis, market data simulation |
+| backtesting/factorBacktestEngine.js | High | 4h | ✅ | Factor backtest with ranked stocks |
+| backtesting/historicalAgentBacktester.js | High | 5h | ✅ | Historical agent backtesting, universe selection |
+| backtesting/historicalDataProvider.js | Medium | 3h | ✅ | 15 async query methods for historical data |
+| backtesting/icAnalysis.js | High | 4h | ✅ | IC decay analysis, signal history |
+| backtesting/index.js | Medium | 2h | ✅ | Main backtesting service entry point |
+| backtesting/multiStrategyBacktester.js | High | 4h | ✅ | Multi-strategy analysis |
+| backtesting/overfittingDetector.js | Medium | 3h | ✅ | Overfitting diagnostics |
+| backtesting/regimeAnalysis.js | High | 4h | ✅ | Regime-based performance analysis |
+| backtesting/screeningBacktestEngine.js | High | 4h | ✅ | Screening backtest with rebalance |
+| backtesting/signalPredictivePower.js | High | 4h | ✅ | Signal predictive power analysis |
+| backtesting/strategyBenchmark.js | High | 5h | ✅ | Strategy benchmarking |
+| backtesting/stressTest.js | High | 4h | ✅ | Historical & factor stress testing |
+| backtesting/unifiedBacktestEngine.js | High | 5h | ✅ | Unified backtest framework |
+| backtesting/varBacktest.js | High | 4h | ✅ | VaR backtesting with exceptions |
+| backtesting/walkForwardEngine.js | High | 4h | ✅ | Walk-forward & CPCV analysis |
+| backtesting/weightOptimizer.js | High | 4h | ✅ | Signal weight optimization |
 
 ---
 
@@ -183,6 +203,36 @@ Priority 1A is now complete! All Data Access Layer services have been converted.
 
 **Total Estimated**: 41-54 hours
 **✅ PRIORITY 1F COMPLETE!** All 13 Agent Services converted to PostgreSQL async!
+
+---
+
+## 📋 Priority 1G: Backtesting Services
+
+| # | Service | Complexity | Estimated | Status | Assignee |
+|---|---------|-----------|-----------|--------|----------|
+| 55 | backtesting/alphaValidation.js | High | 4-5h | ✅ Complete | - |
+| 56 | backtesting/capacityAnalysis.js | Medium | 3-4h | ✅ Complete | - |
+| 57 | backtesting/enhancedBacktestRunner.js | High | 4-5h | ✅ Complete | - |
+| 58 | backtesting/executionSimulator.js | Medium | 3-4h | ✅ Complete | - |
+| 59 | backtesting/factorBacktestEngine.js | High | 4-5h | ✅ Complete | - |
+| 60 | backtesting/historicalAgentBacktester.js | High | 5-6h | ✅ Complete | - |
+| 61 | backtesting/historicalDataProvider.js | Medium | 3-4h | ✅ Complete | - |
+| 62 | backtesting/icAnalysis.js | High | 4-5h | ✅ Complete | - |
+| 63 | backtesting/index.js | Medium | 2-3h | ✅ Complete | - |
+| 64 | backtesting/multiStrategyBacktester.js | High | 4-5h | ✅ Complete | - |
+| 65 | backtesting/overfittingDetector.js | Medium | 3-4h | ✅ Complete | - |
+| 66 | backtesting/regimeAnalysis.js | High | 4-5h | ✅ Complete | - |
+| 67 | backtesting/screeningBacktestEngine.js | High | 4-5h | ✅ Complete | - |
+| 68 | backtesting/signalPredictivePower.js | High | 4-5h | ✅ Complete | - |
+| 69 | backtesting/strategyBenchmark.js | High | 5-6h | ✅ Complete | - |
+| 70 | backtesting/stressTest.js | High | 4-5h | ✅ Complete | - |
+| 71 | backtesting/unifiedBacktestEngine.js | High | 5-6h | ✅ Complete | - |
+| 72 | backtesting/varBacktest.js | High | 4-5h | ✅ Complete | - |
+| 73 | backtesting/walkForwardEngine.js | High | 4-5h | ✅ Complete | - |
+| 74 | backtesting/weightOptimizer.js | High | 4-5h | ✅ Complete | - |
+
+**Total Estimated**: 76-94 hours
+**✅ PRIORITY 1G COMPLETE!** All 20 Backtesting Services converted to PostgreSQL async!
 
 ---
 
