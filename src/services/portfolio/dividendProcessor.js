@@ -2,126 +2,11 @@
 // Automatic dividend processing for portfolio positions
 // Credits dividends to portfolios when stocks go ex-dividend
 
-const { getDatabase } = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 
 class DividendProcessor {
-  constructor(db = null) {
-    this.db = db || getDatabase();
-    this._prepareStatements();
-  }
-
-  _prepareStatements() {
-    this.stmts = {
-      // Get all portfolios with positions
-      getPortfoliosWithPositions: this.db.prepare(`
-        SELECT DISTINCT p.id, p.name, p.dividend_reinvest
-        FROM portfolios p
-        JOIN portfolio_positions pp ON pp.portfolio_id = p.id
-        WHERE p.is_archived = 0 AND pp.shares > 0
-      `),
-
-      // Get positions for a portfolio with dividend data
-      getPositionsWithDividends: this.db.prepare(`
-        SELECT
-          pp.id as position_id,
-          pp.portfolio_id,
-          pp.company_id,
-          pp.shares,
-          pp.first_bought_at,
-          c.symbol,
-          c.name as company_name
-        FROM portfolio_positions pp
-        JOIN companies c ON pp.company_id = c.id
-        WHERE pp.portfolio_id = ? AND pp.shares > 0
-      `),
-
-      // Get dividend history for a company within a date range
-      getDividendsInRange: this.db.prepare(`
-        SELECT dh.ex_date, dh.amount, dh.payment_date
-        FROM dividend_history dh
-        WHERE dh.company_id = ?
-          AND dh.ex_date BETWEEN ? AND ?
-        ORDER BY dh.ex_date ASC
-      `),
-
-      // Check if dividend was already processed
-      isDividendProcessed: this.db.prepare(`
-        SELECT COUNT(*) as count
-        FROM portfolio_transactions pt
-        WHERE pt.portfolio_id = ?
-          AND pt.company_id = ?
-          AND pt.transaction_type = 'dividend'
-          AND DATE(pt.executed_at) = DATE(?)
-      `),
-
-      // Get latest price for DRIP calculation
-      getLatestPrice: this.db.prepare(`
-        SELECT close as price FROM daily_prices
-        WHERE company_id = ?
-        ORDER BY date DESC
-        LIMIT 1
-      `),
-
-      // Portfolio update
-      getPortfolio: this.db.prepare(`
-        SELECT * FROM portfolios WHERE id = ?
-      `),
-
-      updatePortfolioCash: this.db.prepare(`
-        UPDATE portfolios
-        SET current_cash = ?,
-            current_value = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `),
-
-      // Position update for dividends
-      updatePositionDividends: this.db.prepare(`
-        UPDATE portfolio_positions
-        SET total_dividends = COALESCE(total_dividends, 0) + ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `),
-
-      // Create dividend transaction
-      createDividendTransaction: this.db.prepare(`
-        INSERT INTO portfolio_transactions (
-          portfolio_id, company_id, position_id, lot_id,
-          transaction_type, shares, price_per_share, total_amount,
-          fees, dividend_per_share, cash_balance_after, position_shares_after,
-          notes, order_id, executed_at
-        ) VALUES (?, ?, ?, ?, 'dividend', ?, ?, ?, 0, ?, ?, ?, ?, NULL, ?)
-      `),
-
-      // Create lot for DRIP
-      createDripLot: this.db.prepare(`
-        INSERT INTO portfolio_lots (
-          portfolio_id, position_id, company_id,
-          shares_original, shares_remaining, cost_per_share, total_cost,
-          acquired_at, acquisition_type
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'drip')
-      `),
-
-      // Update position after DRIP
-      updatePosition: this.db.prepare(`
-        UPDATE portfolio_positions
-        SET shares = ?,
-            average_cost = ?,
-            cost_basis = ?,
-            current_price = ?,
-            current_value = ?,
-            unrealized_pnl = ?,
-            unrealized_pnl_pct = ?,
-            last_traded_at = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `),
-
-      // Get position by ID
-      getPositionById: this.db.prepare(`
-        SELECT * FROM portfolio_positions WHERE id = ?
-      `)
-    };
+  constructor() {
+    // No database initialization needed for async pattern
   }
 
   /**
@@ -131,7 +16,8 @@ class DividendProcessor {
    * @param {boolean} options.dryRun - If true, don't make changes, just return what would happen
    * @returns {Object} Processing results
    */
-  processAllDividends({ lookbackDays = 7, dryRun = false } = {}) {
+  async processAllDividends({ lookbackDays = 7, dryRun = false } = {}) {
+    const database = await getDatabaseAsync();
     const results = {
       portfoliosChecked: 0,
       dividendsProcessed: 0,
@@ -141,12 +27,18 @@ class DividendProcessor {
       details: []
     };
 
-    const portfolios = this.stmts.getPortfoliosWithPositions.all();
+    const portfoliosResult = await database.query(`
+      SELECT DISTINCT p.id, p.name, p.dividend_reinvest
+      FROM portfolios p
+      JOIN portfolio_positions pp ON pp.portfolio_id = p.id
+      WHERE p.is_archived = false AND pp.shares > 0
+    `);
+    const portfolios = portfoliosResult.rows;
     results.portfoliosChecked = portfolios.length;
 
     for (const portfolio of portfolios) {
       try {
-        const portfolioResult = this.processPortfolioDividends(portfolio.id, { lookbackDays, dryRun });
+        const portfolioResult = await this.processPortfolioDividends(portfolio.id, { lookbackDays, dryRun });
 
         results.dividendsProcessed += portfolioResult.dividendsProcessed;
         results.totalAmount += portfolioResult.totalAmount;
@@ -177,7 +69,8 @@ class DividendProcessor {
    * @param {Object} options - Processing options
    * @returns {Object} Processing results
    */
-  processPortfolioDividends(portfolioId, { lookbackDays = 7, dryRun = false } = {}) {
+  async processPortfolioDividends(portfolioId, { lookbackDays = 7, dryRun = false } = {}) {
+    const database = await getDatabaseAsync();
     const result = {
       dividendsProcessed: 0,
       totalAmount: 0,
@@ -185,12 +78,30 @@ class DividendProcessor {
       dividends: []
     };
 
-    const portfolio = this.stmts.getPortfolio.get(portfolioId);
+    const portfolioResult = await database.query(`
+      SELECT * FROM portfolios WHERE id = $1
+    `, [portfolioId]);
+    const portfolio = portfolioResult.rows[0];
+
     if (!portfolio) {
       throw new Error(`Portfolio ${portfolioId} not found`);
     }
 
-    const positions = this.stmts.getPositionsWithDividends.all(portfolioId);
+    const positionsResult = await database.query(`
+      SELECT
+        pp.id as position_id,
+        pp.portfolio_id,
+        pp.company_id,
+        pp.shares,
+        pp.first_bought_at,
+        c.symbol,
+        c.name as company_name
+      FROM portfolio_positions pp
+      JOIN companies c ON pp.company_id = c.id
+      WHERE pp.portfolio_id = $1 AND pp.shares > 0
+    `, [portfolioId]);
+    const positions = positionsResult.rows;
+
     const today = new Date().toISOString().split('T')[0];
     const lookbackDate = new Date();
     lookbackDate.setDate(lookbackDate.getDate() - lookbackDays);
@@ -198,11 +109,14 @@ class DividendProcessor {
 
     for (const position of positions) {
       // Get dividends for this company in the lookback period
-      const dividends = this.stmts.getDividendsInRange.all(
-        position.company_id,
-        startDate,
-        today
-      );
+      const dividendsResult = await database.query(`
+        SELECT dh.ex_date, dh.amount, dh.payment_date
+        FROM dividend_history dh
+        WHERE dh.company_id = $1
+          AND dh.ex_date BETWEEN $2 AND $3
+        ORDER BY dh.ex_date ASC
+      `, [position.company_id, startDate, today]);
+      const dividends = dividendsResult.rows;
 
       for (const dividend of dividends) {
         // Check if position was held on ex-date
@@ -213,11 +127,15 @@ class DividendProcessor {
         }
 
         // Check if already processed
-        const processed = this.stmts.isDividendProcessed.get(
-          portfolioId,
-          position.company_id,
-          dividend.ex_date
-        );
+        const processedResult = await database.query(`
+          SELECT COUNT(*) as count
+          FROM portfolio_transactions pt
+          WHERE pt.portfolio_id = $1
+            AND pt.company_id = $2
+            AND pt.transaction_type = 'dividend'
+            AND DATE(pt.executed_at) = DATE($3)
+        `, [portfolioId, position.company_id, dividend.ex_date]);
+        const processed = processedResult.rows[0];
 
         if (processed.count > 0) {
           // Already processed
@@ -234,7 +152,7 @@ class DividendProcessor {
             dividendPerShare: dividend.amount,
             shares: position.shares,
             totalAmount: dividendAmount,
-            drip: portfolio.dividend_reinvest === 1,
+            drip: portfolio.dividend_reinvest === true,
             status: 'would_process'
           });
           result.dividendsProcessed++;
@@ -244,7 +162,7 @@ class DividendProcessor {
 
         // Process the dividend
         try {
-          const processResult = this._processSingleDividend(
+          const processResult = await this._processSingleDividend(
             portfolio,
             position,
             dividend,
@@ -288,35 +206,66 @@ class DividendProcessor {
    * Process a single dividend payment
    * @private
    */
-  _processSingleDividend(portfolio, position, dividend, dividendAmount) {
-    const isDRIP = portfolio.dividend_reinvest === 1;
+  async _processSingleDividend(portfolio, position, dividend, dividendAmount) {
+    const database = await getDatabaseAsync();
+    const isDRIP = portfolio.dividend_reinvest === true;
     const execDate = dividend.payment_date || dividend.ex_date;
 
-    return this.db.transaction(() => {
+    // Start transaction
+    await database.query('BEGIN');
+
+    try {
+      let result;
       if (isDRIP) {
-        return this._processDripDividend(portfolio, position, dividend, dividendAmount, execDate);
+        result = await this._processDripDividend(portfolio, position, dividend, dividendAmount, execDate);
       } else {
-        return this._processCashDividend(portfolio, position, dividend, dividendAmount, execDate);
+        result = await this._processCashDividend(portfolio, position, dividend, dividendAmount, execDate);
       }
-    })();
+
+      await database.query('COMMIT');
+      return result;
+    } catch (error) {
+      await database.query('ROLLBACK');
+      throw error;
+    }
   }
 
   /**
    * Process dividend as cash
    * @private
    */
-  _processCashDividend(portfolio, position, dividend, dividendAmount, execDate) {
+  async _processCashDividend(portfolio, position, dividend, dividendAmount, execDate) {
+    const database = await getDatabaseAsync();
+
     // Add to cash balance
     const newCash = portfolio.current_cash + dividendAmount;
     const newTotalValue = portfolio.current_value + dividendAmount;
 
-    this.stmts.updatePortfolioCash.run(newCash, newTotalValue, portfolio.id);
+    await database.query(`
+      UPDATE portfolios
+      SET current_cash = $1,
+          current_value = $2,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $3
+    `, [newCash, newTotalValue, portfolio.id]);
 
     // Update position dividends tracker
-    this.stmts.updatePositionDividends.run(dividendAmount, position.position_id);
+    await database.query(`
+      UPDATE portfolio_positions
+      SET total_dividends = COALESCE(total_dividends, 0) + $1,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+    `, [dividendAmount, position.position_id]);
 
     // Record transaction
-    this.stmts.createDividendTransaction.run(
+    await database.query(`
+      INSERT INTO portfolio_transactions (
+        portfolio_id, company_id, position_id, lot_id,
+        transaction_type, shares, price_per_share, total_amount,
+        fees, dividend_per_share, cash_balance_after, position_shares_after,
+        notes, order_id, executed_at
+      ) VALUES ($1, $2, $3, $4, 'dividend', $5, $6, $7, 0, $8, $9, $10, $11, NULL, $12)
+    `, [
       portfolio.id,
       position.company_id,
       position.position_id,
@@ -329,7 +278,7 @@ class DividendProcessor {
       position.shares, // shares_after
       `Cash dividend: $${dividend.amount.toFixed(4)}/share (ex-date: ${dividend.ex_date})`,
       execDate
-    );
+    ]);
 
     return {
       drip: false,
@@ -341,22 +290,41 @@ class DividendProcessor {
    * Process dividend as DRIP (reinvest)
    * @private
    */
-  _processDripDividend(portfolio, position, dividend, dividendAmount, execDate) {
+  async _processDripDividend(portfolio, position, dividend, dividendAmount, execDate) {
+    const database = await getDatabaseAsync();
+
     // Get current price
-    const priceRow = this.stmts.getLatestPrice.get(position.company_id);
+    const priceResult = await database.query(`
+      SELECT close as price FROM daily_prices
+      WHERE company_id = $1
+      ORDER BY date DESC
+      LIMIT 1
+    `, [position.company_id]);
+    const priceRow = priceResult.rows[0];
+
     if (!priceRow) {
       // Fall back to cash dividend if no price available
-      return this._processCashDividend(portfolio, position, dividend, dividendAmount, execDate);
+      return await this._processCashDividend(portfolio, position, dividend, dividendAmount, execDate);
     }
 
     const currentPrice = priceRow.price;
     const sharesToBuy = dividendAmount / currentPrice;
 
     // Get current position data
-    const positionData = this.stmts.getPositionById.get(position.position_id);
+    const positionResult = await database.query(`
+      SELECT * FROM portfolio_positions WHERE id = $1
+    `, [position.position_id]);
+    const positionData = positionResult.rows[0];
 
     // Create DRIP lot
-    const lotResult = this.stmts.createDripLot.run(
+    const lotResult = await database.query(`
+      INSERT INTO portfolio_lots (
+        portfolio_id, position_id, company_id,
+        shares_original, shares_remaining, cost_per_share, total_cost,
+        acquired_at, acquisition_type
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'drip')
+      RETURNING id
+    `, [
       portfolio.id,
       position.position_id,
       position.company_id,
@@ -365,7 +333,8 @@ class DividendProcessor {
       currentPrice,
       dividendAmount,
       execDate
-    );
+    ]);
+    const lotId = lotResult.rows[0].id;
 
     // Update position
     const newShares = positionData.shares + sharesToBuy;
@@ -375,7 +344,19 @@ class DividendProcessor {
     const unrealizedPnl = currentValue - newCostBasis;
     const unrealizedPnlPct = newCostBasis > 0 ? (unrealizedPnl / newCostBasis) * 100 : 0;
 
-    this.stmts.updatePosition.run(
+    await database.query(`
+      UPDATE portfolio_positions
+      SET shares = $1,
+          average_cost = $2,
+          cost_basis = $3,
+          current_price = $4,
+          current_value = $5,
+          unrealized_pnl = $6,
+          unrealized_pnl_pct = $7,
+          last_traded_at = $8,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $9
+    `, [
       newShares,
       newAvgCost,
       newCostBasis,
@@ -385,22 +366,40 @@ class DividendProcessor {
       unrealizedPnlPct,
       execDate,
       position.position_id
-    );
+    ]);
 
     // Update position dividends tracker
-    this.stmts.updatePositionDividends.run(dividendAmount, position.position_id);
+    await database.query(`
+      UPDATE portfolio_positions
+      SET total_dividends = COALESCE(total_dividends, 0) + $1,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+    `, [dividendAmount, position.position_id]);
 
     // Update portfolio value (cash unchanged, positions increased)
     const portfolioValueChange = sharesToBuy * currentPrice;
     const newTotalValue = portfolio.current_value + portfolioValueChange;
-    this.stmts.updatePortfolioCash.run(portfolio.current_cash, newTotalValue, portfolio.id);
+    await database.query(`
+      UPDATE portfolios
+      SET current_cash = $1,
+          current_value = $2,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $3
+    `, [portfolio.current_cash, newTotalValue, portfolio.id]);
 
     // Record transaction
-    this.stmts.createDividendTransaction.run(
+    await database.query(`
+      INSERT INTO portfolio_transactions (
+        portfolio_id, company_id, position_id, lot_id,
+        transaction_type, shares, price_per_share, total_amount,
+        fees, dividend_per_share, cash_balance_after, position_shares_after,
+        notes, order_id, executed_at
+      ) VALUES ($1, $2, $3, $4, 'dividend', $5, $6, $7, 0, $8, $9, $10, $11, NULL, $12)
+    `, [
       portfolio.id,
       position.company_id,
       position.position_id,
-      lotResult.lastInsertRowid,
+      lotId,
       sharesToBuy,
       currentPrice,
       dividendAmount,
@@ -409,7 +408,7 @@ class DividendProcessor {
       newShares, // shares_after
       `DRIP: ${sharesToBuy.toFixed(4)} shares at $${currentPrice.toFixed(2)} (ex-date: ${dividend.ex_date})`,
       execDate
-    );
+    ]);
 
     return {
       drip: true,
@@ -425,14 +424,14 @@ class DividendProcessor {
    * @param {number} options.lookbackDays - Days to look back
    * @returns {Array} Pending dividends
    */
-  getPendingDividends({ portfolioId = null, lookbackDays = 7 } = {}) {
+  async getPendingDividends({ portfolioId = null, lookbackDays = 7 } = {}) {
     const options = { lookbackDays, dryRun: true };
 
     if (portfolioId) {
-      return this.processPortfolioDividends(portfolioId, options);
+      return await this.processPortfolioDividends(portfolioId, options);
     }
 
-    return this.processAllDividends(options);
+    return await this.processAllDividends(options);
   }
 
   /**
@@ -441,28 +440,30 @@ class DividendProcessor {
    * @param {number} limit - Max records
    * @returns {Array} Recent dividend transactions
    */
-  getDividendHistory(portfolioId, limit = 50) {
-    return this.db.prepare(`
+  async getDividendHistory(portfolioId, limit = 50) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         pt.*,
         c.symbol,
         c.name as company_name
       FROM portfolio_transactions pt
       JOIN companies c ON pt.company_id = c.id
-      WHERE pt.portfolio_id = ?
+      WHERE pt.portfolio_id = $1
         AND pt.transaction_type = 'dividend'
       ORDER BY pt.executed_at DESC
-      LIMIT ?
-    `).all(portfolioId, limit);
+      LIMIT $2
+    `, [portfolioId, limit]);
+    return result.rows;
   }
 }
 
 // Singleton instance
 let instance = null;
 
-function getDividendProcessor(db = null) {
+function getDividendProcessor() {
   if (!instance) {
-    instance = new DividendProcessor(db);
+    instance = new DividendProcessor();
   }
   return instance;
 }
