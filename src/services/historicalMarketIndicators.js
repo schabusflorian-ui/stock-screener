@@ -16,7 +16,7 @@
  * - Quarterly aggregation aligned to calendar quarters
  */
 
-const { getDatabaseSync } = require('../lib/db');
+const { getDatabase } = require('../lib/db');
 
 // Statistical configuration
 const CONFIG = {
@@ -44,8 +44,11 @@ const CONFIG = {
 
 class HistoricalMarketIndicatorsService {
   constructor() {
-    const dbWrapper = getDatabaseSync();
-    this.db = dbWrapper.raw; // Get the raw better-sqlite3 instance
+    this.db = null;
+  }
+
+  async init() {
+    this.db = await getDatabase();
   }
 
   /**
@@ -126,16 +129,16 @@ class HistoricalMarketIndicatorsService {
   /**
    * Get all available quarters from data
    */
-  getAvailableQuarters() {
-    const result = this.db.prepare(`
+  async getAvailableQuarters() {
+    const result = await this.db.query(`
       SELECT DISTINCT
-        strftime('%Y', fiscal_period) || '-Q' || ((CAST(strftime('%m', fiscal_period) AS INTEGER) + 2) / 3) as quarter
+        TO_CHAR(fiscal_period, 'YYYY') || '-Q' || CEIL(EXTRACT(MONTH FROM fiscal_period)::numeric / 3) as quarter
       FROM calculated_metrics
       WHERE period_type = 'annual'
       ORDER BY quarter ASC
-    `).all();
+    `);
 
-    return result.map(r => r.quarter);
+    return result.rows.map(r => r.quarter);
   }
 
   /**
@@ -143,16 +146,16 @@ class HistoricalMarketIndicatorsService {
    * Uses adjusted_close (split-adjusted) prices × current shares for accurate historical market cap
    * Includes sanity filters to exclude obviously bad data
    */
-  getHistoricalMarketCap(targetDate) {
+  async getHistoricalMarketCap(targetDate) {
     // First, find the closest trading day on or before the target date
     // (Quarter-end dates often fall on weekends when markets are closed)
-    const closestDate = this.db.prepare(`
+    const closestDate = await this.db.query(`
       SELECT MAX(date) as closest_date
       FROM daily_prices
-      WHERE date <= ?
-    `).get(targetDate);
+      WHERE date <= $1
+    `, [targetDate]);
 
-    const actualDate = closestDate?.closest_date || targetDate;
+    const actualDate = closestDate.rows[0]?.closest_date || targetDate;
 
     // Use adjusted_close (split-adjusted) × current shares = historical market cap
     // This works because adjusted prices account for splits, matching current share counts
@@ -160,17 +163,17 @@ class HistoricalMarketIndicatorsService {
     // - Exclude non-US stocks (suffixes indicate foreign exchanges)
     // - Exclude ETFs (can cause double-counting)
     // - Filter out garbage data (impossible prices, shares outstanding, or market caps)
-    const result = this.db.prepare(`
+    const result = await this.db.query(`
       SELECT
         SUM(dp.adjusted_close * pm.shares_outstanding) as total_market_cap,
         COUNT(DISTINCT dp.company_id) as company_count
       FROM daily_prices dp
       JOIN price_metrics pm ON dp.company_id = pm.company_id
       JOIN companies c ON dp.company_id = c.id
-      WHERE dp.date = ?
+      WHERE dp.date = $1
         AND pm.shares_outstanding > 0
         AND pm.shares_outstanding < 50e9  -- No company has 50B+ shares
-        AND c.is_active = 1
+        AND c.is_active = true
         AND dp.adjusted_close IS NOT NULL
         AND dp.adjusted_close > 0
         AND dp.adjusted_close < 10000  -- Sanity filter: max $10K per share
@@ -190,16 +193,16 @@ class HistoricalMarketIndicatorsService {
         AND c.symbol NOT LIKE '%.SZ'  -- Exclude Shenzhen
         AND c.symbol NOT LIKE '%.T'   -- Exclude Tokyo
         AND c.symbol NOT LIKE '%-%'   -- Exclude preferred shares and warrants
-    `).get(actualDate);
+    `, [actualDate]);
 
-    if (!result || !result.total_market_cap) {
+    if (!result.rows[0] || !result.rows[0].total_market_cap) {
       return null;
     }
 
     return {
-      totalMarketCap: result.total_market_cap,
-      totalMarketCapBillions: result.total_market_cap / 1e9,
-      companyCount: result.company_count,
+      totalMarketCap: parseFloat(result.rows[0].total_market_cap),
+      totalMarketCapBillions: parseFloat(result.rows[0].total_market_cap) / 1e9,
+      companyCount: parseInt(result.rows[0].company_count),
       date: actualDate,
       requestedDate: targetDate
     };
@@ -210,47 +213,47 @@ class HistoricalMarketIndicatorsService {
    * Similar to getHistoricalMarketCap but filtered to only S&P 500 constituents
    * Used for S&P 500 / GDP ratio comparison with Buffett Indicator
    */
-  getSP500HistoricalMarketCap(targetDate) {
+  async getSP500HistoricalMarketCap(targetDate) {
     // First, find the closest trading day with S&P 500 data on or before the target date
-    const closestDate = this.db.prepare(`
+    const closestDate = await this.db.query(`
       SELECT MAX(dp.date) as closest_date
       FROM daily_prices dp
       JOIN companies c ON dp.company_id = c.id
-      WHERE dp.date <= ?
-        AND c.is_sp500 = 1
-        AND c.is_active = 1
-    `).get(targetDate);
+      WHERE dp.date <= $1
+        AND c.is_sp500 = true
+        AND c.is_active = true
+    `, [targetDate]);
 
-    const actualDate = closestDate?.closest_date || targetDate;
+    const actualDate = closestDate.rows[0]?.closest_date || targetDate;
 
-    const result = this.db.prepare(`
+    const result = await this.db.query(`
       SELECT
         SUM(dp.adjusted_close * pm.shares_outstanding) as total_market_cap,
         COUNT(DISTINCT dp.company_id) as company_count
       FROM daily_prices dp
       JOIN price_metrics pm ON dp.company_id = pm.company_id
       JOIN companies c ON dp.company_id = c.id
-      WHERE dp.date = ?
-        AND c.is_sp500 = 1  -- Only S&P 500 companies
+      WHERE dp.date = $1
+        AND c.is_sp500 = true  -- Only S&P 500 companies
         AND pm.shares_outstanding > 0
         AND pm.shares_outstanding < 50e9  -- Sanity check: no 50B+ shares
-        AND c.is_active = 1
+        AND c.is_active = true
         AND dp.adjusted_close IS NOT NULL
         AND dp.adjusted_close > 0
         AND dp.adjusted_close < 10000  -- Sanity filter: max $10K per share
         AND (dp.adjusted_close * pm.shares_outstanding) < 4e12  -- Max $4T per company
         -- Exclude garbage data: small companies with huge calculated market cap
         AND (c.market_cap > 1e9 OR (dp.adjusted_close * pm.shares_outstanding) < 100e9)
-    `).get(actualDate);
+    `, [actualDate]);
 
-    if (!result || !result.total_market_cap) {
+    if (!result.rows[0] || !result.rows[0].total_market_cap) {
       return null;
     }
 
     return {
-      totalMarketCap: result.total_market_cap,
-      totalMarketCapBillions: result.total_market_cap / 1e9,
-      companyCount: result.company_count,
+      totalMarketCap: parseFloat(result.rows[0].total_market_cap),
+      totalMarketCapBillions: parseFloat(result.rows[0].total_market_cap) / 1e9,
+      companyCount: parseInt(result.rows[0].company_count),
       date: actualDate,
       requestedDate: targetDate
     };
@@ -259,15 +262,15 @@ class HistoricalMarketIndicatorsService {
   /**
    * Calculate S&P 500 / GDP ratio for a specific quarter
    */
-  calculateSP500ToGDP(quarter) {
+  async calculateSP500ToGDP(quarter) {
     const quarterEndDate = this.getQuarterEndDate(quarter);
-    const gdp = this.getGDPForQuarter(quarter);
+    const gdp = await this.getGDPForQuarter(quarter);
 
     if (!gdp) {
       return { value: null, reason: 'No GDP data available' };
     }
 
-    const sp500MarketCap = this.getSP500HistoricalMarketCap(quarterEndDate);
+    const sp500MarketCap = await this.getSP500HistoricalMarketCap(quarterEndDate);
 
     if (sp500MarketCap?.totalMarketCapBillions) {
       const ratio = (sp500MarketCap.totalMarketCapBillions / gdp) * 100;
@@ -287,13 +290,13 @@ class HistoricalMarketIndicatorsService {
    * Get comparison data for Buffett Indicator vs S&P 500 / GDP
    * Returns historical time series for both metrics
    */
-  getBuffettComparison(options = {}) {
+  async getBuffettComparison(options = {}) {
     const {
       startQuarter = '2015-Q1',
       endQuarter = null,
     } = options;
 
-    const allQuarters = this.getAvailableQuarters();
+    const allQuarters = await this.getAvailableQuarters();
     const currentQuarter = this.getCurrentQuarter();
     const quarters = allQuarters.filter(q => {
       if (q < startQuarter) return false;
@@ -307,7 +310,7 @@ class HistoricalMarketIndicatorsService {
 
     for (const quarter of quarters) {
       // Get Buffett Indicator (total market / GDP)
-      const buffett = this.calculateBuffettIndicator(quarter);
+      const buffett = await this.calculateBuffettIndicator(quarter);
       if (buffett?.value) {
         totalMarketGDP.push({
           quarter,
@@ -317,7 +320,7 @@ class HistoricalMarketIndicatorsService {
       }
 
       // Get S&P 500 / GDP
-      const sp500 = this.calculateSP500ToGDP(quarter);
+      const sp500 = await this.calculateSP500ToGDP(quarter);
       if (sp500?.value) {
         sp500GDP.push({
           quarter,
@@ -328,8 +331,8 @@ class HistoricalMarketIndicatorsService {
     }
 
     // Get current values
-    const currentBuffett = this.getCurrentBuffettIndicator();
-    const currentSP500 = this.getCurrentSP500ToGDP();
+    const currentBuffett = await this.getCurrentBuffettIndicator();
+    const currentSP500 = await this.getCurrentSP500ToGDP();
 
     return {
       generated: new Date().toISOString(),
@@ -353,40 +356,40 @@ class HistoricalMarketIndicatorsService {
   /**
    * Calculate current real-time S&P 500 / GDP ratio
    */
-  getCurrentSP500ToGDP() {
+  async getCurrentSP500ToGDP() {
     // Get S&P 500 market cap from companies table (live data)
-    const marketCapResult = this.db.prepare(`
+    const marketCapResult = await this.db.query(`
       SELECT
         SUM(market_cap) / 1e9 as total_market_cap_billions,
         COUNT(*) as stock_count
       FROM companies
       WHERE market_cap > 0
-        AND is_active = 1
-        AND is_sp500 = 1
-    `).get();
+        AND is_active = true
+        AND is_sp500 = true
+    `);
 
     // Get latest GDP
-    const gdpResult = this.db.prepare(`
+    const gdpResult = await this.db.query(`
       SELECT value, observation_date
       FROM economic_indicators
       WHERE series_id = 'GDP'
       ORDER BY observation_date DESC
       LIMIT 1
-    `).get();
+    `);
 
-    if (!marketCapResult?.total_market_cap_billions || !gdpResult?.value) {
+    if (!marketCapResult.rows[0]?.total_market_cap_billions || !gdpResult.rows[0]?.value) {
       return { value: null, reason: 'Missing S&P 500 market cap or GDP data' };
     }
 
-    const ratio = (marketCapResult.total_market_cap_billions / gdpResult.value) * 100;
+    const ratio = (parseFloat(marketCapResult.rows[0].total_market_cap_billions) / parseFloat(gdpResult.rows[0].value)) * 100;
 
     return {
       value: ratio,
       source: 'current_sp500_market_caps',
-      rawMarketCap: marketCapResult.total_market_cap_billions,
-      gdp: gdpResult.value,
-      gdpDate: gdpResult.observation_date,
-      stockCount: marketCapResult.stock_count,
+      rawMarketCap: parseFloat(marketCapResult.rows[0].total_market_cap_billions),
+      gdp: parseFloat(gdpResult.rows[0].value),
+      gdpDate: gdpResult.rows[0].observation_date,
+      stockCount: parseInt(marketCapResult.rows[0].stock_count),
       quarter: this.getCurrentQuarter(),
       date: new Date().toISOString().split('T')[0],
     };
@@ -396,7 +399,7 @@ class HistoricalMarketIndicatorsService {
    * Get metrics for a specific quarter with robust aggregation
    * Uses data reported in that quarter (fiscal_period falls within quarter)
    */
-  getQuarterMetrics(quarter) {
+  async getQuarterMetrics(quarter) {
     const [year, q] = quarter.split('-Q');
     const quarterNum = parseInt(q);
 
@@ -407,7 +410,7 @@ class HistoricalMarketIndicatorsService {
     const endDate = `${year}-${String(endMonth).padStart(2, '0')}-31`;
 
     // Get all metrics for companies with fiscal periods in this quarter
-    const data = this.db.prepare(`
+    const result = await this.db.query(`
       SELECT
         cm.company_id,
         c.symbol,
@@ -423,13 +426,13 @@ class HistoricalMarketIndicatorsService {
       FROM calculated_metrics cm
       JOIN companies c ON cm.company_id = c.id
       WHERE cm.period_type = 'annual'
-        AND cm.fiscal_period >= ?
-        AND cm.fiscal_period <= ?
-        AND c.is_active = 1
+        AND cm.fiscal_period >= $1
+        AND cm.fiscal_period <= $2
+        AND c.is_active = true
         AND c.market_cap > 0
-    `).all(startDate, endDate);
+    `, [startDate, endDate]);
 
-    return this.aggregateMetrics(data, quarter);
+    return this.aggregateMetrics(result.rows, quarter);
   }
 
   /**
@@ -439,7 +442,7 @@ class HistoricalMarketIndicatorsService {
    * - Reduced seasonal bias from fiscal year-end differences
    * - More frequent and recent data for each company
    */
-  getQuarterMetricsAsOf(quarter) {
+  async getQuarterMetricsAsOf(quarter) {
     const quarterEndDate = this.getQuarterEndDate(quarter);
 
     // Get most recent ANNUAL metrics for each company as of quarter end
@@ -449,7 +452,7 @@ class HistoricalMarketIndicatorsService {
     // - Eliminates Q1 spike caused by stale Q3 data (6-month lag)
     // Note: We use current market_cap for weighting; historical market cap is
     // calculated separately in getHistoricalMarketCap() for Buffett Indicator
-    const data = this.db.prepare(`
+    const result = await this.db.query(`
       WITH latest_metrics AS (
         SELECT
           cm.*,
@@ -460,8 +463,8 @@ class HistoricalMarketIndicatorsService {
         FROM calculated_metrics cm
         JOIN companies c ON cm.company_id = c.id
         WHERE cm.period_type = 'annual'
-          AND cm.fiscal_period <= ?
-          AND c.is_active = 1
+          AND cm.fiscal_period <= $1
+          AND c.is_active = true
           AND c.market_cap > 0
       )
       SELECT
@@ -478,9 +481,9 @@ class HistoricalMarketIndicatorsService {
         fiscal_period
       FROM latest_metrics
       WHERE rn = 1
-    `).all(quarterEndDate);
+    `, [quarterEndDate]);
 
-    return this.aggregateMetrics(data, quarter);
+    return this.aggregateMetrics(result.rows, quarter);
   }
 
   /**
@@ -613,39 +616,42 @@ class HistoricalMarketIndicatorsService {
   /**
    * Get GDP for a quarter from FRED data
    */
-  getGDPForQuarter(quarter) {
+  async getGDPForQuarter(quarter) {
     const quarterEndDate = this.getQuarterEndDate(quarter);
 
     // Get most recent GDP observation as of quarter end
-    const gdp = this.db.prepare(`
+    const gdp = await this.db.query(`
       SELECT value, observation_date
       FROM economic_indicators
       WHERE series_id = 'GDP'
-        AND observation_date <= ?
+        AND observation_date <= $1
       ORDER BY observation_date DESC
       LIMIT 1
-    `).get(quarterEndDate);
+    `, [quarterEndDate]);
 
-    return gdp?.value || null;
+    return gdp.rows[0] ? parseFloat(gdp.rows[0].value) : null;
   }
 
   /**
    * Get World Bank Buffett Indicator for a quarter (if available)
    * Series: DDDM01USA156NWDB - Stock Market Capitalization to GDP for United States
    */
-  getWorldBankBuffettForQuarter(quarter) {
+  async getWorldBankBuffettForQuarter(quarter) {
     const quarterEndDate = this.getQuarterEndDate(quarter);
 
-    const buffett = this.db.prepare(`
+    const buffett = await this.db.query(`
       SELECT value, observation_date
       FROM economic_indicators
       WHERE series_id = 'DDDM01USA156NWDB'
-        AND observation_date <= ?
+        AND observation_date <= $1
       ORDER BY observation_date DESC
       LIMIT 1
-    `).get(quarterEndDate);
+    `, [quarterEndDate]);
 
-    return buffett;
+    return buffett.rows[0] ? {
+      value: parseFloat(buffett.rows[0].value),
+      observation_date: buffett.rows[0].observation_date
+    } : null;
   }
 
   /**
@@ -653,7 +659,7 @@ class HistoricalMarketIndicatorsService {
    * The Wilshire 5000 represents total US market capitalization (in billions)
    * Note: Series discontinued June 3, 2024 - only available for historical dates
    */
-  getWilshire5000ForQuarter(quarter) {
+  async getWilshire5000ForQuarter(quarter) {
     const quarterEndDate = this.getQuarterEndDate(quarter);
 
     // FRED discontinued Wilshire 5000 on June 3, 2024
@@ -662,16 +668,16 @@ class HistoricalMarketIndicatorsService {
       return null;
     }
 
-    const result = this.db.prepare(`
+    const result = await this.db.query(`
       SELECT value, observation_date
       FROM economic_indicators
       WHERE series_id = 'WILL5000IND'
-        AND observation_date <= ?
+        AND observation_date <= $1
       ORDER BY observation_date DESC
       LIMIT 1
-    `).get(quarterEndDate);
+    `, [quarterEndDate]);
 
-    if (!result) {
+    if (!result.rows[0]) {
       return null;
     }
 
@@ -679,8 +685,8 @@ class HistoricalMarketIndicatorsService {
     // The index is designed so that each point = $1 billion in market cap
     // (e.g., index of 45000 = $45 trillion market cap)
     return {
-      value: result.value, // Already in billions
-      date: result.observation_date,
+      value: parseFloat(result.rows[0].value), // Already in billions
+      date: result.rows[0].observation_date,
     };
   }
 
@@ -695,28 +701,30 @@ class HistoricalMarketIndicatorsService {
    *
    * FRED stores as percentage, we convert to ratio for consistency
    */
-  getMSIFromFRED(quarter) {
+  async getMSIFromFRED(quarter) {
     const quarterEndDate = this.getQuarterEndDate(quarter);
 
     // NCBCEPNW is quarterly, find the closest value on or before quarter end
-    const result = this.db.prepare(`
+    const result = await this.db.query(`
       SELECT value, observation_date
       FROM economic_indicators
       WHERE series_id = 'NCBCEPNW'
-        AND observation_date <= ?
+        AND observation_date <= $1
       ORDER BY observation_date DESC
       LIMIT 1
-    `).get(quarterEndDate);
+    `, [quarterEndDate]);
 
-    if (!result || result.value === null) {
+    if (!result.rows[0] || result.rows[0].value === null) {
       return null;
     }
 
+    const value = parseFloat(result.rows[0].value);
+
     // Convert from percentage to ratio (e.g., 215.6% -> 2.156)
     return {
-      value: result.value / 100,
-      percentage: result.value,
-      date: result.observation_date,
+      value: value / 100,
+      percentage: value,
+      date: result.rows[0].observation_date,
       source: 'fred_ncbcepnw',
     };
   }
@@ -729,12 +737,12 @@ class HistoricalMarketIndicatorsService {
    * 2. Historical market cap from daily_prices (if coverage sufficient)
    * 3. Current market cap fallback (for recent quarters only)
    */
-  calculateBuffettIndicator(quarter) {
+  async calculateBuffettIndicator(quarter) {
     const quarterEndDate = this.getQuarterEndDate(quarter);
     const scalingFactor = 1.029; // Calibration factor to align calculated market cap with benchmarks
 
     // Get GDP for the quarter
-    const gdp = this.getGDPForQuarter(quarter);
+    const gdp = await this.getGDPForQuarter(quarter);
     if (!gdp) {
       return { value: null, reason: 'No GDP data available' };
     }
@@ -742,7 +750,7 @@ class HistoricalMarketIndicatorsService {
     // PRIORITY 1: Try World Bank Buffett Indicator (official data up to 2020)
     // Series: DDDM01USA156NWDB - Stock Market Capitalization to GDP for United States
     // Only use if data is from the same year as the quarter (annual data)
-    const worldBank = this.getWorldBankBuffettForQuarter(quarter);
+    const worldBank = await this.getWorldBankBuffettForQuarter(quarter);
     if (worldBank?.value) {
       const quarterYear = parseInt(quarter.split('-Q')[0]);
       const dataYear = parseInt(worldBank.observation_date.substring(0, 4));
@@ -759,7 +767,7 @@ class HistoricalMarketIndicatorsService {
     }
 
     // PRIORITY 2: Try historical market cap from daily_prices
-    const historicalMarketCap = this.getHistoricalMarketCap(quarterEndDate);
+    const historicalMarketCap = await this.getHistoricalMarketCap(quarterEndDate);
 
     // Lower threshold for historical data - we'll scale up based on coverage
     // This allows us to use historical data even with partial coverage
@@ -791,7 +799,7 @@ class HistoricalMarketIndicatorsService {
     // PRIORITY 3: Fallback to current market cap
     // IMPORTANT: Only use this for very recent quarters (post June 2024) where we don't have
     // FRED data and historical price data is still being populated
-    const currentResult = this.getCurrentBuffettIndicator();
+    const currentResult = await this.getCurrentBuffettIndicator();
     if (currentResult?.value) {
       // For quarters after June 2024 (when FRED data ended), use current as primary source
       const isPostFREDDiscontinuation = quarterEndDate > '2024-06-03';
@@ -831,14 +839,14 @@ class HistoricalMarketIndicatorsService {
    * Formula: (Total Market Cap + Total Debt - Total Cash) / Total Book Value
    * This is similar to FRED's MSI which uses aggregate totals instead of median
    */
-  calculateAggregateMSI(quarter) {
+  async calculateAggregateMSI(quarter) {
     const quarterEndDate = this.getQuarterEndDate(quarter);
     const [year, q] = quarter.split('-Q');
     const quarterNum = parseInt(q);
     const fiscalPeriod = `Q${quarterNum}`;
 
     // Get historical market cap (already filters to US stocks)
-    const marketCapData = this.getHistoricalMarketCap(quarterEndDate);
+    const marketCapData = await this.getHistoricalMarketCap(quarterEndDate);
     if (!marketCapData?.totalMarketCap) {
       return { value: null, reason: 'No market cap data available' };
     }
@@ -846,7 +854,7 @@ class HistoricalMarketIndicatorsService {
     // Get aggregate balance sheet data from financial_data
     // Use the most recent quarterly filing for each company as of quarter end
     // FILTERS: US stocks only, $500M+ market cap, positive book value
-    const balanceSheetData = this.db.prepare(`
+    const balanceSheetData = await this.db.query(`
       WITH latest_filings AS (
         SELECT
           fd.company_id,
@@ -869,7 +877,7 @@ class HistoricalMarketIndicatorsService {
         FROM financial_data fd
         JOIN companies c ON fd.company_id = c.id
         WHERE fd.period_type = 'quarterly'
-          AND c.is_active = 1
+          AND c.is_active = true
           AND fd.shareholder_equity > 0
           AND c.market_cap >= 500e6           -- $500M minimum market cap
           AND c.sector != 'ETF'               -- Exclude ETFs
@@ -884,7 +892,7 @@ class HistoricalMarketIndicatorsService {
           AND c.symbol NOT LIKE '%.SZ'        -- Shenzhen
           AND c.symbol NOT LIKE '%.T'         -- Tokyo
           AND c.symbol NOT LIKE '%-%'         -- Preferred shares/warrants
-          AND (fd.fiscal_year < ? OR (fd.fiscal_year = ? AND fd.fiscal_period <= ?))
+          AND (fd.fiscal_year < $1 OR (fd.fiscal_year = $2 AND fd.fiscal_period <= $3))
       )
       SELECT
         SUM(shareholder_equity) as total_book_value,
@@ -893,17 +901,17 @@ class HistoricalMarketIndicatorsService {
         COUNT(*) as company_count
       FROM latest_filings
       WHERE rn = 1
-    `).get(parseInt(year), parseInt(year), fiscalPeriod);
+    `, [parseInt(year), parseInt(year), fiscalPeriod]);
 
-    if (!balanceSheetData?.total_book_value || balanceSheetData.total_book_value <= 0) {
+    if (!balanceSheetData.rows[0]?.total_book_value || parseFloat(balanceSheetData.rows[0].total_book_value) <= 0) {
       return { value: null, reason: 'No balance sheet data available' };
     }
 
     // Calculate aggregate EV and MSI
     const totalMarketCap = marketCapData.totalMarketCap;
-    const totalDebt = balanceSheetData.total_debt || 0;
-    const totalCash = balanceSheetData.total_cash || 0;
-    const totalBookValue = balanceSheetData.total_book_value;
+    const totalDebt = parseFloat(balanceSheetData.rows[0].total_debt) || 0;
+    const totalCash = parseFloat(balanceSheetData.rows[0].total_cash) || 0;
+    const totalBookValue = parseFloat(balanceSheetData.rows[0].total_book_value);
 
     const enterpriseValue = totalMarketCap + totalDebt - totalCash;
     const msi = enterpriseValue / totalBookValue;
@@ -916,7 +924,7 @@ class HistoricalMarketIndicatorsService {
       totalCash: totalCash / 1e12,
       totalBookValue: totalBookValue / 1e12,
       enterpriseValue: enterpriseValue / 1e12,
-      companyCount: balanceSheetData.company_count,
+      companyCount: parseInt(balanceSheetData.rows[0].company_count),
       marketCapCompanyCount: marketCapData.companyCount,
       date: quarterEndDate,
     };
@@ -926,16 +934,16 @@ class HistoricalMarketIndicatorsService {
    * Calculate current real-time aggregate MSI using latest data
    * FILTERS: US stocks only, $500M+ market cap
    */
-  getCurrentAggregateMSI() {
+  async getCurrentAggregateMSI() {
     // Get total market cap from companies table (live data)
     // Filter to US stocks with $500M+ market cap
-    const marketCapResult = this.db.prepare(`
+    const marketCapResult = await this.db.query(`
       SELECT
         SUM(market_cap) as total_market_cap,
         COUNT(*) as stock_count
       FROM companies
       WHERE market_cap >= 500e6       -- $500M minimum
-        AND is_active = 1
+        AND is_active = true
         AND sector != 'ETF'
         AND symbol NOT LIKE '%.L'
         AND symbol NOT LIKE '%.DE'
@@ -947,15 +955,15 @@ class HistoricalMarketIndicatorsService {
         AND symbol NOT LIKE '%.SZ'
         AND symbol NOT LIKE '%.T'
         AND symbol NOT LIKE '%-%'
-    `).get();
+    `);
 
-    if (!marketCapResult?.total_market_cap) {
+    if (!marketCapResult.rows[0]?.total_market_cap) {
       return { value: null, reason: 'No market cap data' };
     }
 
     // Get aggregate balance sheet data from most recent filings
     // Same filters: US stocks only, $500M+ market cap
-    const balanceSheetData = this.db.prepare(`
+    const balanceSheetData = await this.db.query(`
       WITH latest_filings AS (
         SELECT
           fd.company_id,
@@ -974,7 +982,7 @@ class HistoricalMarketIndicatorsService {
         FROM financial_data fd
         JOIN companies c ON fd.company_id = c.id
         WHERE fd.period_type = 'quarterly'
-          AND c.is_active = 1
+          AND c.is_active = true
           AND fd.shareholder_equity > 0
           AND c.market_cap >= 500e6       -- $500M minimum
           AND c.sector != 'ETF'
@@ -996,16 +1004,16 @@ class HistoricalMarketIndicatorsService {
         COUNT(*) as company_count
       FROM latest_filings
       WHERE rn = 1
-    `).get();
+    `);
 
-    if (!balanceSheetData?.total_book_value || balanceSheetData.total_book_value <= 0) {
+    if (!balanceSheetData.rows[0]?.total_book_value || parseFloat(balanceSheetData.rows[0].total_book_value) <= 0) {
       return { value: null, reason: 'No balance sheet data' };
     }
 
-    const totalMarketCap = marketCapResult.total_market_cap;
-    const totalDebt = balanceSheetData.total_debt || 0;
-    const totalCash = balanceSheetData.total_cash || 0;
-    const totalBookValue = balanceSheetData.total_book_value;
+    const totalMarketCap = parseFloat(marketCapResult.rows[0].total_market_cap);
+    const totalDebt = parseFloat(balanceSheetData.rows[0].total_debt) || 0;
+    const totalCash = parseFloat(balanceSheetData.rows[0].total_cash) || 0;
+    const totalBookValue = parseFloat(balanceSheetData.rows[0].total_book_value);
 
     const enterpriseValue = totalMarketCap + totalDebt - totalCash;
     const msi = enterpriseValue / totalBookValue;
@@ -1018,8 +1026,8 @@ class HistoricalMarketIndicatorsService {
       totalCash: totalCash / 1e12,
       totalBookValue: totalBookValue / 1e12,
       enterpriseValue: enterpriseValue / 1e12,
-      companyCount: balanceSheetData.company_count,
-      marketCapCompanyCount: marketCapResult.stock_count,
+      companyCount: parseInt(balanceSheetData.rows[0].company_count),
+      marketCapCompanyCount: parseInt(marketCapResult.rows[0].stock_count),
     };
   }
 
@@ -1037,43 +1045,45 @@ class HistoricalMarketIndicatorsService {
    * Calculate current real-time Buffett Indicator using latest market caps
    * This is separate from historical since it uses live company data
    */
-  getCurrentBuffettIndicator() {
+  async getCurrentBuffettIndicator() {
     // Get total market cap from companies table (live data)
-    const marketCapResult = this.db.prepare(`
+    const marketCapResult = await this.db.query(`
       SELECT
         SUM(market_cap) / 1e9 as total_market_cap_billions,
         COUNT(*) as stock_count
       FROM companies
-      WHERE market_cap > 0 AND is_active = 1
-    `).get();
+      WHERE market_cap > 0 AND is_active = true
+    `);
 
     // Get latest GDP
-    const gdpResult = this.db.prepare(`
+    const gdpResult = await this.db.query(`
       SELECT value, observation_date
       FROM economic_indicators
       WHERE series_id = 'GDP'
       ORDER BY observation_date DESC
       LIMIT 1
-    `).get();
+    `);
 
-    if (!marketCapResult?.total_market_cap_billions || !gdpResult?.value) {
+    if (!marketCapResult.rows[0]?.total_market_cap_billions || !gdpResult.rows[0]?.value) {
       return { value: null, reason: 'Missing market cap or GDP data' };
     }
 
     // Calibration factor 1.029 aligns our data with external benchmarks
     // (Wilshire 5000/GDP from longtermtrends.com, CurrentMarketValuation.com)
     const scalingFactor = 1.029;
-    const estimatedMarketCap = marketCapResult.total_market_cap_billions * scalingFactor;
-    const ratio = (estimatedMarketCap / gdpResult.value) * 100;
+    const rawMarketCap = parseFloat(marketCapResult.rows[0].total_market_cap_billions);
+    const estimatedMarketCap = rawMarketCap * scalingFactor;
+    const gdpValue = parseFloat(gdpResult.rows[0].value);
+    const ratio = (estimatedMarketCap / gdpValue) * 100;
 
     return {
       value: ratio,
       source: 'current_market_caps',
-      rawMarketCap: marketCapResult.total_market_cap_billions,
+      rawMarketCap: rawMarketCap,
       estimatedMarketCap: estimatedMarketCap,
-      gdp: gdpResult.value,
-      gdpDate: gdpResult.observation_date,
-      stockCount: marketCapResult.stock_count,
+      gdp: gdpValue,
+      gdpDate: gdpResult.rows[0].observation_date,
+      stockCount: parseInt(marketCapResult.rows[0].stock_count),
       scalingFactor: scalingFactor,
       quarter: this.getCurrentQuarter(),
       date: new Date().toISOString().split('T')[0],
@@ -1083,14 +1093,14 @@ class HistoricalMarketIndicatorsService {
   /**
    * Generate full historical time series for all indicators
    */
-  generateHistoricalTimeSeries(options = {}) {
+  async generateHistoricalTimeSeries(options = {}) {
     const {
       startQuarter = '2010-Q1',
       endQuarter = null,
       useAsOfMethod = true, // Use "as of" method for more complete data
     } = options;
 
-    const allQuarters = this.getAvailableQuarters();
+    const allQuarters = await this.getAvailableQuarters();
     const currentQuarter = this.getCurrentQuarter();
     const quarters = allQuarters.filter(q => {
       if (q < startQuarter) return false;
@@ -1126,16 +1136,16 @@ class HistoricalMarketIndicatorsService {
 
     for (const quarter of quarters) {
       const metrics = useAsOfMethod
-        ? this.getQuarterMetricsAsOf(quarter)
-        : this.getQuarterMetrics(quarter);
+        ? await this.getQuarterMetricsAsOf(quarter)
+        : await this.getQuarterMetrics(quarter);
 
       if (!metrics.valid) {
         console.log(`  ${quarter}: Invalid - ${metrics.reason}`);
         continue;
       }
 
-      const buffett = this.calculateBuffettIndicator(quarter);
-      const aggregateMSI = this.calculateAggregateMSI(quarter);
+      const buffett = await this.calculateBuffettIndicator(quarter);
+      const aggregateMSI = await this.calculateAggregateMSI(quarter);
 
       // Add to time series
       const date = metrics.date;
@@ -1276,10 +1286,10 @@ class HistoricalMarketIndicatorsService {
    * Get historical data formatted for charts
    * Returns array of {date, value} for each indicator
    */
-  getChartData(indicator, options = {}) {
+  async getChartData(indicator, options = {}) {
     const { startDate, limit } = options;
 
-    const timeSeries = this.generateHistoricalTimeSeries({
+    const timeSeries = await this.generateHistoricalTimeSeries({
       startQuarter: startDate ? this.getQuarter(startDate) : '2010-Q1',
     });
 
@@ -1313,15 +1323,15 @@ class HistoricalMarketIndicatorsService {
   /**
    * Get current real-time valuation metrics using latest company data
    */
-  getCurrentMetrics() {
-    const buffett = this.getCurrentBuffettIndicator();
-    const sp500PE = this.getSP500PE();
-    const aggregateMSI = this.getCurrentAggregateMSI();
+  async getCurrentMetrics() {
+    const buffett = await this.getCurrentBuffettIndicator();
+    const sp500PE = await this.getSP500PE();
+    const aggregateMSI = await this.getCurrentAggregateMSI();
     const today = new Date().toISOString().split('T')[0];
     const currentQuarter = this.getCurrentQuarter();
 
     // Get current aggregate metrics from latest annual filings
-    const latestMetrics = this.getQuarterMetricsAsOf(currentQuarter);
+    const latestMetrics = await this.getQuarterMetricsAsOf(currentQuarter);
 
     return {
       quarter: currentQuarter,
@@ -1354,8 +1364,8 @@ class HistoricalMarketIndicatorsService {
    * Calculate S&P 500 market-cap weighted P/E ratio
    * Uses index_constituents table to get only S&P 500 members
    */
-  getSP500PE() {
-    const result = this.db.prepare(`
+  async getSP500PE() {
+    const result = await this.db.query(`
       WITH sp500_data AS (
         SELECT
           c.id,
@@ -1395,17 +1405,17 @@ class HistoricalMarketIndicatorsService {
         company_count,
         total_market_cap
       FROM aggregated
-    `).get();
+    `);
 
-    if (!result || !result.weighted_pe) {
+    if (!result.rows[0] || !result.rows[0].weighted_pe) {
       return null;
     }
 
     return {
-      weightedPE: Math.round(result.weighted_pe * 100) / 100,
-      simpleAvgPE: Math.round(result.simple_avg_pe * 100) / 100,
-      companyCount: result.company_count,
-      totalMarketCap: result.total_market_cap,
+      weightedPE: Math.round(parseFloat(result.rows[0].weighted_pe) * 100) / 100,
+      simpleAvgPE: Math.round(parseFloat(result.rows[0].simple_avg_pe) * 100) / 100,
+      companyCount: parseInt(result.rows[0].company_count),
+      totalMarketCap: parseFloat(result.rows[0].total_market_cap),
       date: new Date().toISOString().split('T')[0],
     };
   }
@@ -1414,10 +1424,10 @@ class HistoricalMarketIndicatorsService {
    * Calculate S&P 500 P/E for a specific quarter
    * Uses fiscal period data available as of quarter end
    */
-  getSP500PEForQuarter(quarter) {
+  async getSP500PEForQuarter(quarter) {
     const quarterEndDate = this.getQuarterEndDate(quarter);
 
-    const result = this.db.prepare(`
+    const result = await this.db.query(`
       WITH sp500_companies AS (
         -- Get S&P 500 constituents (index_id = 1)
         SELECT DISTINCT ic.company_id
@@ -1436,7 +1446,7 @@ class HistoricalMarketIndicatorsService {
         JOIN companies c ON sp.company_id = c.id
         JOIN calculated_metrics cm ON c.id = cm.company_id
         WHERE cm.period_type = 'annual'
-          AND cm.fiscal_period <= ?
+          AND cm.fiscal_period <= $1
           AND cm.pe_ratio IS NOT NULL
           AND cm.pe_ratio > 0
           AND cm.pe_ratio < 200
@@ -1459,16 +1469,16 @@ class HistoricalMarketIndicatorsService {
         company_count,
         total_market_cap
       FROM aggregated
-    `).get(quarterEndDate);
+    `, [quarterEndDate]);
 
-    if (!result || !result.weighted_pe || result.company_count < 100) {
+    if (!result.rows[0] || !result.rows[0].weighted_pe || parseInt(result.rows[0].company_count) < 100) {
       return null;
     }
 
     return {
-      value: Math.round(result.weighted_pe * 100) / 100,
-      companyCount: result.company_count,
-      totalMarketCap: result.total_market_cap,
+      value: Math.round(parseFloat(result.rows[0].weighted_pe) * 100) / 100,
+      companyCount: parseInt(result.rows[0].company_count),
+      totalMarketCap: parseFloat(result.rows[0].total_market_cap),
     };
   }
 
@@ -1491,18 +1501,18 @@ class HistoricalMarketIndicatorsService {
    * - Annual data: more reliable than quarterly annualized estimates
    * - Consistent with S&P's official methodology
    */
-  getSP500PEForQuarterTTM(quarter) {
+  async getSP500PEForQuarterTTM(quarter) {
     const quarterEndDate = this.getQuarterEndDate(quarter);
 
     // First find the closest trading day for historical market cap calculation
-    const closestDate = this.db.prepare(`
-      SELECT MAX(date) as closest_date FROM daily_prices WHERE date <= ?
-    `).get(quarterEndDate);
-    const priceDate = closestDate?.closest_date || quarterEndDate;
+    const closestDate = await this.db.query(`
+      SELECT MAX(date) as closest_date FROM daily_prices WHERE date <= $1
+    `, [quarterEndDate]);
+    const priceDate = closestDate.rows[0]?.closest_date || quarterEndDate;
 
     // Use annual P/E data with HISTORICAL market caps from daily_prices
     // This ensures quarterly P/E variation reflects actual price changes
-    const result = this.db.prepare(`
+    const result = await this.db.query(`
       WITH sp500_annual_pe AS (
         SELECT
           cm.company_id,
@@ -1519,7 +1529,7 @@ class HistoricalMarketIndicatorsService {
           AND cm.period_type = 'annual'
           AND cm.pe_ratio > 0         -- Must have positive P/E
           AND cm.pe_ratio < 500       -- Max P/E to include high-growth stocks
-          AND cm.fiscal_period <= ?   -- Only filings available by quarter end
+          AND cm.fiscal_period <= $1   -- Only filings available by quarter end
       ),
       latest_pe AS (
         SELECT company_id, pe_ratio
@@ -1535,7 +1545,7 @@ class HistoricalMarketIndicatorsService {
         FROM latest_pe lp
         JOIN daily_prices dp ON lp.company_id = dp.company_id
         JOIN price_metrics pm ON lp.company_id = pm.company_id
-        WHERE dp.date = ?
+        WHERE dp.date = $2
           AND dp.adjusted_close > 0
           AND pm.shares_outstanding > 0
           AND dp.adjusted_close * pm.shares_outstanding > 1e9  -- Min $1B market cap
@@ -1554,23 +1564,23 @@ class HistoricalMarketIndicatorsService {
           ) WHERE rn = (total + 1) / 2
         ) as median_pe
       FROM historical_mktcap
-    `).get(quarterEndDate, priceDate);
+    `, [quarterEndDate, priceDate]);
 
-    if (!result || !result.total_implied_earnings || result.company_count < 100) {
+    if (!result.rows[0] || !result.rows[0].total_implied_earnings || parseInt(result.rows[0].company_count) < 100) {
       return null;
     }
 
     // Calculate market-cap weighted P/E (harmonic mean)
     // Formula: Total Market Cap / Total Implied Earnings
-    const weightedPE = result.total_market_cap / result.total_implied_earnings;
+    const weightedPE = parseFloat(result.rows[0].total_market_cap) / parseFloat(result.rows[0].total_implied_earnings);
 
     return {
       value: Math.round(weightedPE * 100) / 100,
-      companyCount: result.company_count,
-      totalMarketCap: result.total_market_cap,
-      totalImpliedEarnings: result.total_implied_earnings,
-      medianPE: result.median_pe ? Math.round(result.median_pe * 100) / 100 : null,
-      avgPE: result.avg_pe ? Math.round(result.avg_pe * 100) / 100 : null,
+      companyCount: parseInt(result.rows[0].company_count),
+      totalMarketCap: parseFloat(result.rows[0].total_market_cap),
+      totalImpliedEarnings: parseFloat(result.rows[0].total_implied_earnings),
+      medianPE: result.rows[0].median_pe ? Math.round(parseFloat(result.rows[0].median_pe) * 100) / 100 : null,
+      avgPE: result.rows[0].avg_pe ? Math.round(parseFloat(result.rows[0].avg_pe) * 100) / 100 : null,
       method: 'market_cap_weighted_annual',
     };
   }
@@ -1586,16 +1596,16 @@ class HistoricalMarketIndicatorsService {
    *
    * Formula: P/E = Total Market Cap / Total TTM Earnings
    */
-  getSP500PEForQuarterV2(quarter) {
+  async getSP500PEForQuarterV2(quarter) {
     const quarterEndDate = this.getQuarterEndDate(quarter);
 
     // Find closest trading day for price data
-    const closestDate = this.db.prepare(`
-      SELECT MAX(date) as closest_date FROM daily_prices WHERE date <= ?
-    `).get(quarterEndDate);
-    const priceDate = closestDate?.closest_date || quarterEndDate;
+    const closestDate = await this.db.query(`
+      SELECT MAX(date) as closest_date FROM daily_prices WHERE date <= $1
+    `, [quarterEndDate]);
+    const priceDate = closestDate.rows[0]?.closest_date || quarterEndDate;
 
-    const result = this.db.prepare(`
+    const result = await this.db.query(`
       WITH
       -- Step 1: Get all quarterly earnings (actual quarterly records)
       quarterly_earnings AS (
@@ -1608,8 +1618,8 @@ class HistoricalMarketIndicatorsService {
         WHERE ic.index_id = 1
           AND fd.statement_type = 'income_statement'
           AND fd.period_type = 'quarterly'
-          AND fd.fiscal_date_ending <= ?
-          AND fd.fiscal_date_ending > date(?, '-18 months')
+          AND fd.fiscal_date_ending <= $1
+          AND fd.fiscal_date_ending > ($2::date - INTERVAL '18 months')
           AND fd.net_income IS NOT NULL
       ),
 
@@ -1626,15 +1636,15 @@ class HistoricalMarketIndicatorsService {
               AND fd_q.statement_type = 'income_statement'
               AND fd_q.period_type = 'quarterly'
               AND fd_q.fiscal_date_ending < fd_a.fiscal_date_ending
-              AND fd_q.fiscal_date_ending >= date(fd_a.fiscal_date_ending, '-9 months')
+              AND fd_q.fiscal_date_ending >= (fd_a.fiscal_date_ending::date - INTERVAL '9 months')
           ), 0) as net_income
         FROM financial_data fd_a
         JOIN index_constituents ic ON fd_a.company_id = ic.company_id
         WHERE ic.index_id = 1
           AND fd_a.statement_type = 'income_statement'
           AND fd_a.period_type = 'annual'
-          AND fd_a.fiscal_date_ending <= ?
-          AND fd_a.fiscal_date_ending > date(?, '-18 months')
+          AND fd_a.fiscal_date_ending <= $3
+          AND fd_a.fiscal_date_ending > ($4::date - INTERVAL '18 months')
           AND fd_a.net_income IS NOT NULL
       ),
 
@@ -1667,7 +1677,7 @@ class HistoricalMarketIndicatorsService {
         WHERE rn <= 4
         GROUP BY company_id
         HAVING COUNT(*) = 4
-          AND MAX(qtr_date) >= date(?, '-15 months')  -- Data must be reasonably recent
+          AND MAX(qtr_date) >= ($5::date - INTERVAL '15 months')  -- Data must be reasonably recent
       ),
 
       -- Step 5: Calculate historical market cap using price_metrics shares
@@ -1680,7 +1690,7 @@ class HistoricalMarketIndicatorsService {
         FROM ttm_earnings te
         JOIN daily_prices dp ON te.company_id = dp.company_id
         JOIN price_metrics pm ON te.company_id = pm.company_id
-        WHERE dp.date = ?
+        WHERE dp.date = $6
           AND dp.adjusted_close > 0
           AND pm.shares_outstanding > 0
           AND dp.adjusted_close * pm.shares_outstanding > 1e9  -- Min $1B market cap
@@ -1693,30 +1703,30 @@ class HistoricalMarketIndicatorsService {
         SUM(market_cap) as total_market_cap,
         SUM(ttm_net_income) as total_ttm_earnings
       FROM final_data
-    `).get(
-      quarterEndDate,    // quarterly_earnings filter
-      quarterEndDate,    // quarterly_earnings lookback
-      quarterEndDate,    // inferred_q4 filter
-      quarterEndDate,    // inferred_q4 lookback
-      quarterEndDate,    // ttm_earnings recency check
-      priceDate          // final_data price date
-    );
+    `, [
+      quarterEndDate,    // $1 quarterly_earnings filter
+      quarterEndDate,    // $2 quarterly_earnings lookback
+      quarterEndDate,    // $3 inferred_q4 filter
+      quarterEndDate,    // $4 inferred_q4 lookback
+      quarterEndDate,    // $5 ttm_earnings recency check
+      priceDate          // $6 final_data price date
+    ]);
 
-    if (!result || !result.total_ttm_earnings || result.company_count < 100) {
+    if (!result.rows[0] || !result.rows[0].total_ttm_earnings || parseInt(result.rows[0].company_count) < 100) {
       return null;
     }
 
     // Calculate P/E = Total Market Cap / Total TTM Earnings
     // Note: Only includes profitable companies (TTM earnings > 0) to avoid
     // distortions from one-time charges (e.g., TCJA 2018 repatriation taxes)
-    const pe = result.total_market_cap / result.total_ttm_earnings;
+    const pe = parseFloat(result.rows[0].total_market_cap) / parseFloat(result.rows[0].total_ttm_earnings);
 
     return {
       value: Math.round(pe * 100) / 100,
-      companyCount: result.company_count,
-      totalMarketCap: result.total_market_cap,
-      totalTTMEarnings: result.total_ttm_earnings,
-      totalImpliedEarnings: result.total_ttm_earnings,  // For backward compatibility
+      companyCount: parseInt(result.rows[0].company_count),
+      totalMarketCap: parseFloat(result.rows[0].total_market_cap),
+      totalTTMEarnings: parseFloat(result.rows[0].total_ttm_earnings),
+      totalImpliedEarnings: parseFloat(result.rows[0].total_ttm_earnings),  // For backward compatibility
       method: 'ttm_profitable_only',
     };
   }
@@ -1727,14 +1737,14 @@ class HistoricalMarketIndicatorsService {
    * IMPORTANT: Minimum reliable start is 2019-Q2 due to Q4-2017 TCJA one-time charges
    * that distort TTM earnings calculations before this date
    */
-  getSP500PEHistory(options = {}) {
+  async getSP500PEHistory(options = {}) {
     const { startQuarter = '2019-Q2' } = options;
 
     // Ensure minimum reliable start quarter (TCJA impact distorts earlier data)
     const minReliableQuarter = '2019-Q2';
     const effectiveStart = startQuarter < minReliableQuarter ? minReliableQuarter : startQuarter;
 
-    const allQuarters = this.getAvailableQuarters();
+    const allQuarters = await this.getAvailableQuarters();
     const quarters = allQuarters.filter(q => q >= effectiveStart);
 
     const series = [];
@@ -1747,7 +1757,7 @@ class HistoricalMarketIndicatorsService {
 
     for (const quarter of quarters) {
       // Use market-cap weighted calculation for accurate historical patterns
-      const peData = this.getSP500PEForQuarterTTM(quarter);
+      const peData = await this.getSP500PEForQuarterTTM(quarter);
 
       if (peData && peData.value) {
         // Filter based on company count - require sufficient coverage
@@ -1778,18 +1788,18 @@ class HistoricalMarketIndicatorsService {
    * Optimized for frontend consumption
    * Includes current real-time data point
    */
-  getAllHistoricalData(options = {}) {
+  async getAllHistoricalData(options = {}) {
     const { startQuarter = '2015-Q1', includeCurrentQuarter = true } = options;
 
-    const timeSeries = this.generateHistoricalTimeSeries({
+    const timeSeries = await this.generateHistoricalTimeSeries({
       startQuarter,
     });
 
     // Get current real-time metrics to add as latest data point
-    const current = includeCurrentQuarter ? this.getCurrentMetrics() : null;
+    const current = includeCurrentQuarter ? await this.getCurrentMetrics() : null;
 
     // Get S&P 500 P/E history
-    const sp500PEHistory = this.getSP500PEHistory({ startQuarter });
+    const sp500PEHistory = await this.getSP500PEHistory({ startQuarter });
 
     // Helper: Calculate 4-quarter rolling average for smoother trends
     const calculateRollingAverage = (series, window = 4) => {

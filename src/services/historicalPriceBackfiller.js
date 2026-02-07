@@ -12,21 +12,17 @@
 
 const { spawn } = require('child_process');
 const path = require('path');
-const db = require('../database');
+const db = require('../database').db;
 
 class HistoricalPriceBackfiller {
-  constructor() {
-    this.database = db.getDatabase();
-  }
-
   /**
    * Identify CUSIPs from investor holdings that are missing historical price data
    */
-  identifyPriceGaps() {
+  async identifyPriceGaps() {
     console.log('🔍 Identifying price gaps for investor holdings...\n');
 
     // Find all unique company_ids from investor_holdings with their earliest holding date
-    const holdingsWithGaps = this.database.prepare(`
+    const holdingsWithGaps = await db.query(`
       WITH holding_dates AS (
         SELECT
           ih.company_id,
@@ -38,7 +34,7 @@ class HistoricalPriceBackfiller {
         WHERE ih.company_id IS NOT NULL
           AND c.symbol IS NOT NULL
           AND c.symbol NOT LIKE 'CIK_%'
-        GROUP BY ih.company_id
+        GROUP BY ih.company_id, c.symbol
       ),
       price_coverage AS (
         SELECT
@@ -64,29 +60,26 @@ class HistoricalPriceBackfiller {
         END as has_gap,
         CASE
           WHEN pc.earliest_price_date IS NULL THEN 3650
-          ELSE CAST(julianday(pc.earliest_price_date) - julianday(hd.earliest_holding_date) AS INTEGER)
+          ELSE CAST(pc.earliest_price_date - hd.earliest_holding_date AS INTEGER)
         END as gap_days
       FROM holding_dates hd
       LEFT JOIN price_coverage pc ON pc.company_id = hd.company_id
       WHERE pc.earliest_price_date IS NULL
          OR pc.earliest_price_date > hd.earliest_holding_date
       ORDER BY hd.filing_count DESC, gap_days DESC
-    `).all();
-
-    console.log(`Found ${holdingsWithGaps.length} companies with price gaps\n`);
-
-    // Store in cusip_price_gaps table
-    const insertGap = this.database.prepare(`
-      INSERT OR REPLACE INTO cusip_price_gaps (
-        cusip, company_id, symbol, earliest_holding_date,
-        price_data_starts, gap_days, backfill_status
-      ) VALUES (?, ?, ?, ?, ?, ?, 'pending')
     `);
 
-    const insertMany = this.database.transaction((gaps) => {
-      for (const gap of gaps) {
-        // Use symbol as CUSIP placeholder since we're working with company_id
-        insertGap.run(
+    console.log(`Found ${holdingsWithGaps.rows.length} companies with price gaps\n`);
+
+    // Store in cusip_price_gaps table
+    if (holdingsWithGaps.rows.length > 0) {
+      const values = [];
+      const placeholders = [];
+
+      holdingsWithGaps.rows.forEach((gap, idx) => {
+        const base = idx * 6;
+        placeholders.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, 'pending')`);
+        values.push(
           gap.symbol, // Using symbol as unique key
           gap.company_id,
           gap.symbol,
@@ -94,29 +87,41 @@ class HistoricalPriceBackfiller {
           gap.earliest_price_date,
           gap.gap_days
         );
-      }
-    });
+      });
 
-    insertMany(holdingsWithGaps);
+      await db.query(`
+        INSERT INTO cusip_price_gaps (
+          cusip, company_id, symbol, earliest_holding_date,
+          price_data_starts, gap_days, backfill_status
+        ) VALUES ${placeholders.join(', ')}
+        ON CONFLICT (cusip) DO UPDATE SET
+          company_id = EXCLUDED.company_id,
+          symbol = EXCLUDED.symbol,
+          earliest_holding_date = EXCLUDED.earliest_holding_date,
+          price_data_starts = EXCLUDED.price_data_starts,
+          gap_days = EXCLUDED.gap_days,
+          backfill_status = EXCLUDED.backfill_status
+      `, values);
+    }
 
     // Summary stats
-    const noPrice = holdingsWithGaps.filter(h => !h.earliest_price_date).length;
-    const partialPrice = holdingsWithGaps.filter(h => h.earliest_price_date).length;
-    const totalGapDays = holdingsWithGaps.reduce((sum, h) => sum + h.gap_days, 0);
+    const noPrice = holdingsWithGaps.rows.filter(h => !h.earliest_price_date).length;
+    const partialPrice = holdingsWithGaps.rows.filter(h => h.earliest_price_date).length;
+    const totalGapDays = holdingsWithGaps.rows.reduce((sum, h) => sum + (h.gap_days || 0), 0);
 
     console.log('Summary:');
     console.log(`  Companies with no price data: ${noPrice}`);
     console.log(`  Companies with partial price data: ${partialPrice}`);
     console.log(`  Total gap days to fill: ${totalGapDays.toLocaleString()}`);
 
-    return holdingsWithGaps;
+    return holdingsWithGaps.rows;
   }
 
   /**
    * Get symbols that need historical price backfill
    */
-  getSymbolsNeedingBackfill(limit = 100) {
-    return this.database.prepare(`
+  async getSymbolsNeedingBackfill(limit = 100) {
+    const result = await db.query(`
       SELECT
         cpg.symbol,
         cpg.company_id,
@@ -129,8 +134,9 @@ class HistoricalPriceBackfiller {
         AND cpg.symbol IS NOT NULL
         AND cpg.symbol NOT LIKE 'CIK_%'
       ORDER BY cpg.gap_days DESC
-      LIMIT ?
-    `).all(limit);
+      LIMIT $1
+    `, [limit]);
+    return result.rows;
   }
 
   /**
@@ -186,102 +192,96 @@ class HistoricalPriceBackfiller {
   /**
    * Mark symbols as backfilled
    */
-  markBackfilled(symbols) {
-    const update = this.database.prepare(`
+  async markBackfilled(symbols) {
+    if (symbols.length === 0) return;
+
+    const placeholders = symbols.map((_, idx) => `$${idx + 1}`).join(', ');
+    await db.query(`
       UPDATE cusip_price_gaps
       SET backfill_status = 'completed',
           backfill_attempted_at = CURRENT_TIMESTAMP
-      WHERE symbol = ?
-    `);
-
-    const updateMany = this.database.transaction((syms) => {
-      for (const symbol of syms) {
-        update.run(symbol);
-      }
-    });
-
-    updateMany(symbols);
+      WHERE symbol IN (${placeholders})
+    `, symbols);
   }
 
   /**
    * Mark symbols as failed
    */
-  markFailed(symbols, errorMessage) {
-    const update = this.database.prepare(`
+  async markFailed(symbols, errorMessage) {
+    if (symbols.length === 0) return;
+
+    const placeholders = symbols.map((_, idx) => `$${idx + 2}`).join(', ');
+    await db.query(`
       UPDATE cusip_price_gaps
       SET backfill_status = 'error',
-          error_message = ?,
+          error_message = $1,
           backfill_attempted_at = CURRENT_TIMESTAMP
-      WHERE symbol = ?
-    `);
-
-    const updateMany = this.database.transaction((syms) => {
-      for (const symbol of syms) {
-        update.run(errorMessage, symbol);
-      }
-    });
-
-    updateMany(symbols);
+      WHERE symbol IN (${placeholders})
+    `, [errorMessage, ...symbols]);
   }
 
   /**
    * Get status of price gap backfill
    */
-  getStatus() {
-    const summary = this.database.prepare(`
+  async getStatus() {
+    const summaryResult = await db.query(`
       SELECT
         backfill_status,
         COUNT(*) as count,
         SUM(gap_days) as total_gap_days
       FROM cusip_price_gaps
       GROUP BY backfill_status
-    `).all();
+    `);
 
-    const topGaps = this.database.prepare(`
+    const topGapsResult = await db.query(`
       SELECT symbol, company_id, earliest_holding_date, gap_days, backfill_status
       FROM cusip_price_gaps
       WHERE backfill_status = 'pending'
       ORDER BY gap_days DESC
       LIMIT 20
-    `).all();
+    `);
 
-    const recentErrors = this.database.prepare(`
+    const recentErrorsResult = await db.query(`
       SELECT symbol, error_message, backfill_attempted_at
       FROM cusip_price_gaps
       WHERE backfill_status = 'error'
       ORDER BY backfill_attempted_at DESC
       LIMIT 10
-    `).all();
+    `);
 
-    return { summary, topGaps, recentErrors };
+    return {
+      summary: summaryResult.rows,
+      topGaps: topGapsResult.rows,
+      recentErrors: recentErrorsResult.rows
+    };
   }
 
   /**
    * Check if prices exist for a specific company and date range
    */
-  checkPriceCoverage(companyId, startDate, endDate) {
-    const coverage = this.database.prepare(`
+  async checkPriceCoverage(companyId, startDate, endDate) {
+    const result = await db.query(`
       SELECT
         COUNT(*) as price_count,
         MIN(date) as earliest,
         MAX(date) as latest
       FROM daily_prices
-      WHERE company_id = ?
-        AND date >= ?
-        AND date <= ?
-    `).get(companyId, startDate, endDate);
+      WHERE company_id = $1
+        AND date >= $2
+        AND date <= $3
+    `, [companyId, startDate, endDate]);
 
-    return coverage;
+    return result.rows[0];
   }
 
   /**
    * Verify returns can be calculated after price backfill
    */
-  verifyReturnsCalculation(investorId) {
+  async verifyReturnsCalculation(investorId) {
     const investorService = require('./portfolio/investorService');
 
     try {
-      const returns = investorService.getPortfolioReturns(investorId, 50);
+      const returns = await investorService.getPortfolioReturns(investorId, 50);
 
       if (!returns || !returns.returns || returns.returns.length === 0) {
         return { success: false, message: 'No returns data available' };
@@ -305,86 +305,87 @@ if (require.main === module) {
   const args = process.argv.slice(2);
   const backfiller = new HistoricalPriceBackfiller();
 
-  if (args.includes('--identify')) {
-    backfiller.identifyPriceGaps();
-    process.exit(0);
-
-  } else if (args.includes('--backfill')) {
-    const symbols = backfiller.getSymbolsNeedingBackfill(100);
-
-    if (symbols.length === 0) {
-      console.log('No symbols need backfill');
-      process.exit(0);
-    }
-
-    console.log(`Found ${symbols.length} symbols needing backfill`);
-
-    backfiller.runPythonBackfill(symbols.map(s => s.symbol))
-      .then(() => {
-        backfiller.markBackfilled(symbols.map(s => s.symbol));
-        console.log('\nBackfill completed');
+  (async () => {
+    try {
+      if (args.includes('--identify')) {
+        await backfiller.identifyPriceGaps();
         process.exit(0);
-      })
-      .catch(error => {
-        console.error('Backfill failed:', error);
-        backfiller.markFailed(symbols.map(s => s.symbol), error.message);
-        process.exit(1);
-      });
 
-  } else if (args.includes('--status')) {
-    const status = backfiller.getStatus();
+      } else if (args.includes('--backfill')) {
+        const symbols = await backfiller.getSymbolsNeedingBackfill(100);
 
-    console.log('\n📊 Price Gap Backfill Status');
-    console.log('='.repeat(50));
+        if (symbols.length === 0) {
+          console.log('No symbols need backfill');
+          process.exit(0);
+        }
 
-    console.log('\nBy Status:');
-    status.summary.forEach(s => {
-      console.log(`  ${s.backfill_status.padEnd(12)} | ${String(s.count).padStart(5)} symbols | ${String(s.total_gap_days || 0).padStart(8)} gap days`);
-    });
+        console.log(`Found ${symbols.length} symbols needing backfill`);
 
-    console.log('\nTop 20 Pending Gaps:');
-    status.topGaps.forEach(g => {
-      console.log(`  ${g.symbol.padEnd(10)} | ${g.earliest_holding_date} | ${String(g.gap_days).padStart(5)} days`);
-    });
+        try {
+          await backfiller.runPythonBackfill(symbols.map(s => s.symbol));
+          await backfiller.markBackfilled(symbols.map(s => s.symbol));
+          console.log('\nBackfill completed');
+          process.exit(0);
+        } catch (error) {
+          console.error('Backfill failed:', error);
+          await backfiller.markFailed(symbols.map(s => s.symbol), error.message);
+          process.exit(1);
+        }
 
-    if (status.recentErrors.length > 0) {
-      console.log('\nRecent Errors:');
-      status.recentErrors.forEach(e => {
-        console.log(`  ${e.symbol}: ${e.error_message}`);
-      });
-    }
+      } else if (args.includes('--status')) {
+        const status = await backfiller.getStatus();
 
-    process.exit(0);
+        console.log('\n📊 Price Gap Backfill Status');
+        console.log('='.repeat(50));
 
-  } else if (args.includes('--verify')) {
-    const investorIdx = args.indexOf('--investor');
-    const investorId = investorIdx !== -1 ? parseInt(args[investorIdx + 1]) : null;
+        console.log('\nBy Status:');
+        status.summary.forEach(s => {
+          console.log(`  ${s.backfill_status.padEnd(12)} | ${String(s.count).padStart(5)} symbols | ${String(s.total_gap_days || 0).padStart(8)} gap days`);
+        });
 
-    if (investorId) {
-      const result = backfiller.verifyReturnsCalculation(investorId);
-      console.log('\nReturns Calculation Verification:');
-      console.log(JSON.stringify(result, null, 2));
-    } else {
-      // Verify all investors
-      const investors = backfiller.database.prepare(`
-        SELECT id, name FROM famous_investors WHERE is_active = 1 AND cik IS NOT NULL
-      `).all();
+        console.log('\nTop 20 Pending Gaps:');
+        status.topGaps.forEach(g => {
+          console.log(`  ${g.symbol.padEnd(10)} | ${g.earliest_holding_date} | ${String(g.gap_days).padStart(5)} days`);
+        });
 
-      console.log('\nReturns Calculation Verification for All Investors:');
-      console.log('='.repeat(60));
+        if (status.recentErrors.length > 0) {
+          console.log('\nRecent Errors:');
+          status.recentErrors.forEach(e => {
+            console.log(`  ${e.symbol}: ${e.error_message}`);
+          });
+        }
 
-      for (const inv of investors) {
-        const result = backfiller.verifyReturnsCalculation(inv.id);
-        const status = result.success ? '✅' : '❌';
-        const periods = result.periodsAvailable || 0;
-        console.log(`${status} ${inv.name.padEnd(25)} | ${String(periods).padStart(3)} periods`);
-      }
-    }
+        process.exit(0);
 
-    process.exit(0);
+      } else if (args.includes('--verify')) {
+        const investorIdx = args.indexOf('--investor');
+        const investorId = investorIdx !== -1 ? parseInt(args[investorIdx + 1]) : null;
 
-  } else {
-    console.log(`
+        if (investorId) {
+          const result = await backfiller.verifyReturnsCalculation(investorId);
+          console.log('\nReturns Calculation Verification:');
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          // Verify all investors
+          const investorsResult = await db.query(`
+            SELECT id, name FROM famous_investors WHERE is_active = 1 AND cik IS NOT NULL
+          `);
+
+          console.log('\nReturns Calculation Verification for All Investors:');
+          console.log('='.repeat(60));
+
+          for (const inv of investorsResult.rows) {
+            const result = await backfiller.verifyReturnsCalculation(inv.id);
+            const status = result.success ? '✅' : '❌';
+            const periods = result.periodsAvailable || 0;
+            console.log(`${status} ${inv.name.padEnd(25)} | ${String(periods).padStart(3)} periods`);
+          }
+        }
+
+        process.exit(0);
+
+      } else {
+        console.log(`
 Historical Price Backfiller
 ===========================
 
@@ -395,8 +396,13 @@ Usage:
   node src/services/historicalPriceBackfiller.js --verify     Verify returns calculation
   node src/services/historicalPriceBackfiller.js --verify --investor <id>  Verify specific investor
 `);
-    process.exit(0);
-  }
+        process.exit(0);
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      process.exit(1);
+    }
+  })();
 }
 
 module.exports = HistoricalPriceBackfiller;
