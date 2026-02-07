@@ -118,21 +118,23 @@ class FactorAnalysisService {
   /**
    * Get all factor definitions
    */
-  getFactorDefinitions() {
-    return this.db.prepare(`
+  async getFactorDefinitions() {
+    const result = await this.db.query(`
       SELECT * FROM factor_definitions
-      WHERE is_active = 1
+      WHERE is_active = true
       ORDER BY factor_category, factor_name
-    `).all();
+    `);
+    return result.rows;
   }
 
   /**
    * Get factor definition by code
    */
-  getFactorDefinition(factorCode) {
-    return this.db.prepare(`
-      SELECT * FROM factor_definitions WHERE factor_code = ?
-    `).get(factorCode);
+  async getFactorDefinition(factorCode) {
+    const result = await this.db.query(`
+      SELECT * FROM factor_definitions WHERE factor_code = $1
+    `, [factorCode]);
+    return result.rows[0];
   }
 
   // ============================================
@@ -142,16 +144,17 @@ class FactorAnalysisService {
   /**
    * Get factor performance by decision outcome
    */
-  getFactorDecisionPerformance() {
-    return this.db.prepare(`
+  async getFactorDecisionPerformance() {
+    const result = await this.db.query(`
       SELECT * FROM v_factor_decision_performance
-    `).all();
+    `);
+    return result.rows;
   }
 
   /**
    * Analyze which factors lead to best outcomes
    */
-  analyzeFactorSuccess(options = {}) {
+  async analyzeFactorSuccess(options = {}) {
     const { minDecisions = 100, factor = null } = options;
 
     let query = `
@@ -162,7 +165,7 @@ class FactorAnalysisService {
         AVG(d.return_1y) as avg_return_1y,
         AVG(d.alpha_1y) as avg_alpha_1y,
         AVG(CASE WHEN d.return_1y > 0 THEN 1.0 ELSE 0.0 END) * 100 as positive_return_pct,
-        AVG(CASE WHEN d.beat_market_1y = 1 THEN 1.0 ELSE 0.0 END) * 100 as beat_market_pct,
+        AVG(CASE WHEN d.beat_market_1y = true THEN 1.0 ELSE 0.0 END) * 100 as beat_market_pct,
         AVG(dfc.value_percentile) as avg_value_pct,
         AVG(dfc.quality_percentile) as avg_quality_pct,
         AVG(dfc.momentum_percentile) as avg_momentum_pct,
@@ -174,32 +177,34 @@ class FactorAnalysisService {
 
     const params = [];
     if (factor) {
-      query += ' AND dfc.dominant_factor = ?';
+      query += ' AND dfc.dominant_factor = $' + (params.length + 1);
       params.push(factor);
     }
 
     query += `
       GROUP BY dfc.dominant_factor, d.decision_type
-      HAVING COUNT(*) >= ?
+      HAVING COUNT(*) >= $` + (params.length + 1) + `
       ORDER BY avg_alpha_1y DESC
     `;
     params.push(minDecisions);
 
-    return this.db.prepare(query).all(...params);
+    const result = await this.db.query(query, params);
+    return result.rows;
   }
 
   /**
    * Get factor exposure history for an investor
    */
-  getInvestorFactorHistory(investorId, options = {}) {
+  async getInvestorFactorHistory(investorId, options = {}) {
     const { limit = 20 } = options;
 
-    return this.db.prepare(`
+    const result = await this.db.query(`
       SELECT * FROM portfolio_factor_exposures
-      WHERE investor_id = ?
+      WHERE investor_id = $1
       ORDER BY snapshot_date DESC
-      LIMIT ?
-    `).all(investorId, limit);
+      LIMIT $2
+    `, [investorId, limit]);
+    return result.rows;
   }
 
   // ============================================
@@ -209,27 +214,29 @@ class FactorAnalysisService {
   /**
    * Get current factor regime
    */
-  getCurrentFactorRegime() {
-    return this.db.prepare(`
+  async getCurrentFactorRegime() {
+    const result = await this.db.query(`
       SELECT * FROM factor_regimes
       WHERE regime_end IS NULL
         OR regime_end = (SELECT MAX(regime_end) FROM factor_regimes)
       ORDER BY regime_start DESC
       LIMIT 1
-    `).get();
+    `);
+    return result.rows[0];
   }
 
   /**
    * Get factor regime history
    */
-  getFactorRegimeHistory(options = {}) {
+  async getFactorRegimeHistory(options = {}) {
     const { limit = 20 } = options;
 
-    return this.db.prepare(`
+    const result = await this.db.query(`
       SELECT * FROM factor_regimes
       ORDER BY regime_start DESC
-      LIMIT ?
-    `).all(limit);
+      LIMIT $1
+    `, [limit]);
+    return result.rows;
   }
 
   // ============================================
@@ -244,7 +251,7 @@ class FactorAnalysisService {
     const { startDate, endDate } = options;
 
     // Get portfolio holdings and calculate returns
-    const holdings = this.db.prepare(`
+    const holdingsResult = await this.db.query(`
       SELECT
         ih.company_id,
         c.symbol,
@@ -254,22 +261,28 @@ class FactorAnalysisService {
         ih.market_value_weight
       FROM investor_holdings ih
       JOIN companies c ON ih.company_id = c.id
-      WHERE ih.investor_id = ?
+      WHERE ih.investor_id = $1
         AND ih.shares > 0
-    `).all(investorId);
+    `, [investorId]);
+    const holdings = holdingsResult.rows;
 
     if (holdings.length === 0) {
       return null;
     }
 
     // Get factor returns from daily_factor_returns table
-    const factorReturnsQuery = startDate && endDate
-      ? 'SELECT * FROM daily_factor_returns WHERE date >= ? AND date <= ? ORDER BY date'
-      : 'SELECT * FROM daily_factor_returns ORDER BY date DESC LIMIT 252';
-
-    const factorReturns = startDate && endDate
-      ? this.db.prepare(factorReturnsQuery).all(startDate, endDate)
-      : this.db.prepare(factorReturnsQuery).all();
+    let factorReturnsResult;
+    if (startDate && endDate) {
+      factorReturnsResult = await this.db.query(
+        'SELECT * FROM daily_factor_returns WHERE date >= $1 AND date <= $2 ORDER BY date',
+        [startDate, endDate]
+      );
+    } else {
+      factorReturnsResult = await this.db.query(
+        'SELECT * FROM daily_factor_returns ORDER BY date DESC LIMIT 252'
+      );
+    }
+    const factorReturns = factorReturnsResult.rows;
 
     if (factorReturns.length < 30) {
       // Not enough factor returns data, return simplified analysis
@@ -290,7 +303,7 @@ class FactorAnalysisService {
     }
 
     // Calculate weighted average factor scores for the portfolio
-    const portfolioScores = this._calculatePortfolioFactorScores(holdings);
+    const portfolioScores = await this._calculatePortfolioFactorScores(holdings);
 
     // Estimate factor exposures based on portfolio characteristics
     // (In a full implementation, this would use actual portfolio returns regression)
@@ -324,19 +337,20 @@ class FactorAnalysisService {
   /**
    * Calculate portfolio-weighted factor scores
    */
-  _calculatePortfolioFactorScores(holdings) {
+  async _calculatePortfolioFactorScores(holdings) {
     let totalWeight = 0;
     const weightedScores = {
       value: 0, quality: 0, momentum: 0, growth: 0, size: 0, volatility: 0, beta: 0, liquidity: 0
     };
 
     for (const holding of holdings) {
-      const scores = this.db.prepare(`
+      const result = await this.db.query(`
         SELECT * FROM stock_factor_scores
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY score_date DESC
         LIMIT 1
-      `).get(holding.company_id);
+      `, [holding.company_id]);
+      const scores = result.rows[0];
 
       if (scores) {
         const weight = holding.market_value_weight || (1 / holdings.length);
@@ -432,7 +446,7 @@ class FactorAnalysisService {
   /**
    * Get historical factor returns for charting
    */
-  getFactorReturns(options = {}) {
+  async getFactorReturns(options = {}) {
     const { startDate, endDate, cumulative = true } = options;
 
     let query = 'SELECT * FROM daily_factor_returns';
@@ -441,11 +455,11 @@ class FactorAnalysisService {
     if (startDate || endDate) {
       const conditions = [];
       if (startDate) {
-        conditions.push('date >= ?');
+        conditions.push('date >= $' + (params.length + 1));
         params.push(startDate);
       }
       if (endDate) {
-        conditions.push('date <= ?');
+        conditions.push('date <= $' + (params.length + 1));
         params.push(endDate);
       }
       query += ` WHERE ${conditions.join(' AND ')}`;
@@ -453,7 +467,8 @@ class FactorAnalysisService {
 
     query += ' ORDER BY date ASC';
 
-    const returns = this.db.prepare(query).all(...params);
+    const result = await this.db.query(query, params);
+    const returns = result.rows;
 
     if (!cumulative) {
       return returns;
@@ -489,39 +504,43 @@ class FactorAnalysisService {
   /**
    * Get overall factor analysis statistics
    */
-  getStats() {
-    const stockScores = this.db.prepare(`
+  async getStats() {
+    const stockScoresResult = await this.db.query(`
       SELECT
         COUNT(*) as total_scores,
         COUNT(DISTINCT company_id) as stocks_scored,
         MIN(score_date) as earliest,
         MAX(score_date) as latest
       FROM stock_factor_scores
-    `).get();
+    `);
+    const stockScores = stockScoresResult.rows[0];
 
-    const portfolioExposures = this.db.prepare(`
+    const portfolioExposuresResult = await this.db.query(`
       SELECT
         COUNT(*) as total_exposures,
         COUNT(DISTINCT investor_id) as investors_analyzed,
         MIN(snapshot_date) as earliest,
         MAX(snapshot_date) as latest
       FROM portfolio_factor_exposures
-    `).get();
+    `);
+    const portfolioExposures = portfolioExposuresResult.rows[0];
 
-    const decisionContexts = this.db.prepare(`
+    const decisionContextsResult = await this.db.query(`
       SELECT
         COUNT(*) as total_contexts,
-        SUM(is_value_play) as value_plays,
-        SUM(is_quality_play) as quality_plays,
-        SUM(is_momentum_play) as momentum_plays,
-        SUM(is_growth_play) as growth_plays,
-        SUM(is_contrarian_play) as contrarian_plays
+        SUM(CASE WHEN is_value_play THEN 1 ELSE 0 END) as value_plays,
+        SUM(CASE WHEN is_quality_play THEN 1 ELSE 0 END) as quality_plays,
+        SUM(CASE WHEN is_momentum_play THEN 1 ELSE 0 END) as momentum_plays,
+        SUM(CASE WHEN is_growth_play THEN 1 ELSE 0 END) as growth_plays,
+        SUM(CASE WHEN is_contrarian_play THEN 1 ELSE 0 END) as contrarian_plays
       FROM decision_factor_context
-    `).get();
+    `);
+    const decisionContexts = decisionContextsResult.rows[0];
 
-    const factorDefinitions = this.db.prepare(`
-      SELECT COUNT(*) as count FROM factor_definitions WHERE is_active = 1
-    `).get();
+    const factorDefinitionsResult = await this.db.query(`
+      SELECT COUNT(*) as count FROM factor_definitions WHERE is_active = true
+    `);
+    const factorDefinitions = factorDefinitionsResult.rows[0];
 
     return {
       stockScores,

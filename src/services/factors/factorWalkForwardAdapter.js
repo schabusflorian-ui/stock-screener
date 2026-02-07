@@ -21,22 +21,6 @@ class FactorWalkForwardAdapter {
     this.db = db;
     this.calculator = customFactorCalculator;
     this.icAnalysis = icAnalysis;
-
-    // Prepare SQL statements
-    this._prepareStatements();
-  }
-
-  _prepareStatements() {
-    // Get month-end dates in range
-    this.stmtGetMonthEndDates = this.db.prepare(`
-      SELECT DISTINCT date
-      FROM daily_prices
-      WHERE date >= ? AND date <= ?
-        AND strftime('%d', date) >= '25'  -- Last week of month
-      GROUP BY strftime('%Y-%m', date)
-      HAVING date = MAX(date)
-      ORDER BY date ASC
-    `);
   }
 
   /**
@@ -145,7 +129,7 @@ class FactorWalkForwardAdapter {
    */
   async calculateICForPeriod(formula, startDate, endDate, horizon = 21) {
     // Get month-end dates in this period
-    const monthEndDates = this.getMonthEndDates(startDate, endDate);
+    const monthEndDates = await this.getMonthEndDates(startDate, endDate);
 
     if (monthEndDates.length === 0) {
       console.warn(`No month-end dates found between ${startDate} and ${endDate}`);
@@ -169,7 +153,7 @@ class FactorWalkForwardAdapter {
         }
 
         // Get forward returns (21-day horizon)
-        const returns = this.getForwardReturns(
+        const returns = await this.getForwardReturns(
           factorResult.values.map(v => v.company_id),
           date,
           horizon
@@ -208,15 +192,15 @@ class FactorWalkForwardAdapter {
   /**
    * Get forward returns for a list of companies
    */
-  getForwardReturns(companyIds, asOfDate, horizon) {
+  async getForwardReturns(companyIds, asOfDate, horizon) {
     if (companyIds.length === 0) {
       return [];
     }
 
     // Build placeholders for SQL IN clause
-    const placeholders = companyIds.map(() => '?').join(',');
+    const placeholders = companyIds.map((_, i) => `$${i + 1}`).join(',');
 
-    const stmt = this.db.prepare(`
+    const query = `
       SELECT
         c.id as company_id,
         (p2.adjusted_close - p1.adjusted_close) / p1.adjusted_close * 100 as forward_return
@@ -224,18 +208,20 @@ class FactorWalkForwardAdapter {
       JOIN daily_prices p1 ON c.id = p1.company_id
       JOIN daily_prices p2 ON c.id = p2.company_id
       WHERE c.id IN (${placeholders})
-        AND p1.date = (SELECT MAX(date) FROM daily_prices WHERE company_id = c.id AND date <= ?)
+        AND p1.date = (SELECT MAX(date) FROM daily_prices WHERE company_id = c.id AND date <= $${companyIds.length + 1})
         AND p2.date = (
           SELECT MIN(date) FROM daily_prices
           WHERE company_id = c.id
-            AND date > date((SELECT MAX(date) FROM daily_prices WHERE company_id = c.id AND date <= ?), '+' || ? || ' days')
+            AND date > (SELECT MAX(date) FROM daily_prices WHERE company_id = c.id AND date <= $${companyIds.length + 2})
+              + INTERVAL '1 day' * $${companyIds.length + 3}
         )
         AND p1.adjusted_close > 0
         AND p2.adjusted_close > 0
-    `);
+    `;
 
     try {
-      return stmt.all(...companyIds, asOfDate, asOfDate, horizon);
+      const result = await this.db.query(query, [...companyIds, asOfDate, asOfDate, horizon]);
+      return result.rows;
     } catch (err) {
       console.error('Error getting forward returns:', err.message);
       return [];
@@ -269,9 +255,22 @@ class FactorWalkForwardAdapter {
   /**
    * Get month-end trading dates in a range
    */
-  getMonthEndDates(startDate, endDate) {
-    const rows = this.stmtGetMonthEndDates.all(startDate, endDate);
-    return rows.map(r => r.date);
+  async getMonthEndDates(startDate, endDate) {
+    const query = `
+      SELECT DISTINCT ON (TO_CHAR(date, 'YYYY-MM')) date
+      FROM daily_prices
+      WHERE date >= $1 AND date <= $2
+        AND EXTRACT(DAY FROM date) >= 25  -- Last week of month
+      ORDER BY TO_CHAR(date, 'YYYY-MM'), date DESC
+    `;
+
+    try {
+      const result = await this.db.query(query, [startDate, endDate]);
+      return result.rows.map(r => r.date).sort();
+    } catch (err) {
+      console.error('Error getting month-end dates:', err.message);
+      return [];
+    }
   }
 
   /**

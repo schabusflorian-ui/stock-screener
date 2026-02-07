@@ -22,38 +22,6 @@ class FactorBacktestAdapter {
   constructor(db, customFactorCalculator) {
     this.db = db;
     this.calculator = customFactorCalculator;
-
-    // Prepare SQL statements
-    this._prepareStatements();
-  }
-
-  _prepareStatements() {
-    // Get trading days in date range
-    this.stmtGetTradingDays = this.db.prepare(`
-      SELECT DISTINCT date
-      FROM daily_prices
-      WHERE date >= ? AND date <= ?
-      ORDER BY date ASC
-    `);
-
-    // Get price for a symbol on a specific date
-    this.stmtGetPrice = this.db.prepare(`
-      SELECT dp.adjusted_close as price
-      FROM daily_prices dp
-      JOIN companies c ON dp.company_id = c.id
-      WHERE c.symbol = ? AND dp.date = ?
-      LIMIT 1
-    `);
-
-    // Get latest price on or before date
-    this.stmtGetLatestPrice = this.db.prepare(`
-      SELECT dp.adjusted_close as price
-      FROM daily_prices dp
-      JOIN companies c ON dp.company_id = c.id
-      WHERE c.symbol = ? AND dp.date <= ?
-      ORDER BY dp.date DESC
-      LIMIT 1
-    `);
   }
 
   /**
@@ -72,7 +40,14 @@ class FactorBacktestAdapter {
     console.log(`Period: ${startDate} to ${endDate}, Rebalance: ${rebalanceFrequency}`);
 
     // Get all trading days
-    const tradingDays = this.stmtGetTradingDays.all(startDate, endDate).map(row => row.date);
+    const tradingDaysResult = await this.db.query(
+      `SELECT DISTINCT date
+       FROM daily_prices
+       WHERE date >= $1 AND date <= $2
+       ORDER BY date ASC`,
+      [startDate, endDate]
+    );
+    const tradingDays = tradingDaysResult.rows.map(row => row.date);
 
     if (tradingDays.length === 0) {
       throw new Error('No trading days found in date range');
@@ -97,7 +72,7 @@ class FactorBacktestAdapter {
       const date = tradingDays[i];
 
       // Calculate portfolio value
-      const portfolioValue = this.calculatePortfolioValue(positions, date, capital);
+      const portfolioValue = await this.calculatePortfolioValue(positions, date, capital);
 
       // Track running maximum for drawdown
       if (portfolioValue > runningMax) {
@@ -147,7 +122,7 @@ class FactorBacktestAdapter {
           });
 
           // Execute rebalance
-          const rebalanceResult = this.executeRebalance(
+          const rebalanceResult = await this.executeRebalance(
             positions,
             { long, short },
             portfolioValue,
@@ -238,18 +213,26 @@ class FactorBacktestAdapter {
    * - If price drops, we profit; if price rises, we lose
    * - The proceeds are already in cash, so we only add the unrealized P&L
    */
-  calculatePortfolioValue(positions, date, cash) {
+  async calculatePortfolioValue(positions, date, cash) {
     let value = cash;
 
     for (const [symbol, position] of positions) {
-      const priceRow = this.stmtGetLatestPrice.get(symbol, date);
+      const priceResult = await this.db.query(
+        `SELECT dp.adjusted_close as price
+         FROM daily_prices dp
+         JOIN companies c ON dp.company_id = c.id
+         WHERE c.symbol = $1 AND dp.date <= $2
+         ORDER BY dp.date DESC
+         LIMIT 1`,
+        [symbol, date]
+      );
 
-      if (!priceRow) {
+      if (priceResult.rows.length === 0) {
         console.warn(`No price found for ${symbol} on ${date}`);
         continue;
       }
 
-      const currentPrice = priceRow.price;
+      const currentPrice = priceResult.rows[0].price;
 
       if (position.side === 'long') {
         // Long: current market value
@@ -274,15 +257,23 @@ class FactorBacktestAdapter {
    * - Allocate 50% notional to longs, 50% notional to shorts
    * - Track positions; cash is implicit (NAV minus position values)
    */
-  executeRebalance(oldPositions, targets, portfolioValue, date, transactionCost) {
+  async executeRebalance(oldPositions, targets, portfolioValue, date, transactionCost) {
     const newPositions = new Map();
 
     // Calculate turnover cost (closing old + opening new positions)
     let turnoverNotional = 0;
     for (const [symbol, position] of oldPositions) {
-      const priceRow = this.stmtGetLatestPrice.get(symbol, date);
-      if (priceRow) {
-        turnoverNotional += position.shares * priceRow.price;
+      const priceResult = await this.db.query(
+        `SELECT dp.adjusted_close as price
+         FROM daily_prices dp
+         JOIN companies c ON dp.company_id = c.id
+         WHERE c.symbol = $1 AND dp.date <= $2
+         ORDER BY dp.date DESC
+         LIMIT 1`,
+        [symbol, date]
+      );
+      if (priceResult.rows.length > 0) {
+        turnoverNotional += position.shares * priceResult.rows[0].price;
       }
     }
 
@@ -299,10 +290,18 @@ class FactorBacktestAdapter {
       const perStockLong = targetLongNotional / targets.long.length;
 
       for (const stock of targets.long) {
-        const priceRow = this.stmtGetLatestPrice.get(stock.symbol, date);
-        if (!priceRow || priceRow.price <= 0) continue;
+        const priceResult = await this.db.query(
+          `SELECT dp.adjusted_close as price
+           FROM daily_prices dp
+           JOIN companies c ON dp.company_id = c.id
+           WHERE c.symbol = $1 AND dp.date <= $2
+           ORDER BY dp.date DESC
+           LIMIT 1`,
+          [stock.symbol, date]
+        );
+        if (priceResult.rows.length === 0 || priceResult.rows[0].price <= 0) continue;
 
-        const price = priceRow.price;
+        const price = priceResult.rows[0].price;
         const shares = Math.floor(perStockLong / price);
 
         if (shares > 0) {
@@ -322,10 +321,18 @@ class FactorBacktestAdapter {
       const perStockShort = targetShortNotional / targets.short.length;
 
       for (const stock of targets.short) {
-        const priceRow = this.stmtGetLatestPrice.get(stock.symbol, date);
-        if (!priceRow || priceRow.price <= 0) continue;
+        const priceResult = await this.db.query(
+          `SELECT dp.adjusted_close as price
+           FROM daily_prices dp
+           JOIN companies c ON dp.company_id = c.id
+           WHERE c.symbol = $1 AND dp.date <= $2
+           ORDER BY dp.date DESC
+           LIMIT 1`,
+          [stock.symbol, date]
+        );
+        if (priceResult.rows.length === 0 || priceResult.rows[0].price <= 0) continue;
 
-        const price = priceRow.price;
+        const price = priceResult.rows[0].price;
         const shares = Math.floor(perStockShort / price);
 
         if (shares > 0) {
