@@ -962,7 +962,7 @@ class ScreeningService {
   async getMacroContext() {
     try {
       const fredService = new FREDService(this.db);
-      return fredService.getMacroSignals();
+      return await fredService.getMacroSignals();
     } catch (error) {
       console.error('Failed to get macro context:', error.message);
       return null;

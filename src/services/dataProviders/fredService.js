@@ -174,20 +174,20 @@ class FREDService {
     }
 
     // Get series metadata
-    const seriesDef = this.db.prepare(`
+    const seriesDef = await (await this.db.prepare(`
       SELECT * FROM economic_series_definitions WHERE series_id = ?
-    `).get(seriesId);
+    `)).get(seriesId);
 
     // Insert/update observations
-    const insert = this.db.prepare(`
+    const insert = await this.db.prepare(`
       INSERT OR REPLACE INTO economic_indicators
       (series_id, series_name, category, observation_date, value, source, updated_at)
       VALUES (?, ?, ?, ?, ?, 'FRED', datetime('now'))
     `);
 
-    const transaction = this.db.transaction(() => {
+    const transaction = this.db.transaction(async () => {
       for (const obs of data) {
-        insert.run(
+        await insert.run(
           seriesId,
           seriesDef?.series_name || seriesId,
           seriesDef?.category || 'other',
@@ -197,7 +197,7 @@ class FREDService {
       }
     });
 
-    transaction();
+    await transaction();
 
     console.log(`  ${seriesId}: ${data.length} observations`);
     return data.length;
@@ -282,12 +282,12 @@ class FREDService {
    */
   async calculateDerivedMetrics() {
     // For each series, calculate changes vs prior periods
-    const seriesIds = this.db.prepare(`
+    const seriesIds = await (await this.db.prepare(`
       SELECT DISTINCT series_id FROM economic_indicators
-    `).all();
+    `)).all();
 
     for (const { series_id } of seriesIds) {
-      this.db.prepare(`
+      await (await this.db.prepare(`
         UPDATE economic_indicators AS ei
         SET
           change_1m = (
@@ -307,7 +307,7 @@ class FREDService {
             LIMIT 1
           )
         WHERE series_id = ?
-      `).run(series_id);
+      `)).run(series_id);
     }
   }
 
@@ -332,12 +332,12 @@ class FREDService {
     };
 
     for (const [field, seriesId] of Object.entries(yieldSeries)) {
-      const result = this.db.prepare(`
+      const result = await (await this.db.prepare(`
         SELECT value FROM economic_indicators
         WHERE series_id = ?
         ORDER BY observation_date DESC
         LIMIT 1
-      `).get(seriesId);
+      `)).get(seriesId);
 
       yields[field] = result?.value || null;
     }
@@ -362,7 +362,7 @@ class FREDService {
     const yieldValues = Object.values(yields).filter(v => v !== null);
     const level = yieldValues.reduce((a, b) => a + b, 0) / yieldValues.length;
 
-    this.db.prepare(`
+    await (await this.db.prepare(`
       INSERT OR REPLACE INTO yield_curve (
         curve_date,
         y_1m, y_3m, y_6m, y_1y, y_2y, y_3y, y_5y, y_7y, y_10y, y_20y, y_30y,
@@ -370,7 +370,7 @@ class FREDService {
         curvature, level,
         is_inverted_2s10s, is_inverted_3m10y
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    `)).run(
       today,
       yields.y_1m, yields.y_3m, yields.y_6m, yields.y_1y,
       yields.y_2y, yields.y_3y, yields.y_5y, yields.y_7y,
@@ -387,14 +387,14 @@ class FREDService {
   /**
    * Get current macro snapshot
    */
-  getMacroSnapshot() {
-    const indicators = this.db.prepare(`
+  async getMacroSnapshot() {
+    const indicators = await (await this.db.prepare(`
       SELECT * FROM v_latest_economic_indicators
-    `).all();
+    `)).all();
 
-    const yieldCurve = this.db.prepare(`
+    const yieldCurve = await (await this.db.prepare(`
       SELECT * FROM v_current_yield_curve
-    `).get();
+    `)).get();
 
     // Organize by category
     const snapshot = {
@@ -427,14 +427,14 @@ class FREDService {
   /**
    * Get key macro signals for trading
    */
-  getMacroSignals() {
-    const yc = this.db.prepare(`SELECT * FROM v_current_yield_curve`).get();
-    const vix = this.db.prepare(`
+  async getMacroSignals() {
+    const yc = await (await this.db.prepare(`SELECT * FROM v_current_yield_curve`)).get();
+    const vix = await (await this.db.prepare(`
       SELECT value FROM v_latest_economic_indicators WHERE series_id = 'VIXCLS'
-    `).get();
-    const hySpread = this.db.prepare(`
+    `)).get();
+    const hySpread = await (await this.db.prepare(`
       SELECT value FROM v_latest_economic_indicators WHERE series_id = 'BAMLH0A0HYM2'
-    `).get();
+    `)).get();
 
     const signals = [];
 
@@ -541,15 +541,15 @@ class FREDService {
       console.log(`   Found ${data.length} observations`);
 
       // Store in economic_indicators table
-      const insert = this.db.prepare(`
+      const insert = await this.db.prepare(`
         INSERT OR REPLACE INTO economic_indicators
         (series_id, series_name, category, observation_date, value, source, updated_at)
         VALUES (?, ?, ?, ?, ?, 'FRED', datetime('now'))
       `);
 
-      const transaction = this.db.transaction(() => {
+      const transaction = this.db.transaction(async () => {
         for (const obs of data) {
-          insert.run(
+          await insert.run(
             'WILL5000IND',
             'Wilshire 5000 Total Market Index',
             'market_valuation',
@@ -559,7 +559,7 @@ class FREDService {
         }
       });
 
-      transaction();
+      await transaction();
 
       // Get date range stored
       const firstDate = data[0]?.date;
@@ -588,15 +588,15 @@ class FREDService {
    * @param {string} targetDate - Date in YYYY-MM-DD format
    * @returns {Object|null} { date, value } or null if not found
    */
-  getWilshire5000ForDate(targetDate) {
-    const result = this.db.prepare(`
+  async getWilshire5000ForDate(targetDate) {
+    const result = await (await this.db.prepare(`
       SELECT observation_date as date, value
       FROM economic_indicators
       WHERE series_id = 'WILL5000IND'
         AND observation_date <= ?
       ORDER BY observation_date DESC
       LIMIT 1
-    `).get(targetDate);
+    `)).get(targetDate);
 
     return result || null;
   }
@@ -605,15 +605,15 @@ class FREDService {
    * Check if we have Wilshire 5000 data for a date range
    * @returns {Object} Coverage statistics
    */
-  getWilshire5000Coverage() {
-    const result = this.db.prepare(`
+  async getWilshire5000Coverage() {
+    const result = await (await this.db.prepare(`
       SELECT
         MIN(observation_date) as first_date,
         MAX(observation_date) as last_date,
         COUNT(*) as observation_count
       FROM economic_indicators
       WHERE series_id = 'WILL5000IND'
-    `).get();
+    `)).get();
 
     return {
       hasData: result.observation_count > 0,

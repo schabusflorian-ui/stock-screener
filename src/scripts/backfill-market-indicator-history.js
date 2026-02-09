@@ -268,7 +268,7 @@ class MarketIndicatorBackfill {
     // This provides accurate market cap data for Buffett Indicator (pre-June 2024)
     if (!skipFRED) {
       console.log('Step 1: Fetching FRED Wilshire 5000 historical data...');
-      const wilshireCoverage = this.fredService.getWilshire5000Coverage();
+      const wilshireCoverage = await this.fredService.getWilshire5000Coverage();
       if (wilshireCoverage.hasData && wilshireCoverage.count > 1000) {
         console.log(`  ✓ Wilshire 5000 data already present (${wilshireCoverage.count} observations)`);
         console.log(`    Date range: ${wilshireCoverage.firstDate} to ${wilshireCoverage.lastDate}`);

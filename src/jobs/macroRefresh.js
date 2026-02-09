@@ -38,7 +38,7 @@ async function main() {
       console.log(`   Observations updated: ${result.totalUpdated}`);
 
       // Show current signals
-      const signals = fred.getMacroSignals();
+      const signals = await fred.getMacroSignals();
       console.log('\n📊 Current Macro Signals:');
       console.log(`   VIX: ${signals.summary.vix?.toFixed(2) || 'N/A'}`);
       console.log(`   HY Spread: ${signals.summary.hySpread?.toFixed(2) || 'N/A'}%`);
