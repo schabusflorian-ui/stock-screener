@@ -4,7 +4,7 @@
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const crypto = require('crypto');
-const { getDatabase, isUsingPostgres } = require('../lib/db');
+const { getDatabase, getDatabaseAsync, isUsingPostgres } = require('../lib/db');
 
 function configurePassport(db) {
   // Serialize user into session
@@ -51,8 +51,57 @@ function configurePassport(db) {
       callbackURL: `${process.env.APP_URL || 'http://localhost:3000'}/api/auth/google/callback`,
       scope: ['profile', 'email']
     },
-    (accessToken, refreshToken, profile, done) => {
+    async (accessToken, refreshToken, profile, done) => {
       try {
+        // PostgreSQL mode - use async queries
+        if (isUsingPostgres()) {
+          const database = await getDatabaseAsync();
+
+          // Check if user already exists
+          let result = await database.query(
+            'SELECT * FROM users WHERE google_id = $1',
+            [profile.id]
+          );
+          let user = result.rows[0];
+
+          if (user) {
+            // Update last login and profile info
+            await database.query(`
+              UPDATE users
+              SET last_login_at = CURRENT_TIMESTAMP,
+                  name = $1,
+                  picture = $2,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE id = $3
+            `, [profile.displayName, profile.photos?.[0]?.value, user.id]);
+
+            // Refresh user data
+            result = await database.query('SELECT * FROM users WHERE id = $1', [user.id]);
+            user = result.rows[0];
+          } else {
+            // Create new user
+            const userId = crypto.randomUUID();
+            await database.query(`
+              INSERT INTO users (id, google_id, email, name, picture, last_login_at)
+              VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+            `, [
+              userId,
+              profile.id,
+              profile.emails[0].value,
+              profile.displayName,
+              profile.photos?.[0]?.value
+            ]);
+
+            result = await database.query('SELECT * FROM users WHERE id = $1', [userId]);
+            user = result.rows[0];
+
+            console.log(`[OAuth] New user created: ${user.email}`);
+          }
+
+          return done(null, user);
+        }
+
+        // SQLite mode - use synchronous queries
         // Check if user already exists
         let user = db.prepare('SELECT * FROM users WHERE google_id = ?').get(profile.id);
 
@@ -85,12 +134,12 @@ function configurePassport(db) {
 
           user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
 
-          console.log(`New user created: ${user.email}`);
+          console.log(`[OAuth] New user created: ${user.email}`);
         }
 
         return done(null, user);
       } catch (error) {
-        console.error('Passport Google Strategy error:', error);
+        console.error('[Passport] Google Strategy error:', error);
         return done(error, null);
       }
     }
