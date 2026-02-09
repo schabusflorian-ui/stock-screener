@@ -16,10 +16,10 @@ function getService(req) {
 // =========================================================================
 
 // GET /api/settings/updates - List all update schedules
-router.get('/updates', (req, res) => {
+router.get('/updates', async (req, res) => {
   try {
     const service = getService(req);
-    const schedules = service.getUpdateSchedules();
+    const schedules = await service.getUpdateSchedules();
     res.json({ success: true, data: schedules });
   } catch (error) {
     console.error('Error fetching update schedules:', error);
@@ -28,7 +28,7 @@ router.get('/updates', (req, res) => {
 });
 
 // PATCH /api/settings/updates/:name - Toggle schedule enabled/disabled
-router.patch('/updates/:name', (req, res) => {
+router.patch('/updates/:name', async (req, res) => {
   try {
     const { name } = req.params;
     const { enabled } = req.body;
@@ -38,7 +38,7 @@ router.patch('/updates/:name', (req, res) => {
     }
 
     const service = getService(req);
-    const updated = service.toggleUpdateSchedule(name, enabled);
+    const updated = await service.toggleUpdateSchedule(name, enabled);
 
     if (!updated) {
       return res.status(404).json({ success: false, error: 'Schedule not found' });
@@ -52,11 +52,11 @@ router.patch('/updates/:name', (req, res) => {
 });
 
 // GET /api/settings/updates/history - Get update history
-router.get('/updates/history', (req, res) => {
+router.get('/updates/history', async (req, res) => {
   try {
     const { schedule, limit = 50 } = req.query;
     const service = getService(req);
-    const history = service.getUpdateHistory(schedule || null, parseInt(limit));
+    const history = await service.getUpdateHistory(schedule || null, parseInt(limit));
     res.json({ success: true, data: history });
   } catch (error) {
     console.error('Error fetching update history:', error);
@@ -69,10 +69,10 @@ router.get('/updates/history', (req, res) => {
 // =========================================================================
 
 // GET /api/settings/data-health - Generate data health report
-router.get('/data-health', (req, res) => {
+router.get('/data-health', async (req, res) => {
   try {
     const service = getService(req);
-    const report = service.generateDataHealthReport();
+    const report = await service.generateDataHealthReport();
     res.json({ success: true, data: report });
   } catch (error) {
     console.error('Error generating data health report:', error);
@@ -81,10 +81,10 @@ router.get('/data-health', (req, res) => {
 });
 
 // GET /api/settings/health - Quick health check
-router.get('/health', (req, res) => {
+router.get('/health', async (req, res) => {
   try {
     const service = getService(req);
-    const health = service.runHealthCheck();
+    const health = await service.runHealthCheck();
     res.json({ success: true, data: health });
   } catch (error) {
     console.error('Error running health check:', error);
@@ -97,10 +97,10 @@ router.get('/health', (req, res) => {
 // =========================================================================
 
 // GET /api/settings/integrations - List all API integrations
-router.get('/integrations', (req, res) => {
+router.get('/integrations', async (req, res) => {
   try {
     const service = getService(req);
-    const integrations = service.getApiIntegrations();
+    const integrations = await service.getApiIntegrations();
     res.json({ success: true, data: integrations });
   } catch (error) {
     console.error('Error fetching API integrations:', error);
@@ -109,7 +109,7 @@ router.get('/integrations', (req, res) => {
 });
 
 // PATCH /api/settings/integrations/:name - Update API key
-router.patch('/integrations/:name', (req, res) => {
+router.patch('/integrations/:name', async (req, res) => {
   try {
     const { name } = req.params;
     const { apiKey } = req.body;
@@ -119,7 +119,7 @@ router.patch('/integrations/:name', (req, res) => {
     }
 
     const service = getService(req);
-    const updated = service.updateApiKey(name, apiKey);
+    const updated = await service.updateApiKey(name, apiKey);
 
     if (!updated) {
       return res.status(404).json({ success: false, error: 'Integration not found' });
@@ -150,10 +150,10 @@ router.post('/integrations/:name/test', async (req, res) => {
 // =========================================================================
 
 // GET /api/settings/preferences - Get user preferences
-router.get('/preferences', (req, res) => {
+router.get('/preferences', async (req, res) => {
   try {
     const service = getService(req);
-    const preferences = service.getUserPreferences('default');
+    const preferences = await service.getUserPreferences('default');
     res.json({ success: true, data: preferences });
   } catch (error) {
     console.error('Error fetching preferences:', error);
@@ -162,10 +162,10 @@ router.get('/preferences', (req, res) => {
 });
 
 // PATCH /api/settings/preferences - Update user preferences
-router.patch('/preferences', (req, res) => {
+router.patch('/preferences', async (req, res) => {
   try {
     const service = getService(req);
-    service.updateUserPreferences('default', req.body);
+    await service.updateUserPreferences('default', req.body);
     res.json({ success: true });
   } catch (error) {
     console.error('Error updating preferences:', error);
@@ -178,10 +178,10 @@ router.patch('/preferences', (req, res) => {
 // =========================================================================
 
 // GET /api/settings/database - Get database stats
-router.get('/database', (req, res) => {
+router.get('/database', async (req, res) => {
   try {
     const service = getService(req);
-    const stats = service.getDatabaseStats();
+    const stats = await service.getDatabaseStats();
     res.json({ success: true, data: stats });
   } catch (error) {
     console.error('Error fetching database stats:', error);
@@ -190,10 +190,10 @@ router.get('/database', (req, res) => {
 });
 
 // GET /api/settings/diagnostics - Get system diagnostics
-router.get('/diagnostics', (req, res) => {
+router.get('/diagnostics', async (req, res) => {
   try {
     const service = getService(req);
-    const diagnostics = service.getSystemDiagnostics();
+    const diagnostics = await service.getSystemDiagnostics();
     res.json({ success: true, data: diagnostics });
   } catch (error) {
     console.error('Error fetching diagnostics:', error);
@@ -202,11 +202,11 @@ router.get('/diagnostics', (req, res) => {
 });
 
 // GET /api/settings/logs - Query diagnostic logs
-router.get('/logs', (req, res) => {
+router.get('/logs', async (req, res) => {
   try {
     const { level, category, limit = 100 } = req.query;
     const service = getService(req);
-    const logs = service.getLogs({
+    const logs = await service.getLogs({
       level: level || undefined,
       category: category || undefined,
       limit: parseInt(limit),
@@ -219,11 +219,11 @@ router.get('/logs', (req, res) => {
 });
 
 // POST /api/settings/logs/cleanup - Clean up old logs
-router.post('/logs/cleanup', (req, res) => {
+router.post('/logs/cleanup', async (req, res) => {
   try {
     const { daysToKeep = 30 } = req.body;
     const service = getService(req);
-    const deleted = service.cleanupOldLogs(daysToKeep);
+    const deleted = await service.cleanupOldLogs(daysToKeep);
     res.json({ success: true, data: { deleted } });
   } catch (error) {
     console.error('Error cleaning up logs:', error);
@@ -236,10 +236,10 @@ router.post('/logs/cleanup', (req, res) => {
 // =========================================================================
 
 // GET /api/settings/system - Get all system settings
-router.get('/system', (req, res) => {
+router.get('/system', async (req, res) => {
   try {
     const service = getService(req);
-    const settings = service.getAllSettings();
+    const settings = await service.getAllSettings();
     res.json({ success: true, data: settings });
   } catch (error) {
     console.error('Error fetching system settings:', error);
@@ -248,11 +248,11 @@ router.get('/system', (req, res) => {
 });
 
 // GET /api/settings/system/:key - Get specific setting
-router.get('/system/:key', (req, res) => {
+router.get('/system/:key', async (req, res) => {
   try {
     const { key } = req.params;
     const service = getService(req);
-    const value = service.getSetting(key);
+    const value = await service.getSetting(key);
 
     if (value === null) {
       return res.status(404).json({ success: false, error: 'Setting not found' });
@@ -266,7 +266,7 @@ router.get('/system/:key', (req, res) => {
 });
 
 // PUT /api/settings/system/:key - Set a system setting
-router.put('/system/:key', (req, res) => {
+router.put('/system/:key', async (req, res) => {
   try {
     const { key } = req.params;
     const { value, description } = req.body;
@@ -276,7 +276,7 @@ router.put('/system/:key', (req, res) => {
     }
 
     const service = getService(req);
-    service.setSetting(key, value, description);
+    await service.setSetting(key, value, description);
     res.json({ success: true });
   } catch (error) {
     console.error('Error setting value:', error);

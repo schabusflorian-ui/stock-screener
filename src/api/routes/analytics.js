@@ -39,7 +39,7 @@ router.post('/track', optionalAuth, attachUserId, async (req, res) => {
 
     // Check if user has opted out of analytics
     if (req.userId) {
-      const prefs = db.prepare(`
+      const prefs = await db.prepare(`
         SELECT analytics_opted_in FROM user_preferences WHERE user_id = ?
       `).get(req.userId);
 
@@ -57,7 +57,7 @@ router.post('/track', optionalAuth, attachUserId, async (req, res) => {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    stmt.run(
+    await stmt.run(
       sessionId,
       req.userId || null,
       event,
@@ -95,7 +95,7 @@ router.post('/track/batch', optionalAuth, attachUserId, async (req, res) => {
 
     // Check if user has opted out
     if (req.userId) {
-      const prefs = db.prepare(`
+      const prefs = await db.prepare(`
         SELECT analytics_opted_in FROM user_preferences WHERE user_id = ?
       `).get(req.userId);
 
@@ -111,11 +111,11 @@ router.post('/track/batch', optionalAuth, attachUserId, async (req, res) => {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const insertMany = db.transaction((events) => {
+    const insertMany = db.transaction(async (events) => {
       let count = 0;
       for (const event of events) {
         if (event.event && event.category && event.sessionId) {
-          stmt.run(
+          await stmt.run(
             event.sessionId,
             req.userId || null,
             event.event,
@@ -133,7 +133,7 @@ router.post('/track/batch', optionalAuth, attachUserId, async (req, res) => {
       return count;
     });
 
-    const tracked = insertMany(events);
+    const tracked = await insertMany(events);
     res.json({ success: true, tracked });
   } catch (error) {
     console.error('Error batch tracking events:', error);
@@ -170,18 +170,18 @@ router.post('/session/start', optionalAuth, attachUserId, async (req, res) => {
     }
 
     // Check if session already exists
-    const existing = db.prepare('SELECT id FROM analytics_sessions WHERE session_id = ?').get(sessionId);
+    const existing = await db.prepare('SELECT id FROM analytics_sessions WHERE session_id = ?').get(sessionId);
 
     if (existing) {
       // Update existing session
-      db.prepare(`
+      await db.prepare(`
         UPDATE analytics_sessions
         SET user_id = COALESCE(?, user_id)
         WHERE session_id = ?
       `).run(req.userId, sessionId);
     } else {
       // Create new session
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO analytics_sessions (
           session_id, user_id, device, browser, os,
           screen_width, screen_height, landing_page, referrer,
@@ -226,7 +226,7 @@ router.post('/session/end', async (req, res) => {
       });
     }
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE analytics_sessions
       SET ended_at = CURRENT_TIMESTAMP,
           duration_seconds = ?,
@@ -267,7 +267,7 @@ router.get('/admin/summary', requireAdmin, async (req, res) => {
     const prevStartDateStr = prevStartDate.toISOString().split('T')[0];
 
     // Current period metrics
-    const currentMetrics = db.prepare(`
+    const currentMetrics = await db.prepare(`
       SELECT
         COUNT(DISTINCT session_id) as unique_sessions,
         COUNT(DISTINCT user_id) as unique_users,
@@ -277,7 +277,7 @@ router.get('/admin/summary', requireAdmin, async (req, res) => {
     `).get(startDateStr);
 
     // Previous period metrics
-    const prevMetrics = db.prepare(`
+    const prevMetrics = await db.prepare(`
       SELECT
         COUNT(DISTINCT session_id) as unique_sessions,
         COUNT(DISTINCT user_id) as unique_users,
@@ -287,14 +287,14 @@ router.get('/admin/summary', requireAdmin, async (req, res) => {
     `).get(prevStartDateStr, startDateStr);
 
     // Page views
-    const pageViews = db.prepare(`
+    const pageViews = await db.prepare(`
       SELECT COUNT(*) as count
       FROM analytics_events
       WHERE event_name = 'page_view' AND created_at >= ?
     `).get(startDateStr);
 
     // Average feedback rating
-    const feedbackStats = db.prepare(`
+    const feedbackStats = await db.prepare(`
       SELECT
         AVG(rating) as avg_rating,
         COUNT(*) as count
@@ -303,14 +303,14 @@ router.get('/admin/summary', requireAdmin, async (req, res) => {
     `).get(startDateStr);
 
     // Open issues count
-    const openIssues = db.prepare(`
+    const openIssues = await db.prepare(`
       SELECT COUNT(*) as count
       FROM user_feedback
       WHERE status = 'new' AND category = 'bug'
     `).get();
 
     // Feature usage
-    const featureUsage = db.prepare(`
+    const featureUsage = await db.prepare(`
       SELECT
         event_name,
         COUNT(*) as count,
@@ -323,7 +323,7 @@ router.get('/admin/summary', requireAdmin, async (req, res) => {
     `).all(startDateStr);
 
     // Recent feedback
-    const recentFeedback = db.prepare(`
+    const recentFeedback = await db.prepare(`
       SELECT
         id, feedback_type, rating, sentiment, message, feature, created_at
       FROM user_feedback
@@ -388,7 +388,7 @@ router.get('/admin/features', requireAdmin, async (req, res) => {
     const startDateStr = startDate.toISOString().split('T')[0];
 
     // Feature usage with completion rates
-    const features = db.prepare(`
+    const features = await db.prepare(`
       SELECT
         COALESCE(JSON_EXTRACT(properties, '$.feature'), event_name) as feature_name,
         COUNT(*) as usage_count,
@@ -402,7 +402,7 @@ router.get('/admin/features', requireAdmin, async (req, res) => {
     `).all(startDateStr);
 
     // Feature feedback (quick feedback)
-    const featureFeedback = db.prepare(`
+    const featureFeedback = await db.prepare(`
       SELECT
         feature,
         SUM(CASE WHEN response = 'positive' THEN 1 ELSE 0 END) as positive,
@@ -492,7 +492,7 @@ router.get('/admin/funnel', requireAdmin, async (req, res) => {
         params.push(step.filter.page);
       }
 
-      const result = db.prepare(query).get(...params);
+      const result = await db.prepare(query).get(...params);
 
       funnelData.push({
         step: step.step,
@@ -546,7 +546,7 @@ router.get('/admin/feedback', requireAdmin, async (req, res) => {
     const startDateStr = startDate.toISOString().split('T')[0];
 
     // Feedback by category
-    const byCategory = db.prepare(`
+    const byCategory = await db.prepare(`
       SELECT
         category,
         COUNT(*) as count,
@@ -558,7 +558,7 @@ router.get('/admin/feedback', requireAdmin, async (req, res) => {
     `).all(startDateStr);
 
     // Feedback by sentiment
-    const bySentiment = db.prepare(`
+    const bySentiment = await db.prepare(`
       SELECT
         sentiment,
         COUNT(*) as count
@@ -568,7 +568,7 @@ router.get('/admin/feedback', requireAdmin, async (req, res) => {
     `).all(startDateStr);
 
     // Feedback by status
-    const byStatus = db.prepare(`
+    const byStatus = await db.prepare(`
       SELECT
         status,
         COUNT(*) as count
@@ -593,11 +593,11 @@ router.get('/admin/feedback', requireAdmin, async (req, res) => {
     recentQuery += ' ORDER BY created_at DESC LIMIT 20';
 
     const recent = status !== 'all'
-      ? db.prepare(recentQuery).all(startDateStr, status)
-      : db.prepare(recentQuery).all(startDateStr);
+      ? await db.prepare(recentQuery).all(startDateStr, status)
+      : await db.prepare(recentQuery).all(startDateStr);
 
     // Quick feedback stats
-    const quickFeedbackStats = db.prepare(`
+    const quickFeedbackStats = await db.prepare(`
       SELECT
         response,
         COUNT(*) as count
@@ -665,7 +665,7 @@ router.get('/admin/events', requireAdmin, async (req, res) => {
     query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
     params.push(parseInt(limit), parseInt(offset));
 
-    const events = db.prepare(query).all(...params);
+    const events = await db.prepare(query).all(...params);
 
     // Get total count
     let countQuery = `
@@ -685,7 +685,7 @@ router.get('/admin/events', requireAdmin, async (req, res) => {
       countParams.push(event);
     }
 
-    const total = db.prepare(countQuery).get(...countParams);
+    const total = await db.prepare(countQuery).get(...countParams);
 
     // Parse properties JSON
     const parsedEvents = events.map(e => ({
@@ -730,7 +730,7 @@ router.get('/user/summary', optionalAuth, attachUserId, async (req, res) => {
     const startDateStr = startOfMonth.toISOString();
 
     // Total analyses
-    const analyses = db.prepare(`
+    const analyses = await db.prepare(`
       SELECT COUNT(*) as count
       FROM analytics_events
       WHERE user_id = ?
@@ -739,7 +739,7 @@ router.get('/user/summary', optionalAuth, attachUserId, async (req, res) => {
     `).get(req.userId, startDateStr);
 
     // Total page views
-    const pageViews = db.prepare(`
+    const pageViews = await db.prepare(`
       SELECT COUNT(*) as count
       FROM analytics_events
       WHERE user_id = ?
@@ -748,7 +748,7 @@ router.get('/user/summary', optionalAuth, attachUserId, async (req, res) => {
     `).get(req.userId, startDateStr);
 
     // Most used features
-    const topFeatures = db.prepare(`
+    const topFeatures = await db.prepare(`
       SELECT
         COALESCE(JSON_EXTRACT(properties, '$.feature'), event_name) as feature,
         COUNT(*) as count
@@ -762,7 +762,7 @@ router.get('/user/summary', optionalAuth, attachUserId, async (req, res) => {
     `).all(req.userId, startDateStr);
 
     // Session count
-    const sessions = db.prepare(`
+    const sessions = await db.prepare(`
       SELECT COUNT(DISTINCT session_id) as count
       FROM analytics_events
       WHERE user_id = ? AND created_at >= ?
