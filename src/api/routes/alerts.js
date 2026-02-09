@@ -63,7 +63,7 @@ router.use(async (req, res, next) => {
  * GET /api/alerts
  * Get all alerts with filters
  */
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const {
       types,
@@ -91,7 +91,7 @@ router.get('/', (req, res) => {
       offset: parseInt(offset) || 0
     };
 
-    const alerts = alertService.getAlerts(filters);
+    const alerts = await alertService.getAlerts(filters);
 
     // Parse JSON data field
     const enrichedAlerts = alerts.map(alert => ({
@@ -120,9 +120,9 @@ router.get('/', (req, res) => {
  * GET /api/alerts/summary
  * Get alert summary counts
  */
-router.get('/summary', (req, res) => {
+router.get('/summary', async (req, res) => {
   try {
-    const summary = alertService.getAlertSummary();
+    const summary = await alertService.getAlertSummary();
 
     res.json({
       success: true,
@@ -142,10 +142,10 @@ router.get('/summary', (req, res) => {
  * GET /api/alerts/dashboard
  * Get alerts for dashboard display
  */
-router.get('/dashboard', (req, res) => {
+router.get('/dashboard', async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 10, 50);
-    const alerts = alertService.getDashboardAlerts(limit);
+    const alerts = await alertService.getDashboardAlerts(limit);
 
     const enrichedAlerts = alerts.map(alert => ({
       ...alert,
@@ -168,7 +168,7 @@ router.get('/dashboard', (req, res) => {
  * GET /api/alerts/company/:id
  * Get alerts for a specific company
  */
-router.get('/company/:id', (req, res) => {
+router.get('/company/:id', async (req, res) => {
   try {
     const companyId = parseInt(req.params.id);
     const { limit, includeRead, includeDismissed } = req.query;
@@ -179,7 +179,7 @@ router.get('/company/:id', (req, res) => {
       includeDismissed: includeDismissed === 'true'
     };
 
-    const alerts = alertService.getCompanyAlerts(companyId, options);
+    const alerts = await alertService.getCompanyAlerts(companyId, options);
 
     const enrichedAlerts = alerts.map(alert => ({
       ...alert,
@@ -202,10 +202,10 @@ router.get('/company/:id', (req, res) => {
  * GET /api/alerts/clusters
  * Get alert clusters
  */
-router.get('/clusters', (req, res) => {
+router.get('/clusters', async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 20, 50);
-    const clusters = alertService.getClusters(limit);
+    const clusters = await alertService.getClusters(limit);
 
     const enrichedClusters = clusters.map(cluster => ({
       ...cluster,
@@ -226,10 +226,10 @@ router.get('/clusters', (req, res) => {
  * POST /api/alerts/:id/read
  * Mark alert as read
  */
-router.post('/:id/read', (req, res) => {
+router.post('/:id/read', async (req, res) => {
   try {
     const alertId = parseInt(req.params.id);
-    alertService.markAsRead(alertId);
+    await alertService.markAsRead(alertId);
 
     res.json({ success: true, message: 'Alert marked as read' });
   } catch (error) {
@@ -242,13 +242,13 @@ router.post('/:id/read', (req, res) => {
  * POST /api/alerts/read-all
  * Mark all alerts as read
  */
-router.post('/read-all', (req, res) => {
+router.post('/read-all', async (req, res) => {
   try {
     const { companyId } = req.body;
     const filters = {};
     if (companyId) filters.companyId = parseInt(companyId);
 
-    const result = alertService.markAllAsRead(filters);
+    const result = await alertService.markAllAsRead(filters);
 
     res.json({
       success: true,
@@ -264,10 +264,10 @@ router.post('/read-all', (req, res) => {
  * POST /api/alerts/:id/dismiss
  * Dismiss an alert
  */
-router.post('/:id/dismiss', (req, res) => {
+router.post('/:id/dismiss', async (req, res) => {
   try {
     const alertId = parseInt(req.params.id);
-    alertService.dismissAlert(alertId);
+    await alertService.dismissAlert(alertId);
 
     res.json({ success: true, message: 'Alert dismissed' });
   } catch (error) {
@@ -280,7 +280,7 @@ router.post('/:id/dismiss', (req, res) => {
  * POST /api/alerts/scan
  * Trigger a manual alert scan
  */
-router.post('/scan', (req, res) => {
+router.post('/scan', async (req, res) => {
   try {
     const { companyIds, trigger = 'manual' } = req.body;
 
@@ -303,7 +303,7 @@ router.post('/scan', (req, res) => {
  * POST /api/alerts/scan/daily
  * Trigger daily alert scan for all companies
  */
-router.post('/scan/daily', (req, res) => {
+router.post('/scan/daily', async (req, res) => {
   try {
     const results = await alertService.runDetection('daily_scan');
 
@@ -321,7 +321,7 @@ router.post('/scan/daily', (req, res) => {
  * GET /api/alerts/config
  * Get alert configuration (types, signals, etc.)
  */
-router.get('/config', (req, res) => {
+router.get('/config', async (req, res) => {
   try {
     res.json({
       success: true,
@@ -344,7 +344,7 @@ router.get('/config', (req, res) => {
  * GET /api/alerts/summary/ai
  * Get AI-generated "What Matters Today" summary
  */
-router.get('/summary/ai', (req, res) => {
+router.get('/summary/ai', async (req, res) => {
   try {
     const userId = req.query.userId || 'default';
     const summary = await aiSummarizer.generateWhatMattersToday(userId);
@@ -363,10 +363,10 @@ router.get('/summary/ai', (req, res) => {
  * GET /api/alerts/digest/preferences
  * Get user's digest preferences
  */
-router.get('/digest/preferences', (req, res) => {
+router.get('/digest/preferences', async (req, res) => {
   try {
     const userId = req.query.userId || 'default';
-    const prefs = digestManager.getDigestPreferences(userId);
+    const prefs = await digestManager.getDigestPreferences(userId);
 
     res.json({
       success: true,
@@ -385,13 +385,13 @@ router.get('/digest/preferences', (req, res) => {
  * PUT /api/alerts/digest/preferences
  * Update user's digest preferences
  */
-router.put('/digest/preferences', (req, res) => {
+router.put('/digest/preferences', async (req, res) => {
   try {
     const userId = req.body.userId || 'default';
     const updates = req.body;
     delete updates.userId;
 
-    const prefs = digestManager.updateDigestPreferences(userId, updates);
+    const prefs = await digestManager.updateDigestPreferences(userId, updates);
 
     res.json({
       success: true,
@@ -408,11 +408,11 @@ router.put('/digest/preferences', (req, res) => {
  * GET /api/alerts/digest/pending
  * Get pending digest items for a user
  */
-router.get('/digest/pending', (req, res) => {
+router.get('/digest/pending', async (req, res) => {
   try {
     const userId = req.query.userId || 'default';
     const digestType = req.query.type || null;
-    const pending = digestManager.getPendingDigestItems(userId, digestType);
+    const pending = await digestManager.getPendingDigestItems(userId, digestType);
 
     res.json({
       success: true,
@@ -431,7 +431,7 @@ router.get('/digest/pending', (req, res) => {
  * POST /api/alerts/digest/generate
  * Generate and preview a digest (without sending)
  */
-router.post('/digest/generate', (req, res) => {
+router.post('/digest/generate', async (req, res) => {
   try {
     const userId = req.body.userId || 'default';
     const digest = await digestManager.generateDailyDigest(userId);
@@ -464,7 +464,7 @@ router.post('/digest/generate', (req, res) => {
  * GET /api/alerts/actionability
  * Get alerts filtered/sorted by actionability
  */
-router.get('/actionability', (req, res) => {
+router.get('/actionability', async (req, res) => {
   try {
     const {
       minLevel = 'medium',
@@ -474,7 +474,7 @@ router.get('/actionability', (req, res) => {
     } = req.query;
 
     // Get recent alerts
-    const alerts = alertService.getAlerts({
+    const alerts = await alertService.getAlerts({
       limit: Math.min(parseInt(limit) || 50, 200),
       offset: parseInt(offset) || 0
     });
@@ -520,7 +520,7 @@ router.get('/actionability', (req, res) => {
  * GET /api/alerts/market-context
  * Get current market regime and context
  */
-router.get('/market-context', (req, res) => {
+router.get('/market-context', async (req, res) => {
   try {
     const regime = getCurrentRegime(database);
 
@@ -538,7 +538,7 @@ router.get('/market-context', (req, res) => {
  * GET /api/alerts/stats
  * Get alert volume statistics
  */
-router.get('/stats', (req, res) => {
+router.get('/stats', async (req, res) => {
   try {
     const userId = req.query.userId || 'default';
 

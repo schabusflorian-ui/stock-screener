@@ -290,9 +290,9 @@ const screeningRouter = require('./routes/screening');
 const trendsRouter = require('./routes/trends');
 const sectorsRouter = require('./routes/sectors');
 const classificationsRouter = require('./routes/classifications');
-// const ipoRouter = require('./routes/ipo'); // Temporarily disabled due to initialization issue
+const ipoRouter = require('./routes/ipo');
 const updatesRouter = require('./routes/updates');
-// const insidersRouter = require('./routes/insiders'); // Temporarily disabled due to initialization issue
+const insidersRouter = require('./routes/insiders');
 const capitalRouter = require('./routes/capital'); // FIXED: Now uses lazy initialization and getDatabaseAsync()
 const sentimentRouter = require('./routes/sentiment'); // FIXED: Now uses lazy initialization and getDatabaseAsync()
 const validationRouter = require('./routes/validation');
@@ -302,7 +302,7 @@ const dcfRouter = require('./routes/dcf'); // FIXED: Now uses getDatabaseAsync()
 const earningsRouter = require('./routes/earnings'); // FIXED: Now uses lazy initialization
 const priceUpdatesRouter = require('./routes/priceUpdates');
 const fiscalRouter = require('./routes/fiscal'); // FIXED: Now uses lazy initialization
-// const alertsRouter = require('./routes/alerts'); // Temporarily disabled due to syntax errors
+const alertsRouter = require('./routes/alerts');
 const indicesRouter = require('./routes/indices');
 const dividendsRouter = require('./routes/dividends');
 const investorsRouter = require('./routes/investors');
@@ -386,9 +386,9 @@ app.use('/api/screening', screeningRouter);
 app.use('/api/trends', trendsRouter);
 app.use('/api/sectors', sectorsRouter);
 app.use('/api/classifications', classificationsRouter);
-// app.use('/api/ipo', ipoRouter); // Temporarily disabled
+app.use('/api/ipo', ipoRouter);
 app.use('/api/updates', updatesRouter);
-// app.use('/api/insiders', insidersRouter); // Temporarily disabled
+app.use('/api/insiders', insidersRouter);
 app.use('/api/capital', capitalRouter); // FIXED: Now uses lazy initialization and getDatabaseAsync()
 app.use('/api/sentiment', sentimentRouter); // FIXED: Now uses lazy initialization and getDatabaseAsync()
 app.use('/api/validation', validationRouter);
@@ -398,7 +398,7 @@ app.use('/api/dcf', dcfRouter); // FIXED: Now uses getDatabaseAsync() throughout
 app.use('/api/earnings', earningsRouter); // FIXED: Now uses lazy initialization
 app.use('/api/price-updates', priceUpdatesRouter);
 app.use('/api/fiscal', fiscalRouter); // FIXED: Now uses lazy initialization
-// app.use('/api/alerts', alertsRouter); // Temporarily disabled due to syntax errors
+app.use('/api/alerts', alertsRouter);
 app.use('/api/indices', indicesRouter);
 app.use('/api/dividends', dividendsRouter);
 app.use('/api/investors', investorsRouter);

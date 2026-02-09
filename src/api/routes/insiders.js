@@ -6,14 +6,26 @@ const router = express.Router();
 const { getDatabaseAsync } = require('../../database');
 const InsiderTracker = require('../../services/insiderTracker');
 
-let insiderTracker;
+let insiderTracker = null;
+let insiderTrackerPromise = null;
 
-// Initialize insider tracker
-try {
-    const database = await getDatabaseAsync();
-  insiderTracker = new InsiderTracker(database);
-} catch (error) {
-  console.error('Failed to initialize InsiderTracker:', error.message);
+async function getInsiderTracker() {
+  if (insiderTracker) return insiderTracker;
+  if (insiderTrackerPromise) return insiderTrackerPromise;
+
+  insiderTrackerPromise = (async () => {
+    try {
+      const database = await getDatabaseAsync();
+      insiderTracker = new InsiderTracker(database);
+      return insiderTracker;
+    } catch (error) {
+      console.error('Failed to initialize InsiderTracker:', error.message);
+      insiderTrackerPromise = null;
+      throw error;
+    }
+  })();
+
+  return insiderTrackerPromise;
 }
 
 /**
@@ -25,12 +37,10 @@ try {
  */
 router.get('/top-buying', async (req, res) => {
   try {
-    if (!insiderTracker) {
-      return res.status(503).json({ error: 'Insider tracking service unavailable' });
-    }
+    const tracker = await getInsiderTracker();
 
     const { limit = 20, period = '3m' } = req.query;
-    const results = insiderTracker.getTopInsiderBuying(parseInt(limit), period);
+    const results = await tracker.getTopInsiderBuying(parseInt(limit), period);
 
     res.json({
       period,
@@ -51,6 +61,7 @@ router.get('/top-buying', async (req, res) => {
  */
 router.get('/recent', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { limit = 50, type = 'all' } = req.query;
 
     let whereClause = '';
@@ -98,6 +109,7 @@ router.get('/recent', async (req, res) => {
  */
 router.get('/signals', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { period = '3m', signal = 'all' } = req.query;
 
     let whereClause = '';
@@ -151,6 +163,8 @@ router.get('/signals', async (req, res) => {
  */
 router.get('/company/:symbol', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
+    const tracker = await getInsiderTracker();
     const { symbol } = req.params;
     const { months = 12, type = 'all' } = req.query;
 
@@ -162,12 +176,8 @@ router.get('/company/:symbol', async (req, res) => {
       return res.status(404).json({ error: 'Company not found' });
     }
 
-    if (!insiderTracker) {
-      return res.status(503).json({ error: 'Insider tracking service unavailable' });
-    }
-
     // Get activity
-    const activity = insiderTracker.getInsiderActivity(company.id, {
+    const activity = await tracker.getInsiderActivity(company.id, {
       months: parseInt(months),
       transactionType: type === 'all' ? null : type
     });
@@ -175,7 +185,7 @@ router.get('/company/:symbol', async (req, res) => {
     // Get summary for different periods
     const summaries = {};
     for (const period of ['1m', '3m', '6m', '1y']) {
-      summaries[period] = insiderTracker.calculateSummary(company.id, period);
+      summaries[period] = await tracker.calculateSummary(company.id, period);
     }
 
     // Get list of insiders for this company
@@ -215,6 +225,7 @@ router.get('/company/:symbol', async (req, res) => {
  */
 router.get('/company/:symbol/chart', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { symbol } = req.params;
     const { months = 24 } = req.query;
 
@@ -284,6 +295,7 @@ router.get('/company/:symbol/chart', async (req, res) => {
  */
 router.get('/insider/:cik', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { cik } = req.params;
 
     const insider = database.prepare(`
@@ -354,6 +366,7 @@ router.get('/insider/:cik', async (req, res) => {
  */
 router.get('/cluster-buying', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { minInsiders = 2, days = 30 } = req.query;
 
     const startDate = new Date();
