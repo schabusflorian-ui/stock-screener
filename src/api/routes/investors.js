@@ -159,7 +159,7 @@ const INVESTOR_STATUS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
  * GET /api/investors/status
  * Quick status for 13F holdings - used by Updates Dashboard
  */
-router.get('/status', (req, res) => {
+router.get('/status', async (req, res) => {
   try {
     // Return cached if fresh
     if (investorStatusCache.data && investorStatusCache.lastUpdated &&
@@ -169,7 +169,7 @@ router.get('/status', (req, res) => {
 
     const db = req.app.get('db');
     // Simple fast query - just get counts and latest filing date
-    const stats = db.prepare(`
+    const stats = await db.prepare(`
       SELECT
         COUNT(*) as investor_count,
         MAX(latest_filing_date) as latest_filing
@@ -177,7 +177,7 @@ router.get('/status', (req, res) => {
       WHERE latest_filing_date IS NOT NULL
     `).get();
 
-    const holdingsCount = db.prepare(`
+    const holdingsCount = await db.prepare(`
       SELECT COUNT(*) as count FROM investor_holdings
     `).get();
 
@@ -203,9 +203,9 @@ router.get('/status', (req, res) => {
  * GET /api/investors
  * List all famous investors
  */
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const investors = investorService.getAllInvestors();
+    const investors = await investorService.getAllInvestors();
     res.json({
       success: true,
       count: investors.length,

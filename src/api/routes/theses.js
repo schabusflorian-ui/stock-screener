@@ -16,10 +16,10 @@ const getServices = (req) => {
 // ============================================
 
 // GET /api/theses/dashboard - Get thesis dashboard data
-router.get('/dashboard', (req, res) => {
+router.get('/dashboard', async (req, res) => {
   try {
     const { thesis } = getServices(req);
-    const dashboard = thesis.getThesisDashboard();
+    const dashboard = await thesis.getThesisDashboard();
 
     res.json({
       success: true,
@@ -35,10 +35,10 @@ router.get('/dashboard', (req, res) => {
 // ============================================
 
 // GET /api/theses/templates - List all templates
-router.get('/templates', (req, res) => {
+router.get('/templates', async (req, res) => {
   try {
     const { thesis } = getServices(req);
-    const templates = thesis.getAllTemplates();
+    const templates = await thesis.getAllTemplates();
 
     res.json({
       success: true,

@@ -239,7 +239,7 @@ router.post('/portfolios/:id/analyze', async (req, res) => {
  * GET /api/attribution/recommendations
  * Get recent agent recommendations
  */
-router.get('/recommendations', (req, res) => {
+router.get('/recommendations', async (req, res) => {
   try {
     const db = getDb(req);
     const { portfolioId, limit = 20, executed } = req.query;
@@ -262,7 +262,7 @@ router.get('/recommendations', (req, res) => {
     query += ' ORDER BY ar.created_at DESC LIMIT ?';
     params.push(parseInt(limit));
 
-    const recommendations = db.prepare(query).all(...params);
+    const recommendations = await db.prepare(query).all(...params);
     res.json({ success: true, data: recommendations });
   } catch (error) {
     console.error('Error getting recommendations:', error);
@@ -494,7 +494,7 @@ router.get('/portfolios/:id/signals', async (req, res) => {
  * GET /api/attribution/opportunities
  * Get scanned opportunities
  */
-router.get('/opportunities', (req, res) => {
+router.get('/opportunities', async (req, res) => {
   try {
     const db = getDb(req);
     const { limit = 50, triggerType, minScore = 0 } = req.query;
@@ -513,7 +513,7 @@ router.get('/opportunities', (req, res) => {
     query += ' ORDER BY osr.score DESC, osr.scan_date DESC LIMIT ?';
     params.push(parseInt(limit));
 
-    const opportunities = db.prepare(query).all(...params);
+    const opportunities = await db.prepare(query).all(...params);
     res.json({ success: true, data: opportunities });
   } catch (error) {
     console.error('Error getting opportunities:', error);

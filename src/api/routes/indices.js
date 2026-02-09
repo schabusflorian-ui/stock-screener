@@ -224,14 +224,14 @@ router.get('/benchmark', async (req, res) => {
  *   - period: '1m', '3m', '6m', '1y', '2y', '5y', 'max' (default '1y')
  *   - rollingWindow: '30d', '60d', '90d' - calculate rolling alpha instead of cumulative
  */
-router.get('/alpha/timeseries/:symbol', (req, res) => {
+router.get('/alpha/timeseries/:symbol', async (req, res) => {
   try {
     const db = req.app.get('db');
     const { symbol } = req.params;
     const { period = '1y', rollingWindow } = req.query;
 
     // Get company_id
-    const company = db.prepare(`
+    const company = await db.prepare(`
       SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
     `).get(symbol);
 
@@ -259,7 +259,7 @@ router.get('/alpha/timeseries/:symbol', (req, res) => {
     const startDateStr = startDate.toISOString().split('T')[0];
 
     // Get stock daily prices
-    const stockPrices = db.prepare(`
+    const stockPrices = await db.prepare(`
       SELECT date, adjusted_close as close
       FROM daily_prices
       WHERE company_id = ?
@@ -271,12 +271,12 @@ router.get('/alpha/timeseries/:symbol', (req, res) => {
     // Get SPY prices for the same period from daily_prices table (current data)
     // SPY is tracked as a company in the companies table with current prices
     let benchmarkPrices = [];
-    const spyCompany = db.prepare(`
-      SELECT id FROM companies WHERE symbol = 'SPY' 
+    const spyCompany = await db.prepare(`
+      SELECT id FROM companies WHERE symbol = 'SPY'
     `).get();
 
     if (spyCompany) {
-      benchmarkPrices = db.prepare(`
+      benchmarkPrices = await db.prepare(`
         SELECT date, adjusted_close as close
         FROM daily_prices
         WHERE company_id = ?
@@ -289,7 +289,7 @@ router.get('/alpha/timeseries/:symbol', (req, res) => {
     // Fallback to index_daily_prices table if SPY not in companies
     if (!benchmarkPrices || benchmarkPrices.length === 0) {
       try {
-        benchmarkPrices = db.prepare(`
+        benchmarkPrices = await db.prepare(`
           SELECT date, close
           FROM index_daily_prices
           WHERE symbol = 'SPY'
@@ -475,7 +475,7 @@ router.get('/alpha/:symbol', async (req, res) => {
  * Trigger ETF index price update (admin)
  * Returns immediately and runs processing in background
  */
-router.post('/etfs/update', (req, res) => {
+router.post('/etfs/update', async (req, res) => {
   try {
     // Return immediately
     res.json({

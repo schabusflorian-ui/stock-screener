@@ -155,14 +155,14 @@ router.get('/thresholds', (req, res) => {
  * GET /api/tca/summary
  * Get TCA summary statistics from recent executions
  */
-router.get('/summary', (req, res) => {
+router.get('/summary', async (req, res) => {
   try {
     const db = req.app.get('db');
 
     // Get execution benchmarks if they exist
     let benchmarks = [];
     try {
-      benchmarks = db.prepare(`
+      benchmarks = await db.prepare(`
         SELECT eb.*, ao.symbol, ao.side, ao.total_shares, ao.algorithm
         FROM execution_benchmarks eb
         JOIN algo_orders ao ON eb.order_id = ao.id
@@ -233,12 +233,12 @@ router.get('/summary', (req, res) => {
  * GET /api/tca/orders/:orderId
  * Get TCA metrics for a specific algorithmic order
  */
-router.get('/orders/:orderId', (req, res) => {
+router.get('/orders/:orderId', async (req, res) => {
   try {
     const { orderId } = req.params;
     const db = req.app.get('db');
 
-    const order = db.prepare(`
+    const order = await db.prepare(`
       SELECT ao.*, eb.*
       FROM algo_orders ao
       LEFT JOIN execution_benchmarks eb ON ao.id = eb.order_id
@@ -250,7 +250,7 @@ router.get('/orders/:orderId', (req, res) => {
     }
 
     // Get execution slices
-    const slices = db.prepare(`
+    const slices = await db.prepare(`
       SELECT * FROM algo_executions WHERE order_id = ? ORDER BY slice_number
     `).all(orderId);
 
