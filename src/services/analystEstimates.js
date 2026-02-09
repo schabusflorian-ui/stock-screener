@@ -11,10 +11,11 @@
  */
 
 const YahooFinance = require('yahoo-finance2').default;
+const { getDatabaseAsync } = require('../lib/db');
 
 class AnalystEstimatesFetcher {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
     this.yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
     this.cache = new Map();
     this.cacheTimeout = 15 * 60 * 1000; // 15 minutes cache
@@ -262,32 +263,32 @@ class AnalystEstimatesFetcher {
   async storeAnalystData(companyId, data) {
     if (!data) return;
 
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO analyst_estimates (
-        company_id, fetched_at,
-        current_price, target_high, target_low, target_mean, target_median,
-        number_of_analysts, recommendation_key, recommendation_mean,
-        upside_potential,
-        strong_buy, buy, hold, sell, strong_sell,
-        buy_percent, hold_percent, sell_percent,
-        earnings_beat_rate,
-        signal, signal_strength, signal_confidence, signal_score,
-        raw_data
-      ) VALUES (
-        ?, ?,
-        ?, ?, ?, ?, ?,
-        ?, ?, ?,
-        ?,
-        ?, ?, ?, ?, ?,
-        ?, ?, ?,
-        ?,
-        ?, ?, ?, ?,
-        ?
-      )
-    `);
+    const database = await getDatabaseAsync();
 
     try {
-      stmt.run(
+      await database.query(`
+        INSERT OR REPLACE INTO analyst_estimates (
+          company_id, fetched_at,
+          current_price, target_high, target_low, target_mean, target_median,
+          number_of_analysts, recommendation_key, recommendation_mean,
+          upside_potential,
+          strong_buy, buy, hold, sell, strong_sell,
+          buy_percent, hold_percent, sell_percent,
+          earnings_beat_rate,
+          signal, signal_strength, signal_confidence, signal_score,
+          raw_data
+        ) VALUES (
+          $1, $2,
+          $3, $4, $5, $6, $7,
+          $8, $9, $10,
+          $11,
+          $12, $13, $14, $15, $16,
+          $17, $18, $19,
+          $20,
+          $21, $22, $23, $24,
+          $25
+        )
+      `, [
         companyId,
         data.fetchedAt,
         data.priceTargets.current,
@@ -313,7 +314,7 @@ class AnalystEstimatesFetcher {
         data.signal.confidence,
         data.signal.score,
         JSON.stringify(data)
-      );
+      ]);
     } catch (error) {
       console.error(`Error storing analyst data for company ${companyId}:`, error.message);
     }
@@ -322,14 +323,15 @@ class AnalystEstimatesFetcher {
   /**
    * Get stored analyst data for a company
    */
-  getStoredAnalystData(companyId) {
-    const stmt = this.db.prepare(`
+  async getStoredAnalystData(companyId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT * FROM analyst_estimates
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY fetched_at DESC
       LIMIT 1
-    `);
-    return stmt.get(companyId);
+    `, [companyId]);
+    return result.rows[0];
   }
 
   /**
@@ -352,7 +354,7 @@ class AnalystEstimatesFetcher {
    */
   async getAnalystData(symbol, companyId, maxAgeMinutes = 60) {
     // Check stored data first
-    const stored = this.getStoredAnalystData(companyId);
+    const stored = await this.getStoredAnalystData(companyId);
 
     if (stored) {
       const age = (Date.now() - new Date(stored.fetched_at).getTime()) / (1000 * 60);

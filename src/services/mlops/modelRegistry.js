@@ -1,6 +1,8 @@
 // src/services/mlops/modelRegistry.js
 // Model Registry - Version tracking and model lifecycle management
 
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
+
 /**
  * ModelRegistry
  *
@@ -16,210 +18,9 @@
  * - A/B testing support
  */
 class ModelRegistry {
-  constructor(db) {
-    this.db = db.getDatabase ? db.getDatabase() : db;
-    this._ensureTables();
-    this._prepareStatements();
-  }
-
-  _ensureTables() {
-    // Model registry table
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS model_registry (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        model_name TEXT NOT NULL,
-        version TEXT NOT NULL,
-        model_type TEXT NOT NULL DEFAULT 'signal_weights',
-        status TEXT NOT NULL DEFAULT 'staged',
-
-        -- Artifacts
-        artifacts_json TEXT,
-        config_json TEXT,
-
-        -- Metrics from validation
-        train_sharpe REAL,
-        test_sharpe REAL,
-        walk_forward_efficiency REAL,
-        deflated_sharpe_p REAL,
-        alpha REAL,
-        max_drawdown REAL,
-
-        -- Validation details
-        validation_period_start DATE,
-        validation_period_end DATE,
-        optimization_run_id INTEGER,
-
-        -- Lifecycle
-        staged_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        promoted_at DATETIME,
-        deprecated_at DATETIME,
-        rollback_from_version TEXT,
-
-        -- Audit
-        promoted_by TEXT,
-        promotion_reason TEXT,
-        deprecation_reason TEXT,
-
-        UNIQUE(model_name, version)
-      )
-    `);
-
-    // Model performance tracking (live monitoring)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS model_performance_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        model_name TEXT NOT NULL,
-        version TEXT NOT NULL,
-        log_date DATE NOT NULL,
-
-        -- Daily metrics
-        daily_return REAL,
-        cumulative_return REAL,
-        realized_sharpe REAL,
-        benchmark_return REAL,
-        alpha_vs_benchmark REAL,
-
-        -- Drift detection
-        prediction_drift REAL,
-        feature_drift REAL,
-
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-
-        UNIQUE(model_name, version, log_date)
-      )
-    `);
-
-    // Model comparison snapshots
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS model_comparison (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        comparison_name TEXT NOT NULL,
-        model_a_name TEXT NOT NULL,
-        model_a_version TEXT NOT NULL,
-        model_b_name TEXT NOT NULL,
-        model_b_version TEXT NOT NULL,
-
-        -- Comparison results
-        period_start DATE,
-        period_end DATE,
-        model_a_sharpe REAL,
-        model_b_sharpe REAL,
-        model_a_alpha REAL,
-        model_b_alpha REAL,
-        winner TEXT,
-        confidence REAL,
-
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Indices
-    this.db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_model_registry_name_status
-      ON model_registry(model_name, status)
-    `);
-    this.db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_model_perf_log_name_date
-      ON model_performance_log(model_name, version, log_date)
-    `);
-  }
-
-  _prepareStatements() {
-    // Register new model version
-    this.stmtRegister = this.db.prepare(`
-      INSERT INTO model_registry (
-        model_name, version, model_type, status,
-        artifacts_json, config_json,
-        train_sharpe, test_sharpe, walk_forward_efficiency, deflated_sharpe_p,
-        alpha, max_drawdown,
-        validation_period_start, validation_period_end,
-        optimization_run_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    // Get model by name and version
-    this.stmtGetVersion = this.db.prepare(`
-      SELECT * FROM model_registry
-      WHERE model_name = ? AND version = ?
-    `);
-
-    // Get latest production model
-    this.stmtGetLatestProduction = this.db.prepare(`
-      SELECT * FROM model_registry
-      WHERE model_name = ? AND status = 'production'
-      ORDER BY promoted_at DESC
-      LIMIT 1
-    `);
-
-    // Get all versions for a model
-    this.stmtGetVersions = this.db.prepare(`
-      SELECT * FROM model_registry
-      WHERE model_name = ?
-      ORDER BY staged_at DESC
-    `);
-
-    // Get staged models awaiting promotion
-    this.stmtGetStaged = this.db.prepare(`
-      SELECT * FROM model_registry
-      WHERE status = 'staged'
-      ORDER BY staged_at DESC
-    `);
-
-    // Promote model to production
-    this.stmtPromote = this.db.prepare(`
-      UPDATE model_registry SET
-        status = 'production',
-        promoted_at = CURRENT_TIMESTAMP,
-        promoted_by = ?,
-        promotion_reason = ?
-      WHERE model_name = ? AND version = ?
-    `);
-
-    // Deprecate model
-    this.stmtDeprecate = this.db.prepare(`
-      UPDATE model_registry SET
-        status = 'deprecated',
-        deprecated_at = CURRENT_TIMESTAMP,
-        deprecation_reason = ?
-      WHERE model_name = ? AND version = ?
-    `);
-
-    // Deprecate all production versions (before promoting new one)
-    this.stmtDeprecateProduction = this.db.prepare(`
-      UPDATE model_registry SET
-        status = 'deprecated',
-        deprecated_at = CURRENT_TIMESTAMP,
-        deprecation_reason = ?
-      WHERE model_name = ? AND status = 'production'
-    `);
-
-    // Log performance
-    this.stmtLogPerformance = this.db.prepare(`
-      INSERT OR REPLACE INTO model_performance_log (
-        model_name, version, log_date,
-        daily_return, cumulative_return, realized_sharpe,
-        benchmark_return, alpha_vs_benchmark,
-        prediction_drift, feature_drift
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    // Get performance history
-    this.stmtGetPerformanceHistory = this.db.prepare(`
-      SELECT * FROM model_performance_log
-      WHERE model_name = ? AND version = ?
-      ORDER BY log_date DESC
-      LIMIT ?
-    `);
-
-    // Log comparison
-    this.stmtLogComparison = this.db.prepare(`
-      INSERT INTO model_comparison (
-        comparison_name, model_a_name, model_a_version, model_b_name, model_b_version,
-        period_start, period_end,
-        model_a_sharpe, model_b_sharpe, model_a_alpha, model_b_alpha,
-        winner, confidence
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
+    // Tables should be created via migrations, not in service code
   }
 
   /**
@@ -229,7 +30,8 @@ class ModelRegistry {
    * @param {Object} options - Model details
    * @returns {Object} Registered model
    */
-  registerModel(modelName, version, options = {}) {
+  async registerModel(modelName, version, options = {}) {
+    const database = await getDatabaseAsync();
     const {
       modelType = 'signal_weights',
       artifacts = {},
@@ -239,7 +41,16 @@ class ModelRegistry {
       optimizationRunId = null
     } = options;
 
-    this.stmtRegister.run(
+    await database.query(`
+      INSERT INTO model_registry (
+        model_name, version, model_type, status,
+        artifacts_json, config_json,
+        train_sharpe, test_sharpe, walk_forward_efficiency, deflated_sharpe_p,
+        alpha, max_drawdown,
+        validation_period_start, validation_period_end,
+        optimization_run_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+    `, [
       modelName,
       version,
       modelType,
@@ -255,9 +66,9 @@ class ModelRegistry {
       validationPeriod.start || null,
       validationPeriod.end || null,
       optimizationRunId
-    );
+    ]);
 
-    return this.getModel(modelName, version);
+    return await this.getModel(modelName, version);
   }
 
   /**
@@ -266,8 +77,13 @@ class ModelRegistry {
    * @param {string} version - Version string
    * @returns {Object|null} Model or null
    */
-  getModel(modelName, version) {
-    const row = this.stmtGetVersion.get(modelName, version);
+  async getModel(modelName, version) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM model_registry
+      WHERE model_name = $1 AND version = $2
+    `, [modelName, version]);
+    const row = result.rows[0];
     return row ? this._parseModel(row) : null;
   }
 
@@ -276,8 +92,15 @@ class ModelRegistry {
    * @param {string} modelName - Model name
    * @returns {Object|null} Model or null
    */
-  getLatestProduction(modelName) {
-    const row = this.stmtGetLatestProduction.get(modelName);
+  async getLatestProduction(modelName) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM model_registry
+      WHERE model_name = $1 AND status = 'production'
+      ORDER BY promoted_at DESC
+      LIMIT 1
+    `, [modelName]);
+    const row = result.rows[0];
     return row ? this._parseModel(row) : null;
   }
 
@@ -286,18 +109,28 @@ class ModelRegistry {
    * @param {string} modelName - Model name
    * @returns {Array} Array of model versions
    */
-  getVersionHistory(modelName) {
-    const rows = this.stmtGetVersions.all(modelName);
-    return rows.map(row => this._parseModel(row));
+  async getVersionHistory(modelName) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM model_registry
+      WHERE model_name = $1
+      ORDER BY staged_at DESC
+    `, [modelName]);
+    return result.rows.map(row => this._parseModel(row));
   }
 
   /**
    * Get all staged models awaiting promotion
    * @returns {Array} Array of staged models
    */
-  getStagedModels() {
-    const rows = this.stmtGetStaged.all();
-    return rows.map(row => this._parseModel(row));
+  async getStagedModels() {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM model_registry
+      WHERE status = 'staged'
+      ORDER BY staged_at DESC
+    `);
+    return result.rows.map(row => this._parseModel(row));
   }
 
   /**
@@ -307,22 +140,33 @@ class ModelRegistry {
    * @param {Object} options - Promotion details
    * @returns {Object} Promoted model
    */
-  promoteToProduction(modelName, version, options = {}) {
+  async promoteToProduction(modelName, version, options = {}) {
+    const database = await getDatabaseAsync();
     const {
       promotedBy = 'system',
       reason = 'Passed validation gates'
     } = options;
 
     // First, deprecate any existing production version
-    this.stmtDeprecateProduction.run(
-      `Replaced by ${version}`,
-      modelName
-    );
+    await database.query(`
+      UPDATE model_registry SET
+        status = 'deprecated',
+        deprecated_at = CURRENT_TIMESTAMP,
+        deprecation_reason = $1
+      WHERE model_name = $2 AND status = 'production'
+    `, [`Replaced by ${version}`, modelName]);
 
     // Then promote the new version
-    this.stmtPromote.run(promotedBy, reason, modelName, version);
+    await database.query(`
+      UPDATE model_registry SET
+        status = 'production',
+        promoted_at = CURRENT_TIMESTAMP,
+        promoted_by = $1,
+        promotion_reason = $2
+      WHERE model_name = $3 AND version = $4
+    `, [promotedBy, reason, modelName, version]);
 
-    return this.getModel(modelName, version);
+    return await this.getModel(modelName, version);
   }
 
   /**
@@ -332,9 +176,16 @@ class ModelRegistry {
    * @param {string} reason - Reason for deprecation
    * @returns {Object} Deprecated model
    */
-  deprecateModel(modelName, version, reason = 'Manual deprecation') {
-    this.stmtDeprecate.run(reason, modelName, version);
-    return this.getModel(modelName, version);
+  async deprecateModel(modelName, version, reason = 'Manual deprecation') {
+    const database = await getDatabaseAsync();
+    await database.query(`
+      UPDATE model_registry SET
+        status = 'deprecated',
+        deprecated_at = CURRENT_TIMESTAMP,
+        deprecation_reason = $1
+      WHERE model_name = $2 AND version = $3
+    `, [reason, modelName, version]);
+    return await this.getModel(modelName, version);
   }
 
   /**
@@ -344,17 +195,17 @@ class ModelRegistry {
    * @param {string} reason - Reason for rollback
    * @returns {Object} Rolled back model
    */
-  rollback(modelName, targetVersion, reason = 'Performance degradation') {
-    const targetModel = this.getModel(modelName, targetVersion);
+  async rollback(modelName, targetVersion, reason = 'Performance degradation') {
+    const targetModel = await this.getModel(modelName, targetVersion);
     if (!targetModel) {
       throw new Error(`Version ${targetVersion} not found for ${modelName}`);
     }
 
-    const currentProduction = this.getLatestProduction(modelName);
+    const currentProduction = await this.getLatestProduction(modelName);
 
     // Deprecate current production
     if (currentProduction) {
-      this.deprecateModel(
+      await this.deprecateModel(
         modelName,
         currentProduction.version,
         `Rolled back to ${targetVersion}: ${reason}`
@@ -364,7 +215,7 @@ class ModelRegistry {
     // Create a new version based on the target (with rollback marker)
     const newVersion = `${targetVersion}-rollback-${Date.now()}`;
 
-    this.registerModel(modelName, newVersion, {
+    await this.registerModel(modelName, newVersion, {
       modelType: targetModel.modelType,
       artifacts: targetModel.artifacts,
       config: targetModel.config,
@@ -383,7 +234,7 @@ class ModelRegistry {
     });
 
     // Immediately promote rollback version
-    return this.promoteToProduction(modelName, newVersion, {
+    return await this.promoteToProduction(modelName, newVersion, {
       promotedBy: 'system',
       reason: `Rollback from ${currentProduction?.version || 'none'}: ${reason}`
     });
@@ -396,10 +247,22 @@ class ModelRegistry {
    * @param {Date|string} date - Log date
    * @param {Object} metrics - Daily metrics
    */
-  logPerformance(modelName, version, date, metrics) {
+  async logPerformance(modelName, version, date, metrics) {
+    const database = await getDatabaseAsync();
     const dateStr = typeof date === 'string' ? date : date.toISOString().split('T')[0];
 
-    this.stmtLogPerformance.run(
+    const onConflict = isUsingPostgres()
+      ? 'ON CONFLICT (model_name, version, log_date) DO UPDATE SET daily_return = EXCLUDED.daily_return'
+      : 'OR REPLACE';
+
+    await database.query(`
+      INSERT ${onConflict} INTO model_performance_log (
+        model_name, version, log_date,
+        daily_return, cumulative_return, realized_sharpe,
+        benchmark_return, alpha_vs_benchmark,
+        prediction_drift, feature_drift
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `, [
       modelName,
       version,
       dateStr,
@@ -410,7 +273,7 @@ class ModelRegistry {
       metrics.alphaVsBenchmark || null,
       metrics.predictionDrift || null,
       metrics.featureDrift || null
-    );
+    ]);
   }
 
   /**
@@ -420,8 +283,15 @@ class ModelRegistry {
    * @param {number} limit - Number of days to retrieve
    * @returns {Array} Performance history
    */
-  getPerformanceHistory(modelName, version, limit = 30) {
-    return this.stmtGetPerformanceHistory.all(modelName, version, limit);
+  async getPerformanceHistory(modelName, version, limit = 30) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM model_performance_log
+      WHERE model_name = $1 AND version = $2
+      ORDER BY log_date DESC
+      LIMIT $3
+    `, [modelName, version, limit]);
+    return result.rows;
   }
 
   /**
@@ -432,9 +302,10 @@ class ModelRegistry {
    * @param {string} modelBVersion - Model B version
    * @returns {Object} Comparison results
    */
-  compareModels(modelAName, modelAVersion, modelBName, modelBVersion) {
-    const modelA = this.getModel(modelAName, modelAVersion);
-    const modelB = this.getModel(modelBName, modelBVersion);
+  async compareModels(modelAName, modelAVersion, modelBName, modelBVersion) {
+    const database = await getDatabaseAsync();
+    const modelA = await this.getModel(modelAName, modelAVersion);
+    const modelB = await this.getModel(modelBName, modelBVersion);
 
     if (!modelA || !modelB) {
       throw new Error('One or both models not found');
@@ -475,7 +346,14 @@ class ModelRegistry {
     comparison.confidence = Math.abs(scoreA - scoreB) / 4;
 
     // Log comparison
-    this.stmtLogComparison.run(
+    await database.query(`
+      INSERT INTO model_comparison (
+        comparison_name, model_a_name, model_a_version, model_b_name, model_b_version,
+        period_start, period_end,
+        model_a_sharpe, model_b_sharpe, model_a_alpha, model_b_alpha,
+        winner, confidence
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    `, [
       `${modelAName}:${modelAVersion} vs ${modelBName}:${modelBVersion}`,
       modelAName, modelAVersion,
       modelBName, modelBVersion,
@@ -483,7 +361,7 @@ class ModelRegistry {
       modelA.testSharpe, modelB.testSharpe,
       modelA.alpha, modelB.alpha,
       comparison.winner, comparison.confidence
-    );
+    ]);
 
     return comparison;
   }
@@ -495,7 +373,7 @@ class ModelRegistry {
    * @param {Object} gates - Validation thresholds
    * @returns {Object} Validation result
    */
-  validateModel(modelName, version, gates = {}) {
+  async validateModel(modelName, version, gates = {}) {
     const {
       minWFE = 0.50,           // Minimum walk-forward efficiency
       maxDeflatedSharpeP = 0.05, // Maximum p-value for deflated Sharpe
@@ -504,7 +382,7 @@ class ModelRegistry {
       minAlpha = 0            // Minimum alpha
     } = gates;
 
-    const model = this.getModel(modelName, version);
+    const model = await this.getModel(modelName, version);
     if (!model) {
       return { valid: false, errors: ['Model not found'], warnings: [] };
     }
@@ -559,8 +437,9 @@ class ModelRegistry {
    * Get summary statistics for all models
    * @returns {Object} Summary stats
    */
-  getSummary() {
-    const stats = this.db.prepare(`
+  async getSummary() {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         model_name,
         COUNT(*) as total_versions,
@@ -571,9 +450,8 @@ class ModelRegistry {
         MAX(promoted_at) as latest_promoted
       FROM model_registry
       GROUP BY model_name
-    `).all();
-
-    return stats;
+    `);
+    return result.rows;
   }
 
   /**

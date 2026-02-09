@@ -1,7 +1,7 @@
 // src/services/etfService.js
 // ETF Basket Service - Create portfolios based on ETF allocations
 
-const { getDatabaseAsync } = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 
 class EtfService {
   // No constructor needed for PostgreSQL

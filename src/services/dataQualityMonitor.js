@@ -5,17 +5,17 @@
  * Reports issues that could affect model performance.
  */
 
-const { getDatabase } = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 
 class DataQualityMonitor {
-  constructor(database = null) {
-    this.db = database || getDatabase();
+  constructor() {
+    // No database parameter needed
   }
 
   /**
    * Run all data quality checks
    */
-  runFullAudit() {
+  async runFullAudit() {
     const report = {
       timestamp: new Date().toISOString(),
       status: 'healthy',
@@ -25,14 +25,14 @@ class DataQualityMonitor {
     };
 
     // Run all checks
-    const checks = [
+    const checks = await Promise.all([
       this.checkDataFreshness(),
       this.checkDataCompleteness(),
       this.checkFeatureCoverage(),
       this.checkOutliers(),
       this.checkSurvivorshipBias(),
       this.checkCrossValidation()
-    ];
+    ]);
 
     for (const check of checks) {
       report.metrics[check.name] = check.metrics;
@@ -58,7 +58,9 @@ class DataQualityMonitor {
   /**
    * Check data freshness across key tables
    */
-  checkDataFreshness() {
+  async checkDataFreshness() {
+    const database = await getDatabaseAsync();
+
     const result = {
       name: 'data_freshness',
       metrics: {},
@@ -67,31 +69,34 @@ class DataQualityMonitor {
     };
 
     // Price data freshness - optimized with subquery
-    const priceStats = this.db.prepare(`
+    const priceStatsResult = await database.query(`
       WITH latest_prices AS (
         SELECT company_id, MAX(date) as latest_date
         FROM daily_prices
         GROUP BY company_id
       )
       SELECT
-        COUNT(*) as total_companies,
-        SUM(CASE WHEN latest_date >= date('now', '-1 day') THEN 1 ELSE 0 END) as fresh_1d,
-        SUM(CASE WHEN latest_date >= date('now', '-3 day') THEN 1 ELSE 0 END) as fresh_3d,
-        SUM(CASE WHEN latest_date >= date('now', '-7 day') THEN 1 ELSE 0 END) as fresh_7d,
+        COALESCE(COUNT(*), 0) as total_companies,
+        COALESCE(SUM(CASE WHEN latest_date >= date('now', '-1 day') THEN 1 ELSE 0 END), 0) as fresh_1d,
+        COALESCE(SUM(CASE WHEN latest_date >= date('now', '-3 day') THEN 1 ELSE 0 END), 0) as fresh_3d,
+        COALESCE(SUM(CASE WHEN latest_date >= date('now', '-7 day') THEN 1 ELSE 0 END), 0) as fresh_7d,
         MAX(latest_date) as latest_date
       FROM latest_prices
-    `).get();
+    `);
+    const priceStats = priceStatsResult.rows[0] || {};
 
     result.metrics.prices = {
-      total_companies: priceStats.total_companies,
-      fresh_1d: priceStats.fresh_1d,
-      fresh_3d: priceStats.fresh_3d,
-      fresh_7d: priceStats.fresh_7d,
+      total_companies: priceStats.total_companies || 0,
+      fresh_1d: priceStats.fresh_1d || 0,
+      fresh_3d: priceStats.fresh_3d || 0,
+      fresh_7d: priceStats.fresh_7d || 0,
       latest_date: priceStats.latest_date,
-      freshness_pct_1d: (priceStats.fresh_1d / priceStats.total_companies * 100).toFixed(1)
+      freshness_pct_1d: priceStats.total_companies > 0
+        ? (priceStats.fresh_1d / priceStats.total_companies * 100).toFixed(1)
+        : '0.0'
     };
 
-    if (priceStats.fresh_1d / priceStats.total_companies < 0.5) {
+    if (priceStats.total_companies > 0 && priceStats.fresh_1d / priceStats.total_companies < 0.5) {
       result.issues.push({
         type: 'stale_prices',
         message: `Only ${result.metrics.prices.freshness_pct_1d}% of companies have price data from last day`,
@@ -100,26 +105,27 @@ class DataQualityMonitor {
     }
 
     // Sentiment freshness
-    const sentimentStats = this.db.prepare(`
+    const sentimentStatsResult = await database.query(`
       SELECT
-        COUNT(*) as total,
-        COUNT(CASE WHEN sentiment_updated_at >= datetime('now', '-1 hour') THEN 1 END) as fresh_1h,
-        COUNT(CASE WHEN sentiment_updated_at >= datetime('now', '-4 hour') THEN 1 END) as fresh_4h,
-        COUNT(CASE WHEN sentiment_updated_at >= datetime('now', '-24 hour') THEN 1 END) as fresh_24h,
+        COALESCE(COUNT(*), 0) as total,
+        COALESCE(COUNT(CASE WHEN sentiment_updated_at >= datetime('now', '-1 hour') THEN 1 END), 0) as fresh_1h,
+        COALESCE(COUNT(CASE WHEN sentiment_updated_at >= datetime('now', '-4 hour') THEN 1 END), 0) as fresh_4h,
+        COALESCE(COUNT(CASE WHEN sentiment_updated_at >= datetime('now', '-24 hour') THEN 1 END), 0) as fresh_24h,
         MAX(sentiment_updated_at) as latest_update
       FROM companies
       WHERE sentiment_updated_at IS NOT NULL
-    `).get();
+    `);
+    const sentimentStats = sentimentStatsResult.rows[0];
 
     result.metrics.sentiment = {
-      total: sentimentStats.total,
-      fresh_1h: sentimentStats.fresh_1h,
-      fresh_4h: sentimentStats.fresh_4h,
-      fresh_24h: sentimentStats.fresh_24h,
+      total: sentimentStats.total || 0,
+      fresh_1h: sentimentStats.fresh_1h || 0,
+      fresh_4h: sentimentStats.fresh_4h || 0,
+      fresh_24h: sentimentStats.fresh_24h || 0,
       latest_update: sentimentStats.latest_update
     };
 
-    if (sentimentStats.fresh_4h < sentimentStats.total * 0.3) {
+    if (sentimentStats.total > 0 && sentimentStats.fresh_4h < sentimentStats.total * 0.3) {
       result.warnings.push({
         type: 'stale_sentiment',
         message: `Only ${sentimentStats.fresh_4h} of ${sentimentStats.total} companies have sentiment < 4 hours old`,
@@ -128,14 +134,15 @@ class DataQualityMonitor {
     }
 
     // Fundamentals freshness
-    const fundamentalsStats = this.db.prepare(`
+    const fundamentalsStatsResult = await database.query(`
       SELECT
         COUNT(DISTINCT company_id) as total,
         COUNT(DISTINCT CASE WHEN fiscal_period >= date('now', '-90 day') THEN company_id END) as fresh_90d,
         COUNT(DISTINCT CASE WHEN fiscal_period >= date('now', '-180 day') THEN company_id END) as fresh_180d,
         MAX(fiscal_period) as latest_period
       FROM calculated_metrics
-    `).get();
+    `);
+    const fundamentalsStats = fundamentalsStatsResult.rows[0];
 
     result.metrics.fundamentals = {
       total: fundamentalsStats.total,
@@ -150,7 +157,9 @@ class DataQualityMonitor {
   /**
    * Check data completeness (null rates)
    */
-  checkDataCompleteness() {
+  async checkDataCompleteness() {
+    const database = await getDatabaseAsync();
+
     const result = {
       name: 'data_completeness',
       metrics: {},
@@ -159,24 +168,31 @@ class DataQualityMonitor {
     };
 
     // Check key columns for null rates - sample last 90 days for speed
-    const priceNulls = this.db.prepare(`
+    const priceNullsResult = await database.query(`
       SELECT
-        COUNT(*) as total,
-        SUM(CASE WHEN close IS NULL THEN 1 ELSE 0 END) as null_close,
-        SUM(CASE WHEN volume IS NULL OR volume = 0 THEN 1 ELSE 0 END) as null_volume,
-        SUM(CASE WHEN adjusted_close IS NULL THEN 1 ELSE 0 END) as null_adj_close
+        COALESCE(COUNT(*), 0) as total,
+        COALESCE(SUM(CASE WHEN close IS NULL THEN 1 ELSE 0 END), 0) as null_close,
+        COALESCE(SUM(CASE WHEN volume IS NULL OR volume = 0 THEN 1 ELSE 0 END), 0) as null_volume,
+        COALESCE(SUM(CASE WHEN adjusted_close IS NULL THEN 1 ELSE 0 END), 0) as null_adj_close
       FROM daily_prices
       WHERE date >= date('now', '-90 day')
-    `).get();
+    `);
+    const priceNulls = priceNullsResult.rows[0];
 
     result.metrics.price_nulls = {
-      total_rows: priceNulls.total,
-      null_close_pct: (priceNulls.null_close / priceNulls.total * 100).toFixed(2),
-      null_volume_pct: (priceNulls.null_volume / priceNulls.total * 100).toFixed(2),
-      null_adj_close_pct: (priceNulls.null_adj_close / priceNulls.total * 100).toFixed(2)
+      total_rows: priceNulls.total || 0,
+      null_close_pct: priceNulls.total > 0
+        ? (priceNulls.null_close / priceNulls.total * 100).toFixed(2)
+        : '0.00',
+      null_volume_pct: priceNulls.total > 0
+        ? (priceNulls.null_volume / priceNulls.total * 100).toFixed(2)
+        : '0.00',
+      null_adj_close_pct: priceNulls.total > 0
+        ? (priceNulls.null_adj_close / priceNulls.total * 100).toFixed(2)
+        : '0.00'
     };
 
-    if (priceNulls.null_close / priceNulls.total > 0.01) {
+    if (priceNulls.total > 0 && priceNulls.null_close / priceNulls.total > 0.01) {
       result.issues.push({
         type: 'high_null_rate',
         message: `${result.metrics.price_nulls.null_close_pct}% of close prices are NULL`,
@@ -185,22 +201,31 @@ class DataQualityMonitor {
     }
 
     // Check fundamentals completeness
-    const fundamentalsNulls = this.db.prepare(`
+    const fundamentalsNullsResult = await database.query(`
       SELECT
-        COUNT(*) as total,
-        SUM(CASE WHEN pe_ratio IS NULL THEN 1 ELSE 0 END) as null_pe,
-        SUM(CASE WHEN pb_ratio IS NULL THEN 1 ELSE 0 END) as null_pb,
-        SUM(CASE WHEN roe IS NULL THEN 1 ELSE 0 END) as null_roe,
-        SUM(CASE WHEN roic IS NULL THEN 1 ELSE 0 END) as null_roic
+        COALESCE(COUNT(*), 0) as total,
+        COALESCE(SUM(CASE WHEN pe_ratio IS NULL THEN 1 ELSE 0 END), 0) as null_pe,
+        COALESCE(SUM(CASE WHEN pb_ratio IS NULL THEN 1 ELSE 0 END), 0) as null_pb,
+        COALESCE(SUM(CASE WHEN roe IS NULL THEN 1 ELSE 0 END), 0) as null_roe,
+        COALESCE(SUM(CASE WHEN roic IS NULL THEN 1 ELSE 0 END), 0) as null_roic
       FROM calculated_metrics
-    `).get();
+    `);
+    const fundamentalsNulls = fundamentalsNullsResult.rows[0];
 
     result.metrics.fundamental_nulls = {
-      total_rows: fundamentalsNulls.total,
-      null_pe_pct: (fundamentalsNulls.null_pe / fundamentalsNulls.total * 100).toFixed(2),
-      null_pb_pct: (fundamentalsNulls.null_pb / fundamentalsNulls.total * 100).toFixed(2),
-      null_roe_pct: (fundamentalsNulls.null_roe / fundamentalsNulls.total * 100).toFixed(2),
-      null_roic_pct: (fundamentalsNulls.null_roic / fundamentalsNulls.total * 100).toFixed(2)
+      total_rows: fundamentalsNulls.total || 0,
+      null_pe_pct: fundamentalsNulls.total > 0
+        ? (fundamentalsNulls.null_pe / fundamentalsNulls.total * 100).toFixed(2)
+        : '0.00',
+      null_pb_pct: fundamentalsNulls.total > 0
+        ? (fundamentalsNulls.null_pb / fundamentalsNulls.total * 100).toFixed(2)
+        : '0.00',
+      null_roe_pct: fundamentalsNulls.total > 0
+        ? (fundamentalsNulls.null_roe / fundamentalsNulls.total * 100).toFixed(2)
+        : '0.00',
+      null_roic_pct: fundamentalsNulls.total > 0
+        ? (fundamentalsNulls.null_roic / fundamentalsNulls.total * 100).toFixed(2)
+        : '0.00'
     };
 
     return result;
@@ -209,7 +234,9 @@ class DataQualityMonitor {
   /**
    * Check feature coverage for ML
    */
-  checkFeatureCoverage() {
+  async checkFeatureCoverage() {
+    const database = await getDatabaseAsync();
+
     const result = {
       name: 'feature_coverage',
       metrics: {},
@@ -217,33 +244,30 @@ class DataQualityMonitor {
       warnings: []
     };
 
-    // Check how many companies have full feature coverage
-    const featureCoverage = this.db.prepare(`
+    // Check how many companies have full feature coverage - aggregate in SQL to avoid memory issues
+    const featureCoverageResult = await database.query(`
       SELECT
-        c.id,
-        c.symbol,
-        CASE WHEN dp.close IS NOT NULL THEN 1 ELSE 0 END as has_price,
-        CASE WHEN cm.pe_ratio IS NOT NULL THEN 1 ELSE 0 END as has_fundamentals,
-        CASE WHEN c.sentiment_score IS NOT NULL THEN 1 ELSE 0 END as has_sentiment
+        COUNT(DISTINCT c.id) as total,
+        COUNT(DISTINCT CASE WHEN dp.company_id IS NOT NULL THEN c.id END) as with_price,
+        COUNT(DISTINCT CASE WHEN cm.company_id IS NOT NULL THEN c.id END) as with_fundamentals,
+        COUNT(DISTINCT CASE WHEN c.sentiment_score IS NOT NULL THEN c.id END) as with_sentiment,
+        COUNT(DISTINCT CASE WHEN dp.company_id IS NOT NULL AND cm.company_id IS NOT NULL THEN c.id END) as full_coverage
       FROM companies c
       LEFT JOIN (
-        SELECT company_id, MAX(date) as max_date, close
-        FROM daily_prices GROUP BY company_id
+        SELECT DISTINCT company_id FROM daily_prices
       ) dp ON dp.company_id = c.id
       LEFT JOIN (
-        SELECT company_id, pe_ratio, ROW_NUMBER() OVER (PARTITION BY company_id ORDER BY fiscal_period DESC) as rn
-        FROM calculated_metrics
-      ) cm ON cm.company_id = c.id AND cm.rn = 1
+        SELECT DISTINCT company_id FROM calculated_metrics
+      ) cm ON cm.company_id = c.id
       WHERE c.is_active = 1
-    `).all();
+    `);
+    const coverage = featureCoverageResult.rows[0];
 
-    const total = featureCoverage.length;
-    const withPrice = featureCoverage.filter(c => c.has_price).length;
-    const withFundamentals = featureCoverage.filter(c => c.has_fundamentals).length;
-    const withSentiment = featureCoverage.filter(c => c.has_sentiment).length;
-    const fullCoverage = featureCoverage.filter(c =>
-      c.has_price && c.has_fundamentals
-    ).length;
+    const total = parseInt(coverage.total) || 0;
+    const withPrice = parseInt(coverage.with_price) || 0;
+    const withFundamentals = parseInt(coverage.with_fundamentals) || 0;
+    const withSentiment = parseInt(coverage.with_sentiment) || 0;
+    const fullCoverage = parseInt(coverage.full_coverage) || 0;
 
     result.metrics = {
       total_active_companies: total,
@@ -268,7 +292,9 @@ class DataQualityMonitor {
   /**
    * Check for outliers in key metrics
    */
-  checkOutliers() {
+  async checkOutliers() {
+    const database = await getDatabaseAsync();
+
     const result = {
       name: 'outliers',
       metrics: {},
@@ -277,30 +303,34 @@ class DataQualityMonitor {
     };
 
     // Check for extreme price movements - sample recent data
-    const extremePrices = this.db.prepare(`
-      SELECT COUNT(*) as count
+    const extremePricesResult = await database.query(`
+      SELECT COALESCE(COUNT(*), 0) as count
       FROM daily_prices
       WHERE date >= date('now', '-7 day')
         AND ABS((close - open) / NULLIF(open, 0)) > 0.5
-    `).get();
+    `);
+    const extremePrices = extremePricesResult.rows[0];
 
-    result.metrics.extreme_price_moves = extremePrices.count;
+    result.metrics.extreme_price_moves = extremePrices.count || 0;
 
     // Check for extreme PE ratios
-    const extremePE = this.db.prepare(`
+    const extremePEResult = await database.query(`
       SELECT
-        COUNT(*) as total,
-        SUM(CASE WHEN pe_ratio > 1000 OR pe_ratio < -100 THEN 1 ELSE 0 END) as extreme
+        COALESCE(COUNT(*), 0) as total,
+        COALESCE(SUM(CASE WHEN pe_ratio > 1000 OR pe_ratio < -100 THEN 1 ELSE 0 END), 0) as extreme
       FROM calculated_metrics
-    `).get();
+    `);
+    const extremePE = extremePEResult.rows[0];
 
     result.metrics.extreme_pe_ratios = {
-      total: extremePE.total,
-      extreme: extremePE.extreme,
-      pct: (extremePE.extreme / extremePE.total * 100).toFixed(2)
+      total: extremePE.total || 0,
+      extreme: extremePE.extreme || 0,
+      pct: extremePE.total > 0
+        ? (extremePE.extreme / extremePE.total * 100).toFixed(2)
+        : '0.00'
     };
 
-    if (extremePE.extreme / extremePE.total > 0.05) {
+    if (extremePE.total > 0 && extremePE.extreme / extremePE.total > 0.05) {
       result.warnings.push({
         type: 'extreme_outliers',
         message: `${result.metrics.extreme_pe_ratios.pct}% of PE ratios are extreme outliers`,
@@ -309,13 +339,14 @@ class DataQualityMonitor {
     }
 
     // Check for extreme ROIC values in calculated_metrics (should be clamped to -200% to 300%)
-    const extremeROIC = this.db.prepare(`
+    const extremeROICResult = await database.query(`
       SELECT
-        COUNT(*) as total,
-        SUM(CASE WHEN roic > 300 OR roic < -200 THEN 1 ELSE 0 END) as extreme
+        COALESCE(COUNT(*), 0) as total,
+        COALESCE(SUM(CASE WHEN roic > 300 OR roic < -200 THEN 1 ELSE 0 END), 0) as extreme
       FROM calculated_metrics
       WHERE roic IS NOT NULL
-    `).get();
+    `);
+    const extremeROIC = extremeROICResult.rows[0];
 
     result.metrics.extreme_roic = {
       total: extremeROIC.total,
@@ -334,16 +365,17 @@ class DataQualityMonitor {
 
     // Check for extreme ROIC in XBRL metrics table (stored as decimals: -2 to 3)
     try {
-      const extremeXBRLRoic = this.db.prepare(`
+      const extremeXBRLRoicResult = await database.query(`
         SELECT
-          COUNT(*) as total,
-          SUM(CASE WHEN roic > 3 OR roic < -2 THEN 1 ELSE 0 END) as extreme
+          COALESCE(COUNT(*), 0) as total,
+          COALESCE(SUM(CASE WHEN roic > 3 OR roic < -2 THEN 1 ELSE 0 END), 0) as extreme
         FROM xbrl_fundamental_metrics
         WHERE roic IS NOT NULL
-      `).get();
+      `);
+      const extremeXBRLRoic = extremeXBRLRoicResult.rows[0];
 
       result.metrics.extreme_xbrl_roic = {
-        total: extremeXBRLRoic.total,
+        total: extremeXBRLRoic.total || 0,
         extreme: extremeXBRLRoic.extreme || 0,
         pct: extremeXBRLRoic.total > 0 ? ((extremeXBRLRoic.extreme || 0) / extremeXBRLRoic.total * 100).toFixed(2) : '0.00'
       };
@@ -362,14 +394,15 @@ class DataQualityMonitor {
 
     // Check for unit mismatches in financial_data (operating income > total assets)
     try {
-      const unitMismatches = this.db.prepare(`
-        SELECT COUNT(*) as count
+      const unitMismatchesResult = await database.query(`
+        SELECT COALESCE(COUNT(*), 0) as count
         FROM financial_data
         WHERE operating_income > 0 AND total_assets > 0
           AND operating_income / total_assets > 10
-      `).get();
+      `);
+      const unitMismatches = unitMismatchesResult.rows[0];
 
-      result.metrics.unit_mismatches = unitMismatches.count;
+      result.metrics.unit_mismatches = unitMismatches.count || 0;
 
       if (unitMismatches.count > 0) {
         result.issues.push({
@@ -389,7 +422,9 @@ class DataQualityMonitor {
   /**
    * Check for survivorship bias indicators
    */
-  checkSurvivorshipBias() {
+  async checkSurvivorshipBias() {
+    const database = await getDatabaseAsync();
+
     const result = {
       name: 'survivorship_bias',
       metrics: {},
@@ -398,30 +433,34 @@ class DataQualityMonitor {
     };
 
     // Count inactive companies (using is_active flag)
-    const delistedStats = this.db.prepare(`
+    const delistedStatsResult = await database.query(`
       SELECT
-        COUNT(*) as total_companies,
-        SUM(CASE WHEN is_active = 0 THEN 1 ELSE 0 END) as inactive
+        COALESCE(COUNT(*), 0) as total_companies,
+        COALESCE(SUM(CASE WHEN is_active = 0 THEN 1 ELSE 0 END), 0) as inactive
       FROM companies
-    `).get();
+    `);
+    const delistedStats = delistedStatsResult.rows[0] || {};
 
     result.metrics = {
-      total_companies: delistedStats.total_companies,
-      active_companies: delistedStats.total_companies - delistedStats.inactive,
-      inactive_companies: delistedStats.inactive,
-      inactive_pct: (delistedStats.inactive / delistedStats.total_companies * 100).toFixed(2)
+      total_companies: delistedStats.total_companies || 0,
+      active_companies: (delistedStats.total_companies || 0) - (delistedStats.inactive || 0),
+      inactive_companies: delistedStats.inactive || 0,
+      inactive_pct: delistedStats.total_companies > 0
+        ? (delistedStats.inactive / delistedStats.total_companies * 100).toFixed(2)
+        : '0.00'
     };
 
     // Check if training data includes inactive companies
-    const inactiveWithData = this.db.prepare(`
-      SELECT COUNT(DISTINCT c.id) as count
+    const inactiveWithDataResult = await database.query(`
+      SELECT COALESCE(COUNT(DISTINCT c.id), 0) as count
       FROM companies c
       JOIN daily_prices dp ON dp.company_id = c.id
       WHERE c.is_active = 0
         AND dp.date >= date('now', '-365 day')
-    `).get();
+    `);
+    const inactiveWithData = inactiveWithDataResult.rows[0] || {};
 
-    result.metrics.inactive_with_recent_data = inactiveWithData.count;
+    result.metrics.inactive_with_recent_data = inactiveWithData.count || 0;
 
     if (inactiveWithData.count === 0 && delistedStats.inactive > 0) {
       result.warnings.push({
@@ -437,7 +476,9 @@ class DataQualityMonitor {
   /**
    * Check data consistency for cross-validation
    */
-  checkCrossValidation() {
+  async checkCrossValidation() {
+    const database = await getDatabaseAsync();
+
     const result = {
       name: 'cross_validation_readiness',
       metrics: {},
@@ -446,30 +487,31 @@ class DataQualityMonitor {
     };
 
     // Check temporal coverage
-    const dateRange = this.db.prepare(`
+    const dateRangeResult = await database.query(`
       SELECT
         MIN(date) as min_date,
         MAX(date) as max_date,
-        COUNT(DISTINCT date) as trading_days,
-        JULIANDAY(MAX(date)) - JULIANDAY(MIN(date)) as total_days
+        COALESCE(COUNT(DISTINCT date), 0) as trading_days,
+        COALESCE(JULIANDAY(MAX(date)) - JULIANDAY(MIN(date)), 0) as total_days
       FROM daily_prices
-    `).get();
+    `);
+    const dateRange = dateRangeResult.rows[0];
 
     result.metrics.date_range = {
       start: dateRange.min_date,
       end: dateRange.max_date,
-      trading_days: dateRange.trading_days,
-      total_days: Math.round(dateRange.total_days)
+      trading_days: dateRange.trading_days || 0,
+      total_days: Math.round(dateRange.total_days || 0)
     };
 
     // Check for gaps
-    const gaps = this.db.prepare(`
+    const gapsResult = await database.query(`
       WITH dates AS (
         SELECT DISTINCT date FROM daily_prices
         WHERE date >= date('now', '-365 day')
         ORDER BY date
       )
-      SELECT COUNT(*) as gap_count
+      SELECT COALESCE(COUNT(*), 0) as gap_count
       FROM (
         SELECT
           date,
@@ -478,9 +520,10 @@ class DataQualityMonitor {
         FROM dates
       )
       WHERE days_diff > 4
-    `).get();
+    `);
+    const gaps = gapsResult.rows[0] || {};
 
-    result.metrics.data_gaps = gaps.gap_count;
+    result.metrics.data_gaps = gaps.gap_count || 0;
 
     if (gaps.gap_count > 5) {
       result.warnings.push({
@@ -491,25 +534,26 @@ class DataQualityMonitor {
     }
 
     // Check sample size per symbol - limit to 1 year
-    const sampleSizes = this.db.prepare(`
+    const sampleSizesResult = await database.query(`
       SELECT
-        MIN(cnt) as min_samples,
-        MAX(cnt) as max_samples,
-        AVG(cnt) as avg_samples,
-        COUNT(*) as symbol_count
+        COALESCE(MIN(cnt), 0) as min_samples,
+        COALESCE(MAX(cnt), 0) as max_samples,
+        COALESCE(AVG(cnt), 0) as avg_samples,
+        COALESCE(COUNT(*), 0) as symbol_count
       FROM (
         SELECT company_id, COUNT(*) as cnt
         FROM daily_prices
         WHERE date >= date('now', '-365 day')
         GROUP BY company_id
       )
-    `).get();
+    `);
+    const sampleSizes = sampleSizesResult.rows[0];
 
     result.metrics.sample_sizes = {
-      min: sampleSizes.min_samples,
-      max: sampleSizes.max_samples,
-      avg: Math.round(sampleSizes.avg_samples),
-      symbols: sampleSizes.symbol_count
+      min: sampleSizes.min_samples || 0,
+      max: sampleSizes.max_samples || 0,
+      avg: Math.round(sampleSizes.avg_samples || 0),
+      symbols: sampleSizes.symbol_count || 0
     };
 
     if (sampleSizes.min_samples < 60) {
@@ -526,8 +570,8 @@ class DataQualityMonitor {
   /**
    * Get summary for display
    */
-  getSummary() {
-    const report = this.runFullAudit();
+  async getSummary() {
+    const report = await this.runFullAudit();
 
     let summary = `\n${'='.repeat(60)}\n`;
     summary += `  DATA QUALITY REPORT - ${report.timestamp.split('T')[0]}\n`;
@@ -588,16 +632,18 @@ class DataQualityMonitor {
 
 // CLI
 if (require.main === module) {
-  const monitor = new DataQualityMonitor();
+  (async () => {
+    const monitor = new DataQualityMonitor();
 
-  const args = process.argv.slice(2);
+    const args = process.argv.slice(2);
 
-  if (args.includes('--json')) {
-    const report = monitor.runFullAudit();
-    console.log(JSON.stringify(report, null, 2));
-  } else {
-    console.log(monitor.getSummary());
-  }
+    if (args.includes('--json')) {
+      const report = await monitor.runFullAudit();
+      console.log(JSON.stringify(report, null, 2));
+    } else {
+      console.log(await monitor.getSummary());
+    }
+  })();
 }
 
 module.exports = DataQualityMonitor;

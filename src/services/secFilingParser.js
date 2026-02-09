@@ -2,12 +2,12 @@
 // Service for parsing SEC 10-K, 10-Q, and DEF14A filings for PRISM reports
 
 const SECFilingFetcher = require('./secFilingFetcher');
-const db = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 
 class SECFilingParser {
   constructor() {
+    // No database parameter needed - using getDatabaseAsync()
     this.fetcher = new SECFilingFetcher('PRISM Investment Analyzer contact@example.com');
-    this.database = db.getDatabase();
 
     // CIK mapping cache
     this.cikCache = new Map();
@@ -518,30 +518,33 @@ class SECFilingParser {
     if (!parsedFiling) return null;
 
     try {
+      const database = await getDatabaseAsync();
+
       // Check if we have a company_id for this symbol
-      const company = db.getCompany(parsedFiling.symbol);
+      const companyResult = await database.query(`
+        SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)
+      `, [parsedFiling.symbol]);
+      const company = companyResult.rows[0];
       const companyId = company ? company.id : null;
 
-      const stmt = this.database.prepare(`
+      const result = await database.query(`
         INSERT INTO sec_filings (
           company_id, symbol, cik, form_type, filing_date, accession_number,
           fiscal_year, fiscal_period, business_description, risk_factors,
           mda_discussion, competition_section, raw_sections, key_metrics,
           filing_url, parse_version
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         ON CONFLICT(symbol, accession_number) DO UPDATE SET
-          company_id = excluded.company_id,
-          business_description = excluded.business_description,
-          risk_factors = excluded.risk_factors,
-          mda_discussion = excluded.mda_discussion,
-          competition_section = excluded.competition_section,
-          raw_sections = excluded.raw_sections,
-          key_metrics = excluded.key_metrics,
+          company_id = EXCLUDED.company_id,
+          business_description = EXCLUDED.business_description,
+          risk_factors = EXCLUDED.risk_factors,
+          mda_discussion = EXCLUDED.mda_discussion,
+          competition_section = EXCLUDED.competition_section,
+          raw_sections = EXCLUDED.raw_sections,
+          key_metrics = EXCLUDED.key_metrics,
           parsed_at = CURRENT_TIMESTAMP,
-          parse_version = excluded.parse_version
-      `);
-
-      const result = stmt.run(
+          parse_version = EXCLUDED.parse_version
+      `, [
         companyId,
         parsedFiling.symbol,
         parsedFiling.cik,
@@ -558,7 +561,7 @@ class SECFilingParser {
         JSON.stringify(parsedFiling.keyMetrics),
         parsedFiling.filingUrl,
         '1.0'
-      );
+      ]);
 
       console.log(`  Saved ${parsedFiling.symbol} ${parsedFiling.formType} to database`);
       return result;
@@ -571,15 +574,18 @@ class SECFilingParser {
   /**
    * Get cached filing from database
    */
-  getCachedFiling(symbol, formType = '10-K') {
+  async getCachedFiling(symbol, formType = '10-K') {
     try {
-      const stmt = this.database.prepare(`
+      const database = await getDatabaseAsync();
+
+      const result = await database.query(`
         SELECT * FROM sec_filings
-        WHERE symbol = ? AND form_type = ?
+        WHERE symbol = $1 AND form_type = $2
         ORDER BY filing_date DESC
         LIMIT 1
-      `);
-      return stmt.get(symbol.toUpperCase(), formType);
+      `, [symbol.toUpperCase(), formType]);
+
+      return result.rows[0];
     } catch (error) {
       console.error('Error getting cached filing:', error.message);
       return null;

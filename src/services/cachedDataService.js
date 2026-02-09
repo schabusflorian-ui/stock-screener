@@ -3,14 +3,15 @@
 
 const { cache, TTL } = require('../lib/cache');
 const { RequestCoalescer } = require('../lib/requestCoalescer');
+const { getDatabaseAsync } = require('../lib/db');
 
 /**
  * Cached Data Service
  * Provides caching for database queries and API calls
  */
 class CachedDataService {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
 
     // Create coalescers for batch operations
     this.companyCoalescer = new RequestCoalescer(
@@ -35,10 +36,11 @@ class CachedDataService {
     const cacheKey = `company:${symbol.toUpperCase()}`;
 
     return cache.getOrFetch(cacheKey, async () => {
-      const company = this.db.prepare(`
-        SELECT * FROM companies WHERE LOWER(symbol) = LOWER(?)
-      `).get(symbol);
-      return company;
+      const database = await getDatabaseAsync();
+      const result = await database.query(`
+        SELECT * FROM companies WHERE LOWER(symbol) = LOWER($1)
+      `, [symbol]);
+      return result.rows[0];
     }, TTL.COMPANY_PROFILE);
   }
 
@@ -53,20 +55,23 @@ class CachedDataService {
    * Batch fetch companies from database
    */
   async _fetchCompanies(symbols) {
-    const placeholders = symbols.map(() => '?').join(',');
-    const rows = this.db.prepare(`
+    const database = await getDatabaseAsync();
+    const placeholders = symbols.map((_, i) => `$${i + 1}`).join(',');
+    const result = await database.query(`
       SELECT * FROM companies
       WHERE UPPER(symbol) IN (${placeholders})
-    `).all(symbols.map(s => s.toUpperCase()));
+    `, symbols.map(s => s.toUpperCase()));
+
+    const rows = result.rows;
 
     // Index by symbol
-    const result = {};
+    const resultMap = {};
     for (const row of rows) {
-      result[row.symbol] = row;
+      resultMap[row.symbol] = row;
       // Also cache individually
       cache.set(`company:${row.symbol}`, row, TTL.COMPANY_PROFILE);
     }
-    return result;
+    return resultMap;
   }
 
   /**
@@ -74,12 +79,14 @@ class CachedDataService {
    */
   async getAllCompanies() {
     return cache.getOrFetch('companies:all', async () => {
-      return this.db.prepare(`
+      const database = await getDatabaseAsync();
+      const result = await database.query(`
         SELECT id, symbol, name, sector, industry, exchange, country, market_cap
         FROM companies
         WHERE is_active = 1
         ORDER BY symbol
-      `).all();
+      `);
+      return result.rows;
     }, TTL.INDEX);
   }
 
@@ -94,12 +101,14 @@ class CachedDataService {
     const cacheKey = `metrics:latest:${companyId}`;
 
     return cache.getOrFetch(cacheKey, async () => {
-      return this.db.prepare(`
+      const database = await getDatabaseAsync();
+      const result = await database.query(`
         SELECT * FROM calculated_metrics
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY fiscal_period DESC
         LIMIT 1
-      `).get(companyId);
+      `, [companyId]);
+      return result.rows[0];
     }, TTL.METRICS);
   }
 
@@ -110,12 +119,14 @@ class CachedDataService {
     const cacheKey = `metrics:history:${companyId}:${limit}`;
 
     return cache.getOrFetch(cacheKey, async () => {
-      return this.db.prepare(`
+      const database = await getDatabaseAsync();
+      const result = await database.query(`
         SELECT * FROM calculated_metrics
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY fiscal_period DESC
-        LIMIT ?
-      `).all(companyId, limit);
+        LIMIT $2
+      `, [companyId, limit]);
+      return result.rows;
     }, TTL.METRICS);
   }
 
@@ -125,10 +136,11 @@ class CachedDataService {
   async _fetchMetrics(companyIds) {
     if (companyIds.length === 0) return {};
 
-    const placeholders = companyIds.map(() => '?').join(',');
+    const database = await getDatabaseAsync();
+    const placeholders = companyIds.map((_, i) => `$${i + 1}`).join(',');
 
     // Get latest metric for each company
-    const rows = this.db.prepare(`
+    const result = await database.query(`
       SELECT cm.* FROM calculated_metrics cm
       INNER JOIN (
         SELECT company_id, MAX(fiscal_period) as max_period
@@ -136,14 +148,16 @@ class CachedDataService {
         WHERE company_id IN (${placeholders})
         GROUP BY company_id
       ) latest ON cm.company_id = latest.company_id AND cm.fiscal_period = latest.max_period
-    `).all(companyIds);
+    `, companyIds);
 
-    const result = {};
+    const rows = result.rows;
+
+    const resultMap = {};
     for (const row of rows) {
-      result[row.company_id] = row;
+      resultMap[row.company_id] = row;
       cache.set(`metrics:latest:${row.company_id}`, row, TTL.METRICS);
     }
-    return result;
+    return resultMap;
   }
 
   // ============================================
@@ -157,12 +171,14 @@ class CachedDataService {
     const cacheKey = `price:latest:${companyId}`;
 
     return cache.getOrFetch(cacheKey, async () => {
-      return this.db.prepare(`
+      const database = await getDatabaseAsync();
+      const result = await database.query(`
         SELECT * FROM daily_prices
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY date DESC
         LIMIT 1
-      `).get(companyId);
+      `, [companyId]);
+      return result.rows[0];
     }, TTL.QUOTE);
   }
 
@@ -173,13 +189,15 @@ class CachedDataService {
     const cacheKey = `price:history:${companyId}:${days}`;
 
     return cache.getOrFetch(cacheKey, async () => {
-      return this.db.prepare(`
+      const database = await getDatabaseAsync();
+      const result = await database.query(`
         SELECT date, open, high, low, close, adjusted_close, volume
         FROM daily_prices
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY date DESC
-        LIMIT ?
-      `).all(companyId, days);
+        LIMIT $2
+      `, [companyId, days]);
+      return result.rows;
     }, TTL.PRICE_HISTORY);
   }
 
@@ -196,6 +214,8 @@ class CachedDataService {
     const cacheKey = `screening:${Buffer.from(filterKey).toString('base64').slice(0, 32)}`;
 
     return cache.getOrFetch(cacheKey, async () => {
+      const database = await getDatabaseAsync();
+
       // Build query based on filters
       let query = `
         SELECT
@@ -224,28 +244,34 @@ class CachedDataService {
       `;
 
       const params = [];
+      let paramCounter = 1;
 
       // Apply filters
       if (filters.sector) {
-        query += ' AND c.sector = ?';
+        query += ` AND c.sector = $${paramCounter}`;
         params.push(filters.sector);
+        paramCounter++;
       }
       if (filters.country) {
-        query += ' AND c.country = ?';
+        query += ` AND c.country = $${paramCounter}`;
         params.push(filters.country);
+        paramCounter++;
       }
       if (filters.minMarketCap) {
-        query += ' AND c.market_cap >= ?';
+        query += ` AND c.market_cap >= $${paramCounter}`;
         params.push(filters.minMarketCap);
+        paramCounter++;
       }
       if (filters.maxMarketCap) {
-        query += ' AND c.market_cap <= ?';
+        query += ` AND c.market_cap <= $${paramCounter}`;
         params.push(filters.maxMarketCap);
+        paramCounter++;
       }
 
       query += ' ORDER BY c.market_cap DESC LIMIT 500';
 
-      return this.db.prepare(query).all(...params);
+      const result = await database.query(query, params);
+      return result.rows;
     }, TTL.SCREENING);
   }
 
@@ -258,13 +284,15 @@ class CachedDataService {
    */
   async getSectors() {
     return cache.getOrFetch('sectors:list', async () => {
-      return this.db.prepare(`
+      const database = await getDatabaseAsync();
+      const result = await database.query(`
         SELECT sector, COUNT(*) as count
         FROM companies
         WHERE is_active = 1 AND sector IS NOT NULL
         GROUP BY sector
         ORDER BY count DESC
-      `).all();
+      `);
+      return result.rows;
     }, TTL.INDEX);
   }
 
@@ -275,13 +303,15 @@ class CachedDataService {
     const cacheKey = `industries:${sector}`;
 
     return cache.getOrFetch(cacheKey, async () => {
-      return this.db.prepare(`
+      const database = await getDatabaseAsync();
+      const result = await database.query(`
         SELECT industry, COUNT(*) as count
         FROM companies
-        WHERE is_active = 1 AND sector = ? AND industry IS NOT NULL
+        WHERE is_active = 1 AND sector = $1 AND industry IS NOT NULL
         GROUP BY industry
         ORDER BY count DESC
-      `).all(sector);
+      `, [sector]);
+      return result.rows;
     }, TTL.INDEX);
   }
 
@@ -322,9 +352,9 @@ class CachedDataService {
 // Factory function to create service
 let instance = null;
 
-function getCachedDataService(db) {
-  if (!instance && db) {
-    instance = new CachedDataService(db);
+function getCachedDataService() {
+  if (!instance) {
+    instance = new CachedDataService();
   }
   return instance;
 }

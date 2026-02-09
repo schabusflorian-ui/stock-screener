@@ -2,11 +2,12 @@
 // Auto-execution service for portfolio-specific trade execution
 // Supports both automatic execution and pending approval workflow
 
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 const { getPortfolioService } = require('../portfolio');
 
 class AutoExecutor {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
     this.portfolioService = null; // Lazy loaded to avoid circular dependency
   }
 
@@ -15,7 +16,7 @@ class AutoExecutor {
    */
   _getPortfolioService() {
     if (!this.portfolioService) {
-      this.portfolioService = getPortfolioService(this.db);
+      this.portfolioService = getPortfolioService();
     }
     return this.portfolioService;
   }
@@ -27,8 +28,10 @@ class AutoExecutor {
    * @returns {Object} Result of processing
    */
   async processRecommendation(recommendation, portfolioId) {
+    const database = await getDatabaseAsync();
+
     // Get portfolio settings
-    const settings = await this.db.query(
+    const settings = await database.query(
       `SELECT
         id,
         name,
@@ -68,7 +71,7 @@ class AutoExecutor {
     }
 
     // Get portfolio summary
-    const portfolioResult = await this.db.query(
+    const portfolioResult = await database.query(
       `SELECT
         current_value as total_value,
         current_cash as total_cash,
@@ -88,7 +91,7 @@ class AutoExecutor {
     const maxPositionValue = totalValue * settingsRow.max_auto_position_pct;
 
     // Get current price
-    const priceResult = await this.db.query(
+    const priceResult = await database.query(
       `SELECT close as price
       FROM daily_prices
       WHERE company_id = $1
@@ -117,7 +120,7 @@ class AutoExecutor {
       shares = Math.floor(positionValue / currentPrice);
     } else {
       // For sells, get existing position
-      const positionResult = await this.db.query(
+      const positionResult = await database.query(
         `SELECT
           id,
           shares,
@@ -209,7 +212,9 @@ class AutoExecutor {
    * Queue trade for user approval
    */
   async _queueForApproval(recommendation, portfolioId, shares, price, value) {
-    const portfolioResult = await this.db.query(
+    const database = await getDatabaseAsync();
+
+    const portfolioResult = await database.query(
       `SELECT current_value as total_value, current_cash as total_cash
       FROM portfolios
       WHERE id = $1`,
@@ -219,7 +224,7 @@ class AutoExecutor {
     const portfolioData = portfolioResult.rows[0] || { total_value: 1, total_cash: 0 };
     const positionPct = value / (parseFloat(portfolioData.total_value) + parseFloat(portfolioData.total_cash));
 
-    const result = await this.db.query(
+    const result = await database.query(
       `INSERT INTO pending_executions (
         portfolio_id,
         recommendation_outcome_id,
@@ -261,12 +266,14 @@ class AutoExecutor {
    * Adds position to portfolio via trade
    */
   async _executeImmediately(recommendation, portfolioId, shares, price) {
+    const database = await getDatabaseAsync();
+
     // This would integrate with portfolio service to execute
     // For now, we queue with auto-approval
     const queuedId = await this._queueForApproval(recommendation, portfolioId, shares, price, shares * price);
 
     // Auto-approve
-    await this.db.query(
+    await database.query(
       `UPDATE pending_executions
       SET status = $1,
           decided_at = CURRENT_TIMESTAMP,
@@ -288,7 +295,9 @@ class AutoExecutor {
    * Approve a pending execution
    */
   async approveExecution(executionId, approvedBy = 'user') {
-    const result = await this.db.query(
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(
       `SELECT
         pe.*,
         c.name as company_name,
@@ -310,7 +319,7 @@ class AutoExecutor {
       return { success: false, error: `Execution already ${execution.status}` };
     }
 
-    await this.db.query(
+    await database.query(
       `UPDATE pending_executions
       SET status = $1,
           decided_at = CURRENT_TIMESTAMP,
@@ -336,7 +345,9 @@ class AutoExecutor {
    * Reject a pending execution
    */
   async rejectExecution(executionId, reason = null, rejectedBy = 'user') {
-    const result = await this.db.query(
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(
       `SELECT
         pe.*,
         c.name as company_name,
@@ -358,7 +369,7 @@ class AutoExecutor {
       return { success: false, error: `Execution already ${execution.status}` };
     }
 
-    await this.db.query(
+    await database.query(
       `UPDATE pending_executions
       SET status = 'rejected',
           decided_at = CURRENT_TIMESTAMP,
@@ -385,7 +396,9 @@ class AutoExecutor {
    * Integrates with portfolio service to add/remove positions
    */
   async executeApprovedTrade(executionId, actualPrice = null, actualShares = null) {
-    const result = await this.db.query(
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(
       `SELECT
         pe.*,
         c.name as company_name,
@@ -437,7 +450,7 @@ class AutoExecutor {
       }
 
       // Mark as executed in pending_executions table
-      await this.db.query(
+      await database.query(
         `UPDATE pending_executions
         SET status = 'executed',
             executed_at = CURRENT_TIMESTAMP,
@@ -478,7 +491,7 @@ class AutoExecutor {
       };
     } catch (error) {
       // Mark as failed
-      await this.db.query(
+      await database.query(
         `UPDATE pending_executions
         SET status = 'failed',
             notes = $1
@@ -499,7 +512,8 @@ class AutoExecutor {
    */
   async _updateRecommendationOutcome(outcomeId, details) {
     try {
-      await this.db.query(
+      const database = await getDatabaseAsync();
+      await database.query(
         `UPDATE recommendation_outcomes
         SET executed = true,
             executed_at = $1,
@@ -525,8 +539,10 @@ class AutoExecutor {
    * Get pending executions for a portfolio
    */
   async getPendingExecutions(portfolioId = null) {
+    const database = await getDatabaseAsync();
+
     if (portfolioId) {
-      const result = await this.db.query(
+      const result = await database.query(
         `SELECT
           pe.*,
           c.name as company_name,
@@ -541,7 +557,7 @@ class AutoExecutor {
       );
       return result.rows;
     }
-    const result = await this.db.query(
+    const result = await database.query(
       `SELECT
         pe.*,
         c.name as company_name,
@@ -559,7 +575,9 @@ class AutoExecutor {
    * Get execution settings for a portfolio
    */
   async getPortfolioSettings(portfolioId) {
-    const result = await this.db.query(
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(
       `SELECT
         id,
         name,
@@ -593,6 +611,8 @@ class AutoExecutor {
    * Update execution settings for a portfolio
    */
   async updatePortfolioSettings(portfolioId, settings) {
+    const database = await getDatabaseAsync();
+
     const {
       autoExecute,
       executionThreshold,
@@ -601,7 +621,7 @@ class AutoExecutor {
       autoExecuteActions,
     } = settings;
 
-    await this.db.query(
+    await database.query(
       `UPDATE portfolios
       SET auto_execute = $1,
           execution_threshold = $2,
@@ -672,7 +692,9 @@ class AutoExecutor {
    * Expire old pending executions
    */
   async expireOldExecutions() {
-    const result = await this.db.query(
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(
       `UPDATE pending_executions
       SET status = 'expired'
       WHERE status = 'pending'
@@ -685,7 +707,9 @@ class AutoExecutor {
    * Get execution history for a portfolio
    */
   async getExecutionHistory(portfolioId, limit = 50) {
-    const result = await this.db.query(
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(
       `SELECT
         pe.*,
         c.name as company_name,
@@ -706,7 +730,9 @@ class AutoExecutor {
    * Get execution statistics for a portfolio
    */
   async getExecutionStats(portfolioId) {
-    const result = await this.db.query(
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(
       `SELECT
         status,
         COUNT(*) as count,
@@ -743,15 +769,17 @@ class AutoExecutor {
    * @returns {Object} Execution results
    */
   async executeAllApproved(portfolioId = null) {
+    const database = await getDatabaseAsync();
+
     // Get approved executions
     const result = portfolioId
-      ? await this.db.query(
+      ? await database.query(
           `SELECT id FROM pending_executions
           WHERE portfolio_id = $1 AND status = 'approved'
           ORDER BY created_at ASC`,
           [portfolioId]
         )
-      : await this.db.query(
+      : await database.query(
           `SELECT id FROM pending_executions
           WHERE status = 'approved'
           ORDER BY created_at ASC`
@@ -785,6 +813,8 @@ class AutoExecutor {
    * @returns {Object} Result of submission
    */
   async submitRecommendation(recommendation) {
+    const database = await getDatabaseAsync();
+
     const {
       portfolioId,
       symbol,
@@ -812,7 +842,7 @@ class AutoExecutor {
     // Get company ID if not provided
     let resolvedCompanyId = companyId;
     if (!resolvedCompanyId) {
-      const companyResult = await this.db.query(
+      const companyResult = await database.query(
         `SELECT id, symbol, name FROM companies WHERE LOWER(symbol) = LOWER($1)`,
         [symbol]
       );
@@ -825,7 +855,7 @@ class AutoExecutor {
     // Get current price if not provided
     let resolvedPrice = price;
     if (!resolvedPrice) {
-      const priceResult = await this.db.query(
+      const priceResult = await database.query(
         `SELECT close as price
         FROM daily_prices
         WHERE company_id = $1
@@ -842,7 +872,7 @@ class AutoExecutor {
     // Calculate shares if not provided
     let resolvedShares = shares;
     if (!resolvedShares) {
-      const portfolioResult = await this.db.query(
+      const portfolioResult = await database.query(
         `SELECT current_value as total_value, current_cash as total_cash
         FROM portfolios
         WHERE id = $1`,
@@ -853,7 +883,7 @@ class AutoExecutor {
       }
       const portfolio = portfolioResult.rows[0];
 
-      const settingsResult = await this.db.query(
+      const settingsResult = await database.query(
         `SELECT max_auto_position_pct FROM portfolios WHERE id = $1`,
         [portfolioId]
       );
@@ -904,8 +934,10 @@ class AutoExecutor {
    * Get approved executions waiting to be executed
    */
   async getApprovedExecutions(portfolioId = null) {
+    const database = await getDatabaseAsync();
+
     if (portfolioId) {
-      const result = await this.db.query(
+      const result = await database.query(
         `SELECT pe.*, c.name as company_name, p.name as portfolio_name
         FROM pending_executions pe
         LEFT JOIN companies c ON pe.company_id = c.id
@@ -917,7 +949,7 @@ class AutoExecutor {
       return result.rows;
     }
 
-    const result = await this.db.query(
+    const result = await database.query(
       `SELECT pe.*, c.name as company_name, p.name as portfolio_name
       FROM pending_executions pe
       LEFT JOIN companies c ON pe.company_id = c.id

@@ -2,6 +2,7 @@
 // Dynamically adjusts signal weights based on historical Information Coefficient (IC)
 // Enhanced with alpha validation gate from HF-style backtesting framework
 
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 const { RecommendationTracker } = require('./recommendationTracker');
 
 // Lazy load alpha validation module
@@ -18,9 +19,9 @@ function loadAlphaValidation() {
 }
 
 class SignalOptimizer {
-  constructor(db) {
-    this.db = db;
-    this.tracker = new RecommendationTracker(db);
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
+    this.tracker = new RecommendationTracker();
     this.alphaValidationEnabled = loadAlphaValidation();
 
     // Base weights (fallback when no IC data available)
@@ -226,7 +227,8 @@ class SignalOptimizer {
    */
   async getStoredICAnalysis() {
     try {
-      const result = await this.db.query(`
+      const database = await getDatabaseAsync();
+      const result = await database.query(`
         SELECT signal_type, optimal_horizon, optimal_ic, decay_rate, is_significant
         FROM signal_ic_summary
         WHERE updated_at >= NOW() - INTERVAL '3 days'
@@ -351,6 +353,8 @@ class SignalOptimizer {
    * Store optimized weights in database
    */
   async storeOptimizedWeights(weights, regime) {
+    const database = await getDatabaseAsync();
+
     // Calculate average IC for metadata
     const { ics } = await this.tracker.getOptimalWeights(90);
     const icValues = Object.values(ics)
@@ -360,7 +364,7 @@ class SignalOptimizer {
       ? icValues.reduce((a, b) => a + b, 0) / icValues.length
       : null;
 
-    await this.db.query(`
+    await database.query(`
       INSERT INTO optimized_signal_weights (
         regime,
         technical_weight,
@@ -408,7 +412,8 @@ class SignalOptimizer {
    * Get stored weights from database
    */
   async getStoredWeights(regime) {
-    const result = await this.db.query(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT *
       FROM optimized_signal_weights
       WHERE regime = $1
@@ -448,7 +453,8 @@ class SignalOptimizer {
    * Get all stored weights
    */
   async getAllStoredWeights() {
-    const result = await this.db.query(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT *
       FROM optimized_signal_weights
       ORDER BY regime
@@ -511,18 +517,19 @@ class SignalOptimizer {
    */
   async useOptimizedWeightsFromRun(runId = null) {
     try {
+      const database = await getDatabaseAsync();
       let result;
 
       if (runId) {
         // Get specific run
-        result = await this.db.query(`
+        result = await database.query(`
           SELECT best_weights, best_alpha, walk_forward_efficiency
           FROM weight_optimization_runs
           WHERE id = $1 AND status = 'completed' AND best_weights IS NOT NULL
         `, [runId]);
       } else {
         // Get most recent successful run
-        result = await this.db.query(`
+        result = await database.query(`
           SELECT id, best_weights, best_alpha, walk_forward_efficiency
           FROM weight_optimization_runs
           WHERE status = 'completed' AND best_weights IS NOT NULL
@@ -594,7 +601,8 @@ class SignalOptimizer {
    */
   async loadRegimeOptimizedWeights(regime) {
     try {
-      const result = await this.db.query(`
+      const database = await getDatabaseAsync();
+      const result = await database.query(`
         SELECT technical_weight, fundamental_weight, sentiment_weight,
                insider_weight, valuation_weight, factor_weight,
                alpha, sharpe_ratio, walk_forward_efficiency

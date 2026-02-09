@@ -15,10 +15,11 @@
  */
 
 const https = require('https');
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 
 class QuiverQuantitativeService {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
     this.apiKey = process.env.QUIVER_API_KEY;
     this.baseUrl = 'api.quiverquant.com';
 
@@ -44,109 +45,6 @@ class QuiverQuantitativeService {
 
     // Time decay factor (half-life in days)
     this.TIME_DECAY_HALFLIFE = 30;
-
-    // Prepare statements
-    this.prepareStatements();
-  }
-
-  prepareStatements() {
-    // Politicians
-    this.insertPolitician = this.db.prepare(`
-      INSERT INTO congressional_politicians (
-        name, title, state, party, chamber, district, in_office
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(name, chamber) DO UPDATE SET
-        title = excluded.title,
-        state = excluded.state,
-        party = excluded.party,
-        updated_at = CURRENT_TIMESTAMP
-      RETURNING id
-    `);
-
-    this.getPolitician = this.db.prepare(`
-      SELECT id, track_record_score FROM congressional_politicians WHERE name = ?
-    `);
-
-    this.updatePoliticianStats = this.db.prepare(`
-      UPDATE congressional_politicians SET
-        total_trades = ?,
-        avg_return_30d = ?,
-        avg_return_90d = ?,
-        track_record_score = ?,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `);
-
-    // Trades - note: politician_name is not a column, use politician_id with JOIN to politicians table
-    // UNIQUE constraint is on (politician_id, transaction_date, asset_description, amount_range)
-    this.insertTrade = this.db.prepare(`
-      INSERT INTO congressional_trades (
-        politician_id, company_id, ticker,
-        transaction_date, filing_date, transaction_type,
-        asset_type, amount_min, amount_max, asset_description, amount_range, source
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(politician_id, transaction_date, asset_description, amount_range) DO UPDATE SET
-        filing_date = excluded.filing_date,
-        amount_min = excluded.amount_min,
-        amount_max = excluded.amount_max
-    `);
-
-    this.getRecentTrades = this.db.prepare(`
-      SELECT ct.*, cp.track_record_score
-      FROM congressional_trades ct
-      LEFT JOIN congressional_politicians cp ON ct.politician_id = cp.id
-      WHERE ct.ticker = ?
-        AND ct.transaction_date >= date('now', ?)
-      ORDER BY ct.transaction_date DESC
-    `);
-
-    this.getTopBuys = this.db.prepare(`
-      SELECT
-        COALESCE(ct.ticker, c.symbol) as symbol,
-        c.name as company_name,
-        COUNT(CASE WHEN ct.transaction_type = 'purchase' THEN 1 END) as buy_count,
-        COUNT(CASE WHEN ct.transaction_type = 'sale' THEN 1 END) as sell_count,
-        COUNT(CASE WHEN ct.transaction_type = 'purchase' THEN 1 END) as buy_signal,
-        GROUP_CONCAT(DISTINCT p.full_name) as politicians,
-        MAX(ct.transaction_date) as latest_trade,
-        SUM(COALESCE(ct.amount_max, 0)) as total_amount
-      FROM congressional_trades ct
-      LEFT JOIN companies c ON ct.company_id = c.id
-      LEFT JOIN politicians p ON ct.politician_id = p.id
-      WHERE ct.transaction_date >= date('now', ?)
-      GROUP BY COALESCE(ct.ticker, c.symbol)
-      HAVING buy_count > 0
-      ORDER BY buy_signal DESC
-      LIMIT ?
-    `);
-
-    // Government contracts
-    this.insertContract = this.db.prepare(`
-      INSERT INTO government_contracts (
-        company_id, symbol, contract_id, agency, description,
-        amount, award_date, completion_date, contract_type,
-        naics_code, psc_code, is_competitive, source, signal_score
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(contract_id) DO UPDATE SET
-        amount = excluded.amount,
-        signal_score = excluded.signal_score
-    `);
-
-    this.getRecentContracts = this.db.prepare(`
-      SELECT * FROM government_contracts
-      WHERE symbol = ?
-        AND award_date >= date('now', ?)
-      ORDER BY award_date DESC
-    `);
-
-    // Company lookup
-    this.getCompanyId = this.db.prepare(`
-      SELECT id FROM companies WHERE symbol = ?
-    `);
-
-    this.getMarketCap = this.db.prepare(`
-      SELECT market_cap FROM price_metrics WHERE company_id = ?
-    `);
   }
 
   /**
@@ -234,6 +132,8 @@ class QuiverQuantitativeService {
     console.log(`  Fetching congressional trades for ${symbol}...`);
 
     try {
+      const database = await getDatabaseAsync();
+
       // Try free endpoint first (historical data)
       const data = await this.fetchApi(`/beta/historical/congresstrading/${symbol}`);
 
@@ -242,7 +142,11 @@ class QuiverQuantitativeService {
         return { trades: 0, signal: 0 };
       }
 
-      const companyRow = this.getCompanyId.get(symbol);
+      const companyResult = await database.query(
+        'SELECT id FROM companies WHERE symbol = $1',
+        [symbol]
+      );
+      const companyRow = companyResult.rows[0];
       const companyId = companyRow?.id || null;
 
       let totalSignal = 0;
@@ -250,12 +154,26 @@ class QuiverQuantitativeService {
 
       for (const trade of data) {
         // Get or create politician
-        const politicianRow = this.getPolitician.get(trade.Representative);
+        const politicianResult = await database.query(
+          'SELECT id, track_record_score FROM congressional_politicians WHERE name = $1',
+          [trade.Representative]
+        );
+        const politicianRow = politicianResult.rows[0];
         let politicianId = politicianRow?.id;
         const politicianScore = politicianRow?.track_record_score || 0;
 
         if (!politicianId) {
-          const result = this.insertPolitician.get(
+          const insertResult = await database.query(`
+            INSERT INTO congressional_politicians (
+              name, title, state, party, chamber, district, in_office
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT(name, chamber) DO UPDATE SET
+              title = excluded.title,
+              state = excluded.state,
+              party = excluded.party,
+              updated_at = CURRENT_TIMESTAMP
+            RETURNING id
+          `, [
             trade.Representative,
             trade.House === 'Senate' ? 'Senator' : 'Representative',
             trade.District?.substring(0, 2) || null,
@@ -263,8 +181,8 @@ class QuiverQuantitativeService {
             trade.House || null,
             trade.District || null,
             1
-          );
-          politicianId = result.id;
+          ]);
+          politicianId = insertResult.rows[0].id;
         }
 
         // Parse amounts
@@ -281,11 +199,20 @@ class QuiverQuantitativeService {
         );
 
         // Store trade
-        this.insertTrade.run(
+        await database.query(`
+          INSERT INTO congressional_trades (
+            politician_id, company_id, ticker,
+            transaction_date, filing_date, transaction_type,
+            asset_type, amount_min, amount_max, asset_description, amount_range, source
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          ON CONFLICT(politician_id, transaction_date, asset_description, amount_range) DO UPDATE SET
+            filing_date = excluded.filing_date,
+            amount_min = excluded.amount_min,
+            amount_max = excluded.amount_max
+        `, [
           politicianId,
           companyId,
           symbol,
-          trade.Representative,
           trade.TransactionDate,
           trade.DisclosureDate || trade.TransactionDate,
           trade.Transaction.toLowerCase().includes('purchase') ? 'purchase' : 'sale',
@@ -293,9 +220,9 @@ class QuiverQuantitativeService {
           amountLow,
           amountHigh,
           trade.AssetDescription || null,
-          'quiver',
-          signal
-        );
+          trade.Range || null,
+          'quiver'
+        ]);
 
         totalSignal += signal;
         tradeCount++;
@@ -332,6 +259,8 @@ class QuiverQuantitativeService {
     console.log(`  Fetching government contracts for ${symbol}...`);
 
     try {
+      const database = await getDatabaseAsync();
+
       const data = await this.fetchApi(`/beta/historical/govcontracts/${symbol}`);
 
       if (!Array.isArray(data) || data.length === 0) {
@@ -339,12 +268,23 @@ class QuiverQuantitativeService {
         return { contracts: 0, totalValue: 0, signal: 0 };
       }
 
-      const companyRow = this.getCompanyId.get(symbol);
+      const companyResult = await database.query(
+        'SELECT id FROM companies WHERE symbol = $1',
+        [symbol]
+      );
+      const companyRow = companyResult.rows[0];
       const companyId = companyRow?.id || null;
 
       // Get market cap for relative sizing
-      const marketCapRow = companyId ? this.getMarketCap.get(companyId) : null;
-      const marketCap = marketCapRow?.market_cap || 0;
+      let marketCap = 0;
+      if (companyId) {
+        const marketCapResult = await database.query(
+          'SELECT market_cap FROM price_metrics WHERE company_id = $1',
+          [companyId]
+        );
+        const marketCapRow = marketCapResult.rows[0];
+        marketCap = marketCapRow?.market_cap || 0;
+      }
 
       let totalValue = 0;
       let contractCount = 0;
@@ -376,7 +316,16 @@ class QuiverQuantitativeService {
         const decayFactor = Math.exp(-daysAgo * Math.LN2 / 60); // 60 day half-life for contracts
         signal *= decayFactor;
 
-        this.insertContract.run(
+        await database.query(`
+          INSERT INTO government_contracts (
+            company_id, symbol, contract_id, agency, description,
+            amount, award_date, completion_date, contract_type,
+            naics_code, psc_code, is_competitive, source, signal_score
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          ON CONFLICT(contract_id) DO UPDATE SET
+            amount = excluded.amount,
+            signal_score = excluded.signal_score
+        `, [
           companyId,
           symbol,
           contract.Id || `${symbol}-${contract.Date}-${amount}`,
@@ -391,7 +340,7 @@ class QuiverQuantitativeService {
           null,
           'quiver',
           signal
-        );
+        ]);
 
         totalSignal += signal;
         contractCount++;
@@ -409,8 +358,23 @@ class QuiverQuantitativeService {
   /**
    * Calculate aggregate congressional signal for a symbol
    */
-  getCongressSignal(symbol, lookbackDays = '-90 days') {
-    const trades = this.getRecentTrades.all(symbol, lookbackDays);
+  async getCongressSignal(symbol, lookbackDays = '-90 days') {
+    const database = await getDatabaseAsync();
+
+    // Build dialect-aware date filter
+    const dateCondition = isUsingPostgres()
+      ? `ct.transaction_date >= CURRENT_DATE + INTERVAL '${lookbackDays}'`
+      : `ct.transaction_date >= date('now', '${lookbackDays}')`;
+
+    const result = await database.query(`
+      SELECT ct.*, cp.track_record_score
+      FROM congressional_trades ct
+      LEFT JOIN congressional_politicians cp ON ct.politician_id = cp.id
+      WHERE ct.ticker = $1
+        AND ${dateCondition}
+      ORDER BY ct.transaction_date DESC
+    `, [symbol]);
+    const trades = result.rows;
 
     if (trades.length === 0) {
       return {
@@ -434,13 +398,15 @@ class QuiverQuantitativeService {
 
       if (trade.transaction_type === 'purchase') {
         buyCount++;
-        netAmount += (trade.amount_low + trade.amount_high) / 2;
+        netAmount += ((trade.amount_min || 0) + (trade.amount_max || 0)) / 2;
       } else {
         sellCount++;
-        netAmount -= (trade.amount_low + trade.amount_high) / 2;
+        netAmount -= ((trade.amount_min || 0) + (trade.amount_max || 0)) / 2;
       }
 
-      politicians.add(trade.politician_name);
+      if (trade.politician_id) {
+        politicians.add(trade.politician_id);
+      }
     }
 
     // Multiple politicians buying is a stronger signal
@@ -468,8 +434,21 @@ class QuiverQuantitativeService {
   /**
    * Get government contract signal for a symbol
    */
-  getContractSignal(symbol, lookbackDays = '-365 days') {
-    const contracts = this.getRecentContracts.all(symbol, lookbackDays);
+  async getContractSignal(symbol, lookbackDays = '-365 days') {
+    const database = await getDatabaseAsync();
+
+    // Build dialect-aware date filter
+    const dateCondition = isUsingPostgres()
+      ? `award_date >= CURRENT_DATE + INTERVAL '${lookbackDays}'`
+      : `award_date >= date('now', '${lookbackDays}')`;
+
+    const result = await database.query(`
+      SELECT * FROM government_contracts
+      WHERE symbol = $1
+        AND ${dateCondition}
+      ORDER BY award_date DESC
+    `, [symbol]);
+    const contracts = result.rows;
 
     if (contracts.length === 0) {
       return {
@@ -506,8 +485,40 @@ class QuiverQuantitativeService {
   /**
    * Get top congressional buys across all symbols
    */
-  getTopCongressBuys(lookbackDays = '-30 days', limit = 20) {
-    return this.getTopBuys.all(lookbackDays, limit);
+  async getTopCongressBuys(lookbackDays = '-30 days', limit = 20) {
+    const database = await getDatabaseAsync();
+
+    // Build dialect-aware date filter
+    const dateCondition = isUsingPostgres()
+      ? `ct.transaction_date >= CURRENT_DATE + INTERVAL '${lookbackDays}'`
+      : `ct.transaction_date >= date('now', '${lookbackDays}')`;
+
+    // Note: PostgreSQL doesn't have GROUP_CONCAT, use STRING_AGG instead
+    const aggregateFunction = isUsingPostgres()
+      ? `STRING_AGG(DISTINCT p.full_name, ', ')`
+      : `GROUP_CONCAT(DISTINCT p.full_name)`;
+
+    const result = await database.query(`
+      SELECT
+        COALESCE(ct.ticker, c.symbol) as symbol,
+        c.name as company_name,
+        COUNT(CASE WHEN ct.transaction_type = 'purchase' THEN 1 END) as buy_count,
+        COUNT(CASE WHEN ct.transaction_type = 'sale' THEN 1 END) as sell_count,
+        COUNT(CASE WHEN ct.transaction_type = 'purchase' THEN 1 END) as buy_signal,
+        ${aggregateFunction} as politicians,
+        MAX(ct.transaction_date) as latest_trade,
+        SUM(COALESCE(ct.amount_max, 0)) as total_amount
+      FROM congressional_trades ct
+      LEFT JOIN companies c ON ct.company_id = c.id
+      LEFT JOIN politicians p ON ct.politician_id = p.id
+      WHERE ${dateCondition}
+      GROUP BY COALESCE(ct.ticker, c.symbol), c.name
+      HAVING COUNT(CASE WHEN ct.transaction_type = 'purchase' THEN 1 END) > 0
+      ORDER BY buy_signal DESC
+      LIMIT $1
+    `, [limit]);
+
+    return result.rows;
   }
 
   /**
@@ -516,16 +527,36 @@ class QuiverQuantitativeService {
   async updatePoliticianTrackRecords() {
     console.log('\n📊 Updating politician track records...\n');
 
-    const politicians = this.db.prepare(`
-      SELECT DISTINCT politician_id, politician_name
+    const database = await getDatabaseAsync();
+
+    const politiciansResult = await database.query(`
+      SELECT DISTINCT politician_id
       FROM congressional_trades
       WHERE politician_id IS NOT NULL
-    `).all();
+    `);
+    const politicians = politiciansResult.rows;
 
     for (const pol of politicians) {
       try {
+        // Build dialect-aware date calculations
+        const dateFilter = isUsingPostgres()
+          ? `ct.transaction_date >= CURRENT_DATE - INTERVAL '2 years'`
+          : `ct.transaction_date >= date('now', '-2 years')`;
+
+        const date30Condition = isUsingPostgres()
+          ? `dp_30.date = ct.transaction_date + INTERVAL '30 days'`
+          : `date(dp_30.date) = date(ct.transaction_date, '+30 days')`;
+
+        const date90Condition = isUsingPostgres()
+          ? `dp_90.date = ct.transaction_date + INTERVAL '90 days'`
+          : `date(dp_90.date) = date(ct.transaction_date, '+90 days')`;
+
+        const tradeDateCondition = isUsingPostgres()
+          ? `dp.date = ct.transaction_date`
+          : `date(dp.date) = date(ct.transaction_date)`;
+
         // Get all trades for this politician in last 2 years
-        const trades = this.db.prepare(`
+        const tradesResult = await database.query(`
           SELECT
             ct.ticker as symbol,
             ct.transaction_date,
@@ -538,15 +569,16 @@ class QuiverQuantitativeService {
           FROM congressional_trades ct
           LEFT JOIN companies c ON ct.company_id = c.id
           LEFT JOIN daily_prices dp ON dp.company_id = c.id
-            AND date(dp.price_date) = date(ct.transaction_date)
+            AND ${tradeDateCondition}
           LEFT JOIN daily_prices dp_30 ON dp_30.company_id = c.id
-            AND date(dp_30.price_date) = date(ct.transaction_date, '+30 days')
+            AND ${date30Condition}
           LEFT JOIN daily_prices dp_90 ON dp_90.company_id = c.id
-            AND date(dp_90.price_date) = date(ct.transaction_date, '+90 days')
-          WHERE ct.politician_id = ?
-            AND ct.transaction_date >= date('now', '-2 years')
+            AND ${date90Condition}
+          WHERE ct.politician_id = $1
+            AND ${dateFilter}
             AND ct.transaction_type = 'purchase'
-        `).all(pol.politician_id);
+        `, [pol.politician_id]);
+        const trades = tradesResult.rows;
 
         if (trades.length === 0) continue;
 
@@ -588,16 +620,24 @@ class QuiverQuantitativeService {
 
         trackScore = Math.max(-1, Math.min(1, trackScore));
 
-        this.updatePoliticianStats.run(
+        await database.query(`
+          UPDATE congressional_politicians SET
+            total_trades = $1,
+            avg_return_30d = $2,
+            avg_return_90d = $3,
+            track_record_score = $4,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = $5
+        `, [
           trades.length,
           avgReturn30d,
           avgReturn90d,
           trackScore,
           pol.politician_id
-        );
+        ]);
 
       } catch (error) {
-        console.error(`  Error updating ${pol.politician_name}: ${error.message}`);
+        console.error(`  Error updating politician ${pol.politician_id}: ${error.message}`);
       }
     }
 

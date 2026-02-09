@@ -13,6 +13,7 @@
 
 const Parser = require('rss-parser');
 const localSentiment = require('./localSentiment');
+const { getDatabaseAsync } = require('../lib/db');
 
 const rssParser = new Parser({
   timeout: 15000,
@@ -184,14 +185,12 @@ const NEWS_PROVIDERS = {
 };
 
 class NewsFetcher {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
     this.apiKey = process.env.NEWS_API_KEY || null;
     this.provider = process.env.NEWS_API_PROVIDER || 'marketaux';
     this.lastRequest = {};
     this.minDelay = 1500; // 1.5 seconds between requests per source
-
-    this.ensureTable();
   }
 
   /**
@@ -542,18 +541,24 @@ class NewsFetcher {
    * Store articles in database
    */
   async storeArticles(articles, companyId) {
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO news_articles (
-        company_id, url, title, description, source, feed_source,
-        published_at, image_url, sentiment_score, sentiment_label,
-        sentiment_confidence, fetched_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    `);
+    const database = await getDatabaseAsync();
 
     let stored = 0;
     for (const article of articles) {
       try {
-        stmt.run(
+        await database.query(`
+          INSERT INTO news_articles (
+            company_id, url, title, description, source, feed_source,
+            published_at, image_url, sentiment_score, sentiment_label,
+            sentiment_confidence, fetched_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+          ON CONFLICT (url) DO UPDATE SET
+            title = EXCLUDED.title,
+            description = EXCLUDED.description,
+            sentiment_score = EXCLUDED.sentiment_score,
+            sentiment_label = EXCLUDED.sentiment_label,
+            sentiment_confidence = EXCLUDED.sentiment_confidence
+        `, [
           companyId,
           article.url,
           article.title,
@@ -565,10 +570,10 @@ class NewsFetcher {
           article.sentimentScore,
           article.sentimentLabel,
           article.sentimentConfidence
-        );
+        ]);
         stored++;
       } catch (error) {
-        if (!error.message.includes('UNIQUE')) {
+        if (!error.message.includes('unique') && !error.message.includes('duplicate')) {
           console.error('Error storing article:', error.message);
         }
       }
@@ -578,66 +583,28 @@ class NewsFetcher {
   }
 
   /**
-   * Ensure news table exists with all required columns
-   */
-  ensureTable() {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS news_articles (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        company_id INTEGER,
-        url TEXT UNIQUE,
-        title TEXT NOT NULL,
-        description TEXT,
-        source TEXT,
-        feed_source TEXT,
-        published_at DATETIME,
-        image_url TEXT,
-        sentiment_score REAL,
-        sentiment_label TEXT,
-        sentiment_confidence REAL,
-        fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (company_id) REFERENCES companies(id)
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_news_company ON news_articles(company_id);
-      CREATE INDEX IF NOT EXISTS idx_news_date ON news_articles(published_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_news_source ON news_articles(feed_source);
-    `);
-
-    // Add feed_source column if it doesn't exist (migration)
-    try {
-      this.db.exec('ALTER TABLE news_articles ADD COLUMN feed_source TEXT');
-    } catch (e) {
-      // Column already exists
-    }
-  }
-
-  /**
    * Get recent news for a company from database
    */
-  getRecentNews(companyId, limit = 20) {
-    return this.db
-      .prepare(
-        `
+  async getRecentNews(companyId, limit = 20) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT * FROM news_articles
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY published_at DESC
-      LIMIT ?
-    `
-      )
-      .all(companyId, limit);
+      LIMIT $2
+    `, [companyId, limit]);
+    return result.rows;
   }
 
   /**
    * Get news sentiment summary from database
    */
-  getNewsSummary(companyId, days = 7) {
+  async getNewsSummary(companyId, days = 7) {
+    const database = await getDatabaseAsync();
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
 
-    const summary = this.db
-      .prepare(
-        `
+    const result = await database.query(`
       SELECT
         COUNT(*) as total_articles,
         AVG(sentiment_score) as avg_sentiment,
@@ -646,13 +613,11 @@ class NewsFetcher {
         SUM(CASE WHEN sentiment_label = 'negative' THEN 1 ELSE 0 END) as negative_count,
         SUM(CASE WHEN sentiment_label = 'neutral' THEN 1 ELSE 0 END) as neutral_count
       FROM news_articles
-      WHERE company_id = ?
-        AND published_at >= ?
-    `
-      )
-      .get(companyId, cutoff.toISOString());
+      WHERE company_id = $1
+        AND published_at >= $2
+    `, [companyId, cutoff.toISOString()]);
 
-    return summary;
+    return result.rows[0];
   }
 
   /**

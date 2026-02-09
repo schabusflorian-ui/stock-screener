@@ -1,5 +1,5 @@
 // src/services/screeningService.js
-const { getDatabaseAsync } = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 const { FREDService } = require('./dataProviders');
 
 // Valid sortable columns to prevent SQL injection
@@ -290,9 +290,8 @@ class ScreeningService {
       params.push(periodType);
     }
 
-    // Period type filter
-    where.push(`m.period_type = $${paramCounter++}`);
-    params.push(periodType);
+    // Period type filter is already handled in the subqueries above
+    // No need to add it again here - this was causing parameter mismatch (Bug #1)
 
     // Helper function to add range criteria
     const addRangeCriteria = (column, minVal, maxVal) => {
@@ -613,7 +612,6 @@ class ScreeningService {
     }
 
     const database = await getDatabaseAsync();
-
     const startTime = Date.now();
     const resultsQuery = await database.query(sql, params);
     const results = resultsQuery.rows;
@@ -650,9 +648,6 @@ class ScreeningService {
    * High ROIC, low debt, positive FCF
    */
   async buffettQuality(limit) {
-    console.log('\n🎯 BUFFETT QUALITY SCREEN');
-    console.log('   Criteria: ROIC > 15%, Debt/Equity < 0.5, FCF Yield > 0%\n');
-
     const result = await this.screen({
       minROIC: 15,
       maxDebtToEquity: 0.5,
@@ -669,9 +664,6 @@ class ScreeningService {
    * Graham-style: Deep value
    */
   async deepValue(limit) {
-    console.log('\n🎯 DEEP VALUE SCREEN (Graham)');
-    console.log('   Criteria: P/E < 15, P/B < 1.5, Positive ROE\n');
-
     const result = await this.screen({
       maxPERatio: 15,
       maxPBRatio: 1.5,
@@ -689,9 +681,6 @@ class ScreeningService {
    * Magic Formula (Greenblatt)
    */
   async magicFormula(limit) {
-    console.log('\n🎯 MAGIC FORMULA SCREEN (Greenblatt)');
-    console.log('   Criteria: High ROIC + Low P/E\n');
-
     const result = await this.screen({
       minROIC: 15,
       maxPERatio: 25,

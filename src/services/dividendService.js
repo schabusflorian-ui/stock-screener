@@ -2,7 +2,7 @@
  * Dividend Service - Provides dividend data and analytics
  */
 
-const { getDatabaseAsync } = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 
 class DividendService {
   /**

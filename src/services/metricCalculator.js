@@ -1,5 +1,7 @@
 // src/services/metricCalculator.js
 
+const { getDatabaseAsync } = require('../lib/db');
+
 /**
  * Metric Calculator Service
  *
@@ -1622,12 +1624,11 @@ class MetricCalculator {
    * @param {Number} currentRevenue - Current period revenue
    * @returns {Number|null} Revenue growth percentage (e.g., 25.5 for 25.5% growth)
    */
-  calculateRevenueGrowth(companyId, fiscalDate, periodType, currentRevenue) {
+  async calculateRevenueGrowth(companyId, fiscalDate, periodType, currentRevenue) {
     if (!companyId || !fiscalDate || !currentRevenue) return null;
 
     try {
-      const db = require('../database');
-      const database = db.getDatabase();
+      const database = await getDatabaseAsync();
 
       // Parse current date
       const currentDate = new Date(fiscalDate);
@@ -1642,20 +1643,22 @@ class MetricCalculator {
 
       const minDateStr = minDate.toISOString().split('T')[0];
       const maxDateStr = maxDate.toISOString().split('T')[0];
+      const priorYearStr = priorYearDate.toISOString().split('T')[0];
 
       // Query prior year data
-      const priorData = database.prepare(`
+      const result = await database.query(`
         SELECT data
         FROM financial_data
-        WHERE company_id = ?
+        WHERE company_id = $1
           AND statement_type = 'income_statement'
-          AND period_type = ?
-          AND fiscal_date_ending >= ?
-          AND fiscal_date_ending <= ?
-        ORDER BY ABS(JULIANDAY(fiscal_date_ending) - JULIANDAY(?))
+          AND period_type = $2
+          AND fiscal_date_ending >= $3
+          AND fiscal_date_ending <= $4
+        ORDER BY ABS(EXTRACT(EPOCH FROM (fiscal_date_ending - $5::date)))
         LIMIT 1
-      `).get(companyId, periodType, minDateStr, maxDateStr, priorYearDate.toISOString().split('T')[0]);
+      `, [companyId, periodType, minDateStr, maxDateStr, priorYearStr]);
 
+      const priorData = result.rows[0];
       if (!priorData) return null;
 
       const priorIncomeStatement = JSON.parse(priorData.data);
@@ -1687,12 +1690,11 @@ class MetricCalculator {
    * @param {Number} currentNetIncome - Current period net income
    * @returns {Number|null} Earnings growth percentage
    */
-  calculateEarningsGrowth(companyId, fiscalDate, periodType, currentNetIncome) {
+  async calculateEarningsGrowth(companyId, fiscalDate, periodType, currentNetIncome) {
     if (!companyId || !fiscalDate || currentNetIncome === null || currentNetIncome === undefined) return null;
 
     try {
-      const db = require('../database');
-      const database = db.getDatabase();
+      const database = await getDatabaseAsync();
 
       // Parse current date
       const currentDate = new Date(fiscalDate);
@@ -1708,19 +1710,22 @@ class MetricCalculator {
 
       const minDateStr = minDate.toISOString().split('T')[0];
       const maxDateStr = maxDate.toISOString().split('T')[0];
+      const priorYearStr = priorYearDate.toISOString().split('T')[0];
 
       // Query prior year data using direct columns (more reliable than JSON parsing)
-      const priorData = database.prepare(`
+      const result = await database.query(`
         SELECT net_income, data
         FROM financial_data
-        WHERE company_id = ?
+        WHERE company_id = $1
           AND statement_type = 'income_statement'
-          AND period_type = ?
-          AND fiscal_date_ending >= ?
-          AND fiscal_date_ending <= ?
-        ORDER BY ABS(JULIANDAY(fiscal_date_ending) - JULIANDAY(?))
+          AND period_type = $2
+          AND fiscal_date_ending >= $3
+          AND fiscal_date_ending <= $4
+        ORDER BY ABS(EXTRACT(EPOCH FROM (fiscal_date_ending - $5::date)))
         LIMIT 1
-      `).get(companyId, periodType, minDateStr, maxDateStr, priorYearDate.toISOString().split('T')[0]);
+      `, [companyId, periodType, minDateStr, maxDateStr, priorYearStr]);
+
+      const priorData = result.rows[0];
 
       if (!priorData) return null;
 
@@ -1764,12 +1769,11 @@ class MetricCalculator {
    * @param {Number} currentFCF - Current period free cash flow
    * @returns {Number|null} FCF growth percentage
    */
-  calculateFCFGrowth(companyId, fiscalDate, periodType, currentFCF) {
+  async calculateFCFGrowth(companyId, fiscalDate, periodType, currentFCF) {
     if (!companyId || !fiscalDate || currentFCF === null || currentFCF === undefined) return null;
 
     try {
-      const db = require('../database');
-      const database = db.getDatabase();
+      const database = await getDatabaseAsync();
 
       // Parse current date
       const currentDate = new Date(fiscalDate);
@@ -1784,19 +1788,22 @@ class MetricCalculator {
 
       const minDateStr = minDate.toISOString().split('T')[0];
       const maxDateStr = maxDate.toISOString().split('T')[0];
+      const priorYearStr = priorYearDate.toISOString().split('T')[0];
 
       // Query prior year cash flow data
-      const priorData = database.prepare(`
+      const result = await database.query(`
         SELECT data
         FROM financial_data
-        WHERE company_id = ?
+        WHERE company_id = $1
           AND statement_type = 'cash_flow'
-          AND period_type = ?
-          AND fiscal_date_ending >= ?
-          AND fiscal_date_ending <= ?
-        ORDER BY ABS(JULIANDAY(fiscal_date_ending) - JULIANDAY(?))
+          AND period_type = $2
+          AND fiscal_date_ending >= $3
+          AND fiscal_date_ending <= $4
+        ORDER BY ABS(EXTRACT(EPOCH FROM (fiscal_date_ending - $5::date)))
         LIMIT 1
-      `).get(companyId, periodType, minDateStr, maxDateStr, priorYearDate.toISOString().split('T')[0]);
+      `, [companyId, periodType, minDateStr, maxDateStr, priorYearStr]);
+
+      const priorData = result.rows[0];
 
       if (!priorData) return null;
 
@@ -1839,13 +1846,12 @@ class MetricCalculator {
    * @param {Number} currentRevenue - Current period revenue
    * @returns {Number|null} Revenue growth percentage
    */
-  calculateRevenueGrowthQoQ(companyId, fiscalDate, periodType, currentRevenue) {
+  async calculateRevenueGrowthQoQ(companyId, fiscalDate, periodType, currentRevenue) {
     // QoQ only makes sense for quarterly data
     if (!companyId || !fiscalDate || !currentRevenue || periodType !== 'quarterly') return null;
 
     try {
-      const db = require('../database');
-      const database = db.getDatabase();
+      const database = await getDatabaseAsync();
 
       // Find the previous quarter (approximately 90 days before)
       const currentDate = new Date(fiscalDate);
@@ -1862,18 +1868,20 @@ class MetricCalculator {
       const maxDateStr = maxDate.toISOString().split('T')[0];
 
       // Query prior quarter data
-      const priorData = database.prepare(`
+      const result = await database.query(`
         SELECT data
         FROM financial_data
-        WHERE company_id = ?
+        WHERE company_id = $1
           AND statement_type = 'income_statement'
           AND period_type = 'quarterly'
-          AND fiscal_date_ending >= ?
-          AND fiscal_date_ending <= ?
-          AND fiscal_date_ending < ?
+          AND fiscal_date_ending >= $2
+          AND fiscal_date_ending <= $3
+          AND fiscal_date_ending < $4
         ORDER BY fiscal_date_ending DESC
         LIMIT 1
-      `).get(companyId, minDateStr, maxDateStr, fiscalDate);
+      `, [companyId, minDateStr, maxDateStr, fiscalDate]);
+
+      const priorData = result.rows[0];
 
       if (!priorData) return null;
 
@@ -1902,13 +1910,12 @@ class MetricCalculator {
    * @param {Number} currentNetIncome - Current period net income
    * @returns {Number|null} Earnings growth percentage
    */
-  calculateEarningsGrowthQoQ(companyId, fiscalDate, periodType, currentNetIncome) {
+  async calculateEarningsGrowthQoQ(companyId, fiscalDate, periodType, currentNetIncome) {
     // QoQ only makes sense for quarterly data
     if (!companyId || !fiscalDate || currentNetIncome === null || currentNetIncome === undefined || periodType !== 'quarterly') return null;
 
     try {
-      const db = require('../database');
-      const database = db.getDatabase();
+      const database = await getDatabaseAsync();
 
       // Find the previous quarter (approximately 90 days before)
       const currentDate = new Date(fiscalDate);
@@ -1925,18 +1932,20 @@ class MetricCalculator {
       const maxDateStr = maxDate.toISOString().split('T')[0];
 
       // Query prior quarter data
-      const priorData = database.prepare(`
+      const result = await database.query(`
         SELECT data
         FROM financial_data
-        WHERE company_id = ?
+        WHERE company_id = $1
           AND statement_type = 'income_statement'
           AND period_type = 'quarterly'
-          AND fiscal_date_ending >= ?
-          AND fiscal_date_ending <= ?
-          AND fiscal_date_ending < ?
+          AND fiscal_date_ending >= $2
+          AND fiscal_date_ending <= $3
+          AND fiscal_date_ending < $4
         ORDER BY fiscal_date_ending DESC
         LIMIT 1
-      `).get(companyId, minDateStr, maxDateStr, fiscalDate);
+      `, [companyId, minDateStr, maxDateStr, fiscalDate]);
+
+      const priorData = result.rows[0];
 
       if (!priorData) return null;
 
@@ -1968,24 +1977,25 @@ class MetricCalculator {
    * @param {Number} years - Number of years (3 or 5)
    * @returns {Number|null} CAGR as percentage (e.g., 15.5 for 15.5% annual growth)
    */
-  calculateCAGR(companyId, fiscalDate, metricType, years) {
+  async calculateCAGR(companyId, fiscalDate, metricType, years) {
     if (!companyId || !fiscalDate || !metricType || !years) return null;
 
     try {
-      const db = require('../database');
-      const database = db.getDatabase();
+      const database = await getDatabaseAsync();
 
       // Get current period data
-      const currentData = database.prepare(`
+      const currentResult = await database.query(`
         SELECT data
         FROM financial_data
-        WHERE company_id = ?
+        WHERE company_id = $1
           AND statement_type = 'income_statement'
           AND period_type = 'annual'
-          AND fiscal_date_ending <= ?
+          AND fiscal_date_ending <= $2
         ORDER BY fiscal_date_ending DESC
         LIMIT 1
-      `).get(companyId, fiscalDate);
+      `, [companyId, fiscalDate]);
+
+      const currentData = currentResult.rows[0];
 
       if (!currentData) return null;
 
@@ -2014,17 +2024,20 @@ class MetricCalculator {
       const maxDateStr = maxDate.toISOString().split('T')[0];
 
       // Get start period data
-      const startData = database.prepare(`
+      const startDateStr = startDate.toISOString().split('T')[0];
+      const startResult = await database.query(`
         SELECT data
         FROM financial_data
-        WHERE company_id = ?
+        WHERE company_id = $1
           AND statement_type = 'income_statement'
           AND period_type = 'annual'
-          AND fiscal_date_ending >= ?
-          AND fiscal_date_ending <= ?
-        ORDER BY ABS(JULIANDAY(fiscal_date_ending) - JULIANDAY(?))
+          AND fiscal_date_ending >= $2
+          AND fiscal_date_ending <= $3
+        ORDER BY ABS(EXTRACT(EPOCH FROM (fiscal_date_ending - $4::date)))
         LIMIT 1
-      `).get(companyId, minDateStr, maxDateStr, startDate.toISOString().split('T')[0]);
+      `, [companyId, minDateStr, maxDateStr, startDateStr]);
+
+      const startData = startResult.rows[0];
 
       if (!startData) return null;
 

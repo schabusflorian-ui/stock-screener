@@ -6,39 +6,26 @@
  * so we can estimate next earnings based on historical filing patterns.
  */
 
+const { getDatabaseAsync } = require('../lib/db');
+
 class EUEarningsCalendarService {
-  constructor(db) {
-    this.db = db;
-    this._prepareStatements();
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
   }
 
-  _prepareStatements() {
-    this.stmtGetFilingHistory = this.db.prepare(`
+  async getEarningsDataByIdentifierId(identifierId) {
+    const database = await getDatabaseAsync();
+
+    const filingsResult = await database.query(`
       SELECT f.id, f.period_start, f.period_end, f.filing_date, f.document_type,
              i.legal_name, i.lei, i.country, i.ticker, i.yahoo_symbol
       FROM xbrl_filings f
       JOIN company_identifiers i ON f.identifier_id = i.id
-      WHERE f.identifier_id = ?
+      WHERE f.identifier_id = $1
       ORDER BY f.period_end DESC
-    `);
+    `, [identifierId]);
 
-    this.stmtGetIdentifierByLEI = this.db.prepare(`
-      SELECT * FROM company_identifiers WHERE lei = ?
-    `);
-
-    this.stmtGetUpcomingFilings = this.db.prepare(`
-      SELECT i.id as identifier_id, i.legal_name, i.lei, i.country, i.ticker, i.yahoo_symbol,
-             MAX(f.period_end) as latest_period_end, MAX(f.filing_date) as latest_filing_date,
-             AVG(julianday(f.filing_date) - julianday(f.period_end)) as avg_days_to_file
-      FROM company_identifiers i
-      JOIN xbrl_filings f ON f.identifier_id = i.id
-      WHERE f.filing_date IS NOT NULL AND f.period_end IS NOT NULL
-      GROUP BY i.id HAVING COUNT(*) >= 2
-    `);
-  }
-
-  getEarningsDataByIdentifierId(identifierId) {
-    const filings = this.stmtGetFilingHistory.all(identifierId);
+    const filings = filingsResult.rows;
     if (filings.length === 0) return null;
 
     const company = filings[0];
@@ -67,8 +54,20 @@ class EUEarningsCalendarService {
     };
   }
 
-  getUpcomingEarnings(daysAhead = 30, country = null) {
-    const companies = this.stmtGetUpcomingFilings.all();
+  async getUpcomingEarnings(daysAhead = 30, country = null) {
+    const database = await getDatabaseAsync();
+
+    const companiesResult = await database.query(`
+      SELECT i.id as identifier_id, i.legal_name, i.lei, i.country, i.ticker, i.yahoo_symbol,
+             MAX(f.period_end) as latest_period_end, MAX(f.filing_date) as latest_filing_date,
+             AVG(julianday(f.filing_date) - julianday(f.period_end)) as avg_days_to_file
+      FROM company_identifiers i
+      JOIN xbrl_filings f ON f.identifier_id = i.id
+      WHERE f.filing_date IS NOT NULL AND f.period_end IS NOT NULL
+      GROUP BY i.id HAVING COUNT(*) >= 2
+    `);
+
+    const companies = companiesResult.rows;
     const now = new Date();
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() + daysAhead);
@@ -101,7 +100,9 @@ class EUEarningsCalendarService {
     return upcoming.sort((a, b) => new Date(a.estimatedDate) - new Date(b.estimatedDate));
   }
 
-  getRecentEarnings(daysBack = 30, country = null) {
+  async getRecentEarnings(daysBack = 30, country = null) {
+    const database = await getDatabaseAsync();
+
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - daysBack);
 
@@ -110,13 +111,17 @@ class EUEarningsCalendarService {
              f.period_end, f.filing_date, f.document_type
       FROM xbrl_filings f
       JOIN company_identifiers i ON f.identifier_id = i.id
-      WHERE f.filing_date >= ?
+      WHERE f.filing_date >= $1
     `;
     const params = [cutoff.toISOString()];
-    if (country) { query += ' AND i.country = ?'; params.push(country); }
+    if (country) {
+      query += ' AND i.country = $2';
+      params.push(country);
+    }
     query += ' ORDER BY f.filing_date DESC';
 
-    return this.db.prepare(query).all(...params).map(r => ({
+    const result = await database.query(query, params);
+    return result.rows.map(r => ({
       identifierId: r.identifier_id,
       name: r.legal_name,
       country: r.country,

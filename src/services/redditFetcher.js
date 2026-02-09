@@ -69,9 +69,11 @@ const WSB_PATTERNS = {
   diamondHands: /\u{1F48E}|diamond\s*hands?/giu,
 };
 
+const { getDatabaseAsync } = require('../lib/db');
+
 class RedditFetcher {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
     this.baseUrl = 'https://www.reddit.com';
     this.userAgent = 'StockSentimentAnalyzer/1.0';
     this.lastRequest = 0;
@@ -83,7 +85,7 @@ class RedditFetcher {
   /**
    * Get active subreddits from database (with caching)
    */
-  getActiveSubreddits(region = 'US') {
+  async getActiveSubreddits(region = 'US') {
     const cacheKey = `subreddits_${region}`;
 
     // Cache for 5 minutes
@@ -92,16 +94,17 @@ class RedditFetcher {
     }
 
     try {
-      const rows = this.db.prepare(`
+      const database = await getDatabaseAsync();
+      const result = await database.query(`
         SELECT name FROM tracked_subreddits
-        WHERE is_active = 1 AND (region = ? OR region = 'global')
+        WHERE is_active = 1 AND (region = $1 OR region = 'global')
         ORDER BY priority DESC, quality_score DESC
         LIMIT 20
-      `).all(region);
+      `, [region]);
 
-      if (rows.length > 0) {
+      if (result.rows.length > 0) {
         if (!this._subredditsCache) this._subredditsCache = {};
-        this._subredditsCache[cacheKey] = rows.map(r => r.name);
+        this._subredditsCache[cacheKey] = result.rows.map(r => r.name);
         this._subredditsCacheTime = Date.now();
         return this._subredditsCache[cacheKey];
       }
@@ -126,8 +129,9 @@ class RedditFetcher {
   /**
    * Update subreddit stats after scanning
    */
-  updateSubredditStats(subreddit, posts, tickerMentions) {
+  async updateSubredditStats(subreddit, posts, tickerMentions) {
     try {
+      const database = await getDatabaseAsync();
       const avgScore = posts.length > 0
         ? posts.reduce((sum, p) => sum + (p.score || 0), 0) / posts.length
         : 0;
@@ -135,16 +139,16 @@ class RedditFetcher {
         ? posts.reduce((sum, p) => sum + (p.numComments || 0), 0) / posts.length
         : 0;
 
-      this.db.prepare(`
+      await database.query(`
         UPDATE tracked_subreddits SET
-          total_posts_scanned = total_posts_scanned + ?,
-          ticker_mentions_found = ticker_mentions_found + ?,
-          avg_post_score = ?,
-          avg_comments = ?,
+          total_posts_scanned = total_posts_scanned + $1,
+          ticker_mentions_found = ticker_mentions_found + $2,
+          avg_post_score = $3,
+          avg_comments = $4,
           last_scanned_at = CURRENT_TIMESTAMP,
           updated_at = CURRENT_TIMESTAMP
-        WHERE name = ?
-      `).run(posts.length, tickerMentions, avgScore, avgComments, subreddit);
+        WHERE name = $5
+      `, [posts.length, tickerMentions, avgScore, avgComments, subreddit]);
     } catch (e) {
       // Ignore if table doesn't exist
     }
@@ -153,15 +157,17 @@ class RedditFetcher {
   /**
    * Discover new subreddits from crossposted content
    */
-  discoverSubreddit(name, discoveredFrom) {
+  async discoverSubreddit(name, discoveredFrom) {
     if (!name || name === discoveredFrom) return;
 
     try {
-      this.db.prepare(`
-        INSERT OR IGNORE INTO tracked_subreddits
+      const database = await getDatabaseAsync();
+      await database.query(`
+        INSERT INTO tracked_subreddits
           (name, category, priority, quality_score, is_active, discovered_from)
-        VALUES (?, 'discovered', 20, 40, 0, ?)
-      `).run(name, discoveredFrom);
+        VALUES ($1, 'discovered', 20, 40, 0, $2)
+        ON CONFLICT (name) DO NOTHING
+      `, [name, discoveredFrom]);
     } catch (e) {
       // Ignore
     }
@@ -252,7 +258,7 @@ class RedditFetcher {
 
     try {
       const data = await this.fetch(url);
-      return this.parsePosts(data.data?.children || [], symbol);
+      return await this.parsePosts(data.data?.children || [], symbol);
     } catch (error) {
       console.error(`Reddit search error for ${symbol}:`, error.message);
       return [];
@@ -276,7 +282,7 @@ class RedditFetcher {
 
     try {
       const data = await this.fetch(url);
-      return this.parsePosts(data.data?.children || []);
+      return await this.parsePosts(data.data?.children || []);
     } catch (error) {
       console.error(`Reddit fetch error for r/${subreddit}:`, error.message);
       return [];
@@ -286,7 +292,7 @@ class RedditFetcher {
   /**
    * Parse Reddit API response into clean post objects
    */
-  parsePosts(children, filterTicker = null) {
+  async parsePosts(children, filterTicker = null) {
     const posts = [];
 
     for (const child of children) {
@@ -298,7 +304,7 @@ class RedditFetcher {
       if (data.removed_by_category || data.selftext === '[removed]') continue;
 
       // Detect tickers mentioned
-      const tickers = this.extractTickers(data.title + ' ' + (data.selftext || ''));
+      const tickers = await this.extractTickers(data.title + ' ' + (data.selftext || ''));
 
       // If filtering by ticker, skip posts that don't mention it
       if (filterTicker && !tickers.includes(filterTicker.toUpperCase())) {
@@ -333,7 +339,7 @@ class RedditFetcher {
   /**
    * Extract stock tickers from text using multiple strategies
    */
-  extractTickers(text) {
+  async extractTickers(text) {
     const tickers = new Set();
 
     // Common words that look like tickers but aren't
@@ -441,7 +447,8 @@ class RedditFetcher {
 
     // Strategy 4: Check against database for uppercase words (validates against real tickers)
     // Only do this for words that could plausibly be tickers
-    if (this.db) {
+    try {
+      const database = await getDatabaseAsync();
       const capsWords = text.match(/\b[A-Z]{2,5}\b/g) || [];
       for (const word of capsWords) {
         if (BLACKLIST.has(word)) continue;
@@ -449,16 +456,19 @@ class RedditFetcher {
 
         // Check if it's in our companies database - this validates it's a real ticker
         try {
-          const exists = this.db.prepare(
-            'SELECT 1 FROM companies WHERE symbol = ? LIMIT 1'
-          ).get(word);
-          if (exists) {
+          const result = await database.query(
+            'SELECT 1 FROM companies WHERE symbol = $1 LIMIT 1',
+            [word]
+          );
+          if (result.rows.length > 0) {
             tickers.add(word);
           }
         } catch (e) {
           // Ignore DB errors
         }
       }
+    } catch (e) {
+      // Database not available, skip validation
     }
 
     return Array.from(tickers);
@@ -510,21 +520,28 @@ class RedditFetcher {
    * Store posts in database
    */
   async storePosts(posts, companyId = null) {
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO reddit_posts (
-        company_id, post_id, subreddit, title, selftext, url, permalink, flair,
-        author, score, upvote_ratio, num_comments, posted_at,
-        sentiment_score, sentiment_label, sentiment_confidence,
-        is_dd, is_yolo, is_gain, is_loss,
-        mentions_buy, mentions_sell, mentions_hold,
-        has_rockets, has_diamond_hands, tickers_mentioned
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+    const database = await getDatabaseAsync();
 
     let stored = 0;
     for (const post of posts) {
       try {
-        stmt.run(
+        await database.query(`
+          INSERT INTO reddit_posts (
+            company_id, post_id, subreddit, title, selftext, url, permalink, flair,
+            author, score, upvote_ratio, num_comments, posted_at,
+            sentiment_score, sentiment_label, sentiment_confidence,
+            is_dd, is_yolo, is_gain, is_loss,
+            mentions_buy, mentions_sell, mentions_hold,
+            has_rockets, has_diamond_hands, tickers_mentioned
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+          ON CONFLICT (post_id) DO UPDATE SET
+            score = EXCLUDED.score,
+            upvote_ratio = EXCLUDED.upvote_ratio,
+            num_comments = EXCLUDED.num_comments,
+            sentiment_score = EXCLUDED.sentiment_score,
+            sentiment_label = EXCLUDED.sentiment_label,
+            sentiment_confidence = EXCLUDED.sentiment_confidence
+        `, [
           companyId,
           post.postId,
           post.subreddit,
@@ -551,11 +568,11 @@ class RedditFetcher {
           post.hasRockets || 0,
           post.hasDiamondHands ? 1 : 0,
           JSON.stringify(post.tickersMentioned || [])
-        );
+        ]);
         stored++;
       } catch (error) {
         // Ignore duplicates
-        if (!error.message.includes('UNIQUE')) {
+        if (!error.message.includes('duplicate') && !error.message.includes('unique')) {
           console.error('Error storing post:', error.message);
         }
       }
@@ -665,7 +682,7 @@ class RedditFetcher {
       }
 
       // Update subreddit stats
-      this.updateSubredditStats(subreddit, analyzed, subredditTickerMentions);
+      await this.updateSubredditStats(subreddit, analyzed, subredditTickerMentions);
     }
 
     console.log(`Scanned ${totalPostsScanned} posts (filtered ${totalFiltered} low-quality)`);
@@ -686,7 +703,7 @@ class RedditFetcher {
 
     // Store trending with region
     const periodKey = region === 'US' ? '24h' : `24h_${region}`;
-    this.storeTrending(trending, periodKey);
+    await this.storeTrending(trending, periodKey);
 
     return { trending, region };
   }
@@ -701,50 +718,61 @@ class RedditFetcher {
   /**
    * Store trending tickers
    */
-  storeTrending(trending, period) {
+  async storeTrending(trending, period) {
+    const database = await getDatabaseAsync();
+
     // Clear old data for period
-    this.db.prepare('DELETE FROM trending_tickers WHERE period = ?').run(period);
+    await database.query('DELETE FROM trending_tickers WHERE period = $1', [period]);
 
-    const stmt = this.db.prepare(`
-      INSERT INTO trending_tickers (
-        symbol, mention_count, unique_posts, total_score, avg_sentiment,
-        rank_by_mentions, period
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    trending.forEach((t, index) => {
-      stmt.run(
-        t.symbol,
-        t.mentionCount,
-        t.uniquePosts,
-        t.totalScore,
-        t.avgSentiment,
-        index + 1,
-        period
-      );
-    });
+    for (let index = 0; index < trending.length; index++) {
+      const t = trending[index];
+      try {
+        await database.query(`
+          INSERT INTO trending_tickers (
+            symbol, mention_count, unique_posts, total_score, avg_sentiment,
+            rank_by_mentions, period
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `, [
+          t.symbol,
+          t.mentionCount,
+          t.uniquePosts,
+          t.totalScore,
+          t.avgSentiment,
+          index + 1,
+          period
+        ]);
+      } catch (error) {
+        console.error('Error storing trending ticker:', error.message);
+      }
+    }
 
     // Also store in trending_history for historical tracking
-    this.storeTrendingHistory(trending, period);
+    await this.storeTrendingHistory(trending, period);
   }
 
   /**
    * Store trending history for historical comparison
    */
-  storeTrendingHistory(trending, period) {
+  async storeTrendingHistory(trending, period) {
+    const database = await getDatabaseAsync();
     const today = new Date().toISOString().split('T')[0];
 
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO trending_history (
-        symbol, snapshot_date, period,
-        mention_count, unique_posts, total_score,
-        avg_sentiment, rank_by_mentions
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    trending.forEach((t, index) => {
+    for (let index = 0; index < trending.length; index++) {
+      const t = trending[index];
       try {
-        stmt.run(
+        await database.query(`
+          INSERT INTO trending_history (
+            symbol, snapshot_date, period,
+            mention_count, unique_posts, total_score,
+            avg_sentiment, rank_by_mentions
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          ON CONFLICT (symbol, snapshot_date, period) DO UPDATE SET
+            mention_count = EXCLUDED.mention_count,
+            unique_posts = EXCLUDED.unique_posts,
+            total_score = EXCLUDED.total_score,
+            avg_sentiment = EXCLUDED.avg_sentiment,
+            rank_by_mentions = EXCLUDED.rank_by_mentions
+        `, [
           t.symbol,
           today,
           period,
@@ -753,21 +781,22 @@ class RedditFetcher {
           t.totalScore,
           t.avgSentiment,
           index + 1
-        );
+        ]);
       } catch (e) {
         // Ignore errors (e.g., duplicate entries)
       }
-    });
+    }
   }
 
   /**
    * Get trending history for a symbol
    */
-  getTrendingHistory(symbol, days = 30) {
+  async getTrendingHistory(symbol, days = 30) {
+    const database = await getDatabaseAsync();
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
 
-    return this.db.prepare(`
+    const result = await database.query(`
       SELECT
         snapshot_date,
         mention_count,
@@ -776,45 +805,52 @@ class RedditFetcher {
         avg_sentiment,
         rank_by_mentions
       FROM trending_history
-      WHERE symbol = ? AND snapshot_date >= ?
+      WHERE symbol = $1 AND snapshot_date >= $2
       ORDER BY snapshot_date ASC
-    `).all(symbol, cutoff.toISOString().split('T')[0]);
+    `, [symbol, cutoff.toISOString().split('T')[0]]);
+
+    return result.rows;
   }
 
   /**
    * Get sentiment status for updates page
    */
-  getSentimentStatus() {
-    const stats = this.db.prepare(`
+  async getSentimentStatus() {
+    const database = await getDatabaseAsync();
+
+    const statsResult = await database.query(`
       SELECT
         COUNT(DISTINCT symbol) as tickers_tracked,
         SUM(mention_count) as total_mentions,
         MAX(calculated_at) as last_scan
       FROM trending_tickers
       WHERE period = '24h'
-    `).get();
+    `);
+    const stats = statsResult.rows[0];
 
-    const postStats = this.db.prepare(`
+    const postStatsResult = await database.query(`
       SELECT
         COUNT(*) as total_posts,
         COUNT(DISTINCT company_id) as companies_with_posts,
         MAX(fetched_at) as latest_fetch
       FROM reddit_posts
-    `).get();
+    `);
+    const postStats = postStatsResult.rows[0];
 
-    const historyDays = this.db.prepare(`
+    const historyDaysResult = await database.query(`
       SELECT COUNT(DISTINCT snapshot_date) as days_tracked
       FROM trending_history
-    `).get();
+    `);
+    const historyDays = historyDaysResult.rows[0];
 
     return {
-      tickersTracked: stats?.tickers_tracked || 0,
-      totalMentions: stats?.total_mentions || 0,
+      tickersTracked: parseInt(stats?.tickers_tracked) || 0,
+      totalMentions: parseInt(stats?.total_mentions) || 0,
       lastScan: stats?.last_scan || null,
-      totalPosts: postStats?.total_posts || 0,
-      companiesWithPosts: postStats?.companies_with_posts || 0,
+      totalPosts: parseInt(postStats?.total_posts) || 0,
+      companiesWithPosts: parseInt(postStats?.companies_with_posts) || 0,
       latestFetch: postStats?.latest_fetch || null,
-      daysTracked: historyDays?.days_tracked || 0
+      daysTracked: parseInt(historyDays?.days_tracked) || 0
     };
   }
 }

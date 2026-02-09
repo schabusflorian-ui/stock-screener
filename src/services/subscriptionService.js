@@ -9,6 +9,7 @@
  */
 
 const { unifiedCache } = require('../lib/redisCache');
+const { getDatabaseAsync } = require('../lib/db');
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const CACHE_PREFIX = 'sub:';
@@ -21,8 +22,7 @@ const TIER_HIERARCHY = {
 };
 
 class SubscriptionService {
-  constructor(db) {
-    this.db = db;
+  constructor() {
     // In-memory fallback caches (used when Redis unavailable or for sync methods)
     this._tierCacheFallback = new Map();
     this._userCacheFallback = new Map();
@@ -39,17 +39,18 @@ class SubscriptionService {
       return cached;
     }
 
-    const tiers = this.db.prepare(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT id, name, display_name, description,
              price_monthly_cents, price_yearly_cents,
              limits, features, badge_color, sort_order
       FROM subscription_tiers
       WHERE is_active = 1
       ORDER BY sort_order ASC
-    `).all();
+    `);
 
     // Parse JSON fields
-    const parsed = tiers.map(tier => ({
+    const parsed = result.rows.map(tier => ({
       ...tier,
       limits: JSON.parse(tier.limits || '{}'),
       features: JSON.parse(tier.features || '{}'),
@@ -63,70 +64,48 @@ class SubscriptionService {
   }
 
   /**
-   * Get all available tiers (sync version for backward compatibility)
+   * Get all available tiers (async - sync version deprecated)
    */
-  getAllTiers() {
-    const cached = this._tierCacheFallback.get('all');
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-      return cached.data;
-    }
-
-    const tiers = this.db.prepare(`
-      SELECT id, name, display_name, description,
-             price_monthly_cents, price_yearly_cents,
-             limits, features, badge_color, sort_order
-      FROM subscription_tiers
-      WHERE is_active = 1
-      ORDER BY sort_order ASC
-    `).all();
-
-    // Parse JSON fields
-    const parsed = tiers.map(tier => ({
-      ...tier,
-      limits: JSON.parse(tier.limits || '{}'),
-      features: JSON.parse(tier.features || '{}'),
-      priceMonthly: tier.price_monthly_cents / 100,
-      priceYearly: tier.price_yearly_cents ? tier.price_yearly_cents / 100 : null
-    }));
-
-    this._tierCacheFallback.set('all', { data: parsed, timestamp: Date.now() });
-    return parsed;
+  async getAllTiers() {
+    return this.getAllTiersAsync();
   }
 
   /**
    * Get tier by name
    */
-  getTierByName(tierName) {
-    const tiers = this.getAllTiers();
+  async getTierByName(tierName) {
+    const tiers = await this.getAllTiers();
     return tiers.find(t => t.name === tierName) || tiers.find(t => t.name === 'free');
   }
 
   /**
    * Get tier by ID
    */
-  getTierById(tierId) {
-    const cached = this.tierCache.get(`tier_${tierId}`);
+  async getTierById(tierId) {
+    const cached = this._tierCacheFallback.get(`tier_${tierId}`);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
       return cached.data;
     }
 
-    const tier = this.db.prepare(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT id, name, display_name, description,
              price_monthly_cents, price_yearly_cents,
              limits, features, badge_color
       FROM subscription_tiers
-      WHERE id = ?
-    `).get(tierId);
+      WHERE id = $1
+    `, [tierId]);
 
-    if (!tier) return null;
+    if (!result.rows[0]) return null;
 
+    const tier = result.rows[0];
     const parsed = {
       ...tier,
       limits: JSON.parse(tier.limits || '{}'),
       features: JSON.parse(tier.features || '{}')
     };
 
-    this.tierCache.set(`tier_${tierId}`, { data: parsed, timestamp: Date.now() });
+    this._tierCacheFallback.set(`tier_${tierId}`, { data: parsed, timestamp: Date.now() });
     return parsed;
   }
 
@@ -136,7 +115,7 @@ class SubscriptionService {
    */
   async getUserSubscriptionAsync(userId) {
     if (!userId) {
-      return this.getFreeTierDefaults();
+      return await this.getFreeTierDefaults();
     }
 
     // Check Redis cache first
@@ -145,7 +124,7 @@ class SubscriptionService {
       return cached;
     }
 
-    const result = this._fetchUserSubscription(userId);
+    const result = await this._fetchUserSubscription(userId);
 
     // Cache in Redis
     await unifiedCache.set(`${CACHE_PREFIX}user:${userId}`, result, CACHE_TTL_MS);
@@ -153,31 +132,18 @@ class SubscriptionService {
   }
 
   /**
-   * Get user's current subscription (sync version for backward compatibility)
+   * Get user's current subscription (async - sync version deprecated)
    */
-  getUserSubscription(userId) {
-    if (!userId) {
-      return this.getFreeTierDefaults();
-    }
-
-    // Check in-memory fallback cache
-    const cached = this._userCacheFallback.get(userId);
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-      return cached.data;
-    }
-
-    const result = this._fetchUserSubscription(userId);
-
-    // Cache in memory fallback
-    this._userCacheFallback.set(userId, { data: result, timestamp: Date.now() });
-    return result;
+  async getUserSubscription(userId) {
+    return this.getUserSubscriptionAsync(userId);
   }
 
   /**
    * Internal: fetch user subscription from database
    */
-  _fetchUserSubscription(userId) {
-    const subscription = this.db.prepare(`
+  async _fetchUserSubscription(userId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         us.*,
         st.name as tier_name,
@@ -188,21 +154,22 @@ class SubscriptionService {
         st.badge_color
       FROM user_subscriptions us
       JOIN subscription_tiers st ON us.tier_id = st.id
-      WHERE us.user_id = ?
-    `).get(userId);
+      WHERE us.user_id = $1
+    `, [userId]);
 
-    let result;
+    const subscription = result.rows[0];
+    let subscriptionResult;
 
     if (!subscription) {
       // No subscription record - return free tier defaults
-      result = this.getFreeTierDefaults(userId);
+      subscriptionResult = await this.getFreeTierDefaults(userId);
     } else {
       // Check if grandfathered period has expired
       const isGrandfatheredActive = subscription.grandfathered_expires_at &&
         new Date(subscription.grandfathered_expires_at) > new Date();
 
       // Parse JSON fields
-      result = {
+      subscriptionResult = {
         ...subscription,
         limits: JSON.parse(subscription.limits || '{}'),
         features: JSON.parse(subscription.features || '{}'),
@@ -215,22 +182,22 @@ class SubscriptionService {
 
       // If grandfathered and active, unlock all features
       if (isGrandfatheredActive) {
-        result.effectiveFeatures = this.getAllFeaturesUnlocked();
-        result.effectiveLimits = this.getAllLimitsUnlocked();
+        subscriptionResult.effectiveFeatures = this.getAllFeaturesUnlocked();
+        subscriptionResult.effectiveLimits = this.getAllLimitsUnlocked();
       } else {
-        result.effectiveFeatures = result.features;
-        result.effectiveLimits = result.limits;
+        subscriptionResult.effectiveFeatures = subscriptionResult.features;
+        subscriptionResult.effectiveLimits = subscriptionResult.limits;
       }
     }
 
-    return result;
+    return subscriptionResult;
   }
 
   /**
    * Get free tier defaults for users without subscription
    */
-  getFreeTierDefaults(userId = null) {
-    const freeTier = this.getTierByName('free');
+  async getFreeTierDefaults(userId = null) {
+    const freeTier = await this.getTierByName('free');
     return {
       user_id: userId,
       tier_id: freeTier?.id || 1,
@@ -291,8 +258,8 @@ class SubscriptionService {
   /**
    * Check if user has access to a specific feature
    */
-  hasFeature(userId, featureName) {
-    const subscription = this.getUserSubscription(userId);
+  async hasFeature(userId, featureName) {
+    const subscription = await this.getUserSubscription(userId);
     const features = subscription.effectiveFeatures || subscription.features || {};
     return features[featureName] === true;
   }
@@ -301,8 +268,8 @@ class SubscriptionService {
    * Get usage limit for a specific resource
    * Returns -1 for unlimited
    */
-  getLimit(userId, limitName) {
-    const subscription = this.getUserSubscription(userId);
+  async getLimit(userId, limitName) {
+    const subscription = await this.getUserSubscription(userId);
     const limits = subscription.effectiveLimits || subscription.limits || {};
     return limits[limitName] ?? 0;
   }
@@ -310,8 +277,8 @@ class SubscriptionService {
   /**
    * Check if user's tier is at least the required tier
    */
-  hasTierAccess(userId, requiredTier) {
-    const subscription = this.getUserSubscription(userId);
+  async hasTierAccess(userId, requiredTier) {
+    const subscription = await this.getUserSubscription(userId);
 
     // Grandfathered users have full access during grace period
     if (subscription.isGrandfatheredActive) {
@@ -326,33 +293,35 @@ class SubscriptionService {
   /**
    * Get current period usage count
    */
-  getCurrentUsage(userId, usageType) {
+  async getCurrentUsage(userId, usageType) {
     const periodStart = this.getCurrentPeriodStart(usageType);
     const periodType = this.getPeriodType(usageType);
 
-    const result = this.db.prepare(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT COALESCE(usage_count, 0) as count
       FROM usage_tracking
-      WHERE user_id = ? AND usage_type = ? AND period_start = ? AND period_type = ?
-    `).get(userId, usageType, periodStart, periodType);
+      WHERE user_id = $1 AND usage_type = $2 AND period_start = $3 AND period_type = $4
+    `, [userId, usageType, periodStart, periodType]);
 
-    return result?.count || 0;
+    return result.rows[0]?.count || 0;
   }
 
   /**
    * Get all usage stats for a user
    */
-  getAllUsage(userId) {
+  async getAllUsage(userId) {
     const periodStart = this.getCurrentPeriodStart('monthly');
 
-    const results = this.db.prepare(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT usage_type, usage_count, last_usage_at
       FROM usage_tracking
-      WHERE user_id = ? AND period_start = ?
-    `).all(userId, periodStart);
+      WHERE user_id = $1 AND period_start = $2
+    `, [userId, periodStart]);
 
     const usage = {};
-    for (const row of results) {
+    for (const row of result.rows) {
       usage[row.usage_type] = {
         count: row.usage_count,
         lastUsedAt: row.last_usage_at
@@ -365,19 +334,20 @@ class SubscriptionService {
   /**
    * Track usage increment
    */
-  trackUsage(userId, usageType, increment = 1) {
+  async trackUsage(userId, usageType, increment = 1) {
     const periodStart = this.getCurrentPeriodStart(usageType);
     const periodType = this.getPeriodType(usageType);
 
-    this.db.prepare(`
+    const database = await getDatabaseAsync();
+    await database.query(`
       INSERT INTO usage_tracking (user_id, usage_type, period_start, period_type, usage_count, last_usage_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       ON CONFLICT(user_id, usage_type, period_start, period_type)
       DO UPDATE SET
-        usage_count = usage_count + ?,
+        usage_count = usage_count + $6,
         last_usage_at = CURRENT_TIMESTAMP,
         updated_at = CURRENT_TIMESTAMP
-    `).run(userId, usageType, periodStart, periodType, increment, increment);
+    `, [userId, usageType, periodStart, periodType, increment, increment]);
   }
 
   /**
@@ -385,11 +355,11 @@ class SubscriptionService {
    * Returns { allowed, remaining, limit, resetAt }
    */
   async checkAndTrackUsage(userId, usageType, increment = 1) {
-    const limit = this.getLimit(userId, usageType);
+    const limit = await this.getLimit(userId, usageType);
 
     // -1 means unlimited
     if (limit === -1) {
-      this.trackUsage(userId, usageType, increment);
+      await this.trackUsage(userId, usageType, increment);
       return {
         allowed: true,
         remaining: -1,
@@ -399,7 +369,7 @@ class SubscriptionService {
     }
 
     // Check current usage
-    const currentUsage = this.getCurrentUsage(userId, usageType);
+    const currentUsage = await this.getCurrentUsage(userId, usageType);
     const remaining = limit - currentUsage;
 
     if (remaining < increment) {
@@ -413,7 +383,7 @@ class SubscriptionService {
     }
 
     // Track the usage
-    this.trackUsage(userId, usageType, increment);
+    await this.trackUsage(userId, usageType, increment);
 
     return {
       allowed: true,
@@ -462,7 +432,7 @@ class SubscriptionService {
   /**
    * Create or update user subscription
    */
-  createOrUpdateSubscription(userId, data) {
+  async createOrUpdateSubscription(userId, data) {
     const {
       tierId,
       status = 'active',
@@ -475,109 +445,111 @@ class SubscriptionService {
       grandfatheredExpiresAt
     } = data;
 
-    const existing = this.db.prepare(
-      'SELECT id FROM user_subscriptions WHERE user_id = ?'
-    ).get(userId);
+    const database = await getDatabaseAsync();
+    const existingResult = await database.query(
+      'SELECT id FROM user_subscriptions WHERE user_id = $1',
+      [userId]
+    );
+    const existing = existingResult.rows[0];
 
     if (existing) {
-      this.db.prepare(`
+      await database.query(`
         UPDATE user_subscriptions SET
-          tier_id = COALESCE(?, tier_id),
-          status = COALESCE(?, status),
-          billing_period = COALESCE(?, billing_period),
-          stripe_customer_id = COALESCE(?, stripe_customer_id),
-          stripe_subscription_id = COALESCE(?, stripe_subscription_id),
-          current_period_start = COALESCE(?, current_period_start),
-          current_period_end = COALESCE(?, current_period_end),
+          tier_id = COALESCE($1, tier_id),
+          status = COALESCE($2, status),
+          billing_period = COALESCE($3, billing_period),
+          stripe_customer_id = COALESCE($4, stripe_customer_id),
+          stripe_subscription_id = COALESCE($5, stripe_subscription_id),
+          current_period_start = COALESCE($6, current_period_start),
+          current_period_end = COALESCE($7, current_period_end),
           updated_at = CURRENT_TIMESTAMP
-        WHERE user_id = ?
-      `).run(
+        WHERE user_id = $8
+      `, [
         tierId, status, billingPeriod, stripeCustomerId, stripeSubscriptionId,
         currentPeriodStart, currentPeriodEnd, userId
-      );
+      ]);
     } else {
-      this.db.prepare(`
+      await database.query(`
         INSERT INTO user_subscriptions (
           user_id, tier_id, status, billing_period,
           stripe_customer_id, stripe_subscription_id,
           current_period_start, current_period_end,
           grandfathered_from, grandfathered_expires_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `, [
         userId, tierId, status, billingPeriod,
         stripeCustomerId, stripeSubscriptionId,
         currentPeriodStart || new Date().toISOString(),
         currentPeriodEnd || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
         grandfatheredFrom, grandfatheredExpiresAt
-      );
+      ]);
     }
 
     // Invalidate cache
-    this.invalidateUserCache(userId);
+    await this.invalidateUserCache(userId);
 
-    return this.getUserSubscription(userId);
+    return await this.getUserSubscription(userId);
   }
 
   /**
    * Cancel subscription
    */
-  cancelSubscription(userId, reason = null, immediate = false) {
-    const update = immediate
-      ? { status: 'cancelled', cancelledAt: new Date().toISOString() }
-      : { cancelAtPeriodEnd: 1 };
+  async cancelSubscription(userId, reason = null, immediate = false) {
+    const database = await getDatabaseAsync();
 
-    this.db.prepare(`
+    await database.query(`
       UPDATE user_subscriptions SET
-        cancel_at_period_end = ?,
-        cancelled_at = ?,
-        cancellation_reason = ?,
+        cancel_at_period_end = $1,
+        cancelled_at = $2,
+        cancellation_reason = $3,
         updated_at = CURRENT_TIMESTAMP
-      WHERE user_id = ?
-    `).run(
+      WHERE user_id = $4
+    `, [
       immediate ? 0 : 1,
       immediate ? new Date().toISOString() : null,
       reason,
       userId
-    );
+    ]);
 
     // Invalidate cache
-    this.invalidateUserCache(userId);
+    await this.invalidateUserCache(userId);
 
     // Log event
-    this.logEvent(userId, 'cancelled', { reason, immediate });
+    await this.logEvent(userId, 'cancelled', { reason, immediate });
   }
 
   /**
    * Downgrade user to free tier
    */
-  downgradeToFree(userId, reason = null) {
-    const freeTier = this.getTierByName('free');
-    const currentSub = this.getUserSubscription(userId);
+  async downgradeToFree(userId, reason = null) {
+    const freeTier = await this.getTierByName('free');
+    const currentSub = await this.getUserSubscription(userId);
 
-    this.db.prepare(`
+    const database = await getDatabaseAsync();
+    await database.query(`
       UPDATE user_subscriptions SET
-        tier_id = ?,
+        tier_id = $1,
         status = 'active',
         cancel_at_period_end = 0,
         updated_at = CURRENT_TIMESTAMP
-      WHERE user_id = ?
-    `).run(freeTier.id, userId);
+      WHERE user_id = $2
+    `, [freeTier.id, userId]);
 
     // Log event
-    this.logEvent(userId, 'downgraded', {
+    await this.logEvent(userId, 'downgraded', {
       previousTierId: currentSub.tier_id,
       newTierId: freeTier.id,
       reason
     });
 
     // Invalidate cache
-    this.invalidateUserCache(userId);
+    await this.invalidateUserCache(userId);
   }
 
   /**
    * Log subscription event
    */
-  logEvent(userId, eventType, data = {}) {
+  async logEvent(userId, eventType, data = {}) {
     const {
       previousTierId,
       newTierId,
@@ -589,27 +561,30 @@ class SubscriptionService {
       userAgent
     } = data;
 
-    this.db.prepare(`
+    const database = await getDatabaseAsync();
+    await database.query(`
       INSERT INTO subscription_events (
         user_id, event_type, previous_tier_id, new_tier_id,
         reason, metadata, amount_cents, stripe_event_id,
         ip_address, user_agent
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `, [
       userId, eventType, previousTierId, newTierId,
       reason, metadata ? JSON.stringify(metadata) : null,
       amountCents, stripeEventId, ipAddress, userAgent
-    );
+    ]);
   }
 
   /**
    * Check if Stripe event already processed (idempotency)
    */
-  isEventProcessed(stripeEventId) {
-    const existing = this.db.prepare(
-      'SELECT id FROM subscription_events WHERE stripe_event_id = ?'
-    ).get(stripeEventId);
-    return !!existing;
+  async isEventProcessed(stripeEventId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(
+      'SELECT id FROM subscription_events WHERE stripe_event_id = $1',
+      [stripeEventId]
+    );
+    return !!result.rows[0];
   }
 
   /**
@@ -652,15 +627,15 @@ class SubscriptionService {
 // Singleton instance
 let instance = null;
 
-function getSubscriptionService(db) {
+function getSubscriptionService() {
   if (!instance) {
-    instance = new SubscriptionService(db);
+    instance = new SubscriptionService();
   }
   return instance;
 }
 
-function createSubscriptionService(db) {
-  return new SubscriptionService(db);
+function createSubscriptionService() {
+  return new SubscriptionService();
 }
 
 module.exports = {

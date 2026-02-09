@@ -11,22 +11,27 @@
  * - Contrarian: High value + low momentum
  */
 
+const { getDatabaseAsync } = require('../lib/db');
+
 class InvestorStyleClassifier {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
   }
 
   /**
    * Classify all investors based on their latest portfolio factor exposures
    */
-  classifyAllInvestors() {
-    const investors = this.db.prepare(`
-      SELECT DISTINCT investor_id FROM portfolio_factor_exposures
-    `).all();
+  async classifyAllInvestors() {
+    const database = await getDatabaseAsync();
+
+    const investorsResult = await database.query(
+      'SELECT DISTINCT investor_id FROM portfolio_factor_exposures'
+    );
+    const investors = investorsResult.rows;
 
     const results = [];
     for (const { investor_id } of investors) {
-      const classification = this.classifyInvestor(investor_id);
+      const classification = await this.classifyInvestor(investor_id);
       if (classification) {
         results.push(classification);
       }
@@ -38,23 +43,28 @@ class InvestorStyleClassifier {
   /**
    * Classify a single investor
    */
-  classifyInvestor(investorId) {
+  async classifyInvestor(investorId) {
+    const database = await getDatabaseAsync();
+
     // Get latest portfolio factor exposures
-    const exposure = this.db.prepare(`
+    const exposureResult = await database.query(`
       SELECT * FROM portfolio_factor_exposures
-      WHERE investor_id = ?
+      WHERE investor_id = $1
       ORDER BY snapshot_date DESC
       LIMIT 1
-    `).get(investorId);
+    `, [investorId]);
+    const exposure = exposureResult.rows[0];
 
     if (!exposure) {
       return null;
     }
 
     // Get investor info
-    const investor = this.db.prepare(`
-      SELECT id, name, investment_style FROM famous_investors WHERE id = ?
-    `).get(investorId);
+    const investorResult = await database.query(
+      'SELECT id, name, investment_style FROM famous_investors WHERE id = $1',
+      [investorId]
+    );
+    const investor = investorResult.rows[0];
 
     if (!investor) {
       return null;
@@ -199,8 +209,8 @@ class InvestorStyleClassifier {
   /**
    * Get style distribution across all investors
    */
-  getStyleDistribution() {
-    const classifications = this.classifyAllInvestors();
+  async getStyleDistribution() {
+    const classifications = await this.classifyAllInvestors();
 
     const distribution = {};
     for (const c of classifications) {
@@ -225,12 +235,12 @@ class InvestorStyleClassifier {
   /**
    * Find investors with similar style
    */
-  findSimilarInvestors(investorId, limit = 5) {
-    const target = this.classifyInvestor(investorId);
+  async findSimilarInvestors(investorId, limit = 5) {
+    const target = await this.classifyInvestor(investorId);
     if (!target) return [];
 
-    const allClassifications = this.classifyAllInvestors()
-      .filter(c => c.investorId !== investorId);
+    const allInvestors = await this.classifyAllInvestors();
+    const allClassifications = allInvestors.filter(c => c.investorId !== investorId);
 
     // Score similarity based on factor tilts
     const scored = allClassifications.map(c => {
@@ -254,13 +264,16 @@ class InvestorStyleClassifier {
   /**
    * Get style evolution for an investor over time
    */
-  getStyleEvolution(investorId, limit = 20) {
-    const exposures = this.db.prepare(`
+  async getStyleEvolution(investorId, limit = 20) {
+    const database = await getDatabaseAsync();
+
+    const exposuresResult = await database.query(`
       SELECT * FROM portfolio_factor_exposures
-      WHERE investor_id = ?
+      WHERE investor_id = $1
       ORDER BY snapshot_date DESC
-      LIMIT ?
-    `).all(investorId, limit);
+      LIMIT $2
+    `, [investorId, limit]);
+    const exposures = exposuresResult.rows;
 
     return exposures.map(exp => {
       const classification = this._determineStyle(exp);
@@ -281,20 +294,19 @@ class InvestorStyleClassifier {
   /**
    * Update famous_investors table with classified styles
    */
-  updateInvestorStyles() {
-    const classifications = this.classifyAllInvestors();
-
-    const update = this.db.prepare(`
-      UPDATE famous_investors
-      SET investment_style = ?,
-          updated_at = datetime('now')
-      WHERE id = ?
-    `);
+  async updateInvestorStyles() {
+    const database = await getDatabaseAsync();
+    const classifications = await this.classifyAllInvestors();
 
     let updated = 0;
     for (const c of classifications) {
       if (c.classifiedStyle && c.confidence !== 'low') {
-        update.run(c.classifiedStyle, c.investorId);
+        await database.query(`
+          UPDATE famous_investors
+          SET investment_style = $1,
+              updated_at = datetime('now')
+          WHERE id = $2
+        `, [c.classifiedStyle, c.investorId]);
         updated++;
       }
     }
@@ -308,8 +320,7 @@ let instance = null;
 
 function getInvestorStyleClassifier() {
   if (!instance) {
-    const db = require('../database').db;
-    instance = new InvestorStyleClassifier(db);
+    instance = new InvestorStyleClassifier();
   }
   return instance;
 }

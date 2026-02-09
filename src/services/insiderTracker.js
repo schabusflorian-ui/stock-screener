@@ -9,7 +9,7 @@
  */
 
 const Form4Parser = require('./form4Parser');
-const { getDatabaseAsync } = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 
 // Signal calculation weights
 const SIGNAL_WEIGHTS = {

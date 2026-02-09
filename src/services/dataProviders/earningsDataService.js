@@ -13,61 +13,16 @@
  */
 
 const https = require('https');
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 
 class EarningsDataService {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
     this.fmpApiKey = process.env.FMP_API_KEY;
 
     // Cache for NASDAQ data (in-memory, 1 hour)
     this.cache = new Map();
     this.CACHE_TTL = 60 * 60 * 1000; // 1 hour
-
-    this.prepareStatements();
-  }
-
-  prepareStatements() {
-    this.getCompanyId = this.db.prepare(`
-      SELECT id FROM companies WHERE symbol = ?
-    `);
-
-    this.upsertEarningsDate = this.db.prepare(`
-      INSERT INTO earnings_calendar (
-        company_id, symbol, earnings_date, fiscal_quarter, fiscal_year,
-        eps_estimate, eps_actual, revenue_estimate, revenue_actual,
-        surprise_pct, source, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(company_id, earnings_date) DO UPDATE SET
-        eps_estimate = COALESCE(excluded.eps_estimate, earnings_calendar.eps_estimate),
-        eps_actual = COALESCE(excluded.eps_actual, earnings_calendar.eps_actual),
-        revenue_estimate = COALESCE(excluded.revenue_estimate, earnings_calendar.revenue_estimate),
-        revenue_actual = COALESCE(excluded.revenue_actual, earnings_calendar.revenue_actual),
-        surprise_pct = COALESCE(excluded.surprise_pct, earnings_calendar.surprise_pct),
-        updated_at = CURRENT_TIMESTAMP
-    `);
-
-    this.getUpcomingEarnings = this.db.prepare(`
-      SELECT
-        ec.*,
-        c.name as company_name,
-        c.sector,
-        pm.market_cap,
-        pm.last_price
-      FROM earnings_calendar ec
-      JOIN companies c ON ec.company_id = c.id
-      LEFT JOIN price_metrics pm ON pm.company_id = c.id
-      WHERE ec.earnings_date >= date('now')
-        AND ec.earnings_date <= date('now', ?)
-      ORDER BY ec.earnings_date ASC
-      LIMIT ?
-    `);
-
-    this.getEarningsHistory = this.db.prepare(`
-      SELECT * FROM earnings_calendar
-      WHERE company_id = ?
-      ORDER BY earnings_date DESC
-      LIMIT ?
-    `);
   }
 
   /**
@@ -214,11 +169,17 @@ class EarningsDataService {
   /**
    * Store earnings data in database
    */
-  storeEarnings(earnings) {
+  async storeEarnings(earnings) {
+    const database = await getDatabaseAsync();
     let stored = 0;
 
     for (const e of earnings) {
-      const company = this.getCompanyId.get(e.symbol);
+      // Get company ID
+      const companyResult = await database.query(
+        'SELECT id FROM companies WHERE symbol = $1',
+        [e.symbol]
+      );
+      const company = companyResult.rows[0];
       if (!company) continue;
 
       // Parse fiscal quarter from date
@@ -228,7 +189,20 @@ class EarningsDataService {
       const fiscalYear = date.getFullYear();
 
       try {
-        this.upsertEarningsDate.run(
+        await database.query(`
+          INSERT INTO earnings_calendar (
+            company_id, symbol, earnings_date, fiscal_quarter, fiscal_year,
+            eps_estimate, eps_actual, revenue_estimate, revenue_actual,
+            surprise_pct, source, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
+          ON CONFLICT(company_id, earnings_date) DO UPDATE SET
+            eps_estimate = COALESCE(excluded.eps_estimate, earnings_calendar.eps_estimate),
+            eps_actual = COALESCE(excluded.eps_actual, earnings_calendar.eps_actual),
+            revenue_estimate = COALESCE(excluded.revenue_estimate, earnings_calendar.revenue_estimate),
+            revenue_actual = COALESCE(excluded.revenue_actual, earnings_calendar.revenue_actual),
+            surprise_pct = COALESCE(excluded.surprise_pct, earnings_calendar.surprise_pct),
+            updated_at = CURRENT_TIMESTAMP
+        `, [
           company.id,
           e.symbol,
           e.date,
@@ -240,7 +214,7 @@ class EarningsDataService {
           e.revenueActual || null,
           e.surprise || null,
           e.source || 'nasdaq'
-        );
+        ]);
         stored++;
       } catch (err) {
         // Ignore duplicates
@@ -253,24 +227,60 @@ class EarningsDataService {
   /**
    * Get upcoming earnings from database
    */
-  getUpcoming(lookforwardDays = '+14 days', limit = 100) {
-    return this.getUpcomingEarnings.all(lookforwardDays, limit);
+  async getUpcoming(lookforwardDays = '+14 days', limit = 100) {
+    const database = await getDatabaseAsync();
+
+    // Build dialect-aware date filter
+    const futureDate = isUsingPostgres()
+      ? `ec.earnings_date >= CURRENT_DATE AND ec.earnings_date <= CURRENT_DATE + INTERVAL '${lookforwardDays}'`
+      : `ec.earnings_date >= date('now') AND ec.earnings_date <= date('now', '${lookforwardDays}')`;
+
+    const result = await database.query(`
+      SELECT
+        ec.*,
+        c.name as company_name,
+        c.sector,
+        pm.market_cap,
+        pm.last_price
+      FROM earnings_calendar ec
+      JOIN companies c ON ec.company_id = c.id
+      LEFT JOIN price_metrics pm ON pm.company_id = c.id
+      WHERE ${futureDate}
+      ORDER BY ec.earnings_date ASC
+      LIMIT $1
+    `, [limit]);
+
+    return result.rows;
   }
 
   /**
    * Get earnings history for a symbol
    */
-  getHistory(symbol, limit = 20) {
-    const company = this.getCompanyId.get(symbol);
+  async getHistory(symbol, limit = 20) {
+    const database = await getDatabaseAsync();
+
+    const companyResult = await database.query(
+      'SELECT id FROM companies WHERE symbol = $1',
+      [symbol]
+    );
+    const company = companyResult.rows[0];
     if (!company) return [];
-    return this.getEarningsHistory.all(company.id, limit);
+
+    const result = await database.query(`
+      SELECT * FROM earnings_calendar
+      WHERE company_id = $1
+      ORDER BY earnings_date DESC
+      LIMIT $2
+    `, [company.id, limit]);
+
+    return result.rows;
   }
 
   /**
    * Calculate earnings beat rate
    */
-  calculateBeatRate(symbol) {
-    const history = this.getHistory(symbol, 12);
+  async calculateBeatRate(symbol) {
+    const history = await this.getHistory(symbol, 12);
 
     if (history.length === 0) {
       return { beatRate: null, history: [] };
@@ -329,7 +339,7 @@ class EarningsDataService {
     console.log(`\n📅 Refreshing earnings calendar for next ${days} days...\n`);
 
     const earnings = await this.fetchUpcomingEarnings(days);
-    const stored = this.storeEarnings(earnings);
+    const stored = await this.storeEarnings(earnings);
 
     console.log(`  Fetched ${earnings.length} earnings dates, stored ${stored}\n`);
 
@@ -340,7 +350,7 @@ class EarningsDataService {
    * Get earnings with transcript availability
    */
   async getEarningsWithTranscripts(symbol) {
-    const history = this.getHistory(symbol, 8);
+    const history = await this.getHistory(symbol, 8);
     const fmpData = await this.fetchFMPEarnings(symbol);
 
     // Match transcripts to earnings dates

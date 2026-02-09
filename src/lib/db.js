@@ -38,8 +38,26 @@ function initSQLite() {
 
     // Query methods that match a common interface
     query: (sql, params = []) => {
-      const stmt = sqliteDb.prepare(sql);
-      if (sql.trim().toUpperCase().startsWith('SELECT')) {
+      // Convert PostgreSQL-style $1, $2... placeholders to SQLite-style ?
+      // This allows code written for PostgreSQL to work with SQLite
+      let convertedSql = sql;
+      const pgPlaceholders = sql.match(/\$\d+/g);
+      if (pgPlaceholders) {
+        // Get unique placeholders and sort by numeric value in descending order
+        // This prevents replacing $1 before $10 (e.g., $10 would become ?0)
+        const uniquePlaceholders = [...new Set(pgPlaceholders)].sort((a, b) => {
+          return parseInt(b.substring(1)) - parseInt(a.substring(1));
+        });
+        // Replace each $N with ? in descending order
+        uniquePlaceholders.forEach(placeholder => {
+          // Use a regex that matches the exact placeholder with word boundary
+          const regex = new RegExp('\\' + placeholder + '\\b', 'g');
+          convertedSql = convertedSql.replace(regex, '?');
+        });
+      }
+
+      const stmt = sqliteDb.prepare(convertedSql);
+      if (convertedSql.trim().toUpperCase().startsWith('SELECT')) {
         return { rows: stmt.all(...params) };
       }
       const result = stmt.run(...params);

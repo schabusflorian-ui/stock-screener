@@ -10,17 +10,19 @@
  */
 
 const cheerio = require('cheerio');
+const { getDatabaseAsync } = require('../lib/db');
 
 // Cache duration: 1 hour (these don't change frequently)
 const CACHE_DURATION = 60 * 60 * 1000;
 
 class FearGreedFetcher {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
     this.cache = new Map();
     this.lastFetch = {};
 
-    this.ensureTable();
+    // Ensure table exists (async, but don't await in constructor)
+    this.ensureTable().catch(err => console.error('Error ensuring table:', err));
   }
 
   /**
@@ -429,8 +431,9 @@ class FearGreedFetcher {
       console.log('Calculating Advance/Decline from database...');
 
       try {
+        const database = await getDatabaseAsync();
         // Calculate from our price data - stocks up vs down today
-        const result = this.db.prepare(`
+        const result = await database.query(`
           WITH latest_prices AS (
             SELECT
               dp.company_id,
@@ -440,19 +443,21 @@ class FearGreedFetcher {
             WHERE dp.date >= date('now', '-5 days')
           )
           SELECT
-            SUM(CASE WHEN current_close > prev_close THEN 1 ELSE 0 END) as advances,
-            SUM(CASE WHEN current_close < prev_close THEN 1 ELSE 0 END) as declines,
-            SUM(CASE WHEN current_close = prev_close THEN 1 ELSE 0 END) as unchanged
+            COALESCE(SUM(CASE WHEN current_close > prev_close THEN 1 ELSE 0 END), 0) as advances,
+            COALESCE(SUM(CASE WHEN current_close < prev_close THEN 1 ELSE 0 END), 0) as declines,
+            COALESCE(SUM(CASE WHEN current_close = prev_close THEN 1 ELSE 0 END), 0) as unchanged
           FROM latest_prices
           WHERE prev_close IS NOT NULL
-        `).get();
+        `);
 
-        if (!result || !result.advances) {
+        const row = result.rows[0];
+
+        if (!row || !row.advances) {
           throw new Error('No price data for A/D calculation');
         }
 
-        const ratio = result.declines > 0 ? result.advances / result.declines : result.advances;
-        const netAdvances = result.advances - result.declines;
+        const ratio = row.declines > 0 ? row.advances / row.declines : row.advances;
+        const netAdvances = row.advances - row.declines;
 
         let label;
         if (ratio > 2.0) label = 'very_bullish';
@@ -465,9 +470,9 @@ class FearGreedFetcher {
         return {
           source: 'database',
           value: Math.round(ratio * 100) / 100,
-          advances: result.advances,
-          declines: result.declines,
-          unchanged: result.unchanged,
+          advances: row.advances,
+          declines: row.declines,
+          unchanged: row.unchanged,
           netAdvances,
           label,
           timestamp: new Date().toISOString(),
@@ -581,83 +586,108 @@ class FearGreedFetcher {
    */
   async storeMarketSentiment(data) {
     try {
-      const stmt = this.db.prepare(`
-        INSERT INTO market_sentiment (
-          indicator_type, indicator_value, indicator_label, components,
-          previous_value, change_value, fetched_at
-        ) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-      `);
+      const database = await getDatabaseAsync();
 
       // Store CNN Fear & Greed
       if (data.cnn && !data.cnn.error) {
-        stmt.run(
+        await database.query(`
+          INSERT INTO market_sentiment (
+            indicator_type, indicator_value, indicator_label, components,
+            previous_value, change_value, fetched_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, datetime('now'))
+        `, [
           'cnn_fear_greed',
           data.cnn.value,
           data.cnn.label,
           data.cnn.components ? JSON.stringify(data.cnn.components) : null,
           data.cnn.previousValue,
           data.cnn.change
-        );
+        ]);
       }
 
       // Store VIX
       if (data.vix && !data.vix.error) {
-        stmt.run(
+        await database.query(`
+          INSERT INTO market_sentiment (
+            indicator_type, indicator_value, indicator_label, components,
+            previous_value, change_value, fetched_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, datetime('now'))
+        `, [
           'vix',
           data.vix.value,
           data.vix.fearLevel,
           null,
           data.vix.previousClose,
           data.vix.change
-        );
+        ]);
       }
 
       // Store Put/Call Ratio
       if (data.putCallRatio && !data.putCallRatio.error) {
-        stmt.run(
+        await database.query(`
+          INSERT INTO market_sentiment (
+            indicator_type, indicator_value, indicator_label, components,
+            previous_value, change_value, fetched_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, datetime('now'))
+        `, [
           'put_call_ratio',
           data.putCallRatio.value,
           data.putCallRatio.label,
           JSON.stringify({ source: data.putCallRatio.source, note: data.putCallRatio.note }),
           null,
           null
-        );
+        ]);
       }
 
       // Store High Yield Spread
       if (data.highYieldSpread && !data.highYieldSpread.error) {
-        stmt.run(
+        await database.query(`
+          INSERT INTO market_sentiment (
+            indicator_type, indicator_value, indicator_label, components,
+            previous_value, change_value, fetched_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, datetime('now'))
+        `, [
           'high_yield_spread',
           data.highYieldSpread.value,
           data.highYieldSpread.label,
           JSON.stringify({ hygPrice: data.highYieldSpread.hygPrice, lqdPrice: data.highYieldSpread.lqdPrice }),
           null,
           null
-        );
+        ]);
       }
 
       // Store Advance/Decline
       if (data.advanceDecline && !data.advanceDecline.error) {
-        stmt.run(
+        await database.query(`
+          INSERT INTO market_sentiment (
+            indicator_type, indicator_value, indicator_label, components,
+            previous_value, change_value, fetched_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, datetime('now'))
+        `, [
           'advance_decline',
           data.advanceDecline.value,
           data.advanceDecline.label,
           JSON.stringify({ advances: data.advanceDecline.advances, declines: data.advanceDecline.declines }),
           null,
           data.advanceDecline.netAdvances
-        );
+        ]);
       }
 
       // Store overall
       if (data.overall) {
-        stmt.run(
+        await database.query(`
+          INSERT INTO market_sentiment (
+            indicator_type, indicator_value, indicator_label, components,
+            previous_value, change_value, fetched_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, datetime('now'))
+        `, [
           'overall_market',
           data.overall.sentiment,
           data.overall.label,
           JSON.stringify({ sourcesUsed: data.overall.sourcesUsed }),
           null,
           null
-        );
+        ]);
       }
     } catch (error) {
       console.error('Error storing market sentiment:', error.message);
@@ -667,22 +697,20 @@ class FearGreedFetcher {
   /**
    * Get latest market sentiment from database
    */
-  getLatestSentiment() {
+  async getLatestSentiment() {
+    const database = await getDatabaseAsync();
     const results = {};
 
     const types = ['cnn_fear_greed', 'vix', 'overall_market'];
     for (const type of types) {
-      const row = this.db
-        .prepare(
-          `
+      const result = await database.query(`
         SELECT * FROM market_sentiment
-        WHERE indicator_type = ?
+        WHERE indicator_type = $1
         ORDER BY fetched_at DESC
         LIMIT 1
-      `
-        )
-        .get(type);
+      `, [type]);
 
+      const row = result.rows[0];
       if (row) {
         results[type] = {
           value: row.indicator_value,
@@ -701,33 +729,33 @@ class FearGreedFetcher {
   /**
    * Get sentiment history
    */
-  getSentimentHistory(indicatorType, days = 30) {
+  async getSentimentHistory(indicatorType, days = 30) {
+    const database = await getDatabaseAsync();
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
 
-    return this.db
-      .prepare(
-        `
+    const result = await database.query(`
       SELECT
         DATE(fetched_at) as date,
         AVG(indicator_value) as avg_value,
         MIN(indicator_value) as min_value,
         MAX(indicator_value) as max_value
       FROM market_sentiment
-      WHERE indicator_type = ?
-        AND fetched_at >= ?
+      WHERE indicator_type = $1
+        AND fetched_at >= $2
       GROUP BY DATE(fetched_at)
       ORDER BY date DESC
-    `
-      )
-      .all(indicatorType, cutoff.toISOString());
+    `, [indicatorType, cutoff.toISOString()]);
+
+    return result.rows;
   }
 
   /**
    * Ensure market sentiment table exists
    */
-  ensureTable() {
-    this.db.exec(`
+  async ensureTable() {
+    const database = await getDatabaseAsync();
+    await database.query(`
       CREATE TABLE IF NOT EXISTS market_sentiment (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         indicator_type TEXT NOT NULL,

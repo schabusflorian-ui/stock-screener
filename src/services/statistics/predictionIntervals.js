@@ -2,6 +2,8 @@
 // Prediction Intervals System - Derman-inspired uncertainty quantification
 // Replace dangerous point estimates with proper confidence intervals
 
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
+
 /**
  * PredictionIntervalCalculator - Bootstrap-based prediction intervals
  *
@@ -12,89 +14,10 @@
  * - Position sizing with uncertainty
  */
 class PredictionIntervalCalculator {
-  /**
-   * @param {Database} db - better-sqlite3 database instance
-   */
-  constructor(db) {
-    this.db = db;
-    this._initializeTables();
-    this._prepareStatements();
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
+    // Tables should be created via migrations, not in service code
     console.log('📐 PredictionIntervalCalculator initialized');
-  }
-
-  _initializeTables() {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS prediction_intervals (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        company_id INTEGER,
-        signal_type TEXT,
-        date TEXT,
-        current_signal REAL,
-        expected_return_mean REAL,
-        expected_return_p5 REAL,
-        expected_return_p25 REAL,
-        expected_return_p50 REAL,
-        expected_return_p75 REAL,
-        expected_return_p95 REAL,
-        interval_width REAL,
-        is_significant INTEGER,
-        created_at TEXT DEFAULT (datetime('now'))
-      );
-
-      CREATE TABLE IF NOT EXISTS signal_calibration (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        signal_type TEXT,
-        evaluation_date TEXT,
-        interval_90_coverage REAL,
-        interval_95_coverage REAL,
-        interval_99_coverage REAL,
-        is_calibrated INTEGER,
-        num_observations INTEGER,
-        created_at TEXT DEFAULT (datetime('now'))
-      );
-
-      CREATE TABLE IF NOT EXISTS signal_ic_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        signal_type TEXT,
-        date TEXT,
-        ic_value REAL,
-        lookback_days INTEGER,
-        created_at TEXT DEFAULT (datetime('now'))
-      );
-    `);
-  }
-
-  _prepareStatements() {
-    this.stmtStoreInterval = this.db.prepare(`
-      INSERT INTO prediction_intervals (
-        company_id, signal_type, date, current_signal,
-        expected_return_mean, expected_return_p5, expected_return_p25,
-        expected_return_p50, expected_return_p75, expected_return_p95,
-        interval_width, is_significant
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    this.stmtStoreCalibration = this.db.prepare(`
-      INSERT INTO signal_calibration (
-        signal_type, evaluation_date, interval_90_coverage,
-        interval_95_coverage, interval_99_coverage, is_calibrated, num_observations
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    this.stmtGetSignalHistory = this.db.prepare(`
-      SELECT r.score as signal_score, r.confidence,
-             (SELECT (dp2.close - dp1.close) / dp1.close
-              FROM daily_prices dp1
-              JOIN daily_prices dp2 ON dp1.company_id = dp2.company_id
-              WHERE dp1.company_id = r.company_id
-                AND dp1.date = r.date
-                AND dp2.date = date(r.date, '+21 days')
-             ) as forward_return
-      FROM agent_recommendations r
-      WHERE r.action IN ('strong_buy', 'buy', 'sell', 'strong_sell')
-        AND r.date >= date('now', '-365 days')
-      ORDER BY r.date
-    `);
   }
 
   /**
@@ -105,9 +28,9 @@ class PredictionIntervalCalculator {
    * @param {number} blockSize - Block size for block bootstrap (default 21)
    * @returns {Object} Prediction interval
    */
-  bootstrapSignalInterval(signalType, companyId, numSamples = 1000, blockSize = 21) {
+  async bootstrapSignalInterval(signalType, companyId, numSamples = 1000, blockSize = 21) {
     // Get historical signal-return pairs
-    const history = this._getSignalReturnHistory(signalType, companyId);
+    const history = await this._getSignalReturnHistory(signalType, companyId);
 
     if (history.length < 50) {
       return {
@@ -159,16 +82,45 @@ class PredictionIntervalCalculator {
     };
 
     // Store result
-    this._storeInterval(result);
+    await this._storeInterval(result);
 
     return result;
   }
 
-  _getSignalReturnHistory(signalType, companyId) {
+  async _getSignalReturnHistory(signalType, companyId) {
     // Try to get from recommendations table
     try {
-      const data = this.stmtGetSignalHistory.all(signalType);
-      return data.filter(d => d.forward_return != null);
+      const database = await getDatabaseAsync();
+
+      // Dialect-aware date interval
+      const dateInterval = isUsingPostgres()
+        ? `r.date >= CURRENT_TIMESTAMP - INTERVAL '365 days'`
+        : `r.date >= date('now', '-365 days')`;
+
+      const forwardReturnSubquery = isUsingPostgres()
+        ? `(SELECT (dp2.close - dp1.close) / dp1.close
+            FROM daily_prices dp1
+            JOIN daily_prices dp2 ON dp1.company_id = dp2.company_id
+            WHERE dp1.company_id = r.company_id
+              AND dp1.date = r.date
+              AND dp2.date = r.date::date + INTERVAL '21 days')`
+        : `(SELECT (dp2.close - dp1.close) / dp1.close
+            FROM daily_prices dp1
+            JOIN daily_prices dp2 ON dp1.company_id = dp2.company_id
+            WHERE dp1.company_id = r.company_id
+              AND dp1.date = r.date
+              AND dp2.date = date(r.date, '+21 days'))`;
+
+      const result = await database.query(`
+        SELECT r.score as signal_score, r.confidence,
+               ${forwardReturnSubquery} as forward_return
+        FROM agent_recommendations r
+        WHERE r.action IN ('strong_buy', 'buy', 'sell', 'strong_sell')
+          AND ${dateInterval}
+        ORDER BY r.date
+      `);
+
+      return result.rows.filter(d => d.forward_return != null);
     } catch (e) {
       return [];
     }
@@ -197,10 +149,18 @@ class PredictionIntervalCalculator {
     return result;
   }
 
-  _storeInterval(result) {
+  async _storeInterval(result) {
     const date = new Date().toISOString().split('T')[0];
     try {
-      this.stmtStoreInterval.run(
+      const database = await getDatabaseAsync();
+      await database.query(`
+        INSERT INTO prediction_intervals (
+          company_id, signal_type, date, current_signal,
+          expected_return_mean, expected_return_p5, expected_return_p25,
+          expected_return_p50, expected_return_p75, expected_return_p95,
+          interval_width, is_significant
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      `, [
         result.companyId,
         result.signalType,
         date,
@@ -213,7 +173,7 @@ class PredictionIntervalCalculator {
         result.expectedReturn.percentile95,
         result.confidence.intervalWidth,
         result.confidence.isSignificant ? 1 : 0
-      );
+      ]);
     } catch (e) {
       // Ignore storage errors
     }
@@ -310,9 +270,9 @@ class PredictionIntervalCalculator {
    * @param {number} lookback - Days for recent performance
    * @returns {Object} Updated signal assessment
    */
-  bayesianSignalUpdate(signalType, priorIC = 0.03, lookback = 63) {
+  async bayesianSignalUpdate(signalType, priorIC = 0.03, lookback = 63) {
     // Get recent signal performance
-    const recentIC = this._calculateRecentIC(signalType, lookback);
+    const recentIC = await this._calculateRecentIC(signalType, lookback);
 
     // Prior parameters (based on historical IC distribution)
     const priorMean = priorIC;
@@ -345,9 +305,9 @@ class PredictionIntervalCalculator {
     };
   }
 
-  _calculateRecentIC(signalType, lookback) {
+  async _calculateRecentIC(signalType, lookback) {
     // Simplified IC calculation
-    const history = this._getSignalReturnHistory(signalType, null);
+    const history = await this._getSignalReturnHistory(signalType, null);
     const recent = history.slice(-lookback);
 
     if (recent.length < 20) {
@@ -381,15 +341,24 @@ class PredictionIntervalCalculator {
    * @param {number} lookback - Days to evaluate
    * @returns {Object} Calibration assessment
    */
-  assessPredictionQuality(signalType, lookback = 252) {
+  async assessPredictionQuality(signalType, lookback = 252) {
+    const database = await getDatabaseAsync();
+
+    // Dialect-aware date interval
+    const dateInterval = isUsingPostgres()
+      ? `date >= CURRENT_TIMESTAMP - INTERVAL '${lookback} days'`
+      : `date >= date('now', '-${lookback} days')`;
+
     // Get historical predictions and actual outcomes
-    const predictions = this.db.prepare(`
+    const result = await database.query(`
       SELECT expected_return_p5, expected_return_p50, expected_return_p95,
              expected_return_mean, date, company_id
       FROM prediction_intervals
-      WHERE signal_type = ?
-        AND date >= date('now', '-${lookback} days')
-    `).all(signalType);
+      WHERE signal_type = $1
+        AND ${dateInterval}
+    `, [signalType]);
+
+    const predictions = result.rows;
 
     if (predictions.length < 30) {
       return {
@@ -402,7 +371,7 @@ class PredictionIntervalCalculator {
     let in90 = 0, in95 = 0, in99 = 0, total = 0;
 
     for (const pred of predictions) {
-      const actual = this._getActualReturn(pred.company_id, pred.date, 21);
+      const actual = await this._getActualReturn(pred.company_id, pred.date, 21);
       if (actual === null) continue;
 
       total++;
@@ -436,7 +405,12 @@ class PredictionIntervalCalculator {
     const isCalibrated = Math.abs(coverage95 - 0.95) < 0.05;
 
     // Store calibration result
-    this.stmtStoreCalibration.run(
+    await database.query(`
+      INSERT INTO signal_calibration (
+        signal_type, evaluation_date, interval_90_coverage,
+        interval_95_coverage, interval_99_coverage, is_calibrated, num_observations
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `, [
       signalType,
       new Date().toISOString().split('T')[0],
       coverage90,
@@ -444,7 +418,7 @@ class PredictionIntervalCalculator {
       coverage99,
       isCalibrated ? 1 : 0,
       total
-    );
+    ]);
 
     return {
       interval90Coverage: coverage90,
@@ -460,17 +434,24 @@ class PredictionIntervalCalculator {
     };
   }
 
-  _getActualReturn(companyId, date, days) {
-    const result = this.db.prepare(`
+  async _getActualReturn(companyId, date, days) {
+    const database = await getDatabaseAsync();
+
+    // Dialect-aware date arithmetic
+    const dateCondition = isUsingPostgres()
+      ? `dp2.date = $3::date + INTERVAL '${days} days'`
+      : `dp2.date = date($3, '+${days} days')`;
+
+    const result = await database.query(`
       SELECT (dp2.close - dp1.close) / dp1.close as return
       FROM daily_prices dp1
       JOIN daily_prices dp2 ON dp1.company_id = dp2.company_id
-      WHERE dp1.company_id = ?
-        AND dp1.date = ?
-        AND dp2.date = date(?, '+${days} days')
-    `).get(companyId, date, date);
+      WHERE dp1.company_id = $1
+        AND dp1.date = $2
+        AND ${dateCondition}
+    `, [companyId, date, date]);
 
-    return result?.return || null;
+    return result.rows[0]?.return || null;
   }
 
   /**
@@ -613,8 +594,8 @@ function getIntervalAdjustedWeight(signalType, interval) {
   return Math.max(0.3, multiplier);
 }
 
-function createPredictionIntervalCalculator(db) {
-  return new PredictionIntervalCalculator(db);
+function createPredictionIntervalCalculator() {
+  return new PredictionIntervalCalculator();
 }
 
 module.exports = {

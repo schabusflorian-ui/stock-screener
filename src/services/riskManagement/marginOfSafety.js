@@ -14,12 +14,13 @@
  * Integrates with existing DCF calculator and calculated_metrics.
  */
 
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 const DCFCalculator = require('../dcfCalculator');
 
 class MarginOfSafetyCalculator {
-  constructor(db) {
-    this.db = db;
-    this.dcfCalculator = new DCFCalculator(db);
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
+    this.dcfCalculator = new DCFCalculator();
 
     // Method weights (adjusted based on data availability)
     this.DEFAULT_WEIGHTS = {
@@ -29,13 +30,17 @@ class MarginOfSafetyCalculator {
       bookValue: 0.10,
       ddm: 0.10
     };
-
-    // Prepare statements
-    this.prepareStatements();
   }
 
-  prepareStatements() {
-    this.getCompanyMetrics = this.db.prepare(`
+  /**
+   * Calculate intrinsic value using all available methods
+   */
+  async calculateIntrinsicValue(companyId, options = {}) {
+    const database = await getDatabaseAsync();
+    const { forceRecalcDCF = false, customWeights = null } = options;
+
+    // Get company data
+    const metricsResult = await database.query(`
       SELECT
         c.id as company_id,
         c.symbol,
@@ -67,12 +72,16 @@ class MarginOfSafetyCalculator {
       FROM companies c
       LEFT JOIN price_metrics pm ON pm.company_id = c.id
       LEFT JOIN calculated_metrics cm ON cm.company_id = c.id AND cm.period_type = 'annual'
-      WHERE c.id = ?
+      WHERE c.id = $1
       ORDER BY cm.fiscal_period DESC
       LIMIT 1
-    `);
+    `, [companyId]);
+    const metrics = metricsResult.rows[0];
+    if (!metrics) {
+      return { success: false, error: 'Company not found' };
+    }
 
-    this.getFinancials = this.db.prepare(`
+    const financialsResult = await database.query(`
       SELECT
         total_revenue,
         operating_income,
@@ -85,84 +94,25 @@ class MarginOfSafetyCalculator {
         dividends_paid,
         fiscal_date_ending
       FROM financial_data
-      WHERE company_id = ?
+      WHERE company_id = $1
         AND period_type = 'annual'
       ORDER BY fiscal_date_ending DESC
       LIMIT 3
-    `);
+    `, [companyId]);
+    const financials = financialsResult.rows;
 
-    this.getDividendHistory = this.db.prepare(`
+    const dividendsResult = await database.query(`
       SELECT
         dividend_amount,
         dividend_yield,
         annual_dividend,
         cagr_5y
       FROM dividends
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY ex_date DESC
       LIMIT 1
-    `);
-
-    this.getExistingDCF = this.db.prepare(`
-      SELECT
-        intrinsic_value_base,
-        intrinsic_value_bull,
-        intrinsic_value_bear,
-        wacc,
-        terminal_growth,
-        confidence_score,
-        calculated_at
-      FROM dcf_valuations
-      WHERE company_id = ?
-      ORDER BY calculated_at DESC
-      LIMIT 1
-    `);
-
-    this.insertEstimate = this.db.prepare(`
-      INSERT INTO intrinsic_value_estimates (
-        company_id, symbol, estimate_date,
-        dcf_value, dcf_confidence, dcf_assumptions,
-        graham_number, eps_used, book_value_used,
-        epv_value, normalized_earnings, cost_of_equity,
-        book_value_per_share, tangible_book_value,
-        ddm_value, dividend_used, dividend_growth_rate,
-        weighted_intrinsic_value, method_weights, confidence_level, data_quality_score,
-        current_price, margin_of_safety, valuation_signal
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(company_id, estimate_date) DO UPDATE SET
-        dcf_value = excluded.dcf_value,
-        dcf_confidence = excluded.dcf_confidence,
-        graham_number = excluded.graham_number,
-        epv_value = excluded.epv_value,
-        ddm_value = excluded.ddm_value,
-        weighted_intrinsic_value = excluded.weighted_intrinsic_value,
-        current_price = excluded.current_price,
-        margin_of_safety = excluded.margin_of_safety,
-        valuation_signal = excluded.valuation_signal
-    `);
-
-    this.getLatestEstimate = this.db.prepare(`
-      SELECT * FROM intrinsic_value_estimates
-      WHERE company_id = ?
-      ORDER BY estimate_date DESC
-      LIMIT 1
-    `);
-  }
-
-  /**
-   * Calculate intrinsic value using all available methods
-   */
-  async calculateIntrinsicValue(companyId, options = {}) {
-    const { forceRecalcDCF = false, customWeights = null } = options;
-
-    // Get company data
-    const metrics = this.getCompanyMetrics.get(companyId);
-    if (!metrics) {
-      return { success: false, error: 'Company not found' };
-    }
-
-    const financials = this.getFinancials.all(companyId);
-    const dividends = this.getDividendHistory.get(companyId);
+    `, [companyId]);
+    const dividends = dividendsResult.rows[0];
 
     // Initialize results
     const results = {
@@ -239,7 +189,7 @@ class MarginOfSafetyCalculator {
     results.dataQualityScore = results.dataQuality.available / results.dataQuality.total;
 
     // Store results
-    this.storeEstimate(companyId, results);
+    await this.storeEstimate(companyId, results);
 
     return { success: true, ...results };
   }
@@ -248,9 +198,25 @@ class MarginOfSafetyCalculator {
    * Get DCF value (existing or new calculation)
    */
   async getDCFValue(companyId, forceRecalc = false) {
+    const database = await getDatabaseAsync();
+
     if (!forceRecalc) {
       // Check for recent DCF calculation (within 7 days)
-      const existing = this.getExistingDCF.get(companyId);
+      const existingResult = await database.query(`
+        SELECT
+          intrinsic_value_base,
+          intrinsic_value_bull,
+          intrinsic_value_bear,
+          wacc,
+          terminal_growth,
+          confidence_score,
+          calculated_at
+        FROM dcf_valuations
+        WHERE company_id = $1
+        ORDER BY calculated_at DESC
+        LIMIT 1
+      `, [companyId]);
+      const existing = existingResult.rows[0];
       if (existing) {
         const daysSinceCalc = (Date.now() - new Date(existing.calculated_at).getTime()) / (1000 * 60 * 60 * 24);
         if (daysSinceCalc < 7) {
@@ -507,10 +473,32 @@ class MarginOfSafetyCalculator {
   /**
    * Store estimate in database
    */
-  storeEstimate(companyId, results) {
+  async storeEstimate(companyId, results) {
+    const database = await getDatabaseAsync();
     const today = new Date().toISOString().split('T')[0];
 
-    this.insertEstimate.run(
+    await database.query(`
+      INSERT INTO intrinsic_value_estimates (
+        company_id, symbol, estimate_date,
+        dcf_value, dcf_confidence, dcf_assumptions,
+        graham_number, eps_used, book_value_used,
+        epv_value, normalized_earnings, cost_of_equity,
+        book_value_per_share, tangible_book_value,
+        ddm_value, dividend_used, dividend_growth_rate,
+        weighted_intrinsic_value, method_weights, confidence_level, data_quality_score,
+        current_price, margin_of_safety, valuation_signal
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+      ON CONFLICT(company_id, estimate_date) DO UPDATE SET
+        dcf_value = excluded.dcf_value,
+        dcf_confidence = excluded.dcf_confidence,
+        graham_number = excluded.graham_number,
+        epv_value = excluded.epv_value,
+        ddm_value = excluded.ddm_value,
+        weighted_intrinsic_value = excluded.weighted_intrinsic_value,
+        current_price = excluded.current_price,
+        margin_of_safety = excluded.margin_of_safety,
+        valuation_signal = excluded.valuation_signal
+    `, [
       companyId,
       results.symbol,
       today,
@@ -535,21 +523,28 @@ class MarginOfSafetyCalculator {
       results.currentPrice,
       results.marginOfSafety,
       results.valuationSignal
-    );
+    ]);
   }
 
   /**
    * Get latest estimate for a company
    */
-  getLatestEstimate(companyId) {
-    return this.getLatestEstimate.get(companyId);
+  async getLatestEstimate(companyId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM intrinsic_value_estimates
+      WHERE company_id = $1
+      ORDER BY estimate_date DESC
+      LIMIT 1
+    `, [companyId]);
+    return result.rows[0];
   }
 
   /**
    * Check if margin of safety requirement is met
    */
-  checkMarginOfSafety(companyId, minMargin = 0.25) {
-    const estimate = this.getLatestEstimate.get(companyId);
+  async checkMarginOfSafety(companyId, minMargin = 0.25) {
+    const estimate = await this.getLatestEstimate(companyId);
 
     if (!estimate) {
       return {
@@ -596,8 +591,13 @@ class MarginOfSafetyCalculator {
   /**
    * Get undervalued stocks (margin of safety > threshold)
    */
-  getUndervaluedStocks(minMargin = 0.25, limit = 50) {
-    return this.db.prepare(`
+  async getUndervaluedStocks(minMargin = 0.25, limit = 50) {
+    const database = await getDatabaseAsync();
+    const dateCondition = isUsingPostgres()
+      ? `ive.estimate_date >= CURRENT_DATE - INTERVAL '30 days'`
+      : `ive.estimate_date >= date('now', '-30 days')`;
+
+    const result = await database.query(`
       SELECT
         ive.*,
         c.name,
@@ -611,12 +611,13 @@ class MarginOfSafetyCalculator {
       JOIN companies c ON ive.company_id = c.id
       LEFT JOIN price_metrics pm ON pm.company_id = c.id
       LEFT JOIN calculated_metrics cm ON cm.company_id = c.id AND cm.period_type = 'annual'
-      WHERE ive.margin_of_safety >= ?
+      WHERE ive.margin_of_safety >= $1
         AND ive.confidence_level >= 0.5
-        AND ive.estimate_date >= date('now', '-30 days')
+        AND ${dateCondition}
       ORDER BY ive.margin_of_safety DESC
-      LIMIT ?
-    `).all(minMargin, limit);
+      LIMIT $2
+    `, [minMargin, limit]);
+    return result.rows;
   }
 }
 

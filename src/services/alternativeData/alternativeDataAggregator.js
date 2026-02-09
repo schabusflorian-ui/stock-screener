@@ -11,16 +11,17 @@
  * Provides weighted combined scoring and opportunity discovery.
  */
 
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 const { QuiverQuantitativeService } = require('./quiverQuantitative');
 const { FinraShortInterestService } = require('./finraShortInterest');
 
 class AlternativeDataAggregator {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
 
     // Initialize sub-services
-    this.quiver = new QuiverQuantitativeService(db);
-    this.finra = new FinraShortInterestService(db);
+    this.quiver = new QuiverQuantitativeService();
+    this.finra = new FinraShortInterestService();
 
     // Signal weights for combined score
     this.WEIGHTS = {
@@ -28,99 +29,20 @@ class AlternativeDataAggregator {
       shortInterest: 0.35, // Short interest shows sentiment
       contracts: 0.25      // Government contracts for revenue visibility
     };
-
-    // Prepare statements
-    this.prepareStatements();
-  }
-
-  prepareStatements() {
-    this.upsertSignal = this.db.prepare(`
-      INSERT INTO alternative_data_signals (
-        company_id, symbol, signal_date,
-        congress_signal, congress_buy_count, congress_sell_count, congress_net_amount,
-        short_interest_signal, short_pct_float, days_to_cover, is_squeeze_candidate,
-        contract_signal, recent_contract_value, contract_to_mcap_ratio,
-        combined_score, confidence, data_sources
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(symbol, signal_date) DO UPDATE SET
-        congress_signal = excluded.congress_signal,
-        congress_buy_count = excluded.congress_buy_count,
-        congress_sell_count = excluded.congress_sell_count,
-        short_interest_signal = excluded.short_interest_signal,
-        short_pct_float = excluded.short_pct_float,
-        days_to_cover = excluded.days_to_cover,
-        is_squeeze_candidate = excluded.is_squeeze_candidate,
-        contract_signal = excluded.contract_signal,
-        combined_score = excluded.combined_score,
-        confidence = excluded.confidence,
-        data_sources = excluded.data_sources,
-        updated_at = CURRENT_TIMESTAMP
-    `);
-
-    this.getLatestSignal = this.db.prepare(`
-      SELECT * FROM alternative_data_signals
-      WHERE symbol = ?
-      ORDER BY signal_date DESC
-      LIMIT 1
-    `);
-
-    this.getTopSignals = this.db.prepare(`
-      SELECT
-        ads.*,
-        c.name as company_name,
-        pm.last_price,
-        pm.market_cap
-      FROM alternative_data_signals ads
-      JOIN companies c ON ads.company_id = c.id
-      LEFT JOIN price_metrics pm ON pm.company_id = c.id
-      WHERE ads.signal_date = (
-        SELECT MAX(signal_date) FROM alternative_data_signals
-        WHERE symbol = ads.symbol
-      )
-        AND ads.combined_score IS NOT NULL
-      ORDER BY ads.combined_score DESC
-      LIMIT ?
-    `);
-
-    this.getBottomSignals = this.db.prepare(`
-      SELECT
-        ads.*,
-        c.name as company_name,
-        pm.last_price,
-        pm.market_cap
-      FROM alternative_data_signals ads
-      JOIN companies c ON ads.company_id = c.id
-      LEFT JOIN price_metrics pm ON pm.company_id = c.id
-      WHERE ads.signal_date = (
-        SELECT MAX(signal_date) FROM alternative_data_signals
-        WHERE symbol = ads.symbol
-      )
-        AND ads.combined_score IS NOT NULL
-      ORDER BY ads.combined_score ASC
-      LIMIT ?
-    `);
-
-    this.getCompanyId = this.db.prepare(`
-      SELECT id FROM companies WHERE symbol = ?
-    `);
-
-    this.getMarketCap = this.db.prepare(`
-      SELECT market_cap FROM price_metrics WHERE company_id = ?
-    `);
   }
 
   /**
    * Get all alternative data signals for a symbol
    */
-  getSignals(symbol) {
+  async getSignals(symbol) {
     // Get congressional signal
-    const congressSignal = this.quiver.getCongressSignal(symbol);
+    const congressSignal = await this.quiver.getCongressSignal(symbol);
 
     // Get short interest signal
-    const shortSignal = this.finra.getShortInterestSignal(symbol);
+    const shortSignal = await this.finra.getShortInterestSignal(symbol);
 
     // Get contract signal
-    const contractSignal = this.quiver.getContractSignal(symbol);
+    const contractSignal = await this.quiver.getContractSignal(symbol);
 
     return {
       congress: congressSignal,
@@ -188,7 +110,13 @@ class AlternativeDataAggregator {
   async updateSymbol(symbol, fetchNew = false) {
     console.log(`\n📊 Updating alternative data for ${symbol}...`);
 
-    const companyRow = this.getCompanyId.get(symbol);
+    const database = await getDatabaseAsync();
+
+    const companyResult = await database.query(
+      'SELECT id FROM companies WHERE symbol = $1',
+      [symbol]
+    );
+    const companyRow = companyResult.rows[0];
     if (!companyRow) {
       console.log(`  Company not found: ${symbol}`);
       return null;
@@ -202,13 +130,17 @@ class AlternativeDataAggregator {
     }
 
     // Get all signals
-    const signals = this.getSignals(symbol);
+    const signals = await this.getSignals(symbol);
 
     // Calculate combined score
     const combined = this.calculateCombinedScore(signals);
 
     // Get market cap for contract ratio
-    const mcapRow = this.getMarketCap.get(companyRow.id);
+    const mcapResult = await database.query(
+      'SELECT market_cap FROM price_metrics WHERE company_id = $1',
+      [companyRow.id]
+    );
+    const mcapRow = mcapResult.rows[0];
     const marketCap = mcapRow?.market_cap || 0;
     const contractRatio = marketCap > 0 && signals.contracts?.totalValue
       ? signals.contracts.totalValue / marketCap
@@ -217,7 +149,28 @@ class AlternativeDataAggregator {
     // Store aggregated signal
     const signalDate = new Date().toISOString().split('T')[0];
 
-    this.upsertSignal.run(
+    await database.query(`
+      INSERT INTO alternative_data_signals (
+        company_id, symbol, signal_date,
+        congress_signal, congress_buy_count, congress_sell_count, congress_net_amount,
+        short_interest_signal, short_pct_float, days_to_cover, is_squeeze_candidate,
+        contract_signal, recent_contract_value, contract_to_mcap_ratio,
+        combined_score, confidence, data_sources
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+      ON CONFLICT(symbol, signal_date) DO UPDATE SET
+        congress_signal = excluded.congress_signal,
+        congress_buy_count = excluded.congress_buy_count,
+        congress_sell_count = excluded.congress_sell_count,
+        short_interest_signal = excluded.short_interest_signal,
+        short_pct_float = excluded.short_pct_float,
+        days_to_cover = excluded.days_to_cover,
+        is_squeeze_candidate = excluded.is_squeeze_candidate,
+        contract_signal = excluded.contract_signal,
+        combined_score = excluded.combined_score,
+        confidence = excluded.confidence,
+        data_sources = excluded.data_sources,
+        updated_at = CURRENT_TIMESTAMP
+    `, [
       companyRow.id,
       symbol,
       signalDate,
@@ -235,7 +188,7 @@ class AlternativeDataAggregator {
       combined.score,
       combined.confidence,
       combined.dataSources
-    );
+    ]);
 
     console.log(`  Combined score: ${combined.score?.toFixed(3) || 'N/A'}, ` +
                 `Confidence: ${(combined.confidence * 100).toFixed(0)}%, ` +
@@ -280,29 +233,73 @@ class AlternativeDataAggregator {
   /**
    * Get top bullish signals
    */
-  getTopBullish(limit = 20) {
-    return this.getTopSignals.all(limit);
+  async getTopBullish(limit = 20) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT
+        ads.*,
+        c.name as company_name,
+        pm.last_price,
+        pm.market_cap
+      FROM alternative_data_signals ads
+      JOIN companies c ON ads.company_id = c.id
+      LEFT JOIN price_metrics pm ON pm.company_id = c.id
+      WHERE ads.signal_date = (
+        SELECT MAX(signal_date) FROM alternative_data_signals
+        WHERE symbol = ads.symbol
+      )
+        AND ads.combined_score IS NOT NULL
+      ORDER BY ads.combined_score DESC
+      LIMIT $1
+    `, [limit]);
+
+    return result.rows;
   }
 
   /**
    * Get top bearish signals
    */
-  getTopBearish(limit = 20) {
-    return this.getBottomSignals.all(limit);
+  async getTopBearish(limit = 20) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT
+        ads.*,
+        c.name as company_name,
+        pm.last_price,
+        pm.market_cap
+      FROM alternative_data_signals ads
+      JOIN companies c ON ads.company_id = c.id
+      LEFT JOIN price_metrics pm ON pm.company_id = c.id
+      WHERE ads.signal_date = (
+        SELECT MAX(signal_date) FROM alternative_data_signals
+        WHERE symbol = ads.symbol
+      )
+        AND ads.combined_score IS NOT NULL
+      ORDER BY ads.combined_score ASC
+      LIMIT $1
+    `, [limit]);
+
+    return result.rows;
   }
 
   /**
    * Get top congressional buys with additional context
    */
-  getTopCongressBuys(options = {}) {
+  async getTopCongressBuys(options = {}) {
     const { lookbackDays = '-30 days', limit = 20 } = options;
 
-    const topBuys = this.quiver.getTopCongressBuys(lookbackDays, limit);
+    const database = await getDatabaseAsync();
+
+    const topBuys = await this.quiver.getTopCongressBuys(lookbackDays, limit);
 
     // Enrich with short interest and valuation data
-    return topBuys.map(buy => {
-      const shortInterest = this.finra.getShortInterestSignal(buy.symbol);
-      const valuation = this.db.prepare(`
+    const enriched = [];
+    for (const buy of topBuys) {
+      const shortInterest = await this.finra.getShortInterestSignal(buy.symbol);
+
+      const valuationResult = await database.query(`
         SELECT
           cm.pe_ratio,
           cm.fcf_yield,
@@ -311,13 +308,14 @@ class AlternativeDataAggregator {
           vr.current_pe_percentile
         FROM calculated_metrics cm
         LEFT JOIN valuation_ranges vr ON vr.company_id = cm.company_id
-        WHERE cm.company_id = (SELECT id FROM companies WHERE symbol = ?)
+        WHERE cm.company_id = (SELECT id FROM companies WHERE symbol = $1)
           AND cm.period_type = 'annual'
         ORDER BY cm.fiscal_period DESC
         LIMIT 1
-      `).get(buy.symbol);
+      `, [buy.symbol]);
+      const valuation = valuationResult.rows[0];
 
-      return {
+      enriched.push({
         ...buy,
         shortInterest: shortInterest?.shortPctFloat,
         isSqueezeCandidate: shortInterest?.isSqueezeCandidate,
@@ -326,34 +324,46 @@ class AlternativeDataAggregator {
         roic: valuation?.roic,
         valuationSignal: valuation?.valuation_signal,
         pePercentile: valuation?.current_pe_percentile
-      };
-    });
+      });
+    }
+
+    return enriched;
   }
 
   /**
    * Get squeeze candidates with congressional activity
    */
-  getSqueezeCandidatesWithContext(limit = 20) {
-    const squeezeCandidates = this.finra.getSqueezeCandidates(limit);
+  async getSqueezeCandidatesWithContext(limit = 20) {
+    const squeezeCandidates = await this.finra.getSqueezeCandidates(limit);
 
-    return squeezeCandidates.map(candidate => {
-      const congressSignal = this.quiver.getCongressSignal(candidate.symbol);
+    const enriched = [];
+    for (const candidate of squeezeCandidates) {
+      const congressSignal = await this.quiver.getCongressSignal(candidate.symbol);
 
-      return {
+      enriched.push({
         ...candidate,
         congressBuyCount: congressSignal.buyCount,
         congressSellCount: congressSignal.sellCount,
         congressSignal: congressSignal.signal,
         hasPoliticianBuying: congressSignal.buyCount > 0
-      };
-    });
+      });
+    }
+
+    return enriched;
   }
 
   /**
    * Get summary statistics
    */
-  getSummary() {
-    const stats = this.db.prepare(`
+  async getSummary() {
+    const database = await getDatabaseAsync();
+
+    // Build dialect-aware date filter
+    const dateFilter = isUsingPostgres()
+      ? `signal_date >= CURRENT_DATE - INTERVAL '7 days'`
+      : `signal_date >= date('now', '-7 days')`;
+
+    const statsResult = await database.query(`
       SELECT
         COUNT(*) as total_symbols,
         COUNT(CASE WHEN combined_score > 0.3 THEN 1 END) as bullish_signals,
@@ -363,11 +373,12 @@ class AlternativeDataAggregator {
         AVG(combined_score) as avg_score,
         MAX(signal_date) as latest_date
       FROM alternative_data_signals
-      WHERE signal_date >= date('now', '-7 days')
-    `).get();
+      WHERE ${dateFilter}
+    `);
+    const stats = statsResult.rows[0];
 
-    const topBullish = this.getTopBullish(5);
-    const topBearish = this.getTopBearish(5);
+    const topBullish = await this.getTopBullish(5);
+    const topBearish = await this.getTopBearish(5);
 
     return {
       stats,
@@ -389,8 +400,16 @@ class AlternativeDataAggregator {
   /**
    * Get alternative data for screening integration
    */
-  getScreeningData(symbol) {
-    const latest = this.getLatestSignal.get(symbol);
+  async getScreeningData(symbol) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT * FROM alternative_data_signals
+      WHERE symbol = $1
+      ORDER BY signal_date DESC
+      LIMIT 1
+    `, [symbol]);
+    const latest = result.rows[0];
 
     if (!latest) {
       return null;
@@ -415,16 +434,19 @@ class AlternativeDataAggregator {
 
     console.log('\n🔄 Running full alternative data update...\n');
 
+    const database = await getDatabaseAsync();
+
     // Get top companies by market cap
-    const companies = this.db.prepare(`
+    const companiesResult = await database.query(`
       SELECT c.symbol
       FROM companies c
       JOIN price_metrics pm ON pm.company_id = c.id
       WHERE c.symbol NOT LIKE 'CIK_%'
         AND pm.market_cap IS NOT NULL
       ORDER BY pm.market_cap DESC
-      LIMIT ?
-    `).all(limit);
+      LIMIT $1
+    `, [limit]);
+    const companies = companiesResult.rows;
 
     const symbols = companies.map(c => c.symbol);
 

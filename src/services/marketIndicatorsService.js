@@ -9,11 +9,11 @@
  * - Treasury yields and yield curve
  */
 
-const db = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 
 class MarketIndicatorsService {
   constructor() {
-    this.db = db.getDatabase();
+    // No database parameter needed - using getDatabaseAsync()
   }
 
   /**
@@ -50,22 +50,26 @@ class MarketIndicatorsService {
    * Calculate Buffett Indicator from our companies table
    * Uses calibration factor to align with external benchmarks
    */
-  calculateBuffettFromCompanies() {
+  async calculateBuffettFromCompanies() {
+    const database = await getDatabaseAsync();
+
     // Sum market caps from our tracked companies
-    const marketCap = this.db.prepare(`
+    const marketCapResult = await database.query(`
       SELECT SUM(market_cap) as total_market_cap,
              COUNT(*) as stock_count
       FROM companies
       WHERE market_cap > 0 AND is_active = 1
-    `).get();
+    `);
+    const marketCap = marketCapResult.rows[0];
 
     // Get latest GDP from FRED
-    const gdp = this.db.prepare(`
+    const gdpResult = await database.query(`
       SELECT value, observation_date FROM economic_indicators
-      WHERE series_id = 'GDP'
+      WHERE series_id = $1
       ORDER BY observation_date DESC
       LIMIT 1
-    `).get();
+    `, ['GDP']);
+    const gdp = gdpResult.rows[0];
 
     if (!marketCap?.total_market_cap || !gdp?.value) {
       return {
@@ -125,9 +129,11 @@ class MarketIndicatorsService {
    * Get aggregate Tobin's Q from stock data
    * Tobin's Q = Market Value / Book Value
    */
-  getMarketTobinQ() {
+  async getMarketTobinQ() {
     try {
-      const result = this.db.prepare(`
+      const database = await getDatabaseAsync();
+
+      const resultQuery = await database.query(`
         SELECT
           SUM(c.market_cap) as total_market_cap,
           COUNT(*) as stock_count
@@ -143,10 +149,11 @@ class MarketIndicatorsService {
             WHERE cm2.company_id = cm.company_id
               AND cm2.period_type = 'annual'
           )
-      `).get();
+      `);
+      const result = resultQuery.rows[0];
 
       // Calculate weighted average Tobin's Q
-      const tobinData = this.db.prepare(`
+      const tobinDataResult = await database.query(`
         SELECT
           c.market_cap,
           cm.tobins_q
@@ -163,7 +170,8 @@ class MarketIndicatorsService {
             WHERE cm2.company_id = cm.company_id
               AND cm2.period_type = 'annual'
           )
-      `).all();
+      `);
+      const tobinData = tobinDataResult.rows;
 
       if (tobinData.length === 0) {
         return {
@@ -205,10 +213,12 @@ class MarketIndicatorsService {
   /**
    * Get aggregate valuation metrics from stock data
    */
-  getAggregateValuationMetrics() {
+  async getAggregateValuationMetrics() {
     try {
+      const database = await getDatabaseAsync();
+
       // Get P/E ratios
-      const peData = this.db.prepare(`
+      const peResult = await database.query(`
         SELECT cm.pe_ratio
         FROM calculated_metrics cm
         JOIN companies c ON cm.company_id = c.id
@@ -222,14 +232,15 @@ class MarketIndicatorsService {
               AND cm2.period_type = 'annual'
           )
         ORDER BY cm.pe_ratio
-      `).all().map(r => r.pe_ratio);
+      `);
+      const peData = peResult.rows.map(r => r.pe_ratio);
 
       const medianPE = peData.length > 0
         ? peData[Math.floor(peData.length / 2)]
         : null;
 
       // Get P/B ratios
-      const pbData = this.db.prepare(`
+      const pbResult = await database.query(`
         SELECT cm.pb_ratio
         FROM calculated_metrics cm
         JOIN companies c ON cm.company_id = c.id
@@ -243,14 +254,15 @@ class MarketIndicatorsService {
               AND cm2.period_type = 'annual'
           )
         ORDER BY cm.pb_ratio
-      `).all().map(r => r.pb_ratio);
+      `);
+      const pbData = pbResult.rows.map(r => r.pb_ratio);
 
       const medianPB = pbData.length > 0
         ? pbData[Math.floor(pbData.length / 2)]
         : null;
 
       // Get FCF yield data
-      const fcfData = this.db.prepare(`
+      const fcfResult = await database.query(`
         SELECT cm.fcf_yield
         FROM calculated_metrics cm
         JOIN companies c ON cm.company_id = c.id
@@ -264,14 +276,15 @@ class MarketIndicatorsService {
               AND cm2.period_type = 'annual'
           )
         ORDER BY cm.fcf_yield
-      `).all().map(r => r.fcf_yield);
+      `);
+      const fcfData = fcfResult.rows.map(r => r.fcf_yield);
 
       const medianFCFYield = fcfData.length > 0
         ? fcfData[Math.floor(fcfData.length / 2)]
         : null;
 
       // Get MSI (Misean Stationarity Index = Enterprise Value / Book Value)
-      const msiData = this.db.prepare(`
+      const msiResult = await database.query(`
         SELECT cm.msi
         FROM calculated_metrics cm
         JOIN companies c ON cm.company_id = c.id
@@ -285,7 +298,8 @@ class MarketIndicatorsService {
               AND cm2.period_type = 'annual'
           )
         ORDER BY cm.msi
-      `).all().map(r => r.msi);
+      `);
+      const msiData = msiResult.rows.map(r => r.msi);
 
       const medianMSI = msiData.length > 0
         ? msiData[Math.floor(msiData.length / 2)]
@@ -357,42 +371,45 @@ class MarketIndicatorsService {
   /**
    * Get treasury yields and yield curve data
    */
-  getTreasuryYields() {
-    const getValue = (seriesId) => {
-      const result = this.db.prepare(`
+  async getTreasuryYields() {
+    const database = await getDatabaseAsync();
+
+    const getValue = async (seriesId) => {
+      const result = await database.query(`
         SELECT value, observation_date
         FROM economic_indicators
-        WHERE series_id = ?
+        WHERE series_id = $1
         ORDER BY observation_date DESC
         LIMIT 1
-      `).get(seriesId);
-      return result?.value;
+      `, [seriesId]);
+      return result.rows[0]?.value;
     };
 
-    const twoYear = getValue('DGS2');
-    const tenYear = getValue('DGS10');
-    const thirtyYear = getValue('DGS30');
-    const threeMonth = getValue('DGS3MO');
-    const fiveYear = getValue('DGS5');
+    const twoYear = await getValue('DGS2');
+    const tenYear = await getValue('DGS10');
+    const thirtyYear = await getValue('DGS30');
+    const threeMonth = await getValue('DGS3MO');
+    const fiveYear = await getValue('DGS5');
 
     const spread2s10s = tenYear && twoYear ? tenYear - twoYear : null;
     const spread3m10y = tenYear && threeMonth ? tenYear - threeMonth : null;
 
     // Get full yield curve
-    const yieldCurve = this.db.prepare(`
+    const yieldCurveResult = await database.query(`
       SELECT * FROM yield_curve
       ORDER BY curve_date DESC
       LIMIT 1
-    `).get();
+    `);
+    const yieldCurve = yieldCurveResult.rows[0];
 
     return {
       threeMonth,
-      sixMonth: getValue('DGS6MO'),
-      oneYear: getValue('DGS1'),
+      sixMonth: await getValue('DGS6MO'),
+      oneYear: await getValue('DGS1'),
       twoYear,
       fiveYear,
       tenYear,
-      twentyYear: getValue('DGS20'),
+      twentyYear: await getValue('DGS20'),
       thirtyYear,
       spread2s10s,
       spread3m10y,
@@ -416,11 +433,13 @@ class MarketIndicatorsService {
    * Get safe haven stocks
    * Criteria: High defensive score, low debt, positive FCF, dividend paying
    */
-  getSafeHavens(limit = 10) {
+  async getSafeHavens(limit = 10) {
     try {
+      const database = await getDatabaseAsync();
+
       // Use defensive_score instead of beta since beta data isn't populated
       // Get only the latest factor score per company
-      const safeHavens = this.db.prepare(`
+      const safeHavensResult = await database.query(`
         WITH latest_factors AS (
           SELECT fs.*
           FROM stock_factor_scores fs
@@ -460,10 +479,10 @@ class MarketIndicatorsService {
               AND cm2.period_type = 'annual'
           )
         ORDER BY lf.defensive_score DESC, cm.dividend_yield DESC
-        LIMIT ?
-      `).all(limit);
+        LIMIT $1
+      `, [limit]);
 
-      return safeHavens.map(stock => ({
+      return safeHavensResult.rows.map(stock => ({
         ...stock,
         safetyScore: this.calculateSafetyScore(stock)
       }));
@@ -502,9 +521,11 @@ class MarketIndicatorsService {
    * Get undervalued quality stocks
    * Quality stocks trading below their sector median P/E
    */
-  getUndervaluedQuality(limit = 10) {
+  async getUndervaluedQuality(limit = 10) {
     try {
-      const opportunities = this.db.prepare(`
+      const database = await getDatabaseAsync();
+
+      const opportunitiesResult = await database.query(`
         WITH sector_medians AS (
           SELECT
             c.sector,
@@ -550,10 +571,10 @@ class MarketIndicatorsService {
               AND cm2.period_type = 'annual'
           )
         ORDER BY discount_pct DESC
-        LIMIT ?
-      `).all(limit);
+        LIMIT $1
+      `, [limit]);
 
-      return opportunities;
+      return opportunitiesResult.rows;
     } catch (err) {
       console.error('Error getting undervalued quality:', err.message);
       return [];
@@ -563,9 +584,11 @@ class MarketIndicatorsService {
   /**
    * Get S&P 500 cap-weighted P/E ratio
    */
-  getSP500PE() {
+  async getSP500PE() {
     try {
-      const result = this.db.prepare(`
+      const database = await getDatabaseAsync();
+
+      const resultQuery = await database.query(`
         WITH sp500_data AS (
           SELECT
             c.id,
@@ -593,7 +616,8 @@ class MarketIndicatorsService {
           SUM(market_cap / pe_ratio) as total_earnings,
           COUNT(*) as company_count
         FROM sp500_data
-      `).get();
+      `);
+      const result = resultQuery.rows[0];
 
       if (!result || !result.total_earnings || result.total_earnings <= 0) {
         return null;
@@ -627,39 +651,42 @@ class MarketIndicatorsService {
    * Get all market indicators in one call
    */
   async getAllIndicators() {
+    const database = await getDatabaseAsync();
+
     const [
       buffettIndicator,
       tobinQ,
       valuationMetrics,
       treasuryYields,
       safeHavens,
-      opportunities
+      opportunities,
+      sp500PE
     ] = await Promise.all([
       this.getBuffettIndicator(),
       this.getMarketTobinQ(),
       this.getAggregateValuationMetrics(),
       this.getTreasuryYields(),
       this.getSafeHavens(10),
-      this.getUndervaluedQuality(10)
+      this.getUndervaluedQuality(10),
+      this.getSP500PE()
     ]);
 
-    // Get S&P 500 P/E (synchronous)
-    const sp500PE = this.getSP500PE();
-
     // Get VIX and credit spreads
-    const vix = this.db.prepare(`
+    const vixResult = await database.query(`
       SELECT value FROM economic_indicators
-      WHERE series_id = 'VIXCLS'
+      WHERE series_id = $1
       ORDER BY observation_date DESC
       LIMIT 1
-    `).get();
+    `, ['VIXCLS']);
+    const vix = vixResult.rows[0];
 
-    const hySpread = this.db.prepare(`
+    const hySpreadResult = await database.query(`
       SELECT value FROM economic_indicators
-      WHERE series_id = 'BAMLH0A0HYM2'
+      WHERE series_id = $1
       ORDER BY observation_date DESC
       LIMIT 1
-    `).get();
+    `, ['BAMLH0A0HYM2']);
+    const hySpread = hySpreadResult.rows[0];
 
     // Determine overall market assessment
     const overallAssessment = this.getOverallAssessment({

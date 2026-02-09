@@ -15,10 +15,11 @@
  */
 
 const https = require('https');
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 
 class FinraShortInterestService {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
 
     // Short interest thresholds
     this.THRESHOLDS = {
@@ -31,106 +32,6 @@ class FinraShortInterestService {
         minDaysToCover: 4
       }
     };
-
-    // Prepare statements
-    this.prepareStatements();
-  }
-
-  prepareStatements() {
-    this.insertShortInterest = this.db.prepare(`
-      INSERT INTO short_interest (
-        company_id, symbol, settlement_date, short_interest,
-        avg_daily_volume, days_to_cover, shares_outstanding, float_shares,
-        short_pct_outstanding, short_pct_float, prior_short_interest,
-        change_pct, squeeze_score, signal_score, source
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(symbol, settlement_date) DO UPDATE SET
-        short_interest = excluded.short_interest,
-        avg_daily_volume = excluded.avg_daily_volume,
-        days_to_cover = excluded.days_to_cover,
-        short_pct_float = excluded.short_pct_float,
-        squeeze_score = excluded.squeeze_score,
-        signal_score = excluded.signal_score
-    `);
-
-    this.getLatestShortInterest = this.db.prepare(`
-      SELECT * FROM short_interest
-      WHERE symbol = ?
-      ORDER BY settlement_date DESC
-      LIMIT 1
-    `);
-
-    this.getShortInterestHistory = this.db.prepare(`
-      SELECT * FROM short_interest
-      WHERE symbol = ?
-        AND settlement_date >= date('now', ?)
-      ORDER BY settlement_date DESC
-    `);
-
-    this.getPriorShortInterest = this.db.prepare(`
-      SELECT short_interest FROM short_interest
-      WHERE symbol = ?
-        AND settlement_date < ?
-      ORDER BY settlement_date DESC
-      LIMIT 1
-    `);
-
-    this.getCompanyData = this.db.prepare(`
-      SELECT
-        c.id as company_id,
-        c.symbol,
-        pm.market_cap,
-        pm.shares_outstanding,
-        pm.avg_volume_30d as avg_volume_10d,
-        pm.last_price
-      FROM companies c
-      LEFT JOIN price_metrics pm ON pm.company_id = c.id
-      WHERE c.symbol = ?
-    `);
-
-    this.getSqueezeCandiates = this.db.prepare(`
-      SELECT
-        si.symbol,
-        c.name as company_name,
-        si.short_pct_float,
-        si.days_to_cover,
-        si.squeeze_score,
-        si.signal_score,
-        si.change_pct,
-        si.settlement_date,
-        pm.last_price,
-        pm.market_cap
-      FROM short_interest si
-      JOIN companies c ON si.company_id = c.id
-      LEFT JOIN price_metrics pm ON pm.company_id = c.id
-      WHERE si.settlement_date = (
-        SELECT MAX(settlement_date) FROM short_interest WHERE symbol = si.symbol
-      )
-        AND si.squeeze_score >= 0.4
-      ORDER BY si.squeeze_score DESC
-      LIMIT ?
-    `);
-
-    this.getMostShorted = this.db.prepare(`
-      SELECT
-        si.symbol,
-        c.name as company_name,
-        si.short_pct_float,
-        si.short_interest,
-        si.days_to_cover,
-        si.change_pct,
-        si.settlement_date,
-        pm.last_price,
-        pm.market_cap
-      FROM short_interest si
-      JOIN companies c ON si.company_id = c.id
-      LEFT JOIN price_metrics pm ON pm.company_id = c.id
-      WHERE si.settlement_date = (
-        SELECT MAX(settlement_date) FROM short_interest WHERE symbol = si.symbol
-      )
-      ORDER BY si.short_pct_float DESC
-      LIMIT ?
-    `);
   }
 
   /**
@@ -240,8 +141,23 @@ class FinraShortInterestService {
     console.log(`  Fetching short interest for ${symbol}...`);
 
     try {
+      const database = await getDatabaseAsync();
+
       // Get company data
-      const company = this.getCompanyData.get(symbol);
+      const companyResult = await database.query(`
+        SELECT
+          c.id as company_id,
+          c.symbol,
+          pm.market_cap,
+          pm.shares_outstanding,
+          pm.avg_volume_30d as avg_volume_10d,
+          pm.last_price
+        FROM companies c
+        LEFT JOIN price_metrics pm ON pm.company_id = c.id
+        WHERE c.symbol = $1
+      `, [symbol]);
+      const company = companyResult.rows[0];
+
       if (!company) {
         console.log(`    Company not found: ${symbol}`);
         return null;
@@ -275,7 +191,13 @@ class FinraShortInterestService {
 
       // Get prior short interest for change calculation
       const settlementDate = siData.shortInterestDate || new Date().toISOString().split('T')[0];
-      const priorRow = this.getPriorShortInterest.get(symbol, settlementDate);
+      const priorResult = await database.query(`
+        SELECT short_interest FROM short_interest
+        WHERE symbol = $1 AND settlement_date < $2
+        ORDER BY settlement_date DESC
+        LIMIT 1
+      `, [symbol, settlementDate]);
+      const priorRow = priorResult.rows[0];
       const priorShortInterest = siData.priorShortInterest || priorRow?.short_interest || 0;
 
       const changePct = priorShortInterest > 0
@@ -287,7 +209,21 @@ class FinraShortInterestService {
       const signalScore = this.calculateSignalScore(shortPctFloat, daysToCover, squeezeScore);
 
       // Store in database
-      this.insertShortInterest.run(
+      await database.query(`
+        INSERT INTO short_interest (
+          company_id, symbol, settlement_date, short_interest,
+          avg_daily_volume, days_to_cover, shares_outstanding, float_shares,
+          short_pct_outstanding, short_pct_float, prior_short_interest,
+          change_pct, squeeze_score, signal_score, source
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        ON CONFLICT(symbol, settlement_date) DO UPDATE SET
+          short_interest = excluded.short_interest,
+          avg_daily_volume = excluded.avg_daily_volume,
+          days_to_cover = excluded.days_to_cover,
+          short_pct_float = excluded.short_pct_float,
+          squeeze_score = excluded.squeeze_score,
+          signal_score = excluded.signal_score
+      `, [
         company.company_id,
         symbol,
         settlementDate,
@@ -303,7 +239,7 @@ class FinraShortInterestService {
         squeezeScore,
         signalScore,
         'yahoo'
-      );
+      ]);
 
       // Note: is_squeeze_candidate is derived from squeeze_score >= 0.4
       const isSqueezeCandidate = squeezeScore >= 0.4 ? 1 : 0;
@@ -330,8 +266,16 @@ class FinraShortInterestService {
   /**
    * Get short interest signal for a symbol
    */
-  getShortInterestSignal(symbol) {
-    const latest = this.getLatestShortInterest.get(symbol);
+  async getShortInterestSignal(symbol) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT * FROM short_interest
+      WHERE symbol = $1
+      ORDER BY settlement_date DESC
+      LIMIT 1
+    `, [symbol]);
+    const latest = result.rows[0];
 
     if (!latest) {
       return {
@@ -360,22 +304,83 @@ class FinraShortInterestService {
   /**
    * Get squeeze candidates
    */
-  getSqueezeCandidates(limit = 20) {
-    return this.getSqueezeCandiates.all(limit);
+  async getSqueezeCandidates(limit = 20) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT
+        si.symbol,
+        c.name as company_name,
+        si.short_pct_float,
+        si.days_to_cover,
+        si.squeeze_score,
+        si.signal_score,
+        si.change_pct,
+        si.settlement_date,
+        pm.last_price,
+        pm.market_cap
+      FROM short_interest si
+      JOIN companies c ON si.company_id = c.id
+      LEFT JOIN price_metrics pm ON pm.company_id = c.id
+      WHERE si.settlement_date = (
+        SELECT MAX(settlement_date) FROM short_interest WHERE symbol = si.symbol
+      )
+        AND si.squeeze_score >= 0.4
+      ORDER BY si.squeeze_score DESC
+      LIMIT $1
+    `, [limit]);
+
+    return result.rows;
   }
 
   /**
    * Get most shorted stocks
    */
-  getMostShorted(limit = 20) {
-    return this.getMostShorted.all(limit);
+  async getMostShorted(limit = 20) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT
+        si.symbol,
+        c.name as company_name,
+        si.short_pct_float,
+        si.short_interest,
+        si.days_to_cover,
+        si.change_pct,
+        si.settlement_date,
+        pm.last_price,
+        pm.market_cap
+      FROM short_interest si
+      JOIN companies c ON si.company_id = c.id
+      LEFT JOIN price_metrics pm ON pm.company_id = c.id
+      WHERE si.settlement_date = (
+        SELECT MAX(settlement_date) FROM short_interest WHERE symbol = si.symbol
+      )
+      ORDER BY si.short_pct_float DESC
+      LIMIT $1
+    `, [limit]);
+
+    return result.rows;
   }
 
   /**
    * Get short interest history for a symbol
    */
-  getHistory(symbol, lookbackDays = '-365 days') {
-    return this.getShortInterestHistory.all(symbol, lookbackDays);
+  async getHistory(symbol, lookbackDays = '-365 days') {
+    const database = await getDatabaseAsync();
+
+    // Build dialect-aware date filter
+    const dateCondition = isUsingPostgres()
+      ? `settlement_date >= CURRENT_DATE + INTERVAL '${lookbackDays}'`
+      : `settlement_date >= date('now', '${lookbackDays}')`;
+
+    const result = await database.query(`
+      SELECT * FROM short_interest
+      WHERE symbol = $1 AND ${dateCondition}
+      ORDER BY settlement_date DESC
+    `, [symbol]);
+
+    return result.rows;
   }
 
   /**
@@ -409,8 +414,8 @@ class FinraShortInterestService {
   /**
    * Analyze short interest trends
    */
-  analyzeShortTrends(symbol) {
-    const history = this.getHistory(symbol, '-180 days');
+  async analyzeShortTrends(symbol) {
+    const history = await this.getHistory(symbol, '-180 days');
 
     if (history.length < 2) {
       return { trend: 'unknown', confidence: 0 };

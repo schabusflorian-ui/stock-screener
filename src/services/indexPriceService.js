@@ -8,10 +8,11 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const indexMappingService = require('./indexMappingService');
+const { getDatabaseAsync } = require('../lib/db');
 
 class IndexPriceService {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
     this.pythonScript = path.join(__dirname, '../../python-services/index_etf_fetcher.py');
     this.dbPath = path.join(__dirname, '../../data/stocks.db');
   }
@@ -19,8 +20,9 @@ class IndexPriceService {
   /**
    * Get all tracked indices
    */
-  getAllIndices() {
-    return this.db.prepare(`
+  async getAllIndices() {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         symbol, name, index_type, is_primary,
         last_price, last_price_date,
@@ -29,14 +31,16 @@ class IndexPriceService {
         updated_at
       FROM index_prices
       ORDER BY is_primary DESC, index_type, symbol
-    `).all();
+    `);
+    return result.rows;
   }
 
   /**
    * Get market indices only (SPY, QQQ, DIA, etc.)
    */
-  getMarketIndices() {
-    return this.db.prepare(`
+  async getMarketIndices() {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         symbol, name, is_primary,
         last_price, last_price_date,
@@ -46,14 +50,16 @@ class IndexPriceService {
       FROM index_prices
       WHERE index_type = 'market'
       ORDER BY is_primary DESC, symbol
-    `).all();
+    `);
+    return result.rows;
   }
 
   /**
    * Get sector ETFs
    */
-  getSectorIndices() {
-    return this.db.prepare(`
+  async getSectorIndices() {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         symbol, name,
         last_price, last_price_date,
@@ -62,14 +68,16 @@ class IndexPriceService {
       FROM index_prices
       WHERE index_type = 'sector'
       ORDER BY symbol
-    `).all();
+    `);
+    return result.rows;
   }
 
   /**
    * Get primary benchmark (SPY)
    */
-  getBenchmark() {
-    return this.db.prepare(`
+  async getBenchmark() {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         symbol, name,
         last_price, last_price_date,
@@ -78,16 +86,19 @@ class IndexPriceService {
       FROM index_prices
       WHERE is_primary = 1
       LIMIT 1
-    `).get();
+    `);
+    return result.rows[0];
   }
 
   /**
    * Get index by symbol
    */
-  getIndex(symbol) {
-    return this.db.prepare(`
-      SELECT * FROM index_prices WHERE LOWER(symbol) = LOWER(?)
-    `).get(symbol);
+  async getIndex(symbol) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM index_prices WHERE LOWER(symbol) = LOWER($1)
+    `, [symbol]);
+    return result.rows[0];
   }
 
   /**
@@ -95,27 +106,27 @@ class IndexPriceService {
    * Alpha = stock_change - benchmark_change
    * Calculates both SPY alpha (global) and home index alpha
    */
-  calculateAlphaForAll() {
-    const benchmark = this.getBenchmark();
+  async calculateAlphaForAll() {
+    const benchmark = await this.getBenchmark();
     if (!benchmark) {
       throw new Error('No benchmark index found. Run index price update first.');
     }
 
+    const database = await getDatabaseAsync();
+
     // Step 1: Calculate alpha vs SPY for all stocks
-    const updateSpyAlpha = this.db.prepare(`
+    const spyResult = await database.query(`
       UPDATE price_metrics SET
-        alpha_1d = change_1d - ?,
-        alpha_1w = change_1w - ?,
-        alpha_1m = change_1m - ?,
-        alpha_3m = change_3m - ?,
-        alpha_6m = change_6m - ?,
-        alpha_1y = change_1y - ?,
-        alpha_ytd = change_ytd - ?,
+        alpha_1d = change_1d - $1,
+        alpha_1w = change_1w - $2,
+        alpha_1m = change_1m - $3,
+        alpha_3m = change_3m - $4,
+        alpha_6m = change_6m - $5,
+        alpha_1y = change_1y - $6,
+        alpha_ytd = change_ytd - $7,
         benchmark_symbol = 'SPY'
       WHERE change_1d IS NOT NULL
-    `);
-
-    const spyResult = updateSpyAlpha.run(
+    `, [
       benchmark.change_1d || 0,
       benchmark.change_1w || 0,
       benchmark.change_1m || 0,
@@ -123,13 +134,13 @@ class IndexPriceService {
       benchmark.change_6m || 0,
       benchmark.change_1y || 0,
       benchmark.change_ytd || 0
-    );
+    ]);
 
     // Step 2: Calculate alpha vs home index for non-US stocks
-    const homeAlphaResult = this.calculateHomeAlphaForAll();
+    const homeAlphaResult = await this.calculateHomeAlphaForAll();
 
     return {
-      updated: spyResult.changes,
+      updated: spyResult.rowCount,
       benchmark: benchmark.symbol,
       benchmarkChanges: {
         '1d': benchmark.change_1d,
@@ -148,9 +159,11 @@ class IndexPriceService {
    * Calculate alpha vs home index for all non-US stocks
    * Groups companies by country and calculates alpha against their respective home index
    */
-  calculateHomeAlphaForAll() {
+  async calculateHomeAlphaForAll() {
+    const database = await getDatabaseAsync();
+
     // Get all companies grouped by country
-    const countriesWithCompanies = this.db.prepare(`
+    const countriesResult = await database.query(`
       SELECT DISTINCT c.country, COUNT(*) as company_count
       FROM companies c
       JOIN price_metrics pm ON c.id = pm.company_id
@@ -158,7 +171,8 @@ class IndexPriceService {
         AND c.country != 'US'
         AND pm.change_1d IS NOT NULL
       GROUP BY c.country
-    `).all();
+    `);
+    const countriesWithCompanies = countriesResult.rows;
 
     const results = {
       processed: 0,
@@ -171,32 +185,31 @@ class IndexPriceService {
       const homeIndex = indexMappingService.getHomeIndex(country);
 
       // Get index data for the home benchmark
-      // Try to find by symbol in index_prices table
-      const indexData = this.db.prepare(`
+      const indexDataResult = await database.query(`
         SELECT
           change_1d, change_1w, change_1m, change_3m, change_6m, change_1y, change_ytd
         FROM index_prices
-        WHERE LOWER(symbol) = LOWER(?)
-      `).get(homeIndex.etf);
+        WHERE LOWER(symbol) = LOWER($1)
+      `, [homeIndex.etf]);
+      const indexData = indexDataResult.rows[0];
 
       if (indexData) {
         // Update alpha_home for all companies in this country
-        // SQLite UPDATE...FROM requires careful handling - use subquery instead
-        const updateResult = this.db.prepare(`
+        const updateResult = await database.query(`
           UPDATE price_metrics SET
-            alpha_1d_home = change_1d - ?,
-            alpha_1w_home = change_1w - ?,
-            alpha_1m_home = change_1m - ?,
-            alpha_3m_home = change_3m - ?,
-            alpha_6m_home = change_6m - ?,
-            alpha_1y_home = change_1y - ?,
-            alpha_ytd_home = change_ytd - ?,
-            home_benchmark = ?
+            alpha_1d_home = change_1d - $1,
+            alpha_1w_home = change_1w - $2,
+            alpha_1m_home = change_1m - $3,
+            alpha_3m_home = change_3m - $4,
+            alpha_6m_home = change_6m - $5,
+            alpha_1y_home = change_1y - $6,
+            alpha_ytd_home = change_ytd - $7,
+            home_benchmark = $8
           WHERE company_id IN (
-            SELECT id FROM companies WHERE country = ?
+            SELECT id FROM companies WHERE country = $9
           )
           AND change_1d IS NOT NULL
-        `).run(
+        `, [
           indexData.change_1d || 0,
           indexData.change_1w || 0,
           indexData.change_1m || 0,
@@ -206,28 +219,28 @@ class IndexPriceService {
           indexData.change_ytd || 0,
           homeIndex.code,
           country
-        );
+        ]);
 
         results.byCountry[country] = {
           index: homeIndex.code,
           etf: homeIndex.etf,
-          updated: updateResult.changes,
+          updated: updateResult.rowCount,
           indexData: {
             '1m': indexData.change_1m,
             '1y': indexData.change_1y
           }
         };
-        results.processed += updateResult.changes;
+        results.processed += updateResult.rowCount;
       } else {
         // No index data available for this home index
         // Set home_benchmark but leave alpha_home as null
-        this.db.prepare(`
+        await database.query(`
           UPDATE price_metrics SET
-            home_benchmark = ?
+            home_benchmark = $1
           WHERE company_id IN (
-            SELECT id FROM companies WHERE country = ?
+            SELECT id FROM companies WHERE country = $2
           )
-        `).run(homeIndex.code, country);
+        `, [homeIndex.code, country]);
 
         results.byCountry[country] = {
           index: homeIndex.code,
@@ -239,7 +252,7 @@ class IndexPriceService {
     }
 
     // For US companies, home alpha = SPY alpha (same benchmark)
-    const usResult = this.db.prepare(`
+    const usResult = await database.query(`
       UPDATE price_metrics SET
         alpha_1d_home = alpha_1d,
         alpha_1w_home = alpha_1w,
@@ -253,15 +266,15 @@ class IndexPriceService {
         SELECT id FROM companies WHERE country = 'US' OR country IS NULL
       )
       AND alpha_1d IS NOT NULL
-    `).run();
+    `);
 
     results.byCountry['US'] = {
       index: 'SPX',
       etf: 'SPY',
-      updated: usResult.changes,
+      updated: usResult.rowCount,
       sameAsSpy: true
     };
-    results.processed += usResult.changes;
+    results.processed += usResult.rowCount;
 
     return results;
   }
@@ -270,14 +283,17 @@ class IndexPriceService {
    * Get alpha metrics for a specific stock
    * Returns both SPY alpha and home index alpha
    */
-  getStockAlpha(symbol) {
-    const company = this.db.prepare(`
-      SELECT id, country FROM companies WHERE LOWER(symbol) = LOWER(?)
-    `).get(symbol);
+  async getStockAlpha(symbol) {
+    const database = await getDatabaseAsync();
+
+    const companyResult = await database.query(`
+      SELECT id, country FROM companies WHERE LOWER(symbol) = LOWER($1)
+    `, [symbol]);
+    const company = companyResult.rows[0];
 
     if (!company) return null;
 
-    const alphaData = this.db.prepare(`
+    const alphaDataResult = await database.query(`
       SELECT
         pm.alpha_1d, pm.alpha_1w, pm.alpha_1m,
         pm.alpha_3m, pm.alpha_6m, pm.alpha_1y, pm.alpha_ytd,
@@ -292,8 +308,9 @@ class IndexPriceService {
         ip.change_1y as benchmark_1y
       FROM price_metrics pm
       LEFT JOIN index_prices ip ON ip.symbol = pm.benchmark_symbol
-      WHERE pm.company_id = ?
-    `).get(company.id);
+      WHERE pm.company_id = $1
+    `, [company.id]);
+    const alphaData = alphaDataResult.rows[0];
 
     if (!alphaData) return null;
 
@@ -337,23 +354,25 @@ class IndexPriceService {
   /**
    * Get update status
    */
-  getUpdateStatus() {
-    const indices = this.db.prepare(`
+  async getUpdateStatus() {
+    const database = await getDatabaseAsync();
+
+    const indicesResult = await database.query(`
       SELECT symbol, last_price_date, updated_at
       FROM index_prices
       ORDER BY is_primary DESC, symbol
-    `).all();
+    `);
 
-    const alphaStats = this.db.prepare(`
+    const alphaStatsResult = await database.query(`
       SELECT
         COUNT(*) as total,
         SUM(CASE WHEN alpha_1d IS NOT NULL THEN 1 ELSE 0 END) as with_alpha
       FROM price_metrics
-    `).get();
+    `);
 
     return {
-      indices,
-      alphaStats
+      indices: indicesResult.rows,
+      alphaStats: alphaStatsResult.rows[0]
     };
   }
 
@@ -406,7 +425,7 @@ class IndexPriceService {
     await this.updateIndexPrices();
 
     // Calculate alpha for all stocks
-    const alphaResult = this.calculateAlphaForAll();
+    const alphaResult = await this.calculateAlphaForAll();
 
     return {
       success: true,

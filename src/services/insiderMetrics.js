@@ -4,7 +4,7 @@
  * Provides insider ownership calculations and activity metrics
  */
 
-const database = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 
 class InsiderMetrics {
   /**
@@ -12,13 +12,17 @@ class InsiderMetrics {
    * @param {number} companyId - Company ID
    * @returns {number|null} Insider ownership percentage (0-100) or null if unavailable
    */
-  static getInsiderOwnershipPercent(companyId) {
+  static async getInsiderOwnershipPercent(companyId) {
+    const database = await getDatabaseAsync();
+
     // Check if there are 10%+ owners
-    const tenPercentOwners = database.prepare(`
+    const tenPercentOwnersResult = await database.query(`
       SELECT COUNT(*) as count
       FROM insiders
-      WHERE company_id = ? AND is_ten_percent_owner = 1
-    `).get(companyId);
+      WHERE company_id = $1 AND is_ten_percent_owner = 1
+    `, [companyId]);
+
+    const tenPercentOwners = tenPercentOwnersResult.rows[0];
 
     if (tenPercentOwners && tenPercentOwners.count > 0) {
       // Estimate based on number of 10% owners (conservative estimate)
@@ -28,13 +32,15 @@ class InsiderMetrics {
 
     // Fallback: Check for insider transaction activity
     // High activity often correlates with significant ownership
-    const recentActivity = database.prepare(`
+    const recentActivityResult = await database.query(`
       SELECT COUNT(*) as transactions
       FROM insider_transactions
-      WHERE company_id = ?
+      WHERE company_id = $1
         AND transaction_date >= date('now', '-365 days')
         AND transaction_type IN ('P', 'Purchase', 'BUY')
-    `).get(companyId);
+    `, [companyId]);
+
+    const recentActivity = recentActivityResult.rows[0];
 
     if (recentActivity && recentActivity.transactions > 10) {
       // Significant insider buying suggests material ownership
@@ -50,17 +56,20 @@ class InsiderMetrics {
    * @param {number} days - Lookback period in days (default 90)
    * @returns {boolean} True if recent insider buying detected
    */
-  static hasRecentInsiderBuying(companyId, days = 90) {
-    const result = database.prepare(`
+  static async hasRecentInsiderBuying(companyId, days = 90) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT COUNT(*) as count
       FROM insider_transactions
-      WHERE company_id = ?
-        AND transaction_date >= date('now', '-' || ? || ' days')
+      WHERE company_id = $1
+        AND transaction_date >= date('now', '-' || $2 || ' days')
         AND transaction_type IN ('P', 'Purchase', 'BUY')
         AND shares > 0
-    `).get(companyId, days);
+    `, [companyId, days]);
 
-    return result && result.count > 0;
+    const row = result.rows[0];
+    return row && row.count > 0;
   }
 
   /**
@@ -68,17 +77,21 @@ class InsiderMetrics {
    * @param {number} companyId - Company ID
    * @returns {number} Signal strength score
    */
-  static getInsiderBuyingSignal(companyId) {
-    const activity = database.prepare(`
+  static async getInsiderBuyingSignal(companyId) {
+    const database = await getDatabaseAsync();
+
+    const activityResult = await database.query(`
       SELECT
         COUNT(*) as buy_count,
         SUM(CASE WHEN transaction_type IN ('S', 'Sale', 'SELL') THEN 1 ELSE 0 END) as sell_count,
         SUM(shares * COALESCE(price, 0)) as buy_value
       FROM insider_transactions
-      WHERE company_id = ?
+      WHERE company_id = $1
         AND transaction_date >= date('now', '-90 days')
         AND transaction_type IN ('P', 'Purchase', 'BUY', 'S', 'Sale', 'SELL')
-    `).get(companyId);
+    `, [companyId]);
+
+    const activity = activityResult.rows[0];
 
     if (!activity || activity.buy_count === 0) return 0;
 
@@ -113,11 +126,11 @@ class InsiderMetrics {
    * @param {number} companyId - Company ID
    * @returns {Object} Insider metrics
    */
-  static getInsiderMetrics(companyId) {
+  static async getInsiderMetrics(companyId) {
     return {
-      ownershipPercent: this.getInsiderOwnershipPercent(companyId),
-      hasRecentBuying: this.hasRecentInsiderBuying(companyId),
-      buyingSignalStrength: this.getInsiderBuyingSignal(companyId)
+      ownershipPercent: await this.getInsiderOwnershipPercent(companyId),
+      hasRecentBuying: await this.hasRecentInsiderBuying(companyId),
+      buyingSignalStrength: await this.getInsiderBuyingSignal(companyId)
     };
   }
 }

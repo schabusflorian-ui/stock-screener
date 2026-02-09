@@ -4,56 +4,15 @@
 
 require('dotenv').config();
 const https = require('https');
-const db = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 
 class EarningsTranscriptService {
   constructor() {
-    this.db = db.getDatabase();
+    // No database parameter needed - using getDatabaseAsync()
     this.fmpApiKey = process.env.FMP_API_KEY;
     this.baseUrl = 'https://financialmodelingprep.com/api/v3';
     this.delay = 1000; // 1 second between requests
     this.lastRequest = 0;
-
-    this.prepareStatements();
-  }
-
-  prepareStatements() {
-    this.getCompanyId = this.db.prepare(`
-      SELECT id FROM companies WHERE symbol = ?
-    `);
-
-    this.getExistingTranscript = this.db.prepare(`
-      SELECT id, call_date, fiscal_year, fiscal_quarter
-      FROM earnings_transcripts
-      WHERE company_id = ? AND fiscal_year = ? AND fiscal_quarter = ?
-    `);
-
-    this.insertTranscript = this.db.prepare(`
-      INSERT INTO earnings_transcripts (
-        company_id, symbol, fiscal_year, fiscal_quarter, call_date, call_type,
-        title, full_transcript, prepared_remarks, qa_section,
-        executives, analysts, sentiment_score, tone,
-        guidance_phrases, uncertainty_phrases, forward_looking_count, risk_mentions,
-        source, source_url
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(company_id, fiscal_year, fiscal_quarter, call_type) DO UPDATE SET
-        full_transcript = excluded.full_transcript,
-        prepared_remarks = excluded.prepared_remarks,
-        qa_section = excluded.qa_section,
-        executives = excluded.executives,
-        analysts = excluded.analysts,
-        sentiment_score = excluded.sentiment_score,
-        tone = excluded.tone,
-        guidance_phrases = excluded.guidance_phrases,
-        fetched_at = CURRENT_TIMESTAMP
-    `);
-
-    this.getLatestTranscripts = this.db.prepare(`
-      SELECT * FROM earnings_transcripts
-      WHERE company_id = ?
-      ORDER BY fiscal_year DESC, fiscal_quarter DESC
-      LIMIT ?
-    `);
   }
 
   /**
@@ -289,7 +248,14 @@ class EarningsTranscriptService {
    * Fetch and store transcripts for a symbol
    */
   async fetchAndStoreTranscripts(symbol, quarters = 4) {
-    const company = this.getCompanyId.get(symbol.toUpperCase());
+    const database = await getDatabaseAsync();
+
+    const companyResult = await database.query(
+      'SELECT id FROM companies WHERE symbol = $1',
+      [symbol.toUpperCase()]
+    );
+    const company = companyResult.rows[0];
+
     if (!company) {
       console.warn(`  Company ${symbol} not found in database`);
       return { fetched: 0, stored: 0 };
@@ -318,7 +284,13 @@ class EarningsTranscriptService {
 
     for (const item of sorted) {
       // Check if we already have this transcript
-      const existing = this.getExistingTranscript.get(company.id, item.year, item.quarter);
+      const existingResult = await database.query(`
+        SELECT id, call_date, fiscal_year, fiscal_quarter
+        FROM earnings_transcripts
+        WHERE company_id = $1 AND fiscal_year = $2 AND fiscal_quarter = $3
+      `, [company.id, item.year, item.quarter]);
+      const existing = existingResult.rows[0];
+
       if (existing && existing.full_transcript) {
         console.log(`    Q${item.quarter} ${item.year}: Already stored`);
         continue;
@@ -338,7 +310,25 @@ class EarningsTranscriptService {
       const { executives, analysts } = this.extractParticipants(transcript.content);
 
       try {
-        this.insertTranscript.run(
+        await database.query(`
+          INSERT INTO earnings_transcripts (
+            company_id, symbol, fiscal_year, fiscal_quarter, call_date, call_type,
+            title, full_transcript, prepared_remarks, qa_section,
+            executives, analysts, sentiment_score, tone,
+            guidance_phrases, uncertainty_phrases, forward_looking_count, risk_mentions,
+            source, source_url
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+          ON CONFLICT(company_id, fiscal_year, fiscal_quarter, call_type) DO UPDATE SET
+            full_transcript = excluded.full_transcript,
+            prepared_remarks = excluded.prepared_remarks,
+            qa_section = excluded.qa_section,
+            executives = excluded.executives,
+            analysts = excluded.analysts,
+            sentiment_score = excluded.sentiment_score,
+            tone = excluded.tone,
+            guidance_phrases = excluded.guidance_phrases,
+            fetched_at = CURRENT_TIMESTAMP
+        `, [
           company.id,
           symbol.toUpperCase(),
           item.year,
@@ -359,7 +349,7 @@ class EarningsTranscriptService {
           analysis.riskMentions,
           'fmp',
           null
-        );
+        ]);
         stored++;
         console.log(`    Q${item.quarter} ${item.year}: Stored (${analysis.tone} tone)`);
       } catch (error) {
@@ -373,18 +363,32 @@ class EarningsTranscriptService {
   /**
    * Get transcripts for a company from database
    */
-  getTranscripts(symbol, limit = 4) {
-    const company = this.getCompanyId.get(symbol.toUpperCase());
+  async getTranscripts(symbol, limit = 4) {
+    const database = await getDatabaseAsync();
+
+    const companyResult = await database.query(
+      'SELECT id FROM companies WHERE symbol = $1',
+      [symbol.toUpperCase()]
+    );
+    const company = companyResult.rows[0];
+
     if (!company) return [];
 
-    return this.getLatestTranscripts.all(company.id, limit);
+    const transcriptsResult = await database.query(`
+      SELECT * FROM earnings_transcripts
+      WHERE company_id = $1
+      ORDER BY fiscal_year DESC, fiscal_quarter DESC
+      LIMIT $2
+    `, [company.id, limit]);
+
+    return transcriptsResult.rows;
   }
 
   /**
    * Get transcript summary for PRISM report
    */
-  getTranscriptSummary(symbol) {
-    const transcripts = this.getTranscripts(symbol, 4);
+  async getTranscriptSummary(symbol) {
+    const transcripts = await this.getTranscripts(symbol, 4);
 
     if (transcripts.length === 0) {
       return null;
@@ -445,8 +449,8 @@ class EarningsTranscriptService {
   /**
    * Extract key quotes from transcript for PRISM report
    */
-  extractKeyQuotes(symbol, maxQuotes = 3) {
-    const transcripts = this.getTranscripts(symbol, 1);
+  async extractKeyQuotes(symbol, maxQuotes = 3) {
+    const transcripts = await this.getTranscripts(symbol, 1);
 
     if (transcripts.length === 0 || !transcripts[0].prepared_remarks) {
       return [];
@@ -496,14 +500,14 @@ if (require.main === module) {
     console.log(`\nResult: Fetched ${result.fetched}, Stored ${result.stored}`);
 
     // Test getting summary
-    const summary = service.getTranscriptSummary('AAPL');
+    const summary = await service.getTranscriptSummary('AAPL');
     if (summary) {
       console.log('\nTranscript Summary:');
       console.log(JSON.stringify(summary, null, 2));
     }
 
     // Test key quotes
-    const quotes = service.extractKeyQuotes('AAPL');
+    const quotes = await service.extractKeyQuotes('AAPL');
     if (quotes.length > 0) {
       console.log('\nKey Quotes:');
       quotes.forEach((q, i) => console.log(`${i + 1}. "${q.substring(0, 150)}..."`));

@@ -8,10 +8,11 @@
  */
 
 const localSentiment = require('./localSentiment');
+const { getDatabaseAsync } = require('../lib/db');
 
 class StockTwitsFetcher {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
     this.baseUrl = 'https://api.stocktwits.com/api/2';
     this.lastRequest = 0;
     this.minDelay = 1500; // 1.5s between requests (safe for rate limit)
@@ -173,18 +174,21 @@ class StockTwitsFetcher {
    * Store messages in database
    */
   async storeMessages(messages, companyId) {
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO stocktwits_messages (
-        company_id, message_id, body,
-        user_id, username, user_followers, user_join_date,
-        user_sentiment, likes_count, reshares_count, posted_at,
-        nlp_sentiment_score, nlp_sentiment_label
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+    const database = await getDatabaseAsync();
 
     for (const msg of messages) {
       try {
-        stmt.run(
+        await database.query(`
+          INSERT INTO stocktwits_messages (
+            company_id, message_id, body,
+            user_id, username, user_followers, user_join_date,
+            user_sentiment, likes_count, reshares_count, posted_at,
+            nlp_sentiment_score, nlp_sentiment_label
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          ON CONFLICT (message_id) DO UPDATE SET
+            likes_count = EXCLUDED.likes_count,
+            reshares_count = EXCLUDED.reshares_count
+        `, [
           companyId,
           msg.messageId,
           msg.body,
@@ -198,7 +202,7 @@ class StockTwitsFetcher {
           msg.postedAt,
           msg.nlpSentimentScore || null,
           msg.nlpSentimentLabel || null
-        );
+        ]);
       } catch (error) {
         // Ignore duplicates
       }
@@ -275,18 +279,19 @@ class StockTwitsFetcher {
   /**
    * Get historical sentiment from database
    */
-  getSentimentHistory(companyId, days = 7) {
+  async getSentimentHistory(companyId, days = 7) {
+    const database = await getDatabaseAsync();
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
 
-    const messages = this.db.prepare(`
+    const result = await database.query(`
       SELECT * FROM stocktwits_messages
-      WHERE company_id = ?
-        AND posted_at >= ?
+      WHERE company_id = $1
+        AND posted_at >= $2
       ORDER BY posted_at DESC
-    `).all(companyId, cutoff.toISOString());
+    `, [companyId, cutoff.toISOString()]);
 
-    return this.calculateSummary(messages);
+    return this.calculateSummary(result.rows);
   }
 }
 

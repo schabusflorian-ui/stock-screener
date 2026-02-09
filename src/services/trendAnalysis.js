@@ -1,5 +1,5 @@
 // src/services/trendAnalysis.js
-const db = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 
 /**
  * Trend Analysis Service
@@ -12,21 +12,26 @@ const db = require('../database');
  */
 class TrendAnalysis {
   constructor() {
-    this.db = db.getDatabase();
+    // No database parameter needed - using getDatabaseAsync()
     console.log('✅ Trend Analysis initialized');
   }
 
   /**
    * Get historical metrics for a company
    */
-  getCompanyHistory(symbol, years = 5) {
-    const company = this.db.prepare('SELECT id FROM companies WHERE symbol = ?')
-      .get(symbol.toUpperCase());
+  async getCompanyHistory(symbol, years = 5) {
+    const database = await getDatabaseAsync();
+
+    const companyResult = await database.query(
+      'SELECT id FROM companies WHERE symbol = $1',
+      [symbol.toUpperCase()]
+    );
+    const company = companyResult.rows[0];
 
     if (!company) return null;
 
-    const metrics = this.db.prepare(`
-      SELECT 
+    const metricsResult = await database.query(`
+      SELECT
         fiscal_period,
         roic,
         roe,
@@ -39,12 +44,12 @@ class TrendAnalysis {
         pb_ratio,
         data_quality_score
       FROM calculated_metrics
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY fiscal_period DESC
-      LIMIT ?
-    `).all(company.id, years);
+      LIMIT $2
+    `, [company.id, years]);
 
-    return metrics.reverse(); // Oldest first for trend calculation
+    return metricsResult.rows.reverse(); // Oldest first for trend calculation
   }
 
   /**
@@ -89,16 +94,19 @@ class TrendAnalysis {
   /**
    * Get comprehensive company trends
    */
-  getCompanyTrends(symbol) {
-    const history = this.getCompanyHistory(symbol, 5);
+  async getCompanyTrends(symbol) {
+    const history = await this.getCompanyHistory(symbol, 5);
 
     if (!history || history.length < 2) {
       return { error: 'Insufficient data' };
     }
 
-    const companyInfo = this.db.prepare(`
-      SELECT symbol, name, sector FROM companies WHERE symbol = ?
-    `).get(symbol.toUpperCase());
+    const database = await getDatabaseAsync();
+    const companyInfoResult = await database.query(
+      'SELECT symbol, name, sector FROM companies WHERE symbol = $1',
+      [symbol.toUpperCase()]
+    );
+    const companyInfo = companyInfoResult.rows[0];
 
     return {
       company: companyInfo,
@@ -169,8 +177,8 @@ class TrendAnalysis {
   /**
    * Generate company trend report
    */
-  generateCompanyReport(symbol) {
-    const trends = this.getCompanyTrends(symbol);
+  async generateCompanyReport(symbol) {
+    const trends = await this.getCompanyTrends(symbol);
 
     if (trends.error) {
       console.log(`\n❌ ${symbol}: ${trends.error}\n`);
@@ -224,7 +232,7 @@ class TrendAnalysis {
   /**
    * Compare multiple companies
    */
-  compareCompanies(symbols) {
+  async compareCompanies(symbols) {
     console.log('\n' + '█'.repeat(60));
     console.log('📊 COMPARATIVE TREND ANALYSIS');
     console.log('█'.repeat(60));
@@ -232,7 +240,7 @@ class TrendAnalysis {
     const results = [];
 
     for (const symbol of symbols) {
-      const trends = this.getCompanyTrends(symbol);
+      const trends = await this.getCompanyTrends(symbol);
       if (!trends.error) {
         const health = this.classifyCompanyHealth(trends);
         results.push({
@@ -274,9 +282,11 @@ class TrendAnalysis {
    * Find best trending stocks
    * Optimized: Uses batch query instead of N+1 pattern (Tier 3 optimization)
    */
-  findBestTrends(minScore = 3) {
+  async findBestTrends(minScore = 3) {
+    const database = await getDatabaseAsync();
+
     // Single batch query: fetch all companies with their last 5 years of metrics
-    const allMetrics = this.db.prepare(`
+    const allMetricsResult = await database.query(`
       SELECT
         c.id as company_id,
         c.symbol,
@@ -295,7 +305,8 @@ class TrendAnalysis {
       WHERE c.is_active = 1
         AND cm.fiscal_period >= strftime('%Y', 'now', '-5 years')
       ORDER BY c.symbol, cm.fiscal_period ASC
-    `).all();
+    `);
+    const allMetrics = allMetricsResult.rows;
 
     // Group metrics by company in memory
     const companyMetricsMap = new Map();

@@ -1,77 +1,11 @@
 // src/services/notes/snapshotService.js
 // Service for capturing and managing data snapshots tied to notes
 
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
+
 class SnapshotService {
-  constructor(db) {
-    this.db = db;
-    this._prepareStatements();
-  }
-
-  _prepareStatements() {
-    this.stmts = {
-      // Snapshot CRUD
-      getSnapshotsByNote: this.db.prepare(`
-        SELECT * FROM note_data_snapshots
-        WHERE note_id = ?
-        ORDER BY snapshot_date DESC
-      `),
-
-      getSnapshot: this.db.prepare(`
-        SELECT * FROM note_data_snapshots WHERE id = ?
-      `),
-
-      getSnapshotsBySymbol: this.db.prepare(`
-        SELECT s.*, n.title as note_title
-        FROM note_data_snapshots s
-        JOIN notes n ON s.note_id = n.id
-        WHERE s.symbol = ? AND n.deleted_at IS NULL
-        ORDER BY s.snapshot_date DESC
-      `),
-
-      createSnapshot: this.db.prepare(`
-        INSERT INTO note_data_snapshots (
-          note_id, symbol, snapshot_date,
-          price, market_cap, pe_ratio, pb_ratio, ps_ratio, ev_ebitda,
-          revenue, net_income, gross_margin, operating_margin, net_margin,
-          roic, roe, revenue_growth_yoy, earnings_growth_yoy,
-          debt_to_equity, current_ratio, fcf_yield, metrics_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `),
-
-      deleteSnapshot: this.db.prepare(`
-        DELETE FROM note_data_snapshots WHERE id = ?
-      `),
-
-      deleteSnapshotsByNote: this.db.prepare(`
-        DELETE FROM note_data_snapshots WHERE note_id = ?
-      `),
-
-      // Data gathering queries
-      getCompanyBySymbol: this.db.prepare(`
-        SELECT * FROM companies WHERE LOWER(symbol) = LOWER(?)
-      `),
-
-      getLatestPrice: this.db.prepare(`
-        SELECT * FROM daily_prices
-        WHERE company_id = ?
-        ORDER BY date DESC
-        LIMIT 1
-      `),
-
-      getLatestMetrics: this.db.prepare(`
-        SELECT * FROM calculated_metrics
-        WHERE company_id = ?
-        ORDER BY fiscal_period DESC
-        LIMIT 1
-      `),
-
-      getLatestFinancials: this.db.prepare(`
-        SELECT * FROM financial_data
-        WHERE company_id = ? AND statement_type = 'income_statement'
-        ORDER BY fiscal_date_ending DESC
-        LIMIT 1
-      `)
-    };
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
   }
 
   // ============================================
@@ -81,15 +15,41 @@ class SnapshotService {
   /**
    * Capture a snapshot of current metrics for a symbol
    */
-  captureSnapshot(noteId, symbol) {
-    const company = this.stmts.getCompanyBySymbol.get(symbol);
+  async captureSnapshot(noteId, symbol) {
+    const database = await getDatabaseAsync();
+
+    const companyResult = await database.query(
+      'SELECT * FROM companies WHERE LOWER(symbol) = LOWER($1)',
+      [symbol]
+    );
+    const company = companyResult.rows[0];
     if (!company) {
       return { success: false, error: `Company not found: ${symbol}` };
     }
 
-    const price = this.stmts.getLatestPrice.get(company.id);
-    const metrics = this.stmts.getLatestMetrics.get(company.id);
-    const financials = this.stmts.getLatestFinancials.get(company.id);
+    const priceResult = await database.query(`
+      SELECT * FROM daily_prices
+      WHERE company_id = $1
+      ORDER BY date DESC
+      LIMIT 1
+    `, [company.id]);
+    const price = priceResult.rows[0];
+
+    const metricsResult = await database.query(`
+      SELECT * FROM calculated_metrics
+      WHERE company_id = $1
+      ORDER BY fiscal_period DESC
+      LIMIT 1
+    `, [company.id]);
+    const metrics = metricsResult.rows[0];
+
+    const financialsResult = await database.query(`
+      SELECT * FROM financial_data
+      WHERE company_id = $1 AND statement_type = 'income_statement'
+      ORDER BY fiscal_date_ending DESC
+      LIMIT 1
+    `, [company.id]);
+    const financials = financialsResult.rows[0];
 
     const snapshotDate = new Date().toISOString().split('T')[0];
 
@@ -118,7 +78,16 @@ class SnapshotService {
       captured_at: new Date().toISOString()
     });
 
-    const result = this.stmts.createSnapshot.run(
+    const result = await database.query(`
+      INSERT INTO note_data_snapshots (
+        note_id, symbol, snapshot_date,
+        price, market_cap, pe_ratio, pb_ratio, ps_ratio, ev_ebitda,
+        revenue, net_income, gross_margin, operating_margin, net_margin,
+        roic, roe, revenue_growth_yoy, earnings_growth_yoy,
+        debt_to_equity, current_ratio, fcf_yield, metrics_json
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+      RETURNING id
+    `, [
       noteId,
       symbol.toUpperCase(),
       snapshotDate,
@@ -141,11 +110,11 @@ class SnapshotService {
       metrics?.current_ratio || null,
       metrics?.fcf_yield || null,
       metricsJson
-    );
+    ]);
 
     return {
       success: true,
-      snapshotId: result.lastInsertRowid,
+      snapshotId: result.rows[0].id,
       snapshotDate,
       symbol: symbol.toUpperCase()
     };
@@ -154,10 +123,10 @@ class SnapshotService {
   /**
    * Capture snapshots for multiple symbols
    */
-  captureMultipleSnapshots(noteId, symbols) {
+  async captureMultipleSnapshots(noteId, symbols) {
     const results = [];
     for (const symbol of symbols) {
-      const result = this.captureSnapshot(noteId, symbol);
+      const result = await this.captureSnapshot(noteId, symbol);
       results.push({ symbol, ...result });
     }
     return results;
@@ -166,38 +135,72 @@ class SnapshotService {
   /**
    * Get all snapshots for a note
    */
-  getSnapshotsByNote(noteId) {
-    return this.stmts.getSnapshotsByNote.all(noteId).map(this._formatSnapshot);
+  async getSnapshotsByNote(noteId) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT * FROM note_data_snapshots
+      WHERE note_id = $1
+      ORDER BY snapshot_date DESC
+    `, [noteId]);
+
+    return result.rows.map(this._formatSnapshot);
   }
 
   /**
    * Get snapshot by ID
    */
-  getSnapshot(snapshotId) {
-    const snapshot = this.stmts.getSnapshot.get(snapshotId);
+  async getSnapshot(snapshotId) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(
+      'SELECT * FROM note_data_snapshots WHERE id = $1',
+      [snapshotId]
+    );
+    const snapshot = result.rows[0];
     return snapshot ? this._formatSnapshot(snapshot) : null;
   }
 
   /**
    * Get all snapshots for a symbol across all notes
    */
-  getSnapshotsBySymbol(symbol) {
-    return this.stmts.getSnapshotsBySymbol.all(symbol.toUpperCase()).map(this._formatSnapshot);
+  async getSnapshotsBySymbol(symbol) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT s.*, n.title as note_title
+      FROM note_data_snapshots s
+      JOIN notes n ON s.note_id = n.id
+      WHERE s.symbol = $1 AND n.deleted_at IS NULL
+      ORDER BY s.snapshot_date DESC
+    `, [symbol.toUpperCase()]);
+
+    return result.rows.map(this._formatSnapshot);
   }
 
   /**
    * Delete a specific snapshot
    */
-  deleteSnapshot(snapshotId) {
-    this.stmts.deleteSnapshot.run(snapshotId);
+  async deleteSnapshot(snapshotId) {
+    const database = await getDatabaseAsync();
+
+    await database.query(
+      'DELETE FROM note_data_snapshots WHERE id = $1',
+      [snapshotId]
+    );
     return { success: true, snapshotId };
   }
 
   /**
    * Delete all snapshots for a note
    */
-  deleteSnapshotsByNote(noteId) {
-    this.stmts.deleteSnapshotsByNote.run(noteId);
+  async deleteSnapshotsByNote(noteId) {
+    const database = await getDatabaseAsync();
+
+    await database.query(
+      'DELETE FROM note_data_snapshots WHERE note_id = $1',
+      [noteId]
+    );
     return { success: true, noteId };
   }
 
@@ -208,19 +211,42 @@ class SnapshotService {
   /**
    * Compare a snapshot to current values
    */
-  compareSnapshotToCurrent(snapshotId) {
-    const snapshot = this.stmts.getSnapshot.get(snapshotId);
+  async compareSnapshotToCurrent(snapshotId) {
+    const database = await getDatabaseAsync();
+
+    const snapshotResult = await database.query(
+      'SELECT * FROM note_data_snapshots WHERE id = $1',
+      [snapshotId]
+    );
+    const snapshot = snapshotResult.rows[0];
     if (!snapshot) {
       return { success: false, error: 'Snapshot not found' };
     }
 
-    const company = this.stmts.getCompanyBySymbol.get(snapshot.symbol);
+    const companyResult = await database.query(
+      'SELECT * FROM companies WHERE LOWER(symbol) = LOWER($1)',
+      [snapshot.symbol]
+    );
+    const company = companyResult.rows[0];
     if (!company) {
       return { success: false, error: 'Company not found' };
     }
 
-    const currentPrice = this.stmts.getLatestPrice.get(company.id);
-    const currentMetrics = this.stmts.getLatestMetrics.get(company.id);
+    const currentPriceResult = await database.query(`
+      SELECT * FROM daily_prices
+      WHERE company_id = $1
+      ORDER BY date DESC
+      LIMIT 1
+    `, [company.id]);
+    const currentPrice = currentPriceResult.rows[0];
+
+    const currentMetricsResult = await database.query(`
+      SELECT * FROM calculated_metrics
+      WHERE company_id = $1
+      ORDER BY fiscal_period DESC
+      LIMIT 1
+    `, [company.id]);
+    const currentMetrics = currentMetricsResult.rows[0];
 
     const comparison = {
       symbol: snapshot.symbol,
@@ -274,9 +300,20 @@ class SnapshotService {
   /**
    * Compare two snapshots
    */
-  compareSnapshots(snapshotId1, snapshotId2) {
-    const snapshot1 = this.stmts.getSnapshot.get(snapshotId1);
-    const snapshot2 = this.stmts.getSnapshot.get(snapshotId2);
+  async compareSnapshots(snapshotId1, snapshotId2) {
+    const database = await getDatabaseAsync();
+
+    const snapshot1Result = await database.query(
+      'SELECT * FROM note_data_snapshots WHERE id = $1',
+      [snapshotId1]
+    );
+    const snapshot1 = snapshot1Result.rows[0];
+
+    const snapshot2Result = await database.query(
+      'SELECT * FROM note_data_snapshots WHERE id = $1',
+      [snapshotId2]
+    );
+    const snapshot2 = snapshot2Result.rows[0];
 
     if (!snapshot1 || !snapshot2) {
       return { success: false, error: 'One or both snapshots not found' };

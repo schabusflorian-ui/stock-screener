@@ -14,11 +14,12 @@
  */
 
 const DCFCalculator = require('./dcfCalculator');
+const { getDatabaseAsync } = require('../lib/db');
 
 class TriangulatedValuationService {
-  constructor(db) {
-    this.db = db;
-    this.dcfCalculator = new DCFCalculator(db);
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
+    this.dcfCalculator = new DCFCalculator();
   }
 
   /**
@@ -522,34 +523,38 @@ class TriangulatedValuationService {
    * Get current price from database
    */
   async getCurrentPrice(companyId) {
-    const row = await this.db.getAsync(`
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT p.close as price, c.shares_outstanding
       FROM price_data p
       JOIN companies c ON c.id = p.company_id
-      WHERE p.company_id = ?
+      WHERE p.company_id = $1
       ORDER BY p.date DESC
       LIMIT 1
     `, [companyId]);
 
-    return row || null;
+    return result.rows[0] || null;
   }
 
   /**
    * Get analyst consensus from database
    */
   async getAnalystConsensus(companyId) {
-    const row = await this.db.getAsync(`
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT
         target_low, target_mean, target_high,
         number_of_analysts, upside_potential,
         consensus_rating
       FROM analyst_estimates
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY date DESC
       LIMIT 1
     `, [companyId]);
 
-    return row || {};
+    return result.rows[0] || {};
   }
 
   /**

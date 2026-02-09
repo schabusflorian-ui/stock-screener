@@ -11,6 +11,8 @@
  * - Sector performance analysis
  */
 
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
+
 const FACTORS = ['technical', 'sentiment', 'insider', 'fundamental'];
 
 const FACTOR_WEIGHTS = {
@@ -21,8 +23,8 @@ const FACTOR_WEIGHTS = {
 };
 
 class PerformanceAttribution {
-  constructor(db) {
-    this.db = db.getDatabase ? db.getDatabase() : db;
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
   }
 
   /**
@@ -31,8 +33,10 @@ class PerformanceAttribution {
    * @returns {TradeAttribution|null}
    */
   async analyzeTrade(transactionId) {
+    const database = await getDatabaseAsync();
+
     // Get trade details with company info
-    const trade = this.db.prepare(`
+    const result = await database.query(`
       SELECT
         pt.id,
         pt.portfolio_id,
@@ -49,8 +53,9 @@ class PerformanceAttribution {
         c.industry
       FROM portfolio_transactions pt
       JOIN companies c ON pt.company_id = c.id
-      WHERE pt.id = ?
-    `).get(transactionId);
+      WHERE pt.id = $1
+    `, [transactionId]);
+    const trade = result.rows[0];
 
     if (!trade) {
       return null;
@@ -119,20 +124,23 @@ class PerformanceAttribution {
    */
   async getTradeAnalysis(trade) {
     if (trade.transaction_type === 'sell') {
+      const database = await getDatabaseAsync();
+
       // Find corresponding buy
-      const buyTrade = this.db.prepare(`
+      const result = await database.query(`
         SELECT
           executed_at,
           price_per_share,
           shares
         FROM portfolio_transactions
-        WHERE portfolio_id = ?
-          AND company_id = ?
+        WHERE portfolio_id = $1
+          AND company_id = $2
           AND transaction_type = 'buy'
-          AND executed_at < ?
+          AND executed_at < $3
         ORDER BY executed_at DESC
         LIMIT 1
-      `).get(trade.portfolio_id, trade.company_id, trade.executed_at);
+      `, [trade.portfolio_id, trade.company_id, trade.executed_at]);
+      const buyTrade = result.rows[0];
 
       if (!buyTrade) return null;
 
@@ -162,15 +170,17 @@ class PerformanceAttribution {
   /**
    * Get recommendation at or before a specific date for a company
    */
-  getRecommendationAtDate(companyId, date) {
-    return this.db.prepare(`
+  async getRecommendationAtDate(companyId, date) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT *
       FROM agent_recommendations
-      WHERE company_id = ?
-        AND date <= date(?)
+      WHERE company_id = $1
+        AND date <= $2
       ORDER BY date DESC
       LIMIT 1
-    `).get(companyId, date);
+    `, [companyId, date]);
+    return result.rows[0];
   }
 
   /**
@@ -222,28 +232,29 @@ class PerformanceAttribution {
    * Store attribution results in database
    */
   async storeAttribution(transactionId, attribution, tradeInfo = {}) {
+    const database = await getDatabaseAsync();
+
     // Clear existing attributions for this transaction
-    this.db.prepare(`
-      DELETE FROM trade_attributions WHERE transaction_id = ?
-    `).run(transactionId);
+    await database.query(`
+      DELETE FROM trade_attributions WHERE transaction_id = $1
+    `, [transactionId]);
 
     // Get transaction details if not provided
     if (!tradeInfo.portfolio_id || !tradeInfo.company_id) {
-      const tx = this.db.prepare(`
-        SELECT portfolio_id, company_id FROM portfolio_transactions WHERE id = ?
-      `).get(transactionId);
+      const result = await database.query(`
+        SELECT portfolio_id, company_id FROM portfolio_transactions WHERE id = $1
+      `, [transactionId]);
+      const tx = result.rows[0];
       tradeInfo = { ...tradeInfo, ...tx };
     }
 
     // Insert new attributions
-    const insert = this.db.prepare(`
-      INSERT INTO trade_attributions
-      (transaction_id, portfolio_id, company_id, factor, contribution, direction, signal_at_entry)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-
     for (const factor of attribution.factors) {
-      insert.run(
+      await database.query(`
+        INSERT INTO trade_attributions
+        (transaction_id, portfolio_id, company_id, factor, contribution, direction, signal_at_entry)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `, [
         transactionId,
         tradeInfo.portfolio_id,
         tradeInfo.company_id,
@@ -251,7 +262,7 @@ class PerformanceAttribution {
         factor.contribution,
         factor.correct ? 'long' : 'short',
         JSON.stringify({ score: factor.signalAtEntry })
-      );
+      ]);
     }
   }
 
@@ -261,17 +272,23 @@ class PerformanceAttribution {
    * @param {string} period - '7d', '30d', '90d', '1y', 'all'
    */
   async getFactorPerformance(portfolioId, period = '90d') {
+    const database = await getDatabaseAsync();
     const periodDays = { '7d': 7, '30d': 30, '90d': 90, '1y': 365, 'all': 9999 };
     const days = periodDays[period] || 90;
 
     // Get closed trades (sells) in the period
-    const trades = this.db.prepare(`
+    const dateCondition = isUsingPostgres()
+      ? `pt.executed_at >= CURRENT_TIMESTAMP - INTERVAL '${days} days'`
+      : `pt.executed_at >= datetime('now', '-' || ${days} || ' days')`;
+
+    const result = await database.query(`
       SELECT pt.id
       FROM portfolio_transactions pt
-      WHERE pt.portfolio_id = ?
+      WHERE pt.portfolio_id = $1
         AND pt.transaction_type = 'sell'
-        AND pt.executed_at >= datetime('now', '-' || ? || ' days')
-    `).all(portfolioId, days);
+        AND ${dateCondition}
+    `, [portfolioId]);
+    const trades = result.rows;
 
     const factorStats = {};
     for (const factor of FACTORS) {
@@ -303,10 +320,10 @@ class PerformanceAttribution {
     }
 
     // Calculate final metrics
-    const result = {};
+    const finalResult = {};
     for (const [factor, stats] of Object.entries(factorStats)) {
       const total = stats.wins + stats.losses;
-      result[factor] = {
+      finalResult[factor] = {
         winRate: total > 0 ? stats.wins / total : 0,
         wins: stats.wins,
         losses: stats.losses,
@@ -318,14 +335,14 @@ class PerformanceAttribution {
     }
 
     // Rank factors by win rate
-    const ranked = Object.entries(result)
+    const ranked = Object.entries(finalResult)
       .sort((a, b) => b[1].winRate - a[1].winRate)
       .map(([factor, stats]) => ({ factor, ...stats }));
 
     return {
       period,
       totalTrades: trades.length,
-      factors: result,
+      factors: finalResult,
       ranked,
       bestFactor: ranked[0]?.factor || null,
       worstFactor: ranked[ranked.length - 1]?.factor || null,
@@ -336,11 +353,20 @@ class PerformanceAttribution {
    * Get performance breakdown by market regime
    */
   async getPerformanceByRegime(portfolioId, period = '90d') {
+    const database = await getDatabaseAsync();
     const periodDays = { '30d': 30, '90d': 90, '1y': 365, 'all': 9999 };
     const days = periodDays[period] || 90;
 
     // Get trades with regime context
-    const trades = this.db.prepare(`
+    const dateCondition = isUsingPostgres()
+      ? `pt.executed_at >= CURRENT_TIMESTAMP - INTERVAL '${days} days'`
+      : `pt.executed_at >= datetime('now', '-' || ${days} || ' days')`;
+
+    const dateFunction = isUsingPostgres()
+      ? `DATE(pt.executed_at)`
+      : `date(pt.executed_at)`;
+
+    const result = await database.query(`
       SELECT
         pt.id,
         pt.company_id,
@@ -370,12 +396,13 @@ class PerformanceAttribution {
         ar.regime_at_time as regime
       FROM portfolio_transactions pt
       LEFT JOIN agent_recommendations ar ON ar.company_id = pt.company_id
-        AND ar.date <= date(pt.executed_at)
-      WHERE pt.portfolio_id = ?
+        AND ar.date <= ${dateFunction}
+      WHERE pt.portfolio_id = $1
         AND pt.transaction_type = 'sell'
-        AND pt.executed_at >= datetime('now', '-' || ? || ' days')
+        AND ${dateCondition}
       GROUP BY pt.id
-    `).all(portfolioId, days);
+    `, [portfolioId]);
+    const trades = result.rows;
 
     // Group by regime
     const regimeStats = {};
@@ -409,10 +436,15 @@ class PerformanceAttribution {
    * Get performance breakdown by sector
    */
   async getPerformanceBySector(portfolioId, period = '90d') {
+    const database = await getDatabaseAsync();
     const periodDays = { '30d': 30, '90d': 90, '1y': 365, 'all': 9999 };
     const days = periodDays[period] || 90;
 
-    return this.db.prepare(`
+    const dateCondition = isUsingPostgres()
+      ? `pt.executed_at >= CURRENT_TIMESTAMP - INTERVAL '${days} days'`
+      : `pt.executed_at >= datetime('now', '-' || ${days} || ' days')`;
+
+    const result = await database.query(`
       WITH trade_pairs AS (
         SELECT
           pt.id,
@@ -432,9 +464,9 @@ class PerformanceAttribution {
           ) as entry_price
         FROM portfolio_transactions pt
         JOIN companies c ON pt.company_id = c.id
-        WHERE pt.portfolio_id = ?
+        WHERE pt.portfolio_id = $1
           AND pt.transaction_type = 'sell'
-          AND pt.executed_at >= datetime('now', '-' || ? || ' days')
+          AND ${dateCondition}
       )
       SELECT
         sector,
@@ -446,19 +478,23 @@ class PerformanceAttribution {
       WHERE entry_price IS NOT NULL AND sector IS NOT NULL
       GROUP BY sector
       ORDER BY total_pnl DESC
-    `).all(portfolioId, days);
+    `, [portfolioId]);
+    return result.rows;
   }
 
   /**
    * Get attribution summary for a specific trade
    */
-  getTradeAttributionSummary(transactionId) {
-    const attributions = this.db.prepare(`
+  async getTradeAttributionSummary(transactionId) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT *
       FROM trade_attributions
-      WHERE transaction_id = ?
+      WHERE transaction_id = $1
       ORDER BY ABS(contribution) DESC
-    `).all(transactionId);
+    `, [transactionId]);
+    const attributions = result.rows;
 
     if (!attributions.length) {
       return null;

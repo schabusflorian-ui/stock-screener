@@ -2,6 +2,7 @@
 // Enhanced Quant Trading System - Integration of all council recommendations
 // Orchestrates tail hedging, factor attribution, regime detection, and more
 
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 const { TailHedgeManager } = require('../hedging/tailHedgeManager');
 const { FactorAttribution } = require('../factors/factorAttribution');
 const { PredictionIntervalCalculator } = require('../statistics/predictionIntervals');
@@ -24,21 +25,21 @@ const { CreditCycleMonitor } = require('../macro/creditCycleIndicators');
  * - Buffett: Moat scoring, quality focus
  */
 class EnhancedQuantSystem {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
 
     // Initialize all subsystems
     console.log('\n🚀 Initializing Enhanced Quant System...\n');
 
-    this.tailHedge = new TailHedgeManager(db);
-    this.factorAttribution = new FactorAttribution(db);
-    this.predictionIntervals = new PredictionIntervalCalculator(db);
-    this.signalDecorrelator = new SignalDecorrelator(db);
-    this.correlationManager = new CorrelationManager(db);
-    this.economicRegime = new EconomicRegimeDetector(db);
-    this.pairsTrading = new PairsTradingEngine(db);
-    this.moatScorer = new MoatScorer(db);
-    this.creditCycle = new CreditCycleMonitor(db);
+    this.tailHedge = new TailHedgeManager();
+    this.factorAttribution = new FactorAttribution();
+    this.predictionIntervals = new PredictionIntervalCalculator();
+    this.signalDecorrelator = new SignalDecorrelator();
+    this.correlationManager = new CorrelationManager();
+    this.economicRegime = new EconomicRegimeDetector();
+    this.pairsTrading = new PairsTradingEngine();
+    this.moatScorer = new MoatScorer();
+    this.creditCycle = new CreditCycleMonitor();
 
     console.log('\n✅ All subsystems initialized\n');
   }
@@ -150,11 +151,14 @@ class EnhancedQuantSystem {
    * @returns {Object} Enhanced analysis
    */
   async analyzeStock(symbol) {
-    const company = this.db.prepare(`
-      SELECT id, symbol, name, sector, market_cap
-      FROM companies WHERE LOWER(symbol) = LOWER(?)
-    `).get(symbol);
+    const database = await getDatabaseAsync();
 
+    const result = await database.query(`
+      SELECT id, symbol, name, sector, market_cap
+      FROM companies WHERE LOWER(symbol) = LOWER($1)
+    `, [symbol]);
+
+    const company = result.rows[0];
     if (!company) return { error: 'Company not found' };
 
     // Moat score
@@ -395,8 +399,8 @@ class EnhancedQuantSystem {
   }
 }
 
-function createEnhancedQuantSystem(db) {
-  return new EnhancedQuantSystem(db);
+function createEnhancedQuantSystem() {
+  return new EnhancedQuantSystem();
 }
 
 module.exports = { EnhancedQuantSystem, createEnhancedQuantSystem };

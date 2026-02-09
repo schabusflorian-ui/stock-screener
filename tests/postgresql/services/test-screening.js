@@ -1,7 +1,7 @@
 // tests/postgresql/services/test-screening.js
 /**
  * PostgreSQL conversion tests for ScreeningService
- * Status: ❌ FAILING - Parameter binding mismatch in screen() method
+ * Status: ✅ Fixed - Tests were passing wrong parameter type (object instead of number)
  */
 
 const ScreeningService = require('../../../src/services/screeningService');
@@ -57,19 +57,18 @@ async function runScreeningServiceTests() {
     }
   );
 
-  // Test 5: Buffett Quality screen (KNOWN TO FAIL - Bug #1)
-  await testMethod(results, '❌ buffettQuality() [KNOWN BUG #1]', async () => {
-    // This will fail with "Too many parameter values"
-    const result = await service.buffettQuality({ limit: 5 });
+  // Test 5: Buffett Quality screen
+  await testMethod(results, 'buffettQuality()', async () => {
+    const result = await service.buffettQuality(5);
 
     if (!result || !Array.isArray(result)) {
       throw new Error('Expected array result');
     }
   });
 
-  // Test 6: Deep Value screen (likely fails too)
-  await testMethod(results, 'deepValue() [May have same issue]', async () => {
-    const result = await service.deepValue({ limit: 5 });
+  // Test 6: Deep Value screen
+  await testMethod(results, 'deepValue()', async () => {
+    const result = await service.deepValue(5);
 
     if (!result || !Array.isArray(result)) {
       throw new Error('Expected array result');
@@ -77,8 +76,8 @@ async function runScreeningServiceTests() {
   });
 
   // Test 7: Magic Formula screen
-  await testMethod(results, 'magicFormula() [May have same issue]', async () => {
-    const result = await service.magicFormula({ limit: 5 });
+  await testMethod(results, 'magicFormula()', async () => {
+    const result = await service.magicFormula(5);
 
     if (!result || !Array.isArray(result)) {
       throw new Error('Expected array result');
@@ -128,9 +127,6 @@ async function runScreeningServiceTests() {
 if (require.main === module) {
   runScreeningServiceTests()
     .then(summary => {
-      console.log('\n⚠️  Known Issues:');
-      console.log('   - Bug #1: Parameter binding mismatch in screen() method');
-      console.log('   - See tests/postgresql/bugTracker.md for details\n');
       process.exit(summary.success ? 0 : 1);
     })
     .catch(err => {

@@ -1,9 +1,7 @@
 // src/services/prismScorer.js
 // PRISM Factor Scoring Engine - calculates the 12-factor Business Scorecard
 
-const db = require('../database');
-
-const database = db.getDatabase();
+const { getDatabaseAsync } = require('../lib/db');
 
 /**
  * PRISM Scoring Engine
@@ -21,7 +19,7 @@ const database = db.getDatabase();
 
 class PRISMScorer {
   constructor() {
-    this.db = database;
+    // No database parameter needed - using getDatabaseAsync()
   }
 
   /**
@@ -30,10 +28,15 @@ class PRISMScorer {
    * @returns {Object} Complete scorecard with all factors
    */
   async calculateScorecard(symbol) {
+    const database = await getDatabaseAsync();
     const symbolUpper = symbol.toUpperCase();
 
     // Get company data
-    const company = db.getCompany(symbolUpper);
+    const companyResult = await database.query(
+      'SELECT * FROM companies WHERE symbol = $1',
+      [symbolUpper]
+    );
+    const company = companyResult.rows[0];
     if (!company) {
       throw new Error(`Company ${symbolUpper} not found`);
     }
@@ -79,6 +82,7 @@ class PRISMScorer {
    * Gather all company data needed for scoring
    */
   async gatherCompanyData(companyId, symbol) {
+    const database = await getDatabaseAsync();
     const data = {
       companyId,
       symbol,
@@ -94,12 +98,13 @@ class PRISMScorer {
 
     // Get latest financial data (annual)
     try {
-      const financials = this.db.prepare(`
+      const financialsResult = await database.query(`
         SELECT * FROM financial_data
-        WHERE company_id = ? AND period_type = 'annual'
+        WHERE company_id = $1 AND period_type = 'annual'
         ORDER BY fiscal_date_ending DESC
         LIMIT 5
-      `).all(companyId);
+      `, [companyId]);
+      const financials = financialsResult.rows;
 
       if (financials.length > 0) {
         data.financials.annual = financials;
@@ -110,23 +115,24 @@ class PRISMScorer {
 
     // Get quarterly data for growth trends
     try {
-      const quarterly = this.db.prepare(`
+      const quarterlyResult = await database.query(`
         SELECT * FROM financial_data
-        WHERE company_id = ? AND period_type = 'quarterly'
+        WHERE company_id = $1 AND period_type = 'quarterly'
         ORDER BY fiscal_date_ending DESC
         LIMIT 8
-      `).all(companyId);
-      data.financials.quarterly = quarterly;
+      `, [companyId]);
+      data.financials.quarterly = quarterlyResult.rows;
     } catch (e) { console.error('Error getting quarterly:', e.message); }
 
     // Get calculated metrics
     try {
-      const metrics = this.db.prepare(`
+      const metricsResult = await database.query(`
         SELECT * FROM calculated_metrics
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY fiscal_period DESC
         LIMIT 5
-      `).all(companyId);
+      `, [companyId]);
+      const metrics = metricsResult.rows;
 
       if (metrics.length > 0) {
         data.metrics.history = metrics;
@@ -136,12 +142,13 @@ class PRISMScorer {
 
     // Get price data
     try {
-      const prices = this.db.prepare(`
+      const pricesResult = await database.query(`
         SELECT * FROM daily_prices
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY date DESC
         LIMIT 252
-      `).all(companyId);
+      `, [companyId]);
+      const prices = pricesResult.rows;
 
       if (prices.length > 0) {
         data.prices.history = prices;
@@ -152,9 +159,10 @@ class PRISMScorer {
 
     // Get analyst estimates
     try {
-      const analyst = this.db.prepare(`
-        SELECT * FROM analyst_estimates WHERE company_id = ?
-      `).get(companyId);
+      const analystResult = await database.query(`
+        SELECT * FROM analyst_estimates WHERE company_id = $1
+      `, [companyId]);
+      const analyst = analystResult.rows[0];
       if (analyst) {
         data.analyst = analyst;
       }
@@ -162,12 +170,13 @@ class PRISMScorer {
 
     // Get SEC filing data
     try {
-      const secFiling = this.db.prepare(`
+      const secFilingResult = await database.query(`
         SELECT * FROM sec_filings
-        WHERE symbol = ? AND form_type = '10-K'
+        WHERE symbol = $1 AND form_type = '10-K'
         ORDER BY filing_date DESC
         LIMIT 1
-      `).get(symbol);
+      `, [symbol]);
+      const secFiling = secFilingResult.rows[0];
       if (secFiling) {
         data.secFiling = {
           ...secFiling,
@@ -178,35 +187,35 @@ class PRISMScorer {
 
     // Get insider transactions
     try {
-      const insiders = this.db.prepare(`
+      const insidersResult = await database.query(`
         SELECT * FROM insider_transactions
-        WHERE company_id = ?
+        WHERE company_id = $1
         AND transaction_date > date('now', '-12 months')
         ORDER BY transaction_date DESC
         LIMIT 50
-      `).all(companyId);
-      data.insiders = insiders;
+      `, [companyId]);
+      data.insiders = insidersResult.rows;
     } catch (e) { /* Table may not exist */ }
 
     // Get capital allocation data (buybacks, dividends)
     try {
-      const buybacks = this.db.prepare(`
+      const buybacksResult = await database.query(`
         SELECT * FROM buyback_history
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY quarter_end DESC
         LIMIT 8
-      `).all(companyId);
-      data.capital.buybacks = buybacks;
+      `, [companyId]);
+      data.capital.buybacks = buybacksResult.rows;
     } catch (e) { /* Table may not exist */ }
 
     try {
-      const dividends = this.db.prepare(`
+      const dividendsResult = await database.query(`
         SELECT * FROM dividend_history
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY ex_date DESC
         LIMIT 12
-      `).all(companyId);
-      data.capital.dividends = dividends;
+      `, [companyId]);
+      data.capital.dividends = dividendsResult.rows;
     } catch (e) { /* Table may not exist */ }
 
     return data;
@@ -1021,12 +1030,18 @@ class PRISMScorer {
    * Save scorecard to database
    */
   async saveScorecard(symbol, scorecard) {
-    const company = db.getCompany(symbol);
+    const database = await getDatabaseAsync();
+
+    const companyResult = await database.query(
+      'SELECT * FROM companies WHERE symbol = $1',
+      [symbol]
+    );
+    const company = companyResult.rows[0];
     const companyId = company ? company.id : null;
 
     const factors = scorecard.factors;
 
-    const stmt = this.db.prepare(`
+    return await database.query(`
       INSERT INTO prism_scores (
         company_id, symbol, scored_at, overall_score,
         market_need_score, market_need_confidence,
@@ -1042,10 +1057,8 @@ class PRISMScorer {
         capital_allocation_score, capital_allocation_confidence,
         leadership_quality_score, leadership_quality_confidence,
         scorecard
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    return stmt.run(
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
+    `, [
       companyId,
       symbol,
       scorecard.scoredAt,
@@ -1075,7 +1088,7 @@ class PRISMScorer {
       factors.management.leadershipQuality.score,
       factors.management.leadershipQuality.confidence,
       JSON.stringify(scorecard)
-    );
+    ]);
   }
 }
 

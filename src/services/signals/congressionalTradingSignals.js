@@ -2,8 +2,7 @@
 // Congressional Trading Signal Generator
 // Based on research: Congressional trades outperform market by 5-10% annually
 
-// Note: This class expects a db instance to be passed to its constructor.
-// The db instance should come from src/database.js for proper PostgreSQL support.
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 
 /**
  * Congressional Trading Signal Generator
@@ -22,14 +21,21 @@
  * 5. Party consensus (bipartisan buying = strong signal)
  */
 class CongressionalTradingSignals {
-  constructor(db) {
-    this.db = db;
-    this._prepareStatements();
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
   }
 
-  _prepareStatements() {
-    // Get recent congressional purchases for a company (last 90 days)
-    this.stmtGetRecentPurchases = this.db.prepare(`
+  /**
+   * Generate congressional trading signal for a company
+   * @param {number} companyId - Company ID
+   * @param {string} asOfDate - Date to evaluate signal (YYYY-MM-DD)
+   * @returns {Object|null} Signal with score and reasoning
+   */
+  async generateSignal(companyId, asOfDate = new Date().toISOString().split('T')[0]) {
+    const database = await getDatabaseAsync();
+
+    // Get recent purchases (last 90 days)
+    const recentPurchasesResult = await database.query(`
       SELECT
         ct.*,
         p.full_name as politician_name,
@@ -40,67 +46,14 @@ class CongressionalTradingSignals {
         p.committees
       FROM congressional_trades ct
       JOIN politicians p ON ct.politician_id = p.id
-      WHERE ct.company_id = ?
+      WHERE ct.company_id = $1
         AND ct.transaction_type = 'purchase'
-        AND ct.transaction_date >= date(?, '-90 days')
-        AND ct.transaction_date <= ?
+        AND ct.transaction_date >= date($2, '-90 days')
+        AND ct.transaction_date <= $3
         AND ct.is_periodic_transaction = 0
       ORDER BY ct.transaction_date DESC
-    `);
-
-    // Get purchase clusters across all companies
-    this.stmtGetPurchaseClusters = this.db.prepare(`
-      SELECT
-        c.id as company_id,
-        c.symbol,
-        c.name,
-        COUNT(DISTINCT ct.politician_id) as politician_count,
-        COUNT(*) as transaction_count,
-        SUM(ct.amount_min + ct.amount_max) / 2 as estimated_total_value,
-        MIN(ct.transaction_date) as first_purchase_date,
-        MAX(ct.transaction_date) as last_purchase_date,
-        COUNT(DISTINCT p.party) as party_diversity
-      FROM congressional_trades ct
-      JOIN companies c ON ct.company_id = c.id
-      JOIN politicians p ON ct.politician_id = p.id
-      WHERE ct.transaction_type = 'purchase'
-        AND ct.transaction_date >= date(?, '-30 days')
-        AND ct.transaction_date <= ?
-        AND ct.is_periodic_transaction = 0
-        AND ct.symbol_matched = 1
-      GROUP BY c.id, c.symbol, c.name
-      HAVING COUNT(DISTINCT ct.politician_id) >= 2
-      ORDER BY politician_count DESC, estimated_total_value DESC
-    `);
-
-    // Get large purchases (>$100k)
-    this.stmtGetLargePurchases = this.db.prepare(`
-      SELECT
-        ct.*,
-        p.full_name as politician_name,
-        p.chamber,
-        p.party
-      FROM congressional_trades ct
-      JOIN politicians p ON ct.politician_id = p.id
-      WHERE ct.company_id = ?
-        AND ct.transaction_type = 'purchase'
-        AND ct.transaction_date >= date(?, '-60 days')
-        AND ct.transaction_date <= ?
-        AND ct.amount_min >= 100000
-        AND ct.is_periodic_transaction = 0
-      ORDER BY ct.amount_max DESC
-    `);
-  }
-
-  /**
-   * Generate congressional trading signal for a company
-   * @param {number} companyId - Company ID
-   * @param {string} asOfDate - Date to evaluate signal (YYYY-MM-DD)
-   * @returns {Object|null} Signal with score and reasoning
-   */
-  generateSignal(companyId, asOfDate = new Date().toISOString().split('T')[0]) {
-    // Get recent purchases
-    const recentPurchases = this.stmtGetRecentPurchases.all(companyId, asOfDate, asOfDate);
+    `, [companyId, asOfDate, asOfDate]);
+    const recentPurchases = recentPurchasesResult.rows;
 
     if (recentPurchases.length === 0) {
       return null; // No congressional buying activity
@@ -280,14 +233,41 @@ class CongressionalTradingSignals {
    * @param {string} asOfDate - Date to evaluate (YYYY-MM-DD)
    * @returns {Array} Companies with purchase clusters, ranked by strength
    */
-  findPurchaseClusters(asOfDate = new Date().toISOString().split('T')[0]) {
-    const clusters = this.stmtGetPurchaseClusters.all(asOfDate, asOfDate);
+  async findPurchaseClusters(asOfDate = new Date().toISOString().split('T')[0]) {
+    const database = await getDatabaseAsync();
 
-    return clusters.map(cluster => {
+    // Find companies with 2+ politicians buying in last 30 days
+    const clustersResult = await database.query(`
+      SELECT
+        c.id as company_id,
+        c.symbol,
+        c.name,
+        COUNT(DISTINCT ct.politician_id) as politician_count,
+        COUNT(*) as transaction_count,
+        SUM(ct.amount_min + ct.amount_max) / 2 as estimated_total_value,
+        MIN(ct.transaction_date) as first_purchase_date,
+        MAX(ct.transaction_date) as last_purchase_date,
+        COUNT(DISTINCT p.party) as party_diversity
+      FROM congressional_trades ct
+      JOIN companies c ON ct.company_id = c.id
+      JOIN politicians p ON ct.politician_id = p.id
+      WHERE ct.transaction_type = 'purchase'
+        AND ct.transaction_date >= date($1, '-30 days')
+        AND ct.transaction_date <= $2
+        AND ct.is_periodic_transaction = 0
+        AND ct.symbol_matched = 1
+      GROUP BY c.id, c.symbol, c.name
+      HAVING COUNT(DISTINCT ct.politician_id) >= 2
+      ORDER BY politician_count DESC, estimated_total_value DESC
+    `, [asOfDate, asOfDate]);
+    const clusters = clustersResult.rows;
+
+    const results = [];
+    for (const cluster of clusters) {
       // Generate full signal for this company
-      const signal = this.generateSignal(cluster.company_id, asOfDate);
+      const signal = await this.generateSignal(cluster.company_id, asOfDate);
 
-      return {
+      results.push({
         ...cluster,
         signal: signal?.score || 0,
         confidence: signal?.confidence || 0,
@@ -296,8 +276,10 @@ class CongressionalTradingSignals {
         smeRecommendation: signal?.signalStrength === 'very strong' || signal?.signalStrength === 'strong'
           ? 'STRONG BUY - Congressional consensus detected'
           : 'WATCH - Monitor for more activity'
-      };
-    });
+      });
+    }
+
+    return results;
   }
 
   /**
@@ -306,11 +288,11 @@ class CongressionalTradingSignals {
    * @param {string} asOfDate - Date to evaluate
    * @returns {Array} Summary of congressional activity
    */
-  getPortfolioCongressionalActivity(companyIds, asOfDate = new Date().toISOString().split('T')[0]) {
+  async getPortfolioCongressionalActivity(companyIds, asOfDate = new Date().toISOString().split('T')[0]) {
     const results = [];
 
     for (const companyId of companyIds) {
-      const signal = this.generateSignal(companyId, asOfDate);
+      const signal = await this.generateSignal(companyId, asOfDate);
       if (signal) {
         results.push(signal);
       }
@@ -325,8 +307,10 @@ class CongressionalTradingSignals {
   /**
    * Get statistics on congressional trading data coverage
    */
-  getDataCoverage() {
-    const stats = this.db.prepare(`
+  async getDataCoverage() {
+    const database = await getDatabaseAsync();
+
+    const statsResult = await database.query(`
       SELECT
         COUNT(*) as total_transactions,
         COUNT(DISTINCT company_id) as companies_with_data,
@@ -337,10 +321,11 @@ class CongressionalTradingSignals {
         MAX(transaction_date) as latest_transaction
       FROM congressional_trades
       WHERE symbol_matched = 1
-    `).get();
+    `);
+    const stats = statsResult.rows[0];
 
     // Get chamber breakdown
-    const chambers = this.db.prepare(`
+    const chambersResult = await database.query(`
       SELECT
         p.chamber,
         COUNT(DISTINCT ct.politician_id) as politician_count,
@@ -349,7 +334,8 @@ class CongressionalTradingSignals {
       JOIN politicians p ON ct.politician_id = p.id
       WHERE ct.symbol_matched = 1
       GROUP BY p.chamber
-    `).all();
+    `);
+    const chambers = chambersResult.rows;
 
     stats.chambers = chambers;
 

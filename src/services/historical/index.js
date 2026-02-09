@@ -2,6 +2,7 @@
 // Historical Intelligence Service - Main entry point
 // Provides intelligent analysis based on historical investor decisions and patterns
 
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 const DecisionEnricher = require('./decisionEnricher');
 const OutcomeCalculator = require('./outcomeCalculator');
 const PatternMatcher = require('./patternMatcher');
@@ -20,13 +21,13 @@ const ContextBuilder = require('./contextBuilder');
  * 6. Building rich context for AI analyst prompts
  */
 class HistoricalIntelligenceService {
-  constructor(db) {
-    this.db = db;
-    this.decisionEnricher = new DecisionEnricher(db);
-    this.outcomeCalculator = new OutcomeCalculator(db);
-    this.patternMatcher = new PatternMatcher(db);
-    this.precedentFinder = new PrecedentFinder(db);
-    this.contextBuilder = new ContextBuilder(db);
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
+    this.decisionEnricher = new DecisionEnricher();
+    this.outcomeCalculator = new OutcomeCalculator();
+    this.patternMatcher = new PatternMatcher();
+    this.precedentFinder = new PrecedentFinder();
+    this.contextBuilder = new ContextBuilder();
   }
 
   // ============================================
@@ -170,11 +171,14 @@ class HistoricalIntelligenceService {
   /**
    * Get investor track record
    */
-  getInvestorTrackRecord(investorId, periodType = 'all_time') {
-    const record = this.db.prepare(`
+  async getInvestorTrackRecord(investorId, periodType = 'all_time') {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT * FROM investor_track_records
-      WHERE investor_id = ? AND period_type = ?
-    `).get(investorId, periodType);
+      WHERE investor_id = $1 AND period_type = $2
+    `, [investorId, periodType]);
+    const record = result.rows[0];
 
     if (record && record.sector_allocations) {
       record.sector_allocations = JSON.parse(record.sector_allocations);
@@ -202,7 +206,8 @@ class HistoricalIntelligenceService {
   /**
    * Get investor's decisions with outcomes
    */
-  getInvestorDecisions(investorId, options = {}) {
+  async getInvestorDecisions(investorId, options = {}) {
+    const database = await getDatabaseAsync();
     const { limit = 100, outcomeCategory = null, patternCode = null } = options;
 
     let query = `
@@ -212,36 +217,43 @@ class HistoricalIntelligenceService {
         ip.pattern_category
       FROM investment_decisions d
       LEFT JOIN investment_patterns ip ON d.primary_pattern_id = ip.id
-      WHERE d.investor_id = ?
+      WHERE d.investor_id = $1
     `;
 
     const params = [investorId];
+    let paramIndex = 2;
 
     if (outcomeCategory) {
-      query += ' AND d.outcome_category = ?';
+      query += ` AND d.outcome_category = $${paramIndex}`;
       params.push(outcomeCategory);
+      paramIndex++;
     }
 
     if (patternCode) {
-      query += ' AND ip.pattern_code = ?';
+      query += ` AND ip.pattern_code = $${paramIndex}`;
       params.push(patternCode);
+      paramIndex++;
     }
 
-    query += ' ORDER BY d.decision_date DESC LIMIT ?';
+    query += ` ORDER BY d.decision_date DESC LIMIT $${paramIndex}`;
     params.push(limit);
 
-    return this.db.prepare(query).all(...params);
+    const result = await database.query(query, params);
+    return result.rows;
   }
 
   /**
    * Get investor's sector performance
    */
-  getInvestorSectorPerformance(investorId) {
-    return this.db.prepare(`
+  async getInvestorSectorPerformance(investorId) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT * FROM v_investor_sector_performance
-      WHERE investor_id = ?
+      WHERE investor_id = $1
       ORDER BY decision_count DESC
-    `).all(investorId);
+    `, [investorId]);
+    return result.rows;
   }
 
   // ============================================
@@ -252,10 +264,13 @@ class HistoricalIntelligenceService {
    * Get or create market context snapshot for a date
    */
   async getMarketContext(date) {
-    let context = this.db.prepare(`
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT * FROM market_context_snapshots
-      WHERE snapshot_date = ?
-    `).get(date);
+      WHERE snapshot_date = $1
+    `, [date]);
+    let context = result.rows[0];
 
     if (!context) {
       // Try to calculate from available data
@@ -268,12 +283,15 @@ class HistoricalIntelligenceService {
   /**
    * Get current market cycle classification
    */
-  getCurrentMarketCycle() {
-    const latest = this.db.prepare(`
+  async getCurrentMarketCycle() {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT * FROM market_context_snapshots
       ORDER BY snapshot_date DESC
       LIMIT 1
-    `).get();
+    `);
+    const latest = result.rows[0];
 
     return latest ? {
       date: latest.snapshot_date,
@@ -291,8 +309,10 @@ class HistoricalIntelligenceService {
   /**
    * Get overall system statistics
    */
-  getStats() {
-    const decisions = this.db.prepare(`
+  async getStats() {
+    const database = await getDatabaseAsync();
+
+    const decisionsResult = await database.query(`
       SELECT
         COUNT(*) as total_decisions,
         COUNT(CASE WHEN return_1y IS NOT NULL THEN 1 END) as decisions_with_outcomes,
@@ -302,30 +322,35 @@ class HistoricalIntelligenceService {
         SUM(CASE WHEN beat_market_1y = 1 THEN 1 ELSE 0 END) * 100.0 /
           COUNT(CASE WHEN beat_market_1y IS NOT NULL THEN 1 END) as win_rate
       FROM investment_decisions
-    `).get();
+    `);
+    const decisions = decisionsResult.rows[0];
 
-    const patterns = this.db.prepare(`
+    const patternsResult = await database.query(`
       SELECT COUNT(*) as total_patterns FROM investment_patterns WHERE is_active = 1
-    `).get();
+    `);
+    const patterns = patternsResult.rows[0];
 
-    const precedents = this.db.prepare(`
+    const precedentsResult = await database.query(`
       SELECT COUNT(*) as total_precedents FROM historical_precedents
-    `).get();
+    `);
+    const precedents = precedentsResult.rows[0];
 
-    const marketContexts = this.db.prepare(`
+    const marketContextsResult = await database.query(`
       SELECT
         COUNT(*) as total_snapshots,
         MIN(snapshot_date) as earliest,
         MAX(snapshot_date) as latest
       FROM market_context_snapshots
-    `).get();
+    `);
+    const marketContexts = marketContextsResult.rows[0];
 
-    const investorStats = this.db.prepare(`
+    const investorStatsResult = await database.query(`
       SELECT
         COUNT(DISTINCT investor_id) as investors_tracked,
         COUNT(*) as total_decisions
       FROM investment_decisions
-    `).get();
+    `);
+    const investorStats = investorStatsResult.rows[0];
 
     return {
       decisions: {
@@ -360,8 +385,7 @@ let instance = null;
 
 function getHistoricalIntelligence() {
   if (!instance) {
-    const db = require('../../database').db;
-    instance = new HistoricalIntelligenceService(db);
+    instance = new HistoricalIntelligenceService();
   }
   return instance;
 }

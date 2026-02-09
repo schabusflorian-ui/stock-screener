@@ -12,17 +12,18 @@
 
 const { spawn } = require('child_process');
 const path = require('path');
-const db = require('../database').db;
+const { getDatabaseAsync } = require('../lib/db');
 
 class HistoricalPriceBackfiller {
   /**
    * Identify CUSIPs from investor holdings that are missing historical price data
    */
   async identifyPriceGaps() {
+    const database = await getDatabaseAsync();
     console.log('🔍 Identifying price gaps for investor holdings...\n');
 
     // Find all unique company_ids from investor_holdings with their earliest holding date
-    const holdingsWithGaps = await db.query(`
+    const holdingsWithGaps = await database.query(`
       WITH holding_dates AS (
         SELECT
           ih.company_id,
@@ -89,7 +90,7 @@ class HistoricalPriceBackfiller {
         );
       });
 
-      await db.query(`
+      await database.query(`
         INSERT INTO cusip_price_gaps (
           cusip, company_id, symbol, earliest_holding_date,
           price_data_starts, gap_days, backfill_status
@@ -121,7 +122,8 @@ class HistoricalPriceBackfiller {
    * Get symbols that need historical price backfill
    */
   async getSymbolsNeedingBackfill(limit = 100) {
-    const result = await db.query(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         cpg.symbol,
         cpg.company_id,
@@ -195,8 +197,9 @@ class HistoricalPriceBackfiller {
   async markBackfilled(symbols) {
     if (symbols.length === 0) return;
 
+    const database = await getDatabaseAsync();
     const placeholders = symbols.map((_, idx) => `$${idx + 1}`).join(', ');
-    await db.query(`
+    await database.query(`
       UPDATE cusip_price_gaps
       SET backfill_status = 'completed',
           backfill_attempted_at = CURRENT_TIMESTAMP
@@ -210,8 +213,9 @@ class HistoricalPriceBackfiller {
   async markFailed(symbols, errorMessage) {
     if (symbols.length === 0) return;
 
+    const database = await getDatabaseAsync();
     const placeholders = symbols.map((_, idx) => `$${idx + 2}`).join(', ');
-    await db.query(`
+    await database.query(`
       UPDATE cusip_price_gaps
       SET backfill_status = 'error',
           error_message = $1,
@@ -224,7 +228,9 @@ class HistoricalPriceBackfiller {
    * Get status of price gap backfill
    */
   async getStatus() {
-    const summaryResult = await db.query(`
+    const database = await getDatabaseAsync();
+
+    const summaryResult = await database.query(`
       SELECT
         backfill_status,
         COUNT(*) as count,
@@ -233,7 +239,7 @@ class HistoricalPriceBackfiller {
       GROUP BY backfill_status
     `);
 
-    const topGapsResult = await db.query(`
+    const topGapsResult = await database.query(`
       SELECT symbol, company_id, earliest_holding_date, gap_days, backfill_status
       FROM cusip_price_gaps
       WHERE backfill_status = 'pending'
@@ -241,7 +247,7 @@ class HistoricalPriceBackfiller {
       LIMIT 20
     `);
 
-    const recentErrorsResult = await db.query(`
+    const recentErrorsResult = await database.query(`
       SELECT symbol, error_message, backfill_attempted_at
       FROM cusip_price_gaps
       WHERE backfill_status = 'error'
@@ -260,7 +266,8 @@ class HistoricalPriceBackfiller {
    * Check if prices exist for a specific company and date range
    */
   async checkPriceCoverage(companyId, startDate, endDate) {
-    const result = await db.query(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         COUNT(*) as price_count,
         MIN(date) as earliest,
@@ -367,7 +374,8 @@ if (require.main === module) {
           console.log(JSON.stringify(result, null, 2));
         } else {
           // Verify all investors
-          const investorsResult = await db.query(`
+          const database = await getDatabaseAsync();
+          const investorsResult = await database.query(`
             SELECT id, name FROM famous_investors WHERE is_active = 1 AND cik IS NOT NULL
           `);
 

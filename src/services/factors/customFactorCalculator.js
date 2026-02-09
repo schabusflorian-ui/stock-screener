@@ -1,6 +1,7 @@
 // src/services/factors/customFactorCalculator.js
 // Calculate user-defined custom factors across the stock universe
 
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 const { createParser, validateFormula } = require('./factorFormulaParser');
 
 // Quality filter defaults for factor universe
@@ -25,8 +26,8 @@ const DEFAULT_QUALITY_FILTERS = {
  * - Historical calculation for backtesting
  */
 class CustomFactorCalculator {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
     this.availableMetrics = null;
   }
 
@@ -38,15 +39,16 @@ class CustomFactorCalculator {
       return this.availableMetrics;
     }
 
-    const { rows } = await this.db.query(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT metric_code, metric_name, category, description, higher_is_better
       FROM available_metrics
       WHERE is_active = true
       ORDER BY category, metric_name
     `);
 
-    this.availableMetrics = rows;
-    return rows;
+    this.availableMetrics = result.rows;
+    return result.rows;
   }
 
   /**
@@ -370,7 +372,8 @@ class CustomFactorCalculator {
     // Add a reasonable limit to prevent memory issues
     query += ' LIMIT 10000';
 
-    const { rows } = await this.db.query(query, params);
+    const database = await getDatabaseAsync();
+    const result = await database.query(query, params);
 
     // Log filter statistics
     if (!disableQualityFilters && qualityFilters) {
@@ -380,10 +383,10 @@ class CustomFactorCalculator {
       console.log(`  - Min Price: $${qualityFilters.minPrice}`);
       console.log(`  - Max Debt/Equity: ${qualityFilters.maxDebtToEquity}x`);
       console.log(`  - Min Data Quality: ${(qualityFilters.minDataQualityScore * 100).toFixed(0)}%`);
-      console.log(`  - Result: ${rows.length} stocks in universe`);
+      console.log(`  - Result: ${result.rows.length} stocks in universe`);
     }
 
-    return rows;
+    return result.rows;
   }
 
   /**
@@ -466,8 +469,9 @@ class CustomFactorCalculator {
       LIMIT 1
     `;
 
-    const { rows } = await this.db.query(query, [symbol, asOfDate, asOfDate]);
-    return rows[0] || null;
+    const database = await getDatabaseAsync();
+    const result = await database.query(query, [symbol, asOfDate, asOfDate]);
+    return result.rows[0] || null;
   }
 
   /**
@@ -570,10 +574,15 @@ class CustomFactorCalculator {
    * Store factor values in cache table
    */
   async _storeFactorValues(factorId, date, values) {
+    const database = await getDatabaseAsync();
+
+    // Dialect-aware NOW function
+    const nowFunction = isUsingPostgres() ? 'NOW()' : "datetime('now')";
+
     const query = `
       INSERT INTO factor_values_cache
       (factor_id, symbol, date, raw_value, zscore_value, percentile_value, component_values, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+      VALUES ($1, $2, $3, $4, $5, $6, $7, ${nowFunction})
       ON CONFLICT (factor_id, symbol, date)
       DO UPDATE SET
         raw_value = EXCLUDED.raw_value,
@@ -583,7 +592,7 @@ class CustomFactorCalculator {
         created_at = EXCLUDED.created_at
     `;
 
-    const client = await this.db.connect();
+    const client = await database.connect();
     try {
       await client.query('BEGIN');
 
@@ -631,14 +640,15 @@ class CustomFactorCalculator {
     }
 
     // Get distinct dates from factor scores table (which has data)
-    const { rows } = await this.db.query(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT DISTINCT score_date
       FROM stock_factor_scores
       WHERE score_date >= $1 AND score_date <= $2
       ORDER BY score_date
     `, [startDate, endDate]);
 
-    const dates = rows.map(d => d.score_date);
+    const dates = result.rows.map(d => d.score_date);
 
     // Filter based on frequency
     if (frequency === 'monthly') {

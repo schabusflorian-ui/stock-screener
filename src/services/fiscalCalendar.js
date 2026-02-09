@@ -1,7 +1,7 @@
 // src/services/fiscalCalendar.js
 // Fiscal calendar service for quarter mapping and period translation
 
-const { getDatabaseAsync } = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 
 class FiscalCalendarService {
   constructor() {

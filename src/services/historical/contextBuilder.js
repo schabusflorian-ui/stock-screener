@@ -1,6 +1,7 @@
 // src/services/historical/contextBuilder.js
 // Builds rich historical context for AI analyst prompts
 
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 const PrecedentFinder = require('./precedentFinder');
 const PatternMatcher = require('./patternMatcher');
 
@@ -14,10 +15,10 @@ const PatternMatcher = require('./patternMatcher');
  * 4. Generating formatted context text for prompt injection
  */
 class ContextBuilder {
-  constructor(db) {
-    this.db = db;
-    this.precedentFinder = new PrecedentFinder(db);
-    this.patternMatcher = new PatternMatcher(db);
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
+    this.precedentFinder = new PrecedentFinder();
+    this.patternMatcher = new PatternMatcher();
   }
 
   /**
@@ -60,7 +61,7 @@ class ContextBuilder {
       context.cautionaryTales = cautionaryTales;
 
       // 5. Get current market context
-      context.marketContext = this._getCurrentMarketContext();
+      context.marketContext = await this._getCurrentMarketContext();
 
       // 6. Generate analyst-specific insights
       context.analystSpecificInsights = this._generateAnalystInsights(
@@ -159,7 +160,8 @@ ${sections.join('\n\n')}
     if (similarDecisions.error) return null;
 
     // Also find any decisions on this exact stock
-    const sameStockDecisions = this.db.prepare(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         d.id, d.decision_date, d.decision_type, d.return_1y, d.alpha_1y,
         d.pe_ratio, d.portfolio_weight, d.outcome_category,
@@ -168,10 +170,12 @@ ${sections.join('\n\n')}
       FROM investment_decisions d
       JOIN famous_investors fi ON d.investor_id = fi.id
       LEFT JOIN investment_patterns ip ON d.primary_pattern_id = ip.id
-      WHERE d.symbol = ?
+      WHERE d.symbol = $1
       ORDER BY d.decision_date DESC
       LIMIT 15
-    `).all(symbol);
+    `, [symbol]);
+
+    const sameStockDecisions = result.rows;
 
     return {
       sameStock: sameStockDecisions,
@@ -184,19 +188,24 @@ ${sections.join('\n\n')}
    * Get current stock metrics
    */
   async _getCurrentMetrics(symbol) {
-    const company = this.db.prepare(`
-      SELECT id, name, sector, industry, market_cap
-      FROM companies WHERE symbol = ?
-    `).get(symbol.toUpperCase());
+    const database = await getDatabaseAsync();
 
+    const companyResult = await database.query(`
+      SELECT id, name, sector, industry, market_cap
+      FROM companies WHERE symbol = $1
+    `, [symbol.toUpperCase()]);
+
+    const company = companyResult.rows[0];
     if (!company) return null;
 
-    const metrics = this.db.prepare(`
+    const metricsResult = await database.query(`
       SELECT * FROM calculated_metrics
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY fiscal_period DESC
       LIMIT 1
-    `).get(company.id);
+    `, [company.id]);
+
+    const metrics = metricsResult.rows[0];
 
     return {
       symbol,
@@ -283,6 +292,8 @@ ${sections.join('\n\n')}
     const currentMetrics = await this._getCurrentMetrics(symbol);
     if (!currentMetrics) return null;
 
+    const database = await getDatabaseAsync();
+
     // Find decisions with similar metrics that had poor outcomes
     let query = `
       SELECT
@@ -297,51 +308,72 @@ ${sections.join('\n\n')}
     `;
 
     const params = [];
+    let paramIndex = 1;
 
     // Same sector
     if (currentMetrics.sector) {
-      query += ' AND d.sector = ?';
+      query += ` AND d.sector = $${paramIndex}`;
       params.push(currentMetrics.sector);
+      paramIndex++;
     }
 
     // Similar P/E range
     if (currentMetrics.pe_ratio) {
-      query += ' AND d.pe_ratio BETWEEN ? AND ?';
+      query += ` AND d.pe_ratio BETWEEN $${paramIndex} AND $${paramIndex + 1}`;
       params.push(currentMetrics.pe_ratio * 0.5, currentMetrics.pe_ratio * 2);
+      paramIndex += 2;
     }
 
     query += ' ORDER BY d.return_1y ASC LIMIT 5';
 
-    return this.db.prepare(query).all(...params);
+    const result = await database.query(query, params);
+    return result.rows;
   }
 
   /**
    * Get current market context
    */
-  _getCurrentMarketContext() {
-    const latest = this.db.prepare(`
+  async _getCurrentMarketContext() {
+    const database = await getDatabaseAsync();
+
+    const latestResult = await database.query(`
       SELECT * FROM market_context_snapshots
       ORDER BY snapshot_date DESC
       LIMIT 1
-    `).get();
+    `);
+
+    const latest = latestResult.rows[0];
 
     if (!latest) {
       // Try to get from SPY data
-      const spy = this.db.prepare('SELECT id FROM companies WHERE symbol = \'SPY\'').get();
+      const spyResult = await database.query(`
+        SELECT id FROM companies WHERE symbol = 'SPY'
+      `);
+
+      const spy = spyResult.rows[0];
       if (!spy) return null;
 
       // Calculate rough market context
-      const currentPrice = this.db.prepare(`
+      const currentPriceResult = await database.query(`
         SELECT close, date FROM daily_prices
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY date DESC LIMIT 1
-      `).get(spy.id);
+      `, [spy.id]);
 
-      const yearAgoPrice = this.db.prepare(`
+      const currentPrice = currentPriceResult.rows[0];
+
+      // Dialect-aware date interval
+      const dateInterval = isUsingPostgres()
+        ? `date <= CURRENT_TIMESTAMP - INTERVAL '1 year'`
+        : `date <= date('now', '-1 year')`;
+
+      const yearAgoPriceResult = await database.query(`
         SELECT close FROM daily_prices
-        WHERE company_id = ? AND date <= date('now', '-1 year')
+        WHERE company_id = $1 AND ${dateInterval}
         ORDER BY date DESC LIMIT 1
-      `).get(spy.id);
+      `, [spy.id]);
+
+      const yearAgoPrice = yearAgoPriceResult.rows[0];
 
       if (currentPrice && yearAgoPrice) {
         const sp500_1y_return = ((currentPrice.close - yearAgoPrice.close) / yearAgoPrice.close) * 100;

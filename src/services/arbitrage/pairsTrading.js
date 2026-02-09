@@ -2,6 +2,8 @@
 // Pairs Trading Engine - Simons-inspired statistical arbitrage
 // Market-neutral alpha from mean reversion in cointegrated pairs
 
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
+
 /**
  * PairsTradingEngine - Statistical arbitrage for cointegrated pairs
  *
@@ -12,124 +14,11 @@
  * - Dollar-neutral position sizing
  */
 class PairsTradingEngine {
-  /**
-   * @param {Database} db - better-sqlite3 database instance
-   */
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
+    // Tables should be created via migrations, not in service code
     this.cointegrationCache = new Map();
-    this._initializeTables();
-    this._prepareStatements();
     console.log('⚖️ PairsTradingEngine initialized');
-  }
-
-  _initializeTables() {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS cointegration_pairs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        symbol1 TEXT NOT NULL,
-        symbol2 TEXT NOT NULL,
-        cointegration_pvalue REAL,
-        hedge_ratio REAL,
-        half_life REAL,
-        spread_mean REAL,
-        spread_std REAL,
-        test_date TEXT,
-        is_active INTEGER DEFAULT 1,
-        created_at TEXT DEFAULT (datetime('now')),
-        UNIQUE(symbol1, symbol2, test_date)
-      );
-
-      CREATE TABLE IF NOT EXISTS pair_positions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        pair_id INTEGER REFERENCES cointegration_pairs(id),
-        symbol1 TEXT,
-        symbol2 TEXT,
-        entry_date TEXT,
-        entry_zscore REAL,
-        stock1_shares INTEGER,
-        stock1_entry_price REAL,
-        stock1_side TEXT,
-        stock2_shares INTEGER,
-        stock2_entry_price REAL,
-        stock2_side TEXT,
-        status TEXT DEFAULT 'open',
-        exit_date TEXT,
-        exit_zscore REAL,
-        pnl REAL,
-        created_at TEXT DEFAULT (datetime('now'))
-      );
-
-      CREATE TABLE IF NOT EXISTS pair_trades (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        pair_id INTEGER,
-        symbol1 TEXT,
-        symbol2 TEXT,
-        trade_date TEXT,
-        action TEXT,
-        zscore_at_trade REAL,
-        reason TEXT,
-        created_at TEXT DEFAULT (datetime('now'))
-      );
-    `);
-  }
-
-  _prepareStatements() {
-    this.stmtGetCompanyId = this.db.prepare(`
-      SELECT id, symbol, sector FROM companies WHERE LOWER(symbol) = LOWER(?)
-    `);
-
-    this.stmtGetPriceHistory = this.db.prepare(`
-      SELECT date, close as price
-      FROM daily_prices
-      WHERE company_id = ?
-      ORDER BY date DESC
-      LIMIT ?
-    `);
-
-    this.stmtStorePair = this.db.prepare(`
-      INSERT OR REPLACE INTO cointegration_pairs (
-        symbol1, symbol2, cointegration_pvalue, hedge_ratio,
-        half_life, spread_mean, spread_std, test_date, is_active
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
-    `);
-
-    this.stmtGetActivePairs = this.db.prepare(`
-      SELECT * FROM cointegration_pairs
-      WHERE is_active = 1
-        AND test_date >= date('now', '-30 days')
-      ORDER BY cointegration_pvalue ASC
-    `);
-
-    this.stmtStorePosition = this.db.prepare(`
-      INSERT INTO pair_positions (
-        pair_id, symbol1, symbol2, entry_date, entry_zscore,
-        stock1_shares, stock1_entry_price, stock1_side,
-        stock2_shares, stock2_entry_price, stock2_side, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')
-    `);
-
-    this.stmtGetOpenPositions = this.db.prepare(`
-      SELECT * FROM pair_positions WHERE status = 'open'
-    `);
-
-    this.stmtClosePosition = this.db.prepare(`
-      UPDATE pair_positions
-      SET status = 'closed', exit_date = ?, exit_zscore = ?, pnl = ?
-      WHERE id = ?
-    `);
-
-    this.stmtStoreTrade = this.db.prepare(`
-      INSERT INTO pair_trades (pair_id, symbol1, symbol2, trade_date, action, zscore_at_trade, reason)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    this.stmtGetCompaniesBySector = this.db.prepare(`
-      SELECT id, symbol FROM companies
-      WHERE sector = ? AND market_cap > 1000000000
-      ORDER BY market_cap DESC
-      LIMIT 50
-    `);
   }
 
   /**
@@ -139,12 +28,18 @@ class PairsTradingEngine {
    * @returns {Array} Cointegrated pairs
    */
   async findCointegrationPairs(sectorOrUniverse, lookback = 252) {
+    const database = await getDatabaseAsync();
     let symbols = [];
 
     if (typeof sectorOrUniverse === 'string') {
       // Get stocks in sector
-      const companies = this.stmtGetCompaniesBySector.all(sectorOrUniverse);
-      symbols = companies.map(c => c.symbol);
+      const result = await database.query(`
+        SELECT id, symbol FROM companies
+        WHERE sector = $1 AND market_cap > 1000000000
+        ORDER BY market_cap DESC
+        LIMIT 50
+      `, [sectorOrUniverse]);
+      symbols = result.rows.map(c => c.symbol);
     } else {
       symbols = sectorOrUniverse;
     }
@@ -157,7 +52,7 @@ class PairsTradingEngine {
     // Test all pairs
     for (let i = 0; i < symbols.length; i++) {
       for (let j = i + 1; j < symbols.length; j++) {
-        const result = this.testCointegration(symbols[i], symbols[j], lookback);
+        const result = await this.testCointegration(symbols[i], symbols[j], lookback);
 
         if (result.isCointegrated && result.halfLife >= 5 && result.halfLife <= 60) {
           pairs.push({
@@ -171,10 +66,28 @@ class PairsTradingEngine {
           });
 
           // Store to database
-          this.stmtStorePair.run(
+          const upsertSQL = isUsingPostgres()
+            ? `INSERT INTO cointegration_pairs (
+                symbol1, symbol2, cointegration_pvalue, hedge_ratio,
+                half_life, spread_mean, spread_std, test_date, is_active
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1)
+              ON CONFLICT (symbol1, symbol2, test_date)
+              DO UPDATE SET
+                cointegration_pvalue = EXCLUDED.cointegration_pvalue,
+                hedge_ratio = EXCLUDED.hedge_ratio,
+                half_life = EXCLUDED.half_life,
+                spread_mean = EXCLUDED.spread_mean,
+                spread_std = EXCLUDED.spread_std,
+                is_active = EXCLUDED.is_active`
+            : `INSERT OR REPLACE INTO cointegration_pairs (
+                symbol1, symbol2, cointegration_pvalue, hedge_ratio,
+                half_life, spread_mean, spread_std, test_date, is_active
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1)`;
+
+          await database.query(upsertSQL, [
             symbols[i], symbols[j], result.pValue, result.hedgeRatio,
             result.halfLife, result.spreadMean, result.spreadStd, date
-          );
+          ]);
         }
       }
     }
@@ -192,16 +105,43 @@ class PairsTradingEngine {
    * @param {number} lookback - Lookback period
    * @returns {Object} Cointegration test results
    */
-  testCointegration(symbol1, symbol2, lookback = 252) {
-    const company1 = this.stmtGetCompanyId.get(symbol1);
-    const company2 = this.stmtGetCompanyId.get(symbol2);
+  async testCointegration(symbol1, symbol2, lookback = 252) {
+    const database = await getDatabaseAsync();
+
+    const result1 = await database.query(
+      `SELECT id, symbol, sector FROM companies WHERE LOWER(symbol) = LOWER($1)`,
+      [symbol1]
+    );
+    const result2 = await database.query(
+      `SELECT id, symbol, sector FROM companies WHERE LOWER(symbol) = LOWER($1)`,
+      [symbol2]
+    );
+
+    const company1 = result1.rows[0];
+    const company2 = result2.rows[0];
 
     if (!company1 || !company2) {
       return { isCointegrated: false, error: 'Company not found' };
     }
 
-    const prices1 = this.stmtGetPriceHistory.all(company1.id, lookback);
-    const prices2 = this.stmtGetPriceHistory.all(company2.id, lookback);
+    const priceResult1 = await database.query(`
+      SELECT date, close as price
+      FROM daily_prices
+      WHERE company_id = $1
+      ORDER BY date DESC
+      LIMIT $2
+    `, [company1.id, lookback]);
+
+    const priceResult2 = await database.query(`
+      SELECT date, close as price
+      FROM daily_prices
+      WHERE company_id = $1
+      ORDER BY date DESC
+      LIMIT $2
+    `, [company2.id, lookback]);
+
+    const prices1 = priceResult1.rows;
+    const prices2 = priceResult2.rows;
 
     if (prices1.length < lookback * 0.8 || prices2.length < lookback * 0.8) {
       return { isCointegrated: false, error: 'Insufficient data' };
@@ -347,15 +287,42 @@ class PairsTradingEngine {
    * @param {number} lookback - Lookback for mean/std calculation
    * @returns {Object} Spread analysis
    */
-  calculateSpreadZScore(pair, currentPrices, lookback = 60) {
-    const company1 = this.stmtGetCompanyId.get(pair.symbol1);
-    const company2 = this.stmtGetCompanyId.get(pair.symbol2);
+  async calculateSpreadZScore(pair, currentPrices, lookback = 60) {
+    const database = await getDatabaseAsync();
+
+    const result1 = await database.query(
+      `SELECT id, symbol, sector FROM companies WHERE LOWER(symbol) = LOWER($1)`,
+      [pair.symbol1]
+    );
+    const result2 = await database.query(
+      `SELECT id, symbol, sector FROM companies WHERE LOWER(symbol) = LOWER($1)`,
+      [pair.symbol2]
+    );
+
+    const company1 = result1.rows[0];
+    const company2 = result2.rows[0];
 
     if (!company1 || !company2) return null;
 
     // Get historical prices for spread calculation
-    const prices1 = this.stmtGetPriceHistory.all(company1.id, lookback);
-    const prices2 = this.stmtGetPriceHistory.all(company2.id, lookback);
+    const priceResult1 = await database.query(`
+      SELECT date, close as price
+      FROM daily_prices
+      WHERE company_id = $1
+      ORDER BY date DESC
+      LIMIT $2
+    `, [company1.id, lookback]);
+
+    const priceResult2 = await database.query(`
+      SELECT date, close as price
+      FROM daily_prices
+      WHERE company_id = $1
+      ORDER BY date DESC
+      LIMIT $2
+    `, [company2.id, lookback]);
+
+    const prices1 = priceResult1.rows;
+    const prices2 = priceResult2.rows;
 
     const aligned = this._alignPrices(prices1, prices2);
     if (aligned.p1.length < 20) return null;
@@ -391,18 +358,44 @@ class PairsTradingEngine {
    * @param {Array} cointegrationPairs - List of pairs to analyze
    * @returns {Array} Trading signals
    */
-  generatePairSignals(cointegrationPairs) {
+  async generatePairSignals(cointegrationPairs) {
+    const database = await getDatabaseAsync();
     const signals = [];
 
     for (const pair of cointegrationPairs) {
       // Get current prices
-      const company1 = this.stmtGetCompanyId.get(pair.symbol1);
-      const company2 = this.stmtGetCompanyId.get(pair.symbol2);
+      const result1 = await database.query(
+        `SELECT id, symbol, sector FROM companies WHERE LOWER(symbol) = LOWER($1)`,
+        [pair.symbol1]
+      );
+      const result2 = await database.query(
+        `SELECT id, symbol, sector FROM companies WHERE LOWER(symbol) = LOWER($1)`,
+        [pair.symbol2]
+      );
+
+      const company1 = result1.rows[0];
+      const company2 = result2.rows[0];
 
       if (!company1 || !company2) continue;
 
-      const price1 = this.stmtGetPriceHistory.all(company1.id, 1)[0]?.price;
-      const price2 = this.stmtGetPriceHistory.all(company2.id, 1)[0]?.price;
+      const priceResult1 = await database.query(`
+        SELECT date, close as price
+        FROM daily_prices
+        WHERE company_id = $1
+        ORDER BY date DESC
+        LIMIT 1
+      `, [company1.id]);
+
+      const priceResult2 = await database.query(`
+        SELECT date, close as price
+        FROM daily_prices
+        WHERE company_id = $1
+        ORDER BY date DESC
+        LIMIT 1
+      `, [company2.id]);
+
+      const price1 = priceResult1.rows[0]?.price;
+      const price2 = priceResult2.rows[0]?.price;
 
       if (!price1 || !price2) continue;
 
@@ -411,7 +404,7 @@ class PairsTradingEngine {
         [pair.symbol2]: price2
       };
 
-      const spreadAnalysis = this.calculateSpreadZScore(pair, currentPrices);
+      const spreadAnalysis = await this.calculateSpreadZScore(pair, currentPrices);
       if (!spreadAnalysis) continue;
 
       let signal = 'hold';
@@ -514,16 +507,33 @@ class PairsTradingEngine {
    * Get all active cointegrated pairs
    * @returns {Array} Active pairs
    */
-  getActivePairs() {
-    return this.stmtGetActivePairs.all();
+  async getActivePairs() {
+    const database = await getDatabaseAsync();
+
+    const dateCondition = isUsingPostgres()
+      ? `test_date >= CURRENT_DATE - INTERVAL '30 days'`
+      : `test_date >= date('now', '-30 days')`;
+
+    const result = await database.query(`
+      SELECT * FROM cointegration_pairs
+      WHERE is_active = 1
+        AND ${dateCondition}
+      ORDER BY cointegration_pvalue ASC
+    `);
+
+    return result.rows;
   }
 
   /**
    * Get open pair positions
    * @returns {Array} Open positions
    */
-  getOpenPositions() {
-    return this.stmtGetOpenPositions.all();
+  async getOpenPositions() {
+    const database = await getDatabaseAsync();
+    const result = await database.query(
+      `SELECT * FROM pair_positions WHERE status = 'open'`
+    );
+    return result.rows;
   }
 
   /**
@@ -531,12 +541,12 @@ class PairsTradingEngine {
    * @param {Array} activePairs - Pairs to monitor
    * @returns {Array} Breakdown warnings
    */
-  monitorCointegrationBreakdown(activePairs) {
+  async monitorCointegrationBreakdown(activePairs) {
     const warnings = [];
 
     for (const pair of activePairs) {
       // Re-test cointegration
-      const result = this.testCointegration(pair.symbol1, pair.symbol2, 63);
+      const result = await this.testCointegration(pair.symbol1, pair.symbol2, 63);
 
       let status = 'intact';
       if (result.pValue > 0.20) {
@@ -566,18 +576,44 @@ class PairsTradingEngine {
    * @param {Array} positions - Open positions
    * @returns {Object} Portfolio P&L
    */
-  calculatePairsPortfolioPnL(positions) {
+  async calculatePairsPortfolioPnL(positions) {
+    const database = await getDatabaseAsync();
     let totalPnL = 0;
     const pairPnLs = [];
 
     for (const pos of positions) {
-      const company1 = this.stmtGetCompanyId.get(pos.symbol1);
-      const company2 = this.stmtGetCompanyId.get(pos.symbol2);
+      const result1 = await database.query(
+        `SELECT id, symbol, sector FROM companies WHERE LOWER(symbol) = LOWER($1)`,
+        [pos.symbol1]
+      );
+      const result2 = await database.query(
+        `SELECT id, symbol, sector FROM companies WHERE LOWER(symbol) = LOWER($1)`,
+        [pos.symbol2]
+      );
+
+      const company1 = result1.rows[0];
+      const company2 = result2.rows[0];
 
       if (!company1 || !company2) continue;
 
-      const currentPrice1 = this.stmtGetPriceHistory.all(company1.id, 1)[0]?.price;
-      const currentPrice2 = this.stmtGetPriceHistory.all(company2.id, 1)[0]?.price;
+      const priceResult1 = await database.query(`
+        SELECT date, close as price
+        FROM daily_prices
+        WHERE company_id = $1
+        ORDER BY date DESC
+        LIMIT 1
+      `, [company1.id]);
+
+      const priceResult2 = await database.query(`
+        SELECT date, close as price
+        FROM daily_prices
+        WHERE company_id = $1
+        ORDER BY date DESC
+        LIMIT 1
+      `, [company2.id]);
+
+      const currentPrice1 = priceResult1.rows[0]?.price;
+      const currentPrice2 = priceResult2.rows[0]?.price;
 
       if (!currentPrice1 || !currentPrice2) continue;
 
@@ -621,10 +657,17 @@ class PairsTradingEngine {
    * @param {number} pairId - Cointegration pair ID
    * @param {Object} position - Position details
    */
-  openPosition(pairId, position) {
+  async openPosition(pairId, position) {
+    const database = await getDatabaseAsync();
     const date = new Date().toISOString().split('T')[0];
 
-    this.stmtStorePosition.run(
+    await database.query(`
+      INSERT INTO pair_positions (
+        pair_id, symbol1, symbol2, entry_date, entry_zscore,
+        stock1_shares, stock1_entry_price, stock1_side,
+        stock2_shares, stock2_entry_price, stock2_side, status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'open')
+    `, [
       pairId,
       position.stock1.symbol,
       position.stock2.symbol,
@@ -636,9 +679,12 @@ class PairsTradingEngine {
       position.stock2.shares,
       position.stock2.price,
       position.stock2.side
-    );
+    ]);
 
-    this.stmtStoreTrade.run(
+    await database.query(`
+      INSERT INTO pair_trades (pair_id, symbol1, symbol2, trade_date, action, zscore_at_trade, reason)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `, [
       pairId,
       position.stock1.symbol,
       position.stock2.symbol,
@@ -646,7 +692,7 @@ class PairsTradingEngine {
       'OPEN',
       position.entryZScore,
       position.reason || 'Signal entry'
-    );
+    ]);
   }
 
   /**
@@ -655,14 +701,20 @@ class PairsTradingEngine {
    * @param {number} exitZScore - Z-score at exit
    * @param {number} pnl - Realized P&L
    */
-  closePosition(positionId, exitZScore, pnl) {
+  async closePosition(positionId, exitZScore, pnl) {
+    const database = await getDatabaseAsync();
     const date = new Date().toISOString().split('T')[0];
-    this.stmtClosePosition.run(date, exitZScore, pnl, positionId);
+
+    await database.query(`
+      UPDATE pair_positions
+      SET status = 'closed', exit_date = $1, exit_zscore = $2, pnl = $3
+      WHERE id = $4
+    `, [date, exitZScore, pnl, positionId]);
   }
 }
 
-function createPairsTradingEngine(db) {
-  return new PairsTradingEngine(db);
+function createPairsTradingEngine() {
+  return new PairsTradingEngine();
 }
 
 module.exports = { PairsTradingEngine, createPairsTradingEngine };

@@ -1,6 +1,8 @@
 // src/services/historical/precedentFinder.js
 // Finds historical precedents similar to current investment situations
 
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
+
 /**
  * PrecedentFinder
  *
@@ -11,8 +13,8 @@
  * 4. Building similarity scores across multiple dimensions
  */
 class PrecedentFinder {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
   }
 
   /**
@@ -99,6 +101,7 @@ class PrecedentFinder {
     }
 
     // Build query for similar decisions
+    const database = await getDatabaseAsync();
     let query = `
       SELECT
         d.*,
@@ -114,35 +117,39 @@ class PrecedentFinder {
     `;
 
     const params = [];
+    let paramIndex = 1;
 
     // Filter by sector (important for comparability)
     if (currentMetrics.sector) {
-      query += ' AND d.sector = ?';
+      query += ` AND d.sector = $${paramIndex}`;
       params.push(currentMetrics.sector);
+      paramIndex++;
     }
 
     // Filter by decision types if specified
     if (decisionTypes && decisionTypes.length > 0) {
-      query += ` AND d.decision_type IN (${decisionTypes.map(() => '?').join(',')})`;
+      query += ` AND d.decision_type IN (${decisionTypes.map(() => `$${paramIndex++}`).join(',')})`;
       params.push(...decisionTypes);
     }
 
     // Filter by investor styles if specified
     if (investorStyles && investorStyles.length > 0) {
-      query += ` AND fi.investment_style IN (${investorStyles.map(() => '?').join(',')})`;
+      query += ` AND fi.investment_style IN (${investorStyles.map(() => `$${paramIndex++}`).join(',')})`;
       params.push(...investorStyles);
     }
 
     // Similar valuation range (P/E within 50%)
     if (currentMetrics.pe_ratio) {
-      query += ' AND d.pe_ratio BETWEEN ? AND ?';
+      query += ` AND d.pe_ratio BETWEEN $${paramIndex} AND $${paramIndex + 1}`;
       params.push(currentMetrics.pe_ratio * 0.5, currentMetrics.pe_ratio * 1.5);
+      paramIndex += 2;
     }
 
-    query += ' ORDER BY d.decision_date DESC LIMIT ?';
+    query += ` ORDER BY d.decision_date DESC LIMIT $${paramIndex}`;
     params.push(limit * 2);
 
-    const decisions = this.db.prepare(query).all(...params);
+    const result = await database.query(query, params);
+    const decisions = result.rows;
 
     // Score and rank by similarity
     const scored = decisions.map(d => ({
@@ -201,6 +208,7 @@ class PrecedentFinder {
    * Get historical precedents for a sector/valuation combination
    */
   async getSectorPrecedents(sector, valuationTier, options = {}) {
+    const database = await getDatabaseAsync();
     const { limit = 20, marketCycle = null } = options;
 
     const valuationRange = this._getValuationRange(valuationTier);
@@ -212,22 +220,25 @@ class PrecedentFinder {
         fi.investment_style
       FROM investment_decisions d
       JOIN famous_investors fi ON d.investor_id = fi.id
-      WHERE d.sector = ?
-        AND d.pe_ratio BETWEEN ? AND ?
+      WHERE d.sector = $1
+        AND d.pe_ratio BETWEEN $2 AND $3
         AND d.return_1y IS NOT NULL
     `;
 
     const params = [sector, valuationRange.min, valuationRange.max];
+    let paramIndex = 4;
 
     if (marketCycle) {
-      query += ' AND d.market_cycle = ?';
+      query += ` AND d.market_cycle = $${paramIndex}`;
       params.push(marketCycle);
+      paramIndex++;
     }
 
-    query += ' ORDER BY d.decision_date DESC LIMIT ?';
+    query += ` ORDER BY d.decision_date DESC LIMIT $${paramIndex}`;
     params.push(limit);
 
-    const decisions = this.db.prepare(query).all(...params);
+    const result = await database.query(query, params);
+    const decisions = result.rows;
 
     // Calculate aggregate statistics
     const stats = {
@@ -261,45 +272,59 @@ class PrecedentFinder {
    * Create a historical precedent record for storage
    */
   async createPrecedent(symbol, date, options = {}) {
-    const company = this.db.prepare(`
-      SELECT id, name, sector, industry FROM companies WHERE symbol = ?
-    `).get(symbol);
+    const database = await getDatabaseAsync();
+
+    const companyResult = await database.query(`
+      SELECT id, name, sector, industry FROM companies WHERE symbol = $1
+    `, [symbol]);
+
+    const company = companyResult.rows[0];
 
     if (!company) {
       throw new Error(`Company not found: ${symbol}`);
     }
 
     // Get metrics at that date
-    const metrics = this.db.prepare(`
+    const metricsResult = await database.query(`
       SELECT *
       FROM calculated_metrics
-      WHERE company_id = ? AND fiscal_period <= ?
+      WHERE company_id = $1 AND fiscal_period <= $2
       ORDER BY fiscal_period DESC
       LIMIT 1
-    `).get(company.id, date);
+    `, [company.id, date]);
 
-    const price = this.db.prepare(`
+    const metrics = metricsResult.rows[0];
+
+    const priceResult = await database.query(`
       SELECT close
       FROM daily_prices
-      WHERE company_id = ? AND date <= ?
+      WHERE company_id = $1 AND date <= $2
       ORDER BY date DESC
       LIMIT 1
-    `).get(company.id, date);
+    `, [company.id, date]);
+
+    const price = priceResult.rows[0];
 
     // Calculate outcomes
     const outcomes = await this._calculatePrecedentOutcomes(company.id, date, price?.close);
 
     // Determine what famous investors did
-    const investorActions = this.db.prepare(`
+    const dateInterval = isUsingPostgres()
+      ? `d.decision_date BETWEEN $2::date - INTERVAL '90 days' AND $2::date + INTERVAL '90 days'`
+      : `d.decision_date BETWEEN date($2, '-90 days') AND date($2, '+90 days')`;
+
+    const investorActionsResult = await database.query(`
       SELECT
         fi.name as investor_name,
         d.decision_type,
         d.decision_date
       FROM investment_decisions d
       JOIN famous_investors fi ON d.investor_id = fi.id
-      WHERE d.company_id = ?
-        AND d.decision_date BETWEEN date(?, '-90 days') AND date(?, '+90 days')
-    `).all(company.id, date, date);
+      WHERE d.company_id = $1
+        AND ${dateInterval}
+    `, [company.id, date]);
+
+    const investorActions = investorActionsResult.rows;
 
     const investorsWhoBought = investorActions
       .filter(a => a.decision_type === 'new_position' || a.decision_type === 'increased')
@@ -319,63 +344,80 @@ class PrecedentFinder {
       : null;
 
     // Insert precedent
-    const insertStmt = this.db.prepare(`
-      INSERT OR REPLACE INTO historical_precedents (
-        symbol, company_name, precedent_date,
-        situation_type, situation_summary,
-        price, market_cap, pe_ratio, pb_ratio, ps_ratio, ev_ebitda,
-        revenue_growth, earnings_growth, roic, roe, net_margin, debt_to_equity, fcf_yield,
-        sector, industry,
-        outcome_1y, outcome_3y, outcome_5y, max_drawdown_1y, sp500_return_1y, alpha_1y,
-        outcome_summary, outcome_category,
-        investors_who_bought, investors_who_sold,
-        tags, data_quality_score,
-        created_at, updated_at
-      ) VALUES (
-        @symbol, @company_name, @precedent_date,
-        @situation_type, @situation_summary,
-        @price, @market_cap, @pe_ratio, @pb_ratio, @ps_ratio, @ev_ebitda,
-        @revenue_growth, @earnings_growth, @roic, @roe, @net_margin, @debt_to_equity, @fcf_yield,
-        @sector, @industry,
-        @outcome_1y, @outcome_3y, @outcome_5y, @max_drawdown_1y, @sp500_return_1y, @alpha_1y,
-        @outcome_summary, @outcome_category,
-        @investors_who_bought, @investors_who_sold,
-        @tags, @data_quality_score,
-        datetime('now'), datetime('now')
-      )
-    `);
+    const outcomesSummary = outcomes.outcome_1y
+      ? `${outcomes.outcome_1y > 0 ? '+' : ''}${outcomes.outcome_1y.toFixed(1)}% in 1 year`
+      : null;
 
-    insertStmt.run({
+    const nowFunction = isUsingPostgres() ? 'NOW()' : "datetime('now')";
+    const upsertSQL = isUsingPostgres()
+      ? `INSERT INTO historical_precedents (
+          symbol, company_name, precedent_date,
+          situation_type, situation_summary,
+          price, market_cap, pe_ratio, pb_ratio, ps_ratio, ev_ebitda,
+          revenue_growth, earnings_growth, roic, roe, net_margin, debt_to_equity, fcf_yield,
+          sector, industry,
+          outcome_1y, outcome_3y, outcome_5y, max_drawdown_1y, sp500_return_1y, alpha_1y,
+          outcome_summary, outcome_category,
+          investors_who_bought, investors_who_sold,
+          tags, data_quality_score,
+          created_at, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+          $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, ${nowFunction}, ${nowFunction}
+        ) ON CONFLICT (symbol, precedent_date) DO UPDATE SET
+          situation_type = EXCLUDED.situation_type,
+          situation_summary = EXCLUDED.situation_summary,
+          updated_at = ${nowFunction}`
+      : `INSERT OR REPLACE INTO historical_precedents (
+          symbol, company_name, precedent_date,
+          situation_type, situation_summary,
+          price, market_cap, pe_ratio, pb_ratio, ps_ratio, ev_ebitda,
+          revenue_growth, earnings_growth, roic, roe, net_margin, debt_to_equity, fcf_yield,
+          sector, industry,
+          outcome_1y, outcome_3y, outcome_5y, max_drawdown_1y, sp500_return_1y, alpha_1y,
+          outcome_summary, outcome_category,
+          investors_who_bought, investors_who_sold,
+          tags, data_quality_score,
+          created_at, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+          $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, ${nowFunction}, ${nowFunction}
+        )`;
+
+    await database.query(upsertSQL, [
       symbol,
-      company_name: company.name,
-      precedent_date: date,
-      situation_type: situationType,
-      situation_summary: situationSummary,
-      price: price?.close,
-      market_cap: metrics?.market_cap,
-      pe_ratio: metrics?.pe_ratio,
-      pb_ratio: metrics?.pb_ratio,
-      ps_ratio: metrics?.ps_ratio,
-      ev_ebitda: metrics?.ev_ebitda,
-      revenue_growth: metrics?.revenue_growth_yoy,
-      earnings_growth: metrics?.earnings_growth_yoy,
-      roic: metrics?.roic,
-      roe: metrics?.roe,
-      net_margin: metrics?.net_margin,
-      debt_to_equity: metrics?.debt_to_equity,
-      fcf_yield: metrics?.fcf_yield,
-      sector: company.sector,
-      industry: company.industry,
-      ...outcomes,
-      outcome_summary: outcomes.outcome_1y
-        ? `${outcomes.outcome_1y > 0 ? '+' : ''}${outcomes.outcome_1y.toFixed(1)}% in 1 year`
-        : null,
-      outcome_category: outcomeCategory,
-      investors_who_bought: JSON.stringify(investorsWhoBought),
-      investors_who_sold: JSON.stringify(investorsWhoSold),
-      tags: JSON.stringify(this._generateTags(metrics, company.sector)),
-      data_quality_score: this._calculateDataQuality(metrics, outcomes)
-    });
+      company.name,
+      date,
+      situationType,
+      situationSummary,
+      price?.close,
+      metrics?.market_cap,
+      metrics?.pe_ratio,
+      metrics?.pb_ratio,
+      metrics?.ps_ratio,
+      metrics?.ev_ebitda,
+      metrics?.revenue_growth_yoy,
+      metrics?.earnings_growth_yoy,
+      metrics?.roic,
+      metrics?.roe,
+      metrics?.net_margin,
+      metrics?.debt_to_equity,
+      metrics?.fcf_yield,
+      company.sector,
+      company.industry,
+      outcomes.outcome_1y,
+      outcomes.outcome_3y,
+      outcomes.outcome_5y,
+      outcomes.max_drawdown_1y,
+      outcomes.sp500_return_1y,
+      outcomes.alpha_1y,
+      outcomesSummary,
+      outcomeCategory,
+      JSON.stringify(investorsWhoBought),
+      JSON.stringify(investorsWhoSold),
+      JSON.stringify(this._generateTags(metrics, company.sector)),
+      this._calculateDataQuality(metrics, outcomes)
+    ]);
 
     return { symbol, date, created: true };
   }
@@ -388,29 +430,37 @@ class PrecedentFinder {
    * Get current metrics for a stock
    */
   async _getCurrentMetrics(symbol) {
-    const company = this.db.prepare(`
+    const database = await getDatabaseAsync();
+
+    const companyResult = await database.query(`
       SELECT id, name, sector, industry, market_cap
       FROM companies
-      WHERE symbol = ?
-    `).get(symbol.toUpperCase());
+      WHERE symbol = $1
+    `, [symbol.toUpperCase()]);
+
+    const company = companyResult.rows[0];
 
     if (!company) return null;
 
-    const metrics = this.db.prepare(`
+    const metricsResult = await database.query(`
       SELECT *
       FROM calculated_metrics
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY fiscal_period DESC
       LIMIT 1
-    `).get(company.id);
+    `, [company.id]);
 
-    const price = this.db.prepare(`
+    const metrics = metricsResult.rows[0];
+
+    const priceResult = await database.query(`
       SELECT close
       FROM daily_prices
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY date DESC
       LIMIT 1
-    `).get(company.id);
+    `, [company.id]);
+
+    const price = priceResult.rows[0];
 
     return {
       company_id: company.id,
@@ -428,13 +478,16 @@ class PrecedentFinder {
    * Find candidate historical decisions to compare
    */
   async _findCandidateDecisions(currentMetrics, limit) {
+    const database = await getDatabaseAsync();
     const params = [];
     const conditions = ['d.return_1y IS NOT NULL'];
+    let paramIndex = 1;
 
     // Same sector is highly relevant
     if (currentMetrics.sector) {
-      conditions.push('d.sector = ?');
+      conditions.push(`d.sector = $${paramIndex}`);
       params.push(currentMetrics.sector);
+      paramIndex++;
     }
 
     const query = `
@@ -446,11 +499,12 @@ class PrecedentFinder {
       JOIN famous_investors fi ON d.investor_id = fi.id
       WHERE ${conditions.join(' AND ')}
       ORDER BY d.decision_date DESC
-      LIMIT ?
+      LIMIT $${paramIndex}
     `;
     params.push(limit);
 
-    return this.db.prepare(query).all(...params);
+    const result = await database.query(query, params);
+    return result.rows;
   }
 
   /**
@@ -716,16 +770,22 @@ class PrecedentFinder {
   }
 
   async _getPrice(companyId, date) {
-    const result = this.db.prepare(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT close FROM daily_prices
-      WHERE company_id = ? AND date <= ?
+      WHERE company_id = $1 AND date <= $2
       ORDER BY date DESC LIMIT 1
-    `).get(companyId, date);
-    return result?.close;
+    `, [companyId, date]);
+    return result.rows[0]?.close;
   }
 
   async _getSP500Return(startDate, endDate) {
-    const spy = this.db.prepare('SELECT id FROM companies WHERE symbol = \'SPY\'').get();
+    const database = await getDatabaseAsync();
+    const spyResult = await database.query(`
+      SELECT id FROM companies WHERE symbol = 'SPY'
+    `);
+    const spy = spyResult.rows[0];
+
     if (!spy) return null;
 
     const startPrice = await this._getPrice(spy.id, startDate);
@@ -738,11 +798,14 @@ class PrecedentFinder {
   }
 
   async _getMaxDrawdown(companyId, entryPrice, startDate, endDate) {
-    const prices = this.db.prepare(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT close FROM daily_prices
-      WHERE company_id = ? AND date BETWEEN ? AND ?
+      WHERE company_id = $1 AND date BETWEEN $2 AND $3
       ORDER BY close ASC LIMIT 1
-    `).get(companyId, startDate, endDate);
+    `, [companyId, startDate, endDate]);
+
+    const prices = result.rows[0];
 
     if (prices?.close && entryPrice) {
       return ((prices.close - entryPrice) / entryPrice) * 100;

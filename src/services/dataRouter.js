@@ -53,9 +53,11 @@ const FUNDAMENTALS_SOURCE = {
 // Price data works globally via Alpha Vantage
 const PRICE_SOURCE = 'alphavantage';
 
+const { getDatabaseAsync } = require('../lib/db');
+
 class DataRouter {
-  constructor(database, config = {}) {
-    this.db = database;
+  constructor(database = null, config = {}) {
+    // database parameter is optional - will use getDatabaseAsync() if not provided
 
     // Initialize providers
     const apiKey = config.alphaVantageKey || process.env.ALPHA_VANTAGE_KEY;
@@ -69,15 +71,23 @@ class DataRouter {
       this.price = null;
     }
 
-    this.xbrl = new XBRLProvider(database);
+    this.xbrl = database ? new XBRLProvider(database) : null;
 
     // Optional symbol resolver (from Agent 11)
     this.symbolResolver = config.symbolResolver || null;
 
     console.log('DataRouter initialized');
     console.log(`   - Alpha Vantage: ${this.alphaVantage ? 'enabled' : 'disabled'}`);
-    console.log('   - XBRL Provider: enabled');
+    console.log(`   - XBRL Provider: ${this.xbrl ? 'enabled' : 'lazy-init'}`);
     console.log(`   - Price Provider: ${this.price ? 'enabled' : 'disabled'}`);
+  }
+
+  async _getXBRLProvider() {
+    if (!this.xbrl) {
+      const database = await getDatabaseAsync();
+      this.xbrl = new XBRLProvider(database);
+    }
+    return this.xbrl;
   }
 
   /**
@@ -142,7 +152,8 @@ class DataRouter {
     if (source === 'alphavantage' && this.alphaVantage) {
       return this.alphaVantage.getCompanyOverview(resolved.symbol || identifier);
     } else {
-      return this.xbrl.getCompanyProfile(resolved);
+      const xbrl = await this._getXBRLProvider();
+      return xbrl.getCompanyProfile(resolved);
     }
   }
 
@@ -160,7 +171,8 @@ class DataRouter {
     if (source === 'alphavantage' && this.alphaVantage) {
       return this.alphaVantage.getIncomeStatement(resolved.symbol || identifier);
     } else {
-      return this.xbrl.getIncomeStatement(resolved);
+      const xbrl = await this._getXBRLProvider();
+      return xbrl.getIncomeStatement(resolved);
     }
   }
 
@@ -178,7 +190,8 @@ class DataRouter {
     if (source === 'alphavantage' && this.alphaVantage) {
       return this.alphaVantage.getBalanceSheet(resolved.symbol || identifier);
     } else {
-      return this.xbrl.getBalanceSheet(resolved);
+      const xbrl = await this._getXBRLProvider();
+      return xbrl.getBalanceSheet(resolved);
     }
   }
 
@@ -196,7 +209,8 @@ class DataRouter {
     if (source === 'alphavantage' && this.alphaVantage) {
       return this.alphaVantage.getCashFlow(resolved.symbol || identifier);
     } else {
-      return this.xbrl.getCashFlow(resolved);
+      const xbrl = await this._getXBRLProvider();
+      return xbrl.getCashFlow(resolved);
     }
   }
 
@@ -247,7 +261,8 @@ class DataRouter {
     // Search XBRL database (EU/UK companies)
     if (!options.excludeXBRL) {
       promises.push(
-        this.xbrl.searchCompanies(query, options)
+        this._getXBRLProvider()
+          .then(xbrl => xbrl.searchCompanies(query, options))
           .then(xbrlResults => {
             results.push(...xbrlResults.map(r => ({ ...r, source: 'xbrl' })));
           })
@@ -314,29 +329,33 @@ class DataRouter {
     const source = FUNDAMENTALS_SOURCE[countryCode.toUpperCase()];
 
     if (source === 'xbrl') {
-      return this.xbrl.getCompaniesByCountry(countryCode, options);
+      const xbrl = await this._getXBRLProvider();
+      return xbrl.getCompaniesByCountry(countryCode, options);
     }
 
     // For non-XBRL countries, return from local database
+    const database = await getDatabaseAsync();
     const limit = options.limit || 100;
-    const stmt = this.db.prepare(`
+
+    const result = await database.query(`
       SELECT symbol, name, sector, industry, exchange, country
       FROM companies
-      WHERE country = ?
+      WHERE country = $1
       ORDER BY name
-      LIMIT ?
-    `);
+      LIMIT $2
+    `, [countryCode.toUpperCase(), limit]);
 
-    return stmt.all(countryCode.toUpperCase(), limit);
+    return result.rows;
   }
 
   /**
    * Get statistics about data coverage
    * @returns {Object} - Data coverage statistics
    */
-  getStats() {
+  async getStats() {
+    const xbrl = await this._getXBRLProvider();
     return {
-      xbrl: this.xbrl.getStats(),
+      xbrl: xbrl.getStats(),
       supportedCountries: Object.keys(FUNDAMENTALS_SOURCE),
       routing: {
         fundamentalsSources: {
@@ -366,12 +385,16 @@ class DataRouter {
       return identifier;
     }
 
+    const database = await getDatabaseAsync();
+
     // Check if it's an LEI (20 alphanumeric characters)
     if (typeof identifier === 'string' && identifier.length === 20 && /^[A-Z0-9]+$/.test(identifier)) {
-      const stmt = this.db.prepare(`
-        SELECT * FROM company_identifiers WHERE lei = ?
-      `);
-      const byLei = stmt.get(identifier);
+      const byLeiResult = await database.query(
+        'SELECT * FROM company_identifiers WHERE lei = $1',
+        [identifier]
+      );
+      const byLei = byLeiResult.rows[0];
+
       if (byLei) {
         return {
           symbol: byLei.yahoo_symbol || byLei.ticker,
@@ -387,12 +410,13 @@ class DataRouter {
     }
 
     // Check company_identifiers table by ticker
-    const stmt = this.db.prepare(`
+    const byTickerResult = await database.query(`
       SELECT * FROM company_identifiers
-      WHERE ticker = ? OR yahoo_symbol = ?
+      WHERE ticker = $1 OR yahoo_symbol = $2
       LIMIT 1
-    `);
-    const byTicker = stmt.get(identifier.toUpperCase(), identifier.toUpperCase());
+    `, [identifier.toUpperCase(), identifier.toUpperCase()]);
+    const byTicker = byTickerResult.rows[0];
+
     if (byTicker) {
       return {
         symbol: byTicker.yahoo_symbol || byTicker.ticker,
@@ -406,13 +430,14 @@ class DataRouter {
     }
 
     // Check main companies table
-    const companyStmt = this.db.prepare(`
+    const companyResult = await database.query(`
       SELECT id, symbol, name, country, exchange, lei, isin
       FROM companies
-      WHERE symbol = ? OR UPPER(symbol) = ?
+      WHERE symbol = $1 OR UPPER(symbol) = $2
       LIMIT 1
-    `);
-    const company = companyStmt.get(identifier, identifier.toUpperCase());
+    `, [identifier, identifier.toUpperCase()]);
+    const company = companyResult.rows[0];
+
     if (company) {
       return {
         symbol: company.symbol,
@@ -476,7 +501,8 @@ class DataRouter {
    * @private
    */
   async _getXBRLFundamentals(resolved) {
-    const fundamentals = await this.xbrl.getFundamentals(resolved);
+    const xbrl = await this._getXBRLProvider();
+    const fundamentals = await xbrl.getFundamentals(resolved);
 
     if (!fundamentals) {
       return null;

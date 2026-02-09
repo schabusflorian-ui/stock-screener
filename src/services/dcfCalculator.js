@@ -13,12 +13,13 @@
  * - Margin of safety buy targets
  */
 
+const { getDatabaseAsync } = require('../lib/db');
 const { FREDService } = require('./dataProviders/fredService');
 
 class DCFCalculator {
-  constructor(db) {
-    this.db = db;
-    this.fredService = new FREDService(db);
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
+    this.fredService = new FREDService();
 
     // Cache for dynamic risk-free rate (refresh every hour)
     this._riskFreeRateCache = {
@@ -239,19 +240,22 @@ class DCFCalculator {
    * Gather all inputs from database and apply smart defaults
    */
   async gatherInputs(companyId, overrides) {
+    const database = await getDatabaseAsync();
+
     // Get company info
-    const company = this.db.prepare(`
+    const companyResult = await database.query(`
       SELECT c.*, c.market_cap
       FROM companies c
-      WHERE c.id = ?
-    `).get(companyId);
+      WHERE c.id = $1
+    `, [companyId]);
+    const company = companyResult.rows[0];
 
     if (!company) {
       throw new Error(`Company not found: ${companyId}`);
     }
 
     // Get financial data (last 5 years, annual)
-    const financials = this.db.prepare(`
+    const financialsResult = await database.query(`
       SELECT
         statement_type,
         fiscal_date_ending,
@@ -272,29 +276,31 @@ class DCFCalculator {
         short_term_debt,
         data
       FROM financial_data
-      WHERE company_id = ?
+      WHERE company_id = $1
         AND period_type = 'annual'
       ORDER BY fiscal_date_ending DESC
-    `).all(companyId);
+    `, [companyId]);
+    const financials = financialsResult.rows;
 
     // Parse and organize financials
     const parsed = this.parseFinancials(financials);
 
     // Get industry benchmarks
     const industry = company.industry || company.sector || 'Default';
-    const benchmarks = this.db.prepare(`
+    const benchmarksResult = await database.query(`
       SELECT * FROM industry_benchmarks
-      WHERE industry = ?
-         OR industry LIKE ?
-         OR sector = ?
+      WHERE industry = $1
+         OR industry LIKE $2
+         OR sector = $3
          OR industry = 'Default'
       ORDER BY
-        CASE WHEN industry = ? THEN 0
-             WHEN industry LIKE ? THEN 1
-             WHEN sector = ? THEN 2
+        CASE WHEN industry = $4 THEN 0
+             WHEN industry LIKE $5 THEN 1
+             WHEN sector = $6 THEN 2
              ELSE 3 END
       LIMIT 1
-    `).get(industry, `%${industry}%`, company.sector, industry, `%${industry}%`, company.sector);
+    `, [industry, `%${industry}%`, company.sector, industry, `%${industry}%`, company.sector]);
+    const benchmarks = benchmarksResult.rows[0];
 
     // Calculate normalized FCF with optional CapEx normalization
     // CapEx normalization assumes CapEx drops to maintenance level for mature companies
@@ -361,10 +367,11 @@ class DCFCalculator {
     // Get current price from override or fetch from database
     let currentPrice = overrides.currentPrice;
     if (!currentPrice || currentPrice <= 0) {
-      const priceData = this.db.prepare(`
+      const priceDataResult = await database.query(`
         SELECT pm.last_price FROM price_metrics pm
-        WHERE pm.company_id = ?
-      `).get(companyId);
+        WHERE pm.company_id = $1
+      `, [companyId]);
+      const priceData = priceDataResult.rows[0];
       currentPrice = priceData?.last_price || 0;
     }
 
@@ -1513,7 +1520,8 @@ class DCFCalculator {
    */
   async saveValuation(companyId, results) {
     try {
-      const stmt = this.db.prepare(`
+      const database = await getDatabaseAsync();
+      await database.query(`
         INSERT INTO dcf_valuations (
           company_id, base_fcf, base_ebitda, base_revenue, shares_outstanding, net_debt,
           growth_stage1, growth_stage2, growth_stage3, terminal_growth,
@@ -1525,10 +1533,8 @@ class DCFCalculator {
           implied_ev_ebitda, terminal_value_pct,
           margin_of_safety_25, margin_of_safety_50,
           warning_flags
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      stmt.run(
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
+      `, [
         companyId,
         results.assumptions.fcf,
         results.assumptions.ebitda,
@@ -1557,7 +1563,7 @@ class DCFCalculator {
         results.buyTargets.marginOfSafety25,
         results.buyTargets.marginOfSafety50,
         JSON.stringify(results.warnings)
-      );
+      ]);
     } catch (error) {
       console.error('Error saving DCF valuation:', error);
       // Don't throw - saving is optional
@@ -1567,13 +1573,15 @@ class DCFCalculator {
   /**
    * Get historical DCF valuations for a company
    */
-  getHistoricalValuations(companyId, limit = 10) {
-    return this.db.prepare(`
+  async getHistoricalValuations(companyId, limit = 10) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT * FROM dcf_valuations
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY calculated_at DESC
-      LIMIT ?
-    `).all(companyId, limit);
+      LIMIT $2
+    `, [companyId, limit]);
+    return result.rows;
   }
 
   /**
@@ -1662,11 +1670,13 @@ class DCFCalculator {
 
     // Get current price if target not specified
     if (!targetPrice || targetPrice <= 0) {
-      const priceData = this.db.prepare(`
+      const database = await getDatabaseAsync();
+      const priceDataResult = await database.query(`
         SELECT pm.last_price FROM price_metrics pm
         JOIN companies c ON c.id = pm.company_id
-        WHERE c.id = ?
-      `).get(companyId);
+        WHERE c.id = $1
+      `, [companyId]);
+      const priceData = priceDataResult.rows[0];
       targetPrice = priceData?.last_price || 0;
     }
 
@@ -1788,11 +1798,13 @@ class DCFCalculator {
 
     // Get current price if target not specified
     if (!targetPrice || targetPrice <= 0) {
-      const priceData = this.db.prepare(`
+      const database = await getDatabaseAsync();
+      const priceDataResult = await database.query(`
         SELECT pm.last_price FROM price_metrics pm
         JOIN companies c ON c.id = pm.company_id
-        WHERE c.id = ?
-      `).get(companyId);
+        WHERE c.id = $1
+      `, [companyId]);
+      const priceData = priceDataResult.rows[0];
       targetPrice = priceData?.last_price || 0;
     }
 
@@ -1931,10 +1943,12 @@ class DCFCalculator {
 
     // Get current price if target not specified
     if (!targetPrice || targetPrice <= 0) {
-      const priceData = this.db.prepare(`
+      const database = await getDatabaseAsync();
+      const priceDataResult = await database.query(`
         SELECT pm.last_price FROM price_metrics pm
-        WHERE pm.company_id = ?
-      `).get(companyId);
+        WHERE pm.company_id = $1
+      `, [companyId]);
+      const priceData = priceDataResult.rows[0];
       targetPrice = priceData?.last_price || 0;
     }
 

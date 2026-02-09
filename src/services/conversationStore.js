@@ -2,126 +2,31 @@
 /**
  * Persistent storage for AI analyst conversations.
  *
- * Stores conversations and messages in SQLite with caching
- * for frequently accessed conversations.
+ * Stores conversations and messages with caching for frequently accessed conversations.
+ * Fully async with PostgreSQL/SQLite support via database abstraction layer.
  */
 
-const path = require('path');
-const { db, isPostgres, getDatabase } = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 
 class ConversationStore {
   constructor() {
-    // In PostgreSQL mode, skip initialization until async method is called
-    this.isPostgres = isPostgres;
-    this.db = null; // Will be initialized lazily
     this.cache = new Map();
     this.cacheMaxSize = 100;
     this.cacheMaxAge = 30 * 60 * 1000; // 30 minutes
-    this.statementsReady = false;
-
-    // Only prepare statements in SQLite mode
-    if (!isPostgres) {
-      try {
-        this.db = db;
-        this._prepareStatements();
-        this.statementsReady = true;
-      } catch (err) {
-        console.warn('[ConversationStore] SQLite initialization failed:', err.message);
-        console.warn('[ConversationStore] Analyst conversations feature will be disabled');
-      }
-    } else {
-      console.log('[ConversationStore] PostgreSQL mode - async initialization required');
-    }
-  }
-
-  _prepareStatements() {
-    // Conversation statements
-    this.stmtInsertConversation = this.db.prepare(`
-      INSERT INTO analyst_conversations (id, analyst_id, company_id, company_symbol, title, metadata)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-
-    this.stmtGetConversation = this.db.prepare(`
-      SELECT * FROM analyst_conversations WHERE id = ?
-    `);
-
-    this.stmtUpdateConversation = this.db.prepare(`
-      UPDATE analyst_conversations
-      SET title = COALESCE(?, title),
-          summary = COALESCE(?, summary),
-          metadata = COALESCE(?, metadata),
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `);
-
-    this.stmtListConversations = this.db.prepare(`
-      SELECT c.*, co.name as company_name
-      FROM analyst_conversations c
-      LEFT JOIN companies co ON c.company_id = co.id
-      ORDER BY c.updated_at DESC
-      LIMIT ?
-    `);
-
-    this.stmtListByAnalyst = this.db.prepare(`
-      SELECT c.*, co.name as company_name
-      FROM analyst_conversations c
-      LEFT JOIN companies co ON c.company_id = co.id
-      WHERE c.analyst_id = ?
-      ORDER BY c.updated_at DESC
-      LIMIT ?
-    `);
-
-    this.stmtListByCompany = this.db.prepare(`
-      SELECT c.*
-      FROM analyst_conversations c
-      WHERE c.company_symbol = ?
-      ORDER BY c.updated_at DESC
-      LIMIT ?
-    `);
-
-    this.stmtDeleteConversation = this.db.prepare(`
-      DELETE FROM analyst_conversations WHERE id = ?
-    `);
-
-    // Message statements
-    this.stmtInsertMessage = this.db.prepare(`
-      INSERT INTO analyst_messages (id, conversation_id, role, content, timestamp, tokens_used, model, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    this.stmtGetMessages = this.db.prepare(`
-      SELECT * FROM analyst_messages
-      WHERE conversation_id = ?
-      ORDER BY timestamp ASC
-    `);
-
-    this.stmtGetRecentMessages = this.db.prepare(`
-      SELECT * FROM analyst_messages
-      WHERE conversation_id = ?
-      ORDER BY timestamp DESC
-      LIMIT ?
-    `);
-
-    this.stmtCountMessages = this.db.prepare(`
-      SELECT COUNT(*) as count FROM analyst_messages WHERE conversation_id = ?
-    `);
   }
 
   /**
    * Create a new conversation.
    */
-  createConversation(id, analystId, companyId = null, companySymbol = null, title = null) {
+  async createConversation(id, analystId, companyId = null, companySymbol = null, title = null) {
     const metadata = JSON.stringify({});
+    const database = await getDatabaseAsync();
 
     try {
-      this.stmtInsertConversation.run(
-        id,
-        analystId,
-        companyId,
-        companySymbol,
-        title,
-        metadata
-      );
+      await database.query(`
+        INSERT INTO analyst_conversations (id, analyst_id, company_id, company_symbol, title, metadata)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `, [id, analystId, companyId, companySymbol, title, metadata]);
 
       const conversation = {
         id,
@@ -146,17 +51,28 @@ class ConversationStore {
   /**
    * Get a conversation by ID.
    */
-  getConversation(id) {
+  async getConversation(id) {
     // Check cache first
     const cached = this._cacheGet(id);
     if (cached) return cached;
 
+    const database = await getDatabaseAsync();
+
     // Load from database
-    const row = this.stmtGetConversation.get(id);
+    const result = await database.query(`
+      SELECT * FROM analyst_conversations WHERE id = $1
+    `, [id]);
+    const row = result.rows[0];
     if (!row) return null;
 
     // Load messages
-    const messages = this.stmtGetMessages.all(id).map(m => ({
+    const messagesResult = await database.query(`
+      SELECT * FROM analyst_messages
+      WHERE conversation_id = $1
+      ORDER BY timestamp ASC
+    `, [id]);
+
+    const messages = messagesResult.rows.map(m => ({
       id: m.id,
       role: m.role,
       content: m.content,
@@ -187,7 +103,7 @@ class ConversationStore {
   /**
    * Add a message to a conversation.
    */
-  addMessage(conversationId, message) {
+  async addMessage(conversationId, message) {
     const {
       id,
       role,
@@ -198,17 +114,13 @@ class ConversationStore {
       metadata = {}
     } = message;
 
+    const database = await getDatabaseAsync();
+
     try {
-      this.stmtInsertMessage.run(
-        id,
-        conversationId,
-        role,
-        content,
-        timestamp,
-        tokens_used,
-        model,
-        JSON.stringify(metadata)
-      );
+      await database.query(`
+        INSERT INTO analyst_messages (id, conversation_id, role, content, timestamp, tokens_used, model, metadata)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `, [id, conversationId, role, content, timestamp, tokens_used, model, JSON.stringify(metadata)]);
 
       // Update cache if conversation is cached
       const cached = this.cache.get(conversationId);
@@ -236,14 +148,18 @@ class ConversationStore {
   /**
    * Update conversation title or summary.
    */
-  updateConversation(id, { title, summary, metadata }) {
+  async updateConversation(id, { title, summary, metadata }) {
+    const database = await getDatabaseAsync();
+
     try {
-      this.stmtUpdateConversation.run(
-        title || null,
-        summary || null,
-        metadata ? JSON.stringify(metadata) : null,
-        id
-      );
+      await database.query(`
+        UPDATE analyst_conversations
+        SET title = COALESCE($1, title),
+            summary = COALESCE($2, summary),
+            metadata = COALESCE($3, metadata),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $4
+      `, [title || null, summary || null, metadata ? JSON.stringify(metadata) : null, id]);
 
       // Update cache
       const cached = this.cache.get(id);
@@ -264,9 +180,18 @@ class ConversationStore {
   /**
    * List recent conversations.
    */
-  listConversations(limit = 50) {
-    const rows = this.stmtListConversations.all(limit);
-    return rows.map(row => ({
+  async listConversations(limit = 50) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT c.*, co.name as company_name
+      FROM analyst_conversations c
+      LEFT JOIN companies co ON c.company_id = co.id
+      ORDER BY c.updated_at DESC
+      LIMIT $1
+    `, [limit]);
+
+    return result.rows.map(row => ({
       id: row.id,
       analyst_id: row.analyst_id,
       company_id: row.company_id,
@@ -283,9 +208,19 @@ class ConversationStore {
   /**
    * List conversations for a specific analyst.
    */
-  listByAnalyst(analystId, limit = 50) {
-    const rows = this.stmtListByAnalyst.all(analystId, limit);
-    return rows.map(row => ({
+  async listByAnalyst(analystId, limit = 50) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT c.*, co.name as company_name
+      FROM analyst_conversations c
+      LEFT JOIN companies co ON c.company_id = co.id
+      WHERE c.analyst_id = $1
+      ORDER BY c.updated_at DESC
+      LIMIT $2
+    `, [analystId, limit]);
+
+    return result.rows.map(row => ({
       id: row.id,
       analyst_id: row.analyst_id,
       company_id: row.company_id,
@@ -302,9 +237,18 @@ class ConversationStore {
   /**
    * List conversations for a specific company.
    */
-  listByCompany(companySymbol, limit = 50) {
-    const rows = this.stmtListByCompany.all(companySymbol.toUpperCase(), limit);
-    return rows.map(row => ({
+  async listByCompany(companySymbol, limit = 50) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT c.*
+      FROM analyst_conversations c
+      WHERE c.company_symbol = $1
+      ORDER BY c.updated_at DESC
+      LIMIT $2
+    `, [companySymbol.toUpperCase(), limit]);
+
+    return result.rows.map(row => ({
       id: row.id,
       analyst_id: row.analyst_id,
       company_id: row.company_id,
@@ -320,9 +264,13 @@ class ConversationStore {
   /**
    * Delete a conversation.
    */
-  deleteConversation(id) {
+  async deleteConversation(id) {
+    const database = await getDatabaseAsync();
+
     try {
-      this.stmtDeleteConversation.run(id);
+      await database.query(`
+        DELETE FROM analyst_conversations WHERE id = $1
+      `, [id]);
       this.cache.delete(id);
       return true;
     } catch (error) {
@@ -334,9 +282,17 @@ class ConversationStore {
   /**
    * Get recent messages from a conversation.
    */
-  getRecentMessages(conversationId, limit = 10) {
-    const rows = this.stmtGetRecentMessages.all(conversationId, limit);
-    return rows.reverse().map(m => ({
+  async getRecentMessages(conversationId, limit = 10) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT * FROM analyst_messages
+      WHERE conversation_id = $1
+      ORDER BY timestamp DESC
+      LIMIT $2
+    `, [conversationId, limit]);
+
+    return result.rows.reverse().map(m => ({
       id: m.id,
       role: m.role,
       content: m.content,
@@ -350,8 +306,10 @@ class ConversationStore {
   /**
    * Get statistics.
    */
-  getStats() {
-    const stats = this.db.prepare(`
+  async getStats() {
+    const database = await getDatabaseAsync();
+
+    const statsResult = await database.query(`
       SELECT
         COUNT(DISTINCT c.id) as total_conversations,
         COUNT(DISTINCT c.analyst_id) as analysts_used,
@@ -359,18 +317,18 @@ class ConversationStore {
         COUNT(DISTINCT c.company_symbol) as companies_discussed,
         MAX(c.updated_at) as last_activity
       FROM analyst_conversations c
-    `).get();
+    `);
 
-    const byAnalyst = this.db.prepare(`
+    const byAnalystResult = await database.query(`
       SELECT analyst_id, COUNT(*) as count
       FROM analyst_conversations
       GROUP BY analyst_id
       ORDER BY count DESC
-    `).all();
+    `);
 
     return {
-      ...stats,
-      by_analyst: byAnalyst
+      ...statsResult.rows[0],
+      by_analyst: byAnalystResult.rows
     };
   }
 
@@ -403,7 +361,6 @@ class ConversationStore {
   }
 
   close() {
-    // Don't close shared database instance
     // The main database.js module manages the connection lifecycle
     this.cache.clear();
   }

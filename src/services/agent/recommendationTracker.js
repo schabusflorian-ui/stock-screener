@@ -1,9 +1,11 @@
 // src/services/agent/recommendationTracker.js
 // Tracks recommendation outcomes and calculates performance metrics
 
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
+
 class RecommendationTracker {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
     this.OUTCOME_HORIZONS = [1, 5, 21, 63]; // Days to track
     this.WIN_THRESHOLD = 0.0; // > 0% return = WIN
     this.BENCHMARK_SYMBOL = 'SPY';
@@ -13,6 +15,7 @@ class RecommendationTracker {
    * Track a new recommendation
    */
   async trackRecommendation(recommendation, portfolioId = null) {
+    const database = await getDatabaseAsync();
     const {
       symbol,
       companyId,
@@ -25,7 +28,7 @@ class RecommendationTracker {
       originalRecommendationId,
     } = recommendation;
 
-    const result = await this.db.query(
+    const result = await database.query(
       `INSERT INTO recommendation_outcomes (
         portfolio_id, symbol, company_id, action, signal_score, confidence,
         regime, signal_breakdown, recommended_at, price_at_recommendation,
@@ -58,7 +61,9 @@ class RecommendationTracker {
    * Mark a recommendation as executed
    */
   async markExecuted(recommendationId, executedPrice, executedAt = null) {
-    await this.db.query(
+    const database = await getDatabaseAsync();
+
+    await database.query(
       `UPDATE recommendation_outcomes
       SET was_executed = true,
           executed_at = $1,
@@ -75,7 +80,9 @@ class RecommendationTracker {
    * Called daily by scheduler
    */
   async updateAllOutcomes() {
-    const result = await this.db.query(
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(
       `SELECT ro.*, c.symbol
       FROM recommendation_outcomes ro
       LEFT JOIN companies c ON ro.company_id = c.id
@@ -109,10 +116,11 @@ class RecommendationTracker {
    * Update forward returns for a single recommendation
    */
   async updateSingleOutcome(recommendation) {
+    const database = await getDatabaseAsync();
     const { id, symbol, company_id, recommended_at, price_at_recommendation } = recommendation;
 
     // Get current and historical prices
-    const priceResult = await this.db.query(
+    const priceResult = await database.query(
       `SELECT date, close
       FROM daily_prices
       WHERE company_id = $1
@@ -167,7 +175,7 @@ class RecommendationTracker {
     }
 
     // Update the record
-    await this.db.query(
+    await database.query(
       `UPDATE recommendation_outcomes
       SET return_1d = $1,
           return_5d = $2,
@@ -209,7 +217,9 @@ class RecommendationTracker {
    * Get benchmark prices starting from a date
    */
   async getBenchmarkPrices(startDate) {
-    const spyResult = await this.db.query(
+    const database = await getDatabaseAsync();
+
+    const spyResult = await database.query(
       `SELECT id FROM companies WHERE symbol = $1`,
       [this.BENCHMARK_SYMBOL]
     );
@@ -218,7 +228,7 @@ class RecommendationTracker {
 
     const spy = spyResult.rows[0];
 
-    const result = await this.db.query(
+    const result = await database.query(
       `SELECT date, close
       FROM daily_prices
       WHERE company_id = $1
@@ -268,6 +278,7 @@ class RecommendationTracker {
    * Get overall performance statistics
    */
   async getPerformanceStats(options = {}) {
+    const database = await getDatabaseAsync();
     const { period = '90d', signalType = null, regime = null, action = null } = options;
 
     const periodDays = this.parsePeriod(period);
@@ -287,7 +298,7 @@ class RecommendationTracker {
       params.push(action);
     }
 
-    const result = await this.db.query(
+    const result = await database.query(
       `SELECT
         COUNT(*) as total_recommendations,
         SUM(CASE WHEN outcome = 'WIN' THEN 1 ELSE 0 END) as wins,
@@ -331,10 +342,11 @@ class RecommendationTracker {
    * Get Information Coefficient by signal type
    */
   async getICBySignalType(period = '90d') {
+    const database = await getDatabaseAsync();
     const periodDays = this.parsePeriod(period);
 
     // Get all recommendations with signal breakdown
-    const result = await this.db.query(
+    const result = await database.query(
       `SELECT signal_breakdown, signal_score, return_21d, regime
       FROM recommendation_outcomes
       WHERE outcome != 'PENDING'
@@ -400,9 +412,10 @@ class RecommendationTracker {
    * Get hit rate by market regime
    */
   async getHitRateByRegime(period = '90d') {
+    const database = await getDatabaseAsync();
     const periodDays = this.parsePeriod(period);
 
-    const result = await this.db.query(
+    const result = await database.query(
       `SELECT
         regime,
         COUNT(*) as total,
@@ -430,6 +443,7 @@ class RecommendationTracker {
    * Get recent recommendations with outcomes
    */
   async getRecentRecommendations(limit = 50, options = {}) {
+    const database = await getDatabaseAsync();
     const { portfolioId = null, outcome = null, action = null } = options;
 
     let whereClause = 'WHERE 1=1';
@@ -455,7 +469,7 @@ class RecommendationTracker {
     paramCount++;
     params.push(limit);
 
-    const result = await this.db.query(
+    const result = await database.query(
       `SELECT
         ro.*,
         c.name as company_name
@@ -474,7 +488,9 @@ class RecommendationTracker {
    * Calculate rolling IC for signal optimizer
    */
   async calculateRollingIC(signalType, windowDays = 60) {
-    const result = await this.db.query(
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(
       `SELECT signal_breakdown, return_21d, recommended_at
       FROM recommendation_outcomes
       WHERE outcome != 'PENDING'
@@ -570,6 +586,7 @@ class RecommendationTracker {
    * Recalculate and store signal performance metrics
    */
   async recalculateSignalPerformance() {
+    const database = await getDatabaseAsync();
     const periods = ['30d', '90d', '1y', 'all'];
     const regimes = ['BULL', 'BEAR', 'SIDEWAYS', 'HIGH_VOL', 'CRISIS', 'ALL'];
 
@@ -585,7 +602,7 @@ class RecommendationTracker {
           // Get performance for this signal type
           const perfData = await this.getSignalTypePerformance(signalType, period, regime === 'ALL' ? null : regime);
 
-          await this.db.query(
+          await database.query(
             `INSERT INTO signal_performance (
               signal_type, regime, period, sample_count,
               hit_rate, avg_return_1d, avg_return_5d, avg_return_21d, avg_return_63d,
@@ -635,10 +652,11 @@ class RecommendationTracker {
    * Get performance for a specific signal type
    */
   async getSignalTypePerformance(signalType, period, regime = null) {
+    const database = await getDatabaseAsync();
     const periodDays = this.parsePeriod(period);
 
     const params = regime ? [regime] : [];
-    const result = await this.db.query(
+    const result = await database.query(
       `SELECT signal_breakdown, outcome, return_1d, return_5d, return_21d, return_63d
       FROM recommendation_outcomes
       WHERE outcome != 'PENDING'

@@ -2,8 +2,7 @@
 // Insider Trading Signal Generator
 // Based on SME Panel recommendations: +3-5% expected alpha
 
-// Note: This class expects a db instance to be passed to its constructor.
-// The db instance should come from src/database.js for proper PostgreSQL support.
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 
 /**
  * Insider Trading Signal Generator
@@ -15,70 +14,8 @@
  * - Clusters (3+ insiders in 30 days) predict 12-month outperformance
  */
 class InsiderTradingSignals {
-  constructor(db) {
-    this.db = db;
-    this._prepareStatements();
-  }
-
-  _prepareStatements() {
-    // Get recent insider buys for a company (last 90 days)
-    this.stmtGetRecentBuys = this.db.prepare(`
-      SELECT
-        it.*,
-        i.name as insider_name,
-        i.title as insider_title,
-        c.symbol,
-        c.name as company_name
-      FROM insider_transactions it
-      JOIN insiders i ON it.insider_id = i.id
-      JOIN companies c ON it.company_id = c.id
-      WHERE it.company_id = ?
-        AND it.acquisition_disposition = 'A'  -- Acquisitions (buys)
-        AND it.transaction_date >= date(?, '-90 days')
-        AND it.transaction_date <= ?
-        AND it.is_derivative = 0  -- Exclude option exercises
-      ORDER BY it.transaction_date DESC
-    `);
-
-    // Get insider buy clusters across all companies
-    this.stmtGetBuyClusters = this.db.prepare(`
-      SELECT
-        c.id as company_id,
-        c.symbol,
-        c.name,
-        COUNT(DISTINCT it.insider_id) as insider_count,
-        COUNT(*) as transaction_count,
-        SUM(it.total_value) as total_buy_value,
-        AVG(it.price_per_share) as avg_buy_price,
-        MIN(it.transaction_date) as first_buy_date,
-        MAX(it.transaction_date) as last_buy_date
-      FROM insider_transactions it
-      JOIN companies c ON it.company_id = c.id
-      WHERE it.acquisition_disposition = 'A'
-        AND it.transaction_date >= date(?, '-30 days')
-        AND it.transaction_date <= ?
-        AND it.is_derivative = 0
-      GROUP BY c.id, c.symbol, c.name
-      HAVING COUNT(DISTINCT it.insider_id) >= 3  -- 3+ insiders = cluster
-      ORDER BY insider_count DESC, total_buy_value DESC
-    `);
-
-    // Check if company has recent large buys (>$100k)
-    this.stmtGetLargeBuys = this.db.prepare(`
-      SELECT
-        it.*,
-        i.name as insider_name,
-        i.title as insider_title
-      FROM insider_transactions it
-      JOIN insiders i ON it.insider_id = i.id
-      WHERE it.company_id = ?
-        AND it.acquisition_disposition = 'A'
-        AND it.transaction_date >= date(?, '-60 days')
-        AND it.transaction_date <= ?
-        AND it.total_value >= 100000  -- $100k+ = meaningful
-        AND it.is_derivative = 0
-      ORDER BY it.total_value DESC
-    `);
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
   }
 
   /**
@@ -87,9 +24,31 @@ class InsiderTradingSignals {
    * @param {string} asOfDate - Date to evaluate signal (YYYY-MM-DD)
    * @returns {Object|null} Signal with score and reasoning
    */
-  generateSignal(companyId, asOfDate = new Date().toISOString().split('T')[0]) {
-    // Get recent buys
-    const recentBuys = this.stmtGetRecentBuys.all(companyId, asOfDate, asOfDate);
+  async generateSignal(companyId, asOfDate = new Date().toISOString().split('T')[0]) {
+    const database = await getDatabaseAsync();
+
+    // Get recent buys (last 90 days, open market buys only)
+    const recentBuysResult = await database.query(`
+      SELECT
+        it.insider_id,
+        c.symbol,
+        c.name as company_name,
+        it.transaction_date,
+        it.shares_transacted,
+        it.price_per_share,
+        it.total_value,
+        it.insider_name,
+        it.insider_title
+      FROM insider_transactions it
+      JOIN companies c ON it.company_id = c.id
+      WHERE it.company_id = $1
+        AND it.transaction_date <= $2
+        AND it.transaction_date >= date($3, '-90 days')
+        AND it.acquisition_disposition = 'A'
+        AND it.transaction_code IN ('P', 'M')
+      ORDER BY it.transaction_date DESC
+    `, [companyId, asOfDate, asOfDate]);
+    const recentBuys = recentBuysResult.rows;
 
     if (recentBuys.length === 0) {
       return null; // No insider buying activity
@@ -233,14 +192,36 @@ class InsiderTradingSignals {
    * @param {string} asOfDate - Date to evaluate (YYYY-MM-DD)
    * @returns {Array} Companies with buy clusters, ranked by strength
    */
-  findBuyClusters(asOfDate = new Date().toISOString().split('T')[0]) {
-    const clusters = this.stmtGetBuyClusters.all(asOfDate, asOfDate);
+  async findBuyClusters(asOfDate = new Date().toISOString().split('T')[0]) {
+    const database = await getDatabaseAsync();
 
-    return clusters.map(cluster => {
+    // Find companies with 3+ insiders buying in last 30 days
+    const clustersResult = await database.query(`
+      SELECT
+        it.company_id,
+        c.symbol,
+        c.name as company_name,
+        COUNT(DISTINCT it.insider_id) as unique_insiders,
+        COUNT(*) as total_transactions,
+        SUM(it.total_value) as total_buy_value
+      FROM insider_transactions it
+      JOIN companies c ON it.company_id = c.id
+      WHERE it.transaction_date <= $1
+        AND it.transaction_date >= date($2, '-30 days')
+        AND it.acquisition_disposition = 'A'
+        AND it.transaction_code IN ('P', 'M')
+      GROUP BY it.company_id, c.symbol, c.name
+      HAVING COUNT(DISTINCT it.insider_id) >= 3
+      ORDER BY unique_insiders DESC, total_buy_value DESC
+    `, [asOfDate, asOfDate]);
+    const clusters = clustersResult.rows;
+
+    const results = [];
+    for (const cluster of clusters) {
       // Generate full signal for this company
-      const signal = this.generateSignal(cluster.company_id, asOfDate);
+      const signal = await this.generateSignal(cluster.company_id, asOfDate);
 
-      return {
+      results.push({
         ...cluster,
         signal: signal?.score || 0,
         confidence: signal?.confidence || 0,
@@ -249,8 +230,10 @@ class InsiderTradingSignals {
         smeRecommendation: signal?.signalStrength === 'very strong' || signal?.signalStrength === 'strong'
           ? 'STRONG BUY - Cluster pattern detected'
           : 'WATCH - Monitor for more buying'
-      };
-    });
+      });
+    }
+
+    return results;
   }
 
   /**
@@ -259,11 +242,11 @@ class InsiderTradingSignals {
    * @param {string} asOfDate - Date to evaluate
    * @returns {Array} Summary of insider activity
    */
-  getPortfolioInsiderActivity(companyIds, asOfDate = new Date().toISOString().split('T')[0]) {
+  async getPortfolioInsiderActivity(companyIds, asOfDate = new Date().toISOString().split('T')[0]) {
     const results = [];
 
     for (const companyId of companyIds) {
-      const signal = this.generateSignal(companyId, asOfDate);
+      const signal = await this.generateSignal(companyId, asOfDate);
       if (signal) {
         results.push(signal);
       }
@@ -278,8 +261,10 @@ class InsiderTradingSignals {
   /**
    * Get statistics on insider trading data coverage
    */
-  getDataCoverage() {
-    const stats = this.db.prepare(`
+  async getDataCoverage() {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT
         COUNT(*) as total_transactions,
         COUNT(DISTINCT company_id) as companies_with_data,
@@ -288,9 +273,9 @@ class InsiderTradingSignals {
         MIN(transaction_date) as earliest_transaction,
         MAX(transaction_date) as latest_transaction
       FROM insider_transactions
-    `).get();
+    `);
 
-    return stats;
+    return result.rows[0];
   }
 }
 

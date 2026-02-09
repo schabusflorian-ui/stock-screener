@@ -9,7 +9,7 @@
  */
 
 const YahooFinance = require('yahoo-finance2').default;
-const { getDatabaseAsync } = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 
 class EarningsCalendarService {
   constructor() {
@@ -346,38 +346,6 @@ class EarningsCalendarService {
     return null;
   }
 
-  /**
-   * Create required database table
-   */
-  createTable() {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS earnings_calendar (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        company_id INTEGER NOT NULL,
-        fetched_at TEXT NOT NULL,
-        next_earnings_date TEXT,
-        is_estimate INTEGER DEFAULT 1,
-        eps_estimate REAL,
-        eps_low REAL,
-        eps_high REAL,
-        revenue_estimate REAL,
-        revenue_low REAL,
-        revenue_high REAL,
-        ex_dividend_date TEXT,
-        dividend_pay_date TEXT,
-        beat_rate REAL,
-        avg_surprise REAL,
-        consecutive_beats INTEGER,
-        history_json TEXT,
-        UNIQUE(company_id)
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_earnings_next_date
-        ON earnings_calendar(next_earnings_date);
-      CREATE INDEX IF NOT EXISTS idx_earnings_company
-        ON earnings_calendar(company_id);
-    `);
-  }
 }
 
 module.exports = EarningsCalendarService;

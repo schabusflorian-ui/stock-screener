@@ -3,14 +3,12 @@
 // Uses comprehensive data collection and AI synthesis for Fyva-quality reports
 
 require('dotenv').config();
-const db = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 const PRISMScorer = require('./prismScorer');
 const PRISMDataCollector = require('./prismDataCollector');
 const PRISMAISynthesizer = require('./prismAISynthesizer');
 const PRISMAISynthesizerV2 = require('./prismAISynthesizerV2');
 const TriangulatedValuationService = require('./triangulatedValuationService');
-
-const database = db.getDatabase();
 
 class PRISMReportGeneratorV2 {
   constructor() {
@@ -18,8 +16,15 @@ class PRISMReportGeneratorV2 {
     this.dataCollector = new PRISMDataCollector();
     this.aiSynthesizer = new PRISMAISynthesizer();
     this.aiSynthesizerV2 = new PRISMAISynthesizerV2();
-    this.triangulatedValuationService = new TriangulatedValuationService(database);
-    this.db = database;
+    this.triangulatedValuationService = null; // Lazy initialization
+  }
+
+  async getTriangulatedValuationService() {
+    if (!this.triangulatedValuationService) {
+      const database = await getDatabaseAsync();
+      this.triangulatedValuationService = new TriangulatedValuationService(database);
+    }
+    return this.triangulatedValuationService;
   }
 
   /**
@@ -77,7 +82,8 @@ class PRISMReportGeneratorV2 {
     console.log('\n💰 Step 4: Calculating triangulated valuation...');
     let triangulatedValuation = null;
     try {
-      triangulatedValuation = await this.triangulatedValuationService.calculateTriangulatedValuation(
+      const triangulatedValuationService = await this.getTriangulatedValuationService();
+      triangulatedValuation = await triangulatedValuationService.calculateTriangulatedValuation(
         dataPackage.company.id,
         {
           currentPrice: dataPackage.prices?.current?.close,
@@ -667,12 +673,14 @@ class PRISMReportGeneratorV2 {
 
   async getCachedReport(symbol) {
     try {
-      return this.db.prepare(`
+      const database = await getDatabaseAsync();
+      const result = await database.query(`
         SELECT * FROM prism_reports
-        WHERE symbol = ?
+        WHERE symbol = $1
         ORDER BY generated_at DESC
         LIMIT 1
-      `).get(symbol);
+      `, [symbol]);
+      return result.rows[0];
     } catch (e) {
       return null;
     }
@@ -703,11 +711,13 @@ class PRISMReportGeneratorV2 {
 
   async saveReport(companyId, symbol, report) {
     try {
-      const stmt = this.db.prepare(`
+      const database = await getDatabaseAsync();
+
+      await database.query(`
         INSERT INTO prism_reports (
           company_id, symbol, generated_at, expires_at, report_data,
           overall_score, confidence_level, data_sources
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT(company_id) DO UPDATE SET
           symbol = excluded.symbol,
           generated_at = excluded.generated_at,
@@ -716,9 +726,7 @@ class PRISMReportGeneratorV2 {
           overall_score = excluded.overall_score,
           confidence_level = excluded.confidence_level,
           data_sources = excluded.data_sources
-      `);
-
-      stmt.run(
+      `, [
         companyId,
         symbol,
         report.metadata.generatedAt,
@@ -727,7 +735,7 @@ class PRISMReportGeneratorV2 {
         report.overallScore,
         report.confidenceLevel,
         JSON.stringify(report.metadata.dataSources)
-      );
+      ]);
 
       console.log('  ✓ Report saved to database');
     } catch (error) {

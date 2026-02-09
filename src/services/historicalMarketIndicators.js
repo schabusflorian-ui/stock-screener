@@ -16,7 +16,7 @@
  * - Quarterly aggregation aligned to calendar quarters
  */
 
-const { getDatabase } = require('../lib/db');
+const { getDatabaseAsync } = require('../lib/db');
 
 // Statistical configuration
 const CONFIG = {
@@ -44,11 +44,7 @@ const CONFIG = {
 
 class HistoricalMarketIndicatorsService {
   constructor() {
-    this.db = null;
-  }
-
-  async init() {
-    this.db = await getDatabase();
+    // No database initialization needed - using getDatabaseAsync()
   }
 
   /**
@@ -130,7 +126,8 @@ class HistoricalMarketIndicatorsService {
    * Get all available quarters from data
    */
   async getAvailableQuarters() {
-    const result = await this.db.query(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT DISTINCT
         TO_CHAR(fiscal_period, 'YYYY') || '-Q' || CEIL(EXTRACT(MONTH FROM fiscal_period)::numeric / 3) as quarter
       FROM calculated_metrics
@@ -147,9 +144,10 @@ class HistoricalMarketIndicatorsService {
    * Includes sanity filters to exclude obviously bad data
    */
   async getHistoricalMarketCap(targetDate) {
+    const database = await getDatabaseAsync();
     // First, find the closest trading day on or before the target date
     // (Quarter-end dates often fall on weekends when markets are closed)
-    const closestDate = await this.db.query(`
+    const closestDate = await database.query(`
       SELECT MAX(date) as closest_date
       FROM daily_prices
       WHERE date <= $1
@@ -163,7 +161,7 @@ class HistoricalMarketIndicatorsService {
     // - Exclude non-US stocks (suffixes indicate foreign exchanges)
     // - Exclude ETFs (can cause double-counting)
     // - Filter out garbage data (impossible prices, shares outstanding, or market caps)
-    const result = await this.db.query(`
+    const result = await database.query(`
       SELECT
         SUM(dp.adjusted_close * pm.shares_outstanding) as total_market_cap,
         COUNT(DISTINCT dp.company_id) as company_count
@@ -214,8 +212,9 @@ class HistoricalMarketIndicatorsService {
    * Used for S&P 500 / GDP ratio comparison with Buffett Indicator
    */
   async getSP500HistoricalMarketCap(targetDate) {
+    const database = await getDatabaseAsync();
     // First, find the closest trading day with S&P 500 data on or before the target date
-    const closestDate = await this.db.query(`
+    const closestDate = await database.query(`
       SELECT MAX(dp.date) as closest_date
       FROM daily_prices dp
       JOIN companies c ON dp.company_id = c.id
@@ -226,7 +225,7 @@ class HistoricalMarketIndicatorsService {
 
     const actualDate = closestDate.rows[0]?.closest_date || targetDate;
 
-    const result = await this.db.query(`
+    const result = await database.query(`
       SELECT
         SUM(dp.adjusted_close * pm.shares_outstanding) as total_market_cap,
         COUNT(DISTINCT dp.company_id) as company_count
@@ -357,8 +356,9 @@ class HistoricalMarketIndicatorsService {
    * Calculate current real-time S&P 500 / GDP ratio
    */
   async getCurrentSP500ToGDP() {
+    const database = await getDatabaseAsync();
     // Get S&P 500 market cap from companies table (live data)
-    const marketCapResult = await this.db.query(`
+    const marketCapResult = await database.query(`
       SELECT
         SUM(market_cap) / 1e9 as total_market_cap_billions,
         COUNT(*) as stock_count
@@ -369,7 +369,7 @@ class HistoricalMarketIndicatorsService {
     `);
 
     // Get latest GDP
-    const gdpResult = await this.db.query(`
+    const gdpResult = await database.query(`
       SELECT value, observation_date
       FROM economic_indicators
       WHERE series_id = 'GDP'
@@ -400,6 +400,7 @@ class HistoricalMarketIndicatorsService {
    * Uses data reported in that quarter (fiscal_period falls within quarter)
    */
   async getQuarterMetrics(quarter) {
+    const database = await getDatabaseAsync();
     const [year, q] = quarter.split('-Q');
     const quarterNum = parseInt(q);
 
@@ -410,7 +411,7 @@ class HistoricalMarketIndicatorsService {
     const endDate = `${year}-${String(endMonth).padStart(2, '0')}-31`;
 
     // Get all metrics for companies with fiscal periods in this quarter
-    const result = await this.db.query(`
+    const result = await database.query(`
       SELECT
         cm.company_id,
         c.symbol,
@@ -443,6 +444,7 @@ class HistoricalMarketIndicatorsService {
    * - More frequent and recent data for each company
    */
   async getQuarterMetricsAsOf(quarter) {
+    const database = await getDatabaseAsync();
     const quarterEndDate = this.getQuarterEndDate(quarter);
 
     // Get most recent ANNUAL metrics for each company as of quarter end
@@ -452,7 +454,7 @@ class HistoricalMarketIndicatorsService {
     // - Eliminates Q1 spike caused by stale Q3 data (6-month lag)
     // Note: We use current market_cap for weighting; historical market cap is
     // calculated separately in getHistoricalMarketCap() for Buffett Indicator
-    const result = await this.db.query(`
+    const result = await database.query(`
       WITH latest_metrics AS (
         SELECT
           cm.*,
@@ -617,10 +619,11 @@ class HistoricalMarketIndicatorsService {
    * Get GDP for a quarter from FRED data
    */
   async getGDPForQuarter(quarter) {
+    const database = await getDatabaseAsync();
     const quarterEndDate = this.getQuarterEndDate(quarter);
 
     // Get most recent GDP observation as of quarter end
-    const gdp = await this.db.query(`
+    const gdp = await database.query(`
       SELECT value, observation_date
       FROM economic_indicators
       WHERE series_id = 'GDP'
@@ -637,9 +640,10 @@ class HistoricalMarketIndicatorsService {
    * Series: DDDM01USA156NWDB - Stock Market Capitalization to GDP for United States
    */
   async getWorldBankBuffettForQuarter(quarter) {
+    const database = await getDatabaseAsync();
     const quarterEndDate = this.getQuarterEndDate(quarter);
 
-    const buffett = await this.db.query(`
+    const buffett = await database.query(`
       SELECT value, observation_date
       FROM economic_indicators
       WHERE series_id = 'DDDM01USA156NWDB'
@@ -660,6 +664,7 @@ class HistoricalMarketIndicatorsService {
    * Note: Series discontinued June 3, 2024 - only available for historical dates
    */
   async getWilshire5000ForQuarter(quarter) {
+    const database = await getDatabaseAsync();
     const quarterEndDate = this.getQuarterEndDate(quarter);
 
     // FRED discontinued Wilshire 5000 on June 3, 2024
@@ -668,7 +673,7 @@ class HistoricalMarketIndicatorsService {
       return null;
     }
 
-    const result = await this.db.query(`
+    const result = await database.query(`
       SELECT value, observation_date
       FROM economic_indicators
       WHERE series_id = 'WILL5000IND'
@@ -702,10 +707,11 @@ class HistoricalMarketIndicatorsService {
    * FRED stores as percentage, we convert to ratio for consistency
    */
   async getMSIFromFRED(quarter) {
+    const database = await getDatabaseAsync();
     const quarterEndDate = this.getQuarterEndDate(quarter);
 
     // NCBCEPNW is quarterly, find the closest value on or before quarter end
-    const result = await this.db.query(`
+    const result = await database.query(`
       SELECT value, observation_date
       FROM economic_indicators
       WHERE series_id = 'NCBCEPNW'
@@ -840,6 +846,7 @@ class HistoricalMarketIndicatorsService {
    * This is similar to FRED's MSI which uses aggregate totals instead of median
    */
   async calculateAggregateMSI(quarter) {
+    const database = await getDatabaseAsync();
     const quarterEndDate = this.getQuarterEndDate(quarter);
     const [year, q] = quarter.split('-Q');
     const quarterNum = parseInt(q);
@@ -854,7 +861,7 @@ class HistoricalMarketIndicatorsService {
     // Get aggregate balance sheet data from financial_data
     // Use the most recent quarterly filing for each company as of quarter end
     // FILTERS: US stocks only, $500M+ market cap, positive book value
-    const balanceSheetData = await this.db.query(`
+    const balanceSheetData = await database.query(`
       WITH latest_filings AS (
         SELECT
           fd.company_id,
@@ -935,9 +942,10 @@ class HistoricalMarketIndicatorsService {
    * FILTERS: US stocks only, $500M+ market cap
    */
   async getCurrentAggregateMSI() {
+    const database = await getDatabaseAsync();
     // Get total market cap from companies table (live data)
     // Filter to US stocks with $500M+ market cap
-    const marketCapResult = await this.db.query(`
+    const marketCapResult = await database.query(`
       SELECT
         SUM(market_cap) as total_market_cap,
         COUNT(*) as stock_count
@@ -963,7 +971,7 @@ class HistoricalMarketIndicatorsService {
 
     // Get aggregate balance sheet data from most recent filings
     // Same filters: US stocks only, $500M+ market cap
-    const balanceSheetData = await this.db.query(`
+    const balanceSheetData = await database.query(`
       WITH latest_filings AS (
         SELECT
           fd.company_id,
@@ -1046,8 +1054,9 @@ class HistoricalMarketIndicatorsService {
    * This is separate from historical since it uses live company data
    */
   async getCurrentBuffettIndicator() {
+    const database = await getDatabaseAsync();
     // Get total market cap from companies table (live data)
-    const marketCapResult = await this.db.query(`
+    const marketCapResult = await database.query(`
       SELECT
         SUM(market_cap) / 1e9 as total_market_cap_billions,
         COUNT(*) as stock_count
@@ -1056,7 +1065,7 @@ class HistoricalMarketIndicatorsService {
     `);
 
     // Get latest GDP
-    const gdpResult = await this.db.query(`
+    const gdpResult = await database.query(`
       SELECT value, observation_date
       FROM economic_indicators
       WHERE series_id = 'GDP'
@@ -1365,7 +1374,8 @@ class HistoricalMarketIndicatorsService {
    * Uses index_constituents table to get only S&P 500 members
    */
   async getSP500PE() {
-    const result = await this.db.query(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       WITH sp500_data AS (
         SELECT
           c.id,
@@ -1425,9 +1435,10 @@ class HistoricalMarketIndicatorsService {
    * Uses fiscal period data available as of quarter end
    */
   async getSP500PEForQuarter(quarter) {
+    const database = await getDatabaseAsync();
     const quarterEndDate = this.getQuarterEndDate(quarter);
 
-    const result = await this.db.query(`
+    const result = await database.query(`
       WITH sp500_companies AS (
         -- Get S&P 500 constituents (index_id = 1)
         SELECT DISTINCT ic.company_id
@@ -1502,17 +1513,18 @@ class HistoricalMarketIndicatorsService {
    * - Consistent with S&P's official methodology
    */
   async getSP500PEForQuarterTTM(quarter) {
+    const database = await getDatabaseAsync();
     const quarterEndDate = this.getQuarterEndDate(quarter);
 
     // First find the closest trading day for historical market cap calculation
-    const closestDate = await this.db.query(`
+    const closestDate = await database.query(`
       SELECT MAX(date) as closest_date FROM daily_prices WHERE date <= $1
     `, [quarterEndDate]);
     const priceDate = closestDate.rows[0]?.closest_date || quarterEndDate;
 
     // Use annual P/E data with HISTORICAL market caps from daily_prices
     // This ensures quarterly P/E variation reflects actual price changes
-    const result = await this.db.query(`
+    const result = await database.query(`
       WITH sp500_annual_pe AS (
         SELECT
           cm.company_id,
@@ -1597,15 +1609,16 @@ class HistoricalMarketIndicatorsService {
    * Formula: P/E = Total Market Cap / Total TTM Earnings
    */
   async getSP500PEForQuarterV2(quarter) {
+    const database = await getDatabaseAsync();
     const quarterEndDate = this.getQuarterEndDate(quarter);
 
     // Find closest trading day for price data
-    const closestDate = await this.db.query(`
+    const closestDate = await database.query(`
       SELECT MAX(date) as closest_date FROM daily_prices WHERE date <= $1
     `, [quarterEndDate]);
     const priceDate = closestDate.rows[0]?.closest_date || quarterEndDate;
 
-    const result = await this.db.query(`
+    const result = await database.query(`
       WITH
       -- Step 1: Get all quarterly earnings (actual quarterly records)
       quarterly_earnings AS (

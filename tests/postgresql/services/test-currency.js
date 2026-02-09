@@ -72,7 +72,9 @@ async function runCurrencyServiceTests() {
   // Test 7: Get historical rate (if data exists)
   await testMethod(results, 'getHistoricalRate()', async () => {
     try {
-      const rate = await currencyService.getHistoricalRate('EUR', 'USD', '2024-01-01');
+      // Method signature: getHistoricalRate(currency, date)
+      // All rates are relative to USD base
+      const rate = await currencyService.getHistoricalRate('EUR', '2024-01-01');
       // May return null if no data, which is ok
       if (rate !== null && (typeof rate !== 'number' || rate <= 0)) {
         throw new Error(`Invalid historical rate: ${rate}`);
@@ -90,10 +92,12 @@ async function runCurrencyServiceTests() {
     const testDate = '2024-01-15';
     const testRate = 1.0923;
 
-    await currencyService.storeHistoricalRate('EUR', 'USD', testDate, testRate);
+    // Method signature: storeHistoricalRate(date, currency, rate)
+    // Stores EUR/USD rate (USD is always base currency)
+    await currencyService.storeHistoricalRate(testDate, 'EUR', testRate);
 
-    // Verify it was stored
-    const stored = await currencyService.getHistoricalRate('EUR', 'USD', testDate);
+    // Verify it was stored - getHistoricalRate(currency, date)
+    const stored = await currencyService.getHistoricalRate('EUR', testDate);
     if (stored === null) {
       throw new Error('Historical rate was not stored');
     }

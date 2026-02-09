@@ -2,14 +2,14 @@
 // Comprehensive data collection service for PRISM equity research reports
 // Aggregates all available data sources for AI synthesis
 
-const db = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 const SECFilingParser = require('./secFilingParser');
 const EarningsTranscriptService = require('./earningsTranscriptService');
 const WikipediaService = require('./wikipediaService');
 
 class PRISMDataCollector {
   constructor() {
-    this.database = db.getDatabase();
+    // No database parameter needed - using getDatabaseAsync()
     this.secParser = new SECFilingParser();
     this.transcriptService = new EarningsTranscriptService();
     this.wikipediaService = new WikipediaService();
@@ -20,10 +20,15 @@ class PRISMDataCollector {
    * This is the main entry point - gathers everything we have
    */
   async collectComprehensiveData(symbol) {
+    const database = await getDatabaseAsync();
     const symbolUpper = symbol.toUpperCase();
     console.log(`\n📊 Collecting comprehensive data for ${symbolUpper}...`);
 
-    const company = db.getCompany(symbolUpper);
+    const companyResult = await database.query(
+      'SELECT * FROM companies WHERE symbol = $1',
+      [symbolUpper]
+    );
+    const company = companyResult.rows[0];
     if (!company) {
       throw new Error(`Company ${symbolUpper} not found in database`);
     }
@@ -122,6 +127,7 @@ class PRISMDataCollector {
   // ============================================
 
   async collectFinancialData(companyId) {
+    const database = await getDatabaseAsync();
     const data = {
       annual: [],
       quarterly: [],
@@ -131,20 +137,22 @@ class PRISMDataCollector {
 
     try {
       // Annual financial statements (last 5 years)
-      data.annual = this.database.prepare(`
+      const annualResult = await database.query(`
         SELECT * FROM financial_data
-        WHERE company_id = ? AND period_type = 'annual'
+        WHERE company_id = $1 AND period_type = 'annual'
         ORDER BY fiscal_date_ending DESC
         LIMIT 5
-      `).all(companyId);
+      `, [companyId]);
+      data.annual = annualResult.rows;
 
       // Quarterly statements (last 8 quarters)
-      data.quarterly = this.database.prepare(`
+      const quarterlyResult = await database.query(`
         SELECT * FROM financial_data
-        WHERE company_id = ? AND period_type = 'quarterly'
+        WHERE company_id = $1 AND period_type = 'quarterly'
         ORDER BY fiscal_date_ending DESC
         LIMIT 8
-      `).all(companyId);
+      `, [companyId]);
+      data.quarterly = quarterlyResult.rows;
 
       if (data.annual.length > 0) {
         data.latest = data.annual[0];
@@ -164,6 +172,7 @@ class PRISMDataCollector {
   }
 
   async collectMetricsData(companyId) {
+    const database = await getDatabaseAsync();
     const data = {
       latest: null,
       history: [],
@@ -172,12 +181,13 @@ class PRISMDataCollector {
 
     try {
       // Historical calculated metrics
-      data.history = this.database.prepare(`
+      const historyResult = await database.query(`
         SELECT * FROM calculated_metrics
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY fiscal_period DESC
         LIMIT 5
-      `).all(companyId);
+      `, [companyId]);
+      data.history = historyResult.rows;
 
       if (data.history.length > 0) {
         data.latest = data.history[0];
@@ -232,6 +242,7 @@ class PRISMDataCollector {
   // ============================================
 
   async collectPriceData(companyId) {
+    const database = await getDatabaseAsync();
     const data = {
       current: null,
       history: [],
@@ -240,12 +251,13 @@ class PRISMDataCollector {
 
     try {
       // Recent price history (1 year)
-      data.history = this.database.prepare(`
+      const historyResult = await database.query(`
         SELECT * FROM daily_prices
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY date DESC
         LIMIT 252
-      `).all(companyId);
+      `, [companyId]);
+      data.history = historyResult.rows;
 
       if (data.history.length > 0) {
         data.current = data.history[0];
@@ -293,15 +305,17 @@ class PRISMDataCollector {
   }
 
   async collectAnalystData(companyId) {
+    const database = await getDatabaseAsync();
     const data = {
       estimates: null,
       ratings: null
     };
 
     try {
-      data.estimates = this.database.prepare(`
-        SELECT * FROM analyst_estimates WHERE company_id = ?
-      `).get(companyId);
+      const estimatesResult = await database.query(`
+        SELECT * FROM analyst_estimates WHERE company_id = $1
+      `, [companyId]);
+      data.estimates = estimatesResult.rows[0];
 
     } catch (e) {
       console.error('  Error collecting analyst data:', e.message);
@@ -432,6 +446,7 @@ class PRISMDataCollector {
   // ============================================
 
   async collectNewsData(companyId, symbol) {
+    const database = await getDatabaseAsync();
     const data = {
       recent: [],
       themes: [],
@@ -440,16 +455,17 @@ class PRISMDataCollector {
 
     try {
       // Get recent news (last 30 days, quality filtered)
-      data.recent = this.database.prepare(`
+      const recentResult = await database.query(`
         SELECT
           title, description, source, published_at, url,
           sentiment_score, sentiment_label
         FROM news_articles
-        WHERE company_id = ?
+        WHERE company_id = $1
           AND published_at > datetime('now', '-30 days')
         ORDER BY published_at DESC
         LIMIT 50
-      `).all(companyId);
+      `, [companyId]);
+      data.recent = recentResult.rows;
 
       // Extract themes from news
       if (data.recent.length > 0) {
@@ -516,6 +532,7 @@ class PRISMDataCollector {
   }
 
   async collectSentimentData(companyId, symbol) {
+    const database = await getDatabaseAsync();
     const data = {
       reddit: null,
       stocktwits: null,
@@ -525,25 +542,27 @@ class PRISMDataCollector {
 
     try {
       // Combined sentiment score
-      data.combined = this.database.prepare(`
+      const combinedResult = await database.query(`
         SELECT * FROM combined_sentiment
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY calculated_at DESC
         LIMIT 1
-      `).get(companyId);
+      `, [companyId]);
+      data.combined = combinedResult.rows[0];
 
       // Reddit mentions (quality filtered) - using company_id
-      const redditPosts = this.database.prepare(`
+      const redditPostsResult = await database.query(`
         SELECT
           title, selftext as body, subreddit, score, num_comments,
           sentiment_score, posted_at as created_utc
         FROM reddit_posts
-        WHERE company_id = ?
+        WHERE company_id = $1
           AND posted_at > datetime('now', '-7 days')
           AND score > 10
         ORDER BY score DESC
         LIMIT 20
-      `).all(companyId);
+      `, [companyId]);
+      const redditPosts = redditPostsResult.rows;
 
       if (redditPosts.length > 0) {
         data.reddit = {
@@ -557,15 +576,16 @@ class PRISMDataCollector {
       }
 
       // StockTwits sentiment - using company_id
-      const stocktwitsMessages = this.database.prepare(`
+      const stocktwitsMessagesResult = await database.query(`
         SELECT
           body, user_sentiment as sentiment, likes_count as likes, posted_at as created_at
         FROM stocktwits_messages
-        WHERE company_id = ?
+        WHERE company_id = $1
           AND posted_at > datetime('now', '-7 days')
         ORDER BY posted_at DESC
         LIMIT 50
-      `).all(companyId);
+      `, [companyId]);
+      const stocktwitsMessages = stocktwitsMessagesResult.rows;
 
       if (stocktwitsMessages.length > 0) {
         const bullish = stocktwitsMessages.filter(m => m.sentiment === 'Bullish').length;
@@ -603,6 +623,7 @@ class PRISMDataCollector {
   // ============================================
 
   async collectInsiderData(companyId) {
+    const database = await getDatabaseAsync();
     const data = {
       recentTransactions: [],
       netActivity: null,
@@ -611,7 +632,7 @@ class PRISMDataCollector {
 
     try {
       // Recent insider transactions (last 12 months) - join with insiders table for name/title
-      data.recentTransactions = this.database.prepare(`
+      const transactionsResult = await database.query(`
         SELECT
           i.name as insider_name, i.title as insider_title,
           it.transaction_type, it.transaction_code,
@@ -619,11 +640,12 @@ class PRISMDataCollector {
           it.transaction_date
         FROM insider_transactions it
         JOIN insiders i ON it.insider_id = i.id
-        WHERE it.company_id = ?
+        WHERE it.company_id = $1
           AND it.transaction_date > date('now', '-12 months')
         ORDER BY it.transaction_date DESC
         LIMIT 30
-      `).all(companyId);
+      `, [companyId]);
+      data.recentTransactions = transactionsResult.rows;
 
       if (data.recentTransactions.length > 0) {
         // Calculate net activity
@@ -663,6 +685,7 @@ class PRISMDataCollector {
   }
 
   async collectInstitutionalData(companyId, symbol) {
+    const database = await getDatabaseAsync();
     const data = {
       topHolders: [],
       recentChanges: [],
@@ -671,17 +694,18 @@ class PRISMDataCollector {
 
     try {
       // Top institutional holders (from 13F data) - use actual schema
-      data.topHolders = this.database.prepare(`
+      const topHoldersResult = await database.query(`
         SELECT
           fi.name as investor_name, ih.shares, ih.market_value as value,
           ih.portfolio_weight as percent_of_portfolio,
           ih.filing_date as quarter_end, 1 as is_famous
         FROM investor_holdings ih
         JOIN famous_investors fi ON ih.investor_id = fi.id
-        WHERE ih.company_id = ?
+        WHERE ih.company_id = $1
         ORDER BY ih.market_value DESC
         LIMIT 20
-      `).all(companyId);
+      `, [companyId]);
+      data.topHolders = topHoldersResult.rows;
 
       // Calculate summary
       if (data.topHolders.length > 0) {
@@ -704,6 +728,7 @@ class PRISMDataCollector {
   }
 
   async collectCapitalAllocationData(companyId) {
+    const database = await getDatabaseAsync();
     const data = {
       buybacks: [],
       dividends: [],
@@ -712,22 +737,24 @@ class PRISMDataCollector {
 
     try {
       // Buyback history - use actual buyback_activity table
-      data.buybacks = this.database.prepare(`
+      const buybacksResult = await database.query(`
         SELECT fiscal_quarter, shares_repurchased, amount_spent as amount, average_price
         FROM buyback_activity
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY fiscal_quarter DESC
         LIMIT 12
-      `).all(companyId);
+      `, [companyId]);
+      data.buybacks = buybacksResult.rows;
 
       // Dividend history
-      data.dividends = this.database.prepare(`
+      const dividendsResult = await database.query(`
         SELECT ex_date, payment_date, amount, frequency
         FROM dividend_history
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY ex_date DESC
         LIMIT 16
-      `).all(companyId);
+      `, [companyId]);
+      data.dividends = dividendsResult.rows;
 
       // Calculate summary
       const totalBuybacks = data.buybacks.reduce((sum, b) => sum + (b.amount || 0), 0);
@@ -777,6 +804,7 @@ class PRISMDataCollector {
   // ============================================
 
   async collectEarningsData(companyId) {
+    const database = await getDatabaseAsync();
     const data = {
       upcoming: null,
       history: [],
@@ -785,14 +813,15 @@ class PRISMDataCollector {
 
     try {
       // Use earnings_calendar table which contains both next date and history
-      const earnings = this.database.prepare(`
+      const earningsResult = await database.query(`
         SELECT
           next_earnings_date, is_estimate, eps_estimate,
           revenue_estimate, beat_rate, avg_surprise,
           consecutive_beats, history_json
         FROM earnings_calendar
-        WHERE company_id = ?
-      `).get(companyId);
+        WHERE company_id = $1
+      `, [companyId]);
+      const earnings = earningsResult.rows[0];
 
       if (earnings) {
         // Check if next earnings is upcoming
@@ -922,6 +951,7 @@ class PRISMDataCollector {
   }
 
   async collectPeerData(companyId, sector, industry) {
+    const database = await getDatabaseAsync();
     const data = {
       sectorPeers: [],
       industryPeers: [],
@@ -930,25 +960,27 @@ class PRISMDataCollector {
 
     try {
       // Get industry peers with metrics
-      data.industryPeers = this.database.prepare(`
+      const industryPeersResult = await database.query(`
         SELECT
           c.id, c.symbol, c.name,
           cm.roic, cm.roe, cm.net_margin, cm.revenue_growth_yoy,
           cm.pe_ratio, cm.ev_ebitda, cm.fcf_yield
         FROM companies c
         LEFT JOIN calculated_metrics cm ON c.id = cm.company_id
-        WHERE c.industry = ? AND c.id != ?
+        WHERE c.industry = $1 AND c.id != $2
         ORDER BY cm.roic DESC
         LIMIT 10
-      `).all(industry, companyId);
+      `, [industry, companyId]);
+      data.industryPeers = industryPeersResult.rows;
 
       // Get company's own metrics for comparison
-      const companyMetrics = this.database.prepare(`
+      const companyMetricsResult = await database.query(`
         SELECT * FROM calculated_metrics
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY fiscal_period DESC
         LIMIT 1
-      `).get(companyId);
+      `, [companyId]);
+      const companyMetrics = companyMetricsResult.rows[0];
 
       if (companyMetrics && data.industryPeers.length > 0) {
         // Calculate percentile ranks

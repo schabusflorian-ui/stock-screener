@@ -1,6 +1,8 @@
 // src/services/historical/decisionEnricher.js
 // Converts investor holdings to structured investment decisions and enriches with context
 
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
+
 /**
  * DecisionEnricher
  *
@@ -11,8 +13,8 @@
  * 4. Classifying conviction level based on position size and changes
  */
 class DecisionEnricher {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
   }
 
   /**
@@ -187,9 +189,12 @@ class DecisionEnricher {
    * Enrich a single decision with stock and market context
    */
   async enrichDecision(decisionId) {
-    const decision = this.db.prepare(`
-      SELECT * FROM investment_decisions WHERE id = ?
-    `).get(decisionId);
+    const database = await getDatabaseAsync();
+
+    const decisionResult = await database.query(`
+      SELECT * FROM investment_decisions WHERE id = $1
+    `, [decisionId]);
+    const decision = decisionResult.rows[0];
 
     if (!decision) {
       throw new Error(`Decision not found: ${decisionId}`);
@@ -208,55 +213,92 @@ class DecisionEnricher {
     const indicators = this._calculateIndicators(decision, stockContext);
 
     // Update decision with enriched data
-    const updateStmt = this.db.prepare(`
-      UPDATE investment_decisions SET
-        stock_price = @stock_price,
-        market_cap = @market_cap,
-        enterprise_value = @enterprise_value,
-        pe_ratio = @pe_ratio,
-        pb_ratio = @pb_ratio,
-        ps_ratio = @ps_ratio,
-        ev_ebitda = @ev_ebitda,
-        ev_revenue = @ev_revenue,
-        fcf_yield = @fcf_yield,
-        earnings_yield = @earnings_yield,
-        dividend_yield = @dividend_yield,
-        revenue_growth_yoy = @revenue_growth_yoy,
-        revenue_growth_3y_cagr = @revenue_growth_3y_cagr,
-        earnings_growth_yoy = @earnings_growth_yoy,
-        fcf_growth_yoy = @fcf_growth_yoy,
-        gross_margin = @gross_margin,
-        operating_margin = @operating_margin,
-        net_margin = @net_margin,
-        roe = @roe,
-        roic = @roic,
-        roa = @roa,
-        debt_to_equity = @debt_to_equity,
-        debt_to_assets = @debt_to_assets,
-        current_ratio = @current_ratio,
-        interest_coverage = @interest_coverage,
-        fcf_per_share = @fcf_per_share,
-        market_context_id = @market_context_id,
-        sp500_pe = @sp500_pe,
-        sp500_1y_return = @sp500_1y_return,
-        vix = @vix,
-        fed_funds_rate = @fed_funds_rate,
-        yield_curve_spread = @yield_curve_spread,
-        market_cycle = @market_cycle,
-        is_top_10_position = @is_top_10_position,
-        position_size_category = @position_size_category,
-        data_quality_score = @data_quality_score,
-        updated_at = datetime('now')
-      WHERE id = @id
-    `);
-
-    updateStmt.run({
-      id: decisionId,
+    const enrichedData = {
       ...stockContext,
       ...marketContext,
       ...indicators,
       data_quality_score: this._calculateDataQuality(stockContext, marketContext)
-    });
+    };
+
+    await database.query(`
+      UPDATE investment_decisions SET
+        stock_price = $1,
+        market_cap = $2,
+        enterprise_value = $3,
+        pe_ratio = $4,
+        pb_ratio = $5,
+        ps_ratio = $6,
+        ev_ebitda = $7,
+        ev_revenue = $8,
+        fcf_yield = $9,
+        earnings_yield = $10,
+        dividend_yield = $11,
+        revenue_growth_yoy = $12,
+        revenue_growth_3y_cagr = $13,
+        earnings_growth_yoy = $14,
+        fcf_growth_yoy = $15,
+        gross_margin = $16,
+        operating_margin = $17,
+        net_margin = $18,
+        roe = $19,
+        roic = $20,
+        roa = $21,
+        debt_to_equity = $22,
+        debt_to_assets = $23,
+        current_ratio = $24,
+        interest_coverage = $25,
+        fcf_per_share = $26,
+        market_context_id = $27,
+        sp500_pe = $28,
+        sp500_1y_return = $29,
+        vix = $30,
+        fed_funds_rate = $31,
+        yield_curve_spread = $32,
+        market_cycle = $33,
+        is_top_10_position = $34,
+        position_size_category = $35,
+        data_quality_score = $36,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $37
+    `, [
+      enrichedData.stock_price,
+      enrichedData.market_cap,
+      enrichedData.enterprise_value,
+      enrichedData.pe_ratio,
+      enrichedData.pb_ratio,
+      enrichedData.ps_ratio,
+      enrichedData.ev_ebitda,
+      enrichedData.ev_revenue,
+      enrichedData.fcf_yield,
+      enrichedData.earnings_yield,
+      enrichedData.dividend_yield,
+      enrichedData.revenue_growth_yoy,
+      enrichedData.revenue_growth_3y_cagr,
+      enrichedData.earnings_growth_yoy,
+      enrichedData.fcf_growth_yoy,
+      enrichedData.gross_margin,
+      enrichedData.operating_margin,
+      enrichedData.net_margin,
+      enrichedData.roe,
+      enrichedData.roic,
+      enrichedData.roa,
+      enrichedData.debt_to_equity,
+      enrichedData.debt_to_assets,
+      enrichedData.current_ratio,
+      enrichedData.interest_coverage,
+      enrichedData.fcf_per_share,
+      enrichedData.market_context_id,
+      enrichedData.sp500_pe,
+      enrichedData.sp500_1y_return,
+      enrichedData.vix,
+      enrichedData.fed_funds_rate,
+      enrichedData.yield_curve_spread,
+      enrichedData.market_cycle,
+      enrichedData.is_top_10_position,
+      enrichedData.position_size_category,
+      enrichedData.data_quality_score,
+      decisionId
+    ]);
 
     return {
       decisionId,

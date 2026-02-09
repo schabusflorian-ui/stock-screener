@@ -1,8 +1,7 @@
 // src/services/etfResolver.js
 // Main ETF resolution service with tiered architecture
 
-const db = require('../database');
-const { dialect, isUsingPostgres } = require('../lib/db');
+const { getDatabaseAsync } = require('../lib/db');
 const { getYFinanceETFFetcher } = require('./yfinanceETFFetcher');
 const { buildCategoryTree, getCategoryDescendants, getCategoryBreadcrumb } = require('../data/etf-categories');
 const { LAZY_PORTFOLIOS, getPortfolioBySlug, getFeaturedPortfolios } = require('../data/lazy-portfolios');
@@ -14,7 +13,7 @@ const ETF_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 class ETFResolver {
   constructor() {
-    this.db = db.getDatabase();
+    // No database parameter needed - using getDatabaseAsync()
     this.yfinance = getYFinanceETFFetcher();
 
     // Use Redis-backed unified cache for distributed environments
@@ -32,6 +31,7 @@ class ETFResolver {
    * @returns {Object|null}
    */
   async resolve(symbol) {
+    const database = await getDatabaseAsync();
     const upperSymbol = symbol.toUpperCase().trim();
     const cacheKey = `${ETF_CACHE_PREFIX}${upperSymbol}`;
 
@@ -41,15 +41,16 @@ class ETFResolver {
       return cached;
     }
 
-    // 2. Check database (use LOWER for case-insensitive PostgreSQL compatibility)
-    const sql = isUsingPostgres()
-      ? `SELECT * FROM etf_definitions WHERE LOWER(symbol) = LOWER($1) AND is_active = 1`
-      : `SELECT * FROM etf_definitions WHERE LOWER(symbol) = LOWER(?) AND is_active = 1`;
-    const dbResult = this.db.prepare(sql).get(upperSymbol);
+    // 2. Check database (case-insensitive query)
+    const dbResultQuery = await database.query(
+      `SELECT * FROM etf_definitions WHERE LOWER(symbol) = LOWER($1) AND is_active = 1`,
+      [upperSymbol]
+    );
+    const dbResult = dbResultQuery.rows[0];
 
     if (dbResult) {
       const etf = this.mapRowToETF(dbResult);
-      this.trackAccess(upperSymbol);
+      await this.trackAccess(upperSymbol);
       await unifiedCache.set(cacheKey, etf, ETF_CACHE_TTL);
       return etf;
     }
@@ -77,19 +78,21 @@ class ETFResolver {
    * @param {number} limit
    * @returns {Object[]}
    */
-  search(query, limit = 20) {
-    const result = this.db.prepare(`
+  async search(query, limit = 20) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT * FROM etf_definitions
       WHERE is_active = 1
-        AND (symbol LIKE ? OR name LIKE ?)
+        AND (symbol LIKE $1 OR name LIKE $2)
       ORDER BY
-        CASE WHEN symbol LIKE ? THEN 0 ELSE 1 END,
+        CASE WHEN symbol LIKE $3 THEN 0 ELSE 1 END,
         tier ASC,
         aum DESC
-      LIMIT ?
-    `).all(`%${query}%`, `%${query}%`, `${query}%`, limit);
+      LIMIT $4
+    `, [`%${query}%`, `%${query}%`, `${query}%`, limit]);
 
-    return result.map(row => this.mapRowToETF(row));
+    return result.rows.map(row => this.mapRowToETF(row));
   }
 
   /**
@@ -97,7 +100,9 @@ class ETFResolver {
    * @param {Object} options
    * @returns {{etfs: Object[], total: number}}
    */
-  list(options = {}) {
+  async list(options = {}) {
+    const database = await getDatabaseAsync();
+
     const {
       category,
       issuer,
@@ -114,26 +119,30 @@ class ETFResolver {
     let query = 'SELECT * FROM etf_definitions WHERE is_active = 1';
     let countQuery = 'SELECT COUNT(*) as count FROM etf_definitions WHERE is_active = 1';
     const params = [];
+    let paramCounter = 1;
 
     // Build WHERE clauses
     if (category) {
       // Include descendants for hierarchical categories
       const descendants = getCategoryDescendants(category);
-      const placeholders = descendants.map(() => '?').join(',');
+      const placeholders = descendants.map((_, idx) => `$${paramCounter + idx}`).join(',');
+      paramCounter += descendants.length;
       query += ` AND category IN (${placeholders})`;
       countQuery += ` AND category IN (${placeholders})`;
       params.push(...descendants);
     }
 
     if (issuer) {
-      query += ' AND issuer = ?';
-      countQuery += ' AND issuer = ?';
+      query += ` AND issuer = $${paramCounter}`;
+      countQuery += ` AND issuer = $${paramCounter}`;
+      paramCounter++;
       params.push(issuer);
     }
 
     if (tier) {
-      query += ' AND tier = ?';
-      countQuery += ' AND tier = ?';
+      query += ` AND tier = $${paramCounter}`;
+      countQuery += ` AND tier = $${paramCounter}`;
+      paramCounter++;
       params.push(tier);
     }
 
@@ -143,14 +152,16 @@ class ETFResolver {
     }
 
     if (assetClass) {
-      query += ' AND asset_class = ?';
-      countQuery += ' AND asset_class = ?';
+      query += ` AND asset_class = $${paramCounter}`;
+      countQuery += ` AND asset_class = $${paramCounter}`;
+      paramCounter++;
       params.push(assetClass);
     }
 
     if (search) {
-      query += ' AND (symbol LIKE ? OR name LIKE ?)';
-      countQuery += ' AND (symbol LIKE ? OR name LIKE ?)';
+      query += ` AND (symbol LIKE $${paramCounter} OR name LIKE $${paramCounter + 1})`;
+      countQuery += ` AND (symbol LIKE $${paramCounter} OR name LIKE $${paramCounter + 1})`;
+      paramCounter += 2;
       params.push(`%${search}%`, `%${search}%`);
     }
 
@@ -162,17 +173,17 @@ class ETFResolver {
 
     // Get total count (clone params before adding pagination)
     const countParams = [...params];
-    const totalResult = this.db.prepare(countQuery).get(...countParams);
-    const total = totalResult?.count || 0;
+    const totalResult = await database.query(countQuery, countParams);
+    const total = totalResult.rows[0]?.count || 0;
 
     // Add pagination
-    query += ' LIMIT ? OFFSET ?';
+    query += ` LIMIT $${paramCounter} OFFSET $${paramCounter + 1}`;
     params.push(limit, offset);
 
-    const result = this.db.prepare(query).all(...params);
+    const result = await database.query(query, params);
 
     return {
-      etfs: result.map(row => this.mapRowToETF(row)),
+      etfs: result.rows.map(row => this.mapRowToETF(row)),
       total,
       limit,
       offset
@@ -183,14 +194,16 @@ class ETFResolver {
    * Get essential ETFs (Tier 1 with is_essential flag)
    * @returns {Object[]}
    */
-  getEssentials() {
-    const result = this.db.prepare(`
+  async getEssentials() {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT * FROM etf_definitions
       WHERE is_active = 1 AND is_essential = 1
       ORDER BY category, symbol
-    `).all();
+    `);
 
-    return result.map(row => this.mapRowToETF(row));
+    return result.rows.map(row => this.mapRowToETF(row));
   }
 
   /**
@@ -205,13 +218,16 @@ class ETFResolver {
    * Get category with ETF counts
    * @returns {Object[]}
    */
-  getCategoriesWithCounts() {
-    const counts = this.db.prepare(`
+  async getCategoriesWithCounts() {
+    const database = await getDatabaseAsync();
+
+    const countsResult = await database.query(`
       SELECT category, COUNT(*) as count
       FROM etf_definitions
       WHERE is_active = 1 AND category IS NOT NULL
       GROUP BY category
-    `).all();
+    `);
+    const counts = countsResult.rows;
 
     const countMap = new Map(counts.map(c => [c.category, c.count]));
 
@@ -246,14 +262,17 @@ class ETFResolver {
    * Get all issuers with ETF counts
    * @returns {Object[]}
    */
-  getIssuers() {
-    const issuers = this.db.prepare(`
+  async getIssuers() {
+    const database = await getDatabaseAsync();
+
+    const issuersResult = await database.query(`
       SELECT * FROM etf_issuers ORDER BY etf_count DESC
-    `).all();
+    `);
+    const issuers = issuersResult.rows;
 
     // If no issuers in table, aggregate from etf_definitions
     if (issuers.length === 0) {
-      return this.db.prepare(`
+      const aggregateResult = await database.query(`
         SELECT
           issuer as slug,
           issuer as name,
@@ -263,7 +282,8 @@ class ETFResolver {
         WHERE is_active = 1 AND issuer IS NOT NULL
         GROUP BY issuer
         ORDER BY etf_count DESC
-      `).all();
+      `);
+      return aggregateResult.rows;
     }
 
     return issuers;
@@ -273,11 +293,14 @@ class ETFResolver {
    * Get all lazy portfolios
    * @returns {Object[]}
    */
-  getLazyPortfolios() {
+  async getLazyPortfolios() {
+    const database = await getDatabaseAsync();
+
     // First try database
-    const dbPortfolios = this.db.prepare(`
+    const dbPortfoliosResult = await database.query(`
       SELECT * FROM lazy_portfolios ORDER BY is_featured DESC, name
-    `).all();
+    `);
+    const dbPortfolios = dbPortfoliosResult.rows;
 
     if (dbPortfolios.length > 0) {
       return dbPortfolios.map(p => ({
@@ -303,14 +326,17 @@ class ETFResolver {
    * @param {string} slug
    * @returns {Object|null}
    */
-  getLazyPortfolio(slug) {
+  async getLazyPortfolio(slug) {
+    const database = await getDatabaseAsync();
+
     // Try database first
-    const dbPortfolio = this.db.prepare(`
-      SELECT * FROM lazy_portfolios WHERE slug = ?
-    `).get(slug);
+    const dbPortfolioResult = await database.query(`
+      SELECT * FROM lazy_portfolios WHERE slug = $1
+    `, [slug]);
+    const dbPortfolio = dbPortfolioResult.rows[0];
 
     if (dbPortfolio) {
-      const allocations = this.db.prepare(`
+      const allocationsResult = await database.query(`
         SELECT
           lpa.*,
           ed.name as etf_name,
@@ -318,14 +344,14 @@ class ETFResolver {
           ed.category
         FROM lazy_portfolio_allocations lpa
         LEFT JOIN etf_definitions ed ON ed.symbol = lpa.etf_symbol
-        WHERE lpa.portfolio_id = ?
+        WHERE lpa.portfolio_id = $1
         ORDER BY lpa.weight DESC
-      `).all(dbPortfolio.id);
+      `, [dbPortfolio.id]);
 
       return {
         ...dbPortfolio,
         isFeatured: dbPortfolio.is_featured === 1,
-        allocations
+        allocations: allocationsResult.rows
       };
     }
 
@@ -333,18 +359,21 @@ class ETFResolver {
     const staticPortfolio = getPortfolioBySlug(slug);
     if (staticPortfolio) {
       // Enrich allocations with ETF data from database
-      const enrichedAllocations = staticPortfolio.allocations.map(alloc => {
-        const etf = this.db.prepare(`
-          SELECT name, expense_ratio, category FROM etf_definitions WHERE LOWER(symbol) = LOWER(?)
-        `).get(alloc.symbol);
+      const enrichedAllocations = await Promise.all(
+        staticPortfolio.allocations.map(async (alloc) => {
+          const etfResult = await database.query(`
+            SELECT name, expense_ratio, category FROM etf_definitions WHERE LOWER(symbol) = LOWER($1)
+          `, [alloc.symbol]);
+          const etf = etfResult.rows[0];
 
-        return {
-          ...alloc,
-          etf_name: etf?.name || alloc.symbol,
-          expense_ratio: etf?.expense_ratio || null,
-          category: etf?.category || null
-        };
-      });
+          return {
+            ...alloc,
+            etf_name: etf?.name || alloc.symbol,
+            expense_ratio: etf?.expense_ratio || null,
+            category: etf?.category || null
+          };
+        })
+      );
 
       return {
         ...staticPortfolio,
@@ -359,13 +388,15 @@ class ETFResolver {
    * Get featured lazy portfolios
    * @returns {Object[]}
    */
-  getFeaturedLazyPortfolios() {
-    const dbFeatured = this.db.prepare(`
-      SELECT * FROM lazy_portfolios WHERE is_featured = 1 ORDER BY name
-    `).all();
+  async getFeaturedLazyPortfolios() {
+    const database = await getDatabaseAsync();
 
-    if (dbFeatured.length > 0) {
-      return dbFeatured;
+    const dbFeaturedResult = await database.query(`
+      SELECT * FROM lazy_portfolios WHERE is_featured = 1 ORDER BY name
+    `);
+
+    if (dbFeaturedResult.rows.length > 0) {
+      return dbFeaturedResult.rows;
     }
 
     return getFeaturedPortfolios();
@@ -377,13 +408,15 @@ class ETFResolver {
    */
   async saveAsTier3(data) {
     try {
-      this.db.prepare(`
+      const database = await getDatabaseAsync();
+
+      await database.query(`
         INSERT INTO etf_definitions (
           symbol, name, asset_class, category, issuer,
           expense_ratio, aum, avg_volume, dividend_yield, ytd_return, beta,
           tier, data_source, last_fundamentals_update
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 3, 'yfinance', CURRENT_TIMESTAMP)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 3, 'yfinance', CURRENT_TIMESTAMP)
         ON CONFLICT(symbol) DO UPDATE SET
           name = excluded.name,
           asset_class = excluded.asset_class,
@@ -396,7 +429,7 @@ class ETFResolver {
           beta = COALESCE(excluded.beta, beta),
           last_fundamentals_update = CURRENT_TIMESTAMP,
           last_updated = CURRENT_TIMESTAMP
-      `).run(
+      `, [
         data.symbol,
         data.name,
         data.assetClass,
@@ -408,7 +441,7 @@ class ETFResolver {
         data.dividendYield,
         data.ytdReturn,
         data.beta
-      );
+      ]);
     } catch (error) {
       console.error(`Failed to save Tier 3 ETF ${data.symbol}:`, error.message);
     }
@@ -418,13 +451,15 @@ class ETFResolver {
    * Track ETF access for promotion logic
    * @param {string} symbol
    */
-  trackAccess(symbol) {
+  async trackAccess(symbol) {
     try {
-      this.db.prepare(`
+      const database = await getDatabaseAsync();
+
+      await database.query(`
         UPDATE etf_definitions
         SET access_count = COALESCE(access_count, 0) + 1, last_accessed = CURRENT_TIMESTAMP
-        WHERE LOWER(symbol) = LOWER(?)
-      `).run(symbol);
+        WHERE LOWER(symbol) = LOWER($1)
+      `, [symbol]);
     } catch (error) {
       // Non-critical, log and continue
       console.error(`Failed to track access for ${symbol}:`, error.message);
@@ -437,20 +472,24 @@ class ETFResolver {
    * @param {number} daysRecent - Days to consider for recency (default: 30)
    * @returns {number} Number of ETFs promoted
    */
-  promoteTier3() {
-    const result = this.db.prepare(`
+  async promoteTier3() {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       UPDATE etf_definitions
       SET tier = 2, last_updated = CURRENT_TIMESTAMP
       WHERE tier = 3
         AND access_count >= 10
         AND last_accessed > datetime('now', '-30 days')
-    `).run();
+    `);
 
-    if (result.changes > 0) {
-      console.log(`Promoted ${result.changes} ETFs from Tier 3 to Tier 2`);
+    const changes = result.rowCount || 0;
+
+    if (changes > 0) {
+      console.log(`Promoted ${changes} ETFs from Tier 3 to Tier 2`);
     }
 
-    return result.changes;
+    return changes;
   }
 
   /**

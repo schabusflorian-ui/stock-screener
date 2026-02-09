@@ -1,7 +1,7 @@
 // src/services/capitalAllocationTracker.js
 // Service for tracking capital allocation: buybacks, dividends, and shareholder returns
 
-const { getDatabaseAsync } = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 
 /**
  * Capital Allocation Tracker

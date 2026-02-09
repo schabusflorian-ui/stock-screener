@@ -1,0 +1,647 @@
+/**
+ * Data Quality Monitor
+ *
+ * Monitors data freshness, completeness, and integrity for ML training.
+ * Reports issues that could affect model performance.
+ */
+
+const { getDatabaseAsync } = require('../database');
+
+class DataQualityMonitor {
+  constructor() {
+    // No database parameter needed
+  }
+
+  /**
+   * Run all data quality checks
+   */
+  async runFullAudit() {
+    const report = {
+      timestamp: new Date().toISOString(),
+      status: 'healthy',
+      issues: [],
+      warnings: [],
+      metrics: {}
+    };
+
+    // Run all checks
+    const checks = await Promise.all([
+      this.checkDataFreshness(),
+      this.checkDataCompleteness(),
+      this.checkFeatureCoverage(),
+      this.checkOutliers(),
+      this.checkSurvivorshipBias(),
+      this.checkCrossValidation()
+    ]);
+
+    for (const check of checks) {
+      report.metrics[check.name] = check.metrics;
+
+      if (check.issues) {
+        report.issues.push(...check.issues);
+      }
+      if (check.warnings) {
+        report.warnings.push(...check.warnings);
+      }
+    }
+
+    // Determine overall status
+    if (report.issues.length > 0) {
+      report.status = 'critical';
+    } else if (report.warnings.length > 0) {
+      report.status = 'warning';
+    }
+
+    return report;
+  }
+
+  /**
+   * Check data freshness across key tables
+   */
+  async checkDataFreshness() {
+    const database = await getDatabaseAsync();
+
+    const result = {
+      name: 'data_freshness',
+      metrics: {},
+      issues: [],
+      warnings: []
+    };
+
+    // Price data freshness - optimized with subquery
+    const priceStatsResult = await database.query(`
+      WITH latest_prices AS (
+        SELECT company_id, MAX(date) as latest_date
+        FROM daily_prices
+        GROUP BY company_id
+      )
+      SELECT
+        COALESCE(COUNT(*), 0) as total_companies,
+        COALESCE(SUM(CASE WHEN latest_date >= date('now', '-1 day') THEN 1 ELSE 0 END), 0) as fresh_1d,
+        COALESCE(SUM(CASE WHEN latest_date >= date('now', '-3 day') THEN 1 ELSE 0 END), 0) as fresh_3d,
+        COALESCE(SUM(CASE WHEN latest_date >= date('now', '-7 day') THEN 1 ELSE 0 END), 0) as fresh_7d,
+        MAX(latest_date) as latest_date
+      FROM latest_prices
+    `);
+    const priceStats = priceStatsResult.rows[0];
+
+    result.metrics.prices = {
+      total_companies: priceStats.total_companies || 0,
+      fresh_1d: priceStats.fresh_1d || 0,
+      fresh_3d: priceStats.fresh_3d || 0,
+      fresh_7d: priceStats.fresh_7d || 0,
+      latest_date: priceStats.latest_date,
+      freshness_pct_1d: priceStats.total_companies > 0
+        ? (priceStats.fresh_1d / priceStats.total_companies * 100).toFixed(1)
+        : '0.0'
+    };
+
+    if (priceStats.total_companies > 0 && priceStats.fresh_1d / priceStats.total_companies < 0.5) {
+      result.issues.push({
+        type: 'stale_prices',
+        message: `Only ${result.metrics.prices.freshness_pct_1d}% of companies have price data from last day`,
+        impact: 'ML features will use stale data'
+      });
+    }
+
+    // Sentiment freshness
+    const sentimentStatsResult = await database.query(`
+      SELECT
+        COALESCE(COUNT(*), 0) as total,
+        COALESCE(COUNT(CASE WHEN sentiment_updated_at >= datetime('now', '-1 hour') THEN 1 END), 0) as fresh_1h,
+        COALESCE(COUNT(CASE WHEN sentiment_updated_at >= datetime('now', '-4 hour') THEN 1 END), 0) as fresh_4h,
+        COALESCE(COUNT(CASE WHEN sentiment_updated_at >= datetime('now', '-24 hour') THEN 1 END), 0) as fresh_24h,
+        MAX(sentiment_updated_at) as latest_update
+      FROM companies
+      WHERE sentiment_updated_at IS NOT NULL
+    `);
+    const sentimentStats = sentimentStatsResult.rows[0];
+
+    result.metrics.sentiment = {
+      total: sentimentStats.total || 0,
+      fresh_1h: sentimentStats.fresh_1h || 0,
+      fresh_4h: sentimentStats.fresh_4h || 0,
+      fresh_24h: sentimentStats.fresh_24h || 0,
+      latest_update: sentimentStats.latest_update
+    };
+
+    if (sentimentStats.total > 0 && sentimentStats.fresh_4h < sentimentStats.total * 0.3) {
+      result.warnings.push({
+        type: 'stale_sentiment',
+        message: `Only ${sentimentStats.fresh_4h} of ${sentimentStats.total} companies have sentiment < 4 hours old`,
+        impact: 'Sentiment signals may be outdated'
+      });
+    }
+
+    // Fundamentals freshness
+    const fundamentalsStatsResult = await database.query(`
+      SELECT
+        COUNT(DISTINCT company_id) as total,
+        COUNT(DISTINCT CASE WHEN fiscal_period >= date('now', '-90 day') THEN company_id END) as fresh_90d,
+        COUNT(DISTINCT CASE WHEN fiscal_period >= date('now', '-180 day') THEN company_id END) as fresh_180d,
+        MAX(fiscal_period) as latest_period
+      FROM calculated_metrics
+    `);
+    const fundamentalsStats = fundamentalsStatsResult.rows[0];
+
+    result.metrics.fundamentals = {
+      total: fundamentalsStats.total,
+      fresh_90d: fundamentalsStats.fresh_90d,
+      fresh_180d: fundamentalsStats.fresh_180d,
+      latest_period: fundamentalsStats.latest_period
+    };
+
+    return result;
+  }
+
+  /**
+   * Check data completeness (null rates)
+   */
+  async checkDataCompleteness() {
+    const database = await getDatabaseAsync();
+
+    const result = {
+      name: 'data_completeness',
+      metrics: {},
+      issues: [],
+      warnings: []
+    };
+
+    // Check key columns for null rates - sample last 90 days for speed
+    const priceNullsResult = await database.query(`
+      SELECT
+        COALESCE(COUNT(*), 0) as total,
+        COALESCE(SUM(CASE WHEN close IS NULL THEN 1 ELSE 0 END), 0) as null_close,
+        COALESCE(SUM(CASE WHEN volume IS NULL OR volume = 0 THEN 1 ELSE 0 END), 0) as null_volume,
+        COALESCE(SUM(CASE WHEN adjusted_close IS NULL THEN 1 ELSE 0 END), 0) as null_adj_close
+      FROM daily_prices
+      WHERE date >= date('now', '-90 day')
+    `);
+    const priceNulls = priceNullsResult.rows[0];
+
+    result.metrics.price_nulls = {
+      total_rows: priceNulls.total || 0,
+      null_close_pct: priceNulls.total > 0
+        ? (priceNulls.null_close / priceNulls.total * 100).toFixed(2)
+        : '0.00',
+      null_volume_pct: priceNulls.total > 0
+        ? (priceNulls.null_volume / priceNulls.total * 100).toFixed(2)
+        : '0.00',
+      null_adj_close_pct: priceNulls.total > 0
+        ? (priceNulls.null_adj_close / priceNulls.total * 100).toFixed(2)
+        : '0.00'
+    };
+
+    if (priceNulls.total > 0 && priceNulls.null_close / priceNulls.total > 0.01) {
+      result.issues.push({
+        type: 'high_null_rate',
+        message: `${result.metrics.price_nulls.null_close_pct}% of close prices are NULL`,
+        impact: 'Feature calculation may fail or produce NaN'
+      });
+    }
+
+    // Check fundamentals completeness
+    const fundamentalsNullsResult = await database.query(`
+      SELECT
+        COALESCE(COUNT(*), 0) as total,
+        COALESCE(SUM(CASE WHEN pe_ratio IS NULL THEN 1 ELSE 0 END), 0) as null_pe,
+        COALESCE(SUM(CASE WHEN pb_ratio IS NULL THEN 1 ELSE 0 END), 0) as null_pb,
+        COALESCE(SUM(CASE WHEN roe IS NULL THEN 1 ELSE 0 END), 0) as null_roe,
+        COALESCE(SUM(CASE WHEN roic IS NULL THEN 1 ELSE 0 END), 0) as null_roic
+      FROM calculated_metrics
+    `);
+    const fundamentalsNulls = fundamentalsNullsResult.rows[0];
+
+    result.metrics.fundamental_nulls = {
+      total_rows: fundamentalsNulls.total || 0,
+      null_pe_pct: fundamentalsNulls.total > 0
+        ? (fundamentalsNulls.null_pe / fundamentalsNulls.total * 100).toFixed(2)
+        : '0.00',
+      null_pb_pct: fundamentalsNulls.total > 0
+        ? (fundamentalsNulls.null_pb / fundamentalsNulls.total * 100).toFixed(2)
+        : '0.00',
+      null_roe_pct: fundamentalsNulls.total > 0
+        ? (fundamentalsNulls.null_roe / fundamentalsNulls.total * 100).toFixed(2)
+        : '0.00',
+      null_roic_pct: fundamentalsNulls.total > 0
+        ? (fundamentalsNulls.null_roic / fundamentalsNulls.total * 100).toFixed(2)
+        : '0.00'
+    };
+
+    return result;
+  }
+
+  /**
+   * Check feature coverage for ML
+   */
+  async checkFeatureCoverage() {
+    const database = await getDatabaseAsync();
+
+    const result = {
+      name: 'feature_coverage',
+      metrics: {},
+      issues: [],
+      warnings: []
+    };
+
+    // Check how many companies have full feature coverage - aggregate in SQL to avoid memory issues
+    const featureCoverageResult = await database.query(`
+      SELECT
+        COUNT(DISTINCT c.id) as total,
+        COUNT(DISTINCT CASE WHEN dp.company_id IS NOT NULL THEN c.id END) as with_price,
+        COUNT(DISTINCT CASE WHEN cm.company_id IS NOT NULL THEN c.id END) as with_fundamentals,
+        COUNT(DISTINCT CASE WHEN c.sentiment_score IS NOT NULL THEN c.id END) as with_sentiment,
+        COUNT(DISTINCT CASE WHEN dp.company_id IS NOT NULL AND cm.company_id IS NOT NULL THEN c.id END) as full_coverage
+      FROM companies c
+      LEFT JOIN (
+        SELECT DISTINCT company_id FROM daily_prices
+      ) dp ON dp.company_id = c.id
+      LEFT JOIN (
+        SELECT DISTINCT company_id FROM calculated_metrics
+      ) cm ON cm.company_id = c.id
+      WHERE c.is_active = 1
+    `);
+    const coverage = featureCoverageResult.rows[0];
+
+    const total = parseInt(coverage.total) || 0;
+    const withPrice = parseInt(coverage.with_price) || 0;
+    const withFundamentals = parseInt(coverage.with_fundamentals) || 0;
+    const withSentiment = parseInt(coverage.with_sentiment) || 0;
+    const fullCoverage = parseInt(coverage.full_coverage) || 0;
+
+    result.metrics = {
+      total_active_companies: total,
+      with_price_pct: (withPrice / total * 100).toFixed(1),
+      with_fundamentals_pct: (withFundamentals / total * 100).toFixed(1),
+      with_sentiment_pct: (withSentiment / total * 100).toFixed(1),
+      full_coverage_pct: (fullCoverage / total * 100).toFixed(1),
+      full_coverage_count: fullCoverage
+    };
+
+    if (fullCoverage / total < 0.5) {
+      result.warnings.push({
+        type: 'low_feature_coverage',
+        message: `Only ${result.metrics.full_coverage_pct}% of active companies have price+fundamentals coverage`,
+        impact: 'ML models may train on limited data'
+      });
+    }
+
+    return result;
+  }
+
+  /**
+   * Check for outliers in key metrics
+   */
+  async checkOutliers() {
+    const database = await getDatabaseAsync();
+
+    const result = {
+      name: 'outliers',
+      metrics: {},
+      issues: [],
+      warnings: []
+    };
+
+    // Check for extreme price movements - sample recent data
+    const extremePricesResult = await database.query(`
+      SELECT COALESCE(COUNT(*), 0) as count
+      FROM daily_prices
+      WHERE date >= date('now', '-7 day')
+        AND ABS((close - open) / NULLIF(open, 0)) > 0.5
+    `);
+    const extremePrices = extremePricesResult.rows[0];
+
+    result.metrics.extreme_price_moves = extremePrices.count || 0;
+
+    // Check for extreme PE ratios
+    const extremePEResult = await database.query(`
+      SELECT
+        COALESCE(COUNT(*), 0) as total,
+        COALESCE(SUM(CASE WHEN pe_ratio > 1000 OR pe_ratio < -100 THEN 1 ELSE 0 END), 0) as extreme
+      FROM calculated_metrics
+    `);
+    const extremePE = extremePEResult.rows[0];
+
+    result.metrics.extreme_pe_ratios = {
+      total: extremePE.total || 0,
+      extreme: extremePE.extreme || 0,
+      pct: extremePE.total > 0
+        ? (extremePE.extreme / extremePE.total * 100).toFixed(2)
+        : '0.00'
+    };
+
+    if (extremePE.total > 0 && extremePE.extreme / extremePE.total > 0.05) {
+      result.warnings.push({
+        type: 'extreme_outliers',
+        message: `${result.metrics.extreme_pe_ratios.pct}% of PE ratios are extreme outliers`,
+        impact: 'May need to winsorize or cap features'
+      });
+    }
+
+    // Check for extreme ROIC values in calculated_metrics (should be clamped to -200% to 300%)
+    const extremeROICResult = await database.query(`
+      SELECT
+        COALESCE(COUNT(*), 0) as total,
+        COALESCE(SUM(CASE WHEN roic > 300 OR roic < -200 THEN 1 ELSE 0 END), 0) as extreme
+      FROM calculated_metrics
+      WHERE roic IS NOT NULL
+    `);
+    const extremeROIC = extremeROICResult.rows[0];
+
+    result.metrics.extreme_roic = {
+      total: extremeROIC.total,
+      extreme: extremeROIC.extreme || 0,
+      pct: extremeROIC.total > 0 ? ((extremeROIC.extreme || 0) / extremeROIC.total * 100).toFixed(2) : '0.00'
+    };
+
+    if (extremeROIC.extreme > 0) {
+      result.issues.push({
+        severity: 'HIGH',
+        type: 'EXTREME_ROIC_CALCULATED',
+        message: `${extremeROIC.extreme} ROIC values exceed bounds (-200% to 300%) in calculated_metrics`,
+        recommendation: 'Check metricCalculator.js clampAllMetrics() is being applied'
+      });
+    }
+
+    // Check for extreme ROIC in XBRL metrics table (stored as decimals: -2 to 3)
+    try {
+      const extremeXBRLRoicResult = await database.query(`
+        SELECT
+          COALESCE(COUNT(*), 0) as total,
+          COALESCE(SUM(CASE WHEN roic > 3 OR roic < -2 THEN 1 ELSE 0 END), 0) as extreme
+        FROM xbrl_fundamental_metrics
+        WHERE roic IS NOT NULL
+      `);
+      const extremeXBRLRoic = extremeXBRLRoicResult.rows[0];
+
+      result.metrics.extreme_xbrl_roic = {
+        total: extremeXBRLRoic.total || 0,
+        extreme: extremeXBRLRoic.extreme || 0,
+        pct: extremeXBRLRoic.total > 0 ? ((extremeXBRLRoic.extreme || 0) / extremeXBRLRoic.total * 100).toFixed(2) : '0.00'
+      };
+
+      if (extremeXBRLRoic.extreme > 0) {
+        result.issues.push({
+          severity: 'HIGH',
+          type: 'EXTREME_ROIC_XBRL',
+          message: `${extremeXBRLRoic.extreme} ROIC values exceed bounds in xbrl_fundamental_metrics`,
+          recommendation: 'Check xbrlParser.js invested capital calculation thresholds'
+        });
+      }
+    } catch (e) {
+      // Table may not exist in all installations
+    }
+
+    // Check for unit mismatches in financial_data (operating income > total assets)
+    try {
+      const unitMismatchesResult = await database.query(`
+        SELECT COALESCE(COUNT(*), 0) as count
+        FROM financial_data
+        WHERE operating_income > 0 AND total_assets > 0
+          AND operating_income / total_assets > 10
+      `);
+      const unitMismatches = unitMismatchesResult.rows[0];
+
+      result.metrics.unit_mismatches = unitMismatches.count || 0;
+
+      if (unitMismatches.count > 0) {
+        result.issues.push({
+          severity: 'HIGH',
+          type: 'UNIT_MISMATCH',
+          message: `${unitMismatches.count} records have operating income > 10x total assets (likely unit mismatch)`,
+          recommendation: 'Run data correction to null out corrupted balance sheet fields'
+        });
+      }
+    } catch (e) {
+      // Table structure may vary
+    }
+
+    return result;
+  }
+
+  /**
+   * Check for survivorship bias indicators
+   */
+  async checkSurvivorshipBias() {
+    const database = await getDatabaseAsync();
+
+    const result = {
+      name: 'survivorship_bias',
+      metrics: {},
+      issues: [],
+      warnings: []
+    };
+
+    // Count inactive companies (using is_active flag)
+    const delistedStatsResult = await database.query(`
+      SELECT
+        COUNT(*) as total_companies,
+        SUM(CASE WHEN is_active = 0 THEN 1 ELSE 0 END) as inactive
+      FROM companies
+    `);
+    const delistedStats = delistedStatsResult.rows[0];
+
+    result.metrics = {
+      total_companies: delistedStats.total_companies,
+      active_companies: delistedStats.total_companies - delistedStats.inactive,
+      inactive_companies: delistedStats.inactive,
+      inactive_pct: (delistedStats.inactive / delistedStats.total_companies * 100).toFixed(2)
+    };
+
+    // Check if training data includes inactive companies
+    const inactiveWithDataResult = await database.query(`
+      SELECT COUNT(DISTINCT c.id) as count
+      FROM companies c
+      JOIN daily_prices dp ON dp.company_id = c.id
+      WHERE c.is_active = 0
+        AND dp.date >= date('now', '-365 day')
+    `);
+    const inactiveWithData = inactiveWithDataResult.rows[0];
+
+    result.metrics.inactive_with_recent_data = inactiveWithData.count;
+
+    if (inactiveWithData.count === 0 && delistedStats.inactive > 0) {
+      result.warnings.push({
+        type: 'survivorship_bias',
+        message: `${delistedStats.inactive} inactive companies may be excluded from training`,
+        impact: 'Models may overfit to survivors, underestimate risk of failures'
+      });
+    }
+
+    return result;
+  }
+
+  /**
+   * Check data consistency for cross-validation
+   */
+  async checkCrossValidation() {
+    const database = await getDatabaseAsync();
+
+    const result = {
+      name: 'cross_validation_readiness',
+      metrics: {},
+      issues: [],
+      warnings: []
+    };
+
+    // Check temporal coverage
+    const dateRangeResult = await database.query(`
+      SELECT
+        MIN(date) as min_date,
+        MAX(date) as max_date,
+        COALESCE(COUNT(DISTINCT date), 0) as trading_days,
+        COALESCE(JULIANDAY(MAX(date)) - JULIANDAY(MIN(date)), 0) as total_days
+      FROM daily_prices
+    `);
+    const dateRange = dateRangeResult.rows[0];
+
+    result.metrics.date_range = {
+      start: dateRange.min_date,
+      end: dateRange.max_date,
+      trading_days: dateRange.trading_days || 0,
+      total_days: Math.round(dateRange.total_days || 0)
+    };
+
+    // Check for gaps
+    const gapsResult = await database.query(`
+      WITH dates AS (
+        SELECT DISTINCT date FROM daily_prices
+        WHERE date >= date('now', '-365 day')
+        ORDER BY date
+      )
+      SELECT COALESCE(COUNT(*), 0) as gap_count
+      FROM (
+        SELECT
+          date,
+          LAG(date) OVER (ORDER BY date) as prev_date,
+          JULIANDAY(date) - JULIANDAY(LAG(date) OVER (ORDER BY date)) as days_diff
+        FROM dates
+      )
+      WHERE days_diff > 4
+    `);
+    const gaps = gapsResult.rows[0];
+
+    result.metrics.data_gaps = gaps.gap_count || 0;
+
+    if (gaps.gap_count > 5) {
+      result.warnings.push({
+        type: 'data_gaps',
+        message: `Found ${gaps.gap_count} gaps > 4 days in price data`,
+        impact: 'May affect time-series features and walk-forward validation'
+      });
+    }
+
+    // Check sample size per symbol - limit to 1 year
+    const sampleSizesResult = await database.query(`
+      SELECT
+        COALESCE(MIN(cnt), 0) as min_samples,
+        COALESCE(MAX(cnt), 0) as max_samples,
+        COALESCE(AVG(cnt), 0) as avg_samples,
+        COALESCE(COUNT(*), 0) as symbol_count
+      FROM (
+        SELECT company_id, COUNT(*) as cnt
+        FROM daily_prices
+        WHERE date >= date('now', '-365 day')
+        GROUP BY company_id
+      )
+    `);
+    const sampleSizes = sampleSizesResult.rows[0];
+
+    result.metrics.sample_sizes = {
+      min: sampleSizes.min_samples || 0,
+      max: sampleSizes.max_samples || 0,
+      avg: Math.round(sampleSizes.avg_samples || 0),
+      symbols: sampleSizes.symbol_count || 0
+    };
+
+    if (sampleSizes.min_samples < 60) {
+      result.warnings.push({
+        type: 'insufficient_samples',
+        message: `Some symbols have only ${sampleSizes.min_samples} samples (need 60+ for sequence creation)`,
+        impact: 'Some companies will be excluded from training'
+      });
+    }
+
+    return result;
+  }
+
+  /**
+   * Get summary for display
+   */
+  async getSummary() {
+    const report = await this.runFullAudit();
+
+    let summary = `\n${'='.repeat(60)}\n`;
+    summary += `  DATA QUALITY REPORT - ${report.timestamp.split('T')[0]}\n`;
+    summary += `${'='.repeat(60)}\n\n`;
+    summary += `Status: ${report.status.toUpperCase()}\n\n`;
+
+    // Issues
+    if (report.issues.length > 0) {
+      summary += `CRITICAL ISSUES (${report.issues.length}):\n`;
+      for (const issue of report.issues) {
+        summary += `  ❌ ${issue.type}: ${issue.message}\n`;
+        summary += `     Impact: ${issue.impact}\n`;
+      }
+      summary += '\n';
+    }
+
+    // Warnings
+    if (report.warnings.length > 0) {
+      summary += `WARNINGS (${report.warnings.length}):\n`;
+      for (const warning of report.warnings) {
+        summary += `  ⚠️  ${warning.type}: ${warning.message}\n`;
+        summary += `     Impact: ${warning.impact}\n`;
+      }
+      summary += '\n';
+    }
+
+    // Key metrics
+    summary += 'KEY METRICS:\n';
+
+    if (report.metrics.data_freshness) {
+      const df = report.metrics.data_freshness;
+      summary += `  Price Data: ${df.prices.fresh_1d}/${df.prices.total_companies} companies fresh (<1 day)\n`;
+      summary += `  Sentiment: ${df.sentiment.fresh_4h}/${df.sentiment.total} companies fresh (<4 hours)\n`;
+    }
+
+    if (report.metrics.feature_coverage) {
+      const fc = report.metrics.feature_coverage;
+      summary += `  Price+Fundamentals: ${fc.full_coverage_count} companies (${fc.full_coverage_pct}%)\n`;
+    }
+
+    if (report.metrics.survivorship_bias) {
+      const sb = report.metrics.survivorship_bias;
+      summary += `  Inactive Companies: ${sb.inactive_companies} (${sb.inactive_pct}%)\n`;
+    }
+
+    if (report.metrics.cross_validation_readiness) {
+      const cv = report.metrics.cross_validation_readiness;
+      summary += `  Date Range: ${cv.date_range.start} to ${cv.date_range.end}\n`;
+      summary += `  Trading Days: ${cv.date_range.trading_days}\n`;
+      summary += `  Avg Samples/Symbol: ${cv.sample_sizes.avg}\n`;
+    }
+
+    summary += `\n${'='.repeat(60)}\n`;
+
+    return summary;
+  }
+}
+
+// CLI
+if (require.main === module) {
+  (async () => {
+    const monitor = new DataQualityMonitor();
+
+    const args = process.argv.slice(2);
+
+    if (args.includes('--json')) {
+      const report = await monitor.runFullAudit();
+      console.log(JSON.stringify(report, null, 2));
+    } else {
+      console.log(await monitor.getSummary());
+    }
+  })();
+}
+
+module.exports = DataQualityMonitor;

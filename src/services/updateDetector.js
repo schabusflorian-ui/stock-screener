@@ -8,99 +8,14 @@
 const fs = require('fs');
 const readline = require('readline');
 const path = require('path');
+const { getDatabaseAsync } = require('../lib/db');
 
 class UpdateDetector {
   /**
-   * @param {Database} db - better-sqlite3 database instance
+   * No database parameter - uses getDatabaseAsync() in methods
    */
-  constructor(db) {
-    this.db = db;
-    this.prepareStatements();
-  }
-
-  /**
-   * Prepare commonly used SQL statements for performance
-   */
-  prepareStatements() {
-    // Get latest filing for a company by CIK
-    this.stmtGetLatestFiling = this.db.prepare(`
-      SELECT
-        c.id as company_id,
-        c.symbol,
-        c.cik,
-        MAX(f.filed_date) as latest_filed_date,
-        MAX(CASE WHEN f.form_type = '10-K' THEN f.fiscal_date_ending END) as latest_10k_period,
-        MAX(CASE WHEN f.form_type = '10-Q' THEN f.fiscal_date_ending END) as latest_10q_period
-      FROM companies c
-      LEFT JOIN financial_line_items f ON f.company_id = c.id
-      WHERE c.cik = ?
-      GROUP BY c.id
-    `);
-
-    // Get all companies with CIK
-    this.stmtGetAllCompanies = this.db.prepare(`
-      SELECT id, symbol, cik, name
-      FROM companies
-      WHERE cik IS NOT NULL AND cik != ''
-    `);
-
-    // Get freshness record
-    this.stmtGetFreshness = this.db.prepare(`
-      SELECT * FROM company_data_freshness WHERE company_id = ?
-    `);
-
-    // Upsert freshness record
-    this.stmtUpsertFreshness = this.db.prepare(`
-      INSERT INTO company_data_freshness (
-        company_id, cik, symbol, latest_filing_date,
-        latest_10k_date, latest_10q_date, latest_10k_period, latest_10q_period,
-        last_checked_at, last_updated_at, needs_update, pending_filings
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(company_id) DO UPDATE SET
-        latest_filing_date = excluded.latest_filing_date,
-        latest_10k_date = excluded.latest_10k_date,
-        latest_10q_date = excluded.latest_10q_date,
-        latest_10k_period = excluded.latest_10k_period,
-        latest_10q_period = excluded.latest_10q_period,
-        last_checked_at = excluded.last_checked_at,
-        last_updated_at = excluded.last_updated_at,
-        needs_update = excluded.needs_update,
-        pending_filings = excluded.pending_filings
-    `);
-
-    // Get companies needing update
-    this.stmtGetNeedingUpdate = this.db.prepare(`
-      SELECT
-        f.company_id,
-        f.cik,
-        f.symbol,
-        f.latest_filing_date,
-        f.pending_filings,
-        c.name
-      FROM company_data_freshness f
-      JOIN companies c ON c.id = f.company_id
-      WHERE f.needs_update = 1
-    `);
-
-    // Get update summary
-    this.stmtGetSummary = this.db.prepare(`
-      SELECT
-        COUNT(*) as total_companies,
-        SUM(CASE WHEN needs_update = 1 THEN 1 ELSE 0 END) as needing_update,
-        MAX(last_updated_at) as last_update_date,
-        MIN(latest_filing_date) as oldest_data
-      FROM company_data_freshness
-    `);
-
-    // Check if freshness table has data
-    this.stmtCountFreshness = this.db.prepare(`
-      SELECT COUNT(*) as count FROM company_data_freshness
-    `);
-
-    // Get company by CIK
-    this.stmtGetCompanyByCik = this.db.prepare(`
-      SELECT id, symbol, cik, name FROM companies WHERE cik = ?
-    `);
+  constructor() {
+    // No database parameter needed
   }
 
   /**
@@ -110,17 +25,28 @@ class UpdateDetector {
   async initializeFreshnessTracking(onProgress = () => {}) {
     console.log('Initializing freshness tracking for all companies...');
 
-    const companies = this.stmtGetAllCompanies.all();
+    const database = await getDatabaseAsync();
+
+    // Get all companies with CIK
+    const companiesResult = await database.query(`
+      SELECT id, symbol, cik, name
+      FROM companies
+      WHERE cik IS NOT NULL AND cik != ''
+    `);
+    const companies = companiesResult.rows;
     const total = companies.length;
     let processed = 0;
 
     console.log(`Found ${total} companies with CIK numbers`);
 
-    const insertMany = this.db.transaction((companies) => {
+    // Process in batches with transaction
+    await database.query('BEGIN');
+
+    try {
       for (const company of companies) {
         // Get latest filings for this company - check BOTH tables
         // financial_data is the main table, financial_line_items is for raw imports
-        let latestData = this.db.prepare(`
+        let latestDataResult = await database.query(`
           SELECT
             MAX(filed_date) as latest_filed_date,
             MAX(CASE WHEN form = '10-K' THEN filed_date END) as latest_10k_filed,
@@ -128,12 +54,14 @@ class UpdateDetector {
             MAX(CASE WHEN form = '10-K' THEN fiscal_date_ending END) as latest_10k_period,
             MAX(CASE WHEN form = '10-Q' THEN fiscal_date_ending END) as latest_10q_period
           FROM financial_data
-          WHERE company_id = ?
-        `).get(company.id);
+          WHERE company_id = $1
+        `, [company.id]);
+
+        let latestData = latestDataResult.rows[0];
 
         // Fallback to financial_line_items if financial_data is empty
         if (!latestData?.latest_filed_date) {
-          latestData = this.db.prepare(`
+          latestDataResult = await database.query(`
             SELECT
               MAX(filed_date) as latest_filed_date,
               MAX(CASE WHEN form_type = '10-K' THEN filed_date END) as latest_10k_filed,
@@ -141,11 +69,29 @@ class UpdateDetector {
               MAX(CASE WHEN form_type = '10-K' THEN fiscal_date_ending END) as latest_10k_period,
               MAX(CASE WHEN form_type = '10-Q' THEN fiscal_date_ending END) as latest_10q_period
             FROM financial_line_items
-            WHERE company_id = ?
-          `).get(company.id);
+            WHERE company_id = $1
+          `, [company.id]);
+          latestData = latestDataResult.rows[0];
         }
 
-        this.stmtUpsertFreshness.run(
+        // Upsert freshness record
+        await database.query(`
+          INSERT INTO company_data_freshness (
+            company_id, cik, symbol, latest_filing_date,
+            latest_10k_date, latest_10q_date, latest_10k_period, latest_10q_period,
+            last_checked_at, last_updated_at, needs_update, pending_filings
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          ON CONFLICT(company_id) DO UPDATE SET
+            latest_filing_date = excluded.latest_filing_date,
+            latest_10k_date = excluded.latest_10k_date,
+            latest_10q_date = excluded.latest_10q_date,
+            latest_10k_period = excluded.latest_10k_period,
+            latest_10q_period = excluded.latest_10q_period,
+            last_checked_at = excluded.last_checked_at,
+            last_updated_at = excluded.last_updated_at,
+            needs_update = excluded.needs_update,
+            pending_filings = excluded.pending_filings
+        `, [
           company.id,
           company.cik,
           company.symbol,
@@ -158,7 +104,7 @@ class UpdateDetector {
           latestData?.latest_filed_date ? new Date().toISOString() : null,
           0, // needs_update = false initially
           null // no pending filings
-        );
+        ]);
 
         processed++;
         if (processed % 100 === 0) {
@@ -170,9 +116,12 @@ class UpdateDetector {
           });
         }
       }
-    });
 
-    insertMany(companies);
+      await database.query('COMMIT');
+    } catch (error) {
+      await database.query('ROLLBACK');
+      throw error;
+    }
 
     console.log(`Freshness tracking initialized for ${processed} companies`);
 
@@ -279,12 +228,19 @@ class UpdateDetector {
   async detectUpdatesFromBulkFile(subFilePath, onProgress = () => {}) {
     console.log('Detecting updates from bulk file...');
 
+    const database = await getDatabaseAsync();
+
     // Parse submissions file
     const bulkFilings = await this.parseSubmissionsFile(subFilePath);
     console.log(`Found filings for ${bulkFilings.size} unique CIKs in bulk file`);
 
     // Get our companies
-    const ourCompanies = this.stmtGetAllCompanies.all();
+    const ourCompaniesResult = await database.query(`
+      SELECT id, symbol, cik, name
+      FROM companies
+      WHERE cik IS NOT NULL AND cik != ''
+    `);
+    const ourCompanies = ourCompaniesResult.rows;
     const companiesByCik = new Map();
     for (const company of ourCompanies) {
       const normalizedCik = company.cik.padStart(10, '0');
@@ -307,25 +263,28 @@ class UpdateDetector {
       }
 
       // Get our latest filing dates for this company (check financial_data first, then financial_line_items)
-      let ourLatest = this.db.prepare(`
+      let ourLatestResult = await database.query(`
         SELECT
           MAX(filed_date) as latest_filed_date,
           MAX(CASE WHEN form = '10-K' THEN filed_date END) as latest_10k_date,
           MAX(CASE WHEN form = '10-Q' THEN filed_date END) as latest_10q_date
         FROM financial_data
-        WHERE company_id = ?
-      `).get(company.id);
+        WHERE company_id = $1
+      `, [company.id]);
+
+      let ourLatest = ourLatestResult.rows[0];
 
       // Fallback to financial_line_items
       if (!ourLatest?.latest_filed_date) {
-        ourLatest = this.db.prepare(`
+        ourLatestResult = await database.query(`
           SELECT
             MAX(filed_date) as latest_filed_date,
             MAX(CASE WHEN form_type = '10-K' THEN filed_date END) as latest_10k_date,
             MAX(CASE WHEN form_type = '10-Q' THEN filed_date END) as latest_10q_date
           FROM financial_line_items
-          WHERE company_id = ?
-        `).get(company.id);
+          WHERE company_id = $1
+        `, [company.id]);
+        ourLatest = ourLatestResult.rows[0];
       }
 
       // Find filings newer than what we have
@@ -354,7 +313,23 @@ class UpdateDetector {
         });
 
         // Update freshness record
-        this.stmtUpsertFreshness.run(
+        await database.query(`
+          INSERT INTO company_data_freshness (
+            company_id, cik, symbol, latest_filing_date,
+            latest_10k_date, latest_10q_date, latest_10k_period, latest_10q_period,
+            last_checked_at, last_updated_at, needs_update, pending_filings
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          ON CONFLICT(company_id) DO UPDATE SET
+            latest_filing_date = excluded.latest_filing_date,
+            latest_10k_date = excluded.latest_10k_date,
+            latest_10q_date = excluded.latest_10q_date,
+            latest_10k_period = excluded.latest_10k_period,
+            latest_10q_period = excluded.latest_10q_period,
+            last_checked_at = excluded.last_checked_at,
+            last_updated_at = excluded.last_updated_at,
+            needs_update = excluded.needs_update,
+            pending_filings = excluded.pending_filings
+        `, [
           company.id,
           cik,
           company.symbol,
@@ -367,7 +342,7 @@ class UpdateDetector {
           null, // Not updated yet
           1, // needs_update = true
           JSON.stringify(newFilings.map(f => f.adsh))
-        );
+        ]);
       }
 
       processed++;
@@ -395,32 +370,40 @@ class UpdateDetector {
    */
   async checkCompanyForUpdates(cik) {
     const normalizedCik = cik.padStart(10, '0');
+    const database = await getDatabaseAsync();
 
     // Get company from our database
-    const company = this.stmtGetCompanyByCik.get(normalizedCik);
+    const companyResult = await database.query(`
+      SELECT id, symbol, cik, name FROM companies WHERE cik = $1
+    `, [normalizedCik]);
+    const company = companyResult.rows[0];
+
     if (!company) {
       return { needsUpdate: false, error: 'Company not found in database' };
     }
 
     // Get our latest filing (check financial_data first, then financial_line_items)
-    let ourLatest = this.db.prepare(`
+    let ourLatestResult = await database.query(`
       SELECT
         MAX(filed_date) as latest_filed_date,
         MAX(CASE WHEN form = '10-K' THEN filed_date END) as latest_10k_date,
         MAX(CASE WHEN form = '10-Q' THEN filed_date END) as latest_10q_date
       FROM financial_data
-      WHERE company_id = ?
-    `).get(company.id);
+      WHERE company_id = $1
+    `, [company.id]);
+
+    let ourLatest = ourLatestResult.rows[0];
 
     if (!ourLatest?.latest_filed_date) {
-      ourLatest = this.db.prepare(`
+      ourLatestResult = await database.query(`
         SELECT
           MAX(filed_date) as latest_filed_date,
           MAX(CASE WHEN form_type = '10-K' THEN filed_date END) as latest_10k_date,
           MAX(CASE WHEN form_type = '10-Q' THEN filed_date END) as latest_10q_date
         FROM financial_line_items
-        WHERE company_id = ?
-      `).get(company.id);
+        WHERE company_id = $1
+      `, [company.id]);
+      ourLatest = ourLatestResult.rows[0];
     }
 
     // Fetch from SEC API
@@ -470,7 +453,23 @@ class UpdateDetector {
       }
 
       // Update freshness tracking
-      this.stmtUpsertFreshness.run(
+      await database.query(`
+        INSERT INTO company_data_freshness (
+          company_id, cik, symbol, latest_filing_date,
+          latest_10k_date, latest_10q_date, latest_10k_period, latest_10q_period,
+          last_checked_at, last_updated_at, needs_update, pending_filings
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        ON CONFLICT(company_id) DO UPDATE SET
+          latest_filing_date = excluded.latest_filing_date,
+          latest_10k_date = excluded.latest_10k_date,
+          latest_10q_date = excluded.latest_10q_date,
+          latest_10k_period = excluded.latest_10k_period,
+          latest_10q_period = excluded.latest_10q_period,
+          last_checked_at = excluded.last_checked_at,
+          last_updated_at = excluded.last_updated_at,
+          needs_update = excluded.needs_update,
+          pending_filings = excluded.pending_filings
+      `, [
         company.id,
         normalizedCik,
         company.symbol,
@@ -483,7 +482,7 @@ class UpdateDetector {
         null,
         newFilings.length > 0 ? 1 : 0,
         newFilings.length > 0 ? JSON.stringify(newFilings.map(f => f.adsh)) : null
-      );
+      ]);
 
       return {
         needsUpdate: newFilings.length > 0,
@@ -515,8 +514,22 @@ class UpdateDetector {
    * Get list of companies that need updates (from freshness table)
    * @returns {Array} Companies marked as needing update
    */
-  getCompaniesNeedingUpdate() {
-    return this.stmtGetNeedingUpdate.all().map(row => ({
+  async getCompaniesNeedingUpdate() {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT
+        f.company_id,
+        f.cik,
+        f.symbol,
+        f.latest_filing_date,
+        f.pending_filings,
+        c.name
+      FROM company_data_freshness f
+      JOIN companies c ON c.id = f.company_id
+      WHERE f.needs_update = 1
+    `);
+
+    return result.rows.map(row => ({
       ...row,
       pendingFilings: row.pending_filings ? JSON.parse(row.pending_filings) : []
     }));
@@ -526,49 +539,64 @@ class UpdateDetector {
    * Mark company as updated
    * @param {number} companyId - Company ID
    */
-  markCompanyUpdated(companyId) {
-    this.db.prepare(`
+  async markCompanyUpdated(companyId) {
+    const database = await getDatabaseAsync();
+    await database.query(`
       UPDATE company_data_freshness
       SET
         needs_update = 0,
         pending_filings = NULL,
-        last_updated_at = ?
-      WHERE company_id = ?
-    `).run(new Date().toISOString(), companyId);
+        last_updated_at = $1
+      WHERE company_id = $2
+    `, [new Date().toISOString(), companyId]);
   }
 
   /**
    * Get summary of data freshness across all companies
    * @returns {Object} Freshness summary statistics
    */
-  getUpdateSummary() {
-    // Check if freshness tracking is initialized
-    const countResult = this.stmtCountFreshness.get();
+  async getUpdateSummary() {
+    const database = await getDatabaseAsync();
 
-    if (!countResult || countResult.count === 0) {
+    // Check if freshness tracking is initialized
+    const countResult = await database.query(`
+      SELECT COUNT(*) as count FROM company_data_freshness
+    `);
+    const count = countResult.rows[0];
+
+    if (!count || count.count === 0) {
       // Freshness not initialized - calculate from actual data
-      const companies = this.stmtGetAllCompanies.all();
+      const companiesResult = await database.query(`
+        SELECT id, symbol, cik, name
+        FROM companies
+        WHERE cik IS NOT NULL AND cik != ''
+      `);
+      const companies = companiesResult.rows;
 
       // Check financial_data first, then financial_line_items
-      let lastFiling = this.db.prepare(`
+      let lastFilingResult = await database.query(`
         SELECT MAX(filed_date) as date FROM financial_data
-      `).get();
+      `);
+      let lastFiling = lastFilingResult.rows[0];
 
-      let oldestFiling = this.db.prepare(`
+      let oldestFilingResult = await database.query(`
         SELECT MIN(fiscal_date_ending) as date FROM financial_data
-        WHERE fiscal_date_ending >= '1990-01-01' AND fiscal_date_ending <= date('now')
-      `).get();
+        WHERE fiscal_date_ending >= '1990-01-01' AND fiscal_date_ending <= CURRENT_DATE
+      `);
+      let oldestFiling = oldestFilingResult.rows[0];
 
       // Fallback to financial_line_items
       if (!lastFiling?.date) {
-        lastFiling = this.db.prepare(`
+        lastFilingResult = await database.query(`
           SELECT MAX(filed_date) as date FROM financial_line_items
-        `).get();
+        `);
+        lastFiling = lastFilingResult.rows[0];
       }
       if (!oldestFiling?.date) {
-        oldestFiling = this.db.prepare(`
+        oldestFilingResult = await database.query(`
           SELECT MIN(fiscal_date_ending) as date FROM financial_line_items
-        `).get();
+        `);
+        oldestFiling = oldestFilingResult.rows[0];
       }
 
       return {
@@ -582,15 +610,24 @@ class UpdateDetector {
     }
 
     // Get from freshness table
-    const summary = this.stmtGetSummary.get();
+    const summaryResult = await database.query(`
+      SELECT
+        COUNT(*) as total_companies,
+        SUM(CASE WHEN needs_update = 1 THEN 1 ELSE 0 END) as needing_update,
+        MAX(last_updated_at) as last_update_date,
+        MIN(latest_filing_date) as oldest_data
+      FROM company_data_freshness
+    `);
+    const summary = summaryResult.rows[0];
 
     // Get additional stats
-    const latestUpdate = this.db.prepare(`
+    const latestUpdateResult = await database.query(`
       SELECT * FROM update_history
       WHERE status = 'completed'
       ORDER BY completed_at DESC
       LIMIT 1
-    `).get();
+    `);
+    const latestUpdate = latestUpdateResult.rows[0];
 
     return {
       totalCompanies: summary.total_companies,
@@ -613,8 +650,13 @@ class UpdateDetector {
    * @param {number} companyId - Company ID
    * @returns {Object|null} Freshness details
    */
-  getCompanyFreshness(companyId) {
-    const freshness = this.stmtGetFreshness.get(companyId);
+  async getCompanyFreshness(companyId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM company_data_freshness WHERE company_id = $1
+    `, [companyId]);
+    const freshness = result.rows[0];
+
     if (!freshness) return null;
 
     return {
@@ -626,11 +668,12 @@ class UpdateDetector {
   /**
    * Reset all companies' update status
    */
-  resetUpdateFlags() {
-    this.db.prepare(`
+  async resetUpdateFlags() {
+    const database = await getDatabaseAsync();
+    await database.query(`
       UPDATE company_data_freshness
       SET needs_update = 0, pending_filings = NULL
-    `).run();
+    `);
   }
 }
 

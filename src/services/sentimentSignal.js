@@ -4,27 +4,31 @@
  * Converts raw sentiment data into actionable buy/sell/hold signals
  */
 
+const { getDatabaseAsync } = require('../lib/db');
+
 class SentimentSignalGenerator {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
   }
 
   /**
    * Calculate sentiment summary and signal for a company
    */
   async calculateSignal(companyId, symbol, period = '7d') {
+    const database = await getDatabaseAsync();
     const days = this.parsePeriod(period);
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
 
     // Get posts from database
-    const posts = this.db.prepare(`
+    const postsResult = await database.query(`
       SELECT * FROM reddit_posts
-      WHERE company_id = ?
-        AND posted_at >= ?
+      WHERE company_id = $1
+        AND posted_at >= $2
         AND sentiment_score IS NOT NULL
       ORDER BY posted_at DESC
-    `).all(companyId, cutoff.toISOString());
+    `, [companyId, cutoff.toISOString()]);
+    const posts = postsResult.rows;
 
     if (posts.length === 0) {
       return this.createEmptySignal(companyId, period);
@@ -37,13 +41,14 @@ class SentimentSignalGenerator {
     const priorCutoff = new Date(cutoff);
     priorCutoff.setDate(priorCutoff.getDate() - days);
 
-    const priorPosts = this.db.prepare(`
+    const priorPostsResult = await database.query(`
       SELECT * FROM reddit_posts
-      WHERE company_id = ?
-        AND posted_at >= ?
-        AND posted_at < ?
+      WHERE company_id = $1
+        AND posted_at >= $2
+        AND posted_at < $3
         AND sentiment_score IS NOT NULL
-    `).all(companyId, priorCutoff.toISOString(), cutoff.toISOString());
+    `, [companyId, priorCutoff.toISOString(), cutoff.toISOString()]);
+    const priorPosts = priorPostsResult.rows;
 
     const priorMetrics = priorPosts.length > 0
       ? this.calculateMetrics(priorPosts)
@@ -73,10 +78,10 @@ class SentimentSignalGenerator {
     };
 
     // Store summary
-    this.storeSummary(summary);
+    await this.storeSummary(summary);
 
     // Update company record
-    this.updateCompany(companyId, summary);
+    await this.updateCompany(companyId, summary);
 
     return summary;
   }
@@ -262,9 +267,11 @@ class SentimentSignalGenerator {
   /**
    * Store summary in database
    */
-  storeSummary(summary) {
-    this.db.prepare(`
-      INSERT OR REPLACE INTO sentiment_summary (
+  async storeSummary(summary) {
+    const database = await getDatabaseAsync();
+
+    await database.query(`
+      INSERT INTO sentiment_summary (
         company_id, period, source, calculated_at,
         total_posts, positive_count, negative_count, neutral_count,
         total_score, total_comments,
@@ -273,15 +280,37 @@ class SentimentSignalGenerator {
         dd_posts, yolo_posts, buy_mentions, sell_mentions, rocket_count,
         signal, signal_strength, confidence
       ) VALUES (
-        ?, ?, 'reddit', datetime('now'),
-        ?, ?, ?, ?,
-        ?, ?,
-        ?, ?, ?,
-        ?, ?,
-        ?, ?, ?, ?, ?,
-        ?, ?, ?
+        $1, $2, 'reddit', CURRENT_TIMESTAMP,
+        $3, $4, $5, $6,
+        $7, $8,
+        $9, $10, $11,
+        $12, $13,
+        $14, $15, $16, $17, $18,
+        $19, $20, $21
       )
-    `).run(
+      ON CONFLICT (company_id, period) DO UPDATE SET
+        source = EXCLUDED.source,
+        calculated_at = CURRENT_TIMESTAMP,
+        total_posts = EXCLUDED.total_posts,
+        positive_count = EXCLUDED.positive_count,
+        negative_count = EXCLUDED.negative_count,
+        neutral_count = EXCLUDED.neutral_count,
+        total_score = EXCLUDED.total_score,
+        total_comments = EXCLUDED.total_comments,
+        avg_sentiment = EXCLUDED.avg_sentiment,
+        weighted_sentiment = EXCLUDED.weighted_sentiment,
+        sentiment_std_dev = EXCLUDED.sentiment_std_dev,
+        sentiment_change = EXCLUDED.sentiment_change,
+        volume_change = EXCLUDED.volume_change,
+        dd_posts = EXCLUDED.dd_posts,
+        yolo_posts = EXCLUDED.yolo_posts,
+        buy_mentions = EXCLUDED.buy_mentions,
+        sell_mentions = EXCLUDED.sell_mentions,
+        rocket_count = EXCLUDED.rocket_count,
+        signal = EXCLUDED.signal,
+        signal_strength = EXCLUDED.signal_strength,
+        confidence = EXCLUDED.confidence
+    `, [
       summary.companyId,
       summary.period,
       summary.totalPosts,
@@ -303,21 +332,22 @@ class SentimentSignalGenerator {
       summary.signal,
       summary.signalStrength,
       summary.confidence
-    );
+    ]);
 
     // Also store in history (daily snapshot)
-    this.storeHistory(summary);
+    await this.storeHistory(summary);
   }
 
   /**
    * Store daily history snapshot for charting
    */
-  storeHistory(summary) {
+  async storeHistory(summary) {
+    const database = await getDatabaseAsync();
     const today = new Date().toISOString().split('T')[0];
 
     try {
-      this.db.prepare(`
-        INSERT OR REPLACE INTO sentiment_history (
+      await database.query(`
+        INSERT INTO sentiment_history (
           company_id, snapshot_date, source,
           post_count, mention_count,
           avg_sentiment, weighted_sentiment, sentiment_std_dev,
@@ -326,15 +356,33 @@ class SentimentSignalGenerator {
           signal, signal_strength,
           rocket_count, dd_count, yolo_count
         ) VALUES (
-          ?, ?, 'reddit',
-          ?, ?,
-          ?, ?, ?,
-          ?, ?, ?,
-          ?, ?, ?,
-          ?, ?,
-          ?, ?, ?
+          $1, $2, 'reddit',
+          $3, $4,
+          $5, $6, $7,
+          $8, $9, $10,
+          $11, $12, $13,
+          $14, $15,
+          $16, $17, $18
         )
-      `).run(
+        ON CONFLICT (company_id, snapshot_date) DO UPDATE SET
+          source = EXCLUDED.source,
+          post_count = EXCLUDED.post_count,
+          mention_count = EXCLUDED.mention_count,
+          avg_sentiment = EXCLUDED.avg_sentiment,
+          weighted_sentiment = EXCLUDED.weighted_sentiment,
+          sentiment_std_dev = EXCLUDED.sentiment_std_dev,
+          positive_count = EXCLUDED.positive_count,
+          negative_count = EXCLUDED.negative_count,
+          neutral_count = EXCLUDED.neutral_count,
+          total_score = EXCLUDED.total_score,
+          total_comments = EXCLUDED.total_comments,
+          avg_engagement = EXCLUDED.avg_engagement,
+          signal = EXCLUDED.signal,
+          signal_strength = EXCLUDED.signal_strength,
+          rocket_count = EXCLUDED.rocket_count,
+          dd_count = EXCLUDED.dd_count,
+          yolo_count = EXCLUDED.yolo_count
+      `, [
         summary.companyId,
         today,
         summary.totalPosts,
@@ -353,10 +401,10 @@ class SentimentSignalGenerator {
         summary.rocketCount || 0,
         summary.ddPosts || 0,
         summary.yoloPosts || 0
-      );
+      ]);
     } catch (err) {
       // Ignore duplicate errors - we only want one entry per day
-      if (!err.message.includes('UNIQUE')) {
+      if (!err.message.includes('duplicate') && !err.message.includes('UNIQUE')) {
         console.error('Error storing sentiment history:', err.message);
       }
     }
@@ -365,11 +413,12 @@ class SentimentSignalGenerator {
   /**
    * Get sentiment history for charting
    */
-  getHistory(companyId, days = 30) {
+  async getHistory(companyId, days = 30) {
+    const database = await getDatabaseAsync();
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
 
-    return this.db.prepare(`
+    const result = await database.query(`
       SELECT
         snapshot_date,
         post_count,
@@ -384,20 +433,23 @@ class SentimentSignalGenerator {
         signal_strength,
         rocket_count
       FROM sentiment_history
-      WHERE company_id = ?
-        AND snapshot_date >= ?
+      WHERE company_id = $1
+        AND snapshot_date >= $2
       ORDER BY snapshot_date ASC
-    `).all(companyId, cutoff.toISOString().split('T')[0]);
+    `, [companyId, cutoff.toISOString().split('T')[0]]);
+
+    return result.rows;
   }
 
   /**
    * Get sentiment history from posts (fallback when no history table data)
    */
-  getHistoryFromPosts(companyId, days = 30) {
+  async getHistoryFromPosts(companyId, days = 30) {
+    const database = await getDatabaseAsync();
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
 
-    return this.db.prepare(`
+    const result = await database.query(`
       SELECT
         DATE(posted_at) as snapshot_date,
         COUNT(*) as post_count,
@@ -409,33 +461,37 @@ class SentimentSignalGenerator {
         SUM(num_comments) as total_comments,
         SUM(has_rockets) as rocket_count
       FROM reddit_posts
-      WHERE company_id = ?
-        AND posted_at >= ?
+      WHERE company_id = $1
+        AND posted_at >= $2
         AND sentiment_score IS NOT NULL
       GROUP BY DATE(posted_at)
       ORDER BY DATE(posted_at) ASC
-    `).all(companyId, cutoff.toISOString());
+    `, [companyId, cutoff.toISOString()]);
+
+    return result.rows;
   }
 
   /**
    * Update company with latest sentiment
    */
-  updateCompany(companyId, summary) {
-    this.db.prepare(`
+  async updateCompany(companyId, summary) {
+    const database = await getDatabaseAsync();
+
+    await database.query(`
       UPDATE companies SET
-        sentiment_signal = ?,
-        sentiment_score = ?,
-        sentiment_confidence = ?,
-        sentiment_updated_at = datetime('now'),
-        reddit_mentions_24h = ?
-      WHERE id = ?
-    `).run(
+        sentiment_signal = $1,
+        sentiment_score = $2,
+        sentiment_confidence = $3,
+        sentiment_updated_at = CURRENT_TIMESTAMP,
+        reddit_mentions_24h = $4
+      WHERE id = $5
+    `, [
       summary.signal,
       summary.weightedSentiment,
       summary.confidence,
       summary.totalPosts,
       companyId
-    );
+    ]);
   }
 
   /**

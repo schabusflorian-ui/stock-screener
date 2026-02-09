@@ -1,5 +1,5 @@
 // src/services/stockImporter-v2.js
-const { getDatabaseAsync } = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 
 /**
  * Stock Importer V2

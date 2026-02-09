@@ -13,12 +13,13 @@
  * 6. Tail Hedge Recommendations - Antifragile positioning
  */
 
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 const { MarginOfSafetyCalculator } = require('./marginOfSafety');
 
 class BuffettTalebRiskManager {
-  constructor(db) {
-    this.db = db;
-    this.mosCalculator = new MarginOfSafetyCalculator(db);
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
+    this.mosCalculator = new MarginOfSafetyCalculator();
 
     // Default risk parameters (can be overridden per portfolio)
     this.DEFAULTS = {
@@ -52,142 +53,19 @@ class BuffettTalebRiskManager {
       targetTailHedgePct: 0.03,       // 3% in tail hedges
       tailHedgeInstruments: ['UVXY', 'VXX', 'SQQQ', 'SH']
     };
-
-    this.prepareStatements();
-  }
-
-  prepareStatements() {
-    // Portfolio config
-    this.getPortfolioConfig = this.db.prepare(`
-      SELECT * FROM portfolio_risk_config WHERE portfolio_id = ?
-    `);
-
-    this.upsertPortfolioConfig = this.db.prepare(`
-      INSERT INTO portfolio_risk_config (
-        portfolio_id, min_margin_of_safety, margin_outside_competence,
-        max_position_pct, max_sector_pct, max_positions, min_positions,
-        target_safe_pct, min_safe_pct, target_cash_pct,
-        safe_min_market_cap, safe_max_beta, safe_max_debt_to_equity,
-        max_portfolio_drawdown, max_position_drawdown, drawdown_action,
-        target_tail_hedge_pct, tail_hedge_instruments,
-        core_sectors, core_industries, kelly_fraction, max_kelly_bet
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(portfolio_id) DO UPDATE SET
-        min_margin_of_safety = excluded.min_margin_of_safety,
-        margin_outside_competence = excluded.margin_outside_competence,
-        max_position_pct = excluded.max_position_pct,
-        max_sector_pct = excluded.max_sector_pct,
-        target_safe_pct = excluded.target_safe_pct,
-        min_safe_pct = excluded.min_safe_pct,
-        max_portfolio_drawdown = excluded.max_portfolio_drawdown,
-        updated_at = CURRENT_TIMESTAMP
-    `);
-
-    // Portfolio holdings
-    this.getPortfolioHoldings = this.db.prepare(`
-      SELECT
-        ph.*,
-        c.symbol,
-        c.name,
-        c.sector,
-        c.industry,
-        pm.market_cap,
-        pm.beta,
-        pm.last_price,
-        cm.debt_to_equity,
-        cm.roic
-      FROM portfolio_holdings ph
-      JOIN companies c ON ph.company_id = c.id
-      LEFT JOIN price_metrics pm ON pm.company_id = c.id
-      LEFT JOIN calculated_metrics cm ON cm.company_id = c.id AND cm.period_type = 'annual'
-      WHERE ph.portfolio_id = ?
-        AND ph.quantity > 0
-    `);
-
-    this.getPortfolioValue = this.db.prepare(`
-      SELECT
-        SUM(ph.quantity * pm.last_price) as total_value,
-        SUM(ph.cost_basis) as total_cost
-      FROM portfolio_holdings ph
-      JOIN price_metrics pm ON pm.company_id = ph.company_id
-      WHERE ph.portfolio_id = ?
-        AND ph.quantity > 0
-    `);
-
-    this.getPortfolioCash = this.db.prepare(`
-      SELECT cash_balance FROM portfolios WHERE id = ?
-    `);
-
-    // Drawdown tracking
-    this.getActiveDrawdown = this.db.prepare(`
-      SELECT * FROM drawdown_history
-      WHERE portfolio_id = ? AND is_active = 1
-      ORDER BY start_date DESC
-      LIMIT 1
-    `);
-
-    this.insertDrawdown = this.db.prepare(`
-      INSERT INTO drawdown_history (
-        portfolio_id, start_date, peak_value, current_value,
-        current_drawdown_pct, is_active
-      ) VALUES (?, ?, ?, ?, ?, 1)
-    `);
-
-    this.updateDrawdown = this.db.prepare(`
-      UPDATE drawdown_history SET
-        trough_date = CASE WHEN current_value < trough_value OR trough_value IS NULL
-                          THEN CURRENT_DATE ELSE trough_date END,
-        trough_value = CASE WHEN current_value < trough_value OR trough_value IS NULL
-                           THEN ? ELSE trough_value END,
-        current_value = ?,
-        current_drawdown_pct = ?,
-        max_drawdown_pct = CASE WHEN ? > max_drawdown_pct OR max_drawdown_pct IS NULL
-                               THEN ? ELSE max_drawdown_pct END,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `);
-
-    this.closeDrawdown = this.db.prepare(`
-      UPDATE drawdown_history SET
-        recovery_date = CURRENT_DATE,
-        is_recovered = 1,
-        is_active = 0,
-        days_to_recovery = julianday(CURRENT_DATE) - julianday(start_date),
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `);
-
-    // Risk events
-    this.insertRiskEvent = this.db.prepare(`
-      INSERT INTO risk_events (
-        portfolio_id, company_id, event_type, severity,
-        check_name, check_result, required_value, actual_value,
-        trade_context, message, recommendation
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    // Company lookup
-    this.getCompanyDetails = this.db.prepare(`
-      SELECT
-        c.id,
-        c.symbol,
-        c.name,
-        c.sector,
-        c.industry,
-        pm.market_cap,
-        pm.beta,
-        pm.last_price
-      FROM companies c
-      LEFT JOIN price_metrics pm ON pm.company_id = c.id
-      WHERE c.id = ?
-    `);
   }
 
   /**
    * Get effective config (portfolio-specific or defaults)
    */
-  getConfig(portfolioId) {
-    const custom = this.getPortfolioConfig.get(portfolioId);
+  async getConfig(portfolioId) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(
+      `SELECT * FROM portfolio_risk_config WHERE portfolio_id = $1`,
+      [portfolioId]
+    );
+    const custom = result.rows[0];
+
     if (custom) {
       return {
         ...this.DEFAULTS,
@@ -205,10 +83,40 @@ class BuffettTalebRiskManager {
   /**
    * Save/update portfolio risk config
    */
-  saveConfig(portfolioId, config) {
+  async saveConfig(portfolioId, config) {
+    const database = await getDatabaseAsync();
     const c = { ...this.DEFAULTS, ...config };
 
-    this.upsertPortfolioConfig.run(
+    const upsertSQL = isUsingPostgres()
+      ? `INSERT INTO portfolio_risk_config (
+          portfolio_id, min_margin_of_safety, margin_outside_competence,
+          max_position_pct, max_sector_pct, max_positions, min_positions,
+          target_safe_pct, min_safe_pct, target_cash_pct,
+          safe_min_market_cap, safe_max_beta, safe_max_debt_to_equity,
+          max_portfolio_drawdown, max_position_drawdown, drawdown_action,
+          target_tail_hedge_pct, tail_hedge_instruments,
+          core_sectors, core_industries, kelly_fraction, max_kelly_bet
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+        ON CONFLICT(portfolio_id) DO UPDATE SET
+          min_margin_of_safety = EXCLUDED.min_margin_of_safety,
+          margin_outside_competence = EXCLUDED.margin_outside_competence,
+          max_position_pct = EXCLUDED.max_position_pct,
+          max_sector_pct = EXCLUDED.max_sector_pct,
+          target_safe_pct = EXCLUDED.target_safe_pct,
+          min_safe_pct = EXCLUDED.min_safe_pct,
+          max_portfolio_drawdown = EXCLUDED.max_portfolio_drawdown,
+          updated_at = CURRENT_TIMESTAMP`
+      : `INSERT OR REPLACE INTO portfolio_risk_config (
+          portfolio_id, min_margin_of_safety, margin_outside_competence,
+          max_position_pct, max_sector_pct, max_positions, min_positions,
+          target_safe_pct, min_safe_pct, target_cash_pct,
+          safe_min_market_cap, safe_max_beta, safe_max_debt_to_equity,
+          max_portfolio_drawdown, max_position_drawdown, drawdown_action,
+          target_tail_hedge_pct, tail_hedge_instruments,
+          core_sectors, core_industries, kelly_fraction, max_kelly_bet
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`;
+
+    await database.query(upsertSQL, [
       portfolioId,
       c.minMarginOfSafety,
       c.marginOutsideCompetence,
@@ -231,16 +139,16 @@ class BuffettTalebRiskManager {
       c.coreIndustries ? JSON.stringify(c.coreIndustries) : null,
       c.kellyFraction || 0.5,
       c.maxKellyBet || 0.25
-    );
+    ]);
 
-    return this.getConfig(portfolioId);
+    return await this.getConfig(portfolioId);
   }
 
   /**
    * CHECK 1: Margin of Safety
    */
   async checkMarginOfSafety(companyId, portfolioId, options = {}) {
-    const config = this.getConfig(portfolioId);
+    const config = await this.getConfig(portfolioId);
     const { isOutsideCompetence = false, isLowConfidence = false, isHighVolatility = false } = options;
 
     // Determine required margin
@@ -257,7 +165,7 @@ class BuffettTalebRiskManager {
     }
 
     // Get valuation
-    const mosCheck = this.mosCalculator.checkMarginOfSafety(companyId, requiredMargin);
+    const mosCheck = await this.mosCalculator.checkMarginOfSafety(companyId, requiredMargin);
 
     const result = {
       check: 'marginOfSafety',
@@ -276,8 +184,7 @@ class BuffettTalebRiskManager {
 
     // Log risk event if failed
     if (!result.passed) {
-      const company = this.getCompanyDetails.get(companyId);
-      this.logRiskEvent(portfolioId, companyId, 'margin_of_safety', 'warning', result);
+      await this.logRiskEvent(portfolioId, companyId, 'margin_of_safety', 'warning', result);
     }
 
     return result;
@@ -286,9 +193,26 @@ class BuffettTalebRiskManager {
   /**
    * CHECK 2: Circle of Competence
    */
-  checkCircleOfCompetence(companyId, portfolioId) {
-    const config = this.getConfig(portfolioId);
-    const company = this.getCompanyDetails.get(companyId);
+  async checkCircleOfCompetence(companyId, portfolioId) {
+    const database = await getDatabaseAsync();
+    const config = await this.getConfig(portfolioId);
+
+    const result = await database.query(`
+      SELECT
+        c.id,
+        c.symbol,
+        c.name,
+        c.sector,
+        c.industry,
+        pm.market_cap,
+        pm.beta,
+        pm.last_price
+      FROM companies c
+      LEFT JOIN price_metrics pm ON pm.company_id = c.id
+      WHERE c.id = $1
+    `, [companyId]);
+
+    const company = result.rows[0];
 
     if (!company) {
       return { check: 'circleOfCompetence', passed: false, reason: 'Company not found' };
@@ -328,11 +252,48 @@ class BuffettTalebRiskManager {
   /**
    * CHECK 3: Concentration Limits
    */
-  checkConcentration(portfolioId, newPositionValue = 0, companyId = null) {
-    const config = this.getConfig(portfolioId);
-    const holdings = this.getPortfolioHoldings.all(portfolioId);
-    const portfolioValue = this.getPortfolioValue.get(portfolioId);
-    const cash = this.getPortfolioCash.get(portfolioId)?.cash_balance || 0;
+  async checkConcentration(portfolioId, newPositionValue = 0, companyId = null) {
+    const database = await getDatabaseAsync();
+    const config = await this.getConfig(portfolioId);
+
+    const holdingsResult = await database.query(`
+      SELECT
+        ph.*,
+        c.symbol,
+        c.name,
+        c.sector,
+        c.industry,
+        pm.market_cap,
+        pm.beta,
+        pm.last_price,
+        cm.debt_to_equity,
+        cm.roic
+      FROM portfolio_holdings ph
+      JOIN companies c ON ph.company_id = c.id
+      LEFT JOIN price_metrics pm ON pm.company_id = c.id
+      LEFT JOIN calculated_metrics cm ON cm.company_id = c.id AND cm.period_type = 'annual'
+      WHERE ph.portfolio_id = $1
+        AND ph.quantity > 0
+    `, [portfolioId]);
+
+    const valueResult = await database.query(`
+      SELECT
+        SUM(ph.quantity * pm.last_price) as total_value,
+        SUM(ph.cost_basis) as total_cost
+      FROM portfolio_holdings ph
+      JOIN price_metrics pm ON pm.company_id = ph.company_id
+      WHERE ph.portfolio_id = $1
+        AND ph.quantity > 0
+    `, [portfolioId]);
+
+    const cashResult = await database.query(
+      `SELECT cash_balance FROM portfolios WHERE id = $1`,
+      [portfolioId]
+    );
+
+    const holdings = holdingsResult.rows;
+    const portfolioValue = valueResult.rows[0];
+    const cash = cashResult.rows[0]?.cash_balance || 0;
 
     const totalValue = (portfolioValue?.total_value || 0) + cash + newPositionValue;
 
@@ -391,11 +352,48 @@ class BuffettTalebRiskManager {
   /**
    * CHECK 4: Barbell Allocation
    */
-  checkBarbellAllocation(portfolioId) {
-    const config = this.getConfig(portfolioId);
-    const holdings = this.getPortfolioHoldings.all(portfolioId);
-    const portfolioValue = this.getPortfolioValue.get(portfolioId);
-    const cash = this.getPortfolioCash.get(portfolioId)?.cash_balance || 0;
+  async checkBarbellAllocation(portfolioId) {
+    const database = await getDatabaseAsync();
+    const config = await this.getConfig(portfolioId);
+
+    const holdingsResult = await database.query(`
+      SELECT
+        ph.*,
+        c.symbol,
+        c.name,
+        c.sector,
+        c.industry,
+        pm.market_cap,
+        pm.beta,
+        pm.last_price,
+        cm.debt_to_equity,
+        cm.roic
+      FROM portfolio_holdings ph
+      JOIN companies c ON ph.company_id = c.id
+      LEFT JOIN price_metrics pm ON pm.company_id = c.id
+      LEFT JOIN calculated_metrics cm ON cm.company_id = c.id AND cm.period_type = 'annual'
+      WHERE ph.portfolio_id = $1
+        AND ph.quantity > 0
+    `, [portfolioId]);
+
+    const valueResult = await database.query(`
+      SELECT
+        SUM(ph.quantity * pm.last_price) as total_value,
+        SUM(ph.cost_basis) as total_cost
+      FROM portfolio_holdings ph
+      JOIN price_metrics pm ON pm.company_id = ph.company_id
+      WHERE ph.portfolio_id = $1
+        AND ph.quantity > 0
+    `, [portfolioId]);
+
+    const cashResult = await database.query(
+      `SELECT cash_balance FROM portfolios WHERE id = $1`,
+      [portfolioId]
+    );
+
+    const holdings = holdingsResult.rows;
+    const portfolioValue = valueResult.rows[0];
+    const cash = cashResult.rows[0]?.cash_balance || 0;
 
     const totalValue = (portfolioValue?.total_value || 0) + cash;
 
@@ -490,18 +488,48 @@ class BuffettTalebRiskManager {
   /**
    * CHECK 5: Drawdown
    */
-  checkDrawdown(portfolioId) {
-    const config = this.getConfig(portfolioId);
-    const portfolioValue = this.getPortfolioValue.get(portfolioId);
-    const cash = this.getPortfolioCash.get(portfolioId)?.cash_balance || 0;
+  async checkDrawdown(portfolioId) {
+    const database = await getDatabaseAsync();
+    const config = await this.getConfig(portfolioId);
+
+    const valueResult = await database.query(`
+      SELECT
+        SUM(ph.quantity * pm.last_price) as total_value,
+        SUM(ph.cost_basis) as total_cost
+      FROM portfolio_holdings ph
+      JOIN price_metrics pm ON pm.company_id = ph.company_id
+      WHERE ph.portfolio_id = $1
+        AND ph.quantity > 0
+    `, [portfolioId]);
+
+    const cashResult = await database.query(
+      `SELECT cash_balance FROM portfolios WHERE id = $1`,
+      [portfolioId]
+    );
+
+    const portfolioValue = valueResult.rows[0];
+    const cash = cashResult.rows[0]?.cash_balance || 0;
     const currentValue = (portfolioValue?.total_value || 0) + cash;
 
     // Get or create active drawdown tracking
-    const activeDrawdown = this.getActiveDrawdown.get(portfolioId);
+    const drawdownResult = await database.query(`
+      SELECT * FROM drawdown_history
+      WHERE portfolio_id = $1 AND is_active = 1
+      ORDER BY start_date DESC
+      LIMIT 1
+    `, [portfolioId]);
+
+    const activeDrawdown = drawdownResult.rows[0];
 
     if (!activeDrawdown) {
       // No active drawdown - start tracking with current as peak
-      this.insertDrawdown.run(portfolioId, new Date().toISOString().split('T')[0], currentValue, currentValue, 0);
+      await database.query(`
+        INSERT INTO drawdown_history (
+          portfolio_id, start_date, peak_value, current_value,
+          current_drawdown_pct, is_active
+        ) VALUES ($1, $2, $3, $4, $5, 1)
+      `, [portfolioId, new Date().toISOString().split('T')[0], currentValue, currentValue, 0]);
+
       return {
         check: 'drawdown',
         passed: true,
@@ -518,9 +546,27 @@ class BuffettTalebRiskManager {
     if (currentValue >= peakValue) {
       // Recovered from drawdown
       if (activeDrawdown.current_drawdown_pct > 0.01) {
-        this.closeDrawdown.run(activeDrawdown.id);
+        const daysFunction = isUsingPostgres()
+          ? `EXTRACT(EPOCH FROM (CURRENT_DATE - start_date)) / 86400`
+          : `julianday(CURRENT_DATE) - julianday(start_date)`;
+
+        await database.query(`
+          UPDATE drawdown_history SET
+            recovery_date = CURRENT_DATE,
+            is_recovered = 1,
+            is_active = 0,
+            days_to_recovery = ${daysFunction},
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `, [activeDrawdown.id]);
+
         // Start new tracking period
-        this.insertDrawdown.run(portfolioId, new Date().toISOString().split('T')[0], currentValue, currentValue, 0);
+        await database.query(`
+          INSERT INTO drawdown_history (
+            portfolio_id, start_date, peak_value, current_value,
+            current_drawdown_pct, is_active
+          ) VALUES ($1, $2, $3, $4, $5, 1)
+        `, [portfolioId, new Date().toISOString().split('T')[0], currentValue, currentValue, 0]);
       }
 
       return {
@@ -537,14 +583,22 @@ class BuffettTalebRiskManager {
     const currentDrawdown = (peakValue - currentValue) / peakValue;
 
     // Update drawdown record
-    this.updateDrawdown.run(
-      currentValue, // trough value
-      currentValue, // current value
-      currentDrawdown,
-      currentDrawdown, // for max drawdown comparison
-      currentDrawdown,
-      activeDrawdown.id
-    );
+    const troughDateCase = isUsingPostgres()
+      ? `CASE WHEN $1 < trough_value OR trough_value IS NULL THEN CURRENT_DATE ELSE trough_date END`
+      : `CASE WHEN $1 < trough_value OR trough_value IS NULL THEN date('now') ELSE trough_date END`;
+
+    await database.query(`
+      UPDATE drawdown_history SET
+        trough_date = ${troughDateCase},
+        trough_value = CASE WHEN $1 < trough_value OR trough_value IS NULL
+                           THEN $1 ELSE trough_value END,
+        current_value = $2,
+        current_drawdown_pct = $3,
+        max_drawdown_pct = CASE WHEN $4 > max_drawdown_pct OR max_drawdown_pct IS NULL
+                               THEN $4 ELSE max_drawdown_pct END,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $5
+    `, [currentValue, currentValue, currentDrawdown, currentDrawdown, activeDrawdown.id]);
 
     const maxAllowed = config.maxPortfolioDrawdown || config.max_portfolio_drawdown;
 
@@ -560,7 +614,7 @@ class BuffettTalebRiskManager {
 
     if (!result.passed) {
       result.severity = currentDrawdown > maxAllowed * 1.5 ? 'critical' : 'warning';
-      this.logRiskEvent(portfolioId, null, 'drawdown', result.severity, result);
+      await this.logRiskEvent(portfolioId, null, 'drawdown', result.severity, result);
     }
 
     return result;
@@ -569,9 +623,10 @@ class BuffettTalebRiskManager {
   /**
    * CHECK 6: Tail Hedge Recommendation
    */
-  getTailHedgeRecommendation(portfolioId) {
-    const config = this.getConfig(portfolioId);
-    const barbellCheck = this.checkBarbellAllocation(portfolioId);
+  async getTailHedgeRecommendation(portfolioId) {
+    const database = await getDatabaseAsync();
+    const config = await this.getConfig(portfolioId);
+    const barbellCheck = await this.checkBarbellAllocation(portfolioId);
 
     const currentTailHedgePct = barbellCheck.allocation.tailHedge.pct;
     const targetPct = config.targetTailHedgePct || config.target_tail_hedge_pct;
@@ -585,12 +640,14 @@ class BuffettTalebRiskManager {
     let recommendedPct = targetPct;
 
     try {
-      const vix = this.db.prepare(`
+      const vixResult = await database.query(`
         SELECT value FROM economic_indicators
         WHERE series = 'VIXCLS'
         ORDER BY date DESC
         LIMIT 1
-      `).get();
+      `);
+
+      const vix = vixResult.rows[0];
 
       if (vix) {
         if (vix.value > 30) {
@@ -674,7 +731,7 @@ class BuffettTalebRiskManager {
     }
 
     // 3. Concentration check
-    const concentrationCheck = this.checkConcentration(portfolioId, positionValue, companyId);
+    const concentrationCheck = await this.checkConcentration(portfolioId, positionValue, companyId);
     result.checks.concentration = concentrationCheck;
 
     if (!concentrationCheck.passed) {
@@ -687,7 +744,7 @@ class BuffettTalebRiskManager {
     }
 
     // 4. Barbell allocation
-    const barbellCheck = this.checkBarbellAllocation(portfolioId);
+    const barbellCheck = await this.checkBarbellAllocation(portfolioId);
     result.checks.barbell = barbellCheck;
 
     if (!barbellCheck.passed) {
@@ -700,7 +757,7 @@ class BuffettTalebRiskManager {
     }
 
     // 5. Drawdown check
-    const drawdownCheck = this.checkDrawdown(portfolioId);
+    const drawdownCheck = await this.checkDrawdown(portfolioId);
     result.checks.drawdown = drawdownCheck;
 
     if (!drawdownCheck.passed) {
@@ -729,7 +786,7 @@ class BuffettTalebRiskManager {
     }
 
     // Log risk event
-    this.logRiskEvent(portfolioId, companyId, 'trade_assessment',
+    await this.logRiskEvent(portfolioId, companyId, 'trade_assessment',
       result.approved ? 'info' : 'blocked', result);
 
     return result;
@@ -738,8 +795,15 @@ class BuffettTalebRiskManager {
   /**
    * Log risk event
    */
-  logRiskEvent(portfolioId, companyId, eventType, severity, result) {
-    this.insertRiskEvent.run(
+  async logRiskEvent(portfolioId, companyId, eventType, severity, result) {
+    const database = await getDatabaseAsync();
+    await database.query(`
+      INSERT INTO risk_events (
+        portfolio_id, company_id, event_type, severity,
+        check_name, check_result, required_value, actual_value,
+        trade_context, message, recommendation
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    `, [
       portfolioId,
       companyId,
       eventType,
@@ -751,61 +815,66 @@ class BuffettTalebRiskManager {
       JSON.stringify(result),
       result.blockers?.join('; ') || result.warnings?.join('; ') || null,
       result.recommendation || null
-    );
+    ]);
   }
 
   /**
    * Get recent risk events
    */
-  getRiskEvents(portfolioId, options = {}) {
+  async getRiskEvents(portfolioId, options = {}) {
+    const database = await getDatabaseAsync();
     const { limit = 50, severity = null, unresolved = false } = options;
 
     let query = `
       SELECT re.*, c.symbol, c.name
       FROM risk_events re
       LEFT JOIN companies c ON re.company_id = c.id
-      WHERE re.portfolio_id = ?
+      WHERE re.portfolio_id = $1
     `;
 
     const params = [portfolioId];
+    let paramIndex = 2;
 
     if (severity) {
-      query += ' AND re.severity = ?';
+      query += ` AND re.severity = $${paramIndex}`;
       params.push(severity);
+      paramIndex++;
     }
 
     if (unresolved) {
       query += ' AND re.resolved = 0';
     }
 
-    query += ' ORDER BY re.created_at DESC LIMIT ?';
+    query += ` ORDER BY re.created_at DESC LIMIT $${paramIndex}`;
     params.push(limit);
 
-    return this.db.prepare(query).all(...params);
+    const result = await database.query(query, params);
+    return result.rows;
   }
 
   /**
    * Get portfolio risk summary
    */
-  getPortfolioRiskSummary(portfolioId) {
-    const concentration = this.checkConcentration(portfolioId);
-    const barbell = this.checkBarbellAllocation(portfolioId);
-    const drawdown = this.checkDrawdown(portfolioId);
-    const tailHedge = this.getTailHedgeRecommendation(portfolioId);
+  async getPortfolioRiskSummary(portfolioId) {
+    const database = await getDatabaseAsync();
+    const concentration = await this.checkConcentration(portfolioId);
+    const barbell = await this.checkBarbellAllocation(portfolioId);
+    const drawdown = await this.checkDrawdown(portfolioId);
+    const tailHedge = await this.getTailHedgeRecommendation(portfolioId);
 
-    const unresolvedEvents = this.db.prepare(`
+    const unresolvedResult = await database.query(`
       SELECT severity, COUNT(*) as count
       FROM risk_events
-      WHERE portfolio_id = ? AND resolved = 0
+      WHERE portfolio_id = $1 AND resolved = 0
       GROUP BY severity
-    `).all(portfolioId);
+    `, [portfolioId]);
 
     return {
       concentration,
       barbell,
       drawdown,
       tailHedge,
-      unresolvedEvents,
+      unresolvedEvents: unresolvedResult.rows,
       overallHealth: this.calculateOverallHealth(concentration, barbell, drawdown)
     };
   }

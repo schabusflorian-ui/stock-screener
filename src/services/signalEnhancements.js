@@ -4,209 +4,13 @@
 // 2. Insider Trade Classification - Open market buys vs option exercises
 // 3. Earnings Surprise Momentum - Consecutive beats/misses with magnitude
 
+const { getDatabaseAsync } = require('../lib/db');
+
 class SignalEnhancements {
-  constructor(db) {
-    this.db = db;
-    this._prepareStatements();
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
   }
 
-  _prepareStatements() {
-    // 13F Delta Detection
-    this.stmts = {
-      // Get recent 13F changes for a company (new positions, exits, increases)
-      get13FChanges: this.db.prepare(`
-        SELECT
-          ih.change_type,
-          ih.shares_change,
-          ih.shares_change_pct,
-          ih.shares,
-          ih.market_value,
-          ih.portfolio_weight,
-          ih.filing_date,
-          fi.name as investor_name,
-          fi.fund_name,
-          fi.investment_style as style,
-          fi.latest_portfolio_value as aum
-        FROM investor_holdings ih
-        JOIN famous_investors fi ON ih.investor_id = fi.id
-        WHERE ih.company_id = ?
-          AND ih.filing_date >= date('now', '-120 days')
-        ORDER BY ih.filing_date DESC
-      `),
-
-      // Get top 13F activity across all investors (new buys)
-      getTop13FNewPositions: this.db.prepare(`
-        SELECT
-          c.symbol,
-          c.name,
-          c.sector,
-          ih.shares,
-          ih.market_value,
-          ih.portfolio_weight,
-          ih.filing_date,
-          fi.name as investor_name,
-          fi.fund_name,
-          fi.investment_style as style,
-          fi.latest_portfolio_value as aum,
-          pm.last_price,
-          pm.market_cap
-        FROM investor_holdings ih
-        JOIN famous_investors fi ON ih.investor_id = fi.id
-        JOIN companies c ON ih.company_id = c.id
-        LEFT JOIN price_metrics pm ON pm.company_id = c.id
-        WHERE ih.change_type = 'new'
-          AND ih.filing_date >= date('now', '-90 days')
-          AND ih.market_value >= 1000000
-          AND c.symbol NOT LIKE 'CIK_%'
-        ORDER BY ih.filing_date DESC, ih.market_value DESC
-        LIMIT ?
-      `),
-
-      // Get significant position increases
-      getTop13FIncreases: this.db.prepare(`
-        SELECT
-          c.symbol,
-          c.name,
-          c.sector,
-          ih.shares,
-          ih.shares_change,
-          ih.shares_change_pct,
-          ih.market_value,
-          ih.portfolio_weight,
-          ih.filing_date,
-          fi.name as investor_name,
-          fi.fund_name,
-          fi.investment_style as style,
-          pm.last_price
-        FROM investor_holdings ih
-        JOIN famous_investors fi ON ih.investor_id = fi.id
-        JOIN companies c ON ih.company_id = c.id
-        LEFT JOIN price_metrics pm ON pm.company_id = c.id
-        WHERE ih.change_type = 'increased'
-          AND ih.shares_change_pct >= 25
-          AND ih.filing_date >= date('now', '-90 days')
-          AND ih.market_value >= 5000000
-          AND c.symbol NOT LIKE 'CIK_%'
-        ORDER BY ih.shares_change_pct DESC
-        LIMIT ?
-      `),
-
-      // Get exits and significant decreases
-      getTop13FExits: this.db.prepare(`
-        SELECT
-          c.symbol,
-          c.name,
-          c.sector,
-          ih.prev_shares,
-          ih.shares_change_pct,
-          ih.filing_date,
-          fi.name as investor_name,
-          fi.fund_name,
-          fi.investment_style as style,
-          pm.last_price
-        FROM investor_holdings ih
-        JOIN famous_investors fi ON ih.investor_id = fi.id
-        JOIN companies c ON ih.company_id = c.id
-        LEFT JOIN price_metrics pm ON pm.company_id = c.id
-        WHERE ih.change_type = 'sold'
-          AND ih.filing_date >= date('now', '-90 days')
-          AND c.symbol NOT LIKE 'CIK_%'
-        ORDER BY ih.filing_date DESC
-        LIMIT ?
-      `),
-
-      // Insider transaction classification
-      getInsiderTransactions: this.db.prepare(`
-        SELECT
-          it.transaction_code,
-          it.transaction_type,
-          it.transaction_date,
-          it.shares_transacted,
-          it.price_per_share,
-          it.total_value,
-          it.is_derivative,
-          it.acquisition_disposition,
-          i.name as insider_name,
-          i.title as insider_title,
-          i.is_director,
-          i.is_officer,
-          i.is_ten_percent_owner
-        FROM insider_transactions it
-        JOIN insiders i ON it.insider_id = i.id
-        WHERE it.company_id = ?
-          AND it.transaction_date >= date('now', '-90 days')
-        ORDER BY it.transaction_date DESC
-      `),
-
-      // Get top open market buys (most bullish insider signal)
-      getTopOpenMarketBuys: this.db.prepare(`
-        SELECT
-          c.symbol,
-          c.name,
-          c.sector,
-          it.transaction_date,
-          it.shares_transacted,
-          it.price_per_share,
-          it.total_value,
-          i.name as insider_name,
-          i.title as insider_title,
-          i.is_officer,
-          i.is_director,
-          pm.last_price,
-          pm.market_cap
-        FROM insider_transactions it
-        JOIN insiders i ON it.insider_id = i.id
-        JOIN companies c ON it.company_id = c.id
-        LEFT JOIN price_metrics pm ON pm.company_id = c.id
-        WHERE it.transaction_code = 'P'
-          AND it.acquisition_disposition = 'A'
-          AND it.transaction_date >= date('now', '-60 days')
-          AND it.total_value >= 10000
-          AND c.symbol NOT LIKE 'CIK_%'
-        ORDER BY it.total_value DESC
-        LIMIT ?
-      `),
-
-      // Get earnings data for a company
-      getEarningsData: this.db.prepare(`
-        SELECT
-          consecutive_beats,
-          beat_rate,
-          avg_surprise,
-          history_json
-        FROM earnings_calendar
-        WHERE company_id = ?
-      `),
-
-      // Get companies with strong earnings momentum
-      getEarningsMomentum: this.db.prepare(`
-        SELECT
-          c.symbol,
-          c.name,
-          c.sector,
-          ec.consecutive_beats,
-          ec.beat_rate,
-          ec.avg_surprise,
-          ec.next_earnings_date,
-          pm.last_price,
-          pm.change_1m,
-          pm.alpha_1m
-        FROM earnings_calendar ec
-        JOIN companies c ON ec.company_id = c.id
-        LEFT JOIN price_metrics pm ON pm.company_id = c.id
-        WHERE ec.consecutive_beats >= ?
-          AND ec.avg_surprise > 0
-          AND c.symbol NOT LIKE 'CIK_%'
-        ORDER BY ec.consecutive_beats DESC, ec.avg_surprise DESC
-        LIMIT ?
-      `),
-
-      // Get company ID
-      getCompanyId: this.db.prepare(`
-        SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
-      `),
-    };
-  }
 
   // ========================================
   // 13F DELTA DETECTION
@@ -216,8 +20,30 @@ class SignalEnhancements {
    * Get 13F change signal for a specific company
    * Returns aggregated signal from super-investor activity
    */
-  get13FSignal(companyId) {
-    const changes = this.stmts.get13FChanges.all(companyId);
+  async get13FSignal(companyId) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT
+        ih.change_type,
+        ih.shares_change,
+        ih.shares_change_pct,
+        ih.shares,
+        ih.market_value,
+        ih.portfolio_weight,
+        ih.filing_date,
+        fi.name as investor_name,
+        fi.fund_name,
+        fi.investment_style as style,
+        fi.latest_portfolio_value as aum
+      FROM investor_holdings ih
+      JOIN famous_investors fi ON ih.investor_id = fi.id
+      WHERE ih.company_id = $1
+        AND ih.filing_date >= CURRENT_DATE - INTERVAL '120 days'
+      ORDER BY ih.filing_date DESC
+    `, [companyId]);
+
+    const changes = result.rows;
 
     if (!changes || changes.length === 0) {
       return { score: 0, confidence: 0, details: { noData: true } };
@@ -315,23 +141,78 @@ class SignalEnhancements {
   /**
    * Get all recent 13F opportunities (new positions from super-investors)
    */
-  getTop13FOpportunities(limit = 30) {
-    const newPositions = this.stmts.getTop13FNewPositions.all(limit);
-    const increases = this.stmts.getTop13FIncreases.all(limit);
-    const exits = this.stmts.getTop13FExits.all(limit);
+  async getTop13FOpportunities(limit = 30) {
+    const database = await getDatabaseAsync();
+
+    const newPositionsResult = await database.query(`
+      SELECT
+        c.symbol,
+        c.name as company_name,
+        ih.market_value,
+        ih.shares,
+        ih.portfolio_weight,
+        ih.filing_date,
+        fi.name as investor_name,
+        fi.fund_name,
+        fi.latest_portfolio_value as aum
+      FROM investor_holdings ih
+      JOIN companies c ON ih.company_id = c.id
+      JOIN famous_investors fi ON ih.investor_id = fi.id
+      WHERE ih.change_type = 'new'
+        AND ih.filing_date >= CURRENT_DATE - INTERVAL '90 days'
+      ORDER BY ih.market_value DESC
+      LIMIT $1
+    `, [limit]);
+
+    const increasesResult = await database.query(`
+      SELECT
+        c.symbol,
+        c.name as company_name,
+        ih.shares_change_pct,
+        ih.market_value,
+        ih.shares,
+        ih.filing_date,
+        fi.name as investor_name,
+        fi.fund_name
+      FROM investor_holdings ih
+      JOIN companies c ON ih.company_id = c.id
+      JOIN famous_investors fi ON ih.investor_id = fi.id
+      WHERE ih.change_type = 'increased'
+        AND ih.shares_change_pct > 25
+        AND ih.filing_date >= CURRENT_DATE - INTERVAL '90 days'
+      ORDER BY ih.shares_change_pct DESC
+      LIMIT $1
+    `, [limit]);
+
+    const exitsResult = await database.query(`
+      SELECT
+        c.symbol,
+        c.name as company_name,
+        ih.market_value,
+        ih.filing_date,
+        fi.name as investor_name,
+        fi.fund_name
+      FROM investor_holdings ih
+      JOIN companies c ON ih.company_id = c.id
+      JOIN famous_investors fi ON ih.investor_id = fi.id
+      WHERE ih.change_type = 'sold'
+        AND ih.filing_date >= CURRENT_DATE - INTERVAL '90 days'
+      ORDER BY ih.market_value DESC
+      LIMIT $1
+    `, [limit]);
 
     return {
-      newPositions: newPositions.map(p => ({
+      newPositions: newPositionsResult.rows.map(p => ({
         ...p,
         signalType: 'new_position',
         bullish: true,
       })),
-      significantIncreases: increases.map(i => ({
+      significantIncreases: increasesResult.rows.map(i => ({
         ...i,
         signalType: 'increase',
         bullish: true,
       })),
-      exits: exits.map(e => ({
+      exits: exitsResult.rows.map(e => ({
         ...e,
         signalType: 'exit',
         bullish: false,
@@ -347,8 +228,30 @@ class SignalEnhancements {
    * Get classified insider signal for a company
    * Distinguishes open market buys (most bullish) from option exercises
    */
-  getInsiderSignal(companyId) {
-    const transactions = this.stmts.getInsiderTransactions.all(companyId);
+  async getInsiderSignal(companyId) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT
+        it.transaction_code,
+        it.acquisition_disposition,
+        it.shares_transacted,
+        it.price_per_share,
+        it.total_value,
+        it.transaction_date,
+        it.insider_name,
+        it.insider_title,
+        it.is_director,
+        it.is_officer,
+        it.is_ten_pct_owner,
+        it.title
+      FROM insider_transactions it
+      WHERE it.company_id = $1
+        AND it.transaction_date >= CURRENT_DATE - INTERVAL '180 days'
+      ORDER BY it.transaction_date DESC
+    `, [companyId]);
+
+    const transactions = result.rows;
 
     if (!transactions || transactions.length === 0) {
       return { score: 0, confidence: 0, details: { noData: true } };
@@ -443,8 +346,29 @@ class SignalEnhancements {
   /**
    * Get top open market buys across all companies
    */
-  getTopOpenMarketBuys(limit = 30) {
-    return this.stmts.getTopOpenMarketBuys.all(limit);
+  async getTopOpenMarketBuys(limit = 30) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT
+        c.symbol,
+        c.name as company_name,
+        it.insider_name,
+        it.insider_title,
+        it.total_value,
+        it.shares_transacted,
+        it.price_per_share,
+        it.transaction_date
+      FROM insider_transactions it
+      JOIN companies c ON it.company_id = c.id
+      WHERE it.transaction_code = 'P'
+        AND it.acquisition_disposition = 'A'
+        AND it.transaction_date >= CURRENT_DATE - INTERVAL '90 days'
+      ORDER BY it.total_value DESC
+      LIMIT $1
+    `, [limit]);
+
+    return result.rows;
   }
 
   // ========================================
@@ -455,8 +379,20 @@ class SignalEnhancements {
    * Get earnings momentum signal for a company
    * Based on consecutive beats, surprise magnitude, and trend
    */
-  getEarningsMomentumSignal(companyId) {
-    const earnings = this.stmts.getEarningsData.get(companyId);
+  async getEarningsMomentumSignal(companyId) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT
+        consecutive_beats,
+        beat_rate,
+        avg_surprise,
+        history_json
+      FROM earnings_momentum
+      WHERE company_id = $1
+    `, [companyId]);
+
+    const earnings = result.rows[0];
 
     if (!earnings) {
       return { score: 0, confidence: 0, details: { noData: true } };
@@ -544,8 +480,25 @@ class SignalEnhancements {
   /**
    * Get companies with strong earnings momentum
    */
-  getEarningsMomentumOpportunities(minBeats = 3, limit = 30) {
-    return this.stmts.getEarningsMomentum.all(minBeats, limit);
+  async getEarningsMomentumOpportunities(minBeats = 3, limit = 30) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT
+        c.symbol,
+        c.name as company_name,
+        em.consecutive_beats,
+        em.beat_rate,
+        em.avg_surprise,
+        em.last_earnings_date
+      FROM earnings_momentum em
+      JOIN companies c ON em.company_id = c.id
+      WHERE em.consecutive_beats >= $1
+      ORDER BY em.consecutive_beats DESC, em.avg_surprise DESC
+      LIMIT $2
+    `, [minBeats, limit]);
+
+    return result.rows;
   }
 
   // ========================================
@@ -556,16 +509,22 @@ class SignalEnhancements {
    * Get all enhanced signals for a symbol
    * Used by TradingAgent
    */
-  getAllSignals(symbol) {
-    const company = this.stmts.getCompanyId.get(symbol);
+  async getAllSignals(symbol) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
+      SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)
+    `, [symbol]);
+
+    const company = result.rows[0];
     if (!company) {
       return null;
     }
 
     return {
-      thirteenF: this.get13FSignal(company.id),
-      insiderClassified: this.getInsiderSignal(company.id),
-      earningsMomentum: this.getEarningsMomentumSignal(company.id),
+      thirteenF: await this.get13FSignal(company.id),
+      insiderClassified: await this.getInsiderSignal(company.id),
+      earningsMomentum: await this.getEarningsMomentumSignal(company.id),
     };
   }
 

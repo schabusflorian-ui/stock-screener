@@ -6,65 +6,17 @@
  * Prevents budget overruns by checking limits before expensive operations.
  *
  * Usage:
- *   const tracker = new ApiCostTracker(db);
- *   tracker.logCall('claude', '/v1/messages', 'sentiment_hourly', 0.05, 1000);
+ *   const tracker = new ApiCostTracker();
+ *   await tracker.logCall('claude', '/v1/messages', 'sentiment_hourly', 0.05, 1000);
  *   const budget = await tracker.checkBudget('claude');
  *   if (!budget.withinBudget) throw new Error('Budget exceeded');
  */
 
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
+
 class ApiCostTracker {
-  constructor(db) {
-    this.db = db;
-
-    // Prepare statements for performance
-    this.stmts = {
-      // Log individual API call
-      logCall: this.db.prepare(`
-        INSERT INTO api_usage_log (provider, endpoint, job_key, cost_usd, tokens, cached)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `),
-
-      // Update daily aggregate
-      updateDailyAggregate: this.db.prepare(`
-        INSERT INTO api_usage_daily (provider, date, job_key, total_requests, total_cost_usd, cache_hits)
-        VALUES (?, ?, ?, 1, ?, ?)
-        ON CONFLICT (provider, date, job_key) DO UPDATE SET
-          total_requests = total_requests + 1,
-          total_cost_usd = total_cost_usd + excluded.total_cost_usd,
-          cache_hits = cache_hits + excluded.cache_hits
-      `),
-
-      // Get budget configuration
-      getBudget: this.db.prepare(`
-        SELECT * FROM api_budgets WHERE provider = ?
-      `),
-
-      // Get today's usage
-      getTodayUsage: this.db.prepare(`
-        SELECT SUM(total_cost_usd) as cost_today
-        FROM api_usage_daily
-        WHERE provider = ? AND date = ?
-      `),
-
-      // Get current month's usage
-      getMonthUsage: this.db.prepare(`
-        SELECT SUM(total_cost_usd) as cost_month
-        FROM api_usage_daily
-        WHERE provider = ? AND date >= date('now', 'start of month')
-      `),
-
-      // Get usage stats for a provider
-      getProviderStats: this.db.prepare(`
-        SELECT
-          SUM(total_requests) as total_requests,
-          SUM(total_cost_usd) as total_cost,
-          SUM(cache_hits) as cache_hits,
-          MIN(date) as first_date,
-          MAX(date) as last_date
-        FROM api_usage_daily
-        WHERE provider = ?
-      `),
-    };
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
   }
 
   /**
@@ -76,27 +28,26 @@ class ApiCostTracker {
    * @param {number} tokens - Number of tokens (for LLMs)
    * @param {boolean} cached - Whether the response was cached
    */
-  logCall(provider, endpoint, jobKey, costUsd = 0, tokens = 0, cached = false) {
+  async logCall(provider, endpoint, jobKey, costUsd = 0, tokens = 0, cached = false) {
     try {
+      const database = await getDatabaseAsync();
+
       // Log individual call
-      this.stmts.logCall.run(
-        provider,
-        endpoint,
-        jobKey,
-        costUsd,
-        tokens,
-        cached ? 1 : 0
-      );
+      await database.query(`
+        INSERT INTO api_usage_log (provider, endpoint, job_key, cost_usd, tokens, cached)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `, [provider, endpoint, jobKey, costUsd, tokens, cached ? 1 : 0]);
 
       // Update daily aggregate
       const today = new Date().toISOString().split('T')[0];
-      this.stmts.updateDailyAggregate.run(
-        provider,
-        today,
-        jobKey || 'unknown',
-        costUsd,
-        cached ? 1 : 0
-      );
+      await database.query(`
+        INSERT INTO api_usage_daily (provider, date, job_key, total_requests, total_cost_usd, cache_hits)
+        VALUES ($1, $2, $3, 1, $4, $5)
+        ON CONFLICT (provider, date, job_key) DO UPDATE SET
+          total_requests = total_requests + 1,
+          total_cost_usd = total_cost_usd + excluded.total_cost_usd,
+          cache_hits = cache_hits + excluded.cache_hits
+      `, [provider, today, jobKey || 'unknown', costUsd, cached ? 1 : 0]);
 
       return true;
     } catch (error) {
@@ -117,7 +68,14 @@ class ApiCostTracker {
    */
   async checkBudget(provider) {
     try {
-      const budget = this.stmts.getBudget.get(provider);
+      const database = await getDatabaseAsync();
+
+      // Get budget configuration
+      const budgetResult = await database.query(
+        'SELECT * FROM api_budgets WHERE provider = $1',
+        [provider]
+      );
+      const budget = budgetResult.rows[0];
 
       // If no budget configured, always within budget
       if (!budget) {
@@ -130,9 +88,25 @@ class ApiCostTracker {
 
       const today = new Date().toISOString().split('T')[0];
 
-      // Get usage
-      const todayUsage = this.stmts.getTodayUsage.get(provider, today);
-      const monthUsage = this.stmts.getMonthUsage.get(provider);
+      // Get today's usage
+      const todayResult = await database.query(`
+        SELECT SUM(total_cost_usd) as cost_today
+        FROM api_usage_daily
+        WHERE provider = $1 AND date = $2
+      `, [provider, today]);
+      const todayUsage = todayResult.rows[0];
+
+      // Get month's usage (dialect-aware)
+      const monthCondition = isUsingPostgres()
+        ? `date >= DATE_TRUNC('month', CURRENT_DATE)`
+        : `date >= date('now', 'start of month')`;
+
+      const monthResult = await database.query(`
+        SELECT SUM(total_cost_usd) as cost_month
+        FROM api_usage_daily
+        WHERE provider = $1 AND ${monthCondition}
+      `, [provider]);
+      const monthUsage = monthResult.rows[0];
 
       const costToday = todayUsage?.cost_today || 0;
       const costMonth = monthUsage?.cost_month || 0;
@@ -196,26 +170,45 @@ class ApiCostTracker {
    * @param {string} period - 'today', 'week', 'month', 'all'
    * @returns {Object} Usage statistics
    */
-  getUsageStats(provider, period = 'all') {
+  async getUsageStats(provider, period = 'all') {
     try {
+      const database = await getDatabaseAsync();
       let dateFilter = '';
 
-      switch (period) {
-        case 'today':
-          dateFilter = `AND date = date('now')`;
-          break;
-        case 'week':
-          dateFilter = `AND date >= date('now', '-7 days')`;
-          break;
-        case 'month':
-          dateFilter = `AND date >= date('now', 'start of month')`;
-          break;
-        case 'all':
-        default:
-          dateFilter = '';
+      // Build dialect-aware date filter
+      if (isUsingPostgres()) {
+        switch (period) {
+          case 'today':
+            dateFilter = `AND date = CURRENT_DATE`;
+            break;
+          case 'week':
+            dateFilter = `AND date >= CURRENT_DATE - INTERVAL '7 days'`;
+            break;
+          case 'month':
+            dateFilter = `AND date >= DATE_TRUNC('month', CURRENT_DATE)`;
+            break;
+          case 'all':
+          default:
+            dateFilter = '';
+        }
+      } else {
+        switch (period) {
+          case 'today':
+            dateFilter = `AND date = date('now')`;
+            break;
+          case 'week':
+            dateFilter = `AND date >= date('now', '-7 days')`;
+            break;
+          case 'month':
+            dateFilter = `AND date >= date('now', 'start of month')`;
+            break;
+          case 'all':
+          default:
+            dateFilter = '';
+        }
       }
 
-      const stats = this.db.prepare(`
+      const result = await database.query(`
         SELECT
           provider,
           SUM(total_requests) as total_requests,
@@ -225,9 +218,10 @@ class ApiCostTracker {
           MIN(date) as first_date,
           MAX(date) as last_date
         FROM api_usage_daily
-        WHERE provider = ? ${dateFilter}
+        WHERE provider = $1 ${dateFilter}
         GROUP BY provider
-      `).get(provider);
+      `, [provider]);
+      const stats = result.rows[0];
 
       if (!stats) {
         return {
@@ -282,35 +276,51 @@ class ApiCostTracker {
    * @param {string} period - 'today', 'week', 'month'
    * @returns {Array} Usage by job
    */
-  getUsageByJob(provider, period = 'month') {
+  async getUsageByJob(provider, period = 'month') {
     try {
+      const database = await getDatabaseAsync();
       let dateFilter = '';
 
-      switch (period) {
-        case 'today':
-          dateFilter = `AND date = date('now')`;
-          break;
-        case 'week':
-          dateFilter = `AND date >= date('now', '-7 days')`;
-          break;
-        case 'month':
-          dateFilter = `AND date >= date('now', 'start of month')`;
-          break;
+      // Build dialect-aware date filter
+      if (isUsingPostgres()) {
+        switch (period) {
+          case 'today':
+            dateFilter = `AND date = CURRENT_DATE`;
+            break;
+          case 'week':
+            dateFilter = `AND date >= CURRENT_DATE - INTERVAL '7 days'`;
+            break;
+          case 'month':
+            dateFilter = `AND date >= DATE_TRUNC('month', CURRENT_DATE)`;
+            break;
+        }
+      } else {
+        switch (period) {
+          case 'today':
+            dateFilter = `AND date = date('now')`;
+            break;
+          case 'week':
+            dateFilter = `AND date >= date('now', '-7 days')`;
+            break;
+          case 'month':
+            dateFilter = `AND date >= date('now', 'start of month')`;
+            break;
+        }
       }
 
-      const usage = this.db.prepare(`
+      const result = await database.query(`
         SELECT
           job_key,
           SUM(total_requests) as total_requests,
           SUM(total_cost_usd) as total_cost,
           SUM(cache_hits) as cache_hits
         FROM api_usage_daily
-        WHERE provider = ? ${dateFilter}
+        WHERE provider = $1 ${dateFilter}
         GROUP BY job_key
         ORDER BY total_cost DESC
-      `).all(provider);
+      `, [provider]);
 
-      return usage.map(job => ({
+      return result.rows.map(job => ({
         job_key: job.job_key,
         total_requests: job.total_requests,
         total_cost: job.total_cost,
@@ -336,15 +346,16 @@ class ApiCostTracker {
    */
   async getAllProviderStatus() {
     try {
-      const providers = this.db.prepare(`
-        SELECT DISTINCT provider FROM api_budgets
-      `).all();
+      const database = await getDatabaseAsync();
+
+      const result = await database.query('SELECT DISTINCT provider FROM api_budgets');
+      const providers = result.rows;
 
       const status = [];
 
       for (const { provider } of providers) {
         const budget = await this.checkBudget(provider);
-        const stats = this.getUsageStats(provider, 'month');
+        const stats = await this.getUsageStats(provider, 'month');
 
         status.push({
           provider,
@@ -366,16 +377,18 @@ class ApiCostTracker {
    * @param {number} dailyBudgetUsd - Daily budget in USD (null = no limit)
    * @param {number} monthlyBudgetUsd - Monthly budget in USD (null = no limit)
    */
-  updateBudget(provider, dailyBudgetUsd, monthlyBudgetUsd) {
+  async updateBudget(provider, dailyBudgetUsd, monthlyBudgetUsd) {
     try {
-      this.db.prepare(`
+      const database = await getDatabaseAsync();
+
+      await database.query(`
         INSERT INTO api_budgets (provider, daily_budget_usd, monthly_budget_usd)
-        VALUES (?, ?, ?)
+        VALUES ($1, $2, $3)
         ON CONFLICT (provider) DO UPDATE SET
           daily_budget_usd = excluded.daily_budget_usd,
           monthly_budget_usd = excluded.monthly_budget_usd,
           updated_at = CURRENT_TIMESTAMP
-      `).run(provider, dailyBudgetUsd, monthlyBudgetUsd);
+      `, [provider, dailyBudgetUsd, monthlyBudgetUsd]);
 
       return true;
     } catch (error) {

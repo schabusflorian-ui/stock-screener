@@ -1,5 +1,5 @@
 // src/services/sectorAnalysisService.js
-const { getDatabaseAsync } = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 
 /**
  * Sector Analysis Service

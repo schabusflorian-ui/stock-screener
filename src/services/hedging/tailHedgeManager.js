@@ -2,6 +2,8 @@
 // Tail Hedging Overlay System - Spitznagel-inspired crash protection
 // Provides systematic put buying and crash indicator monitoring
 
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
+
 /**
  * TailHedgeManager - Crash protection overlay for portfolios
  *
@@ -11,119 +13,23 @@
  * - Recommend specific protective positions
  */
 class TailHedgeManager {
-  /**
-   * @param {Database} db - better-sqlite3 database instance
-   */
-  constructor(db) {
-    this.db = db;
-    this._initializeTables();
-    this._prepareStatements();
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
+    // Tables should be created via migrations, not in service code
     console.log('🛡️ TailHedgeManager initialized');
-  }
-
-  _initializeTables() {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS crash_indicators (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        date TEXT NOT NULL,
-        shiller_cape REAL,
-        cape_percentile REAL,
-        credit_spread REAL,
-        vix_spot REAL,
-        vix_futures REAL,
-        vix_term_structure TEXT,
-        margin_debt REAL,
-        insider_sell_buy_ratio REAL,
-        overall_risk_level TEXT,
-        created_at TEXT DEFAULT (datetime('now')),
-        UNIQUE(date)
-      );
-
-      CREATE TABLE IF NOT EXISTS hedge_positions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        instrument TEXT NOT NULL,
-        position_type TEXT NOT NULL,
-        strike REAL,
-        expiry TEXT,
-        quantity INTEGER,
-        entry_price REAL,
-        current_price REAL,
-        entry_date TEXT,
-        status TEXT DEFAULT 'active',
-        created_at TEXT DEFAULT (datetime('now'))
-      );
-
-      CREATE TABLE IF NOT EXISTS hedge_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        instrument TEXT NOT NULL,
-        position_type TEXT NOT NULL,
-        entry_date TEXT,
-        exit_date TEXT,
-        entry_price REAL,
-        exit_price REAL,
-        quantity INTEGER,
-        pnl REAL,
-        pnl_percent REAL,
-        created_at TEXT DEFAULT (datetime('now'))
-      );
-    `);
-  }
-
-  _prepareStatements() {
-    this.stmtGetVix = this.db.prepare(`
-      SELECT close as price, date
-      FROM daily_prices dp
-      JOIN companies c ON dp.company_id = c.id
-      WHERE c.symbol = 'VIX' OR c.symbol = '^VIX'
-      ORDER BY date DESC
-      LIMIT 30
-    `);
-
-    this.stmtGetInsiderRatio = this.db.prepare(`
-      SELECT
-        SUM(CASE WHEN transaction_code IN ('P', 'A') THEN 1 ELSE 0 END) as buys,
-        SUM(CASE WHEN transaction_code IN ('S', 'D') THEN 1 ELSE 0 END) as sells
-      FROM insider_transactions
-      WHERE filing_date >= date('now', '-30 days')
-    `);
-
-    this.stmtStoreCrashIndicators = this.db.prepare(`
-      INSERT OR REPLACE INTO crash_indicators (
-        date, shiller_cape, cape_percentile, credit_spread,
-        vix_spot, vix_futures, vix_term_structure,
-        margin_debt, insider_sell_buy_ratio, overall_risk_level
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    this.stmtGetLatestIndicators = this.db.prepare(`
-      SELECT * FROM crash_indicators
-      ORDER BY date DESC
-      LIMIT 1
-    `);
-
-    this.stmtStoreHedgePosition = this.db.prepare(`
-      INSERT INTO hedge_positions (
-        instrument, position_type, strike, expiry, quantity,
-        entry_price, current_price, entry_date, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')
-    `);
-
-    this.stmtGetActiveHedges = this.db.prepare(`
-      SELECT * FROM hedge_positions WHERE status = 'active'
-    `);
   }
 
   /**
    * Get current crash indicator readings
    * @returns {Object} Crash indicator dashboard
    */
-  getCrashIndicators() {
+  async getCrashIndicators() {
     const indicators = {
-      shillerCAPE: this._getShillerCAPE(),
-      creditSpreads: this._getCreditSpreads(),
-      vixTermStructure: this._getVixTermStructure(),
-      marginDebt: this._getMarginDebt(),
-      insiderRatio: this._getInsiderRatio()
+      shillerCAPE: await this._getShillerCAPE(),
+      creditSpreads: await this._getCreditSpreads(),
+      vixTermStructure: await this._getVixTermStructure(),
+      marginDebt: await this._getMarginDebt(),
+      insiderRatio: await this._getInsiderRatio()
     };
 
     // Calculate overall risk level
@@ -178,21 +84,22 @@ class TailHedgeManager {
     };
 
     // Store indicators
-    this._storeIndicators(result);
+    await this._storeIndicators(result);
 
     return result;
   }
 
-  _getShillerCAPE() {
+  async _getShillerCAPE() {
     // Approximate CAPE calculation from P/E data
     // In production, would fetch from FRED or calculate from earnings
-    const avgPE = this.db.prepare(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT AVG(pe_ratio) as avg_pe
       FROM calculated_metrics
       WHERE pe_ratio > 0 AND pe_ratio < 200
-    `).get();
+    `);
 
-    const pe = avgPE?.avg_pe || 20;
+    const pe = result.rows[0]?.avg_pe || 20;
 
     // Historical CAPE percentiles (approximate)
     // Mean ~17, current elevated markets often 25-35
@@ -211,10 +118,20 @@ class TailHedgeManager {
     };
   }
 
-  _getCreditSpreads() {
+  async _getCreditSpreads() {
     // Would fetch BAA-AAA spread from FRED in production
     // Using proxy based on market conditions
-    const vixData = this.stmtGetVix.all();
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT close as price, date
+      FROM daily_prices dp
+      JOIN companies c ON dp.company_id = c.id
+      WHERE c.symbol = 'VIX' OR c.symbol = '^VIX'
+      ORDER BY date DESC
+      LIMIT 30
+    `);
+
+    const vixData = result.rows;
     const currentVix = vixData[0]?.price || 15;
 
     // VIX as proxy for credit conditions
@@ -232,8 +149,18 @@ class TailHedgeManager {
     };
   }
 
-  _getVixTermStructure() {
-    const vixData = this.stmtGetVix.all();
+  async _getVixTermStructure() {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT close as price, date
+      FROM daily_prices dp
+      JOIN companies c ON dp.company_id = c.id
+      WHERE c.symbol = 'VIX' OR c.symbol = '^VIX'
+      ORDER BY date DESC
+      LIMIT 30
+    `);
+
+    const vixData = result.rows;
 
     if (vixData.length < 2) {
       return { spot: 15, futures: 16, contango: true, signal: 'normal' };
@@ -252,7 +179,7 @@ class TailHedgeManager {
     };
   }
 
-  _getMarginDebt() {
+  async _getMarginDebt() {
     // Proxy using market cap changes and volume
     // In production, would use FINRA margin statistics
     return {
@@ -262,8 +189,23 @@ class TailHedgeManager {
     };
   }
 
-  _getInsiderRatio() {
-    const data = this.stmtGetInsiderRatio.get();
+  async _getInsiderRatio() {
+    const database = await getDatabaseAsync();
+
+    // Dialect-aware date interval
+    const dateInterval = isUsingPostgres()
+      ? `filing_date >= CURRENT_TIMESTAMP - INTERVAL '30 days'`
+      : `filing_date >= date('now', '-30 days')`;
+
+    const result = await database.query(`
+      SELECT
+        SUM(CASE WHEN transaction_code IN ('P', 'A') THEN 1 ELSE 0 END) as buys,
+        SUM(CASE WHEN transaction_code IN ('S', 'D') THEN 1 ELSE 0 END) as sells
+      FROM insider_transactions
+      WHERE ${dateInterval}
+    `);
+
+    const data = result.rows[0];
     const buys = data?.buys || 1;
     const sells = data?.sells || 1;
     const ratio = sells / Math.max(buys, 1);
@@ -281,10 +223,35 @@ class TailHedgeManager {
     };
   }
 
-  _storeIndicators(indicators) {
+  async _storeIndicators(indicators) {
     const date = new Date().toISOString().split('T')[0];
     try {
-      this.stmtStoreCrashIndicators.run(
+      const database = await getDatabaseAsync();
+
+      // Dialect-aware upsert
+      const upsertSQL = isUsingPostgres()
+        ? `INSERT INTO crash_indicators (
+            date, shiller_cape, cape_percentile, credit_spread,
+            vix_spot, vix_futures, vix_term_structure,
+            margin_debt, insider_sell_buy_ratio, overall_risk_level
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          ON CONFLICT (date) DO UPDATE SET
+            shiller_cape = EXCLUDED.shiller_cape,
+            cape_percentile = EXCLUDED.cape_percentile,
+            credit_spread = EXCLUDED.credit_spread,
+            vix_spot = EXCLUDED.vix_spot,
+            vix_futures = EXCLUDED.vix_futures,
+            vix_term_structure = EXCLUDED.vix_term_structure,
+            margin_debt = EXCLUDED.margin_debt,
+            insider_sell_buy_ratio = EXCLUDED.insider_sell_buy_ratio,
+            overall_risk_level = EXCLUDED.overall_risk_level`
+        : `INSERT OR REPLACE INTO crash_indicators (
+            date, shiller_cape, cape_percentile, credit_spread,
+            vix_spot, vix_futures, vix_term_structure,
+            margin_debt, insider_sell_buy_ratio, overall_risk_level
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`;
+
+      await database.query(upsertSQL, [
         date,
         indicators.shillerCAPE.value,
         indicators.shillerCAPE.percentile,
@@ -295,7 +262,7 @@ class TailHedgeManager {
         indicators.marginDebt.value,
         indicators.insiderRatio.sellBuyRatio,
         indicators.overallRiskLevel
-      );
+      ]);
     } catch (e) {
       // Ignore duplicate date errors
     }
@@ -307,9 +274,9 @@ class TailHedgeManager {
    * @param {string} riskLevel - NORMAL, CAUTIOUS, ELEVATED, HIGH_ALERT
    * @returns {Object} Hedge budget allocation
    */
-  calculateHedgeBudget(portfolioValue, riskLevel = null) {
+  async calculateHedgeBudget(portfolioValue, riskLevel = null) {
     if (!riskLevel) {
-      const indicators = this.getCrashIndicators();
+      const indicators = await this.getCrashIndicators();
       riskLevel = indicators.overallRiskLevel;
     }
 
@@ -344,17 +311,20 @@ class TailHedgeManager {
    * @param {Array} currentHedges - Existing hedge positions
    * @returns {Array} Recommended hedges
    */
-  getHedgeRecommendations(portfolioValue, currentHedges = []) {
-    const indicators = this.getCrashIndicators();
-    const budget = this.calculateHedgeBudget(portfolioValue, indicators.overallRiskLevel);
+  async getHedgeRecommendations(portfolioValue, currentHedges = []) {
+    const indicators = await this.getCrashIndicators();
+    const budget = await this.calculateHedgeBudget(portfolioValue, indicators.overallRiskLevel);
 
     // Get current SPY price (approximate)
-    const spyPrice = this.db.prepare(`
+    const database = await getDatabaseAsync();
+    const spyResult = await database.query(`
       SELECT close as price FROM daily_prices dp
       JOIN companies c ON dp.company_id = c.id
       WHERE c.symbol = 'SPY'
       ORDER BY date DESC LIMIT 1
-    `).get()?.price || 450;
+    `);
+
+    const spyPrice = spyResult.rows[0]?.price || 450;
 
     const recommendations = [];
 
@@ -433,7 +403,7 @@ class TailHedgeManager {
    * @param {number} portfolioValue - Portfolio value
    * @returns {Object} Protection analysis
    */
-  calculatePortfolioProtection(hedges, portfolioValue) {
+  async calculatePortfolioProtection(hedges, portfolioValue) {
     const scenarios = [
       { name: '10% Correction', drop: 0.10, vixSpike: 25 },
       { name: '20% Bear Market', drop: 0.20, vixSpike: 35 },
@@ -441,12 +411,15 @@ class TailHedgeManager {
       { name: '50% Crisis (2008)', drop: 0.50, vixSpike: 80 }
     ];
 
-    const spyPrice = this.db.prepare(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT close as price FROM daily_prices dp
       JOIN companies c ON dp.company_id = c.id
       WHERE c.symbol = 'SPY'
       ORDER BY date DESC LIMIT 1
-    `).get()?.price || 450;
+    `);
+
+    const spyPrice = result.rows[0]?.price || 450;
 
     return scenarios.map(scenario => {
       const unhedgedLoss = portfolioValue * scenario.drop;
@@ -482,8 +455,14 @@ class TailHedgeManager {
    * Store a new hedge position
    * @param {Object} hedge - Hedge position details
    */
-  storeHedgePosition(hedge) {
-    this.stmtStoreHedgePosition.run(
+  async storeHedgePosition(hedge) {
+    const database = await getDatabaseAsync();
+    await database.query(`
+      INSERT INTO hedge_positions (
+        instrument, position_type, strike, expiry, quantity,
+        entry_price, current_price, entry_date, status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active')
+    `, [
       hedge.instrument,
       hedge.type,
       hedge.strike,
@@ -492,23 +471,27 @@ class TailHedgeManager {
       hedge.price,
       hedge.price,
       new Date().toISOString().split('T')[0]
-    );
+    ]);
   }
 
   /**
    * Get all active hedge positions
    * @returns {Array} Active hedges
    */
-  getActiveHedges() {
-    return this.stmtGetActiveHedges.all();
+  async getActiveHedges() {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM hedge_positions WHERE status = 'active'
+    `);
+    return result.rows;
   }
 
   /**
    * Get exposure adjustment multiplier based on crash indicators
    * @returns {Object} Exposure recommendation
    */
-  getExposureAdjustment() {
-    const indicators = this.getCrashIndicators();
+  async getExposureAdjustment() {
+    const indicators = await this.getCrashIndicators();
 
     const multipliers = {
       'NORMAL': 1.0,
@@ -532,11 +515,10 @@ class TailHedgeManager {
 
 /**
  * Factory function to create TailHedgeManager
- * @param {Database} db - Database instance
  * @returns {TailHedgeManager}
  */
-function createTailHedgeManager(db) {
-  return new TailHedgeManager(db);
+function createTailHedgeManager() {
+  return new TailHedgeManager();
 }
 
 module.exports = { TailHedgeManager, createTailHedgeManager };

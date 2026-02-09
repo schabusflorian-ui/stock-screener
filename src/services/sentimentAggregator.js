@@ -11,6 +11,7 @@
  */
 
 const { sentiment: logger } = require('../utils/logger');
+const { getDatabaseAsync } = require('../lib/db');
 
 // Weighting configuration for each source
 const SOURCE_WEIGHTS = {
@@ -29,15 +30,13 @@ const CONFIDENCE_THRESHOLDS = {
 };
 
 class SentimentAggregator {
-  constructor(db, services = {}) {
-    this.db = db;
+  constructor(services = {}) {
+    // No database parameter needed - using getDatabaseAsync()
     this.redditFetcher = services.reddit || null;
     this.stocktwitsFetcher = services.stocktwits || null;
     this.newsFetcher = services.news || null;
     this.fearGreedFetcher = services.fearGreed || null;
     this.analystFetcher = services.analyst || null;
-
-    this.ensureTable();
   }
 
   /**
@@ -61,7 +60,7 @@ class SentimentAggregator {
 
     // Check cache first
     if (!skipCache) {
-      const cached = this.getCachedSentiment(companyId, maxAge);
+      const cached = await this.getCachedSentiment(companyId, maxAge);
       if (cached) {
         logger.debug('Using cached sentiment', { symbol });
         return cached;
@@ -441,7 +440,9 @@ class SentimentAggregator {
    */
   async storeCombinedSentiment(companyId, combined, sources, region = 'US') {
     try {
-      const stmt = this.db.prepare(`
+      const database = await getDatabaseAsync();
+
+      await database.query(`
         INSERT INTO combined_sentiment (
           company_id, combined_score, combined_signal, confidence,
           reddit_sentiment, reddit_signal, reddit_confidence,
@@ -449,10 +450,8 @@ class SentimentAggregator {
           news_sentiment, news_signal, news_confidence,
           market_sentiment, market_signal, market_confidence,
           sources_used, agreement_score, region, calculated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-      `);
-
-      stmt.run(
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW())
+      `, [
         companyId,
         combined.sentiment,
         combined.signal,
@@ -472,21 +471,17 @@ class SentimentAggregator {
         combined.sourcesUsed,
         combined.agreement?.score || null,
         region
-      );
+      ]);
 
       // Update company's combined sentiment
-      this.db
-        .prepare(
-          `
+      await database.query(`
         UPDATE companies SET
-          combined_sentiment = ?,
-          sentiment_signal = ?,
-          sentiment_confidence = ?,
-          sentiment_updated_at = datetime('now')
-        WHERE id = ?
-      `
-        )
-        .run(combined.sentiment, combined.signal, combined.confidence, companyId);
+          combined_sentiment = $1,
+          sentiment_signal = $2,
+          sentiment_confidence = $3,
+          sentiment_updated_at = NOW()
+        WHERE id = $4
+      `, [combined.sentiment, combined.signal, combined.confidence, companyId]);
     } catch (error) {
       console.error('Error storing combined sentiment:', error.message);
     }
@@ -495,21 +490,19 @@ class SentimentAggregator {
   /**
    * Get cached sentiment from database
    */
-  getCachedSentiment(companyId, maxAge) {
+  async getCachedSentiment(companyId, maxAge) {
+    const database = await getDatabaseAsync();
     const cutoff = new Date(Date.now() - maxAge).toISOString();
 
-    const row = this.db
-      .prepare(
-        `
+    const result = await database.query(`
       SELECT * FROM combined_sentiment
-      WHERE company_id = ?
-        AND calculated_at >= ?
+      WHERE company_id = $1
+        AND calculated_at >= $2
       ORDER BY calculated_at DESC
       LIMIT 1
-    `
-      )
-      .get(companyId, cutoff);
+    `, [companyId, cutoff]);
 
+    const row = result.rows[0];
     if (!row) return null;
 
     return {
@@ -616,69 +609,6 @@ class SentimentAggregator {
       .all(limit);
   }
 
-  /**
-   * Ensure combined_sentiment table exists
-   */
-  ensureTable() {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS combined_sentiment (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        company_id INTEGER NOT NULL,
-        combined_score REAL,
-        combined_signal TEXT,
-        confidence REAL,
-        reddit_sentiment REAL,
-        reddit_signal TEXT,
-        reddit_confidence REAL,
-        stocktwits_sentiment REAL,
-        stocktwits_signal TEXT,
-        stocktwits_confidence REAL,
-        news_sentiment REAL,
-        news_signal TEXT,
-        news_confidence REAL,
-        market_sentiment REAL,
-        market_signal TEXT,
-        market_confidence REAL,
-        sources_used INTEGER,
-        agreement_score REAL,
-        region TEXT DEFAULT 'US',
-        calculated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (company_id) REFERENCES companies(id)
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_combined_sentiment_company ON combined_sentiment(company_id);
-      CREATE INDEX IF NOT EXISTS idx_combined_sentiment_date ON combined_sentiment(calculated_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_combined_sentiment_region ON combined_sentiment(region);
-    `);
-
-    // Ensure companies table has sentiment columns
-    try {
-      this.db.exec('ALTER TABLE companies ADD COLUMN combined_sentiment REAL');
-    } catch (e) {
-      /* exists */
-    }
-    try {
-      this.db.exec('ALTER TABLE companies ADD COLUMN sentiment_signal TEXT');
-    } catch (e) {
-      /* exists */
-    }
-    try {
-      this.db.exec('ALTER TABLE companies ADD COLUMN sentiment_confidence REAL');
-    } catch (e) {
-      /* exists */
-    }
-    try {
-      this.db.exec('ALTER TABLE companies ADD COLUMN sentiment_updated_at DATETIME');
-    } catch (e) {
-      /* exists */
-    }
-    // Add region column to combined_sentiment for existing tables
-    try {
-      this.db.exec('ALTER TABLE combined_sentiment ADD COLUMN region TEXT DEFAULT \'US\'');
-    } catch (e) {
-      /* exists */
-    }
-  }
 }
 
 module.exports = SentimentAggregator;

@@ -3,54 +3,57 @@
 
 const path = require('path');
 const fs = require('fs');
-const { dialect, isUsingPostgres } = require('../lib/db');
+const { getDatabaseAsync, dialect, isUsingPostgres } = require('../lib/db');
 
 class SettingsService {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
   }
 
   /**
    * Check if a table exists (works for both SQLite and PostgreSQL)
    */
-  _tableExists(tableName) {
+  async _tableExists(tableName) {
+    const database = await getDatabaseAsync();
     if (isUsingPostgres()) {
-      const result = this.db.prepare(`
+      const result = await database.query(`
         SELECT EXISTS (
           SELECT FROM information_schema.tables
-          WHERE table_name = ?
+          WHERE table_name = $1
         ) as exists
-      `).get(tableName);
-      return result?.exists === true;
+      `, [tableName]);
+      return result.rows[0]?.exists === true;
     }
-    const result = this.db.prepare(`
-      SELECT name FROM sqlite_master WHERE type='table' AND name=?
-    `).get(tableName);
-    return !!result;
+    const result = await database.query(`
+      SELECT name FROM sqlite_master WHERE type='table' AND name=$1
+    `, [tableName]);
+    return !!result.rows[0];
   }
 
   // =========================================================================
   // UPDATE SCHEDULES
   // =========================================================================
 
-  getUpdateSchedules() {
+  async getUpdateSchedules() {
     try {
       // Check if table exists (using dialect-aware helper)
-      if (!this._tableExists('update_schedules')) {
+      const tableExists = await this._tableExists('update_schedules');
+      if (!tableExists) {
         // Create the table and seed it
-        this._ensureUpdateSchedulesTable();
+        await this._ensureUpdateSchedulesTable();
       }
 
-      const stmt = this.db.prepare(`
+      const database = await getDatabaseAsync();
+      const result = await database.query(`
         SELECT * FROM update_schedules ORDER BY display_name
       `);
 
-      const rows = stmt.all();
+      const rows = result.rows;
 
       // If empty, seed with defaults
       if (rows.length === 0) {
-        this._seedUpdateSchedules();
-        return this.getUpdateSchedules(); // Recurse once after seeding
+        await this._seedUpdateSchedules();
+        return await this.getUpdateSchedules(); // Recurse once after seeding
       }
 
       return rows.map(row => ({
@@ -78,40 +81,69 @@ class SettingsService {
     }
   }
 
-  _ensureUpdateSchedulesTable() {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS update_schedules (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE NOT NULL,
-        display_name TEXT NOT NULL,
-        description TEXT,
-        is_enabled INTEGER DEFAULT 1,
-        frequency TEXT NOT NULL,
-        cron_expression TEXT,
-        timezone TEXT DEFAULT 'America/New_York',
-        status TEXT DEFAULT 'idle',
-        last_run_at DATETIME,
-        last_success_at DATETIME,
-        last_error TEXT,
-        next_run_at DATETIME,
-        items_processed INTEGER DEFAULT 0,
-        items_updated INTEGER DEFAULT 0,
-        items_failed INTEGER DEFAULT 0,
-        average_duration_seconds INTEGER,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
+  async _ensureUpdateSchedulesTable() {
+    const database = await getDatabaseAsync();
+
+    if (isUsingPostgres()) {
+      await database.query(`
+        CREATE TABLE IF NOT EXISTS update_schedules (
+          id SERIAL PRIMARY KEY,
+          name TEXT UNIQUE NOT NULL,
+          display_name TEXT NOT NULL,
+          description TEXT,
+          is_enabled INTEGER DEFAULT 1,
+          frequency TEXT NOT NULL,
+          cron_expression TEXT,
+          timezone TEXT DEFAULT 'America/New_York',
+          status TEXT DEFAULT 'idle',
+          last_run_at TIMESTAMP,
+          last_success_at TIMESTAMP,
+          last_error TEXT,
+          next_run_at TIMESTAMP,
+          items_processed INTEGER DEFAULT 0,
+          items_updated INTEGER DEFAULT 0,
+          items_failed INTEGER DEFAULT 0,
+          average_duration_seconds INTEGER,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+    } else {
+      await database.query(`
+        CREATE TABLE IF NOT EXISTS update_schedules (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT UNIQUE NOT NULL,
+          display_name TEXT NOT NULL,
+          description TEXT,
+          is_enabled INTEGER DEFAULT 1,
+          frequency TEXT NOT NULL,
+          cron_expression TEXT,
+          timezone TEXT DEFAULT 'America/New_York',
+          status TEXT DEFAULT 'idle',
+          last_run_at DATETIME,
+          last_success_at DATETIME,
+          last_error TEXT,
+          next_run_at DATETIME,
+          items_processed INTEGER DEFAULT 0,
+          items_updated INTEGER DEFAULT 0,
+          items_failed INTEGER DEFAULT 0,
+          average_duration_seconds INTEGER,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+    }
   }
 
-  _seedUpdateSchedules() {
+  async _seedUpdateSchedules() {
+    const database = await getDatabaseAsync();
+
     // Use dialect-aware INSERT to handle PostgreSQL vs SQLite
     const sql = isUsingPostgres()
       ? `INSERT INTO update_schedules (name, display_name, description, frequency, cron_expression)
-         VALUES (?, ?, ?, ?, ?) ON CONFLICT (name) DO NOTHING`
+         VALUES ($1, $2, $3, $4, $5) ON CONFLICT (name) DO NOTHING`
       : `INSERT OR IGNORE INTO update_schedules (name, display_name, description, frequency, cron_expression)
-         VALUES (?, ?, ?, ?, ?)`;
-    const insertSchedule = this.db.prepare(sql);
+         VALUES ($1, $2, $3, $4, $5)`;
 
     const schedules = [
       ['stock_prices', 'Stock Prices', 'Daily closing prices for all tracked stocks', 'daily', '0 18 * * 1-5'],
@@ -129,36 +161,35 @@ class SettingsService {
     ];
 
     for (const [name, displayName, description, frequency, cron] of schedules) {
-      insertSchedule.run(name, displayName, description, frequency, cron);
+      await database.query(sql, [name, displayName, description, frequency, cron]);
     }
   }
 
-  toggleUpdateSchedule(name, enabled) {
-    const stmt = this.db.prepare(`
+  async toggleUpdateSchedule(name, enabled) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       UPDATE update_schedules
-      SET is_enabled = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE name = ?
-    `);
-    const result = stmt.run(enabled ? 1 : 0, name);
+      SET is_enabled = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE name = $2
+    `, [enabled ? 1 : 0, name]);
 
     // Log the change
-    this.log('info', 'update', `Update schedule "${name}" ${enabled ? 'enabled' : 'disabled'}`);
+    await this.log('info', 'update', `Update schedule "${name}" ${enabled ? 'enabled' : 'disabled'}`);
 
-    return result.changes > 0;
+    return (result.rowCount || 0) > 0;
   }
 
-  getUpdateHistory(scheduleName = null, limit = 50) {
-    const query = `
-      SELECT * FROM settings_update_history
-      ${scheduleName ? 'WHERE schedule_name = ?' : ''}
-      ORDER BY created_at DESC
-      LIMIT ?
-    `;
+  async getUpdateHistory(scheduleName = null, limit = 50) {
+    const database = await getDatabaseAsync();
+    const query = scheduleName
+      ? `SELECT * FROM settings_update_history WHERE schedule_name = $1 ORDER BY created_at DESC LIMIT $2`
+      : `SELECT * FROM settings_update_history ORDER BY created_at DESC LIMIT $1`;
 
-    const stmt = this.db.prepare(query);
     const params = scheduleName ? [scheduleName, limit] : [limit];
 
-    return stmt.all(...params).map(row => ({
+    const result = await database.query(query, params);
+
+    return result.rows.map(row => ({
       id: row.id,
       scheduleId: row.schedule_id,
       scheduleName: row.schedule_name,
@@ -175,114 +206,145 @@ class SettingsService {
     }));
   }
 
-  recordUpdateStart(name) {
+  async recordUpdateStart(name) {
+    const database = await getDatabaseAsync();
+
     // Get schedule ID
-    const schedule = this.db.prepare('SELECT id FROM update_schedules WHERE name = ?').get(name);
+    const scheduleResult = await database.query('SELECT id FROM update_schedules WHERE name = $1', [name]);
+    const schedule = scheduleResult.rows[0];
     if (!schedule) return null;
 
     // Update schedule status
-    this.db.prepare(`
+    await database.query(`
       UPDATE update_schedules
       SET status = 'running', last_run_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-      WHERE name = ?
-    `).run(name);
+      WHERE name = $1
+    `, [name]);
 
     // Create history entry
-    const result = this.db.prepare(`
+    const result = await database.query(`
       INSERT INTO settings_update_history (schedule_id, schedule_name, started_at, status)
-      VALUES (?, ?, CURRENT_TIMESTAMP, 'running')
-    `).run(schedule.id, name);
+      VALUES ($1, $2, CURRENT_TIMESTAMP, 'running')
+      RETURNING id
+    `, [schedule.id, name]);
 
-    return result.lastInsertRowid;
+    return result.rows[0].id;
   }
 
-  recordUpdateComplete(name, stats = {}) {
+  async recordUpdateComplete(name, stats = {}) {
     const { itemsProcessed = 0, itemsUpdated = 0, itemsFailed = 0, historyId } = stats;
+    const database = await getDatabaseAsync();
 
     // Update schedule
-    this.db.prepare(`
+    await database.query(`
       UPDATE update_schedules
       SET
         status = 'idle',
         last_success_at = CURRENT_TIMESTAMP,
         last_error = NULL,
-        items_processed = ?,
-        items_updated = ?,
-        items_failed = ?,
+        items_processed = $1,
+        items_updated = $2,
+        items_failed = $3,
         updated_at = CURRENT_TIMESTAMP
-      WHERE name = ?
-    `).run(itemsProcessed, itemsUpdated, itemsFailed, name);
+      WHERE name = $4
+    `, [itemsProcessed, itemsUpdated, itemsFailed, name]);
 
     // Update history if ID provided
     if (historyId) {
-      this.db.prepare(`
-        UPDATE settings_update_history
-        SET
-          completed_at = CURRENT_TIMESTAMP,
-          status = 'success',
-          items_processed = ?,
-          items_updated = ?,
-          items_failed = ?,
-          duration_seconds = CAST((julianday(CURRENT_TIMESTAMP) - julianday(started_at)) * 86400 AS INTEGER)
-        WHERE id = ?
-      `).run(itemsProcessed, itemsUpdated, itemsFailed, historyId);
+      if (isUsingPostgres()) {
+        await database.query(`
+          UPDATE settings_update_history
+          SET
+            completed_at = CURRENT_TIMESTAMP,
+            status = 'success',
+            items_processed = $1,
+            items_updated = $2,
+            items_failed = $3,
+            duration_seconds = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - started_at)) AS INTEGER)
+          WHERE id = $4
+        `, [itemsProcessed, itemsUpdated, itemsFailed, historyId]);
+      } else {
+        await database.query(`
+          UPDATE settings_update_history
+          SET
+            completed_at = CURRENT_TIMESTAMP,
+            status = 'success',
+            items_processed = $1,
+            items_updated = $2,
+            items_failed = $3,
+            duration_seconds = CAST((julianday(CURRENT_TIMESTAMP) - julianday(started_at)) * 86400 AS INTEGER)
+          WHERE id = $4
+        `, [itemsProcessed, itemsUpdated, itemsFailed, historyId]);
+      }
     }
 
-    this.log('info', 'update', `Update "${name}" completed: ${itemsUpdated}/${itemsProcessed} updated`);
+    await this.log('info', 'update', `Update "${name}" completed: ${itemsUpdated}/${itemsProcessed} updated`);
   }
 
-  recordUpdateFailure(name, error, historyId = null) {
+  async recordUpdateFailure(name, error, historyId = null) {
     const errorMessage = error instanceof Error ? error.message : String(error);
+    const database = await getDatabaseAsync();
 
     // Update schedule
-    this.db.prepare(`
+    await database.query(`
       UPDATE update_schedules
       SET
         status = 'failed',
-        last_error = ?,
+        last_error = $1,
         updated_at = CURRENT_TIMESTAMP
-      WHERE name = ?
-    `).run(errorMessage, name);
+      WHERE name = $2
+    `, [errorMessage, name]);
 
     // Update history if ID provided
     if (historyId) {
-      this.db.prepare(`
-        UPDATE settings_update_history
-        SET
-          completed_at = CURRENT_TIMESTAMP,
-          status = 'failed',
-          error_summary = ?,
-          duration_seconds = CAST((julianday(CURRENT_TIMESTAMP) - julianday(started_at)) * 86400 AS INTEGER)
-        WHERE id = ?
-      `).run(errorMessage, historyId);
+      if (isUsingPostgres()) {
+        await database.query(`
+          UPDATE settings_update_history
+          SET
+            completed_at = CURRENT_TIMESTAMP,
+            status = 'failed',
+            error_summary = $1,
+            duration_seconds = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - started_at)) AS INTEGER)
+          WHERE id = $2
+        `, [errorMessage, historyId]);
+      } else {
+        await database.query(`
+          UPDATE settings_update_history
+          SET
+            completed_at = CURRENT_TIMESTAMP,
+            status = 'failed',
+            error_summary = $1,
+            duration_seconds = CAST((julianday(CURRENT_TIMESTAMP) - julianday(started_at)) * 86400 AS INTEGER)
+          WHERE id = $2
+        `, [errorMessage, historyId]);
+      }
     }
 
-    this.log('error', 'update', `Update "${name}" failed: ${errorMessage}`);
+    await this.log('error', 'update', `Update "${name}" failed: ${errorMessage}`);
   }
 
   // =========================================================================
   // API INTEGRATIONS
   // =========================================================================
 
-  getApiIntegrations() {
+  async getApiIntegrations() {
     try {
+      const database = await getDatabaseAsync();
       // Ensure table exists
-      const tableExists = this.db.prepare(`
-        SELECT name FROM sqlite_master WHERE type='table' AND name='api_integrations'
-      `).get();
+      const tableExists = await this._tableExists('api_integrations');
 
       if (!tableExists) {
-        this._ensureApiIntegrationsTable();
-        this._seedApiIntegrations();
+        await this._ensureApiIntegrationsTable();
+        await this._seedApiIntegrations();
       }
 
-      const stmt = this.db.prepare('SELECT * FROM api_integrations ORDER BY display_name');
-      const rows = stmt.all();
+      const result = await database.query('SELECT * FROM api_integrations ORDER BY display_name');
+      const rows = result.rows;
 
       // If empty, seed and return defaults
       if (rows.length === 0) {
-        this._seedApiIntegrations();
-        return this.getApiIntegrations(); // Recurse once after seeding
+        await this._seedApiIntegrations();
+        return await this.getApiIntegrations(); // Recurse once after seeding
       }
 
       return rows.map(row => ({
@@ -312,35 +374,63 @@ class SettingsService {
     }
   }
 
-  _ensureApiIntegrationsTable() {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS api_integrations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE NOT NULL,
-        display_name TEXT NOT NULL,
-        is_enabled INTEGER DEFAULT 0,
-        api_key TEXT,
-        base_url TEXT,
-        calls_today INTEGER DEFAULT 0,
-        calls_this_month INTEGER DEFAULT 0,
-        daily_limit INTEGER,
-        monthly_limit INTEGER,
-        last_call_at DATETIME,
-        last_reset_at DATETIME,
-        status TEXT DEFAULT 'unknown',
-        last_error TEXT,
-        last_health_check DATETIME,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
+  async _ensureApiIntegrationsTable() {
+    const database = await getDatabaseAsync();
+
+    if (isUsingPostgres()) {
+      await database.query(`
+        CREATE TABLE IF NOT EXISTS api_integrations (
+          id SERIAL PRIMARY KEY,
+          name TEXT UNIQUE NOT NULL,
+          display_name TEXT NOT NULL,
+          is_enabled INTEGER DEFAULT 0,
+          api_key TEXT,
+          base_url TEXT,
+          calls_today INTEGER DEFAULT 0,
+          calls_this_month INTEGER DEFAULT 0,
+          daily_limit INTEGER,
+          monthly_limit INTEGER,
+          last_call_at TIMESTAMP,
+          last_reset_at TIMESTAMP,
+          status TEXT DEFAULT 'unknown',
+          last_error TEXT,
+          last_health_check TIMESTAMP,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+    } else {
+      await database.query(`
+        CREATE TABLE IF NOT EXISTS api_integrations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT UNIQUE NOT NULL,
+          display_name TEXT NOT NULL,
+          is_enabled INTEGER DEFAULT 0,
+          api_key TEXT,
+          base_url TEXT,
+          calls_today INTEGER DEFAULT 0,
+          calls_this_month INTEGER DEFAULT 0,
+          daily_limit INTEGER,
+          monthly_limit INTEGER,
+          last_call_at DATETIME,
+          last_reset_at DATETIME,
+          status TEXT DEFAULT 'unknown',
+          last_error TEXT,
+          last_health_check DATETIME,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+    }
   }
 
-  _seedApiIntegrations() {
-    const insertIntegration = this.db.prepare(`
-      INSERT OR IGNORE INTO api_integrations (name, display_name, daily_limit, monthly_limit, base_url, status)
-      VALUES (?, ?, ?, ?, ?, 'connected')
-    `);
+  async _seedApiIntegrations() {
+    const database = await getDatabaseAsync();
+    const sql = isUsingPostgres()
+      ? `INSERT INTO api_integrations (name, display_name, daily_limit, monthly_limit, base_url, status)
+         VALUES ($1, $2, $3, $4, $5, 'connected') ON CONFLICT (name) DO NOTHING`
+      : `INSERT OR IGNORE INTO api_integrations (name, display_name, daily_limit, monthly_limit, base_url, status)
+         VALUES ($1, $2, $3, $4, $5, 'connected')`;
 
     const integrations = [
       ['yfinance', 'Yahoo Finance', null, null, null],
@@ -352,31 +442,33 @@ class SettingsService {
     ];
 
     for (const [name, displayName, dailyLimit, monthlyLimit, baseUrl] of integrations) {
-      insertIntegration.run(name, displayName, dailyLimit, monthlyLimit, baseUrl);
+      await database.query(sql, [name, displayName, dailyLimit, monthlyLimit, baseUrl]);
     }
   }
 
-  updateApiKey(name, apiKey) {
-    const stmt = this.db.prepare(`
+  async updateApiKey(name, apiKey) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       UPDATE api_integrations
-      SET api_key = ?, is_enabled = 1, updated_at = CURRENT_TIMESTAMP
-      WHERE name = ?
-    `);
-    const result = stmt.run(apiKey, name);
+      SET api_key = $1, is_enabled = 1, updated_at = CURRENT_TIMESTAMP
+      WHERE name = $2
+    `, [apiKey, name]);
 
-    this.log('info', 'api', `API key updated for "${name}"`);
-    return result.changes > 0;
+    await this.log('info', 'api', `API key updated for "${name}"`);
+    return (result.rowCount || 0) > 0;
   }
 
-  getApiKey(name) {
-    const stmt = this.db.prepare('SELECT api_key FROM api_integrations WHERE name = ?');
-    const row = stmt.get(name);
+  async getApiKey(name) {
+    const database = await getDatabaseAsync();
+    const result = await database.query('SELECT api_key FROM api_integrations WHERE name = $1', [name]);
+    const row = result.rows[0];
     return row ? row.api_key : null;
   }
 
   async testApiConnection(name) {
-    const stmt = this.db.prepare('SELECT * FROM api_integrations WHERE name = ?');
-    const integration = stmt.get(name);
+    const database = await getDatabaseAsync();
+    const result = await database.query('SELECT * FROM api_integrations WHERE name = $1', [name]);
+    const integration = result.rows[0];
 
     if (!integration) {
       return { success: false, message: 'Integration not found' };
@@ -409,22 +501,22 @@ class SettingsService {
       }
 
       // Update status
-      this.db.prepare(`
+      await database.query(`
         UPDATE api_integrations
-        SET status = ?, last_health_check = CURRENT_TIMESTAMP, last_error = NULL, updated_at = CURRENT_TIMESTAMP
-        WHERE name = ?
-      `).run(testResult ? 'connected' : 'error', name);
+        SET status = $1, last_health_check = CURRENT_TIMESTAMP, last_error = NULL, updated_at = CURRENT_TIMESTAMP
+        WHERE name = $2
+      `, [testResult ? 'connected' : 'error', name]);
 
       return { success: testResult, message };
 
     } catch (error) {
       const errorMessage = error.message || 'Connection test failed';
 
-      this.db.prepare(`
+      await database.query(`
         UPDATE api_integrations
-        SET status = 'error', last_error = ?, last_health_check = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-        WHERE name = ?
-      `).run(errorMessage, name);
+        SET status = 'error', last_error = $1, last_health_check = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+        WHERE name = $2
+      `, [errorMessage, name]);
 
       return { success: false, message: errorMessage };
     }
@@ -452,55 +544,63 @@ class SettingsService {
     return response.ok;
   }
 
-  recordApiCall(name) {
-    this.db.prepare(`
+  async recordApiCall(name) {
+    const database = await getDatabaseAsync();
+    await database.query(`
       UPDATE api_integrations
       SET
         calls_today = calls_today + 1,
         calls_this_month = calls_this_month + 1,
         last_call_at = CURRENT_TIMESTAMP,
         updated_at = CURRENT_TIMESTAMP
-      WHERE name = ?
-    `).run(name);
+      WHERE name = $1
+    `, [name]);
   }
 
-  resetDailyUsage() {
-    this.db.prepare(`
+  async resetDailyUsage() {
+    const database = await getDatabaseAsync();
+    await database.query(`
       UPDATE api_integrations
       SET calls_today = 0, last_reset_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-    `).run();
+    `);
 
-    this.log('info', 'api', 'Daily API usage counters reset');
+    await this.log('info', 'api', 'Daily API usage counters reset');
   }
 
-  resetMonthlyUsage() {
-    this.db.prepare(`
+  async resetMonthlyUsage() {
+    const database = await getDatabaseAsync();
+    await database.query(`
       UPDATE api_integrations
       SET calls_this_month = 0, updated_at = CURRENT_TIMESTAMP
-    `).run();
+    `);
 
-    this.log('info', 'api', 'Monthly API usage counters reset');
+    await this.log('info', 'api', 'Monthly API usage counters reset');
   }
 
   // =========================================================================
   // DATA HEALTH
   // =========================================================================
 
-  generateDataHealthReport() {
+  async generateDataHealthReport() {
+    const database = await getDatabaseAsync();
     const metrics = [];
 
     // 1. Stale stock prices (>3 trading days old)
     try {
-      const staleStocksResult = this.db.prepare(`
+      const dateCondition = isUsingPostgres()
+        ? `dp.date >= CURRENT_DATE - INTERVAL '5 days'`
+        : `dp.date >= date('now', '-5 days')`;
+
+      const result = await database.query(`
         SELECT COUNT(*) as count FROM companies c
         WHERE c.is_active = 1
         AND NOT EXISTS (
           SELECT 1 FROM daily_prices dp
           WHERE dp.company_id = c.id
-          AND dp.date >= date('now', '-5 days')
+          AND ${dateCondition}
         )
-      `).get();
-      const staleStockCount = staleStocksResult?.count || 0;
+      `);
+      const staleStockCount = result.rows[0]?.count || 0;
 
       metrics.push({
         name: 'Stale Stock Prices',
@@ -524,14 +624,14 @@ class SettingsService {
 
     // 2. Missing fundamentals
     try {
-      const missingFundResult = this.db.prepare(`
+      const result = await database.query(`
         SELECT COUNT(*) as count FROM companies c
         WHERE c.is_active = 1
         AND NOT EXISTS (
           SELECT 1 FROM calculated_metrics cm WHERE cm.company_id = c.id
         )
-      `).get();
-      const missingFundCount = missingFundResult?.count || 0;
+      `);
+      const missingFundCount = result.rows[0]?.count || 0;
 
       metrics.push({
         name: 'Missing Metrics',
@@ -555,11 +655,15 @@ class SettingsService {
 
     // 3. Failed updates in last 24h
     try {
-      const failedUpdatesResult = this.db.prepare(`
+      const dateCondition = isUsingPostgres()
+        ? `created_at > CURRENT_TIMESTAMP - INTERVAL '24 hours'`
+        : `created_at > datetime('now', '-24 hours')`;
+
+      const result = await database.query(`
         SELECT COUNT(*) as count FROM settings_update_history
-        WHERE status = 'failed' AND created_at > datetime('now', '-24 hours')
-      `).get();
-      const failedCount = failedUpdatesResult?.count || 0;
+        WHERE status = 'failed' AND ${dateCondition}
+      `);
+      const failedCount = result.rows[0]?.count || 0;
 
       metrics.push({
         name: 'Failed Updates (24h)',
@@ -583,11 +687,11 @@ class SettingsService {
 
     // 4. API rate limit status
     try {
-      const rateLimitedResult = this.db.prepare(`
+      const result = await database.query(`
         SELECT COUNT(*) as count FROM api_integrations
         WHERE status = 'rate_limited'
-      `).get();
-      const rateLimitedCount = rateLimitedResult?.count || 0;
+      `);
+      const rateLimitedCount = result.rows[0]?.count || 0;
 
       metrics.push({
         name: 'Rate Limited APIs',
@@ -611,11 +715,15 @@ class SettingsService {
 
     // 5. Stale sentiment data
     try {
-      const staleSentimentResult = this.db.prepare(`
+      const dateCondition = isUsingPostgres()
+        ? `calculated_at < CURRENT_TIMESTAMP - INTERVAL '2 days'`
+        : `calculated_at < datetime('now', '-2 days')`;
+
+      const result = await database.query(`
         SELECT COUNT(*) as count FROM combined_sentiment
-        WHERE calculated_at < datetime('now', '-2 days')
-      `).get();
-      const staleSentimentCount = staleSentimentResult?.count || 0;
+        WHERE ${dateCondition}
+      `);
+      const staleSentimentCount = result.rows[0]?.count || 0;
 
       metrics.push({
         name: 'Stale Sentiment',
@@ -638,13 +746,23 @@ class SettingsService {
     }
 
     // 6. Database size check
-    const dbPath = path.join(__dirname, '../../data/stocks.db');
     let dbSizeMB = 0;
     try {
-      const stats = fs.statSync(dbPath);
-      dbSizeMB = Math.round(stats.size / (1024 * 1024));
-    } catch {
-      // File not accessible
+      if (isUsingPostgres()) {
+        // Get PostgreSQL database size
+        const result = await database.query(`
+          SELECT pg_database_size(current_database()) as size
+        `);
+        const sizeBytes = result.rows[0]?.size || 0;
+        dbSizeMB = Math.round(sizeBytes / (1024 * 1024));
+      } else {
+        // Get SQLite file size
+        const dbPath = path.join(__dirname, '../../data/stocks.db');
+        const stats = fs.statSync(dbPath);
+        dbSizeMB = Math.round(stats.size / (1024 * 1024));
+      }
+    } catch (e) {
+      console.log('Could not determine database size:', e.message);
     }
 
     metrics.push({
@@ -666,12 +784,13 @@ class SettingsService {
     };
   }
 
-  runHealthCheck() {
+  async runHealthCheck() {
+    const database = await getDatabaseAsync();
     const checks = [];
 
     // 1. Database connection
     try {
-      this.db.prepare('SELECT 1').get();
+      await database.query('SELECT 1');
       checks.push({ name: 'Database', status: 'pass', message: 'Connected' });
     } catch (e) {
       checks.push({ name: 'Database', status: 'fail', message: 'Connection failed' });
@@ -679,17 +798,19 @@ class SettingsService {
 
     // 2. Check for stuck updates (running > 2 hours)
     try {
-      const tableExists = this.db.prepare(`
-        SELECT name FROM sqlite_master WHERE type='table' AND name='update_schedules'
-      `).get();
+      const tableExists = await this._tableExists('update_schedules');
 
       if (tableExists) {
-        const stuckUpdatesResult = this.db.prepare(`
-          SELECT COUNT(*) as count FROM update_schedules
-          WHERE status = 'running' AND last_run_at < datetime('now', '-2 hours')
-        `).get();
+        const dateCondition = isUsingPostgres()
+          ? `last_run_at < CURRENT_TIMESTAMP - INTERVAL '2 hours'`
+          : `last_run_at < datetime('now', '-2 hours')`;
 
-        if ((stuckUpdatesResult?.count || 0) > 0) {
+        const result = await database.query(`
+          SELECT COUNT(*) as count FROM update_schedules
+          WHERE status = 'running' AND ${dateCondition}
+        `);
+
+        if ((result.rows[0]?.count || 0) > 0) {
           checks.push({ name: 'Update Jobs', status: 'fail', message: 'Stuck update detected' });
         } else {
           checks.push({ name: 'Update Jobs', status: 'pass', message: 'All jobs running normally' });
@@ -723,23 +844,24 @@ class SettingsService {
   // USER PREFERENCES
   // =========================================================================
 
-  getUserPreferences(userId = 'default') {
+  async getUserPreferences(userId = 'default') {
     try {
+      const database = await getDatabaseAsync();
       // Ensure table exists
-      const tableExists = this.db.prepare(`
-        SELECT name FROM sqlite_master WHERE type='table' AND name='user_preferences'
-      `).get();
+      const tableExists = await this._tableExists('user_preferences');
 
       if (!tableExists) {
-        this._ensureUserPreferencesTable();
+        await this._ensureUserPreferencesTable();
       }
 
-      let row = this.db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(userId);
+      let result = await database.query('SELECT * FROM user_preferences WHERE user_id = $1', [userId]);
+      let row = result.rows[0];
 
       if (!row) {
         // Create default preferences
-        this.db.prepare('INSERT INTO user_preferences (user_id) VALUES (?)').run(userId);
-        row = this.db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(userId);
+        await database.query('INSERT INTO user_preferences (user_id) VALUES ($1)', [userId]);
+        result = await database.query('SELECT * FROM user_preferences WHERE user_id = $1', [userId]);
+        row = result.rows[0];
       }
 
       return {
@@ -772,33 +894,61 @@ class SettingsService {
     }
   }
 
-  _ensureUserPreferencesTable() {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS user_preferences (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id TEXT UNIQUE NOT NULL,
-        theme TEXT DEFAULT 'system',
-        currency TEXT DEFAULT 'USD',
-        locale TEXT DEFAULT 'en-US',
-        date_format TEXT DEFAULT 'MMM D, YYYY',
-        number_format TEXT DEFAULT 'compact',
-        default_benchmark TEXT DEFAULT 'SPY',
-        default_time_horizon INTEGER DEFAULT 10,
-        default_simulation_runs INTEGER DEFAULT 1000,
-        email_alerts INTEGER DEFAULT 0,
-        alert_on_update_failure INTEGER DEFAULT 1,
-        alert_on_stale_data INTEGER DEFAULT 1,
-        show_percentages INTEGER DEFAULT 1,
-        compact_numbers INTEGER DEFAULT 1,
-        auto_refresh_interval INTEGER DEFAULT 0,
-        notifications_enabled INTEGER DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
+  async _ensureUserPreferencesTable() {
+    const database = await getDatabaseAsync();
+
+    if (isUsingPostgres()) {
+      await database.query(`
+        CREATE TABLE IF NOT EXISTS user_preferences (
+          id SERIAL PRIMARY KEY,
+          user_id TEXT UNIQUE NOT NULL,
+          theme TEXT DEFAULT 'system',
+          currency TEXT DEFAULT 'USD',
+          locale TEXT DEFAULT 'en-US',
+          date_format TEXT DEFAULT 'MMM D, YYYY',
+          number_format TEXT DEFAULT 'compact',
+          default_benchmark TEXT DEFAULT 'SPY',
+          default_time_horizon INTEGER DEFAULT 10,
+          default_simulation_runs INTEGER DEFAULT 1000,
+          email_alerts INTEGER DEFAULT 0,
+          alert_on_update_failure INTEGER DEFAULT 1,
+          alert_on_stale_data INTEGER DEFAULT 1,
+          show_percentages INTEGER DEFAULT 1,
+          compact_numbers INTEGER DEFAULT 1,
+          auto_refresh_interval INTEGER DEFAULT 0,
+          notifications_enabled INTEGER DEFAULT 0,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+    } else {
+      await database.query(`
+        CREATE TABLE IF NOT EXISTS user_preferences (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id TEXT UNIQUE NOT NULL,
+          theme TEXT DEFAULT 'system',
+          currency TEXT DEFAULT 'USD',
+          locale TEXT DEFAULT 'en-US',
+          date_format TEXT DEFAULT 'MMM D, YYYY',
+          number_format TEXT DEFAULT 'compact',
+          default_benchmark TEXT DEFAULT 'SPY',
+          default_time_horizon INTEGER DEFAULT 10,
+          default_simulation_runs INTEGER DEFAULT 1000,
+          email_alerts INTEGER DEFAULT 0,
+          alert_on_update_failure INTEGER DEFAULT 1,
+          alert_on_stale_data INTEGER DEFAULT 1,
+          show_percentages INTEGER DEFAULT 1,
+          compact_numbers INTEGER DEFAULT 1,
+          auto_refresh_interval INTEGER DEFAULT 0,
+          notifications_enabled INTEGER DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+    }
   }
 
-  updateUserPreferences(userId = 'default', prefs) {
+  async updateUserPreferences(userId = 'default', prefs) {
     const fieldMap = {
       theme: 'theme',
       currency: 'currency',
@@ -814,11 +964,12 @@ class SettingsService {
 
     const updates = [];
     const values = [];
+    let paramIndex = 1;
 
     for (const [key, value] of Object.entries(prefs)) {
       if (fieldMap[key] && value !== undefined) {
-        updates.push(`${fieldMap[key]} = ?`);
-        // Convert booleans to integers for SQLite
+        updates.push(`${fieldMap[key]} = $${paramIndex++}`);
+        // Convert booleans to integers for SQLite/PostgreSQL
         values.push(typeof value === 'boolean' ? (value ? 1 : 0) : value);
       }
     }
@@ -826,57 +977,94 @@ class SettingsService {
     if (updates.length === 0) return false;
 
     values.push(userId);
-    const stmt = this.db.prepare(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       UPDATE user_preferences
       SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP
-      WHERE user_id = ?
-    `);
+      WHERE user_id = $${paramIndex}
+    `, values);
 
-    const result = stmt.run(...values);
-    return result.changes > 0;
+    return (result.rowCount || 0) > 0;
   }
 
   // =========================================================================
   // DATABASE & STORAGE
   // =========================================================================
 
-  getDatabaseStats() {
+  async getDatabaseStats() {
     try {
-      // Get table stats
-      const tables = this.db.prepare(`
-        SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'
-      `).all();
+      const database = await getDatabaseAsync();
+      let tables = [];
+      let indexCount = 0;
+      let size = 0;
 
-      let totalRows = 0;
-      const tableStats = tables.map(t => {
+      if (isUsingPostgres()) {
+        // PostgreSQL: Get table stats from information_schema
+        const tablesResult = await database.query(`
+          SELECT table_name as name
+          FROM information_schema.tables
+          WHERE table_schema = 'public'
+          AND table_type = 'BASE TABLE'
+          ORDER BY table_name
+        `);
+        tables = tablesResult.rows;
+
+        // Get index count
+        const indexResult = await database.query(`
+          SELECT COUNT(*) as count
+          FROM pg_indexes
+          WHERE schemaname = 'public'
+        `);
+        indexCount = indexResult.rows[0]?.count || 0;
+
+        // Get database size
+        const sizeResult = await database.query(`
+          SELECT pg_database_size(current_database()) as size
+        `);
+        size = sizeResult.rows[0]?.size || 0;
+      } else {
+        // SQLite: Get table stats from sqlite_master
+        const tablesResult = await database.query(`
+          SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'
+        `);
+        tables = tablesResult.rows;
+
+        // Get index count
+        const indexResult = await database.query(`
+          SELECT COUNT(*) as count FROM sqlite_master WHERE type='index'
+        `);
+        indexCount = indexResult.rows[0]?.count || 0;
+
+        // Get database file size
+        const dbPath = path.join(__dirname, '../../data/stocks.db');
         try {
-          const countResult = this.db.prepare(`SELECT COUNT(*) as count FROM "${t.name}"`).get();
-          const rows = countResult?.count || 0;
+          const stats = fs.statSync(dbPath);
+          size = stats.size;
+        } catch {
+          // File not accessible
+        }
+      }
+
+      // Count rows for each table
+      let totalRows = 0;
+      const tableStats = [];
+
+      for (const t of tables) {
+        try {
+          const countResult = await database.query(`SELECT COUNT(*) as count FROM "${t.name}"`);
+          const rows = countResult.rows[0]?.count || 0;
           totalRows += rows;
-          return {
+          tableStats.push({
             name: t.name,
             rows: rows,
-          };
+          });
         } catch {
-          return { name: t.name, rows: 0 };
+          tableStats.push({ name: t.name, rows: 0 });
         }
-      }).sort((a, b) => b.rows - a.rows);
-
-      // Get index count
-      const indexResult = this.db.prepare(`
-        SELECT COUNT(*) as count FROM sqlite_master WHERE type='index'
-      `).get();
-      const indexCount = indexResult?.count || 0;
-
-      // Get database file size
-      const dbPath = path.join(__dirname, '../../data/stocks.db');
-      let size = 0;
-      try {
-        const stats = fs.statSync(dbPath);
-        size = stats.size;
-      } catch {
-        // File not accessible
       }
+
+      // Sort by row count descending
+      tableStats.sort((a, b) => b.rows - a.rows);
 
       return {
         size,  // Frontend expects 'size' (raw bytes)
@@ -902,22 +1090,30 @@ class SettingsService {
   // DIAGNOSTICS
   // =========================================================================
 
-  getSystemDiagnostics() {
-    const dbStats = this.getDatabaseStats();
+  async getSystemDiagnostics() {
+    const database = await getDatabaseAsync();
+    const dbStats = await this.getDatabaseStats();
 
     // Get recent errors
-    const recentErrors = this.db.prepare(`
-      SELECT level, category, message, created_at
-      FROM diagnostic_logs
-      WHERE level IN ('error', 'warn')
-      ORDER BY created_at DESC
-      LIMIT 20
-    `).all().map(r => ({
-      level: r.level,
-      category: r.category,
-      message: r.message,
-      timestamp: r.created_at,
-    }));
+    let recentErrors = [];
+    try {
+      const result = await database.query(`
+        SELECT level, category, message, created_at
+        FROM diagnostic_logs
+        WHERE level IN ('error', 'warn')
+        ORDER BY created_at DESC
+        LIMIT 20
+      `);
+      recentErrors = result.rows.map(r => ({
+        level: r.level,
+        category: r.category,
+        message: r.message,
+        timestamp: r.created_at,
+      }));
+    } catch (e) {
+      // Table may not exist yet
+      console.log('Could not fetch recent errors:', e.message);
+    }
 
     return {
       version: process.env.APP_VERSION || '1.0.0',
@@ -927,8 +1123,8 @@ class SettingsService {
       memoryUsage: process.memoryUsage(),
       database: {
         connected: true,
-        size: dbStats.totalSize,
-        tableCount: dbStats.tables.length,
+        size: dbStats.size,
+        tableCount: dbStats.tableCount,
       },
       recentErrors,
     };
@@ -938,33 +1134,37 @@ class SettingsService {
   // LOGGING
   // =========================================================================
 
-  log(level, category, message, details = null) {
-    this.db.prepare(`
+  async log(level, category, message, details = null) {
+    const database = await getDatabaseAsync();
+    await database.query(`
       INSERT INTO diagnostic_logs (level, category, message, details)
-      VALUES (?, ?, ?, ?)
-    `).run(level, category, message, details ? JSON.stringify(details) : null);
+      VALUES ($1, $2, $3, $4)
+    `, [level, category, message, details ? JSON.stringify(details) : null]);
   }
 
-  getLogs(options = {}) {
+  async getLogs(options = {}) {
     const { level, category, limit = 100 } = options;
+    const database = await getDatabaseAsync();
 
     let query = 'SELECT * FROM diagnostic_logs WHERE 1=1';
     const params = [];
+    let paramIndex = 1;
 
     if (level) {
-      query += ' AND level = ?';
+      query += ` AND level = $${paramIndex++}`;
       params.push(level);
     }
 
     if (category) {
-      query += ' AND category = ?';
+      query += ` AND category = $${paramIndex++}`;
       params.push(category);
     }
 
-    query += ' ORDER BY created_at DESC LIMIT ?';
+    query += ` ORDER BY created_at DESC LIMIT $${paramIndex}`;
     params.push(limit);
 
-    return this.db.prepare(query).all(...params).map(r => ({
+    const result = await database.query(query, params);
+    return result.rows.map(r => ({
       id: r.id,
       level: r.level,
       category: r.category,
@@ -974,24 +1174,42 @@ class SettingsService {
     }));
   }
 
-  cleanupOldLogs(daysToKeep = 30) {
-    const result = this.db.prepare(`
-      DELETE FROM diagnostic_logs WHERE created_at < datetime('now', '-' || ? || ' days')
-    `).run(daysToKeep);
+  async cleanupOldLogs(daysToKeep = 30) {
+    const database = await getDatabaseAsync();
 
-    if (result.changes > 0) {
-      this.log('info', 'maintenance', `Cleaned up ${result.changes} old log entries`);
+    if (isUsingPostgres()) {
+      const result = await database.query(`
+        DELETE FROM diagnostic_logs WHERE created_at < CURRENT_TIMESTAMP - INTERVAL '1 day' * $1
+      `, [daysToKeep]);
+
+      const deletedCount = result.rowCount || 0;
+      if (deletedCount > 0) {
+        await this.log('info', 'maintenance', `Cleaned up ${deletedCount} old log entries`);
+      }
+
+      return deletedCount;
+    } else {
+      const result = await database.query(`
+        DELETE FROM diagnostic_logs WHERE created_at < datetime('now', '-' || $1 || ' days')
+      `, [daysToKeep]);
+
+      const deletedCount = result.rowCount || 0;
+      if (deletedCount > 0) {
+        await this.log('info', 'maintenance', `Cleaned up ${deletedCount} old log entries`);
+      }
+
+      return deletedCount;
     }
-
-    return result.changes;
   }
 
   // =========================================================================
   // SYSTEM SETTINGS (Key-Value)
   // =========================================================================
 
-  getSetting(key) {
-    const row = this.db.prepare('SELECT value FROM system_settings WHERE key = ?').get(key);
+  async getSetting(key) {
+    const database = await getDatabaseAsync();
+    const result = await database.query('SELECT value FROM system_settings WHERE key = $1', [key]);
+    const row = result.rows[0];
     if (!row) return null;
     try {
       return JSON.parse(row.value);
@@ -1000,20 +1218,23 @@ class SettingsService {
     }
   }
 
-  setSetting(key, value, description = null) {
+  async setSetting(key, value, description = null) {
+    const database = await getDatabaseAsync();
     const jsonValue = JSON.stringify(value);
-    this.db.prepare(`
+    await database.query(`
       INSERT INTO system_settings (key, value, description, updated_at)
-      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
       ON CONFLICT(key) DO UPDATE SET
-        value = excluded.value,
-        description = COALESCE(excluded.description, description),
+        value = EXCLUDED.value,
+        description = COALESCE(EXCLUDED.description, description),
         updated_at = CURRENT_TIMESTAMP
-    `).run(key, jsonValue, description);
+    `, [key, jsonValue, description]);
   }
 
-  getAllSettings() {
-    return this.db.prepare('SELECT * FROM system_settings ORDER BY key').all().map(r => ({
+  async getAllSettings() {
+    const database = await getDatabaseAsync();
+    const result = await database.query('SELECT * FROM system_settings ORDER BY key');
+    return result.rows.map(r => ({
       key: r.key,
       value: (() => { try { return JSON.parse(r.value); } catch { return r.value; } })(),
       description: r.description,
@@ -1023,8 +1244,8 @@ class SettingsService {
 }
 
 // Factory function to create service instance
-function createSettingsService(db) {
-  return new SettingsService(db);
+function createSettingsService() {
+  return new SettingsService();
 }
 
 module.exports = { SettingsService, createSettingsService };

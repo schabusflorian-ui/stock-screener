@@ -16,6 +16,7 @@ const AdmZip = require('adm-zip');
 const UpdateDetector = require('./updateDetector');
 const { getCanonicalTag, getStatementType } = require('../bulk-import/tagMappings');
 const SECBulkImporterUnified = require('../bulk-import/importSECBulkUnified');
+const { getDatabaseAsync } = require('../lib/db');
 
 // Constants
 const SEC_BULK_BASE_URL = 'https://www.sec.gov/files/dera/data/financial-statement-data-sets';
@@ -23,95 +24,10 @@ const DATA_DIR = path.join(process.cwd(), 'data');
 const BULK_DIR = path.join(DATA_DIR, 'sec-bulk');
 
 class QuarterlyUpdater {
-  /**
-   * @param {Database} db - better-sqlite3 database instance
-   */
-  constructor(db) {
-    this.db = db;
-    this.detector = new UpdateDetector(db);
+  constructor() {
+    this.detector = new UpdateDetector();
     this.currentUpdate = null;
     this.currentProgress = null;
-    this.prepareStatements();
-  }
-
-  /**
-   * Prepare commonly used SQL statements
-   */
-  prepareStatements() {
-    // Insert update history record
-    this.stmtInsertUpdate = this.db.prepare(`
-      INSERT INTO update_history (
-        update_type, quarter, started_at, status
-      ) VALUES (?, ?, ?, 'running')
-    `);
-
-    // Complete update record
-    this.stmtCompleteUpdate = this.db.prepare(`
-      UPDATE update_history
-      SET
-        completed_at = ?,
-        status = 'completed',
-        companies_checked = ?,
-        companies_updated = ?,
-        records_added = ?,
-        records_updated = ?,
-        records_skipped = ?,
-        details = ?
-      WHERE id = ?
-    `);
-
-    // Fail update record
-    this.stmtFailUpdate = this.db.prepare(`
-      UPDATE update_history
-      SET
-        completed_at = ?,
-        status = 'failed',
-        error_message = ?
-      WHERE id = ?
-    `);
-
-    // Get latest update record
-    this.stmtGetLatestUpdate = this.db.prepare(`
-      SELECT * FROM update_history
-      ORDER BY started_at DESC
-      LIMIT 1
-    `);
-
-    // Get update history
-    this.stmtGetUpdateHistory = this.db.prepare(`
-      SELECT * FROM update_history
-      ORDER BY started_at DESC
-      LIMIT ?
-    `);
-
-    // Insert financial line item
-    this.stmtInsertLineItem = this.db.prepare(`
-      INSERT INTO financial_line_items (
-        company_id, concept, original_concept, fiscal_date_ending,
-        fiscal_period, fiscal_year, value, unit, statement_type,
-        adsh, qtrs, filed_date, form_type
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(company_id, concept, fiscal_date_ending, fiscal_period)
-      DO UPDATE SET
-        value = excluded.value,
-        unit = excluded.unit,
-        filed_date = excluded.filed_date,
-        form_type = excluded.form_type
-      WHERE excluded.filed_date >= financial_line_items.filed_date
-    `);
-
-    // Get company by CIK
-    this.stmtGetCompanyByCik = this.db.prepare(`
-      SELECT id, symbol, cik, name FROM companies WHERE cik = ?
-    `);
-
-    // Check if update already exists for quarter
-    this.stmtCheckExistingUpdate = this.db.prepare(`
-      SELECT * FROM update_history
-      WHERE quarter = ? AND status = 'completed'
-      ORDER BY completed_at DESC
-      LIMIT 1
-    `);
   }
 
   /**
@@ -130,9 +46,17 @@ class QuarterlyUpdater {
     console.log(`QUARTERLY UPDATE: ${quarter}`);
     console.log(`${'='.repeat(60)}\n`);
 
+    const database = await getDatabaseAsync();
+
     // Check if already completed
     if (!forceFullUpdate) {
-      const existing = this.stmtCheckExistingUpdate.get(quarter);
+      const existingResult = await database.query(`
+        SELECT * FROM update_history
+        WHERE quarter = $1 AND status = 'completed'
+        ORDER BY completed_at DESC
+        LIMIT 1
+      `, [quarter]);
+      const existing = existingResult.rows[0];
       if (existing) {
         console.log(`Quarter ${quarter} already imported on ${existing.completed_at}`);
         console.log('Use forceFullUpdate=true to reimport');
@@ -145,8 +69,13 @@ class QuarterlyUpdater {
     }
 
     // Create update record
-    const result = this.stmtInsertUpdate.run('quarterly_bulk', quarter, new Date().toISOString());
-    const updateId = result.lastInsertRowid;
+    const result = await database.query(`
+      INSERT INTO update_history (
+        update_type, quarter, started_at, status
+      ) VALUES ($1, $2, $3, 'running')
+      RETURNING id
+    `, ['quarterly_bulk', quarter, new Date().toISOString()]);
+    const updateId = result.rows[0].id;
     this.currentUpdate = { id: updateId, quarter };
 
     const stats = {
@@ -196,7 +125,7 @@ class QuarterlyUpdater {
 
       if (companiesNeedingUpdate.length === 0) {
         console.log('   No updates needed - data is current');
-        this.completeUpdateRecord(updateId, stats);
+        await this.completeUpdateRecord(updateId, stats);
         return {
           status: 'completed',
           message: 'No updates needed',
@@ -239,7 +168,7 @@ class QuarterlyUpdater {
       // Step 5: Complete update
       onProgress({ stage: 'completed', percent: 100, message: 'Update complete!' });
 
-      this.completeUpdateRecord(updateId, stats);
+      await this.completeUpdateRecord(updateId, stats);
 
       console.log(`\n${'='.repeat(60)}`);
       console.log('UPDATE COMPLETE');
@@ -259,7 +188,7 @@ class QuarterlyUpdater {
 
     } catch (error) {
       console.error(`Update failed: ${error.message}`);
-      this.failUpdateRecord(updateId, error.message);
+      await this.failUpdateRecord(updateId, error.message);
 
       return {
         status: 'failed',
@@ -478,88 +407,98 @@ class QuarterlyUpdater {
       const batchSize = 5000;
       let batch = [];
 
-      const processBatch = () => {
+      const processBatch = async () => {
         if (batch.length === 0) return;
 
-        const insertMany = this.db.transaction((items) => {
-          for (const item of items) {
-            try {
-              // Get canonical tag
-              const canonicalTag = getCanonicalTag(item.tag);
-              const statementType = getStatementType(canonicalTag);
+        const database = await getDatabaseAsync();
 
-              // Skip unknown tags
-              if (statementType === 'unknown') {
-                stats.recordsSkipped++;
-                continue;
-              }
+        for (const item of batch) {
+          try {
+            // Get canonical tag
+            const canonicalTag = getCanonicalTag(item.tag);
+            const statementType = getStatementType(canonicalTag);
 
-              // Get submission info
-              const submission = submissionsMap.get(item.adsh);
-              if (!submission) {
-                stats.recordsSkipped++;
-                continue;
-              }
-
-              // Get company
-              const companyInfo = adshToCompany.get(item.adsh);
-              if (!companyInfo) {
-                stats.recordsSkipped++;
-                continue;
-              }
-
-              // Parse value
-              const value = parseFloat(item.value);
-              if (isNaN(value)) {
-                stats.recordsSkipped++;
-                continue;
-              }
-
-              // Determine fiscal period from qtrs
-              const qtrs = parseInt(item.qtrs) || 0;
-              let fiscalPeriod;
-              switch (qtrs) {
-                case 0: fiscalPeriod = 'INSTANT'; break;
-                case 1: fiscalPeriod = 'Q1'; break;
-                case 2: fiscalPeriod = 'Q2'; break;
-                case 3: fiscalPeriod = 'Q3'; break;
-                case 4: fiscalPeriod = 'FY'; break;
-                default: fiscalPeriod = 'FY';
-              }
-
-              // Insert line item
-              const result = this.stmtInsertLineItem.run(
-                companyInfo.company_id,
-                canonicalTag,
-                item.tag,
-                item.ddate,
-                fiscalPeriod,
-                parseInt(submission.fy) || null,
-                value,
-                item.uom,
-                statementType,
-                item.adsh,
-                qtrs,
-                submission.filed,
-                submission.form
-              );
-
-              if (result.changes > 0) {
-                stats.recordsAdded++;
-                companiesProcessed.add(companyInfo.company_id);
-              }
-
-            } catch (error) {
-              stats.errors.push({
-                adsh: item.adsh,
-                tag: item.tag,
-                error: error.message
-              });
+            // Skip unknown tags
+            if (statementType === 'unknown') {
+              stats.recordsSkipped++;
+              continue;
             }
-          }
-        });
 
-        insertMany(batch);
+            // Get submission info
+            const submission = submissionsMap.get(item.adsh);
+            if (!submission) {
+              stats.recordsSkipped++;
+              continue;
+            }
+
+            // Get company
+            const companyInfo = adshToCompany.get(item.adsh);
+            if (!companyInfo) {
+              stats.recordsSkipped++;
+              continue;
+            }
+
+            // Parse value
+            const value = parseFloat(item.value);
+            if (isNaN(value)) {
+              stats.recordsSkipped++;
+              continue;
+            }
+
+            // Determine fiscal period from qtrs
+            const qtrs = parseInt(item.qtrs) || 0;
+            let fiscalPeriod;
+            switch (qtrs) {
+              case 0: fiscalPeriod = 'INSTANT'; break;
+              case 1: fiscalPeriod = 'Q1'; break;
+              case 2: fiscalPeriod = 'Q2'; break;
+              case 3: fiscalPeriod = 'Q3'; break;
+              case 4: fiscalPeriod = 'FY'; break;
+              default: fiscalPeriod = 'FY';
+            }
+
+            // Insert line item
+            await database.query(`
+              INSERT INTO financial_line_items (
+                company_id, concept, original_concept, fiscal_date_ending,
+                fiscal_period, fiscal_year, value, unit, statement_type,
+                adsh, qtrs, filed_date, form_type
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+              ON CONFLICT(company_id, concept, fiscal_date_ending, fiscal_period)
+              DO UPDATE SET
+                value = EXCLUDED.value,
+                unit = EXCLUDED.unit,
+                filed_date = EXCLUDED.filed_date,
+                form_type = EXCLUDED.form_type
+              WHERE EXCLUDED.filed_date >= financial_line_items.filed_date
+            `, [
+              companyInfo.company_id,
+              canonicalTag,
+              item.tag,
+              item.ddate,
+              fiscalPeriod,
+              parseInt(submission.fy) || null,
+              value,
+              item.uom,
+              statementType,
+              item.adsh,
+              qtrs,
+              submission.filed,
+              submission.form
+            ]);
+
+            stats.recordsAdded++;
+            companiesProcessed.add(companyInfo.company_id);
+
+          } catch (error) {
+            stats.errors.push({
+              adsh: item.adsh,
+              tag: item.tag,
+              error: error.message
+            });
+          }
+        }
+
         batch = [];
       };
 
@@ -589,31 +528,37 @@ class QuarterlyUpdater {
 
         // Process batch
         if (batch.length >= batchSize) {
-          processBatch();
-
-          // Report progress
-          onProgress({
-            percent: Math.min(99, (companiesProcessed.size / companies.length) * 100),
-            current: companiesProcessed.size,
-            total: companies.length,
-            recordsAdded: stats.recordsAdded,
-            currentCompany: null
-          });
+          rl.pause(); // Pause reading while processing
+          processBatch().then(() => {
+            // Report progress
+            onProgress({
+              percent: Math.min(99, (companiesProcessed.size / companies.length) * 100),
+              current: companiesProcessed.size,
+              total: companies.length,
+              recordsAdded: stats.recordsAdded,
+              currentCompany: null
+            });
+            rl.resume(); // Resume reading
+          }).catch(reject);
         }
       });
 
-      rl.on('close', () => {
-        // Process remaining batch
-        processBatch();
+      rl.on('close', async () => {
+        try {
+          // Process remaining batch
+          await processBatch();
 
-        stats.companiesUpdated = companiesProcessed.size;
+          stats.companiesUpdated = companiesProcessed.size;
 
-        // Update freshness for processed companies
-        for (const companyId of companiesProcessed) {
-          this.detector.markCompanyUpdated(companyId);
+          // Update freshness for processed companies
+          for (const companyId of companiesProcessed) {
+            await this.detector.markCompanyUpdated(companyId);
+          }
+
+          resolve(stats);
+        } catch (error) {
+          reject(error);
         }
-
-        resolve(stats);
       });
 
       rl.on('error', reject);
@@ -708,7 +653,7 @@ class QuarterlyUpdater {
     // Try to load metric calculator if available
     try {
       const MetricCalculator = require('./metricCalculator');
-      const calculator = new MetricCalculator(this.db);
+      const calculator = new MetricCalculator();
 
       for (const companyId of companyIds) {
         try {
@@ -760,8 +705,21 @@ class QuarterlyUpdater {
   /**
    * Complete update record
    */
-  completeUpdateRecord(updateId, stats) {
-    this.stmtCompleteUpdate.run(
+  async completeUpdateRecord(updateId, stats) {
+    const database = await getDatabaseAsync();
+    await database.query(`
+      UPDATE update_history
+      SET
+        completed_at = $1,
+        status = 'completed',
+        companies_checked = $2,
+        companies_updated = $3,
+        records_added = $4,
+        records_updated = $5,
+        records_skipped = $6,
+        details = $7
+      WHERE id = $8
+    `, [
       new Date().toISOString(),
       stats.companiesChecked,
       stats.companiesUpdated,
@@ -770,24 +728,32 @@ class QuarterlyUpdater {
       stats.recordsSkipped,
       JSON.stringify({ errors: stats.errors?.slice(0, 100) || [] }),
       updateId
-    );
+    ]);
   }
 
   /**
    * Mark update as failed
    */
-  failUpdateRecord(updateId, errorMessage) {
-    this.stmtFailUpdate.run(
+  async failUpdateRecord(updateId, errorMessage) {
+    const database = await getDatabaseAsync();
+    await database.query(`
+      UPDATE update_history
+      SET
+        completed_at = $1,
+        status = 'failed',
+        error_message = $2
+      WHERE id = $3
+    `, [
       new Date().toISOString(),
       errorMessage,
       updateId
-    );
+    ]);
   }
 
   /**
    * Get status of current or last update
    */
-  getUpdateStatus() {
+  async getUpdateStatus() {
     if (this.currentUpdate) {
       return {
         status: 'running',
@@ -796,7 +762,13 @@ class QuarterlyUpdater {
       };
     }
 
-    const latest = this.stmtGetLatestUpdate.get();
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM update_history
+      ORDER BY started_at DESC
+      LIMIT 1
+    `);
+    const latest = result.rows[0];
     if (latest) {
       return {
         status: latest.status,
@@ -811,8 +783,14 @@ class QuarterlyUpdater {
   /**
    * Get update history
    */
-  getUpdateHistory(limit = 10) {
-    return this.stmtGetUpdateHistory.all(limit).map(record => ({
+  async getUpdateHistory(limit = 10) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
+      SELECT * FROM update_history
+      ORDER BY started_at DESC
+      LIMIT $1
+    `, [limit]);
+    return result.rows.map(record => ({
       ...record,
       details: record.details ? JSON.parse(record.details) : null
     }));
@@ -821,13 +799,15 @@ class QuarterlyUpdater {
   /**
    * Get latest completed update
    */
-  getLatestCompletedUpdate() {
-    return this.db.prepare(`
+  async getLatestCompletedUpdate() {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT * FROM update_history
       WHERE status = 'completed'
       ORDER BY completed_at DESC
       LIMIT 1
-    `).get();
+    `);
+    return result.rows[0];
   }
 
   /**

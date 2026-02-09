@@ -5,10 +5,11 @@
 
 const { spawn } = require('child_process');
 const path = require('path');
+const { getDatabaseAsync } = require('../lib/db');
 
 class PriceUpdateService {
-  constructor(db) {
-    this.db = db;
+  constructor() {
+    // No database parameter needed - using getDatabaseAsync()
     this.pythonScript = path.join(__dirname, '../../python-services/price_updater.py');
     this.dbPath = path.join(__dirname, '../../data/stocks.db');
   }
@@ -16,8 +17,10 @@ class PriceUpdateService {
   /**
    * Get update statistics from database
    */
-  getUpdateStats() {
-    const overall = this.db.prepare(`
+  async getUpdateStats() {
+    const database = await getDatabaseAsync();
+
+    const overallResult = await database.query(`
       SELECT
         COUNT(*) as total,
         SUM(CASE WHEN last_price_update >= date('now', '-1 day') THEN 1 ELSE 0 END) as fresh_1d,
@@ -26,9 +29,10 @@ class PriceUpdateService {
         SUM(CASE WHEN last_price_update IS NULL THEN 1 ELSE 0 END) as never_updated
       FROM companies
       WHERE symbol IS NOT NULL AND symbol NOT LIKE 'CIK_%'
-    `).get();
+    `);
+    const overall = overallResult.rows[0];
 
-    const byTier = this.db.prepare(`
+    const byTierResult = await database.query(`
       SELECT
         update_tier,
         COUNT(*) as total,
@@ -38,13 +42,15 @@ class PriceUpdateService {
       WHERE symbol IS NOT NULL AND symbol NOT LIKE 'CIK_%'
       GROUP BY update_tier
       ORDER BY update_tier
-    `).all();
+    `);
+    const byTier = byTierResult.rows;
 
-    const recentRuns = this.db.prepare(`
+    const recentRunsResult = await database.query(`
       SELECT * FROM price_update_log
       ORDER BY created_at DESC
       LIMIT 10
-    `).all();
+    `);
+    const recentRuns = recentRunsResult.rows;
 
     const tierNames = {
       1: 'Core (Daily)',
@@ -66,7 +72,7 @@ class PriceUpdateService {
   /**
    * Get companies scheduled for today
    */
-  getTodaysSchedule() {
+  async getTodaysSchedule() {
     const today = new Date();
     const dayOfWeek = today.getDay(); // 0=Sun, 6=Sat
     const dayOfMonth = today.getDate();
@@ -79,7 +85,9 @@ class PriceUpdateService {
     // Convert to Mon=0 format
     const weekday = dayOfWeek - 1;
 
-    const scheduled = this.db.prepare(`
+    const database = await getDatabaseAsync();
+
+    const scheduledResult = await database.query(`
       SELECT
         update_tier,
         COUNT(*) as count
@@ -89,13 +97,14 @@ class PriceUpdateService {
         AND symbol NOT LIKE 'CIK_%'
         AND (
           (update_tier = 1)
-          OR (update_tier = 2 AND (id % 2) = (? % 2))
-          OR (update_tier = 3 AND (id % 3) = (? % 3))
-          OR (update_tier = 4 AND (id % 5) = ?)
+          OR (update_tier = 2 AND (id % 2) = ($1 % 2))
+          OR (update_tier = 3 AND (id % 3) = ($2 % 3))
+          OR (update_tier = 4 AND (id % 5) = $3)
         )
       GROUP BY update_tier
       ORDER BY update_tier
-    `).all(dayOfMonth, dayOfMonth, weekday);
+    `, [dayOfMonth, dayOfMonth, weekday]);
+    const scheduled = scheduledResult.rows;
 
     const tierNames = {
       1: 'Core (Daily)',
@@ -120,8 +129,10 @@ class PriceUpdateService {
   /**
    * Get stale companies that need backfill
    */
-  getStaleCompanies(limit = 100) {
-    return this.db.prepare(`
+  async getStaleCompanies(limit = 100) {
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT
         c.id,
         c.symbol,
@@ -139,8 +150,10 @@ class PriceUpdateService {
           OR (c.update_tier = 4 AND (c.last_price_update < date('now', '-10 days') OR c.last_price_update IS NULL))
         )
       ORDER BY c.update_tier ASC, days_stale DESC NULLS FIRST
-      LIMIT ?
-    `).all(limit);
+      LIMIT $1
+    `, [limit]);
+
+    return result.rows;
   }
 
   /**
