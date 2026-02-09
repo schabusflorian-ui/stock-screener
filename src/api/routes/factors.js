@@ -122,10 +122,10 @@ function sendServiceUnavailable(res, error) {
 // ============================================
 
 // GET /api/factors/stats - Get overall statistics
-router.get('/stats', (req, res) => {
+router.get('/stats', async (req, res) => {
   try {
     const fas = getFactorAnalysisService();
-    const stats = fas.getStats();
+    const stats = await fas.getStats();
     res.json(stats);
   } catch (error) {
     console.error('Error getting factor stats:', error);
@@ -134,9 +134,9 @@ router.get('/stats', (req, res) => {
 });
 
 // GET /api/factors/cache-stats - Get cache statistics
-router.get('/cache-stats', (req, res) => {
+router.get('/cache-stats', async (req, res) => {
   try {
-    const stats = factorCache.getStats();
+    const stats = await factorCache.getStats();
     res.json({
       success: true,
       data: {
@@ -155,16 +155,16 @@ router.get('/cache-stats', (req, res) => {
 });
 
 // POST /api/factors/cache-clear - Clear the factor cache
-router.post('/cache-clear', (req, res) => {
+router.post('/cache-clear', async (req, res) => {
   try {
     const { pattern } = req.body;
 
     if (pattern) {
       // Clear specific pattern
-      factorCache.deletePattern(pattern);
+      await factorCache.deletePattern(pattern);
     } else {
       // Clear all
-      factorCache.clear();
+      await factorCache.clear();
     }
 
     res.json({
@@ -206,7 +206,7 @@ router.get('/performance-dashboard', async (req, res) => {
     let userFactors = [];
     if (repo) {
       try {
-        userFactors = repo.getAllFactors({ includeInactive: false })
+        userFactors = (await repo.getAllFactors({ includeInactive: false }))
           .map(f => ({
             id: f.id,
             name: f.name,
@@ -305,7 +305,7 @@ router.post('/decay-analysis', async (req, res) => {
 
       if (factorId && repo) {
         // Get stored IC history
-        const storedHistory = repo.getICHistory(factorId, { limit: 60 });
+        const storedHistory = await repo.getICHistory(factorId, { limit: 60 });
         if (storedHistory && storedHistory.length > 0) {
           history = storedHistory.map(h => ({
             date: h.calculation_date,
@@ -440,10 +440,10 @@ function analyzeICDecay(history) {
 }
 
 // GET /api/factors/definitions - Get all factor definitions
-router.get('/definitions', (req, res) => {
+router.get('/definitions', async (req, res) => {
   try {
     const fas = getFactorAnalysisService();
-    const definitions = fas.getFactorDefinitions();
+    const definitions = await fas.getFactorDefinitions();
     res.json(definitions);
   } catch (error) {
     console.error('Error getting factor definitions:', error);
@@ -456,13 +456,13 @@ router.get('/definitions', (req, res) => {
 // ============================================
 
 // GET /api/factors/stocks/:symbol - Get factor scores for a stock
-router.get('/stocks/:symbol', requireFeature('factor_analysis'), (req, res) => {
+router.get('/stocks/:symbol', requireFeature('factor_analysis'), async (req, res) => {
   try {
     const { symbol } = req.params;
     const { date } = req.query;
 
     const fas = getFactorAnalysisService();
-    const scores = fas.getStockFactorScores(symbol.toUpperCase(), date);
+    const scores = await fas.getStockFactorScores(symbol.toUpperCase(), date);
 
     if (!scores) {
       return sendNotFoundError(res, 'No factor scores found for this symbol');
@@ -476,13 +476,13 @@ router.get('/stocks/:symbol', requireFeature('factor_analysis'), (req, res) => {
 });
 
 // GET /api/factors/stocks/:symbol/history - Get factor score history
-router.get('/stocks/:symbol/history', requireFeature('factor_analysis'), (req, res) => {
+router.get('/stocks/:symbol/history', requireFeature('factor_analysis'), async (req, res) => {
   try {
     const { symbol } = req.params;
     const { limit = 12, startDate } = req.query;
 
     const fas = getFactorAnalysisService();
-    const history = fas.getStockFactorHistory(symbol.toUpperCase(), {
+    const history = await fas.getStockFactorHistory(symbol.toUpperCase(), {
       limit: parseInt(limit),
       startDate
     });
@@ -495,7 +495,7 @@ router.get('/stocks/:symbol/history', requireFeature('factor_analysis'), (req, r
 });
 
 // GET /api/factors/top/:factor - Get top stocks by factor
-router.get('/top/:factor', requireFeature('factor_analysis'), (req, res) => {
+router.get('/top/:factor', requireFeature('factor_analysis'), async (req, res) => {
   try {
     const { factor } = req.params;
     const { date, limit = 20, minMarketCap, sector } = req.query;
@@ -510,7 +510,7 @@ router.get('/top/:factor', requireFeature('factor_analysis'), (req, res) => {
     }
 
     const fas = getFactorAnalysisService();
-    const stocks = fas.getTopByFactor(factor, date, {
+    const stocks = await fas.getTopByFactor(factor, date, {
       limit: parseInt(limit),
       minMarketCap: minMarketCap ? parseFloat(minMarketCap) : null,
       sector
@@ -528,12 +528,12 @@ router.get('/top/:factor', requireFeature('factor_analysis'), (req, res) => {
 // ============================================
 
 // GET /api/factors/investors/:id/profile - Get investor factor profile
-router.get('/investors/:id/profile', requireFeature('factor_analysis'), (req, res) => {
+router.get('/investors/:id/profile', requireFeature('factor_analysis'), async (req, res) => {
   try {
     const { id } = req.params;
 
     const fas = getFactorAnalysisService();
-    const profile = fas.getInvestorFactorProfile(parseInt(id));
+    const profile = await fas.getInvestorFactorProfile(parseInt(id));
 
     if (!profile) {
       return sendNotFoundError(res, 'No factor profile found for this investor');
@@ -547,13 +547,13 @@ router.get('/investors/:id/profile', requireFeature('factor_analysis'), (req, re
 });
 
 // GET /api/factors/investors/:id/history - Get investor factor exposure history
-router.get('/investors/:id/history', requireFeature('factor_analysis'), (req, res) => {
+router.get('/investors/:id/history', requireFeature('factor_analysis'), async (req, res) => {
   try {
     const { id } = req.params;
     const { limit = 20 } = req.query;
 
     const fas = getFactorAnalysisService();
-    const history = fas.getInvestorFactorHistory(parseInt(id), {
+    const history = await fas.getInvestorFactorHistory(parseInt(id), {
       limit: parseInt(limit)
     });
 
@@ -565,7 +565,7 @@ router.get('/investors/:id/history', requireFeature('factor_analysis'), (req, re
 });
 
 // GET /api/factors/compare - Compare factor exposures between investors
-router.get('/compare', requireFeature('factor_analysis'), (req, res) => {
+router.get('/compare', requireFeature('factor_analysis'), async (req, res) => {
   try {
     const { investors, date } = req.query;
 
@@ -576,7 +576,7 @@ router.get('/compare', requireFeature('factor_analysis'), (req, res) => {
     const investorIds = investors.split(',').map(id => parseInt(id.trim()));
 
     const fas = getFactorAnalysisService();
-    const comparison = fas.compareInvestorFactors(investorIds, date);
+    const comparison = await fas.compareInvestorFactors(investorIds, date);
 
     res.json(comparison);
   } catch (error) {
@@ -590,10 +590,10 @@ router.get('/compare', requireFeature('factor_analysis'), (req, res) => {
 // ============================================
 
 // GET /api/factors/performance - Get factor performance by decision outcome
-router.get('/performance', requireFeature('factor_analysis'), (req, res) => {
+router.get('/performance', requireFeature('factor_analysis'), async (req, res) => {
   try {
     const fas = getFactorAnalysisService();
-    const performance = fas.getFactorDecisionPerformance();
+    const performance = await fas.getFactorDecisionPerformance();
     res.json(performance);
   } catch (error) {
     console.error('Error getting factor performance:', error);
@@ -602,12 +602,12 @@ router.get('/performance', requireFeature('factor_analysis'), (req, res) => {
 });
 
 // GET /api/factors/success - Analyze which factors lead to best outcomes
-router.get('/success', requireFeature('factor_analysis'), (req, res) => {
+router.get('/success', requireFeature('factor_analysis'), async (req, res) => {
   try {
     const { minDecisions = 100, factor } = req.query;
 
     const fas = getFactorAnalysisService();
-    const analysis = fas.analyzeFactorSuccess({
+    const analysis = await fas.analyzeFactorSuccess({
       minDecisions: parseInt(minDecisions),
       factor
     });
@@ -624,10 +624,10 @@ router.get('/success', requireFeature('factor_analysis'), (req, res) => {
 // ============================================
 
 // GET /api/factors/regime - Get current factor regime
-router.get('/regime', requireFeature('factor_analysis'), (req, res) => {
+router.get('/regime', requireFeature('factor_analysis'), async (req, res) => {
   try {
     const fas = getFactorAnalysisService();
-    const regime = fas.getCurrentFactorRegime();
+    const regime = await fas.getCurrentFactorRegime();
     res.json(regime || { message: 'No factor regime data available' });
   } catch (error) {
     console.error('Error getting factor regime:', error);
@@ -636,12 +636,12 @@ router.get('/regime', requireFeature('factor_analysis'), (req, res) => {
 });
 
 // GET /api/factors/regime/history - Get factor regime history
-router.get('/regime/history', requireFeature('factor_analysis'), (req, res) => {
+router.get('/regime/history', requireFeature('factor_analysis'), async (req, res) => {
   try {
     const { limit = 20 } = req.query;
 
     const fas = getFactorAnalysisService();
-    const history = fas.getFactorRegimeHistory({
+    const history = await fas.getFactorRegimeHistory({
       limit: parseInt(limit)
     });
 
@@ -680,12 +680,12 @@ router.get('/portfolio/:id/fama-french', requireFeature('factor_analysis'), asyn
 });
 
 // GET /api/factors/returns - Get historical factor returns
-router.get('/returns', requireFeature('factor_analysis'), (req, res) => {
+router.get('/returns', requireFeature('factor_analysis'), async (req, res) => {
   try {
     const { startDate, endDate, cumulative = 'true' } = req.query;
 
     const fas = getFactorAnalysisService();
-    const returns = fas.getFactorReturns({
+    const returns = await fas.getFactorReturns({
       startDate,
       endDate,
       cumulative: cumulative === 'true'
@@ -821,10 +821,10 @@ router.post('/enrich-decisions', async (req, res) => {
 // ============================================
 
 // GET /api/factors/available-metrics - Get available metrics for factor construction
-router.get('/available-metrics', (req, res) => {
+router.get('/available-metrics', async (req, res) => {
   try {
     const cacheKey = 'available-metrics';
-    const cached = factorCache.get(cacheKey);
+    const cached = await factorCache.get(cacheKey);
 
     if (cached) {
       return res.json({
@@ -839,7 +839,7 @@ router.get('/available-metrics', (req, res) => {
       return sendServiceUnavailable(res, 'Factor repository not available. Run migration first.');
     }
 
-    const metrics = repo.getAvailableMetrics();
+    const metrics = await repo.getAvailableMetrics();
     const grouped = {};
     for (const metric of metrics) {
       if (!grouped[metric.category]) {
@@ -858,7 +858,7 @@ router.get('/available-metrics', (req, res) => {
     };
 
     // Cache for 24 hours
-    factorCache.set(cacheKey, result, CACHE_TTL.AVAILABLE_METRICS);
+    await factorCache.set(cacheKey, result, CACHE_TTL.AVAILABLE_METRICS);
 
     res.json(result);
   } catch (error) {
@@ -868,7 +868,7 @@ router.get('/available-metrics', (req, res) => {
 });
 
 // POST /api/factors/define - Create a new custom factor
-router.post('/define', (req, res) => {
+router.post('/define', async (req, res) => {
   try {
     const repo = getFactorRepository();
     if (!repo) {
@@ -881,7 +881,7 @@ router.post('/define', (req, res) => {
       return sendValidationError(res, 'name and formula are required');
     }
 
-    const result = repo.createFactor({
+    const result = await repo.createFactor({
       name,
       formula,
       description,
@@ -904,7 +904,7 @@ router.post('/define', (req, res) => {
 });
 
 // GET /api/factors/user - Get all user-defined factors
-router.get('/user', (req, res) => {
+router.get('/user', async (req, res) => {
   try {
     const repo = getFactorRepository();
     if (!repo) {
@@ -913,7 +913,7 @@ router.get('/user', (req, res) => {
 
     const { includeInactive, sortBy, order } = req.query;
 
-    const factors = repo.getUserFactors(null, {
+    const factors = await repo.getUserFactors(null, {
       includeInactive: includeInactive === 'true',
       sortBy,
       order
@@ -930,14 +930,14 @@ router.get('/user', (req, res) => {
 });
 
 // GET /api/factors/user/:id - Get a specific user factor
-router.get('/user/:id', (req, res) => {
+router.get('/user/:id', async (req, res) => {
   try {
     const repo = getFactorRepository();
     if (!repo) {
       return sendServiceUnavailable(res, 'Factor repository not available. Run migration first.');
     }
 
-    const factor = repo.getFactorById(req.params.id);
+    const factor = await repo.getFactorById(req.params.id);
 
     if (!factor) {
       return sendNotFoundError(res, 'Factor not found');
@@ -954,7 +954,7 @@ router.get('/user/:id', (req, res) => {
 });
 
 // PUT /api/factors/user/:id - Update a user factor
-router.put('/user/:id', (req, res) => {
+router.put('/user/:id', async (req, res) => {
   try {
     const repo = getFactorRepository();
     if (!repo) {
@@ -965,7 +965,7 @@ router.put('/user/:id', (req, res) => {
 
     // If formula is being updated, use special method
     if (formula) {
-      const result = repo.updateFactorFormula(req.params.id, formula);
+      const result = await repo.updateFactorFormula(req.params.id, formula);
       if (!result.success) {
         return sendValidationError(res, result.error || result);
       }
@@ -973,13 +973,13 @@ router.put('/user/:id', (req, res) => {
 
     // Update other fields
     if (Object.keys(updates).length > 0) {
-      const result = repo.updateFactor(req.params.id, updates);
+      const result = await repo.updateFactor(req.params.id, updates);
       if (!result.success) {
         return sendValidationError(res, result.error || result);
       }
     }
 
-    const factor = repo.getFactorById(req.params.id);
+    const factor = await repo.getFactorById(req.params.id);
     res.json({
       success: true,
       data: factor
@@ -991,14 +991,14 @@ router.put('/user/:id', (req, res) => {
 });
 
 // DELETE /api/factors/user/:id - Delete a user factor
-router.delete('/user/:id', (req, res) => {
+router.delete('/user/:id', async (req, res) => {
   try {
     const repo = getFactorRepository();
     if (!repo) {
       return sendServiceUnavailable(res, 'Factor repository not available. Run migration first.');
     }
 
-    const result = repo.deleteFactor(req.params.id);
+    const result = await repo.deleteFactor(req.params.id);
 
     if (!result.success) {
       return sendValidationError(res, result.error || result);
@@ -1012,7 +1012,7 @@ router.delete('/user/:id', (req, res) => {
 });
 
 // POST /api/factors/user/:id/toggle-active - Toggle factor active status
-router.post('/user/:id/toggle-active', (req, res) => {
+router.post('/user/:id/toggle-active', async (req, res) => {
   try {
     const repo = getFactorRepository();
     if (!repo) {
@@ -1020,7 +1020,7 @@ router.post('/user/:id/toggle-active', (req, res) => {
     }
 
     const { active } = req.body;
-    const result = repo.toggleActive(req.params.id, active);
+    const result = await repo.toggleActive(req.params.id, active);
 
     if (!result.success) {
       return sendValidationError(res, result.error || result);
@@ -1038,7 +1038,7 @@ router.post('/user/:id/toggle-active', (req, res) => {
 // ============================================
 
 // POST /api/factors/validate - Validate a factor formula
-router.post('/validate', (req, res) => {
+router.post('/validate', async (req, res) => {
   try {
     const calc = getCustomFactorCalculator();
     if (!calc) {
@@ -1064,7 +1064,7 @@ router.post('/validate', (req, res) => {
       });
     }
 
-    const result = calc.validateFormula(trimmedFormula);
+    const result = await calc.validateFormula(trimmedFormula);
 
     res.json({
       success: true,
@@ -1084,7 +1084,7 @@ router.post('/validate', (req, res) => {
 });
 
 // POST /api/factors/preview - Preview factor values for a sample of stocks
-router.post('/preview', (req, res) => {
+router.post('/preview', async (req, res) => {
   try {
     const calc = getCustomFactorCalculator();
     if (!calc) {
@@ -1107,7 +1107,7 @@ router.post('/preview', (req, res) => {
       });
     }
 
-    const result = calc.previewFactorValues(trimmedFormula, {
+    const result = await calc.previewFactorValues(trimmedFormula, {
       asOfDate,
       sampleSize: parseInt(sampleSize)
     });
@@ -1126,7 +1126,7 @@ router.post('/preview', (req, res) => {
 });
 
 // POST /api/factors/calculate-custom - Calculate custom factor values
-router.post('/calculate-custom', (req, res) => {
+router.post('/calculate-custom', async (req, res) => {
   try {
     const calc = getCustomFactorCalculator();
     if (!calc) {
@@ -1147,7 +1147,7 @@ router.post('/calculate-custom', (req, res) => {
       return sendValidationError(res, 'formula is required');
     }
 
-    const result = calc.calculateFactorValues(factorId, formula, {
+    const result = await calc.calculateFactorValues(factorId, formula, {
       asOfDate,
       transformations,
       universe,
@@ -1237,7 +1237,7 @@ router.post('/ic-analysis', async (req, res) => {
     // Check cache first (unless skipCache is true)
     const cacheKey = `ic-analysis:${formula}:${JSON.stringify(sortedHorizons)}:${universe}:${endDate || 'default'}`;
     if (!skipCache) {
-      const cached = factorCache.get(cacheKey);
+      const cached = await factorCache.get(cacheKey);
       if (cached) {
         return res.json({
           ...cached,
@@ -1255,7 +1255,7 @@ router.post('/ic-analysis', async (req, res) => {
     }
 
     // Validate formula before calculating
-    const validation = calc.validateFormula(formula.trim());
+    const validation = await calc.validateFormula(formula.trim());
     if (!validation.valid) {
       return sendValidationError(res, validation.error, {
         unknownMetrics: validation.unknownMetrics
@@ -1272,7 +1272,7 @@ router.post('/ic-analysis', async (req, res) => {
       defaultDate.setMonth(defaultDate.getMonth() - 3); // 3 months ago
       asOfDate = defaultDate.toISOString().split('T')[0];
     }
-    const factorResult = calc.calculateFactorValues(factorId, formula, {
+    const factorResult = await calc.calculateFactorValues(factorId, formula, {
       asOfDate,
       universe
     });
@@ -1303,7 +1303,7 @@ router.post('/ic-analysis', async (req, res) => {
 
     for (const horizon of sortedHorizons) {
       // Get returns for this horizon - join prices with factor values
-      const returnData = db.prepare(`
+      const returnData = await db.prepare(`
         SELECT c.id as company_id, c.symbol,
                (p2.adjusted_close - p1.adjusted_close) / p1.adjusted_close * 100 as forward_return
         FROM companies c
@@ -1384,7 +1384,7 @@ router.post('/ic-analysis', async (req, res) => {
     if (factorId) {
       const repo = getFactorRepository();
       if (repo) {
-        repo.updateFactorStats(factorId, {
+        await repo.updateFactorStats(factorId, {
           icStats: icResult.icByHorizon,
           icTstat: icResult.tstat,
           icIr: icResult.icIR
@@ -1402,7 +1402,7 @@ router.post('/ic-analysis', async (req, res) => {
     };
 
     // Cache the result
-    factorCache.set(cacheKey, result, CACHE_TTL.IC_RESULTS);
+    await factorCache.set(cacheKey, result, CACHE_TTL.IC_RESULTS);
 
     res.json(result);
   } catch (error) {
@@ -1412,7 +1412,7 @@ router.post('/ic-analysis', async (req, res) => {
 });
 
 // POST /api/factors/correlation - Calculate correlation with standard factors
-router.post('/correlation', (req, res) => {
+router.post('/correlation', async (req, res) => {
   try {
     const { formula, asOfDate, skipCache = false } = req.body;
 
@@ -1423,7 +1423,7 @@ router.post('/correlation', (req, res) => {
     // Check cache first
     const cacheKey = `correlation:${formula}:${asOfDate || 'default'}`;
     if (!skipCache) {
-      const cached = factorCache.get(cacheKey);
+      const cached = await factorCache.get(cacheKey);
       if (cached) {
         return res.json({
           ...cached,
@@ -1439,7 +1439,7 @@ router.post('/correlation', (req, res) => {
     }
 
     // Validate formula before calculating
-    const validation = calc.validateFormula(formula.trim());
+    const validation = await calc.validateFormula(formula.trim());
     if (!validation.valid) {
       return sendValidationError(res, validation.error, {
         unknownMetrics: validation.unknownMetrics
@@ -1447,7 +1447,7 @@ router.post('/correlation', (req, res) => {
     }
 
     // Calculate custom factor values
-    const customResult = calc.calculateFactorValues(null, formula, { asOfDate });
+    const customResult = await calc.calculateFactorValues(null, formula, { asOfDate });
 
     if (customResult.values.length === 0) {
       return sendValidationError(res, 'No factor values could be calculated');
@@ -1455,7 +1455,7 @@ router.post('/correlation', (req, res) => {
 
     // Get standard factor scores for the same stocks
     const db = require('../../database').db;
-    const standardScores = db.prepare(`
+    const standardScores = await db.prepare(`
       SELECT symbol, value_score, quality_score, momentum_score, growth_score, size_score, volatility_score
       FROM stock_factor_scores
       WHERE score_date = (SELECT MAX(score_date) FROM stock_factor_scores WHERE score_date <= ?)
@@ -1540,7 +1540,7 @@ router.post('/correlation', (req, res) => {
     };
 
     // Cache the result
-    factorCache.set(cacheKey, result, CACHE_TTL.CORRELATIONS);
+    await factorCache.set(cacheKey, result, CACHE_TTL.CORRELATIONS);
 
     res.json(result);
   } catch (error) {
@@ -1550,7 +1550,7 @@ router.post('/correlation', (req, res) => {
 });
 
 // POST /api/factors/custom-sector-exposures - Calculate sector exposures for a custom factor
-router.post('/custom-sector-exposures', (req, res) => {
+router.post('/custom-sector-exposures', async (req, res) => {
   try {
     const { formula, factorId, factorName } = req.body;
 
@@ -1564,7 +1564,7 @@ router.post('/custom-sector-exposures', (req, res) => {
     }
 
     // Validate formula before calculating
-    const validation = calc.validateFormula(formula.trim());
+    const validation = await calc.validateFormula(formula.trim());
     if (!validation.valid) {
       return sendValidationError(res, validation.error, {
         unknownMetrics: validation.unknownMetrics
@@ -1572,7 +1572,7 @@ router.post('/custom-sector-exposures', (req, res) => {
     }
 
     // Calculate factor values for ALL stocks (no limit)
-    const result = calc.calculateFactorValues(factorId, formula.trim(), {
+    const result = await calc.calculateFactorValues(factorId, formula.trim(), {
       universe: 'ALL'
     });
 
@@ -1656,7 +1656,7 @@ router.post('/custom-sector-exposures', (req, res) => {
 });
 
 // GET /api/factors/user/:id/backtest-runs - Get backtest history for a factor
-router.get('/user/:id/backtest-runs', (req, res) => {
+router.get('/user/:id/backtest-runs', async (req, res) => {
   try {
     const repo = getFactorRepository();
     if (!repo) {
@@ -1664,7 +1664,7 @@ router.get('/user/:id/backtest-runs', (req, res) => {
     }
 
     const { limit = 10 } = req.query;
-    const runs = repo.getBacktestRuns(req.params.id, parseInt(limit));
+    const runs = await repo.getBacktestRuns(req.params.id, parseInt(limit));
 
     res.json({
       success: true,
@@ -1677,7 +1677,7 @@ router.get('/user/:id/backtest-runs', (req, res) => {
 });
 
 // GET /api/factors/user/:id/ic-history - Get IC history for a factor
-router.get('/user/:id/ic-history', (req, res) => {
+router.get('/user/:id/ic-history', async (req, res) => {
   try {
     const repo = getFactorRepository();
     if (!repo) {
@@ -1685,7 +1685,7 @@ router.get('/user/:id/ic-history', (req, res) => {
     }
 
     const { limit = 100, universeType } = req.query;
-    const history = repo.getICHistory(req.params.id, {
+    const history = await repo.getICHistory(req.params.id, {
       limit: parseInt(limit),
       universeType
     });
@@ -1902,7 +1902,7 @@ function getRanks(arr) {
 // ============================================
 
 // POST /api/factors/signals - Generate buy signals based on factor scores
-router.post('/signals', (req, res) => {
+router.post('/signals', async (req, res) => {
   try {
     const {
       factorId,
@@ -1932,7 +1932,7 @@ router.post('/signals', (req, res) => {
     }
 
     // Calculate factor values for all stocks with quality filters
-    const result = calculator.calculateFactorValues(factorId, trimmedFormula, {
+    const result = await calculator.calculateFactorValues(factorId, trimmedFormula, {
       storeResults: false,
       qualityFilters: qualityFilters  // NEW: Pass quality filters to calculator
     });
@@ -2033,17 +2033,17 @@ router.post('/sector-exposures', async (req, res) => {
         }
 
         try {
-          const stmt = db.prepare(`
+          const stmt = await db.prepare(`
             SELECT AVG(${metricColumn}) as avg_value
             FROM stocks
             WHERE symbol IN (${symbolList})
               AND ${metricColumn} IS NOT NULL
           `);
 
-          const result = stmt.get();
+          const result = await stmt.get();
 
           // Get overall average for z-score
-          const overallStmt = db.prepare(`
+          const overallStmt = await db.prepare(`
             SELECT AVG(${metricColumn}) as mean,
                    (SUM((${metricColumn} - (SELECT AVG(${metricColumn}) FROM stocks WHERE ${metricColumn} IS NOT NULL)) *
                         (${metricColumn} - (SELECT AVG(${metricColumn}) FROM stocks WHERE ${metricColumn} IS NOT NULL))) /
@@ -2052,7 +2052,7 @@ router.post('/sector-exposures', async (req, res) => {
             WHERE ${metricColumn} IS NOT NULL
           `);
 
-          const overall = overallStmt.get();
+          const overall = await overallStmt.get();
 
           if (result?.avg_value && overall?.mean && overall?.variance > 0) {
             const zscore = (result.avg_value - overall.mean) / Math.sqrt(overall.variance);
@@ -2132,7 +2132,7 @@ router.get('/sector-stocks/:sector', async (req, res) => {
     const symbolList = symbols.map(s => `'${s}'`).join(',');
 
     // Get stock data
-    const stmt = db.prepare(`
+    const stmt = await db.prepare(`
       SELECT
         symbol,
         name,
@@ -2146,7 +2146,7 @@ router.get('/sector-stocks/:sector', async (req, res) => {
       ORDER BY market_cap DESC
     `);
 
-    const stocks = stmt.all();
+    const stocks = await stmt.all();
 
     // Calculate factor values and quintiles
     const factorFormula = getStandardFactorFormula(factor);
@@ -2230,7 +2230,7 @@ router.post('/walk-forward', async (req, res) => {
       return sendServiceUnavailable(res, 'Factor calculator not available. Run migration first.');
     }
 
-    const validation = calc.validateFormula(formula.trim());
+    const validation = await calc.validateFormula(formula.trim());
     if (!validation.valid) {
       return sendValidationError(res, `Invalid formula: ${validation.error}`);
     }
@@ -2338,7 +2338,7 @@ router.post('/backtest', async (req, res) => {
       return sendServiceUnavailable(res, 'Factor calculator not available. Run migration first.');
     }
 
-    const validation = calc.validateFormula(formula.trim());
+    const validation = await calc.validateFormula(formula.trim());
     if (!validation.valid) {
       return sendValidationError(res, `Invalid formula: ${validation.error}`);
     }
@@ -2373,7 +2373,7 @@ router.post('/backtest', async (req, res) => {
 // ============================================
 
 // GET /api/factors/:id/backfill-status - Get backfill status for a factor
-router.get('/:id/backfill-status', (req, res) => {
+router.get('/:id/backfill-status', async (req, res) => {
   try {
     const db = require('../../database').db;
     const factorId = parseInt(req.params.id);
@@ -2383,7 +2383,7 @@ router.get('/:id/backfill-status', (req, res) => {
     }
 
     // Query backfill status from factor_values_cache
-    const status = db.prepare(`
+    const status = await db.prepare(`
       SELECT
         COUNT(DISTINCT company_id) as coverage_companies,
         COUNT(*) as total_values,
@@ -2393,7 +2393,7 @@ router.get('/:id/backfill-status', (req, res) => {
       WHERE factor_id = ?
     `).get(factorId);
 
-    if (status.total_values === 0) {
+    if (!status || status.total_values === 0) {
       return sendNotFoundError(res, 'No backfill data found for this factor');
     }
 
@@ -2428,7 +2428,7 @@ router.post('/backfill', async (req, res) => {
       return sendServiceUnavailable(res, 'Factor calculator not available. Run migration first.');
     }
 
-    const validation = calc.validateFormula(formula.trim());
+    const validation = await calc.validateFormula(formula.trim());
     if (!validation.valid) {
       return sendValidationError(res, `Invalid formula: ${validation.error}`);
     }
@@ -2436,7 +2436,7 @@ router.post('/backfill', async (req, res) => {
     console.log(`Backfilling factor ${factorId} from ${startDate} to ${endDate} (${frequency})`);
 
     // Generate date list based on frequency
-    const dates = generateDateList(startDate, endDate, frequency);
+    const dates = await generateDateList(startDate, endDate, frequency);
 
     console.log(`  Generated ${dates.length} dates for backfill`);
 
@@ -2447,7 +2447,7 @@ router.post('/backfill', async (req, res) => {
     // Calculate and store factor values for each date
     for (const date of dates) {
       try {
-        const result = calc.calculateFactorValues(factorId, formula.trim(), {
+        const result = await calc.calculateFactorValues(factorId, formula.trim(), {
           asOfDate: date,
           storeResults: true  // Critical: store to factor_values_cache
         });
@@ -2489,7 +2489,7 @@ router.post('/backfill', async (req, res) => {
 });
 
 // POST /api/factors/:id/clear-cache - Manually clear cached values for a factor
-router.post('/:id/clear-cache', (req, res) => {
+router.post('/:id/clear-cache', async (req, res) => {
   try {
     const { id } = req.params;
     const repo = getFactorRepository();
@@ -2499,7 +2499,7 @@ router.post('/:id/clear-cache', (req, res) => {
     }
 
     const db = require('../../database').db;
-    const result = db.prepare('DELETE FROM factor_values_cache WHERE factor_id = ?').run(id);
+    const result = await db.prepare('DELETE FROM factor_values_cache WHERE factor_id = ?').run(id);
 
     return sendSuccess(res, {
       factorId: id,
@@ -2515,10 +2515,10 @@ router.post('/:id/clear-cache', (req, res) => {
  * Get last trading day of month from actual data
  * Falls back to last weekday if no data available
  */
-function getLastTradingDay(year, month, db) {
+async function getLastTradingDay(year, month, db) {
   try {
     // Try to get actual last trading day from factor scores
-    const lastDay = db.prepare(`
+    const lastDay = await db.prepare(`
       SELECT MAX(score_date) as last_date
       FROM stock_factor_scores
       WHERE strftime('%Y-%m', score_date) = ?
@@ -2548,7 +2548,7 @@ function getLastTradingDay(year, month, db) {
 /**
  * Generate list of dates for backfill based on frequency
  */
-function generateDateList(startDate, endDate, frequency) {
+async function generateDateList(startDate, endDate, frequency) {
   const dates = [];
   const start = new Date(startDate);
   const end = new Date(endDate);
@@ -2589,7 +2589,7 @@ function generateDateList(startDate, endDate, frequency) {
       // Use last trading day of month
       const year = current.getFullYear();
       const month = current.getMonth() + 1;
-      const lastTradingDay = getLastTradingDay(year, month, db);
+      const lastTradingDay = await getLastTradingDay(year, month, db);
       dates.push(lastTradingDay);
       current.setMonth(current.getMonth() + 1);
 
@@ -2598,7 +2598,7 @@ function generateDateList(startDate, endDate, frequency) {
       const year = current.getFullYear();
       const month = current.getMonth() + 1;
       const quarterEndMonth = Math.ceil(month / 3) * 3; // 3, 6, 9, 12
-      const lastTradingDay = getLastTradingDay(year, quarterEndMonth, db);
+      const lastTradingDay = await getLastTradingDay(year, quarterEndMonth, db);
       dates.push(lastTradingDay);
 
       // Move to next quarter

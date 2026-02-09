@@ -60,7 +60,7 @@ router.get('/margin-of-safety/symbol/:symbol', async (req, res) => {
     const { recalc = false } = req.query;
 
     const dbConn = db.getDatabase();
-    const company = dbConn.prepare('SELECT id FROM companies WHERE symbol = ?').get(symbol.toUpperCase());
+    const company = await dbConn.prepare('SELECT id FROM companies WHERE symbol = ?').get(symbol.toUpperCase());
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -81,12 +81,12 @@ router.get('/margin-of-safety/symbol/:symbol', async (req, res) => {
  * GET /api/risk/undervalued
  * Get list of undervalued stocks
  */
-router.get('/undervalued', (req, res) => {
+router.get('/undervalued', async (req, res) => {
   try {
     initServices();
     const { minMargin = 0.25, limit = 50 } = req.query;
 
-    const stocks = mosCalculator.getUndervaluedStocks(
+    const stocks = await mosCalculator.getUndervaluedStocks(
       parseFloat(minMargin),
       parseInt(limit)
     );
@@ -133,12 +133,12 @@ router.post('/margin-of-safety/batch', async (req, res) => {
  * GET /api/risk/config/:portfolioId
  * Get risk configuration for a portfolio
  */
-router.get('/config/:portfolioId', (req, res) => {
+router.get('/config/:portfolioId', async (req, res) => {
   try {
     initServices();
     const { portfolioId } = req.params;
 
-    const config = riskManager.getConfig(parseInt(portfolioId));
+    const config = await riskManager.getConfig(parseInt(portfolioId));
 
     res.json(config);
   } catch (error) {
@@ -150,13 +150,13 @@ router.get('/config/:portfolioId', (req, res) => {
  * PUT /api/risk/config/:portfolioId
  * Update risk configuration for a portfolio
  */
-router.put('/config/:portfolioId', (req, res) => {
+router.put('/config/:portfolioId', async (req, res) => {
   try {
     initServices();
     const { portfolioId } = req.params;
     const config = req.body;
 
-    const updatedConfig = riskManager.saveConfig(parseInt(portfolioId), config);
+    const updatedConfig = await riskManager.saveConfig(parseInt(portfolioId), config);
 
     res.json({
       message: 'Risk configuration updated',
@@ -185,7 +185,7 @@ router.post('/assess/:portfolioId', async (req, res) => {
     let targetCompanyId = companyId;
     if (!targetCompanyId && symbol) {
       const dbConn = db.getDatabase();
-      const company = dbConn.prepare('SELECT id FROM companies WHERE symbol = ?').get(symbol.toUpperCase());
+      const company = await dbConn.prepare('SELECT id FROM companies WHERE symbol = ?').get(symbol.toUpperCase());
       if (!company) {
         return res.status(404).json({ error: 'Company not found' });
       }
@@ -217,12 +217,12 @@ router.post('/assess/:portfolioId', async (req, res) => {
  * GET /api/risk/barbell/:portfolioId
  * Get barbell allocation analysis for a portfolio
  */
-router.get('/barbell/:portfolioId', (req, res) => {
+router.get('/barbell/:portfolioId', async (req, res) => {
   try {
     initServices();
     const { portfolioId } = req.params;
 
-    const barbell = riskManager.checkBarbellAllocation(parseInt(portfolioId));
+    const barbell = await riskManager.checkBarbellAllocation(parseInt(portfolioId));
 
     res.json(barbell);
   } catch (error) {
@@ -238,12 +238,12 @@ router.get('/barbell/:portfolioId', (req, res) => {
  * GET /api/risk/concentration/:portfolioId
  * Check concentration limits for a portfolio
  */
-router.get('/concentration/:portfolioId', (req, res) => {
+router.get('/concentration/:portfolioId', async (req, res) => {
   try {
     initServices();
     const { portfolioId } = req.params;
 
-    const concentration = riskManager.checkConcentration(parseInt(portfolioId));
+    const concentration = await riskManager.checkConcentration(parseInt(portfolioId));
 
     res.json(concentration);
   } catch (error) {
@@ -259,12 +259,12 @@ router.get('/concentration/:portfolioId', (req, res) => {
  * GET /api/risk/drawdown/:portfolioId
  * Get drawdown status for a portfolio
  */
-router.get('/drawdown/:portfolioId', (req, res) => {
+router.get('/drawdown/:portfolioId', async (req, res) => {
   try {
     initServices();
     const { portfolioId } = req.params;
 
-    const drawdown = riskManager.checkDrawdown(parseInt(portfolioId));
+    const drawdown = await riskManager.checkDrawdown(parseInt(portfolioId));
 
     res.json(drawdown);
   } catch (error) {
@@ -276,14 +276,14 @@ router.get('/drawdown/:portfolioId', (req, res) => {
  * GET /api/risk/drawdown/:portfolioId/history
  * Get drawdown history for a portfolio
  */
-router.get('/drawdown/:portfolioId/history', (req, res) => {
+router.get('/drawdown/:portfolioId/history', async (req, res) => {
   try {
     initServices();
     const { portfolioId } = req.params;
     const { limit = 10 } = req.query;
 
     const dbConn = db.getDatabase();
-    const history = dbConn.prepare(`
+    const history = await dbConn.prepare(`
       SELECT * FROM drawdown_history
       WHERE portfolio_id = ?
       ORDER BY start_date DESC
@@ -307,12 +307,12 @@ router.get('/drawdown/:portfolioId/history', (req, res) => {
  * GET /api/risk/tail-hedge/:portfolioId
  * Get tail hedge recommendation for a portfolio
  */
-router.get('/tail-hedge/:portfolioId', (req, res) => {
+router.get('/tail-hedge/:portfolioId', async (req, res) => {
   try {
     initServices();
     const { portfolioId } = req.params;
 
-    const recommendation = riskManager.getTailHedgeRecommendation(parseInt(portfolioId));
+    const recommendation = await riskManager.getTailHedgeRecommendation(parseInt(portfolioId));
 
     res.json(recommendation);
   } catch (error) {
@@ -328,12 +328,12 @@ router.get('/tail-hedge/:portfolioId', (req, res) => {
  * GET /api/risk/competence/:portfolioId/:companyId
  * Check if company is within circle of competence
  */
-router.get('/competence/:portfolioId/:companyId', (req, res) => {
+router.get('/competence/:portfolioId/:companyId', async (req, res) => {
   try {
     initServices();
     const { portfolioId, companyId } = req.params;
 
-    const competence = riskManager.checkCircleOfCompetence(
+    const competence = await riskManager.checkCircleOfCompetence(
       parseInt(companyId),
       parseInt(portfolioId)
     );
@@ -352,13 +352,13 @@ router.get('/competence/:portfolioId/:companyId', (req, res) => {
  * GET /api/risk/events/:portfolioId
  * Get risk events for a portfolio
  */
-router.get('/events/:portfolioId', (req, res) => {
+router.get('/events/:portfolioId', async (req, res) => {
   try {
     initServices();
     const { portfolioId } = req.params;
     const { limit = 50, severity, unresolved } = req.query;
 
-    const events = riskManager.getRiskEvents(parseInt(portfolioId), {
+    const events = await riskManager.getRiskEvents(parseInt(portfolioId), {
       limit: parseInt(limit),
       severity,
       unresolved: unresolved === 'true'
@@ -377,14 +377,14 @@ router.get('/events/:portfolioId', (req, res) => {
  * POST /api/risk/events/:eventId/resolve
  * Resolve a risk event
  */
-router.post('/events/:eventId/resolve', (req, res) => {
+router.post('/events/:eventId/resolve', async (req, res) => {
   try {
     initServices();
     const { eventId } = req.params;
     const { action, resolvedBy } = req.body;
 
     const dbConn = db.getDatabase();
-    dbConn.prepare(`
+    await dbConn.prepare(`
       UPDATE risk_events SET
         resolved = 1,
         resolution_action = ?,
@@ -407,12 +407,12 @@ router.post('/events/:eventId/resolve', (req, res) => {
  * GET /api/risk/summary/:portfolioId
  * Get comprehensive risk summary for a portfolio
  */
-router.get('/summary/:portfolioId', (req, res) => {
+router.get('/summary/:portfolioId', async (req, res) => {
   try {
     initServices();
     const { portfolioId } = req.params;
 
-    const summary = riskManager.getPortfolioRiskSummary(parseInt(portfolioId));
+    const summary = await riskManager.getPortfolioRiskSummary(parseInt(portfolioId));
 
     res.json(summary);
   } catch (error) {
@@ -424,12 +424,12 @@ router.get('/summary/:portfolioId', (req, res) => {
  * GET /api/risk/health/:portfolioId
  * Get simple health score for a portfolio
  */
-router.get('/health/:portfolioId', (req, res) => {
+router.get('/health/:portfolioId', async (req, res) => {
   try {
     initServices();
     const { portfolioId } = req.params;
 
-    const summary = riskManager.getPortfolioRiskSummary(parseInt(portfolioId));
+    const summary = await riskManager.getPortfolioRiskSummary(parseInt(portfolioId));
 
     res.json({
       portfolioId: parseInt(portfolioId),
