@@ -3,7 +3,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { db } = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 const crypto = require('crypto');
 
 // ============================================
@@ -14,8 +14,9 @@ const crypto = require('crypto');
  * POST /api/ai-ratings/:symbol
  * Store a new AI rating for a company
  */
-router.post('/:symbol', (req, res) => {
+router.post('/:symbol', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { symbol } = req.params;
     const { score, label, summary, strengths, risks, analystId, contextData } = req.body;
 
@@ -27,7 +28,11 @@ router.post('/:symbol', (req, res) => {
     }
 
     // Get company_id
-    const company = db.prepare('SELECT id FROM companies WHERE symbol = ?').get(symbol.toUpperCase());
+    const companyResult = await database.query(
+      'SELECT id FROM companies WHERE symbol = $1',
+      [symbol.toUpperCase()]
+    );
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({
@@ -37,11 +42,12 @@ router.post('/:symbol', (req, res) => {
     }
 
     // Insert rating
-    const result = db.prepare(`
+    const result = await database.query(`
       INSERT INTO ai_rating_history
       (company_id, symbol, score, label, summary, strengths, risks, analyst_id, context_data)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING id
+    `, [
       company.id,
       symbol.toUpperCase(),
       score,
@@ -51,11 +57,11 @@ router.post('/:symbol', (req, res) => {
       risks ? JSON.stringify(risks) : null,
       analystId || 'value',
       contextData ? JSON.stringify(contextData) : null
-    );
+    ]);
 
     res.json({
       success: true,
-      ratingId: result.lastInsertRowid
+      ratingId: result.rows[0].id
     });
   } catch (error) {
     console.error('Error storing AI rating:', error);
@@ -70,18 +76,21 @@ router.post('/:symbol', (req, res) => {
  * GET /api/ai-ratings/:symbol
  * Get AI rating history for a company
  */
-router.get('/:symbol', (req, res) => {
+router.get('/:symbol', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { symbol } = req.params;
     const { limit = 10 } = req.query;
 
-    const ratings = db.prepare(`
+    const result = await database.query(`
       SELECT id, score, label, summary, strengths, risks, analyst_id, created_at
       FROM ai_rating_history
-      WHERE symbol = ?
+      WHERE symbol = $1
       ORDER BY created_at DESC
-      LIMIT ?
-    `).all(symbol.toUpperCase(), parseInt(limit));
+      LIMIT $2
+    `, [symbol.toUpperCase(), parseInt(limit)]);
+
+    const ratings = result.rows;
 
     // Parse JSON fields
     const parsedRatings = ratings.map(r => ({
@@ -109,17 +118,20 @@ router.get('/:symbol', (req, res) => {
  * GET /api/ai-ratings/:symbol/latest
  * Get the latest AI rating for a company
  */
-router.get('/:symbol/latest', (req, res) => {
+router.get('/:symbol/latest', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { symbol } = req.params;
 
-    const rating = db.prepare(`
+    const result = await database.query(`
       SELECT id, score, label, summary, strengths, risks, analyst_id, created_at
       FROM ai_rating_history
-      WHERE symbol = ?
+      WHERE symbol = $1
       ORDER BY created_at DESC
       LIMIT 1
-    `).get(symbol.toUpperCase());
+    `, [symbol.toUpperCase()]);
+
+    const rating = result.rows[0];
 
     if (!rating) {
       return res.json({
@@ -151,18 +163,21 @@ router.get('/:symbol/latest', (req, res) => {
  * GET /api/ai-ratings/:symbol/trend
  * Get AI rating trend data for charting
  */
-router.get('/:symbol/trend', (req, res) => {
+router.get('/:symbol/trend', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { symbol } = req.params;
     const { days = 90 } = req.query;
 
-    const ratings = db.prepare(`
+    const result = await database.query(`
       SELECT score, label, created_at
       FROM ai_rating_history
-      WHERE symbol = ?
-        AND created_at >= datetime('now', '-' || ? || ' days')
+      WHERE symbol = $1
+        AND created_at >= NOW() - INTERVAL '1 day' * $2
       ORDER BY created_at ASC
-    `).all(symbol.toUpperCase(), parseInt(days));
+    `, [symbol.toUpperCase(), parseInt(days)]);
+
+    const ratings = result.rows;
 
     // Calculate trend
     let trend = 'stable';
@@ -216,11 +231,14 @@ router.post('/screening/suggest', async (req, res) => {
     const goalHash = crypto.createHash('md5').update(goal.toLowerCase().trim()).digest('hex');
 
     // Check cache first
-    const cached = db.prepare(`
+    const database = await getDatabaseAsync();
+    const cachedResult = await database.query(`
       SELECT * FROM ai_screening_suggestions
-      WHERE goal_hash = ?
-        AND (expires_at IS NULL OR expires_at > datetime('now'))
-    `).get(goalHash);
+      WHERE goal_hash = $1
+        AND (expires_at IS NULL OR expires_at > NOW())
+    `, [goalHash]);
+
+    const cached = cachedResult.rows[0];
 
     if (cached) {
       return res.json({
@@ -285,17 +303,24 @@ Only include filters that are directly relevant to the goal. Use reasonable thre
     }
 
     // Cache the suggestion (expires in 7 days)
-    db.prepare(`
-      INSERT OR REPLACE INTO ai_screening_suggestions
+    await database.query(`
+      INSERT INTO ai_screening_suggestions
       (user_goal, goal_hash, suggested_filters, explanation, suggested_presets, expires_at)
-      VALUES (?, ?, ?, ?, ?, datetime('now', '+7 days'))
-    `).run(
+      VALUES ($1, $2, $3, $4, $5, NOW() + INTERVAL '7 days')
+      ON CONFLICT (goal_hash) DO UPDATE SET
+        user_goal = EXCLUDED.user_goal,
+        suggested_filters = EXCLUDED.suggested_filters,
+        explanation = EXCLUDED.explanation,
+        suggested_presets = EXCLUDED.suggested_presets,
+        expires_at = EXCLUDED.expires_at,
+        created_at = NOW()
+    `, [
       goal,
       goalHash,
       JSON.stringify(suggestion.filters || {}),
       suggestion.explanation || '',
       JSON.stringify(suggestion.suggestedPresets || [])
-    );
+    ]);
 
     res.json({
       success: true,
