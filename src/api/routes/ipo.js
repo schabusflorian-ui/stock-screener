@@ -667,7 +667,7 @@ router.post('/:id/create-company', async (req, res) => {
     const database = await getDatabaseAsync();
 
     // Check if company already exists
-    const existingCompany = database.prepare(`
+    const existingCompany = await database.prepare(`
       SELECT id, symbol FROM companies WHERE LOWER(symbol) = LOWER(?)
     `).get(ticker);
 
@@ -686,7 +686,7 @@ router.post('/:id/create-company', async (req, res) => {
     const exchange = ipo.exchange_final || ipo.exchange_proposed || ipo.listing_venue;
     const country = ipo.headquarters_country || (ipo.region === 'US' ? 'US' : ipo.home_member_state) || 'US';
 
-    const result = database.prepare(`
+    const result = await database.prepare(`
       INSERT INTO companies (
         symbol, name, sector, industry, exchange, country, is_active, cik
       ) VALUES (?, ?, ?, ?, ?, ?, 1, ?)
@@ -726,7 +726,7 @@ router.post('/sync-trading-companies', async (req, res) => {
     const tracker = await getIPOTracker();
 
     // Get all trading IPOs without company_id (include ISIN for EU/UK)
-    const tradingIPOs = database.prepare(`
+    const tradingIPOs = await database.prepare(`
       SELECT * FROM ipo_tracker
       WHERE status = 'TRADING'
         AND (company_id IS NULL OR company_id = 0)
@@ -765,13 +765,13 @@ router.post('/sync-trading-companies', async (req, res) => {
 
       try {
         // Check if company already exists by ticker
-        let existingCompany = database.prepare(`
+        let existingCompany = await database.prepare(`
           SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
         `).get(ticker);
 
         // Also check by ISIN for EU/UK IPOs
         if (!existingCompany && ipo.isin) {
-          existingCompany = database.prepare(`
+          existingCompany = await database.prepare(`
             SELECT id FROM companies WHERE isin = ?
           `).get(ipo.isin);
         }
@@ -788,7 +788,7 @@ router.post('/sync-trading-companies', async (req, res) => {
             ipo.home_member_state ||
             (ipo.isin ? ipo.isin.substring(0, 2) : 'XX');
 
-          const insertResult = database.prepare(`
+          const insertResult = await database.prepare(`
             INSERT INTO companies (
               symbol, name, sector, industry, exchange, country, is_active, cik, isin
             ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)

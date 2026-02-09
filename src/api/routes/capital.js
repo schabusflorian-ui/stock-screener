@@ -510,8 +510,9 @@ router.get('/recent-events', async (req, res) => {
     const { limit = 50, type } = req.query;
 
     // First try the capitalTracker method (queries significant_events table)
-    if (capitalTracker) {
-      const events = await capitalTracker.getRecentCapitalEvents(parseInt(limit));
+    const tracker = await getCapitalTracker();
+    if (tracker) {
+      const events = await tracker.getRecentCapitalEvents(parseInt(limit));
       if (events.length > 0) {
         const filteredEvents = type ? events.filter(e => e.event_type === type) : events;
         const byType = {};
@@ -679,11 +680,12 @@ router.get('/company/:symbol', async (req, res) => {
       return res.status(404).json({ error: 'Company not found' });
     }
 
-    if (!capitalTracker) {
+    const tracker = await getCapitalTracker();
+    if (!tracker) {
       return res.status(503).json({ error: 'Capital allocation service unavailable' });
     }
 
-    const overview = await capitalTracker.getCapitalAllocationOverview(
+    const overview = await tracker.getCapitalAllocationOverview(
       company.id,
       parseInt(quarters)
     );
@@ -1126,7 +1128,7 @@ router.get('/dividend-calendar', async (req, res) => {
       FROM dividend_metrics dm
       JOIN companies c ON dm.company_id = c.id
       WHERE dm.ex_dividend_date >= CURRENT_DATE
-        AND dm.ex_dividend_date <= CURRENT_DATE + $1 * INTERVAL '1 day'
+        AND dm.ex_dividend_date <= CURRENT_DATE + ($1 || ' days')::INTERVAL
         AND dm.dividend_yield > 0
       ORDER BY dm.ex_dividend_date ASC
     `, [parseInt(days)]);

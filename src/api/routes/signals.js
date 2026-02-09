@@ -38,7 +38,7 @@ router.get('/13f/:symbol', async (req, res) => {
       return res.status(404).json({ error: 'Company not found' });
     }
 
-    const signal = se.get13FSignal(company.id);
+    const signal = await se.get13FSignal(company.id);
 
     res.json({
       success: true,
@@ -59,7 +59,7 @@ router.get('/13f/top/new-positions', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 30;
     const se = getSignalEnhancements();
-    const all = se.getTop13FOpportunities(limit);
+    const all = await se.getTop13FOpportunities(limit);
 
     res.json({
       success: true,
@@ -80,7 +80,7 @@ router.get('/13f/top/increases', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 30;
     const se = getSignalEnhancements();
-    const all = se.getTop13FOpportunities(limit);
+    const all = await se.getTop13FOpportunities(limit);
 
     res.json({
       success: true,
@@ -101,7 +101,7 @@ router.get('/13f/top/exits', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 30;
     const se = getSignalEnhancements();
-    const all = se.getTop13FOpportunities(limit);
+    const all = await se.getTop13FOpportunities(limit);
 
     res.json({
       success: true,
@@ -136,7 +136,7 @@ router.get('/insiders/:symbol', async (req, res) => {
       return res.status(404).json({ error: 'Company not found' });
     }
 
-    const signal = se.getInsiderSignal(company.id);
+    const signal = await se.getInsiderSignal(company.id);
 
     res.json({
       success: true,
@@ -157,7 +157,7 @@ router.get('/insiders/top/open-market-buys', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 30;
     const se = getSignalEnhancements();
-    const opportunities = se.getTopOpenMarketBuys(limit);
+    const opportunities = await se.getTopOpenMarketBuys(limit);
 
     res.json({
       success: true,
@@ -192,7 +192,7 @@ router.get('/earnings/:symbol', async (req, res) => {
       return res.status(404).json({ error: 'Company not found' });
     }
 
-    const signal = se.getEarningsMomentumSignal(company.id);
+    const signal = await se.getEarningsMomentumSignal(company.id);
 
     res.json({
       success: true,
@@ -214,7 +214,7 @@ router.get('/earnings/top/momentum', async (req, res) => {
     const limit = parseInt(req.query.limit) || 30;
     const minBeats = parseInt(req.query.minBeats) || 2;
     const se = getSignalEnhancements();
-    const opportunities = se.getEarningsMomentumOpportunities(minBeats, limit);
+    const opportunities = await se.getEarningsMomentumOpportunities(minBeats, limit);
 
     res.json({
       success: true,
@@ -250,9 +250,9 @@ router.get('/combined/:symbol', async (req, res) => {
       return res.status(404).json({ error: 'Company not found' });
     }
 
-    const thirteenF = se.get13FSignal(company.id);
-    const insider = se.getInsiderSignal(company.id);
-    const earnings = se.getEarningsMomentumSignal(company.id);
+    const thirteenF = await se.get13FSignal(company.id);
+    const insider = await se.getInsiderSignal(company.id);
+    const earnings = await se.getEarningsMomentumSignal(company.id);
 
     // Calculate combined score
     let combinedScore = 0;

@@ -78,7 +78,7 @@ class SignalEnhancements {
           totalWeight += weight;
           details.newPositions.push({
             investor: change.investor_name,
-            firm: change.firm_name,
+            firm: change.fund_name,
             value: change.market_value,
             weight: change.portfolio_weight,
             date: change.filing_date,
