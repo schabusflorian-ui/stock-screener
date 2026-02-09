@@ -69,8 +69,17 @@ router.get('/google/callback', (req, res, next) => {
     failureRedirect: '/login?error=auth_failed'
   })(req, res, next);
 }, (req, res) => {
-  // Successful authentication - redirect to homepage
-  res.redirect('/');
+  // Successful authentication
+  // CRITICAL: Save session before redirecting to prevent session loss
+  req.session.save((err) => {
+    if (err) {
+      console.error('[OAuth] Session save failed:', err);
+      return res.redirect('/login?error=session_failed');
+    }
+    console.log('[OAuth] Session saved successfully for user:', req.user?.email);
+    // Redirect to homepage
+    res.redirect('/');
+  });
 });
 
 // GET /api/auth/me - Get current user
