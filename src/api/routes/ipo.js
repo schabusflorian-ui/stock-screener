@@ -3,17 +3,30 @@
 
 const express = require('express');
 const router = express.Router();
-const { getDatabase } = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 const { IPOTracker, IPO_STAGES, IPO_FORM_TYPES, IPO_REGIONS } = require('../../services/ipoTracker');
 
-// Initialize IPO tracker (lazy initialization to avoid sync database access)
+// Lazy async initialization to avoid sync database access
 let ipoTracker = null;
-function getIPOTracker() {
-  if (!ipoTracker) {
-    const db = getDatabase();
-    ipoTracker = new IPOTracker(db, 'Stock Analyzer contact@example.com');
-  }
-  return ipoTracker;
+let ipoTrackerPromise = null;
+
+async function getIPOTracker() {
+  if (ipoTracker) return ipoTracker;
+  if (ipoTrackerPromise) return ipoTrackerPromise;
+
+  ipoTrackerPromise = (async () => {
+    try {
+      const database = await getDatabaseAsync();
+      ipoTracker = new IPOTracker(database, 'Stock Analyzer contact@example.com');
+      return ipoTracker;
+    } catch (error) {
+      console.error('Failed to initialize IPOTracker:', error.message);
+      ipoTrackerPromise = null;
+      throw error;
+    }
+  })();
+
+  return ipoTrackerPromise;
 }
 
 // ============================================
@@ -29,7 +42,8 @@ router.get('/pipeline', async (req, res) => {
   try {
     const { region, status, sector, sortBy, sortOrder, limit } = req.query;
 
-    const pipeline = getIPOTracker().getPipeline({
+    const tracker = await getIPOTracker();
+    const pipeline = await tracker.getPipeline({
       region: region || 'all',
       status,
       sector,
@@ -57,7 +71,8 @@ router.get('/pipeline', async (req, res) => {
 router.get('/by-stage', async (req, res) => {
   try {
     const { region } = req.query;
-    const byStage = getIPOTracker().getByStage(region || 'all');
+    const tracker = await getIPOTracker();
+    const byStage = await tracker.getByStage(region || 'all');
 
     // Add stage metadata
     const result = {};
@@ -82,7 +97,8 @@ router.get('/by-stage', async (req, res) => {
  */
 router.get('/upcoming', async (req, res) => {
   try {
-    const upcoming = getIPOTracker().getExpectedSoon();
+    const tracker = await getIPOTracker();
+    const upcoming = await tracker.getExpectedSoon();
     res.json({
       count: upcoming.length,
       data: upcoming
@@ -101,7 +117,8 @@ router.get('/upcoming', async (req, res) => {
 router.get('/recent', async (req, res) => {
   try {
     const { limit = 20 } = req.query;
-    const recent = getIPOTracker().getRecentlyCompleted(parseInt(limit));
+    const tracker = await getIPOTracker();
+    const recent = await tracker.getRecentlyCompleted(parseInt(limit));
 
     res.json({
       count: recent.length,
@@ -121,7 +138,8 @@ router.get('/recent', async (req, res) => {
 router.get('/statistics', async (req, res) => {
   try {
     const { region } = req.query;
-    const stats = getIPOTracker().getStatistics({ region: region || 'all' });
+    const tracker = await getIPOTracker();
+    const stats = await tracker.getStatistics({ region: region || 'all' });
     res.json({
       region: region || 'all',
       ...stats
@@ -138,7 +156,8 @@ router.get('/statistics', async (req, res) => {
  */
 router.get('/sectors', async (req, res) => {
   try {
-    const sectors = getIPOTracker().getSectorBreakdown();
+    const tracker = await getIPOTracker();
+    const sectors = await tracker.getSectorBreakdown();
     res.json({
       count: sectors.length,
       data: sectors
@@ -186,7 +205,8 @@ router.post('/check-eu', async (req, res) => {
     const { days = 30 } = req.body;
 
     console.log('API: Starting EU/UK IPO check...');
-    const results = await getIPOTracker().checkForEUFilings({ days });
+    const tracker = await getIPOTracker();
+    const results = await tracker.checkForEUFilings({ days });
 
     res.json({
       success: true,

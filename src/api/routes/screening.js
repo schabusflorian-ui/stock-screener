@@ -234,10 +234,10 @@ router.get('/presets', (req, res) => {
  * GET /api/screening/buffett
  * Buffett quality screen
  */
-router.get('/buffett', (req, res) => {
+router.get('/buffett', async (req, res) => {
   try {
     const { limit } = req.query;
-    const results = screener.buffettQuality(limit ? parseInt(limit) : undefined);
+    const results = await screener.buffettQuality(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Buffett Quality',
@@ -258,10 +258,10 @@ router.get('/buffett', (req, res) => {
  * GET /api/screening/value
  * Deep value screen (Graham)
  */
-router.get('/value', (req, res) => {
+router.get('/value', async (req, res) => {
   try {
     const { limit } = req.query;
-    const results = screener.deepValue(limit ? parseInt(limit) : undefined);
+    const results = await screener.deepValue(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Deep Value (Graham)',
@@ -282,10 +282,10 @@ router.get('/value', (req, res) => {
  * GET /api/screening/magic
  * Magic Formula screen (Greenblatt)
  */
-router.get('/magic', (req, res) => {
+router.get('/magic', async (req, res) => {
   try {
     const { limit } = req.query;
-    const results = screener.magicFormula(limit ? parseInt(limit) : undefined);
+    const results = await screener.magicFormula(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Magic Formula (Greenblatt)',
@@ -305,10 +305,10 @@ router.get('/magic', (req, res) => {
  * GET /api/screening/quality
  * Quality at any price
  */
-router.get('/quality', (req, res) => {
+router.get('/quality', async (req, res) => {
   try {
     const { limit } = req.query;
-    const results = screener.qualityAtAnyPrice(limit ? parseInt(limit) : undefined);
+    const results = await screener.qualityAtAnyPrice(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Quality at Any Price',
@@ -328,10 +328,10 @@ router.get('/quality', (req, res) => {
  * GET /api/screening/growth
  * High growth screen
  */
-router.get('/growth', (req, res) => {
+router.get('/growth', async (req, res) => {
   try {
     const { limit } = req.query;
-    const results = screener.highGrowth(limit ? parseInt(limit) : undefined);
+    const results = await screener.highGrowth(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'High Growth',
@@ -351,10 +351,10 @@ router.get('/growth', (req, res) => {
  * GET /api/screening/dividend
  * Dividend value screen
  */
-router.get('/dividend', (req, res) => {
+router.get('/dividend', async (req, res) => {
   try {
     const { limit } = req.query;
-    const results = screener.dividendValue(limit ? parseInt(limit) : undefined);
+    const results = await screener.dividendValue(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Dividend Value',
@@ -375,10 +375,10 @@ router.get('/dividend', (req, res) => {
  * GET /api/screening/fortress
  * Financial fortress screen
  */
-router.get('/fortress', (req, res) => {
+router.get('/fortress', async (req, res) => {
   try {
     const { limit } = req.query;
-    const results = screener.financialFortress(limit ? parseInt(limit) : undefined);
+    const results = await screener.financialFortress(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Financial Fortress',
@@ -399,10 +399,10 @@ router.get('/fortress', (req, res) => {
  * GET /api/screening/cigarbutts
  * Graham Cigar Butts - Deep value / net-net style
  */
-router.get('/cigarbutts', (req, res) => {
+router.get('/cigarbutts', async (req, res) => {
   try {
     const { limit } = req.query;
-    const results = screener.grahamCigarButts(limit ? parseInt(limit) : undefined);
+    const results = await screener.grahamCigarButts(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Graham Cigar Butts',
@@ -425,10 +425,10 @@ router.get('/cigarbutts', (req, res) => {
  * GET /api/screening/compounders
  * Akre Compounders - High quality compounders
  */
-router.get('/compounders', (req, res) => {
+router.get('/compounders', async (req, res) => {
   try {
     const { limit } = req.query;
-    const results = screener.akreCompounders(limit ? parseInt(limit) : undefined);
+    const results = await screener.akreCompounders(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Akre Compounders',
@@ -451,10 +451,10 @@ router.get('/compounders', (req, res) => {
  * GET /api/screening/flywheel
  * Sleep Well Flywheel - Compounders with growth and efficiency
  */
-router.get('/flywheel', (req, res) => {
+router.get('/flywheel', async (req, res) => {
   try {
     const { limit } = req.query;
-    const results = screener.sleepWellFlywheel(limit ? parseInt(limit) : undefined);
+    const results = await screener.sleepWellFlywheel(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Sleep Well Flywheel',
@@ -476,10 +476,10 @@ router.get('/flywheel', (req, res) => {
  * GET /api/screening/forensic
  * Forensic Quality - High earnings quality
  */
-router.get('/forensic', (req, res) => {
+router.get('/forensic', async (req, res) => {
   try {
     const { limit } = req.query;
-    const results = screener.forensicQuality(limit ? parseInt(limit) : undefined);
+    const results = await screener.forensicQuality(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Forensic Quality',
@@ -501,10 +501,10 @@ router.get('/forensic', (req, res) => {
  * GET /api/screening/asymmetry
  * Pabrai Asymmetry - Low risk, high reward
  */
-router.get('/asymmetry', (req, res) => {
+router.get('/asymmetry', async (req, res) => {
   try {
     const { limit } = req.query;
-    const results = screener.pabraiAsymmetry(limit ? parseInt(limit) : undefined);
+    const results = await screener.pabraiAsymmetry(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Pabrai Asymmetry',
@@ -527,10 +527,10 @@ router.get('/asymmetry', (req, res) => {
  * GET /api/screening/moats
  * Pat Dorsey Moats - Companies with competitive advantages
  */
-router.get('/moats', (req, res) => {
+router.get('/moats', async (req, res) => {
   try {
     const { limit } = req.query;
-    const results = screener.dorseyMoats(limit ? parseInt(limit) : undefined);
+    const results = await screener.dorseyMoats(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Pat Dorsey Moats',
@@ -553,7 +553,7 @@ router.get('/moats', (req, res) => {
 /**
  * Alpha-based preset screens
  */
-router.get('/alpha_outperformers_1m', (req, res) => {
+router.get('/alpha_outperformers_1m', async (req, res) => {
   try {
     const { limit } = req.query;
     const criteria = {
@@ -562,7 +562,7 @@ router.get('/alpha_outperformers_1m', (req, res) => {
       sortOrder: 'DESC',
       limit: limit ? parseInt(limit) : undefined
     };
-    const screenResult = screener.screen(criteria);
+    const screenResult = await screener.screen(criteria);
     const results = screenResult.results || screenResult;
 
     res.json({
@@ -577,7 +577,7 @@ router.get('/alpha_outperformers_1m', (req, res) => {
   }
 });
 
-router.get('/alpha_outperformers_ytd', (req, res) => {
+router.get('/alpha_outperformers_ytd', async (req, res) => {
   try {
     const { limit } = req.query;
     const criteria = {
@@ -586,7 +586,7 @@ router.get('/alpha_outperformers_ytd', (req, res) => {
       sortOrder: 'DESC',
       limit: limit ? parseInt(limit) : undefined
     };
-    const screenResult = screener.screen(criteria);
+    const screenResult = await screener.screen(criteria);
     const results = screenResult.results || screenResult;
 
     res.json({
@@ -601,7 +601,7 @@ router.get('/alpha_outperformers_ytd', (req, res) => {
   }
 });
 
-router.get('/alpha_outperformers_1y', (req, res) => {
+router.get('/alpha_outperformers_1y', async (req, res) => {
   try {
     const { limit } = req.query;
     const criteria = {
@@ -610,7 +610,7 @@ router.get('/alpha_outperformers_1y', (req, res) => {
       sortOrder: 'DESC',
       limit: limit ? parseInt(limit) : undefined
     };
-    const screenResult = screener.screen(criteria);
+    const screenResult = await screener.screen(criteria);
     const results = screenResult.results || screenResult;
 
     res.json({
@@ -625,7 +625,7 @@ router.get('/alpha_outperformers_1y', (req, res) => {
   }
 });
 
-router.get('/alpha_underperformers', (req, res) => {
+router.get('/alpha_underperformers', async (req, res) => {
   try {
     const { limit } = req.query;
     const criteria = {
@@ -635,7 +635,7 @@ router.get('/alpha_underperformers', (req, res) => {
       sortOrder: 'ASC',
       limit: limit ? parseInt(limit) : undefined
     };
-    const screenResult = screener.screen(criteria);
+    const screenResult = await screener.screen(criteria);
     const results = screenResult.results || screenResult;
 
     res.json({
@@ -650,7 +650,7 @@ router.get('/alpha_underperformers', (req, res) => {
   }
 });
 
-router.get('/quality_momentum', (req, res) => {
+router.get('/quality_momentum', async (req, res) => {
   try {
     const { limit } = req.query;
     const criteria = {
@@ -661,7 +661,7 @@ router.get('/quality_momentum', (req, res) => {
       sortOrder: 'DESC',
       limit: limit ? parseInt(limit) : undefined
     };
-    const screenResult = screener.screen(criteria);
+    const screenResult = await screener.screen(criteria);
     const results = screenResult.results || screenResult;
 
     res.json({
@@ -860,9 +860,9 @@ router.get('/factor-presets', (req, res) => {
  * GET /api/screening/macro/context
  * Get current macro context for screening decisions
  */
-router.get('/macro/context', (req, res) => {
+router.get('/macro/context', async (req, res) => {
   try {
-    const macro = screener.getMacroContext();
+    const macro = await screener.getMacroContext();
     res.json({
       timestamp: new Date().toISOString(),
       context: macro
@@ -876,10 +876,10 @@ router.get('/macro/context', (req, res) => {
  * GET /api/screening/macro/value-with-macro
  * Comprehensive value screen with macro overlay
  */
-router.get('/macro/value-with-macro', (req, res) => {
+router.get('/macro/value-with-macro', async (req, res) => {
   try {
     const { limit } = req.query;
-    const result = screener.valueInvestingWithMacro(limit ? parseInt(limit) : undefined);
+    const result = await screener.valueInvestingWithMacro(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Value Investing + Macro Overlay',
@@ -900,10 +900,10 @@ router.get('/macro/value-with-macro', (req, res) => {
  * GET /api/screening/macro/recession-resistant
  * Defensive stocks for late cycle/recession
  */
-router.get('/macro/recession-resistant', (req, res) => {
+router.get('/macro/recession-resistant', async (req, res) => {
   try {
     const { limit } = req.query;
-    const result = screener.recessionResistantValue(limit ? parseInt(limit) : undefined);
+    const result = await screener.recessionResistantValue(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Recession-Resistant Value',
@@ -926,10 +926,10 @@ router.get('/macro/recession-resistant', (req, res) => {
  * GET /api/screening/macro/deep-value-safe
  * Deep value only when macro is favorable
  */
-router.get('/macro/deep-value-safe', (req, res) => {
+router.get('/macro/deep-value-safe', async (req, res) => {
   try {
     const { limit } = req.query;
-    const result = screener.deepValueSafeMacro(limit ? parseInt(limit) : undefined);
+    const result = await screener.deepValueSafeMacro(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Deep Value + Safe Macro',
@@ -953,10 +953,10 @@ router.get('/macro/deep-value-safe', (req, res) => {
  * GET /api/screening/macro/garp-low-vol
  * GARP when volatility is calm
  */
-router.get('/macro/garp-low-vol', (req, res) => {
+router.get('/macro/garp-low-vol', async (req, res) => {
   try {
     const { limit } = req.query;
-    const result = screener.garpLowVol(limit ? parseInt(limit) : undefined);
+    const result = await screener.garpLowVol(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'GARP + Low Volatility',
@@ -980,10 +980,10 @@ router.get('/macro/garp-low-vol', (req, res) => {
  * GET /api/screening/macro/cyclical
  * Cyclicals when curve is steep (early cycle)
  */
-router.get('/macro/cyclical', (req, res) => {
+router.get('/macro/cyclical', async (req, res) => {
   try {
     const { limit } = req.query;
-    const result = screener.cyclicalValue(limit ? parseInt(limit) : undefined);
+    const result = await screener.cyclicalValue(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Cyclical Value',
@@ -1007,10 +1007,10 @@ router.get('/macro/cyclical', (req, res) => {
  * GET /api/screening/macro/fear-buying
  * Quality accumulation during fear (high VIX)
  */
-router.get('/macro/fear-buying', (req, res) => {
+router.get('/macro/fear-buying', async (req, res) => {
   try {
     const { limit } = req.query;
-    const result = screener.fearBuying(limit ? parseInt(limit) : undefined);
+    const result = await screener.fearBuying(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Fear Buying',
@@ -1036,10 +1036,10 @@ router.get('/macro/fear-buying', (req, res) => {
  * GET /api/screening/macro/credit-stress
  * Fortress balance sheets during credit stress
  */
-router.get('/macro/credit-stress', (req, res) => {
+router.get('/macro/credit-stress', async (req, res) => {
   try {
     const { limit } = req.query;
-    const result = screener.creditStressOpportunities(limit ? parseInt(limit) : undefined);
+    const result = await screener.creditStressOpportunities(limit ? parseInt(limit) : undefined);
 
     res.json({
       screen: 'Credit Stress Opportunities',
