@@ -11,7 +11,14 @@ const DCFCalculator = require('../../services/dcfCalculator');
 const { getDatabaseAsync } = require('../../database');
 const { requireFeature } = require('../../middleware/subscription');
 
-const calculator = new DCFCalculator();
+// Lazy initialization to avoid instantiating DCFCalculator at module load time
+let calculator = null;
+function getCalculator() {
+  if (!calculator) {
+    calculator = new DCFCalculator();
+  }
+  return calculator;
+}
 
 /**
  * GET /api/dcf/:symbol
@@ -59,7 +66,7 @@ router.get('/:symbol', requireFeature('dcf_valuation'), async (req, res) => {
       overrides.sharesOutstanding = company.market_cap / overrides.currentPrice;
     }
 
-    const results = await calculator.calculateDCF(company.id, overrides);
+    const results = await getCalculator().calculateDCF(company.id, overrides);
 
     res.json(results);
   } catch (error) {
@@ -103,7 +110,7 @@ router.post('/:symbol', requireFeature('dcf_valuation'), async (req, res) => {
       return res.status(404).json({ success: false, error: 'Company not found' });
     }
 
-    const results = await calculator.calculateDCF(company.id, overrides);
+    const results = await getCalculator().calculateDCF(company.id, overrides);
 
     res.json(results);
   } catch (error) {
@@ -161,7 +168,7 @@ router.get('/:symbol/sensitivity', requireFeature('dcf_valuation'), async (req, 
     }
 
     // First get base case with price/shares
-    const baseCase = await calculator.calculateDCF(company.id, baseOverrides);
+    const baseCase = await getCalculator().calculateDCF(company.id, baseOverrides);
 
     if (!baseCase.success) {
       return res.json({ success: false, error: 'Cannot calculate base case', errors: baseCase.errors });
@@ -184,7 +191,7 @@ router.get('/:symbol/sensitivity', requireFeature('dcf_valuation'), async (req, 
     if (colStep !== undefined) options.colStep = parseFloat(colStep);
 
     // Generate sensitivity matrix
-    const sensitivity = await calculator.calculateSensitivity(company.id, baseWACC, baseGrowth, options);
+    const sensitivity = await getCalculator().calculateSensitivity(company.id, baseWACC, baseGrowth, options);
 
     res.json({
       success: true,
@@ -252,12 +259,12 @@ router.get('/:symbol/reverse', requireFeature('dcf_valuation'), async (req, res)
 
     // Calculate implied growth and WACC in parallel - pass baseOverrides to ensure correct shares
     const [impliedGrowth, impliedWACC] = await Promise.all([
-      calculator.calculateImpliedGrowth(company.id, price, { baseInputs: baseOverrides }),
-      calculator.calculateImpliedWACC(company.id, price, { baseInputs: baseOverrides })
+      getCalculator().calculateImpliedGrowth(company.id, price, { baseInputs: baseOverrides }),
+      getCalculator().calculateImpliedWACC(company.id, price, { baseInputs: baseOverrides })
     ]);
 
     // Get base case for comparison - with proper price/shares
-    const baseCase = await calculator.calculateDCF(company.id, baseOverrides);
+    const baseCase = await getCalculator().calculateDCF(company.id, baseOverrides);
 
     res.json({
       success: true,
@@ -339,7 +346,7 @@ router.get('/:symbol/tornado', requireFeature('dcf_valuation'), async (req, res)
       options.variationPct = parseFloat(variation) / 100;
     }
 
-    const tornado = await calculator.calculateTornadoChart(company.id, options);
+    const tornado = await getCalculator().calculateTornadoChart(company.id, options);
 
     res.json({
       success: tornado.success,
@@ -393,7 +400,7 @@ router.get('/:symbol/breakeven', requireFeature('dcf_valuation'), async (req, re
       baseOverrides.sharesOutstanding = company.market_cap / currentPrice;
     }
 
-    const breakeven = await calculator.calculateBreakeven(company.id, currentPrice, { baseInputs: baseOverrides });
+    const breakeven = await getCalculator().calculateBreakeven(company.id, currentPrice, { baseInputs: baseOverrides });
 
     res.json({
       success: true,
@@ -426,7 +433,7 @@ router.get('/:symbol/history', requireFeature('dcf_valuation'), async (req, res)
       return res.status(404).json({ success: false, error: 'Company not found' });
     }
 
-    const history = await calculator.getHistoricalValuations(company.id, limit);
+    const history = await getCalculator().getHistoricalValuations(company.id, limit);
 
     res.json({
       success: true,
@@ -576,7 +583,7 @@ router.post('/:symbol/parametric', requireFeature('dcf_valuation'), async (req, 
       mergedInputs.sharesOutstanding = priceData.market_cap / mergedInputs.currentPrice;
     }
 
-    const results = await calculator.calculateParametricValuation(company.id, {
+    const results = await getCalculator().calculateParametricValuation(company.id, {
       simulations: Math.min(simulations, 50000), // Cap at 50k for performance
       distributionType,
       growthUncertainty,
@@ -636,7 +643,7 @@ router.get('/:symbol/parametric', requireFeature('dcf_valuation'), async (req, r
       baseInputs.sharesOutstanding = priceData.market_cap / baseInputs.currentPrice;
     }
 
-    const results = await calculator.calculateParametricValuation(company.id, {
+    const results = await getCalculator().calculateParametricValuation(company.id, {
       simulations: Math.min(parseInt(simulations), 20000),
       distributionType,
       baseInputs
