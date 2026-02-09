@@ -10,9 +10,9 @@ const screener = new ScreeningService();
  * GET /api/screening/options
  * Get available filter options (sectors, industries, periods)
  */
-router.get('/options', (req, res) => {
+router.get('/options', async (req, res) => {
   try {
-    const options = screener.getFilterOptions();
+    const options = await screener.getFilterOptions();
     res.json(options);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -23,10 +23,10 @@ router.get('/options', (req, res) => {
  * POST /api/screening/custom
  * Run custom screen with advanced criteria
  */
-router.post('/custom', requireFeature('advanced_screener'), (req, res) => {
+router.post('/custom', requireFeature('advanced_screener'), async (req, res) => {
   try {
     const criteria = req.body;
-    const result = screener.screen(criteria);
+    const result = await screener.screen(criteria);
 
     res.json({
       criteria,
