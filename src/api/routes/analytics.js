@@ -6,6 +6,7 @@
 
 const express = require('express');
 const router = express.Router();
+const { getDatabaseAsync } = require('../../database');
 
 // Middleware imports
 const { optionalAuth, requireAdmin, attachUserId } = require('../../middleware/auth');
@@ -83,7 +84,7 @@ router.post('/track', optionalAuth, attachUserId, async (req, res) => {
  */
 router.post('/track/batch', optionalAuth, attachUserId, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const database = await getDatabaseAsync();
     const { events } = req.body;
 
     if (!Array.isArray(events) || events.length === 0) {
@@ -95,7 +96,7 @@ router.post('/track/batch', optionalAuth, attachUserId, async (req, res) => {
 
     // Check if user has opted out
     if (req.userId) {
-      const prefs = await db.prepare(`
+      const prefs = await database.prepare(`
         SELECT analytics_opted_in FROM user_preferences WHERE user_id = ?
       `).get(req.userId);
 
@@ -104,18 +105,18 @@ router.post('/track/batch', optionalAuth, attachUserId, async (req, res) => {
       }
     }
 
-    const stmt = db.prepare(`
-      INSERT INTO analytics_events (
-        session_id, user_id, event_name, event_category,
-        properties, page, referrer, device, browser, session_duration_seconds
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
     // Execute batch insert in transaction
-    const tracked = await db.transaction(async () => {
-      let count = 0;
+    let count = 0;
+    await database.query('BEGIN');
+    try {
       for (const event of events) {
         if (event.event && event.category && event.sessionId) {
+          const stmt = await database.prepare(`
+            INSERT INTO analytics_events (
+              session_id, user_id, event_name, event_category,
+              properties, page, referrer, device, browser, session_duration_seconds
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `);
           await stmt.run(
             event.sessionId,
             req.userId || null,
@@ -131,9 +132,12 @@ router.post('/track/batch', optionalAuth, attachUserId, async (req, res) => {
           count++;
         }
       }
-      return count;
-    });
-    res.json({ success: true, tracked });
+      await database.query('COMMIT');
+    } catch (transactionError) {
+      await database.query('ROLLBACK');
+      throw transactionError;
+    }
+    res.json({ success: true, tracked: count });
   } catch (error) {
     console.error('Error batch tracking events:', error);
     res.status(500).json({ success: false, error: 'Failed to batch track events' });
