@@ -5,16 +5,14 @@
 
 const express = require('express');
 const router = express.Router();
-const IndexService = require('../../services/indexService');
+const indexService = require('../../services/indexService');
 const IndexPriceService = require('../../services/indexPriceService');
 
-// Lazy service singletons (instantiated on first use to avoid startup failures)
-let indexService = null;
+// Lazy service singleton (instantiated on first use to avoid startup failures)
 let indexPriceService = null;
 
 function getIndexService() {
-  if (!indexService) indexService = new IndexService();
-  return indexService;
+  return indexService; // indexService is already a singleton instance from the module
 }
 
 function getIndexPriceService() {

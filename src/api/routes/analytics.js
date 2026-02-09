@@ -111,7 +111,8 @@ router.post('/track/batch', optionalAuth, attachUserId, async (req, res) => {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const insertMany = db.transaction(async (events) => {
+    // Execute batch insert in transaction
+    const tracked = await db.transaction(async () => {
       let count = 0;
       for (const event of events) {
         if (event.event && event.category && event.sessionId) {
@@ -132,8 +133,6 @@ router.post('/track/batch', optionalAuth, attachUserId, async (req, res) => {
       }
       return count;
     });
-
-    const tracked = await insertMany(events);
     res.json({ success: true, tracked });
   } catch (error) {
     console.error('Error batch tracking events:', error);
