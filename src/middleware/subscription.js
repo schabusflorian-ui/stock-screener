@@ -77,7 +77,7 @@ function requireFeature(featureName, options = {}) {
     message = null
   } = options;
 
-  return (req, res, next) => {
+  return async (req, res, next) => {
     // Admin bypasses all feature restrictions
     if (isAdminRequest(req)) {
       req.isAdmin = true;
@@ -96,10 +96,10 @@ function requireFeature(featureName, options = {}) {
 
     const db = req.app.get('db');
     const subscriptionService = getSubscriptionService(db);
-    const hasAccess = subscriptionService.hasFeature(userId, featureName);
+    const hasAccess = await subscriptionService.hasFeature(userId, featureName);
 
     if (!hasAccess) {
-      const subscription = subscriptionService.getUserSubscription(userId);
+      const subscription = await subscriptionService.getUserSubscription(userId);
       const requiredTier = getRequiredTierForFeature(featureName);
 
       if (softBlock) {
@@ -134,7 +134,7 @@ function requireFeature(featureName, options = {}) {
  * @param {string} minimumTier - Minimum tier required ('free', 'pro', 'ultra')
  */
 function requireTier(minimumTier) {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     // Admin bypasses all tier restrictions
     if (isAdminRequest(req)) {
       req.isAdmin = true;
@@ -153,10 +153,10 @@ function requireTier(minimumTier) {
 
     const db = req.app.get('db');
     const subscriptionService = getSubscriptionService(db);
-    const hasAccess = subscriptionService.hasTierAccess(userId, minimumTier);
+    const hasAccess = await subscriptionService.hasTierAccess(userId, minimumTier);
 
     if (!hasAccess) {
-      const subscription = subscriptionService.getUserSubscription(userId);
+      const subscription = await subscriptionService.getUserSubscription(userId);
       return res.status(403).json({
         error: `This feature requires a ${minimumTier} subscription or higher`,
         code: 'TIER_REQUIRED',
@@ -167,7 +167,7 @@ function requireTier(minimumTier) {
     }
 
     // Attach subscription to request for downstream use
-    req.subscription = subscriptionService.getUserSubscription(userId);
+    req.subscription = await subscriptionService.getUserSubscription(userId);
     req.userTier = req.subscription.tier_name;
 
     next();
@@ -302,7 +302,7 @@ function checkResourceLimit(resourceType, options = {}) {
 
     const db = req.app.get('db');
     const subscriptionService = getSubscriptionService(db);
-    const limit = subscriptionService.getLimit(userId, resourceType);
+    const limit = await subscriptionService.getLimit(userId, resourceType);
 
     // -1 = unlimited
     if (limit === -1) {
@@ -318,7 +318,7 @@ function checkResourceLimit(resourceType, options = {}) {
     }
 
     if (currentCount >= limit) {
-      const subscription = subscriptionService.getUserSubscription(userId);
+      const subscription = await subscriptionService.getUserSubscription(userId);
       const readableType = resourceType.replace(/_/g, ' ');
 
       return res.status(403).json({
@@ -374,12 +374,12 @@ function getDefaultResourceCount(db, userId, resourceType) {
  *
  * Usage: router.use(attachSubscription)
  */
-function attachSubscription(req, res, next) {
+async function attachSubscription(req, res, next) {
   if (req.user?.id) {
     try {
       const db = req.app.get('db');
       const subscriptionService = getSubscriptionService(db);
-      req.subscription = subscriptionService.getUserSubscription(req.user.id);
+      req.subscription = await subscriptionService.getUserSubscription(req.user.id);
       req.userTier = req.subscription?.tier_name || 'free';
     } catch (error) {
       console.error('Error attaching subscription:', error);
@@ -396,12 +396,12 @@ function attachSubscription(req, res, next) {
  * Useful for endpoints that work differently based on tier
  */
 function optionalFeatureCheck(featureName) {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     if (req.user?.id) {
       const db = req.app.get('db');
       const subscriptionService = getSubscriptionService(db);
       req.hasFeature = req.hasFeature || {};
-      req.hasFeature[featureName] = subscriptionService.hasFeature(req.user.id, featureName);
+      req.hasFeature[featureName] = await subscriptionService.hasFeature(req.user.id, featureName);
     }
     next();
   };
