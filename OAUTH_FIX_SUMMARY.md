@@ -235,18 +235,48 @@ If you still see `INTERNAL_ERROR` after redeployment:
    # Should have columns: id, google_id, email, name, picture, last_login_at
    ```
 
+## Additional Issue Found: Missing `await` in deserializeUser
+
+After fixing the `getDatabaseAsync` export, a **second issue** was discovered:
+
+**File**: [src/auth/passport.js:32](src/auth/passport.js:32)
+
+The `deserializeUser` function was calling `getDatabase()` without `await`:
+
+```javascript
+// ❌ WRONG - Missing await
+const dbClient = getDatabase();
+const result = await dbClient.query('SELECT * FROM users WHERE id = $1', [userId]);
+```
+
+**Error**: `TypeError: dbClient.query is not a function`
+
+**Cause**: `getDatabase()` in PostgreSQL mode returns a Promise, not the database object. Without `await`, `dbClient` is a Promise object, which doesn't have a `.query()` method.
+
+**Fix** (commit 6ddafb9):
+```javascript
+// ✅ CORRECT - Added await
+const dbClient = await getDatabaseAsync();
+const result = await dbClient.query('SELECT * FROM users WHERE id = $1', [userId]);
+```
+
+This fix allows session deserialization to work correctly - without it, users couldn't stay logged in across page loads.
+
 ## Timeline
 
 - **Issue Start**: 2026-02-09 08:30 UTC - OAuth started failing after PostgreSQL conversion
-- **Root Cause Identified**: 09:10 UTC - `getDatabaseAsync` not exported from db.js
-- **Fix Applied**: 09:15 UTC - Added getDatabaseAsync export (commit b75e87b)
+- **Root Cause #1 Identified**: 09:10 UTC - `getDatabaseAsync` not exported from db.js
+- **Fix #1 Applied**: 09:15 UTC - Added getDatabaseAsync export (commit b75e87b)
 - **Deployment Triggered**: 09:25 UTC - Forced redeploy (commit a20db28)
-- **Expected Resolution**: 09:30 UTC - OAuth should work after deployment completes
+- **Root Cause #2 Found**: 09:35 UTC - Missing `await` in deserializeUser (passport.js:32)
+- **Fix #2 Applied**: 09:40 UTC - Added await to deserializeUser (commit 6ddafb9)
+- **Expected Resolution**: 09:45 UTC - OAuth should fully work after deployment completes
 
 ## Files Changed
 
 ### Critical Fixes:
-- [src/lib/db.js](src/lib/db.js) - Added `getDatabaseAsync` function and export
+- [src/lib/db.js](src/lib/db.js) - Added `getDatabaseAsync` function and export (commit b75e87b)
+- [src/auth/passport.js](src/auth/passport.js) - Added missing `await` in deserializeUser (commit 6ddafb9)
 
 ### Supporting Infrastructure (already deployed):
 - [src/api/routes/diagnostic.js](src/api/routes/diagnostic.js) - Diagnostic endpoints
@@ -275,6 +305,10 @@ If you still see `INTERNAL_ERROR` after redeployment:
 
 ---
 
-**Status**: 🟡 Fix deployed, awaiting Railway build completion
+**Status**: 🟡 Second fix deployed (missing await), awaiting Railway build completion
 
-**Last Updated**: 2026-02-09 09:25 UTC
+**Commits**:
+- b75e87b - Export getDatabaseAsync from db.js
+- 6ddafb9 - Add missing await in deserializeUser
+
+**Last Updated**: 2026-02-09 09:40 UTC
