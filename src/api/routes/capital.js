@@ -511,7 +511,7 @@ router.get('/recent-events', async (req, res) => {
 
     // First try the capitalTracker method (queries significant_events table)
     if (capitalTracker) {
-      const events = capitalTracker.getRecentCapitalEvents(parseInt(limit));
+      const events = await capitalTracker.getRecentCapitalEvents(parseInt(limit));
       if (events.length > 0) {
         const filteredEvents = type ? events.filter(e => e.event_type === type) : events;
         const byType = {};
@@ -683,7 +683,7 @@ router.get('/company/:symbol', async (req, res) => {
       return res.status(503).json({ error: 'Capital allocation service unavailable' });
     }
 
-    const overview = capitalTracker.getCapitalAllocationOverview(
+    const overview = await capitalTracker.getCapitalAllocationOverview(
       company.id,
       parseInt(quarters)
     );
@@ -845,7 +845,7 @@ router.get('/company/:symbol/dividends', async (req, res) => {
     // Get annual dividend info from capital allocation if metrics not available
     let annualInfo = null;
     if (!metrics && capitalTracker) {
-      annualInfo = capitalTracker.getAnnualDividend(company.id);
+      annualInfo = await capitalTracker.getAnnualDividend(company.id);
     }
 
     // Build response with all available data

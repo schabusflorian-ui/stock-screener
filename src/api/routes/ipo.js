@@ -233,7 +233,8 @@ router.post('/check-esma', async (req, res) => {
     const { days = 30, country = null, ipoOnly = true } = req.body;
 
     console.log('API: Starting ESMA prospectus check...');
-    const results = await getIPOTracker().checkForESMAFilings({ days, country, ipoOnly });
+    const tracker = await getIPOTracker();
+    const results = await tracker.checkForESMAFilings({ days, country, ipoOnly });
 
     res.json({
       success: true,
@@ -259,7 +260,8 @@ router.post('/check-fca', async (req, res) => {
     const { days = 30, ipoOnly = true } = req.body;
 
     console.log('API: Starting FCA NSM prospectus check...');
-    const results = await getIPOTracker().checkForFCAFilings({ days, ipoOnly });
+    const tracker = await getIPOTracker();
+    const results = await tracker.checkForFCAFilings({ days, ipoOnly });
 
     res.json({
       success: true,
@@ -289,14 +291,15 @@ router.get('/lei/:lei', async (req, res) => {
       return res.status(400).json({ error: 'Invalid LEI format. LEI must be 20 alphanumeric characters.' });
     }
 
-    const ipo = getIPOTracker().getIPOByLEI(lei);
+    const tracker = await getIPOTracker();
+    const ipo = tracker.getIPOByLEI(lei);
 
     if (!ipo) {
       return res.status(404).json({ error: 'IPO not found for this LEI' });
     }
 
     // Get full details with filings
-    const fullIPO = getIPOTracker().getIPOWithFilings(ipo.id);
+    const fullIPO = tracker.getIPOWithFilings(ipo.id);
     fullIPO.stageInfo = IPO_STAGES[fullIPO.status];
 
     res.json(fullIPO);
@@ -319,14 +322,15 @@ router.get('/isin/:isin', async (req, res) => {
       return res.status(400).json({ error: 'Invalid ISIN format. ISIN must be 12 characters.' });
     }
 
-    const ipo = getIPOTracker().getIPOByISIN(isin);
+    const tracker = await getIPOTracker();
+    const ipo = tracker.getIPOByISIN(isin);
 
     if (!ipo) {
       return res.status(404).json({ error: 'IPO not found for this ISIN' });
     }
 
     // Get full details with filings
-    const fullIPO = getIPOTracker().getIPOWithFilings(ipo.id);
+    const fullIPO = tracker.getIPOWithFilings(ipo.id);
     fullIPO.stageInfo = IPO_STAGES[fullIPO.status];
 
     res.json(fullIPO);
@@ -361,9 +365,11 @@ router.post('/eu', async (req, res) => {
       });
     }
 
+    const tracker = await getIPOTracker();
+
     // Check if LEI already exists
     if (lei) {
-      const existingByLEI = getIPOTracker().getIPOByLEI(lei);
+      const existingByLEI = tracker.getIPOByLEI(lei);
       if (existingByLEI) {
         return res.status(409).json({
           error: 'IPO with this LEI already exists',
@@ -372,7 +378,7 @@ router.post('/eu', async (req, res) => {
       }
     }
 
-    const ipo = getIPOTracker().createEUIPO({
+    const ipo = tracker.createEUIPO({
       company_name,
       lei,
       isin,
@@ -416,7 +422,8 @@ router.get('/search', async (req, res) => {
       return res.status(400).json({ error: 'Query must be at least 2 characters' });
     }
 
-    const results = getIPOTracker().searchIPOs(q);
+    const tracker = await getIPOTracker();
+    const results = tracker.searchIPOs(q);
 
     res.json({
       query: q,
@@ -439,7 +446,8 @@ router.get('/search', async (req, res) => {
  */
 router.get('/watchlist', async (req, res) => {
   try {
-    const watchlist = getIPOTracker().getWatchlist();
+    const tracker = await getIPOTracker();
+    const watchlist = tracker.getWatchlist();
 
     res.json({
       count: watchlist.length,
@@ -460,13 +468,15 @@ router.post('/:id/watchlist', async (req, res) => {
     const ipoId = parseInt(req.params.id);
     const { notes } = req.body;
 
+    const tracker = await getIPOTracker();
+
     // Verify IPO exists
-    const ipo = getIPOTracker().getIPO(ipoId);
+    const ipo = tracker.getIPO(ipoId);
     if (!ipo) {
       return res.status(404).json({ error: 'IPO not found' });
     }
 
-    getIPOTracker().addToWatchlist(ipoId, notes);
+    tracker.addToWatchlist(ipoId, notes);
 
     res.json({
       success: true,
@@ -487,11 +497,13 @@ router.put('/:id/watchlist', async (req, res) => {
     const ipoId = parseInt(req.params.id);
     const { notes } = req.body;
 
-    if (!getIPOTracker().isInWatchlist(ipoId)) {
+    const tracker = await getIPOTracker();
+
+    if (!tracker.isInWatchlist(ipoId)) {
       return res.status(404).json({ error: 'IPO not in watchlist' });
     }
 
-    getIPOTracker().updateWatchlistNotes(ipoId, notes);
+    tracker.updateWatchlistNotes(ipoId, notes);
 
     res.json({
       success: true,
@@ -511,7 +523,8 @@ router.delete('/:id/watchlist', async (req, res) => {
   try {
     const ipoId = parseInt(req.params.id);
 
-    getIPOTracker().removeFromWatchlist(ipoId);
+    const tracker = await getIPOTracker();
+    tracker.removeFromWatchlist(ipoId);
 
     res.json({
       success: true,
@@ -534,7 +547,8 @@ router.delete('/:id/watchlist', async (req, res) => {
 router.post('/check', async (req, res) => {
   try {
     console.log('API: Starting IPO check...');
-    const results = await getIPOTracker().checkForNewFilings();
+    const tracker = await getIPOTracker();
+    const results = await tracker.checkForNewFilings();
 
     res.json({
       success: true,
@@ -559,7 +573,8 @@ router.post('/check', async (req, res) => {
 router.get('/check-history', async (req, res) => {
   try {
     const { limit = 20 } = req.query;
-    const history = getIPOTracker().getCheckHistory(parseInt(limit));
+    const tracker = await getIPOTracker();
+    const history = tracker.getCheckHistory(parseInt(limit));
 
     res.json({
       count: history.length,
@@ -582,7 +597,8 @@ router.get('/check-history', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const ipoId = parseInt(req.params.id);
-    const ipo = getIPOTracker().getIPOWithFilings(ipoId);
+    const tracker = await getIPOTracker();
+    const ipo = tracker.getIPOWithFilings(ipoId);
 
     if (!ipo) {
       return res.status(404).json({ error: 'IPO not found' });
@@ -611,7 +627,8 @@ router.post('/:id/mark-trading', async (req, res) => {
       return res.status(400).json({ error: 'tradingDate is required' });
     }
 
-    const ipo = await getIPOTracker().markAsTrading(ipoId, tradingDate, ticker);
+    const tracker = await getIPOTracker();
+    const ipo = await tracker.markAsTrading(ipoId, tradingDate, ticker);
 
     res.json({
       success: true,
@@ -631,7 +648,8 @@ router.post('/:id/mark-trading', async (req, res) => {
 router.post('/:id/create-company', async (req, res) => {
   try {
     const ipoId = parseInt(req.params.id);
-    const ipo = getIPOTracker().getIPO(ipoId);
+    const tracker = await getIPOTracker();
+    const ipo = tracker.getIPO(ipoId);
 
     if (!ipo) {
       return res.status(404).json({ error: 'IPO not found' });
@@ -646,6 +664,8 @@ router.post('/:id/create-company', async (req, res) => {
       return res.status(400).json({ error: 'IPO has no ticker symbol' });
     }
 
+    const database = await getDatabaseAsync();
+
     // Check if company already exists
     const existingCompany = database.prepare(`
       SELECT id, symbol FROM companies WHERE LOWER(symbol) = LOWER(?)
@@ -653,7 +673,7 @@ router.post('/:id/create-company', async (req, res) => {
 
     if (existingCompany) {
       // Link IPO to existing company
-      getIPOTracker().updateIPO(ipoId, { company_id: existingCompany.id });
+      tracker.updateIPO(ipoId, { company_id: existingCompany.id });
       return res.json({
         success: true,
         message: `Linked to existing company ${ticker}`,
@@ -681,7 +701,7 @@ router.post('/:id/create-company', async (req, res) => {
     );
 
     const companyId = result.lastInsertRowid;
-    getIPOTracker().updateIPO(ipoId, { company_id: companyId });
+    tracker.updateIPO(ipoId, { company_id: companyId });
 
     res.json({
       success: true,
@@ -703,6 +723,8 @@ router.post('/:id/create-company', async (req, res) => {
 router.post('/sync-trading-companies', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
+    const tracker = await getIPOTracker();
+
     // Get all trading IPOs without company_id (include ISIN for EU/UK)
     const tradingIPOs = database.prepare(`
       SELECT * FROM ipo_tracker
@@ -742,7 +764,6 @@ router.post('/sync-trading-companies', async (req, res) => {
       }
 
       try {
-    const database = await getDatabaseAsync();
         // Check if company already exists by ticker
         let existingCompany = database.prepare(`
           SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
@@ -751,13 +772,13 @@ router.post('/sync-trading-companies', async (req, res) => {
         // Also check by ISIN for EU/UK IPOs
         if (!existingCompany && ipo.isin) {
           existingCompany = database.prepare(`
-            SELECT id FROM companies WHERE isin = ? 
+            SELECT id FROM companies WHERE isin = ?
           `).get(ipo.isin);
         }
 
         if (existingCompany) {
           // Link to existing
-          getIPOTracker().updateIPO(ipo.id, { company_id: existingCompany.id });
+          tracker.updateIPO(ipo.id, { company_id: existingCompany.id });
           results.linked++;
         } else {
           // Create new company
@@ -782,7 +803,7 @@ router.post('/sync-trading-companies', async (req, res) => {
             ipo.isin || null
           );
 
-          getIPOTracker().updateIPO(ipo.id, { company_id: insertResult.lastInsertRowid });
+          tracker.updateIPO(ipo.id, { company_id: insertResult.lastInsertRowid });
           results.created++;
         }
       } catch (err) {
@@ -815,7 +836,8 @@ router.post('/:id/mark-withdrawn', async (req, res) => {
       return res.status(400).json({ error: 'withdrawnDate is required' });
     }
 
-    const ipo = await getIPOTracker().markAsWithdrawn(ipoId, withdrawnDate, reason);
+    const tracker = await getIPOTracker();
+    const ipo = await tracker.markAsWithdrawn(ipoId, withdrawnDate, reason);
 
     res.json({
       success: true,
@@ -837,8 +859,10 @@ router.put('/:id', async (req, res) => {
     const ipoId = parseInt(req.params.id);
     const updates = req.body;
 
+    const tracker = await getIPOTracker();
+
     // Verify IPO exists
-    const existing = getIPOTracker().getIPO(ipoId);
+    const existing = tracker.getIPO(ipoId);
     if (!existing) {
       return res.status(404).json({ error: 'IPO not found' });
     }
@@ -867,12 +891,12 @@ router.put('/:id', async (req, res) => {
 
     filteredUpdates.updated_at = new Date().toISOString();
 
-    getIPOTracker().updateIPO(ipoId, filteredUpdates);
+    tracker.updateIPO(ipoId, filteredUpdates);
 
     res.json({
       success: true,
       message: 'IPO updated',
-      data: getIPOTracker().getIPO(ipoId)
+      data: tracker.getIPO(ipoId)
     });
   } catch (error) {
     console.error('Error updating IPO:', error);
@@ -901,8 +925,10 @@ router.post('/manual', async (req, res) => {
       });
     }
 
+    const tracker = await getIPOTracker();
+
     // Check if CIK already exists
-    const existing = getIPOTracker().getIPOByCIK(cik);
+    const existing = tracker.getIPOByCIK(cik);
     if (existing) {
       return res.status(409).json({
         error: 'IPO with this CIK already exists',
@@ -910,7 +936,7 @@ router.post('/manual', async (req, res) => {
       });
     }
 
-    const ipo = getIPOTracker().createIPO({
+    const ipo = tracker.createIPO({
       cik,
       company_name,
       ticker_proposed,
@@ -939,14 +965,15 @@ router.post('/manual', async (req, res) => {
 router.get('/cik/:cik', async (req, res) => {
   try {
     const { cik } = req.params;
-    const ipo = getIPOTracker().getIPOByCIK(cik);
+    const tracker = await getIPOTracker();
+    const ipo = tracker.getIPOByCIK(cik);
 
     if (!ipo) {
       return res.status(404).json({ error: 'IPO not found for this CIK' });
     }
 
     // Get full details with filings
-    const fullIPO = getIPOTracker().getIPOWithFilings(ipo.id);
+    const fullIPO = tracker.getIPOWithFilings(ipo.id);
     fullIPO.stageInfo = IPO_STAGES[fullIPO.status];
 
     res.json(fullIPO);
