@@ -8,9 +8,19 @@ const router = express.Router();
 const IndexService = require('../../services/indexService');
 const IndexPriceService = require('../../services/indexPriceService');
 
-// Instantiate service singletons
-const indexService = new IndexService();
-const indexPriceService = new IndexPriceService();
+// Lazy service singletons (instantiated on first use to avoid startup failures)
+let indexService = null;
+let indexPriceService = null;
+
+function getIndexService() {
+  if (!indexService) indexService = new IndexService();
+  return indexService;
+}
+
+function getIndexPriceService() {
+  if (!indexPriceService) indexPriceService = new IndexPriceService();
+  return indexPriceService;
+}
 
 /**
  * GET /api/indices
@@ -18,7 +28,7 @@ const indexPriceService = new IndexPriceService();
  */
 router.get('/', async (req, res) => {
   try {
-    const indices = await indexService.getAllIndices();
+    const indices = await getIndexService().getAllIndices();
     res.json({
       success: true,
       data: indices
@@ -38,7 +48,7 @@ router.get('/', async (req, res) => {
  */
 router.get('/summary', async (req, res) => {
   try {
-    const summary = await indexService.getMarketSummary();
+    const summary = await getIndexService().getMarketSummary();
     res.json({
       success: true,
       data: summary
@@ -58,7 +68,7 @@ router.get('/summary', async (req, res) => {
  */
 router.get('/stats', async (req, res) => {
   try {
-    const stats = await indexService.getPriceStats();
+    const stats = await getIndexService().getPriceStats();
     res.json({
       success: true,
       data: stats
@@ -78,7 +88,7 @@ router.get('/stats', async (req, res) => {
  */
 router.get('/sp500/constituents', async (req, res) => {
   try {
-    const constituents = await indexService.getSP500Constituents();
+    const constituents = await getIndexService().getSP500Constituents();
     res.json({
       success: true,
       count: constituents.length,
@@ -105,7 +115,7 @@ router.get('/constituents/:indexCode', async (req, res) => {
     const { indexCode } = req.params;
     const { limit, sortBy = 'market_cap' } = req.query;
 
-    const constituents = await indexService.getConstituents(indexCode.toUpperCase(), {
+    const constituents = await getIndexService().getConstituents(indexCode.toUpperCase(), {
       limit: limit ? parseInt(limit) : null,
       sortBy
     });
@@ -143,7 +153,7 @@ router.get('/constituents/:indexCode', async (req, res) => {
  */
 router.get('/etfs', async (req, res) => {
   try {
-    const indices = await indexPriceService.getAllIndices();
+    const indices = await getIndexPriceService().getAllIndices();
     res.json({
       success: true,
       data: indices
@@ -160,7 +170,7 @@ router.get('/etfs', async (req, res) => {
  */
 router.get('/etfs/market', async (req, res) => {
   try {
-    const indices = await indexPriceService.getMarketIndices();
+    const indices = await getIndexPriceService().getMarketIndices();
     res.json({
       success: true,
       data: indices
@@ -177,7 +187,7 @@ router.get('/etfs/market', async (req, res) => {
  */
 router.get('/etfs/sectors', async (req, res) => {
   try {
-    const sectors = await indexPriceService.getSectorIndices();
+    const sectors = await getIndexPriceService().getSectorIndices();
     res.json({
       success: true,
       data: sectors
@@ -194,7 +204,7 @@ router.get('/etfs/sectors', async (req, res) => {
  */
 router.get('/benchmark', async (req, res) => {
   try {
-    const benchmark = await indexPriceService.getBenchmark();
+    const benchmark = await getIndexPriceService().getBenchmark();
     res.json({
       success: true,
       data: benchmark
@@ -441,11 +451,9 @@ router.get('/alpha/timeseries/:symbol', (req, res) => {
  * GET /api/indices/alpha/:symbol
  * Get alpha metrics for a specific stock vs SPY (snapshot)
  */
-router.get('/alpha/:symbol', (req, res) => {
+router.get('/alpha/:symbol', async (req, res) => {
   try {
-    const db = req.app.get('db');
-    const indexPriceService = new IndexPriceService(db);
-    const alpha = indexPriceService.getStockAlpha(req.params.symbol);
+    const alpha = await getIndexPriceService().getStockAlpha(req.params.symbol);
     if (!alpha) {
       return res.status(404).json({
         success: false,
@@ -469,8 +477,6 @@ router.get('/alpha/:symbol', (req, res) => {
  */
 router.post('/etfs/update', (req, res) => {
   try {
-    const db = req.app.get('db');
-
     // Return immediately
     res.json({
       success: true,
@@ -480,8 +486,7 @@ router.post('/etfs/update', (req, res) => {
     // Run in background
     setImmediate(async () => {
       try {
-        const indexPriceService = new IndexPriceService(db);
-        const result = await indexPriceService.fullUpdate();
+        const result = await getIndexPriceService().fullUpdate();
         console.log('[Index Update] Completed:', result);
       } catch (error) {
         console.error('[Index Update] Error:', error.message);
@@ -497,11 +502,9 @@ router.post('/etfs/update', (req, res) => {
  * POST /api/indices/alpha/calculate
  * Recalculate alpha for all stocks
  */
-router.post('/alpha/calculate', (req, res) => {
+router.post('/alpha/calculate', async (req, res) => {
   try {
-    const db = req.app.get('db');
-    const indexPriceService = new IndexPriceService(db);
-    const result = indexPriceService.calculateAlphaForAll();
+    const result = await getIndexPriceService().calculateAlphaForAll();
     res.json({
       success: true,
       data: result
@@ -526,7 +529,7 @@ router.get('/:symbol', async (req, res) => {
     // URL decode the symbol (^GSPC comes as %5EGSPC)
     const decodedSymbol = decodeURIComponent(symbol);
 
-    const index = await indexService.getIndexBySymbol(decodedSymbol);
+    const index = await getIndexService().getIndexBySymbol(decodedSymbol);
 
     if (!index) {
       return res.status(404).json({
@@ -606,7 +609,7 @@ router.get('/:symbol/prices', async (req, res) => {
       calculatedStartDate = null;
     }
 
-    const prices = await indexService.getHistoricalPrices(decodedSymbol, {
+    const prices = await getIndexService().getHistoricalPrices(decodedSymbol, {
       startDate: calculatedStartDate,
       endDate,
       limit: calculatedLimit
@@ -636,7 +639,7 @@ router.get('/:symbol/returns', async (req, res) => {
     const { symbol } = req.params;
     const decodedSymbol = decodeURIComponent(symbol);
 
-    const returns = await indexService.getIndexReturns(decodedSymbol);
+    const returns = await getIndexService().getIndexReturns(decodedSymbol);
 
     if (!returns) {
       return res.status(404).json({
@@ -671,7 +674,7 @@ router.get('/:symbol/compare/:companyId', async (req, res) => {
     const { period = '1y' } = req.query;
     const decodedSymbol = decodeURIComponent(symbol);
 
-    const comparison = await indexService.compareToIndex(
+    const comparison = await getIndexService().compareToIndex(
       parseInt(companyId),
       decodedSymbol,
       period
@@ -703,7 +706,7 @@ router.get('/:symbol/normalized', async (req, res) => {
     const { companyId, period = '1y' } = req.query;
     const decodedSymbol = decodeURIComponent(symbol);
 
-    const data = await indexService.getNormalizedPrices(
+    const data = await getIndexService().getNormalizedPrices(
       decodedSymbol,
       companyId ? parseInt(companyId) : null,
       period
