@@ -23,14 +23,14 @@ function getSignalEnhancements() {
  * GET /api/signals/13f/:symbol
  * Get 13F activity and signal for a specific symbol
  */
-router.get('/13f/:symbol', (req, res) => {
+router.get('/13f/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
     const database = db.getDatabase();
     const se = getSignalEnhancements();
 
     // Get company ID
-    const company = database.prepare(
+    const company = await database.prepare(
       'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)'
     ).get(symbol.toUpperCase());
 
@@ -55,7 +55,7 @@ router.get('/13f/:symbol', (req, res) => {
  * GET /api/signals/13f/top/new-positions
  * Get top new positions from super-investors
  */
-router.get('/13f/top/new-positions', (req, res) => {
+router.get('/13f/top/new-positions', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 30;
     const se = getSignalEnhancements();
@@ -76,7 +76,7 @@ router.get('/13f/top/new-positions', (req, res) => {
  * GET /api/signals/13f/top/increases
  * Get top position increases from super-investors
  */
-router.get('/13f/top/increases', (req, res) => {
+router.get('/13f/top/increases', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 30;
     const se = getSignalEnhancements();
@@ -97,7 +97,7 @@ router.get('/13f/top/increases', (req, res) => {
  * GET /api/signals/13f/top/exits
  * Get top position exits from super-investors
  */
-router.get('/13f/top/exits', (req, res) => {
+router.get('/13f/top/exits', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 30;
     const se = getSignalEnhancements();
@@ -122,13 +122,13 @@ router.get('/13f/top/exits', (req, res) => {
  * GET /api/signals/insiders/:symbol
  * Get classified insider transactions for a symbol
  */
-router.get('/insiders/:symbol', (req, res) => {
+router.get('/insiders/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
     const database = db.getDatabase();
     const se = getSignalEnhancements();
 
-    const company = database.prepare(
+    const company = await database.prepare(
       'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)'
     ).get(symbol.toUpperCase());
 
@@ -153,7 +153,7 @@ router.get('/insiders/:symbol', (req, res) => {
  * GET /api/signals/insiders/top/open-market-buys
  * Get top open market buys (most bullish insider signal)
  */
-router.get('/insiders/top/open-market-buys', (req, res) => {
+router.get('/insiders/top/open-market-buys', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 30;
     const se = getSignalEnhancements();
@@ -178,13 +178,13 @@ router.get('/insiders/top/open-market-buys', (req, res) => {
  * GET /api/signals/earnings/:symbol
  * Get earnings momentum signal for a symbol
  */
-router.get('/earnings/:symbol', (req, res) => {
+router.get('/earnings/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
     const database = db.getDatabase();
     const se = getSignalEnhancements();
 
-    const company = database.prepare(
+    const company = await database.prepare(
       'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)'
     ).get(symbol.toUpperCase());
 
@@ -209,7 +209,7 @@ router.get('/earnings/:symbol', (req, res) => {
  * GET /api/signals/earnings/top/momentum
  * Get companies with strong earnings momentum
  */
-router.get('/earnings/top/momentum', (req, res) => {
+router.get('/earnings/top/momentum', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 30;
     const minBeats = parseInt(req.query.minBeats) || 2;
@@ -236,13 +236,13 @@ router.get('/earnings/top/momentum', (req, res) => {
  * GET /api/signals/combined/:symbol
  * Get all enhanced signals for a symbol
  */
-router.get('/combined/:symbol', (req, res) => {
+router.get('/combined/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
     const database = db.getDatabase();
     const se = getSignalEnhancements();
 
-    const company = database.prepare(
+    const company = await database.prepare(
       'SELECT id, name, sector, industry FROM companies WHERE LOWER(symbol) = LOWER(?)'
     ).get(symbol.toUpperCase());
 
@@ -302,13 +302,13 @@ router.get('/combined/:symbol', (req, res) => {
  * GET /api/signals/summary
  * Get summary statistics for all enhanced signals
  */
-router.get('/summary', (req, res) => {
+router.get('/summary', async (req, res) => {
   try {
     const se = getSignalEnhancements();
     const database = db.getDatabase();
 
     // Count recent 13F activity
-    const thirteenFStats = database.prepare(`
+    const thirteenFStats = await database.prepare(`
       SELECT
         COUNT(DISTINCT ih.company_id) as companies_with_activity,
         SUM(CASE WHEN ih.change_type = 'new' THEN 1 ELSE 0 END) as new_positions,
@@ -319,7 +319,7 @@ router.get('/summary', (req, res) => {
     `).get();
 
     // Count open market buys
-    const insiderStats = database.prepare(`
+    const insiderStats = await database.prepare(`
       SELECT
         COUNT(DISTINCT it.company_id) as companies_with_buys,
         COUNT(*) as total_buys,
@@ -332,7 +332,7 @@ router.get('/summary', (req, res) => {
     `).get();
 
     // Count earnings momentum
-    const earningsStats = database.prepare(`
+    const earningsStats = await database.prepare(`
       SELECT
         COUNT(*) as companies_with_momentum,
         AVG(consecutive_beats) as avg_consecutive_beats,

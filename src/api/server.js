@@ -357,7 +357,7 @@ const explainabilityRouter = require('./routes/explainability');
 const gdprRouter = require('./routes/gdpr');
 const taxRouter = require('./routes/tax');
 const tcaRouter = require('./routes/tca');
-// const prismRouter = require('./routes/prism'); // Temporarily disabled due to initialization issue
+const prismRouter = require('./routes/prism'); // FIXED: Now uses getDatabaseAsync() pattern
 const batchRouter = require('./routes/batch');
 const subscriptionRouter = require('./routes/subscription');
 const systemRouter = require('./routes/system'); // PHASE 2: System health and monitoring
@@ -453,7 +453,7 @@ app.use('/api/explainability', explainabilityRouter);
 app.use('/api/gdpr', gdprRouter);
 app.use('/api/tax', taxRouter);
 app.use('/api/tca', tcaRouter);
-// app.use('/api/prism', prismRouter); // Temporarily disabled
+app.use('/api/prism', prismRouter); // FIXED: Re-enabled after async conversion
 app.use('/api/batch', batchRouter);
 app.use('/api/subscription', subscriptionRouter);
 app.use('/api/system', systemRouter); // PHASE 2: Enhanced system health endpoints
