@@ -16,10 +16,10 @@ const getServices = (req) => {
 // ============================================
 
 // GET /api/notes/notebooks - List all notebooks
-router.get('/notebooks', (req, res) => {
+router.get('/notebooks', async (req, res) => {
   try {
     const { notes } = getServices(req);
-    const notebooks = notes.getAllNotebooks();
+    const notebooks = await notes.getAllNotebooks();
     res.json({
       success: true,
       count: notebooks.length,
@@ -31,7 +31,7 @@ router.get('/notebooks', (req, res) => {
 });
 
 // POST /api/notes/notebooks - Create a new notebook
-router.post('/notebooks', (req, res) => {
+router.post('/notebooks', async (req, res) => {
   try {
     const { notes } = getServices(req);
     const { name, description, notebookType, color, icon } = req.body;
@@ -40,8 +40,8 @@ router.post('/notebooks', (req, res) => {
       return res.status(400).json({ error: 'Name is required' });
     }
 
-    const result = notes.createNotebook({ name, description, notebookType, color, icon });
-    const notebook = notes.getNotebook(result.notebookId);
+    const result = await notes.createNotebook({ name, description, notebookType, color, icon });
+    const notebook = await notes.getNotebook(result.notebookId);
 
     res.status(201).json({
       success: true,
@@ -53,14 +53,14 @@ router.post('/notebooks', (req, res) => {
 });
 
 // PUT /api/notes/notebooks/:id - Update a notebook
-router.put('/notebooks/:id', (req, res) => {
+router.put('/notebooks/:id', async (req, res) => {
   try {
     const { notes } = getServices(req);
     const notebookId = parseInt(req.params.id);
     const { name, description, color, icon } = req.body;
 
-    notes.updateNotebook(notebookId, { name, description, color, icon });
-    const notebook = notes.getNotebook(notebookId);
+    await notes.updateNotebook(notebookId, { name, description, color, icon });
+    const notebook = await notes.getNotebook(notebookId);
 
     res.json({
       success: true,
@@ -72,12 +72,12 @@ router.put('/notebooks/:id', (req, res) => {
 });
 
 // DELETE /api/notes/notebooks/:id - Archive a notebook
-router.delete('/notebooks/:id', (req, res) => {
+router.delete('/notebooks/:id', async (req, res) => {
   try {
     const { notes } = getServices(req);
     const notebookId = parseInt(req.params.id);
 
-    notes.archiveNotebook(notebookId);
+    await notes.archiveNotebook(notebookId);
 
     res.json({
       success: true,
@@ -93,10 +93,10 @@ router.delete('/notebooks/:id', (req, res) => {
 // ============================================
 
 // GET /api/notes/tags - List all tags
-router.get('/tags', (req, res) => {
+router.get('/tags', async (req, res) => {
   try {
     const { notes } = getServices(req);
-    const tags = notes.getAllTags();
+    const tags = await notes.getAllTags();
     res.json({
       success: true,
       count: tags.length,
@@ -108,7 +108,7 @@ router.get('/tags', (req, res) => {
 });
 
 // POST /api/notes/tags - Create a new tag
-router.post('/tags', (req, res) => {
+router.post('/tags', async (req, res) => {
   try {
     const { notes } = getServices(req);
     const { name, color } = req.body;
@@ -117,7 +117,7 @@ router.post('/tags', (req, res) => {
       return res.status(400).json({ error: 'Name is required' });
     }
 
-    const result = notes.createTag({ name, color: color || '#6B7280' });
+    const result = await notes.createTag({ name, color: color || '#6B7280' });
     if (!result.success) {
       return res.status(400).json({ error: result.error, tagId: result.tagId });
     }
@@ -139,13 +139,13 @@ router.post('/tags', (req, res) => {
 });
 
 // PUT /api/notes/tags/:id - Update a tag
-router.put('/tags/:id', (req, res) => {
+router.put('/tags/:id', async (req, res) => {
   try {
     const { notes } = getServices(req);
     const tagId = parseInt(req.params.id);
     const { name, color } = req.body;
 
-    notes.updateTag(tagId, { name, color });
+    await notes.updateTag(tagId, { name, color });
 
     res.json({
       success: true,
@@ -157,12 +157,12 @@ router.put('/tags/:id', (req, res) => {
 });
 
 // DELETE /api/notes/tags/:id - Delete a tag
-router.delete('/tags/:id', (req, res) => {
+router.delete('/tags/:id', async (req, res) => {
   try {
     const { notes } = getServices(req);
     const tagId = parseInt(req.params.id);
 
-    notes.deleteTag(tagId);
+    await notes.deleteTag(tagId);
 
     res.json({
       success: true,
@@ -178,12 +178,12 @@ router.delete('/tags/:id', (req, res) => {
 // ============================================
 
 // GET /api/notes/activity - Get recent activity
-router.get('/activity', (req, res) => {
+router.get('/activity', async (req, res) => {
   try {
     const { notes } = getServices(req);
     const { limit = 50 } = req.query;
 
-    const activity = notes.getRecentActivity(parseInt(limit));
+    const activity = await notes.getRecentActivity(parseInt(limit));
 
     res.json({
       success: true,
@@ -200,7 +200,7 @@ router.get('/activity', (req, res) => {
 // ============================================
 
 // GET /api/notes/search - Search notes
-router.get('/search', (req, res) => {
+router.get('/search', async (req, res) => {
   try {
     const { notes } = getServices(req);
     const { q, limit = 50 } = req.query;
@@ -209,7 +209,7 @@ router.get('/search', (req, res) => {
       return res.status(400).json({ error: 'Query parameter q is required' });
     }
 
-    const results = notes.searchNotes(q, { limit: parseInt(limit) });
+    const results = await notes.searchNotes(q, { limit: parseInt(limit) });
 
     res.json({
       success: true,
@@ -227,15 +227,15 @@ router.get('/search', (req, res) => {
 // ============================================
 
 // GET /api/notes/company/:symbol - Get notes for a company
-router.get('/company/:symbol', (req, res) => {
+router.get('/company/:symbol', async (req, res) => {
   try {
     const { notes, thesis, snapshot } = getServices(req);
     const symbol = req.params.symbol.toUpperCase();
 
-    const companyNotes = notes.getNotesBySymbol(symbol);
-    const companyTheses = thesis.getThesesBySymbol(symbol);
-    const activeThesis = thesis.getActiveThesisForSymbol(symbol);
-    const snapshots = snapshot.getSnapshotsBySymbol(symbol);
+    const companyNotes = await notes.getNotesBySymbol(symbol);
+    const companyTheses = await thesis.getThesesBySymbol(symbol);
+    const activeThesis = await thesis.getActiveThesisForSymbol(symbol);
+    const snapshots = await snapshot.getSnapshotsBySymbol(symbol);
 
     res.json({
       success: true,
@@ -251,12 +251,12 @@ router.get('/company/:symbol', (req, res) => {
 });
 
 // GET /api/notes/portfolio/:portfolioId - Get notes for a portfolio
-router.get('/portfolio/:portfolioId', (req, res) => {
+router.get('/portfolio/:portfolioId', async (req, res) => {
   try {
     const { notes } = getServices(req);
     const portfolioId = parseInt(req.params.portfolioId);
 
-    const portfolioNotes = notes.getNotesByPortfolio(portfolioId);
+    const portfolioNotes = await notes.getNotesByPortfolio(portfolioId);
 
     res.json({
       success: true,
@@ -273,16 +273,16 @@ router.get('/portfolio/:portfolioId', (req, res) => {
 // ============================================
 
 // GET /api/notes - List all notes
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { notes } = getServices(req);
     const { notebookId, limit = 100 } = req.query;
 
     let notesList;
     if (notebookId) {
-      notesList = notes.getNotesByNotebook(parseInt(notebookId));
+      notesList = await notes.getNotesByNotebook(parseInt(notebookId));
     } else {
-      notesList = notes.getAllNotes({ limit: parseInt(limit) });
+      notesList = await notes.getAllNotes({ limit: parseInt(limit) });
     }
 
     res.json({
@@ -296,18 +296,18 @@ router.get('/', (req, res) => {
 });
 
 // GET /api/notes/:id - Get a specific note
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
     const { notes, snapshot } = getServices(req);
     const noteId = parseInt(req.params.id);
 
-    const note = notes.getNote(noteId);
+    const note = await notes.getNote(noteId);
     if (!note) {
       return res.status(404).json({ error: 'Note not found' });
     }
 
     // Get snapshots for this note
-    const snapshots = snapshot.getSnapshotsByNote(noteId);
+    const snapshots = await snapshot.getSnapshotsByNote(noteId);
 
     res.json({
       success: true,
@@ -322,7 +322,7 @@ router.get('/:id', (req, res) => {
 });
 
 // POST /api/notes - Create a new note
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const { notes, snapshot } = getServices(req);
     const {
@@ -341,7 +341,7 @@ router.post('/', (req, res) => {
       return res.status(400).json({ error: 'notebookId and title are required' });
     }
 
-    const result = notes.createNote({
+    const result = await notes.createNote({
       notebookId: parseInt(notebookId),
       title,
       content,
@@ -354,10 +354,10 @@ router.post('/', (req, res) => {
 
     // Capture snapshots for attached symbols
     if (captureSnapshots && symbols.length > 0) {
-      snapshot.captureMultipleSnapshots(result.noteId, symbols);
+      await snapshot.captureMultipleSnapshots(result.noteId, symbols);
     }
 
-    const note = notes.getNote(result.noteId);
+    const note = await notes.getNote(result.noteId);
 
     res.status(201).json({
       success: true,
@@ -369,7 +369,7 @@ router.post('/', (req, res) => {
 });
 
 // PUT /api/notes/:id - Update a note
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
   try {
     const { notes } = getServices(req);
     const noteId = parseInt(req.params.id);
@@ -384,7 +384,7 @@ router.put('/:id', (req, res) => {
       createVersion = true
     } = req.body;
 
-    notes.updateNote(noteId, {
+    await notes.updateNote(noteId, {
       title,
       content,
       noteType,
@@ -395,7 +395,7 @@ router.put('/:id', (req, res) => {
       createVersion
     });
 
-    const note = notes.getNote(noteId);
+    const note = await notes.getNote(noteId);
 
     res.json({
       success: true,
@@ -407,13 +407,13 @@ router.put('/:id', (req, res) => {
 });
 
 // DELETE /api/notes/:id - Delete a note
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
     const { notes } = getServices(req);
     const noteId = parseInt(req.params.id);
     const { hard = false } = req.query;
 
-    notes.deleteNote(noteId, hard === 'true');
+    await notes.deleteNote(noteId, hard === 'true');
 
     res.json({
       success: true,
@@ -425,13 +425,13 @@ router.delete('/:id', (req, res) => {
 });
 
 // POST /api/notes/:id/pin - Pin/unpin a note
-router.post('/:id/pin', (req, res) => {
+router.post('/:id/pin', async (req, res) => {
   try {
     const { notes } = getServices(req);
     const noteId = parseInt(req.params.id);
     const { isPinned = true } = req.body;
 
-    notes.pinNote(noteId, isPinned);
+    await notes.pinNote(noteId, isPinned);
 
     res.json({
       success: true,
@@ -444,13 +444,13 @@ router.post('/:id/pin', (req, res) => {
 });
 
 // POST /api/notes/:id/publish - Publish a note
-router.post('/:id/publish', (req, res) => {
+router.post('/:id/publish', async (req, res) => {
   try {
     const { notes } = getServices(req);
     const noteId = parseInt(req.params.id);
 
-    notes.publishNote(noteId);
-    const note = notes.getNote(noteId);
+    await notes.publishNote(noteId);
+    const note = await notes.getNote(noteId);
 
     res.json({
       success: true,
@@ -466,13 +466,13 @@ router.post('/:id/publish', (req, res) => {
 // ============================================
 
 // POST /api/notes/:id/attachments - Add attachment
-router.post('/:id/attachments', (req, res) => {
+router.post('/:id/attachments', async (req, res) => {
   try {
     const { notes } = getServices(req);
     const noteId = parseInt(req.params.id);
     const { type, symbol, portfolioId, sector, industry, isPrimary } = req.body;
 
-    const result = notes.addAttachment(noteId, {
+    const result = await notes.addAttachment(noteId, {
       type,
       symbol,
       portfolioId,
@@ -491,12 +491,12 @@ router.post('/:id/attachments', (req, res) => {
 });
 
 // DELETE /api/notes/:id/attachments/:attachmentId - Remove attachment
-router.delete('/:id/attachments/:attachmentId', (req, res) => {
+router.delete('/:id/attachments/:attachmentId', async (req, res) => {
   try {
     const { notes } = getServices(req);
     const attachmentId = parseInt(req.params.attachmentId);
 
-    notes.removeAttachment(attachmentId);
+    await notes.removeAttachment(attachmentId);
 
     res.json({
       success: true,
@@ -512,13 +512,13 @@ router.delete('/:id/attachments/:attachmentId', (req, res) => {
 // ============================================
 
 // POST /api/notes/:id/tags/:tagId - Add tag to note
-router.post('/:id/tags/:tagId', (req, res) => {
+router.post('/:id/tags/:tagId', async (req, res) => {
   try {
     const { notes } = getServices(req);
     const noteId = parseInt(req.params.id);
     const tagId = parseInt(req.params.tagId);
 
-    notes.addTagToNote(noteId, tagId);
+    await notes.addTagToNote(noteId, tagId);
 
     res.json({
       success: true,
@@ -531,13 +531,13 @@ router.post('/:id/tags/:tagId', (req, res) => {
 });
 
 // DELETE /api/notes/:id/tags/:tagId - Remove tag from note
-router.delete('/:id/tags/:tagId', (req, res) => {
+router.delete('/:id/tags/:tagId', async (req, res) => {
   try {
     const { notes } = getServices(req);
     const noteId = parseInt(req.params.id);
     const tagId = parseInt(req.params.tagId);
 
-    notes.removeTagFromNote(noteId, tagId);
+    await notes.removeTagFromNote(noteId, tagId);
 
     res.json({
       success: true,
@@ -554,12 +554,12 @@ router.delete('/:id/tags/:tagId', (req, res) => {
 // ============================================
 
 // GET /api/notes/:id/versions - Get all versions
-router.get('/:id/versions', (req, res) => {
+router.get('/:id/versions', async (req, res) => {
   try {
     const { notes } = getServices(req);
     const noteId = parseInt(req.params.id);
 
-    const versions = notes.getVersions(noteId);
+    const versions = await notes.getVersions(noteId);
 
     res.json({
       success: true,
@@ -572,13 +572,13 @@ router.get('/:id/versions', (req, res) => {
 });
 
 // GET /api/notes/:id/versions/:versionNumber - Get specific version
-router.get('/:id/versions/:versionNumber', (req, res) => {
+router.get('/:id/versions/:versionNumber', async (req, res) => {
   try {
     const { notes } = getServices(req);
     const noteId = parseInt(req.params.id);
     const versionNumber = parseInt(req.params.versionNumber);
 
-    const version = notes.getVersion(noteId, versionNumber);
+    const version = await notes.getVersion(noteId, versionNumber);
     if (!version) {
       return res.status(404).json({ error: 'Version not found' });
     }
@@ -593,14 +593,14 @@ router.get('/:id/versions/:versionNumber', (req, res) => {
 });
 
 // POST /api/notes/:id/versions/:versionNumber/restore - Restore version
-router.post('/:id/versions/:versionNumber/restore', (req, res) => {
+router.post('/:id/versions/:versionNumber/restore', async (req, res) => {
   try {
     const { notes } = getServices(req);
     const noteId = parseInt(req.params.id);
     const versionNumber = parseInt(req.params.versionNumber);
 
-    const result = notes.restoreVersion(noteId, versionNumber);
-    const note = notes.getNote(noteId);
+    const result = await notes.restoreVersion(noteId, versionNumber);
+    const note = await notes.getNote(noteId);
 
     res.json({
       success: true,
@@ -617,12 +617,12 @@ router.post('/:id/versions/:versionNumber/restore', (req, res) => {
 // ============================================
 
 // GET /api/notes/:id/snapshots - Get snapshots for a note
-router.get('/:id/snapshots', (req, res) => {
+router.get('/:id/snapshots', async (req, res) => {
   try {
     const { snapshot } = getServices(req);
     const noteId = parseInt(req.params.id);
 
-    const snapshots = snapshot.getSnapshotsByNote(noteId);
+    const snapshots = await snapshot.getSnapshotsByNote(noteId);
 
     res.json({
       success: true,
@@ -635,20 +635,20 @@ router.get('/:id/snapshots', (req, res) => {
 });
 
 // POST /api/notes/:id/snapshots - Capture new snapshot
-router.post('/:id/snapshots', (req, res) => {
+router.post('/:id/snapshots', async (req, res) => {
   try {
     const { snapshot } = getServices(req);
     const noteId = parseInt(req.params.id);
     const { symbol, symbols } = req.body;
 
     if (symbols && Array.isArray(symbols)) {
-      const results = snapshot.captureMultipleSnapshots(noteId, symbols);
+      const results = await snapshot.captureMultipleSnapshots(noteId, symbols);
       res.status(201).json({
         success: true,
         results
       });
     } else if (symbol) {
-      const result = snapshot.captureSnapshot(noteId, symbol);
+      const result = await snapshot.captureSnapshot(noteId, symbol);
       res.status(201).json(result);
     } else {
       return res.status(400).json({ error: 'symbol or symbols required' });
@@ -659,12 +659,12 @@ router.post('/:id/snapshots', (req, res) => {
 });
 
 // GET /api/notes/snapshots/:snapshotId/compare - Compare snapshot to current
-router.get('/snapshots/:snapshotId/compare', (req, res) => {
+router.get('/snapshots/:snapshotId/compare', async (req, res) => {
   try {
     const { snapshot } = getServices(req);
     const snapshotId = parseInt(req.params.snapshotId);
 
-    const result = snapshot.compareSnapshotToCurrent(snapshotId);
+    const result = await snapshot.compareSnapshotToCurrent(snapshotId);
 
     res.json(result);
   } catch (error) {
@@ -673,12 +673,12 @@ router.get('/snapshots/:snapshotId/compare', (req, res) => {
 });
 
 // DELETE /api/notes/snapshots/:snapshotId - Delete a snapshot
-router.delete('/snapshots/:snapshotId', (req, res) => {
+router.delete('/snapshots/:snapshotId', async (req, res) => {
   try {
     const { snapshot } = getServices(req);
     const snapshotId = parseInt(req.params.snapshotId);
 
-    snapshot.deleteSnapshot(snapshotId);
+    await snapshot.deleteSnapshot(snapshotId);
 
     res.json({
       success: true,

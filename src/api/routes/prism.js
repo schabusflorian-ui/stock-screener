@@ -24,7 +24,7 @@ router.get('/:symbol/report', requireFeature('prism_reports'), async (req, res) 
 
     // Check for cached report
     if (!refresh) {
-      const cachedReport = getCachedReport(symbolUpper);
+      const cachedReport = await getCachedReport(symbolUpper);
       if (cachedReport && !isReportExpired(cachedReport)) {
         return res.json({
           success: true,
@@ -35,7 +35,9 @@ router.get('/:symbol/report', requireFeature('prism_reports'), async (req, res) 
     }
 
     // Get company info
-    const company = db.getCompany(symbolUpper);
+    const database = await getDatabaseAsync();
+    const companyResult = await database.query('SELECT * FROM companies WHERE LOWER(symbol) = LOWER(?)', [symbolUpper]);
+    const company = companyResult.rows[0];
     if (!company) {
       return res.status(404).json({
         success: false,
@@ -98,7 +100,7 @@ router.get('/:symbol/summary', async (req, res) => {
 
   try {
     const symbolUpper = symbol.toUpperCase();
-    const cachedReport = getCachedReport(symbolUpper);
+    const cachedReport = await getCachedReport(symbolUpper);
 
     if (cachedReport) {
       return res.json({
@@ -145,12 +147,13 @@ router.get('/:symbol/scorecard', async (req, res) => {
     const symbolUpper = symbol.toUpperCase();
 
     // Get latest scorecard from prism_scores
-    const scorecard = database.prepare(`
+    const scorecardResult = await database.query(`
       SELECT * FROM prism_scores
       WHERE symbol = ?
       ORDER BY scored_at DESC
       LIMIT 1
-    `).get(symbolUpper);
+    `, [symbolUpper]);
+    const scorecard = scorecardResult.rows[0];
 
     if (scorecard) {
       return res.json({
@@ -187,12 +190,13 @@ router.get('/:symbol/sec-filings', async (req, res) => {
     const symbolUpper = symbol.toUpperCase();
 
     // Get cached filings
-    const filings = database.prepare(`
+    const filingsResult = await database.query(`
       SELECT * FROM sec_filings
       WHERE symbol = ?
       ${formType ? 'AND form_type = ?' : ''}
       ORDER BY filing_date DESC
-    `).all(formType ? [symbolUpper, formType] : [symbolUpper]);
+    `, formType ? [symbolUpper, formType] : [symbolUpper]);
+    const filings = filingsResult.rows;
 
     // If no filings and refresh requested, try to parse
     if (filings.length === 0 && refresh === 'true') {
@@ -234,7 +238,9 @@ router.post('/:symbol/refresh', requireFeature('prism_reports'), async (req, res
     const symbolUpper = symbol.toUpperCase();
 
     // Verify company exists
-    const company = db.getCompany(symbolUpper);
+    const database = await getDatabaseAsync();
+    const companyResult = await database.query('SELECT * FROM companies WHERE LOWER(symbol) = LOWER(?)', [symbolUpper]);
+    const company = companyResult.rows[0];
     if (!company) {
       return res.status(404).json({
         success: false,
@@ -269,6 +275,7 @@ router.post('/:symbol/refresh', requireFeature('prism_reports'), async (req, res
  */
 router.get('/coverage', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { index, minScore } = req.query;
 
     let query = `
@@ -295,12 +302,14 @@ router.get('/coverage', async (req, res) => {
 
     query += ' ORDER BY p.overall_score DESC, p.generated_at DESC';
 
-    const reports = database.prepare(query).all(...params);
+    const reportsResult = await database.query(query, params);
+    const reports = reportsResult.rows;
 
     // Also get SEC filings coverage
-    const secCoverage = database.prepare(`
+    const secCoverageResult = await database.query(`
       SELECT COUNT(DISTINCT symbol) as count FROM sec_filings WHERE form_type = '10-K'
-    `).get();
+    `, []);
+    const secCoverage = secCoverageResult.rows[0];
 
     return res.json({
       success: true,
@@ -344,7 +353,7 @@ router.get('/:symbol/score-history', async (req, res) => {
     const database = await getDatabaseAsync();
     const symbolUpper = symbol.toUpperCase();
 
-    const history = database.prepare(`
+    const historyResult = await database.query(`
       SELECT
         scored_at,
         overall_score,
@@ -358,7 +367,8 @@ router.get('/:symbol/score-history', async (req, res) => {
       WHERE symbol = ?
       ORDER BY scored_at DESC
       LIMIT ?
-    `).all(symbolUpper, parseInt(limit, 10));
+    `, [symbolUpper, parseInt(limit, 10)]);
+    const history = historyResult.rows;
 
     return res.json({
       success: true,
@@ -390,12 +400,13 @@ router.get('/:symbol/score-history', async (req, res) => {
 // Helper Functions
 // ============================================
 
-function getCachedReport(symbol) {
+async function getCachedReport(symbol) {
   try {
     const database = await getDatabaseAsync();
-    return database.prepare(`
+    const result = await database.query(`
       SELECT * FROM prism_reports WHERE symbol = ?
-    `).get(symbol);
+    `, [symbol]);
+    return result.rows[0];
   } catch (error) {
     return null;
   }
@@ -632,6 +643,7 @@ function formatSecFiling(filing) {
 }
 
 async function checkDataAvailability(companyId, symbol) {
+  const database = await getDatabaseAsync();
   const result = {
     hasMinimumData: false,
     available: [],
@@ -639,10 +651,11 @@ async function checkDataAvailability(companyId, symbol) {
   };
 
   // Check financial data
-  const financials = database.prepare(`
+  const financialsResult = await database.query(`
     SELECT COUNT(*) as count FROM financial_data
     WHERE company_id = ? AND period_type = 'annual'
-  `).get(companyId);
+  `, [companyId]);
+  const financials = financialsResult.rows[0];
 
   if (financials.count >= 2) {
     result.available.push('financials');
@@ -651,9 +664,10 @@ async function checkDataAvailability(companyId, symbol) {
   }
 
   // Check analyst estimates
-  const estimates = database.prepare(`
+  const estimatesResult = await database.query(`
     SELECT COUNT(*) as count FROM analyst_estimates WHERE company_id = ?
-  `).get(companyId);
+  `, [companyId]);
+  const estimates = estimatesResult.rows[0];
 
   if (estimates.count > 0) {
     result.available.push('analystEstimates');
@@ -662,9 +676,10 @@ async function checkDataAvailability(companyId, symbol) {
   }
 
   // Check SEC filings
-  const secFilings = database.prepare(`
+  const secFilingsResult = await database.query(`
     SELECT COUNT(*) as count FROM sec_filings WHERE symbol = ? AND form_type = '10-K'
-  `).get(symbol);
+  `, [symbol]);
+  const secFilings = secFilingsResult.rows[0];
 
   if (secFilings.count > 0) {
     result.available.push('secFilings');
@@ -673,9 +688,10 @@ async function checkDataAvailability(companyId, symbol) {
   }
 
   // Check prices
-  const prices = database.prepare(`
+  const pricesResult = await database.query(`
     SELECT COUNT(*) as count FROM daily_prices WHERE company_id = ?
-  `).get(companyId);
+  `, [companyId]);
+  const prices = pricesResult.rows[0];
 
   if (prices.count >= 30) {
     result.available.push('priceHistory');
