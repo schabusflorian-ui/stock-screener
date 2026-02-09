@@ -42,8 +42,8 @@ router.get('/recommendation/:symbol', async (req, res) => {
     let portfolioContext = null;
     if (portfolioId) {
       const database = db.getDatabase();
-      const portfolio = database.prepare('SELECT * FROM portfolios WHERE id = ?').get(portfolioId);
-      const positions = database.prepare(`
+      const portfolio = await database.prepare('SELECT * FROM portfolios WHERE id = ?').get(portfolioId);
+      const positions = await database.prepare(`
         SELECT pp.*, c.symbol, c.sector
         FROM portfolio_positions pp
         JOIN companies c ON pp.company_id = c.id
@@ -418,11 +418,11 @@ router.get('/opportunities/sectors', async (req, res) => {
  * GET /api/agent/stats
  * Get agent statistics
  */
-router.get('/stats', (req, res) => {
+router.get('/stats', async (req, res) => {
   try {
     const database = db.getDatabase();
 
-    const recStats = database.prepare(`
+    const recStats = await database.prepare(`
       SELECT
         COUNT(*) as total_recommendations,
         SUM(CASE WHEN action = 'strong_buy' THEN 1 ELSE 0 END) as strong_buys,
@@ -436,7 +436,7 @@ router.get('/stats', (req, res) => {
       WHERE date >= date('now', '-30 days')
     `).get();
 
-    const recentRecs = database.prepare(`
+    const recentRecs = await database.prepare(`
       SELECT ar.*, c.symbol, c.name
       FROM agent_recommendations ar
       JOIN companies c ON ar.company_id = c.id
@@ -653,7 +653,7 @@ router.get('/tracker/ic/:signalType', (req, res) => {
  * GET /api/agent/tracker/outcomes
  * Get recent recommendation outcomes
  */
-router.get('/tracker/outcomes', (req, res) => {
+router.get('/tracker/outcomes', async (req, res) => {
   try {
     const database = db.getDatabase();
     const { limit = 50, signalType } = req.query;
@@ -673,8 +673,8 @@ router.get('/tracker/outcomes', (req, res) => {
     query += ' ORDER BY ro.updated_at DESC LIMIT ?';
 
     const outcomes = signalType
-      ? database.prepare(query).all(signalType, parseInt(limit))
-      : database.prepare(query).all(parseInt(limit));
+      ? await database.prepare(query).all(signalType, parseInt(limit))
+      : await database.prepare(query).all(parseInt(limit));
 
     res.json({
       success: true,
@@ -741,12 +741,12 @@ router.post('/tracker/recalculate', (req, res) => {
  * GET /api/agent/tracker/signal-summary
  * Get summary of all signal types' performance
  */
-router.get('/tracker/signal-summary', (req, res) => {
+router.get('/tracker/signal-summary', async (req, res) => {
   try {
     const database = db.getDatabase();
 
     // Get signal performance from database
-    const summary = database.prepare(`
+    const summary = await database.prepare(`
       SELECT
         signal_type,
         COUNT(*) as total_signals,
@@ -892,7 +892,7 @@ router.post('/portfolios/:portfolioId/pause', (req, res) => {
  * POST /api/agent/portfolios/:portfolioId/scan
  * Run immediate scan
  */
-router.post('/portfolios/:portfolioId/scan', (req, res) => {
+router.post('/portfolios/:portfolioId/scan', async (req, res) => {
   try {
     const { portfolioId } = req.params;
     const id = parseInt(portfolioId, 10);
@@ -901,7 +901,7 @@ router.post('/portfolios/:portfolioId/scan', (req, res) => {
 
     logActivity(id, 'scan', 'Starting manual scan...');
 
-    const positions = database.prepare(`
+    const positions = await database.prepare(`
       SELECT DISTINCT symbol FROM portfolio_positions
       WHERE portfolio_id = ? AND quantity > 0
     `).all(id);
@@ -928,7 +928,7 @@ router.post('/portfolios/:portfolioId/scan', (req, res) => {
  * GET /api/agent/portfolios/:portfolioId/activity
  * Get agent activity log
  */
-router.get('/portfolios/:portfolioId/activity', (req, res) => {
+router.get('/portfolios/:portfolioId/activity', async (req, res) => {
   try {
     const { portfolioId } = req.params;
     const { limit = 50 } = req.query;
@@ -936,7 +936,7 @@ router.get('/portfolios/:portfolioId/activity', (req, res) => {
     const state = getAgentState(id);
     const database = db.getDatabase();
 
-    const recentExecutions = database.prepare(`
+    const recentExecutions = await database.prepare(`
       SELECT id, symbol, action, status, approved_at, executed_at, rejected_at, target_value
       FROM pending_executions
       WHERE portfolio_id = ?
@@ -983,14 +983,14 @@ router.get('/portfolios/:portfolioId/activity', (req, res) => {
  * GET /api/agent/portfolios/:portfolioId/context
  * Get market context
  */
-router.get('/portfolios/:portfolioId/context', (req, res) => {
+router.get('/portfolios/:portfolioId/context', async (req, res) => {
   try {
     const database = db.getDatabase();
 
     let regime = 'NEUTRAL', regimeConfidence = 0.5, vix = null, vixLevel = null;
 
     try {
-      const regimeData = database.prepare(`
+      const regimeData = await database.prepare(`
         SELECT regime, confidence, vix_value, vix_level
         FROM market_regime_history
         ORDER BY date DESC LIMIT 1
@@ -1006,7 +1006,7 @@ router.get('/portfolios/:portfolioId/context', (req, res) => {
 
     const signalStrength = { positive: 0, negative: 0, neutral: 0 };
     try {
-      const signals = database.prepare(`
+      const signals = await database.prepare(`
         SELECT signal_type, score FROM agent_signals
         WHERE date(created_at) = date('now')
       `).all();
@@ -1041,12 +1041,12 @@ router.get('/portfolios/:portfolioId/context', (req, res) => {
  * GET /api/agent/portfolios/:portfolioId/stats/today
  * Get today's stats
  */
-router.get('/portfolios/:portfolioId/stats/today', (req, res) => {
+router.get('/portfolios/:portfolioId/stats/today', async (req, res) => {
   try {
     const { portfolioId } = req.params;
     const database = db.getDatabase();
 
-    const stats = database.prepare(`
+    const stats = await database.prepare(`
       SELECT
         COUNT(*) as total,
         SUM(CASE WHEN status = 'executed' THEN 1 ELSE 0 END) as executed,
@@ -1060,7 +1060,7 @@ router.get('/portfolios/:portfolioId/stats/today', (req, res) => {
 
     let signalsGenerated = 0;
     try {
-      const signalCount = database.prepare(`
+      const signalCount = await database.prepare(`
         SELECT COUNT(*) as count FROM agent_signals WHERE date(created_at) = date('now')
       `).get();
       signalsGenerated = signalCount?.count || 0;
@@ -1086,20 +1086,20 @@ router.get('/portfolios/:portfolioId/stats/today', (req, res) => {
  * GET /api/agent/portfolios/:portfolioId/settings
  * Get agent settings
  */
-router.get('/portfolios/:portfolioId/settings', (req, res) => {
+router.get('/portfolios/:portfolioId/settings', async (req, res) => {
   try {
     const { portfolioId } = req.params;
     const database = db.getDatabase();
 
     let settings = null;
     try {
-      settings = database.prepare('SELECT * FROM execution_settings WHERE portfolio_id = ?')
+      settings = await database.prepare('SELECT * FROM execution_settings WHERE portfolio_id = ?')
         .get(parseInt(portfolioId, 10));
     } catch (e) { /* Table may not exist */ }
 
     let riskLimits = null;
     try {
-      riskLimits = database.prepare('SELECT * FROM risk_limits WHERE portfolio_id = ?')
+      riskLimits = await database.prepare('SELECT * FROM risk_limits WHERE portfolio_id = ?')
         .get(parseInt(portfolioId, 10));
     } catch (e) { /* Table may not exist */ }
 
@@ -1126,7 +1126,7 @@ router.get('/portfolios/:portfolioId/settings', (req, res) => {
  * PUT /api/agent/portfolios/:portfolioId/settings
  * Update agent settings
  */
-router.put('/portfolios/:portfolioId/settings', (req, res) => {
+router.put('/portfolios/:portfolioId/settings', async (req, res) => {
   try {
     const { portfolioId } = req.params;
     const { execution, mode } = req.body;
@@ -1140,7 +1140,7 @@ router.put('/portfolios/:portfolioId/settings', (req, res) => {
     }
 
     if (execution) {
-      database.prepare(`
+      await database.prepare(`
         INSERT OR REPLACE INTO execution_settings (
           portfolio_id, auto_execute, min_confidence, max_trades_per_day, require_confirmation
         ) VALUES (?, ?, ?, ?, ?)
