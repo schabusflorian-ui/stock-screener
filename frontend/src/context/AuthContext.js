@@ -8,12 +8,17 @@ const API_BASE = process.env.REACT_APP_API_URL || '';
 // Admin access expiry: 24 hours
 const ADMIN_ACCESS_EXPIRY = 24 * 60 * 60 * 1000;
 
+// Admin access code - can be set via environment variable or use default
+// For production: Set REACT_APP_ADMIN_CODE environment variable
+// For development: Auto-enabled on localhost
+const ADMIN_CODE = process.env.REACT_APP_ADMIN_CODE || 'prism-admin-2024';
+
 // Auto-enable admin for localhost development
 const isLocalDev = typeof window !== 'undefined' &&
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
-// Check if admin access is valid
-function checkAdminAccess() {
+// Check if admin access is currently valid (stored in localStorage)
+function isAdminAccessActive() {
   // Auto-enable admin for local development
   if (isLocalDev) {
     if (localStorage.getItem('adminAccess') !== 'true') {
@@ -47,7 +52,7 @@ export function AuthProvider({ children }) {
   // Check auth status on mount
   const checkAuth = useCallback(async () => {
     // First check admin access
-    if (checkAdminAccess()) {
+    if (isAdminAccessActive()) {
       setIsAdmin(true);
       setUser({
         id: 'admin',
@@ -117,6 +122,34 @@ export function AuthProvider({ children }) {
     }, 100);
   }, []);
 
+  // Check admin access with code
+  const checkAdminAccess = useCallback((code) => {
+    if (!code || code.trim() === '') {
+      return false;
+    }
+
+    // Check if code matches
+    if (code === ADMIN_CODE) {
+      // Store admin access
+      localStorage.setItem('adminAccess', 'true');
+      localStorage.setItem('adminAccessTime', Date.now().toString());
+
+      // Update state
+      setIsAdmin(true);
+      setUser({
+        id: 'admin',
+        name: 'Admin',
+        email: 'admin@local',
+        picture: null
+      });
+
+      console.log('[Auth] Admin access granted via code');
+      return true;
+    }
+
+    return false;
+  }, []);
+
   const value = {
     user,
     loading,
@@ -124,7 +157,8 @@ export function AuthProvider({ children }) {
     isAdmin,
     login,
     logout,
-    checkAuth
+    checkAuth,
+    checkAdminAccess
   };
 
   return (
