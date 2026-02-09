@@ -301,10 +301,10 @@ router.get('/by-stock/:symbol', async (req, res) => {
  * GET /api/investors/:id
  * Get single investor with details
  */
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const investor = investorService.getInvestor(id);
+    const investor = await investorService.getInvestor(id);
 
     if (!investor) {
       return res.status(404).json({ success: false, error: 'Investor not found' });
@@ -329,7 +329,7 @@ router.get('/:id', (req, res) => {
  *   - sortBy: column name
  *   - sortOrder: 'ASC' | 'DESC'
  */
-router.get('/:id/holdings', (req, res) => {
+router.get('/:id/holdings', async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const limit = parseInt(req.query.limit) || 100;
@@ -337,7 +337,7 @@ router.get('/:id/holdings', (req, res) => {
     const sortOrder = req.query.sortOrder || 'DESC';
     const optionType = req.query.optionType || 'all';
 
-    const data = investorService.getLatestHoldings(id, { limit, sortBy, sortOrder });
+    const data = await investorService.getLatestHoldings(id, { limit, sortBy, sortOrder });
 
     // Filter by option type if specified (case-insensitive)
     let filteredHoldings = data.holdings;
@@ -394,10 +394,10 @@ router.get('/:id/holdings', (req, res) => {
  * GET /api/investors/:id/changes
  * Get holding changes from latest filing
  */
-router.get('/:id/changes', (req, res) => {
+router.get('/:id/changes', async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const changes = investorService.getHoldingChanges(id);
+    const changes = await investorService.getHoldingChanges(id);
     res.json({
       success: true,
       changes
@@ -412,11 +412,11 @@ router.get('/:id/changes', (req, res) => {
  * GET /api/investors/:id/history
  * Get holdings history over time
  */
-router.get('/:id/history', (req, res) => {
+router.get('/:id/history', async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const periods = parseInt(req.query.periods) || 4;
-    const history = investorService.getHoldingsHistory(id, { periods });
+    const history = await investorService.getHoldingsHistory(id, { periods });
     res.json({
       success: true,
       history
@@ -433,11 +433,11 @@ router.get('/:id/history', (req, res) => {
  * Returns quarterly values and returns over time
  * OPTIMIZED: Added response cache for repeated requests
  */
-router.get('/:id/performance', responseCacheMiddleware(CACHE_LONG), (req, res) => {
+router.get('/:id/performance', responseCacheMiddleware(CACHE_LONG), async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const limit = parseInt(req.query.limit) || 40;
-    const data = investorService.getPortfolioValueHistory(id, { limit });
+    const data = await investorService.getPortfolioValueHistory(id, { limit });
     res.json({
       success: true,
       investorId: id,
@@ -455,11 +455,11 @@ router.get('/:id/performance', responseCacheMiddleware(CACHE_LONG), (req, res) =
  * Includes S&P 500 benchmark comparison and alpha calculation
  * OPTIMIZED: Uses pre-calculated cache to avoid expensive recalculation
  */
-router.get('/:id/returns', responseCacheMiddleware(CACHE_LONG), (req, res) => {
+router.get('/:id/returns', responseCacheMiddleware(CACHE_LONG), async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     // Use cached performance data (calculates on first request, serves from cache after)
-    const data = investorService.getCachedPerformance(id);
+    const data = await investorService.getCachedPerformance(id);
 
     if (!data.summary) {
       return res.status(404).json({
@@ -484,9 +484,9 @@ router.get('/:id/returns', responseCacheMiddleware(CACHE_LONG), (req, res) => {
  * GET /api/investors/cache/status
  * Get performance cache status for all investors
  */
-router.get('/cache/status', (req, res) => {
+router.get('/cache/status', async (req, res) => {
   try {
-    const status = investorService.getPerformanceCacheStatus();
+    const status = await investorService.getPerformanceCacheStatus();
     res.json({
       success: true,
       investors: status,
@@ -503,9 +503,9 @@ router.get('/cache/status', (req, res) => {
  * POST /api/investors/cache/recalculate
  * Recalculate performance cache for all investors
  */
-router.post('/cache/recalculate', (req, res) => {
+router.post('/cache/recalculate', async (req, res) => {
   try {
-    const results = investorService.recalculateAllPerformance();
+    const results = await investorService.recalculateAllPerformance();
     res.json({
       success: true,
       ...results
@@ -520,10 +520,10 @@ router.post('/cache/recalculate', (req, res) => {
  * POST /api/investors/:id/cache/invalidate
  * Invalidate performance cache for a specific investor
  */
-router.post('/:id/cache/invalidate', (req, res) => {
+router.post('/:id/cache/invalidate', async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    investorService.invalidatePerformanceCache(id);
+    await investorService.invalidatePerformanceCache(id);
     res.json({
       success: true,
       message: `Performance cache invalidated for investor ${id}`
@@ -538,10 +538,10 @@ router.post('/:id/cache/invalidate', (req, res) => {
  * GET /api/investors/:id/stats
  * Get investor statistics and analytics
  */
-router.get('/:id/stats', (req, res) => {
+router.get('/:id/stats', async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const stats = investorService.getInvestorStats(id);
+    const stats = await investorService.getInvestorStats(id);
 
     if (!stats) {
       return res.status(404).json({ success: false, error: 'Investor not found' });
@@ -612,7 +612,7 @@ router.post('/fetch-all-13f', async (req, res) => {
  * Prepare clone data for creating a portfolio
  * Note: Actual portfolio creation is handled by Agent 1's portfolio routes
  */
-router.post('/:id/clone', (req, res) => {
+router.post('/:id/clone', async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const {
@@ -622,7 +622,7 @@ router.post('/:id/clone', (req, res) => {
       excludeSymbols = []
     } = req.body;
 
-    const cloneData = investorService.prepareClone(id, {
+    const cloneData = await investorService.prepareClone(id, {
       amount,
       minWeight,
       maxPositions,
@@ -644,7 +644,7 @@ router.post('/:id/clone', (req, res) => {
  * Preview what a clone would look like without creating it
  * Returns trades array with shares, currentPrice for executing purchases
  */
-router.get('/:id/clone-preview', (req, res) => {
+router.get('/:id/clone-preview', async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const amount = parseFloat(req.query.amount) || 10000;
@@ -652,7 +652,7 @@ router.get('/:id/clone-preview', (req, res) => {
     const maxPositions = req.query.maxPositions ? parseInt(req.query.maxPositions) : null;
 
     // Don't actually increment follower count for preview
-    const { holdings, filingDate } = investorService.getLatestHoldings(id, { limit: 1000 });
+    const { holdings, filingDate } = await investorService.getLatestHoldings(id, { limit: 1000 });
 
     if (!holdings.length) {
       return res.status(400).json({ success: false, error: 'No holdings found' });

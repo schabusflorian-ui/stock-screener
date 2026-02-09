@@ -166,10 +166,10 @@ router.post('/snapshots/create', async (req, res) => {
  * POST /api/simulate/snapshots/create-all
  * Create snapshots for all active portfolios
  */
-router.post('/snapshots/create-all', (req, res) => {
+router.post('/snapshots/create-all', async (req, res) => {
   try {
     const { date } = req.body;
-    const result = metricsEngine.createAllDailySnapshots(date);
+    const result = await metricsEngine.createAllDailySnapshots(date);
 
     res.json({
       success: true,
@@ -230,10 +230,10 @@ router.post('/backtest', async (req, res) => {
  * GET /api/simulate/backtest/:id
  * Get a saved backtest
  */
-router.get('/backtest/:id', (req, res) => {
+router.get('/backtest/:id', async (req, res) => {
   try {
     const backtestId = parseInt(req.params.id);
-    const backtest = backtestEngine.getBacktest(backtestId);
+    const backtest = await backtestEngine.getBacktest(backtestId);
 
     res.json({
       success: true,
@@ -252,10 +252,10 @@ router.get('/backtest/:id', (req, res) => {
  * GET /api/simulate/backtests
  * List recent backtests
  */
-router.get('/backtests', (req, res) => {
+router.get('/backtests', async (req, res) => {
   try {
     const { limit = 20 } = req.query;
-    const backtests = backtestEngine.listBacktests(parseInt(limit));
+    const backtests = await backtestEngine.listBacktests(parseInt(limit));
 
     res.json({
       success: true,
@@ -274,10 +274,10 @@ router.get('/backtests', (req, res) => {
  * DELETE /api/simulate/backtest/:id
  * Delete a backtest
  */
-router.delete('/backtest/:id', (req, res) => {
+router.delete('/backtest/:id', async (req, res) => {
   try {
     const backtestId = parseInt(req.params.id);
-    const result = backtestEngine.deleteBacktest(backtestId);
+    const result = await backtestEngine.deleteBacktest(backtestId);
 
     res.json({
       success: true,
@@ -331,10 +331,10 @@ router.post('/monte-carlo', async (req, res) => {
  * GET /api/simulate/monte-carlo/:id
  * Get a saved Monte Carlo simulation
  */
-router.get('/monte-carlo/:id', (req, res) => {
+router.get('/monte-carlo/:id', async (req, res) => {
   try {
     const simulationId = parseInt(req.params.id);
-    const simulation = monteCarloEngine.getSimulation(simulationId);
+    const simulation = await monteCarloEngine.getSimulation(simulationId);
 
     res.json({
       success: true,
@@ -353,10 +353,10 @@ router.get('/monte-carlo/:id', (req, res) => {
  * GET /api/simulate/monte-carlo
  * List recent Monte Carlo simulations
  */
-router.get('/monte-carlo', (req, res) => {
+router.get('/monte-carlo', async (req, res) => {
   try {
     const { limit = 20 } = req.query;
-    const simulations = monteCarloEngine.listSimulations(parseInt(limit));
+    const simulations = await monteCarloEngine.listSimulations(parseInt(limit));
 
     res.json({
       success: true,
@@ -375,10 +375,10 @@ router.get('/monte-carlo', (req, res) => {
  * DELETE /api/simulate/monte-carlo/:id
  * Delete a Monte Carlo simulation
  */
-router.delete('/monte-carlo/:id', (req, res) => {
+router.delete('/monte-carlo/:id', async (req, res) => {
   try {
     const simulationId = parseInt(req.params.id);
-    const result = monteCarloEngine.deleteSimulation(simulationId);
+    const result = await monteCarloEngine.deleteSimulation(simulationId);
 
     res.json({
       success: true,
@@ -475,7 +475,7 @@ router.post('/distribution/analyze', async (req, res) => {
  * POST /api/simulate/position-size
  * Calculate position size
  */
-router.post('/position-size', (req, res) => {
+router.post('/position-size', async (req, res) => {
   try {
     const { method = 'fixed_risk', ...params } = req.body;
 
@@ -486,7 +486,7 @@ router.post('/position-size', (req, res) => {
       });
     }
 
-    const result = positionSizing.calculate(method, params);
+    const result = await positionSizing.calculate(method, params);
 
     res.json({
       success: true,
@@ -505,7 +505,7 @@ router.post('/position-size', (req, res) => {
  * POST /api/simulate/risk-reward
  * Analyze risk/reward for a trade
  */
-router.post('/risk-reward', (req, res) => {
+router.post('/risk-reward', async (req, res) => {
   try {
     const params = req.body;
 
@@ -516,7 +516,7 @@ router.post('/risk-reward', (req, res) => {
       });
     }
 
-    const result = positionSizing.analyzeRiskReward(params);
+    const result = await positionSizing.analyzeRiskReward(params);
 
     res.json({
       success: true,
@@ -535,7 +535,7 @@ router.post('/risk-reward', (req, res) => {
  * POST /api/simulate/optimal-positions
  * Calculate optimal number of positions
  */
-router.post('/optimal-positions', (req, res) => {
+router.post('/optimal-positions', async (req, res) => {
   try {
     const params = req.body;
 
@@ -546,7 +546,7 @@ router.post('/optimal-positions', (req, res) => {
       });
     }
 
-    const result = positionSizing.calculateOptimalPositions(params);
+    const result = await positionSizing.calculateOptimalPositions(params);
 
     res.json({
       success: true,
@@ -569,7 +569,7 @@ router.post('/optimal-positions', (req, res) => {
  * POST /api/simulate/compare
  * Compare multiple portfolios or strategies
  */
-router.post('/compare', (req, res) => {
+router.post('/compare', async (req, res) => {
   try {
     const { portfolioIds, startDate, endDate, period = '1y' } = req.body;
 
@@ -580,11 +580,11 @@ router.post('/compare', (req, res) => {
       });
     }
 
-    const results = portfolioIds.map(id => {
+    const results = await Promise.all(portfolioIds.map(async id => {
       try {
         return {
           portfolioId: id,
-          metrics: metricsEngine.getPerformanceMetrics(id, period),
+          metrics: await metricsEngine.getPerformanceMetrics(id, period),
           success: true
         };
       } catch (error) {
@@ -594,7 +594,7 @@ router.post('/compare', (req, res) => {
           error: error.message
         };
       }
-    });
+    }));
 
     res.json({
       success: true,
@@ -784,10 +784,10 @@ router.post('/stress-test/all', async (req, res) => {
  * GET /api/simulate/stress-test/scenarios
  * Get available stress test scenarios
  */
-router.get('/stress-test/scenarios', (req, res) => {
+router.get('/stress-test/scenarios', async (req, res) => {
   res.json({
     success: true,
-    data: stressTestEngine.getAvailableScenarios()
+    data: await stressTestEngine.getAvailableScenarios()
   });
 });
 
@@ -799,12 +799,12 @@ router.get('/stress-test/scenarios', (req, res) => {
  * GET /api/simulate/portfolios/:id/correlation
  * Get correlation matrix for portfolio positions
  */
-router.get('/portfolios/:id/correlation', (req, res) => {
+router.get('/portfolios/:id/correlation', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const { period = '1y' } = req.query;
 
-    const result = advancedAnalytics.getCorrelationMatrix(portfolioId, period);
+    const result = await advancedAnalytics.getCorrelationMatrix(portfolioId, period);
 
     res.json({
       success: true,
@@ -823,11 +823,11 @@ router.get('/portfolios/:id/correlation', (req, res) => {
  * GET /api/simulate/portfolios/:id/diversification
  * Get diversification score and analysis
  */
-router.get('/portfolios/:id/diversification', (req, res) => {
+router.get('/portfolios/:id/diversification', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
 
-    const result = advancedAnalytics.getDiversificationScore(portfolioId);
+    const result = await advancedAnalytics.getDiversificationScore(portfolioId);
 
     res.json({
       success: true,
@@ -846,11 +846,11 @@ router.get('/portfolios/:id/diversification', (req, res) => {
  * GET /api/simulate/portfolios/:id/factors
  * Get factor exposure analysis
  */
-router.get('/portfolios/:id/factors', (req, res) => {
+router.get('/portfolios/:id/factors', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
 
-    const result = advancedAnalytics.getFactorExposure(portfolioId);
+    const result = await advancedAnalytics.getFactorExposure(portfolioId);
 
     res.json({
       success: true,
@@ -869,12 +869,12 @@ router.get('/portfolios/:id/factors', (req, res) => {
  * GET /api/simulate/portfolios/:id/covariance
  * Get covariance matrix and portfolio variance decomposition
  */
-router.get('/portfolios/:id/covariance', (req, res) => {
+router.get('/portfolios/:id/covariance', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const { period = '1y' } = req.query;
 
-    const result = advancedAnalytics.getCovarianceMatrix(portfolioId, period);
+    const result = await advancedAnalytics.getCovarianceMatrix(portfolioId, period);
 
     res.json({
       success: true,
@@ -893,12 +893,12 @@ router.get('/portfolios/:id/covariance', (req, res) => {
  * GET /api/simulate/portfolios/:id/risk-contribution
  * Get marginal risk contribution for each position
  */
-router.get('/portfolios/:id/risk-contribution', (req, res) => {
+router.get('/portfolios/:id/risk-contribution', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const { period = '1y' } = req.query;
 
-    const result = advancedAnalytics.getMarginalRiskContribution(portfolioId, period);
+    const result = await advancedAnalytics.getMarginalRiskContribution(portfolioId, period);
 
     res.json({
       success: true,
@@ -917,12 +917,12 @@ router.get('/portfolios/:id/risk-contribution', (req, res) => {
  * GET /api/simulate/portfolios/:id/rolling-correlation
  * Get rolling correlation over time
  */
-router.get('/portfolios/:id/rolling-correlation', (req, res) => {
+router.get('/portfolios/:id/rolling-correlation', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const { period = '1y', window = 60 } = req.query;
 
-    const result = advancedAnalytics.getRollingCorrelation(
+    const result = await advancedAnalytics.getRollingCorrelation(
       portfolioId,
       period,
       parseInt(window)
@@ -945,12 +945,12 @@ router.get('/portfolios/:id/rolling-correlation', (req, res) => {
  * GET /api/simulate/portfolios/:id/clusters
  * Get cluster analysis for hidden concentration risks
  */
-router.get('/portfolios/:id/clusters', (req, res) => {
+router.get('/portfolios/:id/clusters', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const { period = '1y' } = req.query;
 
-    const result = advancedAnalytics.getClusterAnalysis(portfolioId, period);
+    const result = await advancedAnalytics.getClusterAnalysis(portfolioId, period);
 
     res.json({
       success: true,
@@ -973,7 +973,7 @@ router.get('/portfolios/:id/clusters', (req, res) => {
  * POST /api/simulate/portfolios/:id/what-if
  * Simulate portfolio changes without executing
  */
-router.post('/portfolios/:id/what-if', (req, res) => {
+router.post('/portfolios/:id/what-if', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const { changes } = req.body;
@@ -985,7 +985,7 @@ router.post('/portfolios/:id/what-if', (req, res) => {
       });
     }
 
-    const result = whatIfAnalysis.simulateChange(portfolioId, changes);
+    const result = await whatIfAnalysis.simulateChange(portfolioId, changes);
 
     res.json({
       success: true,
@@ -1004,7 +1004,7 @@ router.post('/portfolios/:id/what-if', (req, res) => {
  * POST /api/simulate/portfolios/:id/what-if/weights
  * Simulate weight changes
  */
-router.post('/portfolios/:id/what-if/weights', (req, res) => {
+router.post('/portfolios/:id/what-if/weights', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const { targetWeights } = req.body;
@@ -1016,7 +1016,7 @@ router.post('/portfolios/:id/what-if/weights', (req, res) => {
       });
     }
 
-    const result = whatIfAnalysis.simulateWeightChange(portfolioId, targetWeights);
+    const result = await whatIfAnalysis.simulateWeightChange(portfolioId, targetWeights);
 
     res.json({
       success: true,
@@ -1035,7 +1035,7 @@ router.post('/portfolios/:id/what-if/weights', (req, res) => {
  * POST /api/simulate/portfolios/:id/what-if/compare
  * Compare multiple scenarios
  */
-router.post('/portfolios/:id/what-if/compare', (req, res) => {
+router.post('/portfolios/:id/what-if/compare', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const { scenarios } = req.body;
@@ -1047,7 +1047,7 @@ router.post('/portfolios/:id/what-if/compare', (req, res) => {
       });
     }
 
-    const result = whatIfAnalysis.compareScenarios(portfolioId, scenarios);
+    const result = await whatIfAnalysis.compareScenarios(portfolioId, scenarios);
 
     res.json({
       success: true,
@@ -1070,7 +1070,7 @@ router.post('/portfolios/:id/what-if/compare', (req, res) => {
  * POST /api/simulate/portfolios/:id/rebalance-calc
  * Calculate trades needed to reach target allocation
  */
-router.post('/portfolios/:id/rebalance-calc', (req, res) => {
+router.post('/portfolios/:id/rebalance-calc', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const { targetAllocation, options = {} } = req.body;
@@ -1082,7 +1082,7 @@ router.post('/portfolios/:id/rebalance-calc', (req, res) => {
       });
     }
 
-    const result = rebalanceCalculator.calculateRebalanceTrades(portfolioId, targetAllocation, options);
+    const result = await rebalanceCalculator.calculateRebalanceTrades(portfolioId, targetAllocation, options);
 
     res.json({
       success: true,
@@ -1101,12 +1101,12 @@ router.post('/portfolios/:id/rebalance-calc', (req, res) => {
  * GET /api/simulate/portfolios/:id/rebalance-check
  * Check if rebalancing is needed (drift detection)
  */
-router.get('/portfolios/:id/rebalance-check', (req, res) => {
+router.get('/portfolios/:id/rebalance-check', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const { threshold = 5 } = req.query;
 
-    const result = rebalanceCalculator.checkRebalanceNeeded(portfolioId, parseFloat(threshold));
+    const result = await rebalanceCalculator.checkRebalanceNeeded(portfolioId, parseFloat(threshold));
 
     res.json({
       success: true,
@@ -1125,8 +1125,8 @@ router.get('/portfolios/:id/rebalance-check', (req, res) => {
  * GET /api/simulate/rebalance-templates
  * Get available rebalancing templates
  */
-router.get('/rebalance-templates', (req, res) => {
-  const templates = rebalanceCalculator.getRebalanceTemplates();
+router.get('/rebalance-templates', async (req, res) => {
+  const templates = await rebalanceCalculator.getRebalanceTemplates();
   res.json({
     success: true,
     data: templates.map(t => ({
@@ -1141,7 +1141,7 @@ router.get('/rebalance-templates', (req, res) => {
  * POST /api/simulate/portfolios/:id/apply-template
  * Apply a rebalancing template
  */
-router.post('/portfolios/:id/apply-template', (req, res) => {
+router.post('/portfolios/:id/apply-template', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const { templateId } = req.body;
@@ -1153,7 +1153,7 @@ router.post('/portfolios/:id/apply-template', (req, res) => {
       });
     }
 
-    const result = rebalanceCalculator.applyTemplate(portfolioId, templateId);
+    const result = await rebalanceCalculator.applyTemplate(portfolioId, templateId);
 
     res.json({
       success: true,
@@ -1176,12 +1176,12 @@ router.post('/portfolios/:id/apply-template', (req, res) => {
  * GET /api/simulate/portfolios/:id/income-projection
  * Project dividend income
  */
-router.get('/portfolios/:id/income-projection', (req, res) => {
+router.get('/portfolios/:id/income-projection', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const { years = 5, growthRate = 0.05 } = req.query;
 
-    const result = advancedAnalytics.projectDividendIncome(
+    const result = await advancedAnalytics.projectDividendIncome(
       portfolioId,
       parseInt(years),
       parseFloat(growthRate)
@@ -1208,7 +1208,7 @@ router.get('/portfolios/:id/income-projection', (req, res) => {
  * GET /api/simulate/portfolios/:id/kelly/backtest
  * Historical Kelly backtest with actual returns
  */
-router.get('/portfolios/:id/kelly/backtest', (req, res) => {
+router.get('/portfolios/:id/kelly/backtest', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const {
@@ -1217,7 +1217,7 @@ router.get('/portfolios/:id/kelly/backtest', (req, res) => {
       initialCapital = 100000
     } = req.query;
 
-    const result = advancedKelly.historicalKellyBacktest(portfolioId, {
+    const result = await advancedKelly.historicalKellyBacktest(portfolioId, {
       period,
       rebalanceFrequency,
       initialCapital: parseFloat(initialCapital)
@@ -1240,7 +1240,7 @@ router.get('/portfolios/:id/kelly/backtest', (req, res) => {
  * GET /api/simulate/portfolios/:id/kelly/optimize
  * Find optimal Kelly weights maximizing geometric growth
  */
-router.get('/portfolios/:id/kelly/optimize', (req, res) => {
+router.get('/portfolios/:id/kelly/optimize', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const {
@@ -1250,7 +1250,7 @@ router.get('/portfolios/:id/kelly/optimize', (req, res) => {
       leverageAllowed = false
     } = req.query;
 
-    const result = advancedKelly.optimizeKellyWeights(portfolioId, {
+    const result = await advancedKelly.optimizeKellyWeights(portfolioId, {
       period,
       maxWeight: parseFloat(maxWeight),
       minWeight: parseFloat(minWeight),
@@ -1274,7 +1274,7 @@ router.get('/portfolios/:id/kelly/optimize', (req, res) => {
  * GET /api/simulate/portfolios/:id/kelly/regime
  * Get regime-aware Kelly sizing
  */
-router.get('/portfolios/:id/kelly/regime', (req, res) => {
+router.get('/portfolios/:id/kelly/regime', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const {
@@ -1282,7 +1282,7 @@ router.get('/portfolios/:id/kelly/regime', (req, res) => {
       regimeWindow = 60
     } = req.query;
 
-    const result = advancedKelly.regimeAwareKelly(portfolioId, {
+    const result = await advancedKelly.regimeAwareKelly(portfolioId, {
       period,
       regimeWindow: parseInt(regimeWindow)
     });
@@ -1304,7 +1304,7 @@ router.get('/portfolios/:id/kelly/regime', (req, res) => {
  * GET /api/simulate/portfolios/:id/kelly/drawdown
  * Kelly drawdown analysis at various fractions
  */
-router.get('/portfolios/:id/kelly/drawdown', (req, res) => {
+router.get('/portfolios/:id/kelly/drawdown', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const {
@@ -1312,7 +1312,7 @@ router.get('/portfolios/:id/kelly/drawdown', (req, res) => {
       initialCapital = 100000
     } = req.query;
 
-    const result = advancedKelly.kellyDrawdownAnalysis(portfolioId, {
+    const result = await advancedKelly.kellyDrawdownAnalysis(portfolioId, {
       period,
       initialCapital: parseFloat(initialCapital)
     });
@@ -1334,7 +1334,7 @@ router.get('/portfolios/:id/kelly/drawdown', (req, res) => {
  * GET /api/simulate/portfolios/:id/kelly/compare
  * Compare Kelly vs other sizing strategies
  */
-router.get('/portfolios/:id/kelly/compare', (req, res) => {
+router.get('/portfolios/:id/kelly/compare', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const {
@@ -1343,7 +1343,7 @@ router.get('/portfolios/:id/kelly/compare', (req, res) => {
       rebalanceFrequency = 'monthly'
     } = req.query;
 
-    const result = advancedKelly.compareKellyStrategies(portfolioId, {
+    const result = await advancedKelly.compareKellyStrategies(portfolioId, {
       period,
       initialCapital: parseFloat(initialCapital),
       rebalanceFrequency
@@ -1366,9 +1366,9 @@ router.get('/portfolios/:id/kelly/compare', (req, res) => {
  * GET /api/simulate/kelly/options
  * Get available Kelly configuration options and defaults
  */
-router.get('/kelly/options', (req, res) => {
+router.get('/kelly/options', async (req, res) => {
   try {
-    const options = advancedKelly.getOptions();
+    const options = await advancedKelly.getOptions();
     res.json({
       success: true,
       data: options
@@ -1386,7 +1386,7 @@ router.get('/kelly/options', (req, res) => {
  * GET /api/simulate/kelly/analyze/:symbol
  * Analyze Kelly sizing for a single holding
  */
-router.get('/kelly/analyze/:symbol', (req, res) => {
+router.get('/kelly/analyze/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
     const {
@@ -1397,7 +1397,7 @@ router.get('/kelly/analyze/:symbol', (req, res) => {
       kellyFractions
     } = req.query;
 
-    const result = advancedKelly.analyzeSingleHolding({
+    const result = await advancedKelly.analyzeSingleHolding({
       symbol,
       portfolioId: portfolioId ? parseInt(portfolioId) : null,
       period,
@@ -1423,7 +1423,7 @@ router.get('/kelly/analyze/:symbol', (req, res) => {
  * GET /api/simulate/portfolios/:id/kelly/taleb-risk
  * Get Taleb/Spitznagel risk analysis
  */
-router.get('/portfolios/:id/kelly/taleb-risk', (req, res) => {
+router.get('/portfolios/:id/kelly/taleb-risk', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const {
@@ -1432,7 +1432,7 @@ router.get('/portfolios/:id/kelly/taleb-risk', (req, res) => {
       riskFreeRate = 0.05
     } = req.query;
 
-    const result = advancedKelly.getTalebRiskAnalysis(portfolioId, {
+    const result = await advancedKelly.getTalebRiskAnalysis(portfolioId, {
       period,
       initialCapital: parseFloat(initialCapital),
       riskFreeRate: parseFloat(riskFreeRate)
@@ -1455,7 +1455,7 @@ router.get('/portfolios/:id/kelly/taleb-risk', (req, res) => {
  * GET /api/simulate/portfolios/:id/kelly/multi-asset
  * Get multi-asset Kelly optimization with correlation-aware weights
  */
-router.get('/portfolios/:id/kelly/multi-asset', (req, res) => {
+router.get('/portfolios/:id/kelly/multi-asset', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const {
@@ -1464,7 +1464,7 @@ router.get('/portfolios/:id/kelly/multi-asset', (req, res) => {
       riskFreeRate = 0.05
     } = req.query;
 
-    const result = advancedKelly.getMultiAssetAllocation(portfolioId, {
+    const result = await advancedKelly.getMultiAssetAllocation(portfolioId, {
       period,
       kellyFraction: parseFloat(kellyFraction),
       riskFreeRate: parseFloat(riskFreeRate)
@@ -1491,7 +1491,7 @@ router.get('/portfolios/:id/kelly/multi-asset', (req, res) => {
  * GET /api/simulate/portfolios/:id/alpha
  * Comprehensive alpha analysis including Jensen's, multi-factor, rolling, attribution
  */
-router.get('/portfolios/:id/alpha', (req, res) => {
+router.get('/portfolios/:id/alpha', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const {
@@ -1499,7 +1499,7 @@ router.get('/portfolios/:id/alpha', (req, res) => {
       benchmarkSymbol = 'SPY'
     } = req.query;
 
-    const result = alphaAnalytics.getComprehensiveAlpha(portfolioId, {
+    const result = await alphaAnalytics.getComprehensiveAlpha(portfolioId, {
       period,
       benchmarkSymbol
     });
@@ -1521,7 +1521,7 @@ router.get('/portfolios/:id/alpha', (req, res) => {
  * GET /api/simulate/portfolios/:id/alpha/jensens
  * Jensen's Alpha (CAPM-based) with statistical significance
  */
-router.get('/portfolios/:id/alpha/jensens', (req, res) => {
+router.get('/portfolios/:id/alpha/jensens', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const {
@@ -1529,7 +1529,7 @@ router.get('/portfolios/:id/alpha/jensens', (req, res) => {
       benchmarkSymbol = 'SPY'
     } = req.query;
 
-    const result = alphaAnalytics.getJensensAlpha(portfolioId, {
+    const result = await alphaAnalytics.getJensensAlpha(portfolioId, {
       period,
       benchmarkSymbol
     });
@@ -1551,7 +1551,7 @@ router.get('/portfolios/:id/alpha/jensens', (req, res) => {
  * GET /api/simulate/portfolios/:id/alpha/multi-factor
  * Multi-factor alpha (Fama-French style)
  */
-router.get('/portfolios/:id/alpha/multi-factor', (req, res) => {
+router.get('/portfolios/:id/alpha/multi-factor', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const {
@@ -1559,7 +1559,7 @@ router.get('/portfolios/:id/alpha/multi-factor', (req, res) => {
       benchmarkSymbol = 'SPY'
     } = req.query;
 
-    const result = alphaAnalytics.getMultiFactorAlpha(portfolioId, {
+    const result = await alphaAnalytics.getMultiFactorAlpha(portfolioId, {
       period,
       benchmarkSymbol
     });
@@ -1581,7 +1581,7 @@ router.get('/portfolios/:id/alpha/multi-factor', (req, res) => {
  * GET /api/simulate/portfolios/:id/alpha/rolling
  * Rolling alpha over time for consistency analysis
  */
-router.get('/portfolios/:id/alpha/rolling', (req, res) => {
+router.get('/portfolios/:id/alpha/rolling', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const {
@@ -1590,7 +1590,7 @@ router.get('/portfolios/:id/alpha/rolling', (req, res) => {
       windowDays = 60
     } = req.query;
 
-    const result = alphaAnalytics.getRollingAlpha(portfolioId, {
+    const result = await alphaAnalytics.getRollingAlpha(portfolioId, {
       period,
       benchmarkSymbol,
       windowDays: parseInt(windowDays)
@@ -1613,7 +1613,7 @@ router.get('/portfolios/:id/alpha/rolling', (req, res) => {
  * GET /api/simulate/portfolios/:id/alpha/attribution
  * Alpha attribution by position (which positions contribute to alpha)
  */
-router.get('/portfolios/:id/alpha/attribution', (req, res) => {
+router.get('/portfolios/:id/alpha/attribution', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const {
@@ -1621,7 +1621,7 @@ router.get('/portfolios/:id/alpha/attribution', (req, res) => {
       benchmarkSymbol = 'SPY'
     } = req.query;
 
-    const result = alphaAnalytics.getAlphaAttribution(portfolioId, {
+    const result = await alphaAnalytics.getAlphaAttribution(portfolioId, {
       period,
       benchmarkSymbol
     });
@@ -1643,7 +1643,7 @@ router.get('/portfolios/:id/alpha/attribution', (req, res) => {
  * GET /api/simulate/portfolios/:id/alpha/skill
  * Skill vs luck analysis (is alpha statistically significant?)
  */
-router.get('/portfolios/:id/alpha/skill', (req, res) => {
+router.get('/portfolios/:id/alpha/skill', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const {
@@ -1651,7 +1651,7 @@ router.get('/portfolios/:id/alpha/skill', (req, res) => {
       benchmarkSymbol = 'SPY'
     } = req.query;
 
-    const result = alphaAnalytics.getSkillAnalysis(portfolioId, {
+    const result = await alphaAnalytics.getSkillAnalysis(portfolioId, {
       period,
       benchmarkSymbol
     });

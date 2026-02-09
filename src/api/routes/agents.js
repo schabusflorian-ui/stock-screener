@@ -18,9 +18,9 @@ const { requireFeature, checkResourceLimit } = require('../../middleware/subscri
  * GET /api/agents
  * List all active trading agents
  */
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const agents = agentService.getAllAgents();
+    const agents = await agentService.getAllAgents();
     res.json({ success: true, data: agents });
   } catch (error) {
     console.error('Error fetching agents:', error);
@@ -32,9 +32,9 @@ router.get('/', (req, res) => {
  * GET /api/agents/presets
  * Get available strategy presets
  */
-router.get('/presets', (req, res) => {
+router.get('/presets', async (req, res) => {
   try {
-    const presets = agentService.getStrategyPresets();
+    const presets = await agentService.getStrategyPresets();
     res.json({ success: true, data: presets });
   } catch (error) {
     console.error('Error fetching presets:', error);
@@ -47,9 +47,9 @@ router.get('/presets', (req, res) => {
  * Create a new trading agent
  * Requires: Ultra tier (paper_trading_bots feature)
  */
-router.post('/', requireAuth, requireFeature('paper_trading_bots'), checkResourceLimit('agents'), validateBody('createAgent'), (req, res) => {
+router.post('/', requireAuth, requireFeature('paper_trading_bots'), checkResourceLimit('agents'), validateBody('createAgent'), async (req, res) => {
   try {
-    const agent = agentService.createAgent(req.body);
+    const agent = await agentService.createAgent(req.body);
     res.status(201).json({ success: true, data: agent });
   } catch (error) {
     console.error('Error creating agent:', error);
@@ -61,9 +61,9 @@ router.post('/', requireAuth, requireFeature('paper_trading_bots'), checkResourc
  * GET /api/agents/:id
  * Get a single agent with details
  */
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
-    const agent = agentService.getAgent(parseInt(req.params.id, 10));
+    const agent = await agentService.getAgent(parseInt(req.params.id, 10));
     if (!agent) {
       return res.status(404).json({ success: false, error: 'Agent not found' });
     }
@@ -78,9 +78,9 @@ router.get('/:id', (req, res) => {
  * PUT /api/agents/:id
  * Update an agent
  */
-router.put('/:id', validateBody('updateAgent'), (req, res) => {
+router.put('/:id', validateBody('updateAgent'), async (req, res) => {
   try {
-    const agent = agentService.updateAgent(parseInt(req.params.id, 10), req.body);
+    const agent = await agentService.updateAgent(parseInt(req.params.id, 10), req.body);
     if (!agent) {
       return res.status(404).json({ success: false, error: 'Agent not found' });
     }
@@ -95,9 +95,9 @@ router.put('/:id', validateBody('updateAgent'), (req, res) => {
  * DELETE /api/agents/:id
  * Delete (soft delete) an agent
  */
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
-    const result = agentService.deleteAgent(parseInt(req.params.id, 10));
+    const result = await agentService.deleteAgent(parseInt(req.params.id, 10));
     res.json({ success: true, data: result });
   } catch (error) {
     console.error('Error deleting agent:', error);
@@ -113,9 +113,9 @@ router.delete('/:id', (req, res) => {
  * GET /api/agents/:id/status
  * Get agent status
  */
-router.get('/:id/status', (req, res) => {
+router.get('/:id/status', async (req, res) => {
   try {
-    const status = agentService.getAgentStatus(parseInt(req.params.id, 10));
+    const status = await agentService.getAgentStatus(parseInt(req.params.id, 10));
     if (!status) {
       return res.status(404).json({ success: false, error: 'Agent not found' });
     }
@@ -130,9 +130,9 @@ router.get('/:id/status', (req, res) => {
  * POST /api/agents/:id/start
  * Start an agent
  */
-router.post('/:id/start', (req, res) => {
+router.post('/:id/start', async (req, res) => {
   try {
-    const status = agentService.startAgent(parseInt(req.params.id, 10));
+    const status = await agentService.startAgent(parseInt(req.params.id, 10));
     res.json({ success: true, data: status });
   } catch (error) {
     console.error('Error starting agent:', error);
@@ -144,9 +144,9 @@ router.post('/:id/start', (req, res) => {
  * POST /api/agents/:id/pause
  * Pause an agent
  */
-router.post('/:id/pause', (req, res) => {
+router.post('/:id/pause', async (req, res) => {
   try {
-    const status = agentService.pauseAgent(parseInt(req.params.id, 10));
+    const status = await agentService.pauseAgent(parseInt(req.params.id, 10));
     res.json({ success: true, data: status });
   } catch (error) {
     console.error('Error pausing agent:', error);
@@ -194,10 +194,10 @@ router.post('/:id/scan', async (req, res) => {
  * GET /api/agents/:id/signals
  * Get signals for an agent
  */
-router.get('/:id/signals', (req, res) => {
+router.get('/:id/signals', async (req, res) => {
   try {
     const { status, limit = 50, offset = 0, sortBy, sortOrder } = req.query;
-    const signals = agentService.getSignals(parseInt(req.params.id, 10), {
+    const signals = await agentService.getSignals(parseInt(req.params.id, 10), {
       status,
       limit: parseInt(limit, 10),
       offset: parseInt(offset, 10),
@@ -215,9 +215,9 @@ router.get('/:id/signals', (req, res) => {
  * GET /api/agents/:id/signals/pending
  * Get pending signals for an agent
  */
-router.get('/:id/signals/pending', (req, res) => {
+router.get('/:id/signals/pending', async (req, res) => {
   try {
-    const signals = agentService.getPendingSignals(parseInt(req.params.id, 10));
+    const signals = await agentService.getPendingSignals(parseInt(req.params.id, 10));
     res.json({ success: true, data: signals });
   } catch (error) {
     console.error('Error fetching pending signals:', error);
@@ -229,9 +229,9 @@ router.get('/:id/signals/pending', (req, res) => {
  * GET /api/agents/:id/signals/:signalId
  * Get a single signal
  */
-router.get('/:id/signals/:signalId', (req, res) => {
+router.get('/:id/signals/:signalId', async (req, res) => {
   try {
-    const signal = agentService.getSignal(parseInt(req.params.signalId, 10));
+    const signal = await agentService.getSignal(parseInt(req.params.signalId, 10));
     if (!signal) {
       return res.status(404).json({ success: false, error: 'Signal not found' });
     }
@@ -246,10 +246,10 @@ router.get('/:id/signals/:signalId', (req, res) => {
  * POST /api/agents/:id/signals/:signalId/approve
  * Approve a signal
  */
-router.post('/:id/signals/:signalId/approve', validateBody('approveSignal'), (req, res) => {
+router.post('/:id/signals/:signalId/approve', validateBody('approveSignal'), async (req, res) => {
   try {
     const { portfolioId } = req.body || {};
-    const signal = agentService.approveSignal(
+    const signal = await agentService.approveSignal(
       parseInt(req.params.signalId, 10),
       portfolioId ? parseInt(portfolioId, 10) : null
     );
@@ -267,10 +267,10 @@ router.post('/:id/signals/:signalId/approve', validateBody('approveSignal'), (re
  * POST /api/agents/:id/signals/:signalId/reject
  * Reject a signal
  */
-router.post('/:id/signals/:signalId/reject', validateBody('rejectSignal'), (req, res) => {
+router.post('/:id/signals/:signalId/reject', validateBody('rejectSignal'), async (req, res) => {
   try {
     const { reason } = req.body || {};
-    const signal = agentService.rejectSignal(
+    const signal = await agentService.rejectSignal(
       parseInt(req.params.signalId, 10),
       reason
     );
@@ -288,10 +288,10 @@ router.post('/:id/signals/:signalId/reject', validateBody('rejectSignal'), (req,
  * POST /api/agents/:id/signals/approve-all
  * Approve all pending signals
  */
-router.post('/:id/signals/approve-all', (req, res) => {
+router.post('/:id/signals/approve-all', async (req, res) => {
   try {
     const { portfolioId } = req.body;
-    const approved = agentService.approveAllPendingSignals(
+    const approved = await agentService.approveAllPendingSignals(
       parseInt(req.params.id, 10),
       portfolioId ? parseInt(portfolioId, 10) : null
     );
@@ -341,9 +341,9 @@ router.post('/:id/signals/execute-all', async (req, res) => {
  * GET /api/agents/:id/portfolios
  * Get portfolios managed by an agent
  */
-router.get('/:id/portfolios', (req, res) => {
+router.get('/:id/portfolios', async (req, res) => {
   try {
-    const portfolios = agentService.getAgentPortfolios(parseInt(req.params.id, 10));
+    const portfolios = await agentService.getAgentPortfolios(parseInt(req.params.id, 10));
     res.json({ success: true, data: portfolios });
   } catch (error) {
     console.error('Error fetching agent portfolios:', error);
@@ -355,7 +355,7 @@ router.get('/:id/portfolios', (req, res) => {
  * POST /api/agents/:id/portfolios
  * Create a new portfolio for an agent
  */
-router.post('/:id/portfolios', (req, res) => {
+router.post('/:id/portfolios', async (req, res) => {
   try {
     const { name, initial_capital, mode = 'paper' } = req.body;
 
@@ -366,7 +366,7 @@ router.post('/:id/portfolios', (req, res) => {
       });
     }
 
-    const portfolios = agentService.createPortfolioForAgent(
+    const portfolios = await agentService.createPortfolioForAgent(
       parseInt(req.params.id, 10),
       { name, initial_capital, mode }
     );
@@ -381,7 +381,7 @@ router.post('/:id/portfolios', (req, res) => {
  * POST /api/agents/:id/portfolios/attach
  * Attach an existing portfolio to an agent
  */
-router.post('/:id/portfolios/attach', (req, res) => {
+router.post('/:id/portfolios/attach', async (req, res) => {
   try {
     const { portfolioId, mode = 'paper' } = req.body;
 
@@ -392,7 +392,7 @@ router.post('/:id/portfolios/attach', (req, res) => {
       });
     }
 
-    const portfolios = agentService.attachPortfolio(
+    const portfolios = await agentService.attachPortfolio(
       parseInt(req.params.id, 10),
       parseInt(portfolioId, 10),
       mode
@@ -408,9 +408,9 @@ router.post('/:id/portfolios/attach', (req, res) => {
  * DELETE /api/agents/:id/portfolios/:portfolioId
  * Detach a portfolio from an agent
  */
-router.delete('/:id/portfolios/:portfolioId', (req, res) => {
+router.delete('/:id/portfolios/:portfolioId', async (req, res) => {
   try {
-    const result = agentService.detachPortfolio(
+    const result = await agentService.detachPortfolio(
       parseInt(req.params.id, 10),
       parseInt(req.params.portfolioId, 10)
     );
@@ -429,17 +429,17 @@ router.delete('/:id/portfolios/:portfolioId', (req, res) => {
  * GET /api/agents/:id/performance
  * Get agent performance metrics
  */
-router.get('/:id/performance', (req, res) => {
+router.get('/:id/performance', async (req, res) => {
   try {
     const agentId = parseInt(req.params.id, 10);
 
     // Validate agent exists
-    const agent = agentService.getAgent(agentId);
+    const agent = await agentService.getAgent(agentId);
     if (!agent) {
       return res.status(404).json({ success: false, error: 'Agent not found' });
     }
 
-    const performance = agentService.getAgentPerformance(agentId);
+    const performance = await agentService.getAgentPerformance(agentId);
 
     // Handle case where no performance data exists yet
     if (!performance || !performance.total_signals_generated) {
@@ -471,10 +471,10 @@ router.get('/:id/performance', (req, res) => {
  * GET /api/agents/:id/activity
  * Get agent activity log
  */
-router.get('/:id/activity', (req, res) => {
+router.get('/:id/activity', async (req, res) => {
   try {
     const { limit = 50 } = req.query;
-    const activity = agentService.getActivityLog(
+    const activity = await agentService.getActivityLog(
       parseInt(req.params.id, 10),
       parseInt(limit, 10)
     );
@@ -489,9 +489,9 @@ router.get('/:id/activity', (req, res) => {
  * GET /api/agents/:id/config
  * Get agent configuration for TradingAgent
  */
-router.get('/:id/config', (req, res) => {
+router.get('/:id/config', async (req, res) => {
   try {
-    const config = agentService.getAgentConfig(parseInt(req.params.id, 10));
+    const config = await agentService.getAgentConfig(parseInt(req.params.id, 10));
     if (!config) {
       return res.status(404).json({ success: false, error: 'Agent not found' });
     }
@@ -510,10 +510,10 @@ router.get('/:id/config', (req, res) => {
  * GET /api/agents/:id/executions
  * Get all executions for an agent (pending, approved, and executed)
  */
-router.get('/:id/executions', (req, res) => {
+router.get('/:id/executions', async (req, res) => {
   try {
     const agentId = parseInt(req.params.id, 10);
-    const executions = agentService.getExecutions(agentId);
+    const executions = await agentService.getExecutions(agentId);
     res.json({ success: true, data: executions });
   } catch (error) {
     console.error('Error fetching executions:', error);
@@ -525,10 +525,10 @@ router.get('/:id/executions', (req, res) => {
  * POST /api/agents/:id/executions/:executionId/approve
  * Approve an execution (move from pending to approved)
  */
-router.post('/:id/executions/:executionId/approve', (req, res) => {
+router.post('/:id/executions/:executionId/approve', async (req, res) => {
   try {
     const executionId = parseInt(req.params.executionId, 10);
-    const execution = agentService.approveExecution(executionId);
+    const execution = await agentService.approveExecution(executionId);
     if (!execution) {
       return res.status(404).json({ success: false, error: 'Execution not found' });
     }
@@ -543,11 +543,11 @@ router.post('/:id/executions/:executionId/approve', (req, res) => {
  * POST /api/agents/:id/executions/:executionId/reject
  * Reject an execution
  */
-router.post('/:id/executions/:executionId/reject', (req, res) => {
+router.post('/:id/executions/:executionId/reject', async (req, res) => {
   try {
     const executionId = parseInt(req.params.executionId, 10);
     const { reason } = req.body;
-    const execution = agentService.rejectExecution(executionId, reason);
+    const execution = await agentService.rejectExecution(executionId, reason);
     if (!execution) {
       return res.status(404).json({ success: false, error: 'Execution not found' });
     }
@@ -580,10 +580,10 @@ router.post('/:id/executions/:executionId/execute', async (req, res) => {
  * POST /api/agents/:id/executions/approve-all
  * Approve all pending executions
  */
-router.post('/:id/executions/approve-all', (req, res) => {
+router.post('/:id/executions/approve-all', async (req, res) => {
   try {
     const agentId = parseInt(req.params.id, 10);
-    const approved = agentService.approveAllExecutions(agentId);
+    const approved = await agentService.approveAllExecutions(agentId);
     res.json({ success: true, data: { approved: approved.length, executions: approved } });
   } catch (error) {
     console.error('Error approving all executions:', error);
@@ -610,10 +610,10 @@ router.post('/:id/executions/execute-all', async (req, res) => {
  * PUT /api/agents/:id/settings
  * Update agent settings
  */
-router.put('/:id/settings', (req, res) => {
+router.put('/:id/settings', async (req, res) => {
   try {
     const agentId = parseInt(req.params.id, 10);
-    const agent = agentService.updateAgentSettings(agentId, req.body);
+    const agent = await agentService.updateAgentSettings(agentId, req.body);
     if (!agent) {
       return res.status(404).json({ success: false, error: 'Agent not found' });
     }
@@ -628,10 +628,10 @@ router.put('/:id/settings', (req, res) => {
  * GET /api/agents/:id/live-status
  * Lightweight status endpoint for polling
  */
-router.get('/:id/live-status', (req, res) => {
+router.get('/:id/live-status', async (req, res) => {
   try {
     const agentId = parseInt(req.params.id, 10);
-    const status = agentService.getLiveStatus(agentId);
+    const status = await agentService.getLiveStatus(agentId);
     if (!status) {
       return res.status(404).json({ success: false, error: 'Agent not found' });
     }
@@ -652,9 +652,9 @@ const { BeginnerStrategyEngine, STRATEGY_TYPES, FREQUENCIES } = require('../../s
  * GET /api/agents/beginner/presets
  * Get beginner strategy presets
  */
-router.get('/beginner/presets', (req, res) => {
+router.get('/beginner/presets', async (req, res) => {
   try {
-    const presets = agentService.getBeginnerPresets();
+    const presets = await agentService.getBeginnerPresets();
     res.json({ success: true, data: presets });
   } catch (error) {
     console.error('Error fetching beginner presets:', error);
@@ -666,7 +666,7 @@ router.get('/beginner/presets', (req, res) => {
  * GET /api/agents/beginner/strategy-types
  * Get available beginner strategy types with descriptions
  */
-router.get('/beginner/strategy-types', (req, res) => {
+router.get('/beginner/strategy-types', async (req, res) => {
   try {
     const types = [
       {

@@ -36,7 +36,7 @@ router.get('/', async (req, res) => {
     if (outcome) options.outcome = outcome.toUpperCase();
     if (regime) options.regime = regime.toUpperCase();
 
-    const recommendations = tracker.getRecentRecommendations(parseInt(limit), options);
+    const recommendations = await tracker.getRecentRecommendations(parseInt(limit), options);
 
     res.json({
       success: true,
@@ -110,7 +110,7 @@ router.get('/performance/summary', async (req, res) => {
     if (regime) options.regime = regime.toUpperCase();
     if (action) options.action = action.toUpperCase();
 
-    const stats = tracker.getPerformanceStats(options);
+    const stats = await tracker.getPerformanceStats(options);
 
     res.json({
       success: true,
@@ -129,7 +129,7 @@ router.get('/performance/by-signal', async (req, res) => {
     const tracker = await getTracker();
     const { period = '90d' } = req.query;
 
-    const icBySignal = tracker.getICBySignalType(period);
+    const icBySignal = await tracker.getICBySignalType(period);
 
     res.json({
       success: true,
@@ -148,7 +148,7 @@ router.get('/performance/by-regime', async (req, res) => {
     const tracker = await getTracker();
     const { period = '90d' } = req.query;
 
-    const hitRateByRegime = tracker.getHitRateByRegime(period);
+    const hitRateByRegime = await tracker.getHitRateByRegime(period);
 
     res.json({
       success: true,
@@ -167,7 +167,7 @@ router.get('/performance/optimal-weights', async (req, res) => {
     const tracker = await getTracker();
     const { lookbackDays = 90 } = req.query;
 
-    const { weights, ics } = tracker.getOptimalWeights(parseInt(lookbackDays));
+    const { weights, ics } = await tracker.getOptimalWeights(parseInt(lookbackDays));
 
     res.json({
       success: true,
@@ -195,7 +195,7 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'recommendation object required' });
     }
 
-    const id = tracker.trackRecommendation(recommendation, portfolioId || null);
+    const id = await tracker.trackRecommendation(recommendation, portfolioId || null);
 
     res.json({
       success: true,
@@ -209,9 +209,9 @@ router.post('/', async (req, res) => {
 });
 
 // POST /api/recommendations/:id/execute - Mark recommendation as executed
-router.post('/:id/execute', (req, res) => {
+router.post('/:id/execute', async (req, res) => {
   try {
-    const tracker = getTracker(req);
+    const tracker = await getTracker();
     const { id } = req.params;
     const { executedPrice, executedAt } = req.body;
 
@@ -219,7 +219,7 @@ router.post('/:id/execute', (req, res) => {
       return res.status(400).json({ error: 'executedPrice required' });
     }
 
-    const success = tracker.markExecuted(
+    const success = await tracker.markExecuted(
       parseInt(id),
       parseFloat(executedPrice),
       executedAt || null
@@ -262,11 +262,11 @@ router.post('/update-outcomes', async (req, res) => {
 });
 
 // GET /api/recommendations/update-status - Get outcome updater status
-router.get('/update-status', (req, res) => {
+router.get('/update-status', async (req, res) => {
   try {
     const { outcomeUpdater } = require('../../jobs/outcomeUpdater');
 
-    const status = outcomeUpdater.getStatus();
+    const status = await outcomeUpdater.getStatus();
 
     res.json({
       success: true,
@@ -279,11 +279,11 @@ router.get('/update-status', (req, res) => {
 });
 
 // POST /api/recommendations/recalculate-performance - Recalculate signal performance
-router.post('/recalculate-performance', (req, res) => {
+router.post('/recalculate-performance', async (req, res) => {
   try {
-    const tracker = getTracker(req);
+    const tracker = await getTracker();
 
-    tracker.recalculateSignalPerformance();
+    await tracker.recalculateSignalPerformance();
 
     res.json({
       success: true,
@@ -296,12 +296,12 @@ router.post('/recalculate-performance', (req, res) => {
 });
 
 // GET /api/recommendations/signal-weights/:regime - Get current signal weights for regime
-router.get('/signal-weights/:regime', (req, res) => {
+router.get('/signal-weights/:regime', async (req, res) => {
   try {
     const { outcomeUpdater } = require('../../jobs/outcomeUpdater');
     const { regime } = req.params;
 
-    const weights = outcomeUpdater.getSignalWeights(regime.toUpperCase());
+    const weights = await outcomeUpdater.getSignalWeights(regime.toUpperCase());
 
     res.json({
       success: true,

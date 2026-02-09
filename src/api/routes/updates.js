@@ -332,13 +332,13 @@ router.post('/company/:symbol/check', async (req, res) => {
  * GET /api/updates/companies-needing-update
  * Get list of companies that need updates
  */
-router.get('/companies-needing-update', (req, res) => {
+router.get('/companies-needing-update', async (req, res) => {
   try {
     const upd = initializeUpdater();
     const { limit = 50, offset = 0 } = req.query;
 
     // Query companies that need update from freshness table
-    const companies = db.prepare(`
+    const companies = await db.prepare(`
       SELECT
         cdf.company_id,
         cdf.cik,
@@ -360,7 +360,7 @@ router.get('/companies-needing-update', (req, res) => {
     `).all(parseInt(limit), parseInt(offset));
 
     // Get total count
-    const totalResult = db.prepare(`
+    const totalResult = await db.prepare(`
       SELECT COUNT(*) as count FROM company_data_freshness WHERE needs_update = 1
     `).get();
 
@@ -386,7 +386,7 @@ router.get('/companies-needing-update', (req, res) => {
  * DELETE /api/updates/cancel
  * Cancel running update (not fully implemented - updates run to completion)
  */
-router.delete('/cancel', (req, res) => {
+router.delete('/cancel', async (req, res) => {
   if (!updateInProgress) {
     return res.json({ message: 'No update in progress' });
   }

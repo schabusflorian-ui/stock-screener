@@ -333,7 +333,7 @@ router.post('/manual-link', async (req, res) => {
     }
 
     const svc = getServices();
-    const success = svc.linker.manualLink(lei, companyId);
+    const success = await svc.linker.manualLink(lei, companyId);
 
     res.json({
       success,
@@ -499,10 +499,10 @@ router.get('/exchanges', async (req, res) => {
  * GET /api/identifiers/exchanges/european
  * Get European exchanges only
  */
-router.get('/exchanges/european', (req, res) => {
+router.get('/exchanges/european', async (req, res) => {
   try {
     const svc = getServices();
-    const exchanges = svc.exchange.getEuropeanExchanges();
+    const exchanges = await svc.exchange.getEuropeanExchanges();
 
     res.json({
       success: true,
@@ -521,12 +521,12 @@ router.get('/exchanges/european', (req, res) => {
  * GET /api/identifiers/exchanges/country/:code
  * Get exchanges for a specific country
  */
-router.get('/exchanges/country/:code', (req, res) => {
+router.get('/exchanges/country/:code', async (req, res) => {
   try {
     const { code } = req.params;
 
     const svc = getServices();
-    const exchanges = svc.exchange.getExchangesForCountry(code);
+    const exchanges = await svc.exchange.getExchangesForCountry(code);
 
     if (exchanges.length === 0) {
       return res.status(404).json({
@@ -553,12 +553,12 @@ router.get('/exchanges/country/:code', (req, res) => {
  * GET /api/identifiers/exchanges/:mic
  * Get info for a specific exchange by MIC code
  */
-router.get('/exchanges/:mic', (req, res) => {
+router.get('/exchanges/:mic', async (req, res) => {
   try {
     const { mic } = req.params;
 
     const svc = getServices();
-    const info = svc.exchange.getExchangeInfo(mic.toUpperCase());
+    const info = await svc.exchange.getExchangeInfo(mic.toUpperCase());
 
     if (!info) {
       return res.status(404).json({
@@ -587,9 +587,9 @@ router.get('/exchanges/:mic', (req, res) => {
  * GET /api/identifiers/validate/lei/:lei
  * Validate an LEI format and checksum
  */
-router.get('/validate/lei/:lei', (req, res) => {
+router.get('/validate/lei/:lei', async (req, res) => {
   const { lei } = req.params;
-  const isValid = identifiers.GleifClient.validateLei(lei);
+  const isValid = await identifiers.GleifClient.validateLei(lei);
 
   res.json({
     success: true,
@@ -603,7 +603,7 @@ router.get('/validate/lei/:lei', (req, res) => {
  * Get Yahoo symbol for ticker + exchange
  * Query: exchange (required)
  */
-router.get('/symbol/:ticker', (req, res) => {
+router.get('/symbol/:ticker', async (req, res) => {
   try {
     const { ticker } = req.params;
     const { exchange } = req.query;
@@ -616,8 +616,8 @@ router.get('/symbol/:ticker', (req, res) => {
     }
 
     const svc = getServices();
-    const yahooSymbol = svc.exchange.getYahooSymbol(ticker, exchange);
-    const exchangeInfo = svc.exchange.getExchangeInfo(exchange);
+    const yahooSymbol = await svc.exchange.getYahooSymbol(ticker, exchange);
+    const exchangeInfo = await svc.exchange.getExchangeInfo(exchange);
 
     res.json({
       success: true,
@@ -642,10 +642,10 @@ router.get('/symbol/:ticker', (req, res) => {
  * POST /api/identifiers/cache/clear
  * Clear expired cache entries
  */
-router.post('/cache/clear', (req, res) => {
+router.post('/cache/clear', async (req, res) => {
   try {
     const svc = getServices();
-    const cleared = svc.resolver.clearExpiredCache();
+    const cleared = await svc.resolver.clearExpiredCache();
 
     res.json({
       success: true,
