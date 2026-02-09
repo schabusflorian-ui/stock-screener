@@ -304,7 +304,7 @@ router.get('/models/:name', async (req, res) => {
  * @route GET /api/rl/config
  * @description Get default RL configuration
  */
-router.get('/config', (req, res) => {
+router.get('/config', async (req, res) => {
   res.json({
     success: true,
     config: {

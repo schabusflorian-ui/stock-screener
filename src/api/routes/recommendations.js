@@ -95,9 +95,9 @@ router.get('/:id', async (req, res) => {
 // ============================================
 
 // GET /api/recommendations/performance - Aggregate performance stats
-router.get('/performance/summary', (req, res) => {
+router.get('/performance/summary', async (req, res) => {
   try {
-    const tracker = getTracker(req);
+    const tracker = await getTracker();
     const {
       period = '90d',
       signalType,
@@ -124,9 +124,9 @@ router.get('/performance/summary', (req, res) => {
 });
 
 // GET /api/recommendations/performance/by-signal - IC by signal type
-router.get('/performance/by-signal', (req, res) => {
+router.get('/performance/by-signal', async (req, res) => {
   try {
-    const tracker = getTracker(req);
+    const tracker = await getTracker();
     const { period = '90d' } = req.query;
 
     const icBySignal = tracker.getICBySignalType(period);
@@ -143,9 +143,9 @@ router.get('/performance/by-signal', (req, res) => {
 });
 
 // GET /api/recommendations/performance/by-regime - Performance by market regime
-router.get('/performance/by-regime', (req, res) => {
+router.get('/performance/by-regime', async (req, res) => {
   try {
-    const tracker = getTracker(req);
+    const tracker = await getTracker();
     const { period = '90d' } = req.query;
 
     const hitRateByRegime = tracker.getHitRateByRegime(period);
@@ -162,9 +162,9 @@ router.get('/performance/by-regime', (req, res) => {
 });
 
 // GET /api/recommendations/performance/optimal-weights - Get IC-optimized weights
-router.get('/performance/optimal-weights', (req, res) => {
+router.get('/performance/optimal-weights', async (req, res) => {
   try {
-    const tracker = getTracker(req);
+    const tracker = await getTracker();
     const { lookbackDays = 90 } = req.query;
 
     const { weights, ics } = tracker.getOptimalWeights(parseInt(lookbackDays));
@@ -186,9 +186,9 @@ router.get('/performance/optimal-weights', (req, res) => {
 // ============================================
 
 // POST /api/recommendations - Track a new recommendation
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
-    const tracker = getTracker(req);
+    const tracker = await getTracker();
     const { recommendation, portfolioId } = req.body;
 
     if (!recommendation) {

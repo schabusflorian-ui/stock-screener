@@ -221,10 +221,10 @@ router.get('/', async (req, res) => {
  * GET /api/investors/most-owned
  * Get stocks most owned by famous investors
  */
-router.get('/most-owned', (req, res) => {
+router.get('/most-owned', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 20;
-    const stocks = investorService.getMostOwnedStocks(limit);
+    const stocks = await investorService.getMostOwnedStocks(limit);
     res.json({
       success: true,
       count: stocks.length,
@@ -242,10 +242,10 @@ router.get('/most-owned', (req, res) => {
  * OPTIMIZED: Uses batch query instead of N+1 pattern (Tier 3 optimization)
  * CACHED: 5 minute TTL since data changes infrequently
  */
-router.get('/returns/leaderboard', responseCacheMiddleware(CACHE_LONG), (req, res) => {
+router.get('/returns/leaderboard', responseCacheMiddleware(CACHE_LONG), async (req, res) => {
   try {
     // Use optimized batch function instead of N+1 loop
-    const results = investorService.getAllInvestorReturnsSummary();
+    const results = await investorService.getAllInvestorReturnsSummary();
 
     res.json({
       success: true,
@@ -262,10 +262,10 @@ router.get('/returns/leaderboard', responseCacheMiddleware(CACHE_LONG), (req, re
  * GET /api/investors/activity
  * Get recent investor activity (new buys, sells)
  */
-router.get('/activity', (req, res) => {
+router.get('/activity', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 50;
-    const activity = investorService.getRecentActivity(limit);
+    const activity = await investorService.getRecentActivity(limit);
     res.json({
       success: true,
       count: activity.length,
@@ -281,10 +281,10 @@ router.get('/activity', (req, res) => {
  * GET /api/investors/by-stock/:symbol
  * Get investors who own a specific stock
  */
-router.get('/by-stock/:symbol', (req, res) => {
+router.get('/by-stock/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
-    const investors = investorService.getInvestorsBySymbol(symbol.toUpperCase());
+    const investors = await investorService.getInvestorsBySymbol(symbol.toUpperCase());
     res.json({
       success: true,
       symbol: symbol.toUpperCase(),

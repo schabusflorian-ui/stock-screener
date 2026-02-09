@@ -25,12 +25,12 @@ const alphaAnalytics = require('../../services/portfolio/alphaAnalytics');
  * GET /api/simulate/portfolios/:id/performance
  * Get performance metrics for a portfolio
  */
-router.get('/portfolios/:id/performance', (req, res) => {
+router.get('/portfolios/:id/performance', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const { period = '1y' } = req.query;
 
-    const metrics = metricsEngine.getPerformanceMetrics(portfolioId, period);
+    const metrics = await metricsEngine.getPerformanceMetrics(portfolioId, period);
 
     res.json({
       success: true,
@@ -49,10 +49,10 @@ router.get('/portfolios/:id/performance', (req, res) => {
  * GET /api/simulate/portfolios/:id/quick-metrics
  * Get quick dashboard metrics
  */
-router.get('/portfolios/:id/quick-metrics', (req, res) => {
+router.get('/portfolios/:id/quick-metrics', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
-    const metrics = metricsEngine.getQuickMetrics(portfolioId);
+    const metrics = await metricsEngine.getQuickMetrics(portfolioId);
 
     res.json({
       success: true,
@@ -71,10 +71,10 @@ router.get('/portfolios/:id/quick-metrics', (req, res) => {
  * GET /api/simulate/portfolios/:id/allocation
  * Get allocation breakdown for a portfolio
  */
-router.get('/portfolios/:id/allocation', (req, res) => {
+router.get('/portfolios/:id/allocation', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
-    const allocation = metricsEngine.getAllocation(portfolioId);
+    const allocation = await metricsEngine.getAllocation(portfolioId);
 
     res.json({
       success: true,
@@ -93,12 +93,12 @@ router.get('/portfolios/:id/allocation', (req, res) => {
  * GET /api/simulate/portfolios/:id/risk
  * Get risk metrics for a portfolio (alias for performance with risk focus)
  */
-router.get('/portfolios/:id/risk', (req, res) => {
+router.get('/portfolios/:id/risk', async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const { period = '1y' } = req.query;
 
-    const metrics = metricsEngine.getPerformanceMetrics(portfolioId, period);
+    const metrics = await metricsEngine.getPerformanceMetrics(portfolioId, period);
 
     // Extract risk-focused metrics
     const riskMetrics = {
@@ -136,7 +136,7 @@ router.get('/portfolios/:id/risk', (req, res) => {
  * POST /api/simulate/snapshots/create
  * Create a snapshot for a specific portfolio
  */
-router.post('/snapshots/create', (req, res) => {
+router.post('/snapshots/create', async (req, res) => {
   try {
     const { portfolioId, date } = req.body;
 
@@ -147,7 +147,7 @@ router.post('/snapshots/create', (req, res) => {
       });
     }
 
-    const result = metricsEngine.createDailySnapshot(portfolioId, date);
+    const result = await metricsEngine.createDailySnapshot(portfolioId, date);
 
     res.json({
       success: true,

@@ -48,12 +48,12 @@ function initializeUpdater() {
  * GET /api/updates/status
  * Get current update status and data freshness summary
  */
-router.get('/status', (req, res) => {
+router.get('/status', async (req, res) => {
   try {
     const upd = initializeUpdater();
 
-    const summary = upd.detector.getUpdateSummary();
-    const currentStatus = upd.getUpdateStatus();
+    const summary = await upd.detector.getUpdateSummary();
+    const currentStatus = await upd.getUpdateStatus();
     const availableQuarter = upd.getCurrentQuarter();
 
     res.json({
@@ -124,14 +124,14 @@ router.post('/run', async (req, res) => {
  * GET /api/updates/progress
  * Get real-time progress of running update (for polling)
  */
-router.get('/progress', (req, res) => {
+router.get('/progress', async (req, res) => {
   try {
     const upd = initializeUpdater();
 
     if (!updateInProgress) {
       return res.json({
         status: 'idle',
-        lastUpdate: upd.getLatestCompletedUpdate()
+        lastUpdate: await upd.getLatestCompletedUpdate()
       });
     }
 
@@ -148,11 +148,11 @@ router.get('/progress', (req, res) => {
  * GET /api/updates/history
  * Get history of past updates
  */
-router.get('/history', (req, res) => {
+router.get('/history', async (req, res) => {
   try {
     const upd = initializeUpdater();
     const { limit = 10 } = req.query;
-    const history = upd.getUpdateHistory(parseInt(limit));
+    const history = await upd.getUpdateHistory(parseInt(limit));
     res.json(history);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -228,7 +228,7 @@ router.post('/initialize-freshness', async (req, res) => {
  * GET /api/updates/quarters
  * Get list of available quarters based on current date
  */
-router.get('/quarters', (req, res) => {
+router.get('/quarters', async (req, res) => {
   try {
     const upd = initializeUpdater();
     const currentQuarter = upd.getCurrentQuarter();
@@ -265,13 +265,13 @@ router.get('/quarters', (req, res) => {
  * GET /api/updates/company/:symbol/freshness
  * Get freshness details for a specific company
  */
-router.get('/company/:symbol/freshness', (req, res) => {
+router.get('/company/:symbol/freshness', async (req, res) => {
   try {
     const upd = initializeUpdater();
     const { symbol } = req.params;
 
     // Get company by symbol
-    const company = db.prepare(`
+    const company = await db.prepare(`
       SELECT id FROM companies WHERE symbol = ?
     `).get(symbol.toUpperCase());
 

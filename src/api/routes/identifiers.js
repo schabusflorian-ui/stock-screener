@@ -357,7 +357,7 @@ router.post('/manual-link', async (req, res) => {
  * Lookup identifier records by various keys
  * Query params: lei, isin, yahooSymbol, companyId
  */
-router.get('/lookup', (req, res) => {
+router.get('/lookup', async (req, res) => {
   try {
     const { lei, isin, yahooSymbol, companyId } = req.query;
 
@@ -369,7 +369,7 @@ router.get('/lookup', (req, res) => {
     }
 
     const svc = getServices();
-    const record = svc.linker.lookupIdentifiers({
+    const record = await svc.linker.lookupIdentifiers({
       lei,
       isin,
       yahooSymbol,
@@ -400,12 +400,12 @@ router.get('/lookup', (req, res) => {
  * GET /api/identifiers/company/:companyId
  * Get all identifiers for a specific company
  */
-router.get('/company/:companyId', (req, res) => {
+router.get('/company/:companyId', async (req, res) => {
   try {
     const { companyId } = req.params;
 
     const svc = getServices();
-    const records = svc.linker.getCompanyIdentifiers(parseInt(companyId));
+    const records = await svc.linker.getCompanyIdentifiers(parseInt(companyId));
 
     res.json({
       success: true,
@@ -426,12 +426,12 @@ router.get('/company/:companyId', (req, res) => {
  * Get unlinked identifiers for manual review
  * Query params: limit (default 100)
  */
-router.get('/unlinked', (req, res) => {
+router.get('/unlinked', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 100;
 
     const svc = getServices();
-    const records = svc.linker.getUnlinkedIdentifiers(limit);
+    const records = await svc.linker.getUnlinkedIdentifiers(limit);
 
     res.json({
       success: true,
@@ -451,10 +451,10 @@ router.get('/unlinked', (req, res) => {
  * GET /api/identifiers/stats
  * Get linking statistics
  */
-router.get('/stats', (req, res) => {
+router.get('/stats', async (req, res) => {
   try {
     const svc = getServices();
-    const stats = svc.linker.getStatistics();
+    const stats = await svc.linker.getStatistics();
 
     res.json({
       success: true,
@@ -477,10 +477,10 @@ router.get('/stats', (req, res) => {
  * GET /api/identifiers/exchanges
  * Get all supported exchanges
  */
-router.get('/exchanges', (req, res) => {
+router.get('/exchanges', async (req, res) => {
   try {
     const svc = getServices();
-    const exchanges = svc.exchange.getAllExchanges();
+    const exchanges = await svc.exchange.getAllExchanges();
 
     res.json({
       success: true,
