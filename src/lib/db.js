@@ -415,12 +415,58 @@ async function initPostgres() {
     // Get a client for transactions
     getClient: () => pool.connect(),
 
-    // Transaction support (different API than SQLite)
+    // Prepare statement (SQLite compatibility layer)
+    // Returns statement object with .run(), .get(), .all() methods
+    // This allows routes using req.app.get('db').prepare() to work with PostgreSQL
+    prepare: (sql) => {
+      // Convert ? placeholders to $1, $2, etc.
+      const convertedSql = convertPlaceholders(sql);
+      const dialectSql = convertSQLDialect(convertedSql);
+
+      return {
+        // Run statement (INSERT/UPDATE/DELETE)
+        // Returns promise but can be called without await in transaction callbacks
+        run: (...params) => {
+          return pool.query(dialectSql, params).then(result => ({
+            changes: result.rowCount || 0,
+            lastInsertRowid: result.rows[0]?.id || null,
+          }));
+        },
+
+        // Get single row (SELECT - first result)
+        get: (...params) => {
+          return pool.query(dialectSql, params).then(result => result.rows[0] || null);
+        },
+
+        // Get all rows (SELECT - all results)
+        all: (...params) => {
+          return pool.query(dialectSql, params).then(result => result.rows);
+        }
+      };
+    },
+
+    // Transaction support (handles both SQLite and PostgreSQL signatures)
+    // Supports both: db.transaction(() => { stmt.run(...); }) [SQLite style]
+    //           and: db.transaction(async (client) => { await client.query(...); }) [PostgreSQL style]
     transaction: async (fn) => {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        const result = await fn(client);
+
+        // Check function signature to determine callback style
+        const fnString = fn.toString();
+        const hasClientParam = fnString.match(/^\s*(async\s+)?\(\s*client\s*\)/);
+
+        let result;
+        if (hasClientParam) {
+          // PostgreSQL style: fn(client) receives client for queries
+          result = await fn(client);
+        } else {
+          // SQLite style: fn() uses closured prepared statements
+          // The function will call stmt.run() which returns promises
+          result = await fn();
+        }
+
         await client.query('COMMIT');
         return result;
       } catch (err) {
