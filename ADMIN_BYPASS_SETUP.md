@@ -5,7 +5,70 @@ The admin bypass feature allows you to log in without going through Google OAuth
 - Emergency access if OAuth fails
 - Accessing admin features quickly
 
-## How It Works
+## Two Methods Available
+
+### Method 1: Login Page UI (Recommended)
+Click "Admin Access" on the login page and enter the admin code.
+
+### Method 2: Direct URL
+Visit `/api/auth/dev-login?secret=YOUR_SECRET` directly.
+
+---
+
+## Method 1: Login Page UI
+
+### How It Works
+
+1. On the login page, click **"Admin Access"** button (below the Google login button)
+2. Enter the admin code in the input field
+3. Click **"Access"**
+4. You'll be redirected to the homepage as an admin
+
+**Default Admin Code**: `prism-admin-2024`
+
+**Admin User Created**:
+- ID: `admin`
+- Email: `admin@local`
+- Name: `Admin`
+- Admin Flag: `isAdmin: true`
+- Session Duration: 24 hours
+
+### Setup for Production
+
+To change the default admin code for Railway:
+
+1. Go to **Railway dashboard** → **Variables**
+2. Add a new variable:
+   ```
+   Name: REACT_APP_ADMIN_CODE
+   Value: your-secure-admin-code-here
+   ```
+3. Click **Add** or **Save**
+4. Railway will automatically redeploy
+
+**Generate a secure code**:
+```bash
+# Generate a random 32-character code
+node -e "console.log(require('crypto').randomBytes(16).toString('hex'))"
+```
+
+### Local Development
+
+On **localhost** (http://localhost:3000), admin access is **automatically enabled** - you don't need to enter a code. Just visit the homepage and you'll be logged in as admin.
+
+### Testing on Railway
+
+1. Visit your app: `https://your-app.up.railway.app/login`
+2. Click **"Admin Access"** button
+3. Enter `prism-admin-2024` (or your custom code if you changed it)
+4. Click **"Access"**
+5. You should be redirected to the homepage, logged in as Admin
+
+---
+
+## Method 2: Direct URL Endpoint
+
+### How It Works
 
 The `/api/auth/dev-login` endpoint creates an admin session when you provide the correct secret.
 
