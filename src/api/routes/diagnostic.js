@@ -121,4 +121,145 @@ router.get('/oauth', (req, res) => {
   });
 });
 
+// GET /api/diagnostic/data - Check data availability for key features
+router.get('/data', async (req, res) => {
+  try {
+    const database = await getDatabaseAsync();
+    const checks = {
+      sectors: { available: false, details: {} },
+      factors: { available: false, details: {} },
+      alpha: { available: false, details: {} }
+    };
+
+    // Check 1: Sectors data (calculated_metrics)
+    try {
+      const sectorsCount = await database.query(`
+        SELECT COUNT(DISTINCT company_id) as companies_with_metrics,
+               COUNT(*) as total_metrics,
+               MAX(fiscal_period) as latest_period
+        FROM calculated_metrics
+        WHERE period_type = 'annual'
+      `);
+
+      const metricsData = sectorsCount.rows[0];
+      checks.sectors.available = parseInt(metricsData.companies_with_metrics) > 0;
+      checks.sectors.details = {
+        companiesWithMetrics: parseInt(metricsData.companies_with_metrics),
+        totalRecords: parseInt(metricsData.total_metrics),
+        latestPeriod: metricsData.latest_period
+      };
+
+      if (checks.sectors.available) {
+        const sectorBreakdown = await database.query(`
+          SELECT c.sector, COUNT(DISTINCT c.id) as company_count
+          FROM companies c
+          JOIN calculated_metrics m ON c.id = m.company_id
+          WHERE m.period_type = 'annual'
+            AND c.sector IS NOT NULL
+          GROUP BY c.sector
+          ORDER BY company_count DESC
+          LIMIT 5
+        `);
+        checks.sectors.details.topSectors = sectorBreakdown.rows;
+      }
+    } catch (error) {
+      checks.sectors.error = error.message;
+    }
+
+    // Check 2: Factor Analysis data
+    try {
+      const factorScoresCheck = await database.query(`
+        SELECT COUNT(*) as records,
+               COUNT(DISTINCT company_id) as companies,
+               MAX(date) as latest_date
+        FROM factor_scores
+      `);
+
+      const scoresData = factorScoresCheck.rows[0];
+      checks.factors.available = parseInt(scoresData.records) > 0;
+      checks.factors.details = {
+        totalRecords: parseInt(scoresData.records),
+        companies: parseInt(scoresData.companies),
+        latestDate: scoresData.latest_date
+      };
+
+      // Also check factor_performance table
+      try {
+        const perfCheck = await database.query(`
+          SELECT COUNT(*) as records FROM factor_performance
+        `);
+        checks.factors.details.performanceRecords = parseInt(perfCheck.rows[0].records);
+      } catch (e) {
+        checks.factors.details.performanceTableError = e.message.includes('does not exist') ? 'Table does not exist' : e.message;
+      }
+    } catch (error) {
+      checks.factors.error = error.message.includes('does not exist') ? 'factor_scores table does not exist' : error.message;
+    }
+
+    // Check 3: Alpha vs S&P 500 data (index_prices)
+    try {
+      const indexCheck = await database.query(`
+        SELECT COUNT(*) as records,
+               COUNT(DISTINCT index_symbol) as indices,
+               MAX(date) as latest_date
+        FROM index_prices
+      `);
+
+      const indexData = indexCheck.rows[0];
+      checks.alpha.available = parseInt(indexData.records) > 0;
+      checks.alpha.details = {
+        totalRecords: parseInt(indexData.records),
+        indicesTracked: parseInt(indexData.indices),
+        latestDate: indexData.latest_date
+      };
+
+      if (checks.alpha.available) {
+        // Check for SPY specifically
+        const spyCheck = await database.query(`
+          SELECT COUNT(*) as records,
+                 MIN(date) as earliest,
+                 MAX(date) as latest
+          FROM index_prices
+          WHERE index_symbol = 'SPY'
+        `);
+        checks.alpha.details.spyData = spyCheck.rows[0];
+      }
+
+      // Check price_metrics for companies
+      const priceMetricsCheck = await database.query(`
+        SELECT COUNT(DISTINCT company_id) as companies_with_prices
+        FROM price_metrics
+        WHERE last_price IS NOT NULL
+      `);
+      checks.alpha.details.companiesWithPrices = parseInt(priceMetricsCheck.rows[0].companies_with_prices);
+    } catch (error) {
+      checks.alpha.error = error.message.includes('does not exist') ? 'index_prices table does not exist' : error.message;
+    }
+
+    // Overall status
+    const allAvailable = checks.sectors.available && checks.factors.available && checks.alpha.available;
+
+    res.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      databaseType: isUsingPostgres() ? 'PostgreSQL' : 'SQLite',
+      allFeaturesAvailable: allAvailable,
+      checks,
+      recommendations: {
+        sectors: !checks.sectors.available ? 'Run metrics calculation job to populate calculated_metrics table' : 'OK',
+        factors: !checks.factors.available ? 'Run factor calculation job to populate factor_scores table' : 'OK',
+        alpha: !checks.alpha.available ? 'Run index price update to populate index_prices table' : 'OK'
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: {
+        message: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      }
+    });
+  }
+});
+
 module.exports = router;
