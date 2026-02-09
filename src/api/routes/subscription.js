@@ -75,8 +75,8 @@ router.get('/', requireAuth, async (req, res) => {
     const db = req.app.get('db');
     const subscriptionService = getSubscriptionService(db);
 
-    const subscription = subscriptionService.getUserSubscription(req.user.id);
-    const usage = subscriptionService.getAllUsage(req.user.id);
+    const subscription = await subscriptionService.getUserSubscription(req.user.id);
+    const usage = await subscriptionService.getAllUsage(req.user.id);
 
     // Build usage with limits
     const usageWithLimits = {};
@@ -131,12 +131,12 @@ router.get('/tiers', optionalAuth, async (req, res) => {
     const db = req.app.get('db');
     const subscriptionService = getSubscriptionService(db);
 
-    const tiers = subscriptionService.getAllTiers();
+    const tiers = await subscriptionService.getAllTiers();
 
     // Get current tier if authenticated
     let currentTier = null;
     if (req.user?.id) {
-      const subscription = subscriptionService.getUserSubscription(req.user.id);
+      const subscription = await subscriptionService.getUserSubscription(req.user.id);
       currentTier = subscription.tier_name;
     }
 
@@ -203,7 +203,7 @@ router.post('/checkout', requireAuth, async (req, res) => {
 
     const db = req.app.get('db');
     const subscriptionService = getSubscriptionService(db);
-    const currentSub = subscriptionService.getUserSubscription(req.user.id);
+    const currentSub = await subscriptionService.getUserSubscription(req.user.id);
 
     // Create or get Stripe customer
     let customerId = currentSub.stripe_customer_id;
@@ -219,7 +219,7 @@ router.post('/checkout', requireAuth, async (req, res) => {
       customerId = customer.id;
 
       // Save customer ID
-      subscriptionService.createOrUpdateSubscription(req.user.id, {
+      await subscriptionService.createOrUpdateSubscription(req.user.id, {
         stripeCustomerId: customerId
       });
     }
@@ -284,7 +284,7 @@ router.post('/portal', requireAuth, async (req, res) => {
   try {
     const db = req.app.get('db');
     const subscriptionService = getSubscriptionService(db);
-    const subscription = subscriptionService.getUserSubscription(req.user.id);
+    const subscription = await subscriptionService.getUserSubscription(req.user.id);
 
     if (!subscription.stripe_customer_id) {
       return res.status(400).json({
@@ -324,7 +324,7 @@ router.post('/cancel', requireAuth, async (req, res) => {
 
     const db = req.app.get('db');
     const subscriptionService = getSubscriptionService(db);
-    const subscription = subscriptionService.getUserSubscription(req.user.id);
+    const subscription = await subscriptionService.getUserSubscription(req.user.id);
 
     if (subscription.tier_name === 'free') {
       return res.status(400).json({
@@ -345,7 +345,7 @@ router.post('/cancel', requireAuth, async (req, res) => {
     }
 
     // Update local subscription
-    subscriptionService.cancelSubscription(req.user.id, reason, immediate);
+    await subscriptionService.cancelSubscription(req.user.id, reason, immediate);
 
     res.json({
       success: true,
