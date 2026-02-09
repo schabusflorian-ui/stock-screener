@@ -7,14 +7,27 @@ const { getDatabaseAsync } = require('../../database');
 const CapitalAllocationTracker = require('../../services/capitalAllocationTracker');
 const DividendService = require('../../services/dividendService');
 
-let capitalTracker;
+// Lazy initialization cache
+let capitalTracker = null;
+let capitalTrackerPromise = null;
 
-// Initialize capital allocation tracker
-try {
-    const database = await getDatabaseAsync();
-  capitalTracker = new CapitalAllocationTracker(database);
-} catch (error) {
-  console.error('Failed to initialize CapitalAllocationTracker:', error.message);
+async function getCapitalTracker() {
+  if (capitalTracker) return capitalTracker;
+  if (capitalTrackerPromise) return capitalTrackerPromise;
+
+  capitalTrackerPromise = (async () => {
+    try {
+      const database = await getDatabaseAsync();
+      capitalTracker = new CapitalAllocationTracker(database);
+      return capitalTracker;
+    } catch (error) {
+      console.error('Failed to initialize CapitalAllocationTracker:', error.message);
+      capitalTrackerPromise = null;
+      throw error;
+    }
+  })();
+
+  return capitalTrackerPromise;
 }
 
 /**
@@ -26,21 +39,25 @@ try {
 router.get('/top-yield', async (req, res) => {
   try {
     const { limit = 20 } = req.query;
+    const database = await getDatabaseAsync();
 
     // Try the capitalTracker method first
-    if (capitalTracker) {
-      const results = capitalTracker.getTopShareholderYield(parseInt(limit));
+    try {
+      const tracker = await getCapitalTracker();
+      const results = await tracker.getTopShareholderYield(parseInt(limit));
       if (results.length > 0) {
         return res.json({
           count: results.length,
           companies: results
         });
       }
+    } catch (trackerError) {
+      console.log('CapitalTracker unavailable, using fallback query');
     }
 
     // Fallback: query directly for companies with highest total shareholder return
     // This works even when shareholder_yield is not calculated (requires market cap)
-    const results = database.prepare(`
+    const resultsQuery = await database.query(`
       SELECT
         c.id, c.symbol, c.name, c.sector,
         cas.fiscal_quarter,
@@ -62,8 +79,9 @@ router.get('/top-yield', async (req, res) => {
           WHERE company_id = cas.company_id AND fiscal_quarter LIKE '%-FY'
         )
       ORDER BY cas.total_shareholder_return DESC
-      LIMIT ?
-    `).all(parseInt(limit));
+      LIMIT $1
+    `, [parseInt(limit)]);
+    const results = resultsQuery.rows;
 
     res.json({
       count: results.length,
@@ -84,9 +102,10 @@ router.get('/top-yield', async (req, res) => {
 router.get('/dividend-aristocrats', async (req, res) => {
   try {
     const { minYears = 25 } = req.query;
+    const database = await getDatabaseAsync();
 
     // First try the new dividend_metrics table
-    const results = database.prepare(`
+    const resultsQuery = await database.query(`
       SELECT
         c.id, c.symbol, c.name, c.sector, c.market_cap,
         dm.dividend_yield,
@@ -104,10 +123,11 @@ router.get('/dividend-aristocrats', async (req, res) => {
         dm.is_dividend_king
       FROM dividend_metrics dm
       JOIN companies c ON dm.company_id = c.id
-      WHERE dm.years_of_growth >= ?
+      WHERE dm.years_of_growth >= $1
         AND dm.dividend_yield > 0
       ORDER BY dm.years_of_growth DESC, dm.dividend_yield DESC
-    `).all(parseInt(minYears));
+    `, [parseInt(minYears)]);
+    const results = resultsQuery.rows;
 
     if (results.length > 0) {
       return res.json({
@@ -119,8 +139,9 @@ router.get('/dividend-aristocrats', async (req, res) => {
     }
 
     // Fallback: Use capitalTracker method if dividend_metrics is empty
-    if (capitalTracker) {
-      const fallbackResults = capitalTracker.getDividendAristocrats(parseInt(minYears));
+    try {
+      const tracker = await getCapitalTracker();
+      const fallbackResults = await tracker.getDividendAristocrats(parseInt(minYears));
       if (fallbackResults.length > 0) {
         return res.json({
           minYears: parseInt(minYears),
@@ -129,10 +150,12 @@ router.get('/dividend-aristocrats', async (req, res) => {
           note: 'Based on dividend payment history'
         });
       }
+    } catch (trackerError) {
+      console.log('CapitalTracker unavailable for aristocrats, using fallback');
     }
 
     // Final fallback: Use capital_allocation_summary
-    const fallbackResults = database.prepare(`
+    const fallbackQuery = await database.query(`
       WITH dividend_years AS (
         SELECT
           company_id,
@@ -151,7 +174,7 @@ router.get('/dividend-aristocrats', async (req, res) => {
           AVG(annual_dividends) as avg_annual_dividend
         FROM dividend_years
         GROUP BY company_id
-        HAVING COUNT(*) >= ?
+        HAVING COUNT(*) >= $1
       )
       SELECT
         c.id, c.symbol, c.name, c.sector,
@@ -167,7 +190,8 @@ router.get('/dividend-aristocrats', async (req, res) => {
         AND cas.fiscal_quarter = cs.latest_year || '-FY'
       ORDER BY cs.years_paying_dividends DESC, cs.avg_annual_dividend DESC
       LIMIT 100
-    `).all(parseInt(minYears));
+    `, [parseInt(minYears)]);
+    const fallbackResults = fallbackQuery.rows;
 
     res.json({
       minYears: parseInt(minYears),
@@ -187,7 +211,7 @@ router.get('/dividend-aristocrats', async (req, res) => {
 router.get('/dividend-kings', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
-    const results = database.prepare(`
+    const resultsQuery = await database.query(`
       SELECT
         c.id, c.symbol, c.name, c.sector, c.market_cap,
         dm.dividend_yield,
@@ -206,7 +230,8 @@ router.get('/dividend-kings', async (req, res) => {
       WHERE dm.is_dividend_king = 1
         OR dm.years_of_growth >= 50
       ORDER BY dm.years_of_growth DESC, dm.dividend_yield DESC
-    `).all();
+    `);
+    const results = resultsQuery.rows;
 
     res.json({
       count: results.length,
@@ -230,6 +255,7 @@ router.get('/dividend-kings', async (req, res) => {
  */
 router.get('/top-dividend-yielders', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const {
       minYield = 0,
       maxYield = 15,
@@ -252,23 +278,24 @@ router.get('/top-dividend-yielders', async (req, res) => {
         dm.is_dividend_king
       FROM dividend_metrics dm
       JOIN companies c ON dm.company_id = c.id
-      WHERE dm.dividend_yield >= ?
-        AND dm.dividend_yield <= ?
-        AND dm.years_of_growth >= ?
+      WHERE dm.dividend_yield >= $1
+        AND dm.dividend_yield <= $2
+        AND dm.years_of_growth >= $3
         AND dm.dividend_yield IS NOT NULL
     `;
 
     const params = [parseFloat(minYield), parseFloat(maxYield), parseInt(minYearsGrowth)];
 
     if (sector) {
-      sql += ' AND c.sector = ?';
+      sql += ' AND c.sector = $4';
       params.push(sector);
     }
 
-    sql += ' ORDER BY dm.dividend_yield DESC LIMIT ?';
+    sql += ` ORDER BY dm.dividend_yield DESC LIMIT $${params.length + 1}`;
     params.push(parseInt(limit));
 
-    const results = database.prepare(sql).all(...params);
+    const resultsQuery = await database.query(sql, params);
+    const results = resultsQuery.rows;
 
     res.json({
       count: results.length,
@@ -289,6 +316,7 @@ router.get('/top-dividend-yielders', async (req, res) => {
  */
 router.get('/dividend-growth-leaders', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { period = '5y', limit = 50 } = req.query;
 
     const growthColumn = {
@@ -298,7 +326,7 @@ router.get('/dividend-growth-leaders', async (req, res) => {
       '10y': 'dividend_growth_10y'
     }[period] || 'dividend_growth_5y';
 
-    const results = database.prepare(`
+    const resultsQuery = await database.query(`
       SELECT
         c.id, c.symbol, c.name, c.sector, c.market_cap,
         dm.dividend_yield,
@@ -314,8 +342,9 @@ router.get('/dividend-growth-leaders', async (req, res) => {
         AND dm.${growthColumn} > 0
         AND dm.dividend_yield > 0
       ORDER BY dm.${growthColumn} DESC
-      LIMIT ?
-    `).all(parseInt(limit));
+      LIMIT $1
+    `, [parseInt(limit)]);
+    const results = resultsQuery.rows;
 
     res.json({
       period,
@@ -334,7 +363,7 @@ router.get('/dividend-growth-leaders', async (req, res) => {
 router.get('/dividends-by-sector', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
-    const results = database.prepare(`
+    const resultsQuery = await database.query(`
       SELECT
         c.sector,
         COUNT(*) as company_count,
@@ -350,7 +379,8 @@ router.get('/dividends-by-sector', async (req, res) => {
         AND dm.dividend_yield > 0
       GROUP BY c.sector
       ORDER BY avg_yield DESC
-    `).all();
+    `);
+    const results = resultsQuery.rows;
 
     res.json({
       sectorCount: results.length,
@@ -368,6 +398,7 @@ router.get('/dividends-by-sector', async (req, res) => {
  */
 router.get('/dividend-screen', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const {
       minYield,
       maxYield,
@@ -403,33 +434,34 @@ router.get('/dividend-screen', async (req, res) => {
     `;
 
     const params = [];
+    let paramIndex = 1;
 
     if (minYield) {
-      sql += ' AND dm.dividend_yield >= ?';
+      sql += ` AND dm.dividend_yield >= $${paramIndex++}`;
       params.push(parseFloat(minYield));
     }
     if (maxYield) {
-      sql += ' AND dm.dividend_yield <= ?';
+      sql += ` AND dm.dividend_yield <= $${paramIndex++}`;
       params.push(parseFloat(maxYield));
     }
     if (minPayoutRatio) {
-      sql += ' AND dm.payout_ratio >= ?';
+      sql += ` AND dm.payout_ratio >= $${paramIndex++}`;
       params.push(parseFloat(minPayoutRatio));
     }
     if (maxPayoutRatio) {
-      sql += ' AND dm.payout_ratio <= ?';
+      sql += ` AND dm.payout_ratio <= $${paramIndex++}`;
       params.push(parseFloat(maxPayoutRatio));
     }
     if (minYearsGrowth) {
-      sql += ' AND dm.years_of_growth >= ?';
+      sql += ` AND dm.years_of_growth >= $${paramIndex++}`;
       params.push(parseInt(minYearsGrowth));
     }
     if (minGrowth5y) {
-      sql += ' AND dm.dividend_growth_5y >= ?';
+      sql += ` AND dm.dividend_growth_5y >= $${paramIndex++}`;
       params.push(parseFloat(minGrowth5y));
     }
     if (sector) {
-      sql += ' AND c.sector = ?';
+      sql += ` AND c.sector = $${paramIndex++}`;
       params.push(sector);
     }
     if (sp500Only === 'true') {
@@ -450,10 +482,11 @@ router.get('/dividend-screen', async (req, res) => {
     const sortColumn = validSortColumns.includes(sortBy) ? sortBy : 'dividend_yield';
     const order = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
-    sql += ` ORDER BY dm.${sortColumn} ${order} NULLS LAST LIMIT ?`;
+    sql += ` ORDER BY dm.${sortColumn} ${order} NULLS LAST LIMIT $${paramIndex}`;
     params.push(parseInt(limit));
 
-    const results = database.prepare(sql).all(...params);
+    const resultsQuery = await database.query(sql, params);
+    const results = resultsQuery.rows;
 
     res.json({
       count: results.length,
@@ -473,6 +506,7 @@ router.get('/dividend-screen', async (req, res) => {
  */
 router.get('/recent-events', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { limit = 50, type } = req.query;
 
     // First try the capitalTracker method (queries significant_events table)
@@ -494,7 +528,7 @@ router.get('/recent-events', async (req, res) => {
 
     // Fallback: Generate events from significant changes in capital allocation data
     // Find companies with notable dividend or buyback changes year-over-year
-    const events = database.prepare(`
+    const eventsQuery = await database.query(`
       WITH yearly_data AS (
         SELECT
           cas.company_id,
@@ -556,8 +590,9 @@ router.get('/recent-events', async (req, res) => {
       JOIN companies c ON yoy.company_id = c.id
       WHERE yoy.event_type IS NOT NULL
       ORDER BY yoy.event_year DESC, yoy.current_dividends DESC
-      LIMIT ?
-    `).all(parseInt(limit));
+      LIMIT $1
+    `, [parseInt(limit)]);
+    const events = eventsQuery.rows;
 
     // Filter by type if specified
     const filteredEvents = type ? events.filter(e => e.event_type === type) : events;
@@ -587,9 +622,10 @@ router.get('/recent-events', async (req, res) => {
  */
 router.get('/top-buybacks', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { limit = 20 } = req.query;
 
-    const results = database.prepare(`
+    const resultsQuery = await database.query(`
       SELECT
         c.id, c.symbol, c.name, c.sector,
         cas.fiscal_quarter,
@@ -608,8 +644,9 @@ router.get('/top-buybacks', async (req, res) => {
           WHERE company_id = cas.company_id AND fiscal_quarter LIKE '%-FY'
         )
       ORDER BY cas.buybacks_executed DESC
-      LIMIT ?
-    `).all(parseInt(limit));
+      LIMIT $1
+    `, [parseInt(limit)]);
+    const results = resultsQuery.rows;
 
     res.json({
       count: results.length,
@@ -628,12 +665,15 @@ router.get('/top-buybacks', async (req, res) => {
  */
 router.get('/company/:symbol', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { symbol } = req.params;
     const { quarters = 8 } = req.query;
 
-    const company = database.prepare(
-      'SELECT id, symbol, name, market_cap FROM companies WHERE LOWER(symbol) = LOWER(?)'
-    ).get(symbol.toUpperCase());
+    const companyQuery = await database.query(
+      'SELECT id, symbol, name, market_cap FROM companies WHERE LOWER(symbol) = LOWER($1)',
+      [symbol.toUpperCase()]
+    );
+    const company = companyQuery.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -651,12 +691,13 @@ router.get('/company/:symbol', async (req, res) => {
     // Calculate dividend yield if we have market cap
     if (company.market_cap && overview.dividends.annualDividend) {
       // Get shares outstanding from latest balance sheet
-      const sharesData = database.prepare(`
+      const sharesDataQuery = await database.query(`
         SELECT data FROM financial_data
-        WHERE company_id = ? AND statement_type = 'balance_sheet'
+        WHERE company_id = $1 AND statement_type = 'balance_sheet'
         ORDER BY fiscal_date_ending DESC
         LIMIT 1
-      `).get(company.id);
+      `, [company.id]);
+      const sharesData = sharesDataQuery.rows[0];
 
       if (sharesData) {
         const data = JSON.parse(sharesData.data);
@@ -690,30 +731,35 @@ router.get('/company/:symbol', async (req, res) => {
  */
 router.get('/company/:symbol/buybacks', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { symbol } = req.params;
 
-    const company = database.prepare(
-      'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)'
-    ).get(symbol.toUpperCase());
+    const companyQuery = await database.query(
+      'SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)',
+      [symbol.toUpperCase()]
+    );
+    const company = companyQuery.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
     }
 
     // Get all buyback programs
-    const programs = database.prepare(`
+    const programsQuery = await database.query(`
       SELECT * FROM buyback_programs
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY announced_date DESC
-    `).all(company.id);
+    `, [company.id]);
+    const programs = programsQuery.rows;
 
     // Get quarterly execution
-    const activity = database.prepare(`
+    const activityQuery = await database.query(`
       SELECT * FROM buyback_activity
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY fiscal_quarter DESC
       LIMIT 20
-    `).all(company.id);
+    `, [company.id]);
+    const activity = activityQuery.rows;
 
     // Calculate totals
     const totals = {
@@ -742,52 +788,58 @@ router.get('/company/:symbol/buybacks', async (req, res) => {
  */
 router.get('/company/:symbol/dividends', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { symbol } = req.params;
     const { limit = 40 } = req.query;
 
-    const company = database.prepare(
-      'SELECT id, symbol, name, market_cap, sector FROM companies WHERE LOWER(symbol) = LOWER(?)'
-    ).get(symbol.toUpperCase());
+    const companyQuery = await database.query(
+      'SELECT id, symbol, name, market_cap, sector FROM companies WHERE LOWER(symbol) = LOWER($1)',
+      [symbol.toUpperCase()]
+    );
+    const company = companyQuery.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
     }
 
     // Get dividend metrics from dividend_metrics table (primary source)
-    const metrics = database.prepare(`
+    const metricsQuery = await database.query(`
       SELECT
         dm.*
       FROM dividend_metrics dm
-      WHERE dm.company_id = ?
-    `).get(company.id);
+      WHERE dm.company_id = $1
+    `, [company.id]);
+    const metrics = metricsQuery.rows[0];
 
     // Get dividend history from dividend_history table (per-share dividends from yfinance)
-    const history = database.prepare(`
+    const historyQuery = await database.query(`
       SELECT
         ex_date,
         payment_date,
         amount,
         frequency
       FROM dividend_history
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY ex_date DESC
-      LIMIT ?
-    `).all(company.id, parseInt(limit));
+      LIMIT $2
+    `, [company.id, parseInt(limit)]);
+    const history = historyQuery.rows;
 
     // Fallback: Get from old dividends table if dividend_history is empty
     let fallbackHistory = [];
     if (history.length === 0) {
-      fallbackHistory = database.prepare(`
+      const fallbackQuery = await database.query(`
         SELECT
           ex_dividend_date as ex_date,
           payment_date,
           dividend_amount as amount,
           frequency
         FROM dividends
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY ex_dividend_date DESC
-        LIMIT ?
-      `).all(company.id, parseInt(limit));
+        LIMIT $2
+      `, [company.id, parseInt(limit)]);
+      fallbackHistory = fallbackQuery.rows;
     }
 
     // Get annual dividend info from capital allocation if metrics not available
@@ -848,48 +900,54 @@ router.get('/company/:symbol/dividends', async (req, res) => {
  */
 router.get('/company/:symbol/chart', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { symbol } = req.params;
     const { quarters = 20 } = req.query;
 
-    const company = database.prepare(
-      'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)'
-    ).get(symbol.toUpperCase());
+    const companyQuery = await database.query(
+      'SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)',
+      [symbol.toUpperCase()]
+    );
+    const company = companyQuery.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
     }
 
     // Get capital allocation summary
-    const summary = database.prepare(`
+    const summaryQuery = await database.query(`
       SELECT * FROM capital_allocation_summary
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY fiscal_quarter DESC
-      LIMIT ?
-    `).all(company.id, parseInt(quarters));
+      LIMIT $2
+    `, [company.id, parseInt(quarters)]);
+    const summary = summaryQuery.rows;
 
     // Get buyback activity
-    const buybacks = database.prepare(`
+    const buybacksQuery = await database.query(`
       SELECT fiscal_quarter, amount_spent, shares_repurchased, average_price
       FROM buyback_activity
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY fiscal_quarter DESC
-      LIMIT ?
-    `).all(company.id, parseInt(quarters));
+      LIMIT $2
+    `, [company.id, parseInt(quarters)]);
+    const buybacks = buybacksQuery.rows;
 
     // Get dividend payments aggregated by quarter
-    const dividends = database.prepare(`
+    const dividendsQuery = await database.query(`
       SELECT
-        strftime('%Y', ex_dividend_date) || '-Q' ||
-        ((CAST(strftime('%m', ex_dividend_date) AS INTEGER) + 2) / 3) as fiscal_quarter,
+        TO_CHAR(ex_dividend_date, 'YYYY') || '-Q' ||
+        EXTRACT(QUARTER FROM ex_dividend_date)::text as fiscal_quarter,
         SUM(dividend_amount) as total_dividend,
         COUNT(*) as payment_count
       FROM dividends
-      WHERE company_id = ?
+      WHERE company_id = $1
         AND dividend_type = 'regular'
       GROUP BY fiscal_quarter
       ORDER BY fiscal_quarter DESC
-      LIMIT ?
-    `).all(company.id, parseInt(quarters));
+      LIMIT $2
+    `, [company.id, parseInt(quarters)]);
+    const dividends = dividendsQuery.rows;
 
     // Format for charts
     const chartData = summary.reverse().map(s => ({
@@ -920,7 +978,7 @@ router.get('/stats', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
     // Combined query for all stats - runs as single transaction
-    const allStats = database.prepare(`
+    const allStatsQuery = await database.query(`
       WITH summary_stats AS (
         SELECT
           COUNT(DISTINCT company_id) as companies_with_data,
@@ -967,7 +1025,8 @@ router.get('/stats', async (req, res) => {
         ds.avg_years_growth,
         ds.max_years_growth
       FROM summary_stats ss, buyback_stats bs, dividend_stats ds
-    `).get();
+    `);
+    const allStats = allStatsQuery.rows[0];
 
     // Build buyback stats - use summary data as fallback
     const buybackStats = {
@@ -989,16 +1048,17 @@ router.get('/stats', async (req, res) => {
     };
 
     // Get recent events and top yielders in parallel (these are fast)
-    const recentEvents = database.prepare(`
+    const recentEventsQuery = await database.query(`
       SELECT event_type, COUNT(*) as count
       FROM significant_events
-      WHERE event_date >= date('now', '-3 months')
+      WHERE event_date >= CURRENT_DATE - INTERVAL '3 months'
         AND event_type IN ('buyback_announcement', 'dividend_increase', 'dividend_decrease', 'dividend_initiation')
       GROUP BY event_type
-    `).all();
+    `);
+    const recentEvents = recentEventsQuery.rows;
 
     // Top dividend yielders - with index on dividend_yield
-    const topYielders = database.prepare(`
+    const topYieldersQuery = await database.query(`
       SELECT c.symbol, c.name, dm.dividend_yield, dm.years_of_growth,
              dm.is_dividend_aristocrat, dm.is_dividend_king
       FROM dividend_metrics dm
@@ -1006,10 +1066,11 @@ router.get('/stats', async (req, res) => {
       WHERE dm.dividend_yield > 0 AND dm.dividend_yield < 15
       ORDER BY dm.dividend_yield DESC
       LIMIT 5
-    `).all();
+    `);
+    const topYielders = topYieldersQuery.rows;
 
     // Top shareholder return - optimized with direct join
-    const topYield = database.prepare(`
+    const topYieldQuery = await database.query(`
       SELECT c.symbol, c.name, cas.shareholder_yield, cas.total_shareholder_return
       FROM capital_allocation_summary cas
       JOIN companies c ON cas.company_id = c.id
@@ -1021,7 +1082,8 @@ router.get('/stats', async (req, res) => {
         )
       ORDER BY COALESCE(cas.shareholder_yield, 0) DESC, cas.total_shareholder_return DESC
       LIMIT 5
-    `).all();
+    `);
+    const topYield = topYieldQuery.rows;
 
     res.json({
       buybacks: buybackStats,
@@ -1043,10 +1105,11 @@ router.get('/stats', async (req, res) => {
  */
 router.get('/dividend-calendar', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { days = 30 } = req.query;
 
     // Try dividend_metrics first (has ex_dividend_date from yfinance)
-    let upcoming = database.prepare(`
+    const upcomingQuery = await database.query(`
       SELECT
         c.id as company_id,
         c.symbol,
@@ -1062,15 +1125,16 @@ router.get('/dividend-calendar', async (req, res) => {
         dm.is_dividend_king
       FROM dividend_metrics dm
       JOIN companies c ON dm.company_id = c.id
-      WHERE dm.ex_dividend_date >= date('now')
-        AND dm.ex_dividend_date <= date('now', '+' || ? || ' days')
+      WHERE dm.ex_dividend_date >= CURRENT_DATE
+        AND dm.ex_dividend_date <= CURRENT_DATE + $1 * INTERVAL '1 day'
         AND dm.dividend_yield > 0
       ORDER BY dm.ex_dividend_date ASC
-    `).all(parseInt(days));
+    `, [parseInt(days)]);
+    let upcoming = upcomingQuery.rows;
 
     // Fallback to old dividends table if dividend_metrics has no upcoming
     if (upcoming.length === 0) {
-      upcoming = database.prepare(`
+      const fallbackQuery = await database.query(`
         SELECT
           d.company_id,
           c.symbol,
@@ -1081,10 +1145,11 @@ router.get('/dividend-calendar', async (req, res) => {
           d.frequency as dividend_frequency
         FROM dividends d
         JOIN companies c ON d.company_id = c.id
-        WHERE d.ex_dividend_date >= date('now')
-          AND d.ex_dividend_date <= date('now', '+' || ? || ' days')
+        WHERE d.ex_dividend_date >= CURRENT_DATE
+          AND d.ex_dividend_date <= CURRENT_DATE + $1 * INTERVAL '1 day'
         ORDER BY d.ex_dividend_date ASC
-      `).all(parseInt(days));
+      `, [parseInt(days)]);
+      upcoming = fallbackQuery.rows;
     }
 
     // Group by date
@@ -1115,7 +1180,7 @@ router.get('/dividend-calendar', async (req, res) => {
 router.get('/sector-comparison', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
-    const comparison = database.prepare(`
+    const comparisonQuery = await database.query(`
       SELECT
         c.sector,
         COUNT(DISTINCT c.id) as company_count,
@@ -1135,7 +1200,8 @@ router.get('/sector-comparison', async (req, res) => {
       GROUP BY c.sector
       HAVING COUNT(DISTINCT c.id) >= 3
       ORDER BY avg_total_return DESC NULLS LAST
-    `).all();
+    `);
+    const comparison = comparisonQuery.rows;
 
     res.json({
       sectors: comparison
@@ -1153,17 +1219,18 @@ router.get('/update-status', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
     // Get data freshness stats
-    const summaryStats = database.prepare(`
+    const summaryStatsQuery = await database.query(`
       SELECT
         COUNT(*) as total_records,
         COUNT(DISTINCT company_id) as companies_tracked,
         MAX(updated_at) as last_update,
         MAX(fiscal_quarter) as latest_fiscal_quarter
       FROM capital_allocation_summary
-    `).get();
+    `);
+    const summaryStats = summaryStatsQuery.rows[0];
 
     // Get fiscal year breakdown
-    const fyBreakdown = database.prepare(`
+    const fyBreakdownQuery = await database.query(`
       SELECT
         SUBSTR(fiscal_quarter, 1, 4) as year,
         COUNT(DISTINCT company_id) as companies,
@@ -1173,7 +1240,8 @@ router.get('/update-status', async (req, res) => {
       GROUP BY SUBSTR(fiscal_quarter, 1, 4)
       ORDER BY year DESC
       LIMIT 5
-    `).all();
+    `);
+    const fyBreakdown = fyBreakdownQuery.rows;
 
     res.json({
       status: 'ready',
@@ -1198,7 +1266,8 @@ router.post('/update', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
     // Get company count for status message
-    const countResult = database.prepare('SELECT COUNT(*) as count FROM companies').get();
+    const countResultQuery = await database.query('SELECT COUNT(*) as count FROM companies');
+    const countResult = countResultQuery.rows[0];
     const totalCompanies = countResult.count;
 
     // Return immediately
@@ -1218,44 +1287,13 @@ router.post('/update', async (req, res) => {
 });
 
 // Background capital allocation update function
-function runCapitalUpdate() {
+async function runCapitalUpdate() {
   try {
     const database = await getDatabaseAsync();
-    const companies = database.prepare('SELECT id, symbol FROM companies').all();
+    const companiesQuery = await database.query('SELECT id, symbol FROM companies');
+    const companies = companiesQuery.rows;
     let processed = 0;
     let recordsUpdated = 0;
-
-    // Prepare upsert statement
-    const upsertSummary = database.prepare(`
-      INSERT INTO capital_allocation_summary (
-        company_id, fiscal_quarter,
-        operating_cash_flow, free_cash_flow,
-        dividends_paid, buybacks_executed, capex,
-        acquisitions, debt_repayment, debt_issuance,
-        total_shareholder_return, shareholder_yield,
-        dividend_pct_of_fcf, buyback_pct_of_fcf, capex_pct_of_revenue,
-        dividend_payout_ratio, total_payout_ratio
-      ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-      )
-      ON CONFLICT(company_id, fiscal_quarter) DO UPDATE SET
-        operating_cash_flow = excluded.operating_cash_flow,
-        free_cash_flow = excluded.free_cash_flow,
-        dividends_paid = excluded.dividends_paid,
-        buybacks_executed = excluded.buybacks_executed,
-        capex = excluded.capex,
-        acquisitions = excluded.acquisitions,
-        debt_repayment = excluded.debt_repayment,
-        debt_issuance = excluded.debt_issuance,
-        total_shareholder_return = excluded.total_shareholder_return,
-        shareholder_yield = excluded.shareholder_yield,
-        dividend_pct_of_fcf = excluded.dividend_pct_of_fcf,
-        buyback_pct_of_fcf = excluded.buyback_pct_of_fcf,
-        capex_pct_of_revenue = excluded.capex_pct_of_revenue,
-        dividend_payout_ratio = excluded.dividend_payout_ratio,
-        total_payout_ratio = excluded.total_payout_ratio,
-        updated_at = CURRENT_TIMESTAMP
-    `);
 
     // Helper functions
     const parseNum = (value) => {
@@ -1293,103 +1331,130 @@ function runCapitalUpdate() {
       return `${year}-${quarter}`;
     };
 
-    // Process companies in transaction
-    const processCompany = database.transaction((company) => {
-      // Get cash flow data
-      const cashFlowData = database.prepare(`
-        SELECT fiscal_date_ending, fiscal_period, period_type, data
-        FROM financial_data
-        WHERE company_id = ? AND statement_type = 'cash_flow'
-        ORDER BY fiscal_date_ending DESC
-      `).all(company.id);
-
-      if (cashFlowData.length === 0) return 0;
-
-      // Get income data for payout ratios
-      const incomeData = database.prepare(`
-        SELECT fiscal_date_ending, period_type, total_revenue,
-          json_extract(data, '$.netIncome') as net_income,
-          json_extract(data, '$.NetIncomeLoss') as net_income2
-        FROM financial_data
-        WHERE company_id = ? AND statement_type = 'income_statement'
-      `).all(company.id);
-
-      const incomeMap = {};
-      for (const row of incomeData) {
-        incomeMap[`${row.fiscal_date_ending}_${row.period_type}`] = {
-          revenue: parseNum(row.total_revenue),
-          netIncome: parseNum(row.net_income) || parseNum(row.net_income2)
-        };
-      }
-
-      // Get market cap
-      const companyInfo = database.prepare('SELECT market_cap FROM companies WHERE id = ?').get(company.id);
-      const marketCap = parseNum(companyInfo?.market_cap);
-
-      let count = 0;
-
-      for (const row of cashFlowData) {
-        try {
-          const data = JSON.parse(row.data);
-          const fiscalQuarter = getFiscalQuarter(row.fiscal_date_ending, row.fiscal_period, row.period_type);
-
-          const operatingCashFlow = extractValue(data, 'operatingCashFlow', 'NetCashProvidedByUsedInOperatingActivities');
-          const capex = extractValue(data, 'capitalExpenditures', 'PaymentsToAcquirePropertyPlantAndEquipment');
-          const dividendsPaid = extractValue(data, 'dividends', 'PaymentsOfDividends');
-          const buybacks = extractValue(data, 'stockRepurchase', 'PaymentsForRepurchaseOfCommonStock');
-          const debtRepayment = extractValue(data, 'debtRepayment', 'RepaymentsOfLongTermDebt', 'RepaymentsOfDebt');
-          const debtIssuance = extractValue(data, 'debtIssuance', 'ProceedsFromIssuanceOfLongTermDebt');
-          const acquisitions = extractValue(data, 'acquisitionsNet', 'PaymentsToAcquireBusinessesNetOfCashAcquired');
-
-          const freeCashFlow = operatingCashFlow !== null ? operatingCashFlow - Math.abs(capex || 0) : null;
-          const totalShareholderReturn = (dividendsPaid !== null || buybacks !== null)
-            ? Math.abs(dividendsPaid || 0) + Math.abs(buybacks || 0)
-            : null;
-
-          let dividendPctOfFcf = null, buybackPctOfFcf = null;
-          if (freeCashFlow && freeCashFlow > 0) {
-            if (dividendsPaid !== null) dividendPctOfFcf = (Math.abs(dividendsPaid) / freeCashFlow) * 100;
-            if (buybacks !== null) buybackPctOfFcf = (Math.abs(buybacks) / freeCashFlow) * 100;
-          }
-
-          const income = incomeMap[`${row.fiscal_date_ending}_${row.period_type}`] || {};
-          const capexPctOfRevenue = (capex !== null && income.revenue > 0) ? (Math.abs(capex) / income.revenue) * 100 : null;
-
-          let dividendPayoutRatio = null, totalPayoutRatio = null;
-          if (income.netIncome > 0) {
-            if (dividendsPaid !== null) dividendPayoutRatio = (Math.abs(dividendsPaid) / income.netIncome) * 100;
-            if (totalShareholderReturn !== null) totalPayoutRatio = (totalShareholderReturn / income.netIncome) * 100;
-          }
-
-          let shareholderYield = null;
-          if (marketCap > 0 && totalShareholderReturn !== null) {
-            shareholderYield = (totalShareholderReturn / marketCap) * 100;
-            if (row.period_type === 'quarterly') shareholderYield *= 4;
-          }
-
-          upsertSummary.run(
-            company.id, fiscalQuarter, operatingCashFlow, freeCashFlow,
-            dividendsPaid ? Math.abs(dividendsPaid) : null,
-            buybacks ? Math.abs(buybacks) : null,
-            capex ? Math.abs(capex) : null,
-            acquisitions ? Math.abs(acquisitions) : null,
-            debtRepayment ? Math.abs(debtRepayment) : null,
-            debtIssuance, totalShareholderReturn, shareholderYield,
-            dividendPctOfFcf, buybackPctOfFcf, capexPctOfRevenue,
-            dividendPayoutRatio, totalPayoutRatio
-          );
-          count++;
-        } catch (err) {
-          continue;
-        }
-      }
-      return count;
-    });
-
-    // Process all companies
+    // Process companies
     for (const company of companies) {
       try {
-        const count = processCompany(company);
+        // Get cash flow data
+        const cashFlowDataQuery = await database.query(`
+          SELECT fiscal_date_ending, fiscal_period, period_type, data
+          FROM financial_data
+          WHERE company_id = $1 AND statement_type = 'cash_flow'
+          ORDER BY fiscal_date_ending DESC
+        `, [company.id]);
+        const cashFlowData = cashFlowDataQuery.rows;
+
+        if (cashFlowData.length === 0) continue;
+
+        // Get income data for payout ratios
+        const incomeDataQuery = await database.query(`
+          SELECT fiscal_date_ending, period_type, total_revenue,
+            data->>'netIncome' as net_income,
+            data->>'NetIncomeLoss' as net_income2
+          FROM financial_data
+          WHERE company_id = $1 AND statement_type = 'income_statement'
+        `, [company.id]);
+        const incomeData = incomeDataQuery.rows;
+
+        const incomeMap = {};
+        for (const row of incomeData) {
+          incomeMap[`${row.fiscal_date_ending}_${row.period_type}`] = {
+            revenue: parseNum(row.total_revenue),
+            netIncome: parseNum(row.net_income) || parseNum(row.net_income2)
+          };
+        }
+
+        // Get market cap
+        const companyInfoQuery = await database.query('SELECT market_cap FROM companies WHERE id = $1', [company.id]);
+        const companyInfo = companyInfoQuery.rows[0];
+        const marketCap = parseNum(companyInfo?.market_cap);
+
+        let count = 0;
+
+        for (const row of cashFlowData) {
+          try {
+            const data = JSON.parse(row.data);
+            const fiscalQuarter = getFiscalQuarter(row.fiscal_date_ending, row.fiscal_period, row.period_type);
+
+            const operatingCashFlow = extractValue(data, 'operatingCashFlow', 'NetCashProvidedByUsedInOperatingActivities');
+            const capex = extractValue(data, 'capitalExpenditures', 'PaymentsToAcquirePropertyPlantAndEquipment');
+            const dividendsPaid = extractValue(data, 'dividends', 'PaymentsOfDividends');
+            const buybacks = extractValue(data, 'stockRepurchase', 'PaymentsForRepurchaseOfCommonStock');
+            const debtRepayment = extractValue(data, 'debtRepayment', 'RepaymentsOfLongTermDebt', 'RepaymentsOfDebt');
+            const debtIssuance = extractValue(data, 'debtIssuance', 'ProceedsFromIssuanceOfLongTermDebt');
+            const acquisitions = extractValue(data, 'acquisitionsNet', 'PaymentsToAcquireBusinessesNetOfCashAcquired');
+
+            const freeCashFlow = operatingCashFlow !== null ? operatingCashFlow - Math.abs(capex || 0) : null;
+            const totalShareholderReturn = (dividendsPaid !== null || buybacks !== null)
+              ? Math.abs(dividendsPaid || 0) + Math.abs(buybacks || 0)
+              : null;
+
+            let dividendPctOfFcf = null, buybackPctOfFcf = null;
+            if (freeCashFlow && freeCashFlow > 0) {
+              if (dividendsPaid !== null) dividendPctOfFcf = (Math.abs(dividendsPaid) / freeCashFlow) * 100;
+              if (buybacks !== null) buybackPctOfFcf = (Math.abs(buybacks) / freeCashFlow) * 100;
+            }
+
+            const income = incomeMap[`${row.fiscal_date_ending}_${row.period_type}`] || {};
+            const capexPctOfRevenue = (capex !== null && income.revenue > 0) ? (Math.abs(capex) / income.revenue) * 100 : null;
+
+            let dividendPayoutRatio = null, totalPayoutRatio = null;
+            if (income.netIncome > 0) {
+              if (dividendsPaid !== null) dividendPayoutRatio = (Math.abs(dividendsPaid) / income.netIncome) * 100;
+              if (totalShareholderReturn !== null) totalPayoutRatio = (totalShareholderReturn / income.netIncome) * 100;
+            }
+
+            let shareholderYield = null;
+            if (marketCap > 0 && totalShareholderReturn !== null) {
+              shareholderYield = (totalShareholderReturn / marketCap) * 100;
+              if (row.period_type === 'quarterly') shareholderYield *= 4;
+            }
+
+            await database.query(`
+              INSERT INTO capital_allocation_summary (
+                company_id, fiscal_quarter,
+                operating_cash_flow, free_cash_flow,
+                dividends_paid, buybacks_executed, capex,
+                acquisitions, debt_repayment, debt_issuance,
+                total_shareholder_return, shareholder_yield,
+                dividend_pct_of_fcf, buyback_pct_of_fcf, capex_pct_of_revenue,
+                dividend_payout_ratio, total_payout_ratio
+              ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+              )
+              ON CONFLICT(company_id, fiscal_quarter) DO UPDATE SET
+                operating_cash_flow = EXCLUDED.operating_cash_flow,
+                free_cash_flow = EXCLUDED.free_cash_flow,
+                dividends_paid = EXCLUDED.dividends_paid,
+                buybacks_executed = EXCLUDED.buybacks_executed,
+                capex = EXCLUDED.capex,
+                acquisitions = EXCLUDED.acquisitions,
+                debt_repayment = EXCLUDED.debt_repayment,
+                debt_issuance = EXCLUDED.debt_issuance,
+                total_shareholder_return = EXCLUDED.total_shareholder_return,
+                shareholder_yield = EXCLUDED.shareholder_yield,
+                dividend_pct_of_fcf = EXCLUDED.dividend_pct_of_fcf,
+                buyback_pct_of_fcf = EXCLUDED.buyback_pct_of_fcf,
+                capex_pct_of_revenue = EXCLUDED.capex_pct_of_revenue,
+                dividend_payout_ratio = EXCLUDED.dividend_payout_ratio,
+                total_payout_ratio = EXCLUDED.total_payout_ratio,
+                updated_at = CURRENT_TIMESTAMP
+            `, [
+              company.id, fiscalQuarter, operatingCashFlow, freeCashFlow,
+              dividendsPaid ? Math.abs(dividendsPaid) : null,
+              buybacks ? Math.abs(buybacks) : null,
+              capex ? Math.abs(capex) : null,
+              acquisitions ? Math.abs(acquisitions) : null,
+              debtRepayment ? Math.abs(debtRepayment) : null,
+              debtIssuance, totalShareholderReturn, shareholderYield,
+              dividendPctOfFcf, buybackPctOfFcf, capexPctOfRevenue,
+              dividendPayoutRatio, totalPayoutRatio
+            ]);
+            count++;
+          } catch (err) {
+            continue;
+          }
+        }
+
         recordsUpdated += count;
         processed++;
       } catch (err) {

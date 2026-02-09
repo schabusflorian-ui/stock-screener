@@ -12,13 +12,65 @@ const FearGreedFetcher = require('../../services/fearGreedFetcher');
 const SentimentAggregator = require('../../services/sentimentAggregator');
 const AnalystEstimatesFetcher = require('../../services/analystEstimates');
 
-let redditFetcher;
-let signalGenerator;
-let newsFetcher;
-let stocktwitsFetcher;
-let fearGreedFetcher;
-let sentimentAggregator;
-let analystEstimatesFetcher;
+// Lazy initialization cache
+let redditFetcher = null;
+let signalGenerator = null;
+let newsFetcher = null;
+let stocktwitsFetcher = null;
+let fearGreedFetcher = null;
+let sentimentAggregator = null;
+let analystEstimatesFetcher = null;
+let servicesPromise = null;
+
+async function getSentimentServices() {
+  if (redditFetcher && signalGenerator && newsFetcher) {
+    return {
+      redditFetcher,
+      signalGenerator,
+      newsFetcher,
+      stocktwitsFetcher,
+      fearGreedFetcher,
+      sentimentAggregator,
+      analystEstimatesFetcher
+    };
+  }
+
+  if (servicesPromise) return servicesPromise;
+
+  servicesPromise = (async () => {
+    try {
+      const database = await getDatabaseAsync();
+      redditFetcher = new RedditFetcher(database);
+      signalGenerator = new SentimentSignalGenerator(database);
+      newsFetcher = new NewsFetcher(database);
+      stocktwitsFetcher = new StockTwitsFetcher(database);
+      fearGreedFetcher = new FearGreedFetcher(database);
+      analystEstimatesFetcher = new AnalystEstimatesFetcher(database);
+      sentimentAggregator = new SentimentAggregator(database, {
+        reddit: redditFetcher,
+        stocktwits: stocktwitsFetcher,
+        news: newsFetcher,
+        fearGreed: fearGreedFetcher,
+        analyst: analystEstimatesFetcher,
+      });
+      return {
+        redditFetcher,
+        signalGenerator,
+        newsFetcher,
+        stocktwitsFetcher,
+        fearGreedFetcher,
+        sentimentAggregator,
+        analystEstimatesFetcher
+      };
+    } catch (error) {
+      console.error('Failed to initialize sentiment services:', error.message);
+      servicesPromise = null;
+      throw error;
+    }
+  })();
+
+  return servicesPromise;
+}
 
 /**
  * Safely map period parameter to SQLite datetime interval
@@ -39,26 +91,6 @@ function getSafeDateInterval(period) {
   return PERIOD_MAP[period] || '-7 days'; // Default to 7 days if invalid
 }
 
-// Initialize services
-try {
-    const database = await getDatabaseAsync();
-  redditFetcher = new RedditFetcher(database);
-  signalGenerator = new SentimentSignalGenerator(database);
-  newsFetcher = new NewsFetcher(database);
-  stocktwitsFetcher = new StockTwitsFetcher(database);
-  fearGreedFetcher = new FearGreedFetcher(database);
-  analystEstimatesFetcher = new AnalystEstimatesFetcher(database);
-  sentimentAggregator = new SentimentAggregator(database, {
-    reddit: redditFetcher,
-    stocktwits: stocktwitsFetcher,
-    news: newsFetcher,
-    fearGreed: fearGreedFetcher,
-    analyst: analystEstimatesFetcher,
-  });
-} catch (error) {
-  console.error('Failed to initialize sentiment services:', error.message);
-}
-
 /**
  * GET /api/sentiment/status
  * Get sentiment data status for Updates page
@@ -67,35 +99,38 @@ router.get('/status', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
     // Get counts from trending_tickers
-    const trendingStats = database.prepare(`
+    const trendingStatsQuery = await database.query(`
       SELECT
         COUNT(DISTINCT symbol) as tickers_tracked,
         SUM(mention_count) as total_mentions,
         MAX(calculated_at) as last_scan
       FROM trending_tickers
-      WHERE period = '24h'
-    `).get();
+      WHERE period = $1
+    `, ['24h']);
+    const trendingStats = trendingStatsQuery.rows[0];
 
     // Get post counts
-    const postStats = database.prepare(`
+    const postStatsQuery = await database.query(`
       SELECT
         COUNT(*) as total_posts,
         COUNT(DISTINCT company_id) as companies_with_posts
       FROM reddit_posts
-    `).get();
+    `);
+    const postStats = postStatsQuery.rows[0];
 
     // Get sentiment distribution
-    const sentimentDist = database.prepare(`
+    const sentimentDistQuery = await database.query(`
       SELECT
         SUM(CASE WHEN avg_sentiment > 0.05 THEN 1 ELSE 0 END) as bullish,
         SUM(CASE WHEN avg_sentiment < -0.05 THEN 1 ELSE 0 END) as bearish,
         SUM(CASE WHEN avg_sentiment BETWEEN -0.05 AND 0.05 THEN 1 ELSE 0 END) as neutral
       FROM trending_tickers
-      WHERE period = '24h'
-    `).get();
+      WHERE period = $1
+    `, ['24h']);
+    const sentimentDist = sentimentDistQuery.rows[0];
 
     // Get subreddit breakdown
-    const subreddits = database.prepare(`
+    const subredditsQuery = await database.query(`
       SELECT
         subreddit,
         COUNT(*) as post_count
@@ -103,24 +138,26 @@ router.get('/status', async (req, res) => {
       GROUP BY subreddit
       ORDER BY post_count DESC
       LIMIT 10
-    `).all();
+    `);
+    const subreddits = subredditsQuery.rows;
 
     // Get news article count
-    const newsStats = database.prepare(`
+    const newsStatsQuery = await database.query(`
       SELECT COUNT(*) as total_articles
       FROM news_articles
-      WHERE published_at >= datetime('now', '-7 days')
-    `).get();
+      WHERE published_at >= CURRENT_TIMESTAMP - INTERVAL '7 days'
+    `);
+    const newsStats = newsStatsQuery.rows[0];
 
     // Get StockTwits message count
     let stocktwitsStats = { total_messages: 0 };
     try {
-    const database = await getDatabaseAsync();
-      stocktwitsStats = database.prepare(`
+      const stocktwitsStatsQuery = await database.query(`
         SELECT COUNT(*) as total_messages
         FROM stocktwits_messages
-        WHERE posted_at >= datetime('now', '-7 days')
-      `).get() || { total_messages: 0 };
+        WHERE posted_at >= CURRENT_TIMESTAMP - INTERVAL '7 days'
+      `);
+      stocktwitsStats = stocktwitsStatsQuery.rows[0] || { total_messages: 0 };
     } catch (e) {
       // Table may not exist yet
     }
@@ -165,16 +202,18 @@ router.get('/trending', async (req, res) => {
     // Use region-specific period key for EU
     const periodKey = region === 'US' ? period : `${period}_${region}`;
 
-    const trending = database.prepare(`
+    const database = await getDatabaseAsync();
+    const trendingQuery = await database.query(`
       SELECT
         t.*,
         c.name as company_name
       FROM trending_tickers t
       LEFT JOIN companies c ON t.symbol = c.symbol
-      WHERE t.period = ?
+      WHERE t.period = $1
       ORDER BY t.rank_by_mentions
-      LIMIT ?
-    `).all(periodKey, parseInt(limit));
+      LIMIT $2
+    `, [periodKey, parseInt(limit)]);
+    const trending = trendingQuery.rows;
 
     // Transform snake_case to camelCase for frontend
     const transformed = trending.map((t) => ({
@@ -273,9 +312,10 @@ router.get('/batch/signals', async (req, res) => {
     }
 
     const symbolList = symbols.split(',').map((s) => s.trim().toUpperCase());
-    const placeholders = symbolList.map(() => '?').join(',');
+    const placeholders = symbolList.map((_, i) => `$${i + 1}`).join(',');
 
-    const signals = database.prepare(`
+    const database = await getDatabaseAsync();
+    const signalsQuery = await database.query(`
       SELECT
         c.symbol,
         c.name,
@@ -287,7 +327,8 @@ router.get('/batch/signals', async (req, res) => {
         c.combined_sentiment as combinedSentiment
       FROM companies c
       WHERE c.symbol IN (${placeholders})
-    `).all(...symbolList);
+    `, symbolList);
+    const signals = signalsQuery.rows;
 
     res.json(signals);
   } catch (error) {
@@ -308,9 +349,10 @@ router.get('/sources-overview', async (req, res) => {
   try {
     const { period = '24h' } = req.query;
 
+    const database = await getDatabaseAsync();
     // Reddit sentiment summary
     const dateInterval = getSafeDateInterval(period);
-    const redditStats = database.prepare(`
+    const redditStatsQuery = await database.query(`
       SELECT
         COUNT(*) as post_count,
         AVG(sentiment_score) as avg_sentiment,
@@ -318,24 +360,25 @@ router.get('/sources-overview', async (req, res) => {
         SUM(CASE WHEN sentiment_score < -0.05 THEN 1 ELSE 0 END) as bearish_count,
         SUM(CASE WHEN sentiment_score BETWEEN -0.05 AND 0.05 THEN 1 ELSE 0 END) as neutral_count
       FROM reddit_posts
-      WHERE posted_at >= datetime('now', ?)
-    `).get(dateInterval);
+      WHERE posted_at >= CURRENT_TIMESTAMP + INTERVAL $1
+    `, [dateInterval]);
+    const redditStats = redditStatsQuery.rows[0];
 
     // Top subreddits
-    const topSubreddits = database.prepare(`
+    const topSubredditsQuery = await database.query(`
       SELECT subreddit, COUNT(*) as count
       FROM reddit_posts
-      WHERE posted_at >= datetime('now', ?)
+      WHERE posted_at >= CURRENT_TIMESTAMP + INTERVAL $1
       GROUP BY subreddit
       ORDER BY count DESC
       LIMIT 5
-    `).all(dateInterval);
+    `, [dateInterval]);
+    const topSubreddits = topSubredditsQuery.rows;
 
     // StockTwits sentiment summary
     let stocktwitsStats = { message_count: 0, avg_sentiment: 0, bullish_count: 0, bearish_count: 0, neutral_count: 0 };
     try {
-    const database = await getDatabaseAsync();
-      stocktwitsStats = database.prepare(`
+      const stocktwitsStatsQuery = await database.query(`
         SELECT
           COUNT(*) as message_count,
           AVG(nlp_sentiment_score) as avg_sentiment,
@@ -343,8 +386,9 @@ router.get('/sources-overview', async (req, res) => {
           SUM(CASE WHEN user_sentiment = 'Bearish' OR nlp_sentiment_score < -0.05 THEN 1 ELSE 0 END) as bearish_count,
           SUM(CASE WHEN user_sentiment IS NULL AND nlp_sentiment_score BETWEEN -0.05 AND 0.05 THEN 1 ELSE 0 END) as neutral_count
         FROM stocktwits_messages
-        WHERE posted_at >= datetime('now', ?)
-      `).get(dateInterval) || stocktwitsStats;
+        WHERE posted_at >= CURRENT_TIMESTAMP + INTERVAL $1
+      `, [dateInterval]);
+      stocktwitsStats = stocktwitsStatsQuery.rows[0] || stocktwitsStats;
     } catch (e) {
       // Table may not exist
     }
@@ -352,8 +396,7 @@ router.get('/sources-overview', async (req, res) => {
     // News sentiment summary
     let newsStats = { article_count: 0, avg_sentiment: 0, bullish_count: 0, bearish_count: 0, neutral_count: 0 };
     try {
-    const database = await getDatabaseAsync();
-      newsStats = database.prepare(`
+      const newsStatsQuery = await database.query(`
         SELECT
           COUNT(*) as article_count,
           AVG(sentiment_score) as avg_sentiment,
@@ -361,8 +404,9 @@ router.get('/sources-overview', async (req, res) => {
           SUM(CASE WHEN sentiment_score < -0.05 THEN 1 ELSE 0 END) as bearish_count,
           SUM(CASE WHEN sentiment_score BETWEEN -0.05 AND 0.05 THEN 1 ELSE 0 END) as neutral_count
         FROM news_articles
-        WHERE published_at >= datetime('now', ?)
-      `).get(dateInterval) || newsStats;
+        WHERE published_at >= CURRENT_TIMESTAMP + INTERVAL $1
+      `, [dateInterval]);
+      newsStats = newsStatsQuery.rows[0] || newsStats;
     } catch (e) {
       // Table may not exist
     }
@@ -370,15 +414,15 @@ router.get('/sources-overview', async (req, res) => {
     // Top news sources
     let topNewsSources = [];
     try {
-    const database = await getDatabaseAsync();
-      topNewsSources = database.prepare(`
+      const topNewsSourcesQuery = await database.query(`
         SELECT source, COUNT(*) as count
         FROM news_articles
-        WHERE published_at >= datetime('now', ?)
+        WHERE published_at >= CURRENT_TIMESTAMP + INTERVAL $1
         GROUP BY source
         ORDER BY count DESC
         LIMIT 5
-      `).all(dateInterval);
+      `, [dateInterval]);
+      topNewsSources = topNewsSourcesQuery.rows;
     } catch (e) {
       // Table may not exist
     }
@@ -387,9 +431,8 @@ router.get('/sources-overview', async (req, res) => {
     // OPTIMIZED: Single batch query with subquery instead of N+1 loop queries
     const divergences = [];
     try {
-    const database = await getDatabaseAsync();
       // Get tickers with both Reddit and News sentiment in one query using a correlated subquery
-      const tickersWithDivergences = database.prepare(`
+      const tickersWithDivergencesQuery = await database.query(`
         SELECT
           t.symbol,
           t.avg_sentiment as reddit_sentiment,
@@ -398,15 +441,16 @@ router.get('/sources-overview', async (req, res) => {
             SELECT AVG(sentiment_score)
             FROM news_articles na
             WHERE na.company_id = c.id
-              AND na.published_at >= datetime('now', ?)
+              AND na.published_at >= CURRENT_TIMESTAMP + INTERVAL $1
           ) as news_sentiment
         FROM trending_tickers t
         JOIN companies c ON t.symbol = c.symbol
-        WHERE t.period = ?
+        WHERE t.period = $2
           AND t.avg_sentiment IS NOT NULL
         ORDER BY t.mention_count DESC
         LIMIT 50
-      `).all(dateInterval, period);
+      `, [dateInterval, period]);
+      const tickersWithDivergences = tickersWithDivergencesQuery.rows;
 
       for (const ticker of tickersWithDivergences) {
         if (ticker.news_sentiment !== null && ticker.reddit_sentiment !== null) {
@@ -478,11 +522,12 @@ router.get('/analyst-activity', async (req, res) => {
   try {
     const { limit = 20 } = req.query;
 
+    const database = await getDatabaseAsync();
     // Get stocks with recent analyst estimate changes
     const recentChanges = [];
 
     // Check for price target changes by comparing current vs history
-    const stocksWithHistory = database.prepare(`
+    const stocksWithHistoryQuery = await database.query(`
       SELECT DISTINCT ae.company_id, c.symbol, c.name
       FROM analyst_estimates ae
       JOIN companies c ON ae.company_id = c.id
@@ -491,26 +536,29 @@ router.get('/analyst-activity', async (req, res) => {
         WHERE aeh.company_id = ae.company_id
       )
       LIMIT 100
-    `).all();
+    `);
+    const stocksWithHistory = stocksWithHistoryQuery.rows;
 
     for (const stock of stocksWithHistory) {
-      const current = database.prepare(`
+      const currentQuery = await database.query(`
         SELECT
           target_mean, target_median, recommendation_key, recommendation_mean,
           buy_percent, number_of_analysts, fetched_at
         FROM analyst_estimates
-        WHERE company_id = ?
-      `).get(stock.company_id);
+        WHERE company_id = $1
+      `, [stock.company_id]);
+      const current = currentQuery.rows[0];
 
-      const previous = database.prepare(`
+      const previousQuery = await database.query(`
         SELECT
           target_mean, target_median, recommendation_key, recommendation_mean,
           buy_percent, number_of_analysts, archived_at
         FROM analyst_estimates_history
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY archived_at DESC
         LIMIT 1
-      `).get(stock.company_id);
+      `, [stock.company_id]);
+      const previous = previousQuery.rows[0];
 
       if (current && previous) {
         // Check for rating change
@@ -568,7 +616,7 @@ router.get('/analyst-activity', async (req, res) => {
     recentChanges.sort((a, b) => new Date(b.date) - new Date(a.date));
 
     // Get strong buy stocks (>80% buy consensus)
-    const strongBuys = database.prepare(`
+    const strongBuysQuery = await database.query(`
       SELECT
         c.symbol, c.name, c.sector,
         ae.buy_percent, ae.target_mean, ae.current_price,
@@ -579,10 +627,11 @@ router.get('/analyst-activity', async (req, res) => {
         AND ae.number_of_analysts >= 5
       ORDER BY ae.buy_percent DESC, ae.upside_potential DESC
       LIMIT 10
-    `).all();
+    `);
+    const strongBuys = strongBuysQuery.rows;
 
     // Get top upside stocks
-    const topUpside = database.prepare(`
+    const topUpsideQuery = await database.query(`
       SELECT
         c.symbol, c.name, c.sector,
         ae.upside_potential, ae.target_mean, ae.current_price,
@@ -593,7 +642,8 @@ router.get('/analyst-activity', async (req, res) => {
         AND ae.number_of_analysts >= 5
       ORDER BY ae.upside_potential DESC
       LIMIT 10
-    `).all();
+    `);
+    const topUpside = topUpsideQuery.rows;
 
     res.json({
       recentChanges: recentChanges.slice(0, parseInt(limit)),
@@ -615,8 +665,9 @@ router.get('/insider-activity', async (req, res) => {
   try {
     const { days = 30, limit = 50 } = req.query;
 
+    const database = await getDatabaseAsync();
     // Get significant insider buys (bullish signal)
-    const significantBuys = database.prepare(`
+    const significantBuysQuery = await database.query(`
       SELECT
         c.symbol,
         c.name as company_name,
@@ -632,14 +683,15 @@ router.get('/insider-activity', async (req, res) => {
       JOIN companies c ON it.company_id = c.id
       JOIN insiders i ON it.insider_id = i.id
       WHERE it.transaction_type IN ('buy', 'purchase')
-        AND it.transaction_date >= date('now', '-' || ? || ' days')
+        AND it.transaction_date >= CURRENT_DATE - INTERVAL '$1 days'
         AND it.total_value >= 50000
       ORDER BY it.total_value DESC
-      LIMIT ?
-    `).all(parseInt(days), parseInt(limit));
+      LIMIT $2
+    `, [parseInt(days), parseInt(limit)]);
+    const significantBuys = significantBuysQuery.rows;
 
     // Get significant insider sells (bearish signal)
-    const significantSells = database.prepare(`
+    const significantSellsQuery = await database.query(`
       SELECT
         c.symbol,
         c.name as company_name,
@@ -655,14 +707,15 @@ router.get('/insider-activity', async (req, res) => {
       JOIN companies c ON it.company_id = c.id
       JOIN insiders i ON it.insider_id = i.id
       WHERE it.transaction_type IN ('sell', 'sale')
-        AND it.transaction_date >= date('now', '-' || ? || ' days')
+        AND it.transaction_date >= CURRENT_DATE - INTERVAL '$1 days'
         AND it.total_value >= 100000
       ORDER BY it.total_value DESC
-      LIMIT ?
-    `).all(parseInt(days), parseInt(limit));
+      LIMIT $2
+    `, [parseInt(days), parseInt(limit)]);
+    const significantSells = significantSellsQuery.rows;
 
     // Get insider activity summary by stock
-    const activityByStock = database.prepare(`
+    const activityByStockQuery = await database.query(`
       SELECT
         c.symbol,
         c.name as company_name,
@@ -674,19 +727,20 @@ router.get('/insider-activity', async (req, res) => {
         MAX(it.transaction_date) as last_activity
       FROM insider_transactions it
       JOIN companies c ON it.company_id = c.id
-      WHERE it.transaction_date >= date('now', '-' || ? || ' days')
+      WHERE it.transaction_date >= CURRENT_DATE - INTERVAL '$1 days'
       GROUP BY c.symbol, c.name
       HAVING (buy_count > 0 OR sell_count > 0)
       ORDER BY (total_bought - total_sold) DESC
       LIMIT 20
-    `).all(parseInt(days));
+    `, [parseInt(days)]);
+    const activityByStock = activityByStockQuery.rows;
 
     // Calculate net insider sentiment
     const netBuying = activityByStock.filter(s => s.total_bought > s.total_sold);
     const netSelling = activityByStock.filter(s => s.total_sold > s.total_bought);
 
     // Get overall statistics
-    const overallStats = database.prepare(`
+    const overallStatsQuery = await database.query(`
       SELECT
         COUNT(CASE WHEN transaction_type IN ('buy', 'purchase') THEN 1 END) as total_buys,
         COUNT(CASE WHEN transaction_type IN ('sell', 'sale') THEN 1 END) as total_sells,
@@ -694,8 +748,9 @@ router.get('/insider-activity', async (req, res) => {
         SUM(CASE WHEN transaction_type IN ('sell', 'sale') THEN total_value ELSE 0 END) as total_sell_value,
         COUNT(DISTINCT company_id) as companies_with_activity
       FROM insider_transactions
-      WHERE transaction_date >= date('now', '-' || ? || ' days')
-    `).get(parseInt(days));
+      WHERE transaction_date >= CURRENT_DATE - INTERVAL '$1 days'
+    `, [parseInt(days)]);
+    const overallStats = overallStatsQuery.rows[0];
 
     res.json({
       period: `${days} days`,
@@ -765,12 +820,13 @@ router.get('/insider-activity', async (req, res) => {
 router.get('/trending-enhanced', async (req, res) => {
   try {
     const { period = '24h', limit = 30, region = 'US' } = req.query;
+    const database = await getDatabaseAsync();
     const dateInterval = getSafeDateInterval(period);
     // Use region-specific period key for EU
     const periodKey = region === 'US' ? period : `${period}_${region}`;
 
     // Get base trending data
-    const trending = database.prepare(`
+    const trendingQuery = await database.query(`
       SELECT
         t.*,
         c.name as company_name,
@@ -778,10 +834,11 @@ router.get('/trending-enhanced', async (req, res) => {
         c.id as company_id
       FROM trending_tickers t
       LEFT JOIN companies c ON t.symbol = c.symbol
-      WHERE t.period = ?
+      WHERE t.period = $1
       ORDER BY t.rank_by_mentions
-      LIMIT ?
-    `).all(periodKey, parseInt(limit));
+      LIMIT $2
+    `, [periodKey, parseInt(limit)]);
+    const trending = trendingQuery.rows;
 
     // OPTIMIZED: Batch fetch all data sources instead of N+1 queries per ticker
     // Extract company_ids and symbols for batch queries
@@ -792,13 +849,12 @@ router.get('/trending-enhanced', async (req, res) => {
       return res.json({ period, region, count: 0, trending: [] });
     }
 
-    const companyIdPlaceholders = companyIds.map(() => '?').join(',');
+    const companyIdPlaceholders = companyIds.map((_, i) => `$${i + 1}`).join(',');
 
     // Batch query: Reddit data for all tickers
     const redditDataMap = new Map();
     try {
-    const database = await getDatabaseAsync();
-      const redditRows = database.prepare(`
+      const redditRowsQuery = await database.query(`
         SELECT
           company_id,
           COUNT(*) as post_count,
@@ -806,9 +862,10 @@ router.get('/trending-enhanced', async (req, res) => {
           SUM(score) as total_score
         FROM reddit_posts
         WHERE company_id IN (${companyIdPlaceholders})
-          AND posted_at >= datetime('now', ?)
+          AND posted_at >= CURRENT_TIMESTAMP + INTERVAL $${companyIds.length + 1}
         GROUP BY company_id
-      `).all(...companyIds, dateInterval);
+      `, [...companyIds, dateInterval]);
+      const redditRows = redditRowsQuery.rows;
       for (const row of redditRows) {
         redditDataMap.set(row.company_id, row);
       }
@@ -817,17 +874,17 @@ router.get('/trending-enhanced', async (req, res) => {
     // Batch query: StockTwits data for all tickers
     const stocktwitsDataMap = new Map();
     try {
-    const database = await getDatabaseAsync();
-      const stocktwitsRows = database.prepare(`
+      const stocktwitsRowsQuery = await database.query(`
         SELECT
           company_id,
           COUNT(*) as message_count,
           AVG(nlp_sentiment_score) as avg_sentiment
         FROM stocktwits_messages
         WHERE company_id IN (${companyIdPlaceholders})
-          AND posted_at >= datetime('now', ?)
+          AND posted_at >= CURRENT_TIMESTAMP + INTERVAL $${companyIds.length + 1}
         GROUP BY company_id
-      `).all(...companyIds, dateInterval);
+      `, [...companyIds, dateInterval]);
+      const stocktwitsRows = stocktwitsRowsQuery.rows;
       for (const row of stocktwitsRows) {
         stocktwitsDataMap.set(row.company_id, row);
       }
@@ -836,17 +893,17 @@ router.get('/trending-enhanced', async (req, res) => {
     // Batch query: News data for all tickers
     const newsDataMap = new Map();
     try {
-    const database = await getDatabaseAsync();
-      const newsRows = database.prepare(`
+      const newsRowsQuery = await database.query(`
         SELECT
           company_id,
           COUNT(*) as article_count,
           AVG(sentiment_score) as avg_sentiment
         FROM news_articles
         WHERE company_id IN (${companyIdPlaceholders})
-          AND published_at >= datetime('now', ?)
+          AND published_at >= CURRENT_TIMESTAMP + INTERVAL $${companyIds.length + 1}
         GROUP BY company_id
-      `).all(...companyIds, dateInterval);
+      `, [...companyIds, dateInterval]);
+      const newsRows = newsRowsQuery.rows;
       for (const row of newsRows) {
         newsDataMap.set(row.company_id, row);
       }
@@ -855,8 +912,7 @@ router.get('/trending-enhanced', async (req, res) => {
     // Batch query: Insider activity for all tickers
     const insiderDataMap = new Map();
     try {
-    const database = await getDatabaseAsync();
-      const insiderRows = database.prepare(`
+      const insiderRowsQuery = await database.query(`
         SELECT
           company_id,
           COUNT(CASE WHEN transaction_type IN ('buy', 'purchase') THEN 1 END) as buy_count,
@@ -865,9 +921,10 @@ router.get('/trending-enhanced', async (req, res) => {
           COALESCE(SUM(CASE WHEN transaction_type IN ('sell', 'sale') THEN total_value ELSE 0 END), 0) as net_value
         FROM insider_transactions
         WHERE company_id IN (${companyIdPlaceholders})
-          AND transaction_date >= date('now', '-30 days')
+          AND transaction_date >= CURRENT_DATE - INTERVAL '30 days'
         GROUP BY company_id
-      `).all(...companyIds);
+      `, companyIds);
+      const insiderRows = insiderRowsQuery.rows;
       for (const row of insiderRows) {
         insiderDataMap.set(row.company_id, row);
       }
@@ -876,8 +933,7 @@ router.get('/trending-enhanced', async (req, res) => {
     // Batch query: Analyst data for all tickers
     const analystDataMap = new Map();
     try {
-    const database = await getDatabaseAsync();
-      const analystRows = database.prepare(`
+      const analystRowsQuery = await database.query(`
         SELECT
           company_id,
           target_mean,
@@ -887,7 +943,8 @@ router.get('/trending-enhanced', async (req, res) => {
           recommendation_key
         FROM analyst_estimates
         WHERE company_id IN (${companyIdPlaceholders})
-      `).all(...companyIds);
+      `, companyIds);
+      const analystRows = analystRowsQuery.rows;
       for (const row of analystRows) {
         analystDataMap.set(row.company_id, row);
       }
@@ -896,16 +953,16 @@ router.get('/trending-enhanced', async (req, res) => {
     // Batch query: Recent sentiment (last 3 days) for momentum calculation
     const recentSentimentMap = new Map();
     try {
-    const database = await getDatabaseAsync();
-      const recentRows = database.prepare(`
+      const recentRowsQuery = await database.query(`
         SELECT
           company_id,
           AVG(sentiment_score) as avg
         FROM reddit_posts
         WHERE company_id IN (${companyIdPlaceholders})
-          AND posted_at >= datetime('now', '-3 days')
+          AND posted_at >= CURRENT_TIMESTAMP - INTERVAL '3 days'
         GROUP BY company_id
-      `).all(...companyIds);
+      `, companyIds);
+      const recentRows = recentRowsQuery.rows;
       for (const row of recentRows) {
         recentSentimentMap.set(row.company_id, row.avg);
       }
@@ -914,17 +971,17 @@ router.get('/trending-enhanced', async (req, res) => {
     // Batch query: Older sentiment (3-7 days ago) for momentum calculation
     const olderSentimentMap = new Map();
     try {
-    const database = await getDatabaseAsync();
-      const olderRows = database.prepare(`
+      const olderRowsQuery = await database.query(`
         SELECT
           company_id,
           AVG(sentiment_score) as avg
         FROM reddit_posts
         WHERE company_id IN (${companyIdPlaceholders})
-          AND posted_at >= datetime('now', '-7 days')
-          AND posted_at < datetime('now', '-3 days')
+          AND posted_at >= CURRENT_TIMESTAMP - INTERVAL '7 days'
+          AND posted_at < CURRENT_TIMESTAMP - INTERVAL '3 days'
         GROUP BY company_id
-      `).all(...companyIds);
+      `, companyIds);
+      const olderRows = olderRowsQuery.rows;
       for (const row of olderRows) {
         olderSentimentMap.set(row.company_id, row.avg);
       }
@@ -1053,9 +1110,12 @@ router.get('/:symbol', async (req, res) => {
     const { symbol } = req.params;
     const { period = '7d', refresh = 'false' } = req.query;
 
-    const company = database.prepare(
-      'SELECT id, symbol, name FROM companies WHERE symbol = ?'
-    ).get(symbol.toUpperCase());
+    const database = await getDatabaseAsync();
+    const companyQuery = await database.query(
+      'SELECT id, symbol, name FROM companies WHERE symbol = $1',
+      [symbol.toUpperCase()]
+    );
+    const company = companyQuery.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -1070,16 +1130,17 @@ router.get('/:symbol', async (req, res) => {
     const signal = await signalGenerator.calculateSignal(company.id, symbol, period);
 
     // Get recent posts for display
-    const recentPosts = database.prepare(`
+    const recentPostsQuery = await database.query(`
       SELECT
         post_id, subreddit, title, permalink, score, num_comments,
         posted_at, sentiment_score, sentiment_label,
         is_dd, is_yolo, mentions_buy, mentions_sell, has_rockets
       FROM reddit_posts
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY score DESC
       LIMIT 10
-    `).all(company.id);
+    `, [company.id]);
+    const recentPosts = recentPostsQuery.rows;
 
     res.json({
       symbol: company.symbol,
@@ -1107,9 +1168,12 @@ router.get('/:symbol/combined', async (req, res) => {
     const { symbol } = req.params;
     const { refresh = 'false', region = 'US' } = req.query;
 
-    const company = database.prepare(
-      'SELECT id, symbol, name FROM companies WHERE symbol = ?'
-    ).get(symbol.toUpperCase());
+    const database = await getDatabaseAsync();
+    const companyQuery = await database.query(
+      'SELECT id, symbol, name FROM companies WHERE symbol = $1',
+      [symbol.toUpperCase()]
+    );
+    const company = companyQuery.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -1146,9 +1210,12 @@ router.get('/:symbol/stocktwits', async (req, res) => {
     const { symbol } = req.params;
     const { refresh = 'false', limit = 30 } = req.query;
 
-    const company = database.prepare(
-      'SELECT id FROM companies WHERE symbol = ?'
-    ).get(symbol.toUpperCase());
+    const database = await getDatabaseAsync();
+    const companyQuery = await database.query(
+      'SELECT id FROM companies WHERE symbol = $1',
+      [symbol.toUpperCase()]
+    );
+    const company = companyQuery.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -1165,12 +1232,13 @@ router.get('/:symbol/stocktwits', async (req, res) => {
       });
     } else {
       // Get from database
-      const messages = database.prepare(`
+      const messagesQuery = await database.query(`
         SELECT * FROM stocktwits_messages
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY posted_at DESC
-        LIMIT ?
-      `).all(company.id, parseInt(limit));
+        LIMIT $2
+      `, [company.id, parseInt(limit)]);
+      const messages = messagesQuery.rows;
 
       const summary = stocktwitsFetcher.calculateSummary(
         messages.map((m) => ({
@@ -1205,9 +1273,12 @@ router.post('/:symbol/refresh', async (req, res) => {
     const { symbol } = req.params;
     const { region = 'US' } = req.query;
 
-    const company = database.prepare(
-      'SELECT id FROM companies WHERE symbol = ?'
-    ).get(symbol.toUpperCase());
+    const database = await getDatabaseAsync();
+    const companyQuery = await database.query(
+      'SELECT id FROM companies WHERE symbol = $1',
+      [symbol.toUpperCase()]
+    );
+    const company = companyQuery.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -1249,9 +1320,12 @@ router.post('/:symbol/refresh-all', async (req, res) => {
     const { symbol } = req.params;
     const { region = 'US' } = req.query;
 
-    const company = database.prepare(
-      'SELECT id, symbol, name FROM companies WHERE symbol = ?'
-    ).get(symbol.toUpperCase());
+    const database = await getDatabaseAsync();
+    const companyQuery = await database.query(
+      'SELECT id, symbol, name FROM companies WHERE symbol = $1',
+      [symbol.toUpperCase()]
+    );
+    const company = companyQuery.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -1289,9 +1363,12 @@ router.get('/:symbol/history', async (req, res) => {
     const { symbol } = req.params;
     const { days = 30, source = 'reddit' } = req.query;
 
-    const company = database.prepare(
-      'SELECT id FROM companies WHERE symbol = ?'
-    ).get(symbol.toUpperCase());
+    const database = await getDatabaseAsync();
+    const companyQuery = await database.query(
+      'SELECT id FROM companies WHERE symbol = $1',
+      [symbol.toUpperCase()]
+    );
+    const company = companyQuery.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -1338,9 +1415,12 @@ router.get('/:symbol/posts', async (req, res) => {
 
     const upperSymbol = symbol.toUpperCase();
 
-    const company = database.prepare(
-      'SELECT id FROM companies WHERE symbol = ?'
-    ).get(upperSymbol);
+    const database = await getDatabaseAsync();
+    const companyQuery = await database.query(
+      'SELECT id FROM companies WHERE symbol = $1',
+      [upperSymbol]
+    );
+    const company = companyQuery.rows[0];
 
     let orderBy;
     switch (sort) {
@@ -1359,35 +1439,41 @@ router.get('/:symbol/posts', async (req, res) => {
     if (company) {
       let query = `
         SELECT * FROM reddit_posts
-        WHERE company_id = ?
+        WHERE company_id = $1
       `;
       const params = [company.id];
+      let paramIndex = 2;
 
       if (subreddit) {
-        query += ' AND subreddit = ?';
+        query += ` AND subreddit = $${paramIndex}`;
         params.push(subreddit);
+        paramIndex++;
       }
 
-      query += ` ORDER BY ${orderBy} LIMIT ?`;
+      query += ` ORDER BY ${orderBy} LIMIT $${paramIndex}`;
       params.push(parseInt(limit));
 
-      posts = database.prepare(query).all(...params);
+      const postsQuery = await database.query(query, params);
+      posts = postsQuery.rows;
     } else {
       let query = `
         SELECT * FROM reddit_posts
-        WHERE tickers_mentioned LIKE ?
+        WHERE tickers_mentioned LIKE $1
       `;
       const params = [`%"${upperSymbol}"%`];
+      let paramIndex = 2;
 
       if (subreddit) {
-        query += ' AND subreddit = ?';
+        query += ` AND subreddit = $${paramIndex}`;
         params.push(subreddit);
+        paramIndex++;
       }
 
-      query += ` ORDER BY ${orderBy} LIMIT ?`;
+      query += ` ORDER BY ${orderBy} LIMIT $${paramIndex}`;
       params.push(parseInt(limit));
 
-      posts = database.prepare(query).all(...params);
+      const postsQuery = await database.query(query, params);
+      posts = postsQuery.rows;
     }
 
     res.json({ posts });
@@ -1410,9 +1496,12 @@ router.get('/:symbol/news', async (req, res) => {
     const { symbol } = req.params;
     const { refresh = 'false', limit = 20, region = 'US' } = req.query;
 
-    const company = database.prepare(
-      'SELECT id FROM companies WHERE symbol = ?'
-    ).get(symbol.toUpperCase());
+    const database = await getDatabaseAsync();
+    const companyQuery = await database.query(
+      'SELECT id FROM companies WHERE symbol = $1',
+      [symbol.toUpperCase()]
+    );
+    const company = companyQuery.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -1453,9 +1542,12 @@ router.post('/:symbol/news/refresh', async (req, res) => {
 
     const { symbol } = req.params;
 
-    const company = database.prepare(
-      'SELECT id FROM companies WHERE symbol = ?'
-    ).get(symbol.toUpperCase());
+    const database = await getDatabaseAsync();
+    const companyQuery = await database.query(
+      'SELECT id FROM companies WHERE symbol = $1',
+      [symbol.toUpperCase()]
+    );
+    const company = companyQuery.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -1482,9 +1574,10 @@ router.get('/sources-overview', async (req, res) => {
   try {
     const { period = '24h' } = req.query;
 
+    const database = await getDatabaseAsync();
     // Reddit sentiment summary
     const dateInterval = getSafeDateInterval(period);
-    const redditStats = database.prepare(`
+    const redditStatsQuery = await database.query(`
       SELECT
         COUNT(*) as post_count,
         AVG(sentiment_score) as avg_sentiment,
@@ -1492,24 +1585,25 @@ router.get('/sources-overview', async (req, res) => {
         SUM(CASE WHEN sentiment_score < -0.05 THEN 1 ELSE 0 END) as bearish_count,
         SUM(CASE WHEN sentiment_score BETWEEN -0.05 AND 0.05 THEN 1 ELSE 0 END) as neutral_count
       FROM reddit_posts
-      WHERE posted_at >= datetime('now', ?)
-    `).get(dateInterval);
+      WHERE posted_at >= CURRENT_TIMESTAMP + INTERVAL $1
+    `, [dateInterval]);
+    const redditStats = redditStatsQuery.rows[0];
 
     // Top subreddits
-    const topSubreddits = database.prepare(`
+    const topSubredditsQuery = await database.query(`
       SELECT subreddit, COUNT(*) as count
       FROM reddit_posts
-      WHERE posted_at >= datetime('now', ?)
+      WHERE posted_at >= CURRENT_TIMESTAMP + INTERVAL $1
       GROUP BY subreddit
       ORDER BY count DESC
       LIMIT 5
-    `).all(dateInterval);
+    `, [dateInterval]);
+    const topSubreddits = topSubredditsQuery.rows;
 
     // StockTwits sentiment summary
     let stocktwitsStats = { message_count: 0, avg_sentiment: 0, bullish_count: 0, bearish_count: 0, neutral_count: 0 };
     try {
-    const database = await getDatabaseAsync();
-      stocktwitsStats = database.prepare(`
+      const stocktwitsStatsQuery = await database.query(`
         SELECT
           COUNT(*) as message_count,
           AVG(nlp_sentiment_score) as avg_sentiment,
@@ -1517,8 +1611,9 @@ router.get('/sources-overview', async (req, res) => {
           SUM(CASE WHEN user_sentiment = 'Bearish' OR nlp_sentiment_score < -0.05 THEN 1 ELSE 0 END) as bearish_count,
           SUM(CASE WHEN user_sentiment IS NULL AND nlp_sentiment_score BETWEEN -0.05 AND 0.05 THEN 1 ELSE 0 END) as neutral_count
         FROM stocktwits_messages
-        WHERE posted_at >= datetime('now', ?)
-      `).get(dateInterval) || stocktwitsStats;
+        WHERE posted_at >= CURRENT_TIMESTAMP + INTERVAL $1
+      `, [dateInterval]);
+      stocktwitsStats = stocktwitsStatsQuery.rows[0] || stocktwitsStats;
     } catch (e) {
       // Table may not exist
     }
@@ -1526,8 +1621,7 @@ router.get('/sources-overview', async (req, res) => {
     // News sentiment summary
     let newsStats = { article_count: 0, avg_sentiment: 0, bullish_count: 0, bearish_count: 0, neutral_count: 0 };
     try {
-    const database = await getDatabaseAsync();
-      newsStats = database.prepare(`
+      const newsStatsQuery = await database.query(`
         SELECT
           COUNT(*) as article_count,
           AVG(sentiment_score) as avg_sentiment,
@@ -1535,8 +1629,9 @@ router.get('/sources-overview', async (req, res) => {
           SUM(CASE WHEN sentiment_score < -0.05 THEN 1 ELSE 0 END) as bearish_count,
           SUM(CASE WHEN sentiment_score BETWEEN -0.05 AND 0.05 THEN 1 ELSE 0 END) as neutral_count
         FROM news_articles
-        WHERE published_at >= datetime('now', ?)
-      `).get(dateInterval) || newsStats;
+        WHERE published_at >= CURRENT_TIMESTAMP + INTERVAL $1
+      `, [dateInterval]);
+      newsStats = newsStatsQuery.rows[0] || newsStats;
     } catch (e) {
       // Table may not exist
     }
@@ -1544,15 +1639,15 @@ router.get('/sources-overview', async (req, res) => {
     // Top news sources
     let topNewsSources = [];
     try {
-    const database = await getDatabaseAsync();
-      topNewsSources = database.prepare(`
+      const topNewsSourcesQuery = await database.query(`
         SELECT source, COUNT(*) as count
         FROM news_articles
-        WHERE published_at >= datetime('now', ?)
+        WHERE published_at >= CURRENT_TIMESTAMP + INTERVAL $1
         GROUP BY source
         ORDER BY count DESC
         LIMIT 5
-      `).all(dateInterval);
+      `, [dateInterval]);
+      topNewsSources = topNewsSourcesQuery.rows;
     } catch (e) {
       // Table may not exist
     }
@@ -1561,9 +1656,8 @@ router.get('/sources-overview', async (req, res) => {
     // OPTIMIZED: Single batch query with subquery instead of N+1 loop queries
     const divergences = [];
     try {
-    const database = await getDatabaseAsync();
       // Get tickers with both Reddit and News sentiment in one query using a correlated subquery
-      const tickersWithDivergences = database.prepare(`
+      const tickersWithDivergencesQuery = await database.query(`
         SELECT
           t.symbol,
           t.avg_sentiment as reddit_sentiment,
@@ -1572,15 +1666,16 @@ router.get('/sources-overview', async (req, res) => {
             SELECT AVG(sentiment_score)
             FROM news_articles na
             WHERE na.company_id = c.id
-              AND na.published_at >= datetime('now', ?)
+              AND na.published_at >= CURRENT_TIMESTAMP + INTERVAL $1
           ) as news_sentiment
         FROM trending_tickers t
         JOIN companies c ON t.symbol = c.symbol
-        WHERE t.period = ?
+        WHERE t.period = $2
           AND t.avg_sentiment IS NOT NULL
         ORDER BY t.mention_count DESC
         LIMIT 50
-      `).all(dateInterval, period);
+      `, [dateInterval, period]);
+      const tickersWithDivergences = tickersWithDivergencesQuery.rows;
 
       for (const ticker of tickersWithDivergences) {
         if (ticker.news_sentiment !== null && ticker.reddit_sentiment !== null) {
@@ -1652,11 +1747,12 @@ router.get('/analyst-activity', async (req, res) => {
   try {
     const { limit = 20 } = req.query;
 
+    const database = await getDatabaseAsync();
     // Get stocks with recent analyst estimate changes
     const recentChanges = [];
 
     // Check for price target changes by comparing current vs history
-    const stocksWithHistory = database.prepare(`
+    const stocksWithHistoryQuery = await database.query(`
       SELECT DISTINCT ae.company_id, c.symbol, c.name
       FROM analyst_estimates ae
       JOIN companies c ON ae.company_id = c.id
@@ -1665,26 +1761,29 @@ router.get('/analyst-activity', async (req, res) => {
         WHERE aeh.company_id = ae.company_id
       )
       LIMIT 100
-    `).all();
+    `);
+    const stocksWithHistory = stocksWithHistoryQuery.rows;
 
     for (const stock of stocksWithHistory) {
-      const current = database.prepare(`
+      const currentQuery = await database.query(`
         SELECT
           target_mean, target_median, recommendation_key, recommendation_mean,
           buy_percent, number_of_analysts, fetched_at
         FROM analyst_estimates
-        WHERE company_id = ?
-      `).get(stock.company_id);
+        WHERE company_id = $1
+      `, [stock.company_id]);
+      const current = currentQuery.rows[0];
 
-      const previous = database.prepare(`
+      const previousQuery = await database.query(`
         SELECT
           target_mean, target_median, recommendation_key, recommendation_mean,
           buy_percent, number_of_analysts, archived_at
         FROM analyst_estimates_history
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY archived_at DESC
         LIMIT 1
-      `).get(stock.company_id);
+      `, [stock.company_id]);
+      const previous = previousQuery.rows[0];
 
       if (current && previous) {
         // Check for rating change
@@ -1742,7 +1841,7 @@ router.get('/analyst-activity', async (req, res) => {
     recentChanges.sort((a, b) => new Date(b.date) - new Date(a.date));
 
     // Get strong buy stocks (>80% buy consensus)
-    const strongBuys = database.prepare(`
+    const strongBuysQuery = await database.query(`
       SELECT
         c.symbol, c.name, c.sector,
         ae.buy_percent, ae.target_mean, ae.current_price,
@@ -1753,10 +1852,11 @@ router.get('/analyst-activity', async (req, res) => {
         AND ae.number_of_analysts >= 5
       ORDER BY ae.buy_percent DESC, ae.upside_potential DESC
       LIMIT 10
-    `).all();
+    `);
+    const strongBuys = strongBuysQuery.rows;
 
     // Get top upside stocks
-    const topUpside = database.prepare(`
+    const topUpsideQuery = await database.query(`
       SELECT
         c.symbol, c.name, c.sector,
         ae.upside_potential, ae.target_mean, ae.current_price,
@@ -1767,7 +1867,8 @@ router.get('/analyst-activity', async (req, res) => {
         AND ae.number_of_analysts >= 5
       ORDER BY ae.upside_potential DESC
       LIMIT 10
-    `).all();
+    `);
+    const topUpside = topUpsideQuery.rows;
 
     res.json({
       recentChanges: recentChanges.slice(0, parseInt(limit)),
@@ -1815,9 +1916,12 @@ router.get('/:symbol/analyst', async (req, res) => {
     const { symbol } = req.params;
     const { refresh = 'false' } = req.query;
 
-    const company = database.prepare(
-      'SELECT id, symbol, name FROM companies WHERE symbol = ?'
-    ).get(symbol.toUpperCase());
+    const database = await getDatabaseAsync();
+    const companyQuery = await database.query(
+      'SELECT id, symbol, name FROM companies WHERE symbol = $1',
+      [symbol.toUpperCase()]
+    );
+    const company = companyQuery.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -1856,7 +1960,8 @@ router.get('/analyst/top-upside', async (req, res) => {
   try {
     const { limit = 20 } = req.query;
 
-    const stocks = database.prepare(`
+    const database = await getDatabaseAsync();
+    const stocksQuery = await database.query(`
       SELECT
         ae.*,
         c.symbol,
@@ -1867,8 +1972,9 @@ router.get('/analyst/top-upside', async (req, res) => {
       WHERE ae.upside_potential IS NOT NULL
         AND ae.number_of_analysts >= 5
       ORDER BY ae.upside_potential DESC
-      LIMIT ?
-    `).all(parseInt(limit));
+      LIMIT $1
+    `, [parseInt(limit)]);
+    const stocks = stocksQuery.rows;
 
     res.json({ stocks });
   } catch (error) {
@@ -1885,7 +1991,8 @@ router.get('/analyst/strong-buy', async (req, res) => {
   try {
     const { limit = 20 } = req.query;
 
-    const stocks = database.prepare(`
+    const database = await getDatabaseAsync();
+    const stocksQuery = await database.query(`
       SELECT
         ae.*,
         c.symbol,
@@ -1896,8 +2003,9 @@ router.get('/analyst/strong-buy', async (req, res) => {
       WHERE ae.buy_percent >= 80
         AND ae.number_of_analysts >= 5
       ORDER BY ae.buy_percent DESC, ae.number_of_analysts DESC
-      LIMIT ?
-    `).all(parseInt(limit));
+      LIMIT $1
+    `, [parseInt(limit)]);
+    const stocks = stocksQuery.rows;
 
     res.json({ stocks });
   } catch (error) {
@@ -1915,16 +2023,19 @@ router.get('/:symbol/analyst/history', async (req, res) => {
     const { symbol } = req.params;
     const { limit = 50 } = req.query;
 
-    const company = database.prepare(
-      'SELECT id, symbol, name FROM companies WHERE symbol = ?'
-    ).get(symbol.toUpperCase());
+    const database = await getDatabaseAsync();
+    const companyQuery = await database.query(
+      'SELECT id, symbol, name FROM companies WHERE symbol = $1',
+      [symbol.toUpperCase()]
+    );
+    const company = companyQuery.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
     }
 
     // Get current estimate
-    const current = database.prepare(`
+    const currentQuery = await database.query(`
       SELECT
         fetched_at as date,
         current_price as price,
@@ -1946,11 +2057,12 @@ router.get('/:symbol/analyst/history', async (req, res) => {
         signal_score as signalScore,
         'current' as type
       FROM analyst_estimates
-      WHERE company_id = ?
-    `).get(company.id);
+      WHERE company_id = $1
+    `, [company.id]);
+    const current = currentQuery.rows[0];
 
     // Get historical estimates
-    const history = database.prepare(`
+    const historyQuery = await database.query(`
       SELECT
         fetched_at as date,
         archived_at as archivedAt,
@@ -1973,10 +2085,11 @@ router.get('/:symbol/analyst/history', async (req, res) => {
         signal_score as signalScore,
         'historical' as type
       FROM analyst_estimates_history
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY archived_at DESC
-      LIMIT ?
-    `).all(company.id, parseInt(limit));
+      LIMIT $2
+    `, [company.id, parseInt(limit)]);
+    const history = historyQuery.rows;
 
     // Combine current + history, sorted by date
     const allData = current ? [current, ...history] : history;

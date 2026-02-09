@@ -11,7 +11,7 @@ const DCFCalculator = require('../../services/dcfCalculator');
 const { getDatabaseAsync } = require('../../database');
 const { requireFeature } = require('../../middleware/subscription');
 
-const calculator = new DCFCalculator(database);
+const calculator = new DCFCalculator();
 
 /**
  * GET /api/dcf/:symbol
@@ -22,19 +22,23 @@ router.get('/:symbol', requireFeature('dcf_valuation'), async (req, res) => {
     const { symbol } = req.params;
     const { price, shares } = req.query;
 
+    const database = await getDatabaseAsync();
+
     // Get company ID
-    const company = database.prepare(`
-      SELECT id, symbol, name, market_cap FROM companies WHERE symbol = ?
-    `).get(symbol.toUpperCase());
+    const companyResult = await database.query(`
+      SELECT id, symbol, name, market_cap FROM companies WHERE symbol = $1
+    `, [symbol.toUpperCase()]);
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ success: false, error: 'Company not found' });
     }
 
     // Get current price and market cap from price_metrics
-    const priceData = database.prepare(`
-      SELECT last_price, market_cap FROM price_metrics WHERE company_id = ?
-    `).get(company.id);
+    const priceDataResult = await database.query(`
+      SELECT last_price, market_cap FROM price_metrics WHERE company_id = $1
+    `, [company.id]);
+    const priceData = priceDataResult.rows[0];
 
     // Build overrides from query params OR price_metrics
     const overrides = {};
@@ -87,10 +91,13 @@ router.post('/:symbol', requireFeature('dcf_valuation'), async (req, res) => {
     const { symbol } = req.params;
     const overrides = req.body;
 
+    const database = await getDatabaseAsync();
+
     // Get company ID
-    const company = database.prepare(`
-      SELECT id FROM companies WHERE symbol = ?
-    `).get(symbol.toUpperCase());
+    const companyResult = await database.query(`
+      SELECT id FROM companies WHERE symbol = $1
+    `, [symbol.toUpperCase()]);
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ success: false, error: 'Company not found' });
@@ -124,9 +131,12 @@ router.get('/:symbol/sensitivity', requireFeature('dcf_valuation'), async (req, 
       colMin, colMax, colStep
     } = req.query;
 
-    const company = database.prepare(`
-      SELECT id, market_cap FROM companies WHERE symbol = ?
-    `).get(symbol.toUpperCase());
+    const database = await getDatabaseAsync();
+
+    const companyResult = await database.query(`
+      SELECT id, market_cap FROM companies WHERE symbol = $1
+    `, [symbol.toUpperCase()]);
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ success: false, error: 'Company not found' });
@@ -134,9 +144,10 @@ router.get('/:symbol/sensitivity', requireFeature('dcf_valuation'), async (req, 
 
     // Get current price and market cap from price_metrics
     // NOTE: Use market_cap/price for shares (consistent with main endpoint)
-    const priceData = database.prepare(`
-      SELECT last_price, market_cap FROM price_metrics WHERE company_id = ?
-    `).get(company.id);
+    const priceDataResult = await database.query(`
+      SELECT last_price, market_cap FROM price_metrics WHERE company_id = $1
+    `, [company.id]);
+    const priceData = priceDataResult.rows[0];
 
     const baseOverrides = {};
     if (priceData?.last_price) {
@@ -202,9 +213,12 @@ router.get('/:symbol/reverse', requireFeature('dcf_valuation'), async (req, res)
     const { symbol } = req.params;
     const { targetPrice } = req.query;
 
-    const company = database.prepare(`
-      SELECT id, market_cap FROM companies WHERE symbol = ?
-    `).get(symbol.toUpperCase());
+    const database = await getDatabaseAsync();
+
+    const companyResult = await database.query(`
+      SELECT id, market_cap FROM companies WHERE symbol = $1
+    `, [symbol.toUpperCase()]);
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ success: false, error: 'Company not found' });
@@ -212,9 +226,10 @@ router.get('/:symbol/reverse', requireFeature('dcf_valuation'), async (req, res)
 
     // Get current price and market cap from price_metrics
     // NOTE: Use market_cap/price for shares (consistent with main endpoint)
-    const priceData = database.prepare(`
-      SELECT last_price, market_cap FROM price_metrics WHERE company_id = ?
-    `).get(company.id);
+    const priceDataResult = await database.query(`
+      SELECT last_price, market_cap FROM price_metrics WHERE company_id = $1
+    `, [company.id]);
+    const priceData = priceDataResult.rows[0];
 
     // Build base overrides with price and shares
     const baseOverrides = {};
@@ -287,9 +302,12 @@ router.get('/:symbol/tornado', requireFeature('dcf_valuation'), async (req, res)
     const { symbol } = req.params;
     const { variation } = req.query;
 
-    const company = database.prepare(`
-      SELECT id, market_cap FROM companies WHERE symbol = ?
-    `).get(symbol.toUpperCase());
+    const database = await getDatabaseAsync();
+
+    const companyResult = await database.query(`
+      SELECT id, market_cap FROM companies WHERE symbol = $1
+    `, [symbol.toUpperCase()]);
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ success: false, error: 'Company not found' });
@@ -297,9 +315,10 @@ router.get('/:symbol/tornado', requireFeature('dcf_valuation'), async (req, res)
 
     // Get current price and market cap from price_metrics
     // NOTE: Use market_cap/price for shares (consistent with main endpoint)
-    const priceData = database.prepare(`
-      SELECT last_price, market_cap FROM price_metrics WHERE company_id = ?
-    `).get(company.id);
+    const priceDataResult = await database.query(`
+      SELECT last_price, market_cap FROM price_metrics WHERE company_id = $1
+    `, [company.id]);
+    const priceData = priceDataResult.rows[0];
 
     // Build base overrides with price and shares
     const baseOverrides = {};
@@ -341,9 +360,12 @@ router.get('/:symbol/breakeven', requireFeature('dcf_valuation'), async (req, re
   try {
     const { symbol } = req.params;
 
-    const company = database.prepare(`
-      SELECT id, market_cap FROM companies WHERE symbol = ?
-    `).get(symbol.toUpperCase());
+    const database = await getDatabaseAsync();
+
+    const companyResult = await database.query(`
+      SELECT id, market_cap FROM companies WHERE symbol = $1
+    `, [symbol.toUpperCase()]);
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ success: false, error: 'Company not found' });
@@ -351,9 +373,10 @@ router.get('/:symbol/breakeven', requireFeature('dcf_valuation'), async (req, re
 
     // Get current price and market cap from price_metrics
     // NOTE: Use market_cap/price for shares (consistent with main endpoint)
-    const priceData = database.prepare(`
-      SELECT last_price, market_cap FROM price_metrics WHERE company_id = ?
-    `).get(company.id);
+    const priceDataResult = await database.query(`
+      SELECT last_price, market_cap FROM price_metrics WHERE company_id = $1
+    `, [company.id]);
+    const priceData = priceDataResult.rows[0];
 
     const currentPrice = priceData?.last_price;
     if (!currentPrice || currentPrice <= 0) {
@@ -387,20 +410,23 @@ router.get('/:symbol/breakeven', requireFeature('dcf_valuation'), async (req, re
  * GET /api/dcf/:symbol/history
  * Get historical DCF valuations for a company
  */
-router.get('/:symbol/history', requireFeature('dcf_valuation'), (req, res) => {
+router.get('/:symbol/history', requireFeature('dcf_valuation'), async (req, res) => {
   try {
     const { symbol } = req.params;
     const limit = parseInt(req.query.limit) || 10;
 
-    const company = database.prepare(`
-      SELECT id FROM companies WHERE symbol = ?
-    `).get(symbol.toUpperCase());
+    const database = await getDatabaseAsync();
+
+    const companyResult = await database.query(`
+      SELECT id FROM companies WHERE symbol = $1
+    `, [symbol.toUpperCase()]);
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ success: false, error: 'Company not found' });
     }
 
-    const history = calculator.getHistoricalValuations(company.id, limit);
+    const history = await calculator.getHistoricalValuations(company.id, limit);
 
     res.json({
       success: true,
@@ -430,12 +456,15 @@ router.get('/benchmarks/:industry', async (req, res) => {
   try {
     const { industry } = req.params;
 
-    const benchmarks = database.prepare(`
+    const database = await getDatabaseAsync();
+
+    const benchmarksResult = await database.query(`
       SELECT * FROM industry_benchmarks
-      WHERE industry LIKE ? OR sector LIKE ? OR industry = 'Default'
-      ORDER BY CASE WHEN industry LIKE ? THEN 0 WHEN sector LIKE ? THEN 1 ELSE 2 END
+      WHERE industry LIKE $1 OR sector LIKE $2 OR industry = 'Default'
+      ORDER BY CASE WHEN industry LIKE $3 THEN 0 WHEN sector LIKE $4 THEN 1 ELSE 2 END
       LIMIT 1
-    `).get(`%${industry}%`, `%${industry}%`, `%${industry}%`, `%${industry}%`);
+    `, [`%${industry}%`, `%${industry}%`, `%${industry}%`, `%${industry}%`]);
+    const benchmarks = benchmarksResult.rows[0];
 
     if (!benchmarks) {
       return res.status(404).json({ success: false, error: 'Industry not found' });
@@ -467,9 +496,10 @@ router.get('/benchmarks/:industry', async (req, res) => {
 router.get('/benchmarks', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
-    const benchmarks = database.prepare(`
+    const benchmarksResult = await database.query(`
       SELECT * FROM industry_benchmarks ORDER BY industry
-    `).all();
+    `);
+    const benchmarks = benchmarksResult.rows;
 
     res.json({
       success: true,
@@ -519,19 +549,23 @@ router.post('/:symbol/parametric', requireFeature('dcf_valuation'), async (req, 
       baseInputs = {}
     } = req.body;
 
+    const database = await getDatabaseAsync();
+
     // Get company ID
-    const company = database.prepare(`
-      SELECT id, symbol, name FROM companies WHERE symbol = ?
-    `).get(symbol.toUpperCase());
+    const companyResult = await database.query(`
+      SELECT id, symbol, name FROM companies WHERE symbol = $1
+    `, [symbol.toUpperCase()]);
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ success: false, error: 'Company not found' });
     }
 
     // Get current price from price_metrics
-    const priceData = database.prepare(`
-      SELECT last_price, market_cap FROM price_metrics WHERE company_id = ?
-    `).get(company.id);
+    const priceDataResult = await database.query(`
+      SELECT last_price, market_cap FROM price_metrics WHERE company_id = $1
+    `, [company.id]);
+    const priceData = priceDataResult.rows[0];
 
     // Merge price data into base inputs if not provided
     const mergedInputs = { ...baseInputs };
@@ -576,19 +610,23 @@ router.get('/:symbol/parametric', requireFeature('dcf_valuation'), async (req, r
       distributionType = 'studentT'
     } = req.query;
 
+    const database = await getDatabaseAsync();
+
     // Get company ID
-    const company = database.prepare(`
-      SELECT id, symbol, name FROM companies WHERE symbol = ?
-    `).get(symbol.toUpperCase());
+    const companyResult = await database.query(`
+      SELECT id, symbol, name FROM companies WHERE symbol = $1
+    `, [symbol.toUpperCase()]);
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ success: false, error: 'Company not found' });
     }
 
     // Get current price from price_metrics
-    const priceData = database.prepare(`
-      SELECT last_price, market_cap FROM price_metrics WHERE company_id = ?
-    `).get(company.id);
+    const priceDataResult = await database.query(`
+      SELECT last_price, market_cap FROM price_metrics WHERE company_id = $1
+    `, [company.id]);
+    const priceData = priceDataResult.rows[0];
 
     const baseInputs = {};
     if (priceData?.last_price) {

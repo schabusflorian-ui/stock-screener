@@ -389,12 +389,12 @@ app.use('/api/classifications', classificationsRouter);
 // app.use('/api/ipo', ipoRouter); // Temporarily disabled
 app.use('/api/updates', updatesRouter);
 // app.use('/api/insiders', insidersRouter); // Temporarily disabled
-// app.use('/api/capital', capitalRouter); // Temporarily disabled
-// app.use('/api/sentiment', sentimentRouter); // Temporarily disabled
+app.use('/api/capital', capitalRouter); // FIXED: Now uses lazy initialization and getDatabaseAsync()
+app.use('/api/sentiment', sentimentRouter); // FIXED: Now uses lazy initialization and getDatabaseAsync()
 app.use('/api/validation', validationRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/prices', pricesRouter);
-// app.use('/api/dcf', dcfRouter); // Temporarily disabled
+app.use('/api/dcf', dcfRouter); // FIXED: Now uses getDatabaseAsync() throughout
 app.use('/api/earnings', earningsRouter); // FIXED: Now uses lazy initialization
 app.use('/api/price-updates', priceUpdatesRouter);
 app.use('/api/fiscal', fiscalRouter); // FIXED: Now uses lazy initialization

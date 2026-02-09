@@ -9,10 +9,10 @@ const sectorService = new SectorAnalysisService();
  * GET /api/sectors
  * Get all sectors with aggregate metrics
  */
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { periodType = 'annual' } = req.query;
-    const sectors = sectorService.getSectorOverview(periodType);
+    const sectors = await sectorService.getSectorOverview(periodType);
 
     res.json({
       sectors,
@@ -29,10 +29,10 @@ router.get('/', (req, res) => {
  * GET /api/sectors/rankings
  * Get sector rankings by various metrics
  */
-router.get('/rankings', (req, res) => {
+router.get('/rankings', async (req, res) => {
   try {
     const { periodType = 'annual' } = req.query;
-    const rankings = sectorService.getSectorRankings(periodType);
+    const rankings = await sectorService.getSectorRankings(periodType);
 
     res.json({
       rankings,
@@ -48,10 +48,10 @@ router.get('/rankings', (req, res) => {
  * GET /api/sectors/rotation
  * Get sector rotation data with historical trends
  */
-router.get('/rotation', (req, res) => {
+router.get('/rotation', async (req, res) => {
   try {
     const { periods = 4, periodType = 'annual' } = req.query;
-    const rotation = sectorService.getSectorRotation(parseInt(periods), periodType);
+    const rotation = await sectorService.getSectorRotation(parseInt(periods), periodType);
 
     res.json({
       rotation,
@@ -68,10 +68,10 @@ router.get('/rotation', (req, res) => {
  * GET /api/sectors/top-performers
  * Get top performing companies by sector
  */
-router.get('/top-performers', (req, res) => {
+router.get('/top-performers', async (req, res) => {
   try {
     const { metric = 'roic', limit = 5, periodType = 'annual' } = req.query;
-    const topPerformers = sectorService.getTopPerformersBySector(metric, parseInt(limit), periodType);
+    const topPerformers = await sectorService.getTopPerformersBySector(metric, parseInt(limit), periodType);
 
     res.json({
       topPerformers,
@@ -89,10 +89,10 @@ router.get('/top-performers', (req, res) => {
  * GET /api/sectors/margins
  * Get industry margin comparisons
  */
-router.get('/margins', (req, res) => {
+router.get('/margins', async (req, res) => {
   try {
     const { periodType = 'annual' } = req.query;
-    const margins = sectorService.getIndustryMarginComparison(periodType);
+    const margins = await sectorService.getIndustryMarginComparison(periodType);
 
     res.json({
       margins,
@@ -109,11 +109,11 @@ router.get('/margins', (req, res) => {
  * GET /api/sectors/:sector
  * Get detailed sector data with all companies
  */
-router.get('/:sector', (req, res) => {
+router.get('/:sector', async (req, res) => {
   try {
     const { sector } = req.params;
     const { periodType = 'annual' } = req.query;
-    const detail = sectorService.getSectorDetail(decodeURIComponent(sector), periodType);
+    const detail = await sectorService.getSectorDetail(decodeURIComponent(sector), periodType);
 
     if (!detail.companies.length) {
       return res.status(404).json({ error: 'Sector not found or no data available' });
@@ -130,11 +130,11 @@ router.get('/:sector', (req, res) => {
  * GET /api/sectors/:sector/industries
  * Get industries within a sector
  */
-router.get('/:sector/industries', (req, res) => {
+router.get('/:sector/industries', async (req, res) => {
   try {
     const { sector } = req.params;
     const { periodType = 'annual' } = req.query;
-    const industries = sectorService.getIndustriesBySector(decodeURIComponent(sector), periodType);
+    const industries = await sectorService.getIndustriesBySector(decodeURIComponent(sector), periodType);
 
     res.json({
       sector: decodeURIComponent(sector),
@@ -152,11 +152,11 @@ router.get('/:sector/industries', (req, res) => {
  * GET /api/sectors/industry/:industry
  * Get detailed industry data with all companies
  */
-router.get('/industry/:industry', (req, res) => {
+router.get('/industry/:industry', async (req, res) => {
   try {
     const { industry } = req.params;
     const { periodType = 'annual' } = req.query;
-    const detail = sectorService.getIndustryDetail(decodeURIComponent(industry), periodType);
+    const detail = await sectorService.getIndustryDetail(decodeURIComponent(industry), periodType);
 
     if (!detail.companies.length) {
       return res.status(404).json({ error: 'Industry not found or no data available' });
