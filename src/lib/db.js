@@ -358,6 +358,37 @@ function convertSQLDialect(sql) {
   // AUTOINCREMENT alone (rare)
   converted = converted.replace(/\s+AUTOINCREMENT/gi, '');
 
+  // ====== CRITICAL POSTGRESQL FIXES ======
+
+  // Boolean comparisons: PostgreSQL strict about types
+  // Convert: column = true → column = 1, column = false → column = 0
+  // This handles cases where SQLite uses INTEGER for booleans but code uses true/false
+  converted = converted.replace(/\b(=|!=|<>)\s*(true|false)\b/gi, (match, operator, value) => {
+    const numValue = value.toLowerCase() === 'true' ? '1' : '0';
+    return `${operator} ${numValue}`;
+  });
+
+  // Also handle IS TRUE/IS FALSE comparisons
+  converted = converted.replace(/\bIS\s+(NOT\s+)?(true|false)\b/gi, (match, notPart, value) => {
+    const numValue = value.toLowerCase() === 'true' ? '1' : '0';
+    if (notPart) {
+      return `!= ${numValue}`;
+    }
+    return `= ${numValue}`;
+  });
+
+  // SUBSTR → SUBSTRING (PostgreSQL function name)
+  // SQLite uses SUBSTR, PostgreSQL uses SUBSTRING
+  converted = converted.replace(/\bSUBSTR\s*\(/gi, 'SUBSTRING(');
+
+  // Handle NULLS LAST / NULLS FIRST in ORDER BY
+  // PostgreSQL supports this, SQLite doesn't have it
+  // This is actually fine - PostgreSQL handles NULLS LAST natively
+  // Just ensure it's preserved if already in query
+
+  // Handle LENGTH vs LENGTH() - both work in PostgreSQL but standardize
+  // This is already fine - both databases support LENGTH()
+
   return converted;
 }
 
