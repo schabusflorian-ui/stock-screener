@@ -27,10 +27,10 @@ function getService() {
  * GET /api/macro/snapshot
  * Get current macroeconomic snapshot
  */
-router.get('/snapshot', (req, res) => {
+router.get('/snapshot', async (req, res) => {
   try {
     const service = getService();
-    const snapshot = service.getMacroSnapshot();
+    const snapshot = await service.getMacroSnapshot();
     res.json(snapshot);
   } catch (error) {
     console.error('Macro snapshot error:', error);
@@ -42,10 +42,10 @@ router.get('/snapshot', (req, res) => {
  * GET /api/macro/signals
  * Get current macro trading signals
  */
-router.get('/signals', (req, res) => {
+router.get('/signals', async (req, res) => {
   try {
     const service = getService();
-    const signals = service.getMacroSignals();
+    const signals = await service.getMacroSignals();
     res.json(signals);
   } catch (error) {
     console.error('Macro signals error:', error);
@@ -61,13 +61,14 @@ router.get('/signals', (req, res) => {
  * GET /api/macro/yield-curve
  * Get current yield curve
  */
-router.get('/yield-curve', (req, res) => {
+router.get('/yield-curve', async (req, res) => {
   try {
-    const curve = db.getDatabase().prepare(`
+    const dbConn = await db.getDatabaseAsync();
+    const curve = await dbConn.get(`
       SELECT * FROM yield_curve
       ORDER BY curve_date DESC
       LIMIT 1
-    `).get();
+    `);
 
     if (!curve) {
       return res.status(404).json({ error: 'No yield curve data available' });
@@ -99,21 +100,22 @@ router.get('/yield-curve', (req, res) => {
  * GET /api/macro/yield-curve/history
  * Get yield curve spread history from economic_indicators table
  */
-router.get('/yield-curve/history', (req, res) => {
+router.get('/yield-curve/history', async (req, res) => {
   try {
     const days = parseInt(req.query.days) || 90;
+    const dbConn = await db.getDatabaseAsync();
 
     // First try yield_curve table
-    let history = db.getDatabase().prepare(`
+    let history = await dbConn.all(`
       SELECT curve_date, y_2y, y_5y, y_10y, y_30y, spread_2s10s, is_inverted_2s10s
       FROM yield_curve
       WHERE curve_date >= date('now', '-' || ? || ' days')
       ORDER BY curve_date ASC
-    `).all(days);
+    `, days);
 
     // If yield_curve table is empty or has few records, use economic_indicators
     if (!history || history.length < 5) {
-      history = db.getDatabase().prepare(`
+      history = await dbConn.all(`
         SELECT
           observation_date as curve_date,
           value as spread_2s10s,
@@ -122,7 +124,7 @@ router.get('/yield-curve/history', (req, res) => {
         WHERE series_id = 'T10Y2Y'
           AND observation_date >= date('now', '-' || ? || ' days')
         ORDER BY observation_date ASC
-      `).all(days);
+      `, days);
     }
 
     res.json(history);
@@ -140,9 +142,10 @@ router.get('/yield-curve/history', (req, res) => {
  * GET /api/macro/indicators
  * Get all latest economic indicators
  */
-router.get('/indicators', (req, res) => {
+router.get('/indicators', async (req, res) => {
   try {
     const category = req.query.category;
+    const dbConn = await db.getDatabaseAsync();
 
     let query = `
       SELECT * FROM v_latest_economic_indicators
@@ -155,8 +158,8 @@ router.get('/indicators', (req, res) => {
     query += ' ORDER BY category, series_name';
 
     const indicators = category
-      ? db.getDatabase().prepare(query).all(category)
-      : db.getDatabase().prepare(query).all();
+      ? await dbConn.all(query, category)
+      : await dbConn.all(query);
 
     res.json(indicators);
   } catch (error) {
@@ -169,22 +172,23 @@ router.get('/indicators', (req, res) => {
  * GET /api/macro/indicators/:seriesId
  * Get specific indicator history
  */
-router.get('/indicators/:seriesId', (req, res) => {
+router.get('/indicators/:seriesId', async (req, res) => {
   try {
     const { seriesId } = req.params;
     const days = parseInt(req.query.days) || 365;
+    const dbConn = await db.getDatabaseAsync();
 
-    const history = db.getDatabase().prepare(`
+    const history = await dbConn.all(`
       SELECT observation_date, value, change_1m, change_1y
       FROM economic_indicators
       WHERE series_id = ?
         AND observation_date >= date('now', '-' || ? || ' days')
       ORDER BY observation_date ASC
-    `).all(seriesId.toUpperCase(), days);
+    `, seriesId.toUpperCase(), days);
 
-    const metadata = db.getDatabase().prepare(`
+    const metadata = await dbConn.get(`
       SELECT * FROM economic_series_definitions WHERE series_id = ?
-    `).get(seriesId.toUpperCase());
+    `, seriesId.toUpperCase());
 
     res.json({
       seriesId: seriesId.toUpperCase(),
@@ -201,15 +205,16 @@ router.get('/indicators/:seriesId', (req, res) => {
  * GET /api/macro/categories
  * Get available indicator categories
  */
-router.get('/categories', (req, res) => {
+router.get('/categories', async (req, res) => {
   try {
-    const categories = db.getDatabase().prepare(`
+    const dbConn = await db.getDatabaseAsync();
+    const categories = await dbConn.all(`
       SELECT category, COUNT(*) as series_count
       FROM economic_series_definitions
       WHERE is_active = 1
       GROUP BY category
       ORDER BY category
-    `).all();
+    `);
 
     res.json(categories);
   } catch (error) {
@@ -249,27 +254,29 @@ router.post('/update', async (req, res) => {
  * GET /api/macro/status
  * Get macro data status
  */
-router.get('/status', (req, res) => {
+router.get('/status', async (req, res) => {
   try {
-    const latestIndicator = db.getDatabase().prepare(`
+    const dbConn = await db.getDatabaseAsync();
+
+    const latestIndicator = await dbConn.get(`
       SELECT MAX(observation_date) as latest_date
       FROM economic_indicators
-    `).get();
+    `);
 
-    const latestYieldCurve = db.getDatabase().prepare(`
+    const latestYieldCurve = await dbConn.get(`
       SELECT MAX(curve_date) as latest_date
       FROM yield_curve
-    `).get();
+    `);
 
-    const seriesCount = db.getDatabase().prepare(`
+    const seriesCount = await dbConn.get(`
       SELECT COUNT(DISTINCT series_id) as count
       FROM economic_indicators
-    `).get();
+    `);
 
-    const totalObservations = db.getDatabase().prepare(`
+    const totalObservations = await dbConn.get(`
       SELECT COUNT(*) as count
       FROM economic_indicators
-    `).get();
+    `);
 
     res.json({
       status: 'ok',
@@ -317,13 +324,13 @@ function applyRollingAverage(series, window = 4) {
   });
 }
 
-router.get('/market-indicators/history', (req, res) => {
+router.get('/market-indicators/history', async (req, res) => {
   try {
     const startQuarter = req.query.startQuarter || '2015-Q1';
-    const db = require('../../database').getDatabase();
+    const dbConn = await require('../../database').getDatabaseAsync();
 
     // Read pre-calculated data from table (instant!)
-    const data = db.prepare(`
+    const data = await dbConn.all(`
       SELECT
         quarter,
         quarter_end_date as date,
@@ -340,7 +347,7 @@ router.get('/market-indicators/history', (req, res) => {
       FROM market_indicator_history
       WHERE quarter >= ?
       ORDER BY quarter ASC
-    `).all(startQuarter);
+    `, startQuarter);
 
     if (data.length === 0) {
       return res.json({
@@ -448,12 +455,12 @@ router.get('/market-indicators', async (req, res) => {
  * GET /api/macro/safe-havens
  * Get safe haven stocks
  */
-router.get('/safe-havens', (req, res) => {
+router.get('/safe-havens', async (req, res) => {
   try {
     const { MarketIndicatorsService } = require('../../services/marketIndicatorsService');
     const service = new MarketIndicatorsService();
     const limit = parseInt(req.query.limit) || 10;
-    const safeHavens = service.getSafeHavens(limit);
+    const safeHavens = await service.getSafeHavens(limit);
     res.json(safeHavens);
   } catch (error) {
     console.error('Safe havens error:', error);
@@ -465,12 +472,12 @@ router.get('/safe-havens', (req, res) => {
  * GET /api/macro/opportunities
  * Get undervalued quality stocks
  */
-router.get('/opportunities', (req, res) => {
+router.get('/opportunities', async (req, res) => {
   try {
     const { MarketIndicatorsService } = require('../../services/marketIndicatorsService');
     const service = new MarketIndicatorsService();
     const limit = parseInt(req.query.limit) || 10;
-    const opportunities = service.getUndervaluedQuality(limit);
+    const opportunities = await service.getUndervaluedQuality(limit);
     res.json(opportunities);
   } catch (error) {
     console.error('Opportunities error:', error);
@@ -482,36 +489,36 @@ router.get('/opportunities', (req, res) => {
  * GET /api/macro/key-metrics
  * Get key macro metrics summary
  */
-router.get('/key-metrics', (req, res) => {
+router.get('/key-metrics', async (req, res) => {
   try {
-    const dbConn = db.getDatabase();
+    const dbConn = await db.getDatabaseAsync();
 
     // Get key values
-    const getValue = (seriesId) => {
-      const result = dbConn.prepare(`
+    const getValue = async (seriesId) => {
+      const result = await dbConn.get(`
         SELECT value, observation_date FROM economic_indicators
         WHERE series_id = ?
         ORDER BY observation_date DESC
         LIMIT 1
-      `).get(seriesId);
+      `, seriesId);
       return result;
     };
 
-    const fedFunds = getValue('DFF');
-    const treasury10y = getValue('DGS10');
-    const treasury2y = getValue('DGS2');
-    const vix = getValue('VIXCLS');
-    const hySpread = getValue('BAMLH0A0HYM2');
-    const unemployment = getValue('UNRATE');
-    const cpi = getValue('CPIAUCSL');
+    const fedFunds = await getValue('DFF');
+    const treasury10y = await getValue('DGS10');
+    const treasury2y = await getValue('DGS2');
+    const vix = await getValue('VIXCLS');
+    const hySpread = await getValue('BAMLH0A0HYM2');
+    const unemployment = await getValue('UNRATE');
+    const cpi = await getValue('CPIAUCSL');
 
     // Get yield curve
-    const yieldCurve = dbConn.prepare(`
+    const yieldCurve = await dbConn.get(`
       SELECT spread_2s10s, is_inverted_2s10s
       FROM yield_curve
       ORDER BY curve_date DESC
       LIMIT 1
-    `).get();
+    `);
 
     res.json({
       timestamp: new Date().toISOString(),
@@ -546,13 +553,13 @@ router.get('/key-metrics', (req, res) => {
  * Returns both Buffett Indicator (total market/GDP) and S&P 500/GDP
  * for overlay chart comparison showing broad market vs large-cap perspectives
  */
-router.get('/buffett-comparison', (req, res) => {
+router.get('/buffett-comparison', async (req, res) => {
   try {
     const startQuarter = req.query.startQuarter || '2015-Q1';
-    const db = require('../../database').getDatabase();
+    const dbConn = await require('../../database').getDatabaseAsync();
 
     // Read pre-calculated data from table (instant!)
-    const data = db.prepare(`
+    const data = await dbConn.all(`
       SELECT
         quarter,
         quarter_end_date as date,
@@ -565,7 +572,7 @@ router.get('/buffett-comparison', (req, res) => {
       WHERE quarter >= ?
         AND buffett_indicator IS NOT NULL
       ORDER BY quarter ASC
-    `).all(startQuarter);
+    `, startQuarter);
 
     if (data.length === 0) {
       return res.json({
