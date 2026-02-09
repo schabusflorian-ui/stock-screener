@@ -363,12 +363,13 @@ function convertSQLDialect(sql) {
   // Boolean comparisons: PostgreSQL strict about types
   // Convert: column = true → column = 1, column = false → column = 0
   // This handles cases where SQLite uses INTEGER for booleans but code uses true/false
-  converted = converted.replace(/\b(=|!=|<>)\s*(true|false)\b/gi, (match, operator, value) => {
+  // Don't use \b before operator as = is not a word character
+  converted = converted.replace(/(=|!=|<>)\s*(true|false)\b/gi, (match, operator, value) => {
     const numValue = value.toLowerCase() === 'true' ? '1' : '0';
     return `${operator} ${numValue}`;
   });
 
-  // Also handle IS TRUE/IS FALSE comparisons
+  // Handle IS TRUE/IS FALSE comparisons
   converted = converted.replace(/\bIS\s+(NOT\s+)?(true|false)\b/gi, (match, notPart, value) => {
     const numValue = value.toLowerCase() === 'true' ? '1' : '0';
     if (notPart) {
@@ -377,9 +378,11 @@ function convertSQLDialect(sql) {
     return `= ${numValue}`;
   });
 
-  // SUBSTR → SUBSTRING (PostgreSQL function name)
-  // SQLite uses SUBSTR, PostgreSQL uses SUBSTRING
-  converted = converted.replace(/\bSUBSTR\s*\(/gi, 'SUBSTRING(');
+  // SUBSTR → SUBSTRING with text cast for PostgreSQL compatibility
+  // PostgreSQL's SUBSTRING cannot operate on DATE types directly, must cast to text
+  // SUBSTR(column, start, length) → SUBSTRING(column::text, start, length)
+  // Safe to cast everything to ::text as PostgreSQL handles text::text as no-op
+  converted = converted.replace(/\bSUBSTR\s*\(\s*([a-zA-Z_][\w.]*)\s*,/gi, 'SUBSTRING($1::text,');
 
   // Handle NULLS LAST / NULLS FIRST in ORDER BY
   // PostgreSQL supports this, SQLite doesn't have it

@@ -472,6 +472,7 @@ function buildFollowUpSuggestions(intent, symbols) {
  */
 router.post('/query', optionalAuth, attachSubscription, checkUsageLimit('ai_queries_monthly'), async (req, res) => {
   try {
+    const db = req.app.get('db');
     const { query, context, conversation_id, session_id } = req.body;
 
     if (!query || typeof query !== 'string') {
@@ -485,7 +486,7 @@ router.post('/query', optionalAuth, attachSubscription, checkUsageLimit('ai_quer
     let contextResolved = false;
 
     try {
-      conversation = getOrCreateConversation(conversation_id, session_id);
+      conversation = getOrCreateConversation(db, conversation_id, session_id);
 
       // Get context from previous messages
       if (conversation.message_count > 0) {
@@ -510,7 +511,7 @@ router.post('/query', optionalAuth, attachSubscription, checkUsageLimit('ai_quer
       message_count: conversation?.message_count || 0,
       last_symbol: conversationContext?.last_symbol,
       recent_symbols: conversationContext?.recent_symbols,
-      history: conversation?.id ? getConversationHistory(conversation.id, 5) : []
+      history: conversation?.id ? getConversationHistory(db, conversation.id, 5) : []
     };
 
     // Route query - decides between LLM path and fast handler path
@@ -567,6 +568,7 @@ router.post('/query', optionalAuth, attachSubscription, checkUsageLimit('ai_quer
           }
         }
         storeMessage(
+          db,
           conversation.id,
           'user',
           query, // Store original query, not resolved
@@ -580,6 +582,7 @@ router.post('/query', optionalAuth, attachSubscription, checkUsageLimit('ai_quer
           response.confirmation ||
           `${response.intent} response`;
         storeMessage(
+          db,
           conversation.id,
           'assistant',
           responseSummary,
@@ -630,6 +633,7 @@ router.post('/query/stream', optionalAuth, attachSubscription, checkUsageLimit('
   };
 
   try {
+    const db = req.app.get('db');
     const { query, context, conversation_id, session_id } = req.body;
 
     if (!query || typeof query !== 'string') {
@@ -652,7 +656,7 @@ router.post('/query/stream', optionalAuth, attachSubscription, checkUsageLimit('
     let resolvedQuery = query;
 
     try {
-      conversation = getOrCreateConversation(conversation_id, session_id);
+      conversation = getOrCreateConversation(db, conversation_id, session_id);
 
       if (conversation.message_count > 0) {
         conversationContext = getConversationContext(conversation.id);
@@ -672,7 +676,7 @@ router.post('/query/stream', optionalAuth, attachSubscription, checkUsageLimit('
       message_count: conversation?.message_count || 0,
       last_symbol: conversationContext?.last_symbol,
       recent_symbols: conversationContext?.recent_symbols,
-      history: conversation?.id ? getConversationHistory(conversation.id, 5) : []
+      history: conversation?.id ? getConversationHistory(db, conversation.id, 5) : []
     };
 
     // Send conversation ID
@@ -695,6 +699,7 @@ router.post('/query/stream', optionalAuth, attachSubscription, checkUsageLimit('
         const symbols = result.result?.symbol ? [result.result.symbol] : [];
 
         storeMessage(
+          db,
           conversation.id,
           'user',
           query,
@@ -704,6 +709,7 @@ router.post('/query/stream', optionalAuth, attachSubscription, checkUsageLimit('
         );
 
         storeMessage(
+          db,
           conversation.id,
           'assistant',
           result.result?.summary || result.result?.message?.slice(0, 200) || '',
@@ -939,10 +945,10 @@ function shuffleArray(arr) {
 /**
  * Get or create a conversation
  */
-function getOrCreateConversation(conversationId, sessionId) {
+function getOrCreateConversation(db, conversationId, sessionId) {
   if (conversationId) {
     // Check if conversation exists
-    const existing = database.prepare(
+    const existing = db.prepare(
       'SELECT * FROM nl_conversations WHERE id = ?'
     ).get(conversationId);
 
@@ -953,7 +959,7 @@ function getOrCreateConversation(conversationId, sessionId) {
 
   // Create new conversation
   const newId = conversationId || crypto.randomUUID();
-  database.prepare(`
+  db.prepare(`
     INSERT INTO nl_conversations (id, session_id, created_at, updated_at)
     VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
   `).run(newId, sessionId || 'anonymous');
@@ -964,8 +970,8 @@ function getOrCreateConversation(conversationId, sessionId) {
 /**
  * Get conversation history (last N messages)
  */
-function getConversationHistory(conversationId, limit = 5) {
-  return database.prepare(`
+function getConversationHistory(db, conversationId, limit = 5) {
+  return db.prepare(`
     SELECT role, content, intent, symbols, entities, timestamp
     FROM nl_messages
     WHERE conversation_id = ?
@@ -977,8 +983,8 @@ function getConversationHistory(conversationId, limit = 5) {
 /**
  * Store a message in conversation history
  */
-function storeMessage(conversationId, role, content, intent, symbols, entities) {
-  database.prepare(`
+function storeMessage(db, conversationId, role, content, intent, symbols, entities) {
+  db.prepare(`
     INSERT INTO nl_messages (conversation_id, role, content, intent, symbols, entities)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(
@@ -992,7 +998,7 @@ function storeMessage(conversationId, role, content, intent, symbols, entities) 
 
   // Update conversation metadata
   const lastSymbol = symbols && symbols.length > 0 ? symbols[0] : null;
-  database.prepare(`
+  db.prepare(`
     UPDATE nl_conversations
     SET updated_at = CURRENT_TIMESTAMP,
         last_symbol = COALESCE(?, last_symbol),
@@ -1116,6 +1122,7 @@ router.get('/health', async (req, res) => {
  */
 router.get('/conversations', async (req, res) => {
   try {
+    const db = req.app.get('db');
     const { limit = 20, session_id } = req.query;
 
     let query = `
@@ -1140,7 +1147,7 @@ router.get('/conversations', async (req, res) => {
     query += ' ORDER BY c.updated_at DESC LIMIT ?';
     params.push(parseInt(limit));
 
-    const conversations = database.prepare(query).all(...params);
+    const conversations = await db.prepare(query).all(...params);
 
     res.json({
       conversations,
@@ -1158,10 +1165,11 @@ router.get('/conversations', async (req, res) => {
  */
 router.get('/conversation/:id', async (req, res) => {
   try {
+    const db = req.app.get('db');
     const { id } = req.params;
     const { limit = 20 } = req.query;
 
-    const conversation = database.prepare(
+    const conversation = await db.prepare(
       'SELECT * FROM nl_conversations WHERE id = ?'
     ).get(id);
 
@@ -1169,7 +1177,7 @@ router.get('/conversation/:id', async (req, res) => {
       return sendError(res, ERROR_CODES.NOT_FOUND, 'Conversation not found');
     }
 
-    const messages = getConversationHistory(id, parseInt(limit));
+    const messages = getConversationHistory(db, id, parseInt(limit));
 
     res.json({
       conversation,
@@ -1188,13 +1196,14 @@ router.get('/conversation/:id', async (req, res) => {
  */
 router.delete('/conversation/:id', async (req, res) => {
   try {
+    const db = req.app.get('db');
     const { id } = req.params;
 
     // Delete messages first (foreign key)
-    database.prepare('DELETE FROM nl_messages WHERE conversation_id = ?').run(id);
+    await db.prepare('DELETE FROM nl_messages WHERE conversation_id = ?').run(id);
 
     // Delete conversation
-    const result = database.prepare('DELETE FROM nl_conversations WHERE id = ?').run(id);
+    const result = await db.prepare('DELETE FROM nl_conversations WHERE id = ?').run(id);
 
     if (result.changes === 0) {
       return sendError(res, ERROR_CODES.NOT_FOUND, 'Conversation not found');
@@ -1213,20 +1222,21 @@ router.delete('/conversation/:id', async (req, res) => {
  */
 router.post('/conversation/new', async (req, res) => {
   try {
+    const db = req.app.get('db');
     const { session_id, clear_previous } = req.body;
 
     // Optionally clear previous conversations for this session
     if (clear_previous && session_id) {
-      database.prepare(`
+      await db.prepare(`
         DELETE FROM nl_messages WHERE conversation_id IN (
           SELECT id FROM nl_conversations WHERE session_id = ?
         )
       `).run(session_id);
-      database.prepare('DELETE FROM nl_conversations WHERE session_id = ?').run(session_id);
+      await db.prepare('DELETE FROM nl_conversations WHERE session_id = ?').run(session_id);
     }
 
     // Create new conversation
-    const conversation = getOrCreateConversation(null, session_id);
+    const conversation = getOrCreateConversation(db, null, session_id);
 
     res.json({
       conversation_id: conversation.id,
