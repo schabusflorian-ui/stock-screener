@@ -274,11 +274,11 @@ router.get('/recommendations', async (req, res) => {
  * GET /api/attribution/recommendations/:id
  * Get a specific recommendation
  */
-router.get('/recommendations/:id', (req, res) => {
+router.get('/recommendations/:id', async (req, res) => {
   try {
     const db = getDb(req);
     const id = parseInt(req.params.id);
-    const rec = db.prepare(`SELECT ar.*, c.symbol, c.name as company_name
+    const rec = await db.prepare(`SELECT ar.*, c.symbol, c.name as company_name
       FROM agent_recommendations ar
       JOIN companies c ON ar.company_id = c.id
       WHERE ar.id = ?`).get(id);

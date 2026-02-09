@@ -51,12 +51,12 @@ router.get('/templates', async (req, res) => {
 });
 
 // GET /api/theses/templates/:id - Get specific template
-router.get('/templates/:id', (req, res) => {
+router.get('/templates/:id', async (req, res) => {
   try {
     const { thesis } = getServices(req);
     const templateId = req.params.id;
 
-    const template = thesis.getTemplate(templateId);
+    const template = await thesis.getTemplate(templateId);
     if (!template) {
       return res.status(404).json({ error: 'Template not found' });
     }
@@ -75,12 +75,12 @@ router.get('/templates/:id', (req, res) => {
 // ============================================
 
 // GET /api/theses/catalysts/upcoming - Get upcoming catalysts across all theses
-router.get('/catalysts/upcoming', (req, res) => {
+router.get('/catalysts/upcoming', async (req, res) => {
   try {
     const { thesis } = getServices(req);
     const { limit = 20 } = req.query;
 
-    const catalysts = thesis.getUpcomingCatalysts(parseInt(limit));
+    const catalysts = await thesis.getUpcomingCatalysts(parseInt(limit));
 
     res.json({
       success: true,
