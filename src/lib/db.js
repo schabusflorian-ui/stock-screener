@@ -468,6 +468,11 @@ async function getDatabase() {
 }
 
 /**
+ * Alias for getDatabase() - for clarity in async contexts
+ */
+const getDatabaseAsync = getDatabase;
+
+/**
  * Get database instance synchronously (for SQLite backwards compatibility)
  * Throws error if using PostgreSQL
  */
@@ -651,6 +656,7 @@ const dialect = {
 
 module.exports = {
   getDatabase,
+  getDatabaseAsync,
   getDatabaseSync,
   getDatabaseType,
   isUsingPostgres,
