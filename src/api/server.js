@@ -361,6 +361,7 @@ const tcaRouter = require('./routes/tca');
 const batchRouter = require('./routes/batch');
 const subscriptionRouter = require('./routes/subscription');
 const systemRouter = require('./routes/system'); // PHASE 2: System health and monitoring
+const diagnosticRouter = require('./routes/diagnostic'); // Diagnostic endpoints for troubleshooting
 
 // CSRF Protection - apply to all state-changing requests
 // Skip in development for easier testing, enable in production
@@ -456,6 +457,7 @@ app.use('/api/tca', tcaRouter);
 app.use('/api/batch', batchRouter);
 app.use('/api/subscription', subscriptionRouter);
 app.use('/api/system', systemRouter); // PHASE 2: Enhanced system health endpoints
+app.use('/api/diagnostic', diagnosticRouter); // Diagnostic endpoints for troubleshooting
 
 // Note: Basic /api/health endpoint is registered early (before middleware) to ensure
 // Railway's healthcheck can reach it without being blocked by HTTPS redirects, CORS, etc.
