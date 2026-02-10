@@ -1120,15 +1120,15 @@ router.get('/dividend-calendar', async (req, res) => {
         dm.ex_dividend_date,
         dm.dividend_yield,
         dm.current_annual_dividend,
-        ROUND(dm.current_annual_dividend / 4, 4) as est_quarterly_dividend,
+        ROUND((dm.current_annual_dividend / 4)::numeric, 4) as est_quarterly_dividend,
         dm.dividend_frequency,
         dm.years_of_growth,
         dm.is_dividend_aristocrat,
         dm.is_dividend_king
       FROM dividend_metrics dm
       JOIN companies c ON dm.company_id = c.id
-      WHERE dm.ex_dividend_date >= CURRENT_DATE
-        AND dm.ex_dividend_date <= CURRENT_DATE + ($1 || ' days')::INTERVAL
+      WHERE dm.ex_dividend_date::date >= CURRENT_DATE
+        AND dm.ex_dividend_date::date <= CURRENT_DATE + ($1 || ' days')::INTERVAL
         AND dm.dividend_yield > 0
       ORDER BY dm.ex_dividend_date ASC
     `, [parseInt(days)]);
@@ -1147,8 +1147,8 @@ router.get('/dividend-calendar', async (req, res) => {
           d.frequency as dividend_frequency
         FROM dividends d
         JOIN companies c ON d.company_id = c.id
-        WHERE d.ex_dividend_date >= CURRENT_DATE
-          AND d.ex_dividend_date <= CURRENT_DATE + $1 * INTERVAL '1 day'
+        WHERE d.ex_dividend_date::date >= CURRENT_DATE
+          AND d.ex_dividend_date::date <= CURRENT_DATE + $1 * INTERVAL '1 day'
         ORDER BY d.ex_dividend_date ASC
       `, [parseInt(days)]);
       upcoming = fallbackQuery.rows;
