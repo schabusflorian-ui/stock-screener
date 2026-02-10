@@ -257,41 +257,59 @@ router.get('/alpha/timeseries/:symbol', async (req, res) => {
     startDate.setDate(startDate.getDate() - days);
     const startDateStr = startDate.toISOString().split('T')[0];
 
-    // Get stock daily prices
+    // Get stock daily prices (use close when adjusted_close is null)
     const stockPrices = await db.prepare(`
-      SELECT date, adjusted_close as close
+      SELECT date, COALESCE(adjusted_close, close) as close
       FROM daily_prices
       WHERE company_id = ?
         AND date >= ?
-        AND adjusted_close IS NOT NULL
+        AND (adjusted_close IS NOT NULL OR close IS NOT NULL)
       ORDER BY date ASC
     `).all(company.id, startDateStr);
 
-    // Get SPY prices for the same period from daily_prices table (current data)
-    // SPY is tracked as a company in the companies table with current prices
+    // Get SPY prices for the same period
+    // 1) SPY as company in daily_prices (ETFs are tracked as companies)
     let benchmarkPrices = [];
     const spyCompany = await db.prepare(`
-      SELECT id FROM companies WHERE symbol = 'SPY'
+      SELECT id FROM companies WHERE LOWER(symbol) = 'spy'
     `).get();
 
     if (spyCompany) {
       benchmarkPrices = await db.prepare(`
-        SELECT date, adjusted_close as close
+        SELECT date, COALESCE(adjusted_close, close) as close
         FROM daily_prices
         WHERE company_id = ?
           AND date >= ?
-          AND adjusted_close IS NOT NULL
+          AND (adjusted_close IS NOT NULL OR close IS NOT NULL)
         ORDER BY date ASC
       `).all(spyCompany.id, startDateStr);
     }
 
-    // Fallback to index_daily_prices table if SPY not in companies
+    // 2) Fallback: market_index_prices (used by indexService)
+    if (!benchmarkPrices || benchmarkPrices.length === 0) {
+      try {
+        const mipResult = await db.prepare(`
+          SELECT mip.date, mip.close
+          FROM market_index_prices mip
+          JOIN market_indices mi ON mip.index_id = mi.id
+          WHERE (LOWER(mi.symbol) = 'spy' OR LOWER(mi.short_name) = 'spy')
+            AND mip.date >= ?
+            AND mip.close IS NOT NULL
+          ORDER BY mip.date ASC
+        `).all(startDateStr);
+        benchmarkPrices = mipResult;
+      } catch (e) {
+        // Table might not exist (e.g. SQLite without migration)
+      }
+    }
+
+    // 3) Fallback: index_daily_prices (legacy table)
     if (!benchmarkPrices || benchmarkPrices.length === 0) {
       try {
         benchmarkPrices = await db.prepare(`
           SELECT date, close
           FROM index_daily_prices
-          WHERE symbol = 'SPY'
+          WHERE LOWER(symbol) = 'spy'
             AND date >= ?
             AND close IS NOT NULL
           ORDER BY date ASC
@@ -303,19 +321,25 @@ router.get('/alpha/timeseries/:symbol', async (req, res) => {
 
     // Build date-indexed maps for alignment
     const stockMap = new Map(stockPrices.map(p => [p.date, p.close]));
-    const benchmarkMap = new Map(benchmarkPrices.map(p => [p.date, p.close]));
+    const benchmarkMap = new Map((benchmarkPrices || []).map(p => [p.date, p.close]));
 
     // Get all unique dates where we have both stock and benchmark data
     const commonDates = [...stockMap.keys()].filter(d => benchmarkMap.has(d)).sort();
 
     if (commonDates.length < 2) {
+      const reason = stockPrices.length === 0
+        ? 'No price data for this symbol. Run price updates to backfill.'
+        : !benchmarkPrices || benchmarkPrices.length === 0
+        ? 'No SPY benchmark data. Run index/ETF price updates.'
+        : 'Insufficient overlapping price data.';
       return res.json({
         success: true,
         data: {
           symbol,
           benchmark: 'SPY',
           period,
-          timeseries: []
+          timeseries: [],
+          reason
         }
       });
     }

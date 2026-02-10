@@ -142,9 +142,11 @@ export function AlphaChart({ symbol, height = 300, showControls = true }) {
       const res = await indicesAPI.getAlphaTimeseries(symbol, period, rollingWindow);
 
       if (res.data.success && res.data.data) {
-        setData(res.data.data.timeseries);
+        const ts = res.data.data.timeseries || [];
+        setData(ts);
         setSummary(res.data.data.summary);
         setRollingSummary(res.data.data.rollingSummary);
+        setError(ts.length ? null : (res.data.data.reason || 'No alpha data available'));
       } else {
         setError('No alpha data available');
       }

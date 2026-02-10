@@ -4,6 +4,22 @@
 const express = require('express');
 const router = express.Router();
 const { getDatabaseAsync } = require('../../database');
+
+// Check if error is due to missing insider tables (e.g. in fresh PostgreSQL deployments)
+function isInsiderTableMissingError(err) {
+  const msg = (err.message || '').toLowerCase();
+  const code = err.code || '';
+  return (
+    msg.includes('insider_transactions') ||
+    msg.includes('insider_activity_summary') ||
+    msg.includes('insiders')
+  ) && (
+    msg.includes('does not exist') ||
+    msg.includes('no such table') ||
+    code === '42P01' || // PostgreSQL: undefined_table
+    code === 'SQLITE_ERROR'
+  );
+}
 const InsiderTracker = require('../../services/insiderTracker');
 
 let insiderTracker = null;
@@ -507,6 +523,20 @@ router.get('/update-status', async (req, res) => {
  * Get overall insider trading statistics
  */
 router.get('/stats', async (req, res) => {
+  const emptyResponse = () => ({
+    yearToDate: {
+      companies_with_activity: 0,
+      active_insiders: 0,
+      total_transactions: 0,
+      buy_count: 0,
+      sell_count: 0,
+      total_buy_value: 0,
+      total_sell_value: 0
+    },
+    monthlyTrend: [],
+    signalDistribution: {}
+  });
+
   try {
     const database = await getDatabaseAsync();
     // Overall stats (Postgres: CURRENT_DATE - INTERVAL)
@@ -539,25 +569,34 @@ router.get('/stats', async (req, res) => {
     `);
     const monthlyTrend = monthlyTrendResult.rows;
 
-    // Signal distribution
-    const signalDistResult = await database.query(`
-      SELECT
-        insider_signal,
-        COUNT(*)::int as count
-      FROM insider_activity_summary
-      WHERE period = '3m'
-      GROUP BY insider_signal
-    `);
-    const signalDistribution = signalDistResult.rows;
+    // Signal distribution (insider_activity_summary may not exist)
+    let signalDistribution = {};
+    try {
+      const signalDistResult = await database.query(`
+        SELECT
+          insider_signal,
+          COUNT(*)::int as count
+        FROM insider_activity_summary
+        WHERE period = '3m'
+        GROUP BY insider_signal
+      `);
+      signalDistribution = Object.fromEntries(
+        signalDistResult.rows.map(s => [s.insider_signal, s.count])
+      );
+    } catch (signalErr) {
+      if (!isInsiderTableMissingError(signalErr)) throw signalErr;
+    }
 
     res.json({
       yearToDate: stats,
       monthlyTrend,
-      signalDistribution: Object.fromEntries(
-        signalDistribution.map(s => [s.insider_signal, s.count])
-      )
+      signalDistribution
     });
   } catch (error) {
+    if (isInsiderTableMissingError(error)) {
+      return res.json(emptyResponse());
+    }
+    console.error('Error fetching insider stats:', error);
     res.status(500).json({ error: error.message });
   }
 });
