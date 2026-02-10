@@ -616,7 +616,7 @@ router.get('/buffett-comparison', async (req, res) => {
     }));
     const totalMarketGDP = allTotalMarketGDP.slice(0, -1); // Remove last quarter
 
-    const result = {
+    const responseData = {
       success: true,
       source: 'database',
       generated: new Date().toISOString(),
@@ -636,7 +636,7 @@ router.get('/buffett-comparison', async (req, res) => {
       }
     };
 
-    res.json(result);
+    res.json(responseData);
   } catch (error) {
     console.error('Buffett comparison error:', error);
     res.status(500).json({
