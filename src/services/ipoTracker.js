@@ -3,6 +3,7 @@
 
 const SECFilingFetcher = require('./secFilingFetcher');
 const { EUIpoFetcher } = require('./ipoTracker/euIpoFetcher');
+const { isUsingPostgres } = require('../lib/db');
 
 /**
  * IPO lifecycle stages
@@ -1372,19 +1373,27 @@ class IPOTracker {
     `);
     const stats = await statsStmt.get(...regionParams);
 
+    const recentCompletedDateCondition = isUsingPostgres()
+      ? "trading_date > CURRENT_DATE - INTERVAL '30 days'"
+      : "trading_date > date('now', '-30 days')";
+
     const recentCompletedStmt = await this.db.prepare(`
       SELECT COUNT(*) as count
       FROM ipo_tracker
       WHERE status = 'TRADING'
-        AND trading_date > date('now', '-30 days')${regionWhere}
+        AND ${recentCompletedDateCondition}${regionWhere}
     `);
     const recentCompleted = await recentCompletedStmt.get(...regionParams);
+
+    const withdrawnDateCondition = isUsingPostgres()
+      ? "withdrawn_date > CURRENT_DATE - INTERVAL '90 days'"
+      : "withdrawn_date > date('now', '-90 days')";
 
     const withdrawnStmt = await this.db.prepare(`
       SELECT COUNT(*) as count
       FROM ipo_tracker
       WHERE status = 'WITHDRAWN'
-        AND withdrawn_date > date('now', '-90 days')${regionWhere}
+        AND ${withdrawnDateCondition}${regionWhere}
     `);
     const withdrawn = await withdrawnStmt.get(...regionParams);
 
