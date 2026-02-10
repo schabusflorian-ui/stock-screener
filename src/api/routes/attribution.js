@@ -299,7 +299,7 @@ router.get('/recommendations/:id', async (req, res) => {
  * GET /api/attribution/portfolios/:id/recommendation
  * Get the latest recommendation for a portfolio
  */
-router.get('/portfolios/:id/recommendation', (req, res) => {
+router.get('/portfolios/:id/recommendation', async (req, res) => {
   try {
     const db = await getDb();
     const portfolioId = parseInt(req.params.id);
@@ -530,7 +530,7 @@ router.get('/opportunities', async (req, res) => {
  * GET /api/attribution/portfolios/:id/risk-limits
  * Get risk limits for a portfolio
  */
-router.get('/portfolios/:id/risk-limits', (req, res) => {
+router.get('/portfolios/:id/risk-limits', async (req, res) => {
   try {
     const db = await getDb();
     const portfolioId = parseInt(req.params.id);
@@ -563,7 +563,7 @@ router.get('/portfolios/:id/risk-limits', (req, res) => {
  * PUT /api/attribution/portfolios/:id/risk-limits
  * Update risk limits for a portfolio
  */
-router.put('/portfolios/:id/risk-limits', (req, res) => {
+router.put('/portfolios/:id/risk-limits', async (req, res) => {
   try {
     const db = await getDb();
     const portfolioId = parseInt(req.params.id);
