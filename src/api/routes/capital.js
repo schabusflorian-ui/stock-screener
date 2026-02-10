@@ -367,10 +367,10 @@ router.get('/dividends-by-sector', async (req, res) => {
       SELECT
         c.sector,
         COUNT(*) as company_count,
-        ROUND(AVG(dm.dividend_yield), 2) as avg_yield,
-        ROUND(AVG(dm.payout_ratio), 2) as avg_payout_ratio,
-        ROUND(AVG(dm.years_of_growth), 1) as avg_years_growth,
-        ROUND(AVG(dm.dividend_growth_5y), 2) as avg_5y_growth,
+        ROUND(AVG(dm.dividend_yield)::numeric, 2) as avg_yield,
+        ROUND(AVG(dm.payout_ratio)::numeric, 2) as avg_payout_ratio,
+        ROUND(AVG(dm.years_of_growth)::numeric, 1) as avg_years_growth,
+        ROUND(AVG(dm.dividend_growth_5y)::numeric, 2) as avg_5y_growth,
         SUM(CASE WHEN dm.is_dividend_aristocrat = 1 THEN 1 ELSE 0 END) as aristocrats,
         SUM(CASE WHEN dm.is_dividend_king = 1 THEN 1 ELSE 0 END) as kings
       FROM dividend_metrics dm
@@ -1006,9 +1006,9 @@ router.get('/stats', async (req, res) => {
           COUNT(*) as total_dividend_payers,
           SUM(CASE WHEN is_dividend_aristocrat = 1 THEN 1 ELSE 0 END) as aristocrats,
           SUM(CASE WHEN is_dividend_king = 1 THEN 1 ELSE 0 END) as kings,
-          ROUND(AVG(dividend_yield), 2) as avg_yield,
-          ROUND(AVG(CASE WHEN payout_ratio BETWEEN 0 AND 200 THEN payout_ratio END), 2) as avg_payout_ratio,
-          ROUND(AVG(years_of_growth), 1) as avg_years_growth,
+          ROUND(AVG(dividend_yield)::numeric, 2) as avg_yield,
+          ROUND(AVG(CASE WHEN payout_ratio BETWEEN 0 AND 200 THEN payout_ratio END)::numeric, 2) as avg_payout_ratio,
+          ROUND(AVG(years_of_growth)::numeric, 1) as avg_years_growth,
           MAX(years_of_growth) as max_years_growth
         FROM dividend_metrics
         WHERE dividend_yield > 0
