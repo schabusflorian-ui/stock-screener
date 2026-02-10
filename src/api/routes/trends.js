@@ -9,16 +9,16 @@ const analyzer = new TrendAnalysis();
  * GET /api/trends/:symbol
  * Get trend analysis for a company
  */
-router.get('/:symbol', (req, res) => {
+router.get('/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
-    const trends = analyzer.getCompanyTrends(symbol.toUpperCase());
+    const trends = await analyzer.getCompanyTrends(symbol.toUpperCase());
 
     if (trends.error) {
       return res.status(404).json({ error: trends.error });
     }
 
-    const health = analyzer.classifyCompanyHealth(trends);
+    const health = await analyzer.classifyCompanyHealth(trends);
 
     res.json({
       ...trends,
@@ -33,15 +33,15 @@ router.get('/:symbol', (req, res) => {
  * GET /api/trends/compare/all
  * Compare trends across all companies
  */
-router.get('/compare/all', (req, res) => {
+router.get('/compare/all', async (req, res) => {
   try {
-    const db = require('../../database').getDatabase();
-    const companies = db.prepare(
-      'SELECT symbol FROM companies WHERE is_active = 1'
-    ).all();
+    const { getDatabaseAsync } = require('../../database');
+    const database = await getDatabaseAsync();
+    const stmt = await database.prepare('SELECT symbol FROM companies WHERE is_active = 1');
+    const companies = await stmt.all();
 
     const symbols = companies.map(c => c.symbol);
-    const comparison = analyzer.compareCompanies(symbols);
+    const comparison = await analyzer.compareCompanies(symbols);
 
     res.json({
       count: comparison.length,
@@ -56,10 +56,10 @@ router.get('/compare/all', (req, res) => {
  * GET /api/trends/improving
  * Find companies with improving trends
  */
-router.get('/improving', (req, res) => {
+router.get('/improving', async (req, res) => {
   try {
     const { minScore = 3 } = req.query;
-    const improving = analyzer.findBestTrends(parseInt(minScore));
+    const improving = await analyzer.findBestTrends(parseInt(minScore));
 
     res.json({
       minScore: parseInt(minScore),

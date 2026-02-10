@@ -35,9 +35,10 @@ sentry.initSentry();
  * Development: SQLite (simpler local setup)
  */
 function createSessionStore() {
+  const dbUrl = process.env.DATABASE_URL;
   const redisUrl = process.env.REDIS_URL;
 
-  // Try Redis first (required for production cloud deployment)
+  // Try Redis first (best for production cloud deployment with horizontal scaling)
   if (redisUrl) {
     try {
       const RedisStore = require('connect-redis').default;
@@ -65,17 +66,44 @@ function createSessionStore() {
       });
     } catch (err) {
       logger.error('[Session Store] Failed to initialize Redis:', err.message);
+      // Continue to PostgreSQL fallback if Redis fails
+    }
+  }
+
+  // PostgreSQL session store (for Railway and other PostgreSQL deployments)
+  if (dbUrl && dbUrl.includes('postgresql')) {
+    try {
+      const pgSession = require('connect-pg-simple')(session);
+      const { Pool } = require('pg');
+
+      const pool = new Pool({
+        connectionString: dbUrl,
+        ssl: dbUrl.includes('sslmode=require') ? { rejectUnauthorized: false } : false,
+        max: 5,
+        idleTimeoutMillis: 30000
+      });
+
+      logger.info('[Session Store] Using PostgreSQL session store');
+      return new pgSession({
+        pool,
+        tableName: 'session',
+        createTableIfMissing: true,
+        ttl: 8 * 60 * 60 // 8 hours in seconds
+      });
+    } catch (err) {
+      logger.error('[Session Store] PostgreSQL initialization failed:', err.message);
       if (process.env.NODE_ENV === 'production') {
-        throw new Error('Redis session store required in production but failed to initialize');
+        throw new Error('PostgreSQL session store required but failed to initialize');
       }
     }
   }
 
   // Fallback to SQLite (development only)
   if (process.env.NODE_ENV === 'production') {
-    logger.warn('[Session Store] WARNING: Using SQLite session store in production. Set REDIS_URL for horizontal scaling.');
+    throw new Error('Production requires PostgreSQL or Redis session store');
   }
 
+  logger.warn('[Session Store] Using SQLite (dev mode only)');
   return new SQLiteStore({
     client: db.getDatabase(),
     expired: {

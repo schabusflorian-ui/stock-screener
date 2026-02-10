@@ -9,6 +9,7 @@ const express = require('express');
 const router = express.Router();
 const DCFCalculator = require('../../services/dcfCalculator');
 const { getDatabaseAsync } = require('../../database');
+const { requireAuth } = require('../../middleware/auth');
 const { requireFeature } = require('../../middleware/subscription');
 
 // Lazy initialization to avoid instantiating DCFCalculator at module load time
@@ -24,7 +25,7 @@ function getCalculator() {
  * GET /api/dcf/:symbol
  * Get DCF valuation for a company
  */
-router.get('/:symbol', requireFeature('dcf_valuation'), async (req, res) => {
+router.get('/:symbol', requireAuth, requireFeature('dcf_valuation'), async (req, res) => {
   try {
     const { symbol } = req.params;
     const { price, shares } = req.query;
@@ -93,7 +94,7 @@ router.get('/:symbol', requireFeature('dcf_valuation'), async (req, res) => {
  * - netDebt: Net debt (debt - cash)
  * - targetMargin: Target FCF margin
  */
-router.post('/:symbol', requireFeature('dcf_valuation'), async (req, res) => {
+router.post('/:symbol', requireAuth, requireFeature('dcf_valuation'), async (req, res) => {
   try {
     const { symbol } = req.params;
     const overrides = req.body;
@@ -129,7 +130,7 @@ router.post('/:symbol', requireFeature('dcf_valuation'), async (req, res) => {
  * - rowMin, rowMax, rowStep: Custom row interval (decimal, e.g., 0.06 for 6%)
  * - colMin, colMax, colStep: Custom column interval
  */
-router.get('/:symbol/sensitivity', requireFeature('dcf_valuation'), async (req, res) => {
+router.get('/:symbol/sensitivity', requireAuth, requireFeature('dcf_valuation'), async (req, res) => {
   try {
     const { symbol } = req.params;
     const {
@@ -215,7 +216,7 @@ router.get('/:symbol/sensitivity', requireFeature('dcf_valuation'), async (req, 
  * Query params:
  * - targetPrice: Price to solve for (defaults to current price)
  */
-router.get('/:symbol/reverse', requireFeature('dcf_valuation'), async (req, res) => {
+router.get('/:symbol/reverse', requireAuth, requireFeature('dcf_valuation'), async (req, res) => {
   try {
     const { symbol } = req.params;
     const { targetPrice } = req.query;
@@ -304,7 +305,7 @@ router.get('/:symbol/reverse', requireFeature('dcf_valuation'), async (req, res)
  * Query params:
  * - variation: Variation percentage (default 20 for ±20%)
  */
-router.get('/:symbol/tornado', requireFeature('dcf_valuation'), async (req, res) => {
+router.get('/:symbol/tornado', requireAuth, requireFeature('dcf_valuation'), async (req, res) => {
   try {
     const { symbol } = req.params;
     const { variation } = req.query;
@@ -363,7 +364,7 @@ router.get('/:symbol/tornado', requireFeature('dcf_valuation'), async (req, res)
  * GET /api/dcf/:symbol/breakeven
  * Break-even analysis - find values where intrinsic = current price
  */
-router.get('/:symbol/breakeven', requireFeature('dcf_valuation'), async (req, res) => {
+router.get('/:symbol/breakeven', requireAuth, requireFeature('dcf_valuation'), async (req, res) => {
   try {
     const { symbol } = req.params;
 
@@ -417,7 +418,7 @@ router.get('/:symbol/breakeven', requireFeature('dcf_valuation'), async (req, re
  * GET /api/dcf/:symbol/history
  * Get historical DCF valuations for a company
  */
-router.get('/:symbol/history', requireFeature('dcf_valuation'), async (req, res) => {
+router.get('/:symbol/history', requireAuth, requireFeature('dcf_valuation'), async (req, res) => {
   try {
     const { symbol } = req.params;
     const limit = parseInt(req.query.limit) || 10;
@@ -543,7 +544,7 @@ router.get('/benchmarks', async (req, res) => {
  * - multipleUncertainty: Std dev of exit multiple (default: 2)
  * - baseInputs: Optional DCF input overrides
  */
-router.post('/:symbol/parametric', requireFeature('dcf_valuation'), async (req, res) => {
+router.post('/:symbol/parametric', requireAuth, requireFeature('dcf_valuation'), async (req, res) => {
   try {
     const { symbol } = req.params;
     const {
@@ -609,7 +610,7 @@ router.post('/:symbol/parametric', requireFeature('dcf_valuation'), async (req, 
  * GET /api/dcf/:symbol/parametric
  * Get parametric valuation with default settings
  */
-router.get('/:symbol/parametric', requireFeature('dcf_valuation'), async (req, res) => {
+router.get('/:symbol/parametric', requireAuth, requireFeature('dcf_valuation'), async (req, res) => {
   try {
     const { symbol } = req.params;
     const {

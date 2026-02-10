@@ -45,7 +45,7 @@ function markPortfolioRefreshed(portfolioId) {
 }
 
 // GET /api/portfolios - List user's portfolios (or all if admin)
-router.get('/', async (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   try {
     const service = getService(req);
     const { refresh = 'auto' } = req.query;

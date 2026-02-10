@@ -18,7 +18,7 @@ const { requireFeature, checkResourceLimit } = require('../../middleware/subscri
  * GET /api/agents
  * List all active trading agents
  */
-router.get('/', async (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   try {
     const agents = await agentService.getAllAgents();
     res.json({ success: true, data: agents });

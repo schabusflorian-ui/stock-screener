@@ -547,7 +547,7 @@ router.get('/stats', async (req, res) => {
     const weekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
     const monthAgo = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    const stats = database.prepare(`
+    const statsStmt = await database.prepare(`
       SELECT
         COUNT(CASE WHEN triggered_at > ? THEN 1 END) as alerts_24h,
         COUNT(CASE WHEN triggered_at > ? THEN 1 END) as alerts_7d,
@@ -558,23 +558,26 @@ router.get('/stats', async (req, res) => {
         COUNT(DISTINCT company_id) as unique_companies_7d
       FROM alerts
       WHERE triggered_at > ?
-    `).get(dayAgo, weekAgo, monthAgo, weekAgo, weekAgo, weekAgo, monthAgo);
+    `);
+    const stats = await statsStmt.get(dayAgo, weekAgo, monthAgo, weekAgo, weekAgo, weekAgo, monthAgo);
 
-    const byType = database.prepare(`
+    const byTypeStmt = await database.prepare(`
       SELECT alert_type, COUNT(*) as count
       FROM alerts
       WHERE triggered_at > ?
       GROUP BY alert_type
       ORDER BY count DESC
-    `).all(weekAgo);
+    `);
+    const byType = await byTypeStmt.all(weekAgo);
 
-    const bySignal = database.prepare(`
+    const bySignalStmt = await database.prepare(`
       SELECT signal_type, COUNT(*) as count
       FROM alerts
       WHERE triggered_at > ?
       GROUP BY signal_type
       ORDER BY count DESC
-    `).all(weekAgo);
+    `);
+    const bySignal = await bySignalStmt.all(weekAgo);
 
     res.json({
       success: true,

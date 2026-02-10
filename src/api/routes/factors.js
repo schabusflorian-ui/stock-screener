@@ -4,6 +4,7 @@
 const express = require('express');
 const router = express.Router();
 const { getFactorAnalysisService } = require('../../services/factors');
+const { requireAuth } = require('../../middleware/auth');
 const { requireFeature } = require('../../middleware/subscription');
 const { MemoryCache } = require('../../lib/cache');
 
@@ -456,7 +457,7 @@ router.get('/definitions', async (req, res) => {
 // ============================================
 
 // GET /api/factors/stocks/:symbol - Get factor scores for a stock
-router.get('/stocks/:symbol', requireFeature('factor_analysis'), async (req, res) => {
+router.get('/stocks/:symbol', requireAuth, requireFeature('factor_analysis'), async (req, res) => {
   try {
     const { symbol } = req.params;
     const { date } = req.query;
@@ -476,7 +477,7 @@ router.get('/stocks/:symbol', requireFeature('factor_analysis'), async (req, res
 });
 
 // GET /api/factors/stocks/:symbol/history - Get factor score history
-router.get('/stocks/:symbol/history', requireFeature('factor_analysis'), async (req, res) => {
+router.get('/stocks/:symbol/history', requireAuth, requireFeature('factor_analysis'), async (req, res) => {
   try {
     const { symbol } = req.params;
     const { limit = 12, startDate } = req.query;
@@ -495,7 +496,7 @@ router.get('/stocks/:symbol/history', requireFeature('factor_analysis'), async (
 });
 
 // GET /api/factors/top/:factor - Get top stocks by factor
-router.get('/top/:factor', requireFeature('factor_analysis'), async (req, res) => {
+router.get('/top/:factor', requireAuth, requireFeature('factor_analysis'), async (req, res) => {
   try {
     const { factor } = req.params;
     const { date, limit = 20, minMarketCap, sector } = req.query;
@@ -528,7 +529,7 @@ router.get('/top/:factor', requireFeature('factor_analysis'), async (req, res) =
 // ============================================
 
 // GET /api/factors/investors/:id/profile - Get investor factor profile
-router.get('/investors/:id/profile', requireFeature('factor_analysis'), async (req, res) => {
+router.get('/investors/:id/profile', requireAuth, requireFeature('factor_analysis'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -547,7 +548,7 @@ router.get('/investors/:id/profile', requireFeature('factor_analysis'), async (r
 });
 
 // GET /api/factors/investors/:id/history - Get investor factor exposure history
-router.get('/investors/:id/history', requireFeature('factor_analysis'), async (req, res) => {
+router.get('/investors/:id/history', requireAuth, requireFeature('factor_analysis'), async (req, res) => {
   try {
     const { id } = req.params;
     const { limit = 20 } = req.query;
@@ -565,7 +566,7 @@ router.get('/investors/:id/history', requireFeature('factor_analysis'), async (r
 });
 
 // GET /api/factors/compare - Compare factor exposures between investors
-router.get('/compare', requireFeature('factor_analysis'), async (req, res) => {
+router.get('/compare', requireAuth, requireFeature('factor_analysis'), async (req, res) => {
   try {
     const { investors, date } = req.query;
 
@@ -590,7 +591,7 @@ router.get('/compare', requireFeature('factor_analysis'), async (req, res) => {
 // ============================================
 
 // GET /api/factors/performance - Get factor performance by decision outcome
-router.get('/performance', requireFeature('factor_analysis'), async (req, res) => {
+router.get('/performance', requireAuth, requireFeature('factor_analysis'), async (req, res) => {
   try {
     const fas = getFactorAnalysisService();
     const performance = await fas.getFactorDecisionPerformance();
@@ -602,7 +603,7 @@ router.get('/performance', requireFeature('factor_analysis'), async (req, res) =
 });
 
 // GET /api/factors/success - Analyze which factors lead to best outcomes
-router.get('/success', requireFeature('factor_analysis'), async (req, res) => {
+router.get('/success', requireAuth, requireFeature('factor_analysis'), async (req, res) => {
   try {
     const { minDecisions = 100, factor } = req.query;
 
@@ -624,7 +625,7 @@ router.get('/success', requireFeature('factor_analysis'), async (req, res) => {
 // ============================================
 
 // GET /api/factors/regime - Get current factor regime
-router.get('/regime', requireFeature('factor_analysis'), async (req, res) => {
+router.get('/regime', requireAuth, requireFeature('factor_analysis'), async (req, res) => {
   try {
     const fas = getFactorAnalysisService();
     const regime = await fas.getCurrentFactorRegime();
@@ -636,7 +637,7 @@ router.get('/regime', requireFeature('factor_analysis'), async (req, res) => {
 });
 
 // GET /api/factors/regime/history - Get factor regime history
-router.get('/regime/history', requireFeature('factor_analysis'), async (req, res) => {
+router.get('/regime/history', requireAuth, requireFeature('factor_analysis'), async (req, res) => {
   try {
     const { limit = 20 } = req.query;
 
@@ -657,7 +658,7 @@ router.get('/regime/history', requireFeature('factor_analysis'), async (req, res
 // ============================================
 
 // GET /api/factors/portfolio/:id/fama-french - Get Fama-French factor exposures for portfolio
-router.get('/portfolio/:id/fama-french', requireFeature('factor_analysis'), async (req, res) => {
+router.get('/portfolio/:id/fama-french', requireAuth, requireFeature('factor_analysis'), async (req, res) => {
   try {
     const { id } = req.params;
     const { startDate, endDate } = req.query;
@@ -680,7 +681,7 @@ router.get('/portfolio/:id/fama-french', requireFeature('factor_analysis'), asyn
 });
 
 // GET /api/factors/returns - Get historical factor returns
-router.get('/returns', requireFeature('factor_analysis'), async (req, res) => {
+router.get('/returns', requireAuth, requireFeature('factor_analysis'), async (req, res) => {
   try {
     const { startDate, endDate, cumulative = 'true' } = req.query;
 

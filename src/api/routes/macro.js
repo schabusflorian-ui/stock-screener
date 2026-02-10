@@ -652,9 +652,10 @@ router.get('/buffett-comparison', async (req, res) => {
  */
 router.get('/refresh-current-quarter', async (req, res) => {
   try {
-    const db = require('../../database').getDatabase();
+    const { getDatabaseAsync } = require('../../database');
+    const database = await getDatabaseAsync();
     const { HistoricalMarketIndicatorsService } = require('../../services/historicalMarketIndicators');
-    const service = new HistoricalMarketIndicatorsService();
+    const service = new HistoricalMarketIndicatorsService(database);
 
     // Get current quarter
     const now = new Date();
@@ -667,12 +668,12 @@ router.get('/refresh-current-quarter', async (req, res) => {
     console.log(`Refreshing market indicators for ${currentQuarter}...`);
 
     // Calculate current quarter metrics
-    const buffett = service.calculateBuffettIndicator(currentQuarter);
-    const sp500PE = service.getSP500PEForQuarterTTM(currentQuarter);
-    const aggregateMetrics = service.getQuarterMetrics(currentQuarter);
+    const buffett = await service.calculateBuffettIndicator(currentQuarter);
+    const sp500PE = await service.getSP500PEForQuarterTTM(currentQuarter);
+    const aggregateMetrics = await service.getQuarterMetrics(currentQuarter);
 
     // Upsert into table
-    db.prepare(`
+    const stmt = await database.prepare(`
       INSERT OR REPLACE INTO market_indicator_history (
         quarter, quarter_end_date,
         buffett_indicator, buffett_market_cap, buffett_gdp, buffett_stock_count,
@@ -680,7 +681,8 @@ router.get('/refresh-current-quarter', async (req, res) => {
         median_pe, median_msi, pct_undervalued, total_stocks_analyzed,
         calculated_at, data_quality
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
-    `).run(
+    `);
+    await stmt.run(
       currentQuarter,
       quarterEndDate,
       buffett?.value ? Math.round(buffett.value * 100) / 100 : null,
