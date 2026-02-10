@@ -71,7 +71,7 @@ router.get('/recent', async (req, res) => {
       whereClause = "AND it.transaction_type = 'sell'";
     }
 
-    const transactions = await database.prepare(`
+    const stmt1 = await database.prepare(`
       SELECT
         it.*,
         c.symbol,
@@ -88,7 +88,8 @@ router.get('/recent', async (req, res) => {
       ${whereClause}
       ORDER BY it.transaction_date DESC
       LIMIT ?
-    `).all(parseInt(limit));
+    `);
+    const transactions = await stmt1.all(parseInt(limit));
 
     res.json({
       count: transactions.length,
@@ -117,7 +118,7 @@ router.get('/signals', async (req, res) => {
       whereClause = `AND ias.insider_signal = '${signal}'`;
     }
 
-    const signals = await database.prepare(`
+    const stmt2 = await database.prepare(`
       SELECT
         ias.*,
         c.symbol,
@@ -129,7 +130,8 @@ router.get('/signals', async (req, res) => {
       WHERE ias.period = ?
       ${whereClause}
       ORDER BY ias.signal_score DESC
-    `).all(period);
+    `);
+    const signals = await stmt2.all(period);
 
     // Group by signal type
     const grouped = {
@@ -168,9 +170,10 @@ router.get('/company/:symbol', async (req, res) => {
     const { symbol } = req.params;
     const { months = 12, type = 'all' } = req.query;
 
-    const company = await database.prepare(
+    const stmt3 = await database.prepare(
       'SELECT id, symbol, name FROM companies WHERE LOWER(symbol) = LOWER(?)'
-    ).get(symbol.toUpperCase());
+    );
+    const company = await stmt3.get(symbol.toUpperCase());
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -189,7 +192,7 @@ router.get('/company/:symbol', async (req, res) => {
     }
 
     // Get list of insiders for this company
-    const insiders = await database.prepare(`
+    const stmt4 = await database.prepare(`
       SELECT
         i.*,
         COUNT(it.id) as transaction_count,
@@ -201,7 +204,8 @@ router.get('/company/:symbol', async (req, res) => {
       WHERE i.company_id = ?
       GROUP BY i.id
       ORDER BY i.is_officer DESC, transaction_count DESC
-    `).all(company.id);
+    `);
+    const insiders = await stmt4.all(company.id);
 
     res.json({
       company: {
@@ -229,9 +233,10 @@ router.get('/company/:symbol/chart', async (req, res) => {
     const { symbol } = req.params;
     const { months = 24 } = req.query;
 
-    const company = await database.prepare(
+    const stmt5 = await database.prepare(
       'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)'
-    ).get(symbol.toUpperCase());
+    );
+    const company = await stmt5.get(symbol.toUpperCase());
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -242,7 +247,7 @@ router.get('/company/:symbol/chart', async (req, res) => {
     const startDateStr = startDate.toISOString().split('T')[0];
 
     // Get monthly aggregated data
-    const monthlyData = await database.prepare(`
+    const stmt6 = await database.prepare(`
       SELECT
         strftime('%Y-%m', transaction_date) as month,
         SUM(CASE WHEN transaction_type = 'buy' THEN total_value ELSE 0 END) as buy_value,
@@ -258,10 +263,11 @@ router.get('/company/:symbol/chart', async (req, res) => {
         AND transaction_type IN ('buy', 'sell')
       GROUP BY strftime('%Y-%m', transaction_date)
       ORDER BY month ASC
-    `).all(company.id, startDateStr);
+    `);
+    const monthlyData = await stmt6.all(company.id, startDateStr);
 
     // Get individual transactions for scatter plot
-    const transactions = await database.prepare(`
+    const stmt7 = await database.prepare(`
       SELECT
         it.transaction_date as date,
         it.transaction_type as type,
@@ -278,7 +284,8 @@ router.get('/company/:symbol/chart', async (req, res) => {
         AND it.transaction_date >= ?
         AND it.transaction_type IN ('buy', 'sell')
       ORDER BY it.transaction_date ASC
-    `).all(company.id, startDateStr);
+    `);
+    const transactions = await stmt7.all(company.id, startDateStr);
 
     res.json({
       monthly: monthlyData,
@@ -298,19 +305,20 @@ router.get('/insider/:cik', async (req, res) => {
     const database = await getDatabaseAsync();
     const { cik } = req.params;
 
-    const insider = await database.prepare(`
+    const stmt8 = await database.prepare(`
       SELECT i.*, c.symbol, c.name as company_name
       FROM insiders i
       JOIN companies c ON i.company_id = c.id
       WHERE i.cik = ?
-    `).all(cik);
+    `);
+    const insider = await stmt8.all(cik);
 
     if (insider.length === 0) {
       return res.status(404).json({ error: 'Insider not found' });
     }
 
     // Get all transactions for this insider
-    const transactions = await database.prepare(`
+    const stmt9 = await database.prepare(`
       SELECT
         it.*,
         c.symbol,
@@ -320,7 +328,8 @@ router.get('/insider/:cik', async (req, res) => {
       JOIN companies c ON it.company_id = c.id
       WHERE i.cik = ?
       ORDER BY it.transaction_date DESC
-    `).all(cik);
+    `);
+    const transactions = await stmt9.all(cik);
 
     // Calculate totals
     const totals = {
@@ -373,7 +382,7 @@ router.get('/cluster-buying', async (req, res) => {
     startDate.setDate(startDate.getDate() - parseInt(days));
     const startDateStr = startDate.toISOString().split('T')[0];
 
-    const clusters = await database.prepare(`
+    const stmt10 = await database.prepare(`
       SELECT
         c.id as company_id,
         c.symbol,
@@ -394,7 +403,8 @@ router.get('/cluster-buying', async (req, res) => {
       GROUP BY c.id
       HAVING COUNT(DISTINCT it.insider_id) >= ?
       ORDER BY unique_buyers DESC, total_buy_value DESC
-    `).all(startDateStr, parseInt(minInsiders));
+    `);
+    const clusters = await stmt10.all(startDateStr, parseInt(minInsiders));
 
     res.json({
       criteria: {
@@ -456,7 +466,7 @@ router.get('/update-status', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
     // Get counts and latest transaction date
-    const stats = await database.prepare(`
+    const stmt11 = await database.prepare(`
       SELECT
         COUNT(DISTINCT company_id) as companies_with_data,
         COUNT(DISTINCT insider_id) as total_insiders,
@@ -464,15 +474,17 @@ router.get('/update-status', async (req, res) => {
         MAX(created_at) as last_import_time,
         MAX(transaction_date) as latest_transaction
       FROM insider_transactions
-    `).get();
+    `);
+    const stats = await stmt11.get();
 
     // Get signal distribution
-    const signals = await database.prepare(`
+    const stmt12 = await database.prepare(`
       SELECT insider_signal, COUNT(*) as count
       FROM insider_activity_summary
       WHERE period = '3m'
       GROUP BY insider_signal
-    `).all();
+    `);
+    const signals = await stmt12.all();
 
     res.json({
       lastImport: stats.last_import_time,
@@ -495,7 +507,7 @@ router.get('/stats', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
     // Overall stats
-    const stats = await database.prepare(`
+    const stmt13 = await database.prepare(`
       SELECT
         COUNT(DISTINCT it.company_id) as companies_with_activity,
         COUNT(DISTINCT it.insider_id) as active_insiders,
@@ -506,10 +518,11 @@ router.get('/stats', async (req, res) => {
         SUM(CASE WHEN it.transaction_type = 'sell' THEN it.total_value ELSE 0 END) as total_sell_value
       FROM insider_transactions it
       WHERE it.transaction_date >= date('now', '-1 year')
-    `).get();
+    `);
+    const stats = await stmt13.get();
 
     // Monthly trend
-    const monthlyTrend = await database.prepare(`
+    const stmt14 = await database.prepare(`
       SELECT
         strftime('%Y-%m', transaction_date) as month,
         SUM(CASE WHEN transaction_type = 'buy' THEN total_value ELSE 0 END) as buy_value,
@@ -520,17 +533,19 @@ router.get('/stats', async (req, res) => {
       WHERE transaction_date >= date('now', '-12 months')
       GROUP BY strftime('%Y-%m', transaction_date)
       ORDER BY month ASC
-    `).all();
+    `);
+    const monthlyTrend = await stmt14.all();
 
     // Signal distribution
-    const signalDistribution = await database.prepare(`
+    const stmt15 = await database.prepare(`
       SELECT
         insider_signal,
         COUNT(*) as count
       FROM insider_activity_summary
       WHERE period = '3m'
       GROUP BY insider_signal
-    `).all();
+    `);
+    const signalDistribution = await stmt15.all();
 
     res.json({
       yearToDate: stats,
