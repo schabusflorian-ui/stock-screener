@@ -3,7 +3,9 @@
 
 const express = require('express');
 const router = express.Router();
+const { getDatabaseAsync } = require('../../database');
 const { getPortfolioService } = require('../../services/portfolio');
+const { asyncHandler } = require('../../middleware/errorHandler');
 const {
   requireAuth,
   optionalAuth,
@@ -13,10 +15,10 @@ const {
 } = require('../../middleware/auth');
 const { checkResourceLimit } = require('../../middleware/subscription');
 
-// Middleware to get portfolio service
-const getService = (req) => {
-  const db = req.app.get('db');
-  return getPortfolioService(db);
+// Middleware to get portfolio service (async - requires await)
+const getService = async (req) => {
+  const database = await getDatabaseAsync();
+  return getPortfolioService(database);
 };
 
 // Apply auth middleware to all routes
@@ -45,9 +47,9 @@ function markPortfolioRefreshed(portfolioId) {
 }
 
 // GET /api/portfolios - List user's portfolios (or all if admin)
-router.get('/', requireAuth, async (req, res) => {
+router.get('/', requireAuth, asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const { refresh = 'auto' } = req.query;
 
     // Determine user filter - admins can see all, regular users see only their own
@@ -80,12 +82,12 @@ router.get('/', requireAuth, async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // POST /api/portfolios - Create a new portfolio (requires auth, resource limit check)
-router.post('/', requireAuth, checkResourceLimit('portfolios'), async (req, res) => {
+router.post('/', requireAuth, checkResourceLimit('portfolios'), asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const {
       name,
       description,
@@ -135,16 +137,16 @@ router.post('/', requireAuth, checkResourceLimit('portfolios'), async (req, res)
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // ============================================
 // Static Routes (must be before /:id routes)
 // ============================================
 
 // GET /api/portfolios/alerts - Get all unread alerts across all portfolios
-router.get('/alerts', async (req, res) => {
+router.get('/alerts', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const { limit = 20 } = req.query;
 
     const alerts = await service.getAllUnreadAlerts(parseInt(limit));
@@ -159,12 +161,12 @@ router.get('/alerts', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // GET /api/portfolios/summaries - Get all portfolio summaries for dashboard
-router.get('/summaries', async (req, res) => {
+router.get('/summaries', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const summaries = await service.getPortfolioSummaries();
     res.json({
       success: true,
@@ -174,12 +176,12 @@ router.get('/summaries', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // GET /api/portfolios/:id - Get portfolio with full summary (requires ownership)
-router.get('/:id', requireAuth, requirePortfolioOwnership, async (req, res) => {
+router.get('/:id', requireAuth, requirePortfolioOwnership, asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
 
     const summary = await service.getPortfolioSummary(portfolioId);
@@ -189,12 +191,12 @@ router.get('/:id', requireAuth, requirePortfolioOwnership, async (req, res) => {
       error: error.message
     });
   }
-});
+}));
 
 // PUT /api/portfolios/:id - Update portfolio (requires ownership)
-router.put('/:id', requireAuth, requirePortfolioOwnership, async (req, res) => {
+router.put('/:id', requireAuth, requirePortfolioOwnership, asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
     const { name, description, benchmarkIndexId } = req.body;
 
@@ -208,12 +210,12 @@ router.put('/:id', requireAuth, requirePortfolioOwnership, async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // DELETE /api/portfolios/:id - Delete portfolio (requires ownership)
-router.delete('/:id', requireAuth, requirePortfolioOwnership, async (req, res) => {
+router.delete('/:id', requireAuth, requirePortfolioOwnership, asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
     const { archive = false } = req.query;
 
@@ -228,16 +230,16 @@ router.delete('/:id', requireAuth, requirePortfolioOwnership, async (req, res) =
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // ============================================
 // Position Routes (all require ownership)
 // ============================================
 
 // GET /api/portfolios/:id/holdings - Get all holdings (alias for positions)
-router.get('/:id/holdings', requireAuth, requirePortfolioOwnership, async (req, res) => {
+router.get('/:id/holdings', requireAuth, requirePortfolioOwnership, asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
     const forceRefresh = req.query.refresh === 'true';
 
@@ -257,12 +259,12 @@ router.get('/:id/holdings', requireAuth, requirePortfolioOwnership, async (req, 
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // GET /api/portfolios/:id/positions - Get all positions
-router.get('/:id/positions', requireAuth, requirePortfolioOwnership, async (req, res) => {
+router.get('/:id/positions', requireAuth, requirePortfolioOwnership, asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
     const forceRefresh = req.query.refresh === 'true';
 
@@ -282,12 +284,12 @@ router.get('/:id/positions', requireAuth, requirePortfolioOwnership, async (req,
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // GET /api/portfolios/:id/positions/:positionId/lots - Get lots for a position
-router.get('/:id/positions/:positionId/lots', async (req, res) => {
+router.get('/:id/positions/:positionId/lots', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const positionId = parseInt(req.params.positionId);
     const { openOnly = 'false' } = req.query;
 
@@ -301,12 +303,12 @@ router.get('/:id/positions/:positionId/lots', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // GET /api/portfolios/:id/underlying - Get underlying holdings breakdown for ETF positions
-router.get('/:id/underlying', async (req, res) => {
+router.get('/:id/underlying', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const db = require('../../database').getDatabase();
     const { getEtfService } = require('../../services/etfService');
     const etfService = getEtfService();
@@ -407,16 +409,16 @@ router.get('/:id/underlying', async (req, res) => {
     console.error('Error getting underlying holdings:', error);
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // ============================================
 // Trading Routes (all require ownership)
 // ============================================
 
 // POST /api/portfolios/:id/trade - Execute buy or sell
-router.post('/:id/trade', requireAuth, requirePortfolioOwnership, async (req, res) => {
+router.post('/:id/trade', requireAuth, requirePortfolioOwnership, asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const db = require('../../database').getDatabase();
     const portfolioId = parseInt(req.params.id);
     let {
@@ -536,16 +538,16 @@ router.post('/:id/trade', requireAuth, requirePortfolioOwnership, async (req, re
     const status = error.message.includes('Insufficient') ? 400 : 500;
     res.status(status).json({ error: error.message });
   }
-});
+}));
 
 // ============================================
 // Cash Management Routes (all require ownership)
 // ============================================
 
 // POST /api/portfolios/:id/deposit - Deposit cash
-router.post('/:id/deposit', requireAuth, requirePortfolioOwnership, async (req, res) => {
+router.post('/:id/deposit', requireAuth, requirePortfolioOwnership, asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
     const { amount, date, notes } = req.body;
 
@@ -558,12 +560,12 @@ router.post('/:id/deposit', requireAuth, requirePortfolioOwnership, async (req, 
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // POST /api/portfolios/:id/withdraw - Withdraw cash
-router.post('/:id/withdraw', requireAuth, requirePortfolioOwnership, async (req, res) => {
+router.post('/:id/withdraw', requireAuth, requirePortfolioOwnership, asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
     const { amount, date, notes } = req.body;
 
@@ -577,12 +579,12 @@ router.post('/:id/withdraw', requireAuth, requirePortfolioOwnership, async (req,
     const status = error.message.includes('Insufficient') ? 400 : 500;
     res.status(status).json({ error: error.message });
   }
-});
+}));
 
 // POST /api/portfolios/:id/dividend - Record dividend payment
-router.post('/:id/dividend', async (req, res) => {
+router.post('/:id/dividend', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
     const { companyId, amount, dividendPerShare, date, notes } = req.body;
 
@@ -604,16 +606,16 @@ router.post('/:id/dividend', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // ============================================
 // Order Routes
 // ============================================
 
 // GET /api/portfolios/:id/orders - Get orders (active by default)
-router.get('/:id/orders', async (req, res) => {
+router.get('/:id/orders', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
     const { history = 'false', limit = 50, offset = 0 } = req.query;
 
@@ -636,12 +638,12 @@ router.get('/:id/orders', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // POST /api/portfolios/:id/orders - Create a new order
-router.post('/:id/orders', async (req, res) => {
+router.post('/:id/orders', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
     const {
       companyId,
@@ -684,12 +686,12 @@ router.post('/:id/orders', async (req, res) => {
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
-});
+}));
 
 // DELETE /api/portfolios/:id/orders/:orderId - Cancel an order
-router.delete('/:id/orders/:orderId', async (req, res) => {
+router.delete('/:id/orders/:orderId', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const orderId = parseInt(req.params.orderId);
 
     const result = await service.cancelOrder(orderId);
@@ -698,16 +700,16 @@ router.delete('/:id/orders/:orderId', async (req, res) => {
     const status = error.message.includes('not found') ? 404 : 500;
     res.status(status).json({ error: error.message });
   }
-});
+}));
 
 // ============================================
 // Transaction History Routes
 // ============================================
 
 // GET /api/portfolios/:id/transactions - Get transaction history
-router.get('/:id/transactions', async (req, res) => {
+router.get('/:id/transactions', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
     const { limit = 50, offset = 0 } = req.query;
 
@@ -725,16 +727,16 @@ router.get('/:id/transactions', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // ============================================
 // Snapshot Routes
 // ============================================
 
 // GET /api/portfolios/:id/snapshots - Get portfolio snapshots
-router.get('/:id/snapshots', async (req, res) => {
+router.get('/:id/snapshots', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
     const { limit = 365, startDate, endDate } = req.query;
 
@@ -754,12 +756,12 @@ router.get('/:id/snapshots', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // POST /api/portfolios/:id/snapshots - Take a snapshot
-router.post('/:id/snapshots', async (req, res) => {
+router.post('/:id/snapshots', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
     const { date } = req.body;
 
@@ -768,12 +770,12 @@ router.post('/:id/snapshots', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // GET /api/portfolios/:id/value-history - Get portfolio value history for charting
-router.get('/:id/value-history', async (req, res) => {
+router.get('/:id/value-history', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
     const { period = '1y' } = req.query;
 
@@ -815,12 +817,12 @@ router.get('/:id/value-history', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // GET /api/portfolios/:id/performance - Get portfolio performance metrics
-router.get('/:id/performance', async (req, res) => {
+router.get('/:id/performance', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
     const { period = '1y' } = req.query;
 
@@ -932,27 +934,27 @@ router.get('/:id/performance', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // ============================================
 // Utility Routes
 // ============================================
 
 // POST /api/portfolios/check-orders - Manually trigger order check
-router.post('/check-orders', async (req, res) => {
+router.post('/check-orders', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const result = await service.checkAndExecuteOrders();
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // POST /api/portfolios/refresh-all - Refresh all portfolio values
-router.post('/refresh-all', async (req, res) => {
+router.post('/refresh-all', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const results = await service.refreshAllPortfolios();
     res.json({
       success: true,
@@ -962,12 +964,12 @@ router.post('/refresh-all', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // POST /api/portfolios/snapshot-all - Take snapshots for all portfolios
-router.post('/snapshot-all', async (req, res) => {
+router.post('/snapshot-all', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const date = req.body?.date || null;
     const results = await service.takeAllSnapshots(date);
     res.json({
@@ -978,16 +980,16 @@ router.post('/snapshot-all', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // ============================================
 // Integration Helper Routes
 // ============================================
 
 // POST /api/portfolios/:id/add-from-company - Quick add from company page
-router.post('/:id/add-from-company', async (req, res) => {
+router.post('/:id/add-from-company', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
     const { companyId, shares, price } = req.body;
 
@@ -1007,12 +1009,12 @@ router.post('/:id/add-from-company', async (req, res) => {
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
-});
+}));
 
 // POST /api/portfolios/:id/add-from-screener - Add multiple from screener
-router.post('/:id/add-from-screener', async (req, res) => {
+router.post('/:id/add-from-screener', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
     const { selections, allocation = 'equal' } = req.body;
 
@@ -1027,12 +1029,12 @@ router.post('/:id/add-from-screener', async (req, res) => {
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
-});
+}));
 
 // POST /api/portfolios/from-watchlist - Create portfolio from watchlist
-router.post('/from-watchlist', async (req, res) => {
+router.post('/from-watchlist', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const { watchlistItems, name, initialCash, allocation = 'equal' } = req.body;
 
     if (!watchlistItems || !Array.isArray(watchlistItems)) {
@@ -1056,16 +1058,16 @@ router.post('/from-watchlist', async (req, res) => {
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
-});
+}));
 
 // ============================================
 // Dividend Processing Routes
 // ============================================
 
 // POST /api/portfolios/:id/process-dividend - Process dividend with DRIP support
-router.post('/:id/process-dividend', async (req, res) => {
+router.post('/:id/process-dividend', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
     const { companyId, dividendPerShare, exDate, payDate } = req.body;
 
@@ -1085,12 +1087,12 @@ router.post('/:id/process-dividend', async (req, res) => {
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
-});
+}));
 
 // PUT /api/portfolios/:id/drip - Set DRIP setting
-router.put('/:id/drip', async (req, res) => {
+router.put('/:id/drip', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
     const { enabled } = req.body;
 
@@ -1099,16 +1101,16 @@ router.put('/:id/drip', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // ============================================
 // Bulk Operation Routes
 // ============================================
 
 // POST /api/portfolios/:id/duplicate - Duplicate portfolio
-router.post('/:id/duplicate', async (req, res) => {
+router.post('/:id/duplicate', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
     const { name } = req.body;
 
@@ -1117,12 +1119,12 @@ router.post('/:id/duplicate', async (req, res) => {
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
-});
+}));
 
 // POST /api/portfolios/:id/liquidate - Liquidate entire portfolio
-router.post('/:id/liquidate', async (req, res) => {
+router.post('/:id/liquidate', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
 
     const result = await service.liquidatePortfolio(portfolioId);
@@ -1130,12 +1132,12 @@ router.post('/:id/liquidate', async (req, res) => {
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
-});
+}));
 
 // POST /api/portfolios/:id/close-position - Close a single position
-router.post('/:id/close-position', async (req, res) => {
+router.post('/:id/close-position', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
     const { companyId } = req.body;
 
@@ -1148,16 +1150,16 @@ router.post('/:id/close-position', async (req, res) => {
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
-});
+}));
 
 // ============================================
 // Stock Split Routes
 // ============================================
 
 // POST /api/portfolios/stock-split - Process stock split for all portfolios holding a company
-router.post('/stock-split', async (req, res) => {
+router.post('/stock-split', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const db = require('../../database').getDatabase();
     let { companyId, symbol, splitRatio, effectiveDate } = req.body;
 
@@ -1185,12 +1187,12 @@ router.post('/stock-split', async (req, res) => {
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
-});
+}));
 
 // POST /api/portfolios/:id/stock-split - Process stock split for a specific portfolio
-router.post('/:id/stock-split', async (req, res) => {
+router.post('/:id/stock-split', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const db = require('../../database').getDatabase();
     const portfolioId = parseInt(req.params.id);
     let { companyId, symbol, splitRatio, effectiveDate } = req.body;
@@ -1220,16 +1222,16 @@ router.post('/:id/stock-split', async (req, res) => {
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
-});
+}));
 
 // ============================================
 // Validation Routes
 // ============================================
 
 // POST /api/portfolios/:id/validate-trade - Validate a trade before execution
-router.post('/:id/validate-trade', async (req, res) => {
+router.post('/:id/validate-trade', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const db = require('../../database').getDatabase();
     const portfolioId = parseInt(req.params.id);
     let { companyId, symbol, side, shares, price, includeRisk = true } = req.body;
@@ -1297,16 +1299,16 @@ router.post('/:id/validate-trade', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // ============================================
 // Alert Routes (portfolio-specific)
 // ============================================
 
 // GET /api/portfolios/:id/alerts - Get alerts for a portfolio
-router.get('/:id/alerts', async (req, res) => {
+router.get('/:id/alerts', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
     const { unreadOnly = 'false', limit = 50, offset = 0 } = req.query;
 
@@ -1328,12 +1330,12 @@ router.get('/:id/alerts', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // POST /api/portfolios/:id/check-alerts - Check alerts for a specific portfolio
-router.post('/:id/check-alerts', async (req, res) => {
+router.post('/:id/check-alerts', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
 
     const alerts = await service.checkPortfolioAlerts(portfolioId);
@@ -1346,12 +1348,12 @@ router.post('/:id/check-alerts', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // GET /api/portfolios/:id/alert-settings - Get alert settings for a portfolio
-router.get('/:id/alert-settings', async (req, res) => {
+router.get('/:id/alert-settings', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
 
     const settings = await service.getAlertSettings(portfolioId);
@@ -1363,12 +1365,12 @@ router.get('/:id/alert-settings', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // PUT /api/portfolios/:id/alert-settings - Update alert setting
-router.put('/:id/alert-settings', async (req, res) => {
+router.put('/:id/alert-settings', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
     const { alertType, enabled, threshold } = req.body;
 
@@ -1389,12 +1391,12 @@ router.put('/:id/alert-settings', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // POST /api/portfolios/:id/alerts/mark-read - Mark alerts as read
-router.post('/:id/alerts/mark-read', async (req, res) => {
+router.post('/:id/alerts/mark-read', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const portfolioId = parseInt(req.params.id);
     const { alertIds, all = false } = req.body;
 
@@ -1416,12 +1418,12 @@ router.post('/:id/alerts/mark-read', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // DELETE /api/portfolios/:id/alerts/:alertId - Dismiss an alert
-router.delete('/:id/alerts/:alertId', async (req, res) => {
+router.delete('/:id/alerts/:alertId', asyncHandler(async (req, res) => {
   try {
-    const service = getService(req);
+    const service = await getService(req);
     const alertId = parseInt(req.params.alertId);
 
     await service.dismissAlert(alertId);
@@ -1433,7 +1435,7 @@ router.delete('/:id/alerts/:alertId', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // ============================================
 // Export Routes
@@ -1441,7 +1443,7 @@ router.delete('/:id/alerts/:alertId', async (req, res) => {
 const exportService = require('../../services/portfolio/exportService');
 
 // GET /api/portfolios/:id/export/holdings - Export holdings as CSV
-router.get('/:id/export/holdings', async (req, res) => {
+router.get('/:id/export/holdings', asyncHandler(async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const csv = await exportService.exportHoldingsCSV(portfolioId);
@@ -1452,10 +1454,10 @@ router.get('/:id/export/holdings', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // GET /api/portfolios/:id/export/transactions - Export transactions as CSV
-router.get('/:id/export/transactions', async (req, res) => {
+router.get('/:id/export/transactions', asyncHandler(async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const { startDate, endDate, type } = req.query;
@@ -1470,10 +1472,10 @@ router.get('/:id/export/transactions', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // GET /api/portfolios/:id/export/summary - Export portfolio summary as JSON
-router.get('/:id/export/summary', async (req, res) => {
+router.get('/:id/export/summary', asyncHandler(async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const summary = await exportService.exportSummary(portfolioId);
@@ -1485,10 +1487,10 @@ router.get('/:id/export/summary', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // GET /api/portfolios/:id/export/tax - Export tax report as CSV
-router.get('/:id/export/tax', async (req, res) => {
+router.get('/:id/export/tax', asyncHandler(async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const { year = new Date().getFullYear() } = req.query;
@@ -1501,10 +1503,10 @@ router.get('/:id/export/tax', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // GET /api/portfolios/:id/export/dividends - Export dividend report as CSV
-router.get('/:id/export/dividends', async (req, res) => {
+router.get('/:id/export/dividends', asyncHandler(async (req, res) => {
   try {
     const portfolioId = parseInt(req.params.id);
     const { year = new Date().getFullYear() } = req.query;
@@ -1517,14 +1519,14 @@ router.get('/:id/export/dividends', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // ============================================
 // Hedge Suggestions Routes
 // ============================================
 
 // GET /api/portfolios/:id/hedge-suggestions - Get hedge recommendations
-router.get('/:id/hedge-suggestions', async (req, res) => {
+router.get('/:id/hedge-suggestions', asyncHandler(async (req, res) => {
   try {
     const db = req.app.get('db');
     const { HedgeOptimizer } = require('../../services/portfolio/hedgeOptimizer');
@@ -1554,10 +1556,10 @@ router.get('/:id/hedge-suggestions', async (req, res) => {
     console.error('Error getting hedge suggestions:', error);
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // GET /api/portfolios/:id/hedge-history - Get hedge suggestion history
-router.get('/:id/hedge-history', async (req, res) => {
+router.get('/:id/hedge-history', asyncHandler(async (req, res) => {
   try {
     const db = req.app.get('db');
     const { HedgeOptimizer } = require('../../services/portfolio/hedgeOptimizer');
@@ -1577,10 +1579,10 @@ router.get('/:id/hedge-history', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // POST /api/portfolios/:id/hedge-suggestions/:suggestionId/status - Update suggestion status
-router.post('/:id/hedge-suggestions/:suggestionId/status', async (req, res) => {
+router.post('/:id/hedge-suggestions/:suggestionId/status', asyncHandler(async (req, res) => {
   try {
     const db = req.app.get('db');
     const { HedgeOptimizer } = require('../../services/portfolio/hedgeOptimizer');
@@ -1603,10 +1605,10 @@ router.post('/:id/hedge-suggestions/:suggestionId/status', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // GET /api/portfolios/:id/hedge-summary - Get hedge summary
-router.get('/:id/hedge-summary', async (req, res) => {
+router.get('/:id/hedge-summary', asyncHandler(async (req, res) => {
   try {
     const db = req.app.get('db');
     const { HedgeOptimizer } = require('../../services/portfolio/hedgeOptimizer');
@@ -1623,14 +1625,14 @@ router.get('/:id/hedge-summary', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // ============================================
 // Dividend Processing Routes
 // ============================================
 
 // POST /api/portfolios/process-dividends - Process dividends for all portfolios
-router.post('/process-dividends', async (req, res) => {
+router.post('/process-dividends', asyncHandler(async (req, res) => {
   try {
     const db = req.app.get('db');
     const { getDividendProcessor } = require('../../services/portfolio/dividendProcessor');
@@ -1650,10 +1652,10 @@ router.post('/process-dividends', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // GET /api/portfolios/pending-dividends - Preview pending dividends
-router.get('/pending-dividends', async (req, res) => {
+router.get('/pending-dividends', asyncHandler(async (req, res) => {
   try {
     const db = req.app.get('db');
     const { getDividendProcessor } = require('../../services/portfolio/dividendProcessor');
@@ -1670,10 +1672,10 @@ router.get('/pending-dividends', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // POST /api/portfolios/:id/process-dividends - Process dividends for a specific portfolio
-router.post('/:id/process-dividends', async (req, res) => {
+router.post('/:id/process-dividends', asyncHandler(async (req, res) => {
   try {
     const db = req.app.get('db');
     const { getDividendProcessor } = require('../../services/portfolio/dividendProcessor');
@@ -1695,10 +1697,10 @@ router.post('/:id/process-dividends', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // GET /api/portfolios/:id/pending-dividends - Preview pending dividends for a portfolio
-router.get('/:id/pending-dividends', async (req, res) => {
+router.get('/:id/pending-dividends', asyncHandler(async (req, res) => {
   try {
     const db = req.app.get('db');
     const { getDividendProcessor } = require('../../services/portfolio/dividendProcessor');
@@ -1717,10 +1719,10 @@ router.get('/:id/pending-dividends', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // GET /api/portfolios/:id/dividend-history - Get dividend transaction history
-router.get('/:id/dividend-history', async (req, res) => {
+router.get('/:id/dividend-history', asyncHandler(async (req, res) => {
   try {
     const db = req.app.get('db');
     const { getDividendProcessor } = require('../../services/portfolio/dividendProcessor');
@@ -1740,6 +1742,6 @@ router.get('/:id/dividend-history', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 module.exports = router;
