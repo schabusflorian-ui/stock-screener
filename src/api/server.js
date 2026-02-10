@@ -144,8 +144,9 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Make database available to routes via req.app.get('db')
-app.set('db', db.getDatabase());
+// Database is NOT set on app to prevent using stub proxy
+// Routes must use: const database = await getDatabaseAsync() from '../../lib/db'
+// See MIGRATION_AUDIT.md for details on why app.set('db') was removed
 
 // Configure Passport (only if Google OAuth is configured)
 let passport = null;
@@ -190,16 +191,6 @@ app.use(helmet({
 
 // Sentry request handler (must be first after helmet)
 app.use(sentry.getRequestHandler());
-
-// HTTPS redirect in production (Railway/Heroku set x-forwarded-proto)
-if (isProduction) {
-  app.use((req, res, next) => {
-    if (req.header('x-forwarded-proto') !== 'https') {
-      return res.redirect(301, `https://${req.header('host')}${req.url}`);
-    }
-    next();
-  });
-}
 
 // Correlation ID for request tracing
 app.use((req, res, next) => {
@@ -325,6 +316,17 @@ app.use(session({
     sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
   }
 }));
+
+// HTTPS redirect in production (Railway/Heroku set x-forwarded-proto)
+// IMPORTANT: This MUST come AFTER session middleware so session cookies are set before redirect
+if (isProduction) {
+  app.use((req, res, next) => {
+    if (req.header('x-forwarded-proto') !== 'https') {
+      return res.redirect(301, `https://${req.header('host')}${req.url}`);
+    }
+    next();
+  });
+}
 
 // Initialize Passport (if configured)
 if (passport) {
@@ -609,9 +611,21 @@ app.get('/api/health/detailed', async (req, res) => {
 const frontendBuildPath = path.join(__dirname, '../../frontend/build');
 app.use(express.static(frontendBuildPath));
 
+// Import error handlers
+const { notFoundHandler, errorHandler } = require('../middleware/errorHandler');
+
+// 404 handler (only for API routes now)
+app.use(notFoundHandler);
+
+// Sentry error handler (captures errors to Sentry before main handler)
+app.use(sentry.getErrorHandler());
+
+// Error handler (sanitizes errors in production)
+app.use(errorHandler);
+
 // Catch-all handler: Serve React app for all non-API GET requests
 // This enables client-side routing (React Router)
-// Placed before error handlers so it catches unmatched routes
+// IMPORTANT: Must come AFTER error handlers so API errors return JSON, not HTML
 app.use((req, res, next) => {
   // Skip API routes and health check endpoint
   if (req.method !== 'GET' || req.path.startsWith('/api/') || req.path === '/health') {
@@ -626,18 +640,6 @@ app.use((req, res, next) => {
     }
   });
 });
-
-// Import error handlers
-const { notFoundHandler, errorHandler } = require('../middleware/errorHandler');
-
-// 404 handler (only for API routes now)
-app.use(notFoundHandler);
-
-// Sentry error handler (captures errors to Sentry before main handler)
-app.use(sentry.getErrorHandler());
-
-// Error handler (sanitizes errors in production)
-app.use(errorHandler);
 
 // Import HTTP/2 server support
 const { createServer, getServerInfo, http2InfoMiddleware } = require('../lib/http2Server');
