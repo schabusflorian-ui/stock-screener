@@ -9,7 +9,7 @@ import { useAskAI } from '../hooks/useAskAI';
 import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Activity, DollarSign, BarChart3, Shield } from '../components/icons';
 import './ValueInvestingPage.css';
 
-const API_BASE = process.env.REACT_APP_API_URL || '/api';
+const API_BASE = process.env.REACT_APP_API_URL ? `${process.env.REACT_APP_API_URL}/api` : '/api';
 
 // Macro regime configuration - colors now handled via CSS classes (Prism Design System)
 const REGIME_CONFIG = {

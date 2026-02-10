@@ -26,7 +26,7 @@ import { Badge } from '../components/ui';
 import { FeatureGate } from '../components/subscription';
 import './HomePage.css';
 
-const API_BASE = process.env.REACT_APP_API_URL || '/api';
+const API_BASE = process.env.REACT_APP_API_URL ? `${process.env.REACT_APP_API_URL}/api` : '/api';
 
 // Macro regime colors and icons
 const REGIME_CONFIG = {

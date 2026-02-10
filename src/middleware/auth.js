@@ -38,10 +38,22 @@ const isDevModeEnabled = () => {
 };
 
 // Check for local admin bypass header (matches frontend localStorage admin bypass)
-// Only works in dev mode with explicit ALLOW_DEV_AUTH
-const hasLocalAdminBypass = (req) => {
-  if (!isDevModeEnabled()) return false;
+// Works in dev mode with ALLOW_DEV_AUTH, or in production with ALLOW_ADMIN_BYPASS
+const hasAdminBypassHeader = (req) => {
   return req.headers['x-admin-bypass'] === 'true' || req.get('X-Admin-Bypass') === 'true';
+};
+
+// Production admin bypass - enable with ALLOW_ADMIN_BYPASS=true (e.g. Railway testing)
+const isAdminBypassEnabled = () => process.env.ALLOW_ADMIN_BYPASS === 'true';
+
+const hasLocalAdminBypass = (req) => {
+  // Production: honor bypass when explicitly enabled
+  if (process.env.NODE_ENV === 'production' && isAdminBypassEnabled()) {
+    return hasAdminBypassHeader(req);
+  }
+  // Dev mode with explicit ALLOW_DEV_AUTH
+  if (!isDevModeEnabled()) return false;
+  return hasAdminBypassHeader(req);
 };
 
 /**
@@ -50,7 +62,15 @@ const hasLocalAdminBypass = (req) => {
  * In development: Requires ALLOW_DEV_AUTH=true for bypass
  */
 const requireAuth = (req, res, next) => {
-  // Production ALWAYS requires authentication - no bypass
+  // Admin bypass (works in production when ALLOW_ADMIN_BYPASS=true)
+  if (hasLocalAdminBypass(req)) {
+    req.user = req.user || { id: 'admin', email: 'admin@local', is_admin: true };
+    req.userId = req.user.id;
+    req.isAdmin = true;
+    return next();
+  }
+
+  // Production: require session auth (unless bypass above)
   if (process.env.NODE_ENV === 'production') {
     if (req.isAuthenticated && req.isAuthenticated()) {
       return next();
@@ -64,13 +84,6 @@ const requireAuth = (req, res, next) => {
   // Development mode with explicit dev auth enabled
   if (isDevModeEnabled() && !isOAuthConfigured()) {
     req.user = req.user || { id: 'dev-user', email: 'dev@local', is_admin: false };
-    return next();
-  }
-
-  // Check for local admin bypass header (dev only with ALLOW_DEV_AUTH)
-  if (hasLocalAdminBypass(req)) {
-    req.user = req.user || { id: 'admin', email: 'admin@local', is_admin: true };
-    req.isAdmin = true;
     return next();
   }
 
