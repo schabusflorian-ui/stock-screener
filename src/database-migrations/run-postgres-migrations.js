@@ -82,9 +82,11 @@ async function runMigrations() {
       }
       // Otherwise, migration ran on require
 
-      // Record the migration
+      // Record the migration (use WHERE NOT EXISTS - schema_migrations may lack UNIQUE on name)
       await db.query(
-        'INSERT INTO schema_migrations (name, batch) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING',
+        `INSERT INTO schema_migrations (name, batch)
+         SELECT $1, $2
+         WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE name = $1)`,
         [migrationName, 1]
       );
 
