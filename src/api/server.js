@@ -227,6 +227,12 @@ const allowedOrigins = process.env.FRONTEND_URL
   ? [process.env.FRONTEND_URL]
   : ['http://localhost:3001', 'http://localhost:3002', 'http://localhost:3003'];
 
+// Auto-add Railway preview URLs in production if FRONTEND_URL not set
+if (process.env.NODE_ENV === 'production' && !process.env.FRONTEND_URL) {
+  // Allow any *.up.railway.app domain for Railway deployments
+  allowedOrigins.push(/https:\/\/.*\.up\.railway\.app$/);
+}
+
 app.use(cors({
   origin: function(origin, callback) {
     // In production, require origin header for browser requests
@@ -240,9 +246,23 @@ app.use(cors({
       // Allow in development for easier testing (curl, Postman, etc.)
       return callback(null, true);
     }
-    if (allowedOrigins.includes(origin)) {
+
+    // Check if origin matches allowed origins (strings or regexes)
+    const isAllowed = allowedOrigins.some(allowed => {
+      if (typeof allowed === 'string') {
+        return allowed === origin;
+      }
+      if (allowed instanceof RegExp) {
+        return allowed.test(origin);
+      }
+      return false;
+    });
+
+    if (isAllowed) {
       return callback(null, origin);
     }
+
+    console.warn('[CORS] Rejected origin:', origin, 'Allowed:', allowedOrigins);
     return callback(null, false);
   },
   credentials: true
@@ -300,7 +320,9 @@ app.use(session({
     maxAge: process.env.NODE_ENV === 'production'
       ? 8 * 60 * 60 * 1000   // 8 hours for production (reduced attack window)
       : 30 * 24 * 60 * 60 * 1000, // 30 days for development convenience
-    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax'
+    // SameSite 'none' allows cross-domain cookies (required when frontend/backend are on different Railway domains)
+    // Must be 'none' with secure:true for Railway deployment where frontend and backend are separate services
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
   }
 }));
 
