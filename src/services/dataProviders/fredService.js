@@ -16,6 +16,7 @@
 
 const axios = require('axios');
 const { unifiedCache } = require('../../lib/redisCache');
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 
 const FRED_BASE_URL = 'https://api.stlouisfed.org/fred';
 const FRED_CACHE_PREFIX = 'fred:';
@@ -70,7 +71,7 @@ const PRIORITY_SERIES = {
 
 class FREDService {
   constructor(db, apiKey = process.env.FRED_API_KEY) {
-    this.db = db.getDatabase ? db.getDatabase() : db;
+    // Don't store db instance - use getDatabaseAsync() in methods
     this.apiKey = apiKey;
     this.baseUrl = FRED_BASE_URL;
 
@@ -173,31 +174,50 @@ class FREDService {
       return 0;
     }
 
+    const database = await getDatabaseAsync();
+
     // Get series metadata
-    const seriesDef = await (await this.db.prepare(`
-      SELECT * FROM economic_series_definitions WHERE series_id = ?
-    `)).get(seriesId);
+    const seriesDefResult = await database.query(`
+      SELECT * FROM economic_series_definitions WHERE series_id = $1
+    `, [seriesId]);
+    const seriesDef = seriesDefResult.rows[0];
 
-    // Insert/update observations
-    const insert = await this.db.prepare(`
-      INSERT OR REPLACE INTO economic_indicators
-      (series_id, series_name, category, observation_date, value, source, updated_at)
-      VALUES (?, ?, ?, ?, ?, 'FRED', datetime('now'))
-    `);
+    // Insert/update observations - PostgreSQL uses ON CONFLICT, SQLite uses INSERT OR REPLACE
+    const upsertSql = isUsingPostgres()
+      ? `INSERT INTO economic_indicators
+         (series_id, series_name, category, observation_date, value, source, updated_at)
+         VALUES ($1, $2, $3, $4, $5, 'FRED', NOW())
+         ON CONFLICT (series_id, observation_date)
+         DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`
+      : `INSERT OR REPLACE INTO economic_indicators
+         (series_id, series_name, category, observation_date, value, source, updated_at)
+         VALUES ($1, $2, $3, $4, $5, 'FRED', datetime('now'))`;
 
-    const transaction = this.db.transaction(async () => {
+    // Process in transaction-like manner (BEGIN/COMMIT for PostgreSQL)
+    if (isUsingPostgres()) {
+      await database.query('BEGIN');
+    }
+
+    try {
       for (const obs of data) {
-        await insert.run(
+        await database.query(upsertSql, [
           seriesId,
           seriesDef?.series_name || seriesId,
           seriesDef?.category || 'other',
           obs.date,
           obs.value
-        );
+        ]);
       }
-    });
 
-    await transaction();
+      if (isUsingPostgres()) {
+        await database.query('COMMIT');
+      }
+    } catch (error) {
+      if (isUsingPostgres()) {
+        await database.query('ROLLBACK');
+      }
+      throw error;
+    }
 
     console.log(`  ${seriesId}: ${data.length} observations`);
     return data.length;
@@ -281,33 +301,57 @@ class FREDService {
    * Calculate derived metrics (changes, percentiles, z-scores)
    */
   async calculateDerivedMetrics() {
+    const database = await getDatabaseAsync();
+
     // For each series, calculate changes vs prior periods
-    const seriesIds = await (await this.db.prepare(`
+    const seriesIdsResult = await database.query(`
       SELECT DISTINCT series_id FROM economic_indicators
-    `)).all();
+    `);
+    const seriesIds = seriesIdsResult.rows;
 
     for (const { series_id } of seriesIds) {
-      await (await this.db.prepare(`
-        UPDATE economic_indicators AS ei
-        SET
-          change_1m = (
-            SELECT ei.value - prev.value
-            FROM economic_indicators prev
-            WHERE prev.series_id = ei.series_id
-              AND prev.observation_date < ei.observation_date
-            ORDER BY prev.observation_date DESC
-            LIMIT 1
-          ),
-          change_1y = (
-            SELECT ei.value - prev.value
-            FROM economic_indicators prev
-            WHERE prev.series_id = ei.series_id
-              AND prev.observation_date <= date(ei.observation_date, '-1 year')
-            ORDER BY prev.observation_date DESC
-            LIMIT 1
-          )
-        WHERE series_id = ?
-      `)).run(series_id);
+      // PostgreSQL and SQLite have different date arithmetic
+      const updateSql = isUsingPostgres()
+        ? `UPDATE economic_indicators AS ei
+           SET
+             change_1m = (
+               SELECT ei.value - prev.value
+               FROM economic_indicators prev
+               WHERE prev.series_id = ei.series_id
+                 AND prev.observation_date < ei.observation_date
+               ORDER BY prev.observation_date DESC
+               LIMIT 1
+             ),
+             change_1y = (
+               SELECT ei.value - prev.value
+               FROM economic_indicators prev
+               WHERE prev.series_id = ei.series_id
+                 AND prev.observation_date <= ei.observation_date - INTERVAL '1 year'
+               ORDER BY prev.observation_date DESC
+               LIMIT 1
+             )
+           WHERE series_id = $1`
+        : `UPDATE economic_indicators AS ei
+           SET
+             change_1m = (
+               SELECT ei.value - prev.value
+               FROM economic_indicators prev
+               WHERE prev.series_id = ei.series_id
+                 AND prev.observation_date < ei.observation_date
+               ORDER BY prev.observation_date DESC
+               LIMIT 1
+             ),
+             change_1y = (
+               SELECT ei.value - prev.value
+               FROM economic_indicators prev
+               WHERE prev.series_id = ei.series_id
+                 AND prev.observation_date <= date(ei.observation_date, '-1 year')
+               ORDER BY prev.observation_date DESC
+               LIMIT 1
+             )
+           WHERE series_id = $1`;
+
+      await database.query(updateSql, [series_id]);
     }
   }
 
@@ -315,6 +359,8 @@ class FREDService {
    * Update yield curve table
    */
   async updateYieldCurve() {
+    const database = await getDatabaseAsync();
+
     // Get latest Treasury yields
     const yields = {};
     const yieldSeries = {
@@ -332,14 +378,14 @@ class FREDService {
     };
 
     for (const [field, seriesId] of Object.entries(yieldSeries)) {
-      const result = await (await this.db.prepare(`
+      const result = await database.query(`
         SELECT value FROM economic_indicators
-        WHERE series_id = ?
+        WHERE series_id = $1
         ORDER BY observation_date DESC
         LIMIT 1
-      `)).get(seriesId);
+      `, [seriesId]);
 
-      yields[field] = result?.value || null;
+      yields[field] = result.rows[0]?.value || null;
     }
 
     // Only proceed if we have key yields
@@ -362,15 +408,32 @@ class FREDService {
     const yieldValues = Object.values(yields).filter(v => v !== null);
     const level = yieldValues.reduce((a, b) => a + b, 0) / yieldValues.length;
 
-    await (await this.db.prepare(`
-      INSERT OR REPLACE INTO yield_curve (
-        curve_date,
-        y_1m, y_3m, y_6m, y_1y, y_2y, y_3y, y_5y, y_7y, y_10y, y_20y, y_30y,
-        spread_2s10s, spread_3m10y, spread_2s30s,
-        curvature, level,
-        is_inverted_2s10s, is_inverted_3m10y
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)).run(
+    // PostgreSQL uses ON CONFLICT, SQLite uses INSERT OR REPLACE
+    const upsertSql = isUsingPostgres()
+      ? `INSERT INTO yield_curve (
+          curve_date,
+          y_1m, y_3m, y_6m, y_1y, y_2y, y_3y, y_5y, y_7y, y_10y, y_20y, y_30y,
+          spread_2s10s, spread_3m10y, spread_2s30s,
+          curvature, level,
+          is_inverted_2s10s, is_inverted_3m10y
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        ON CONFLICT (curve_date)
+        DO UPDATE SET
+          y_1m = EXCLUDED.y_1m, y_3m = EXCLUDED.y_3m, y_6m = EXCLUDED.y_6m, y_1y = EXCLUDED.y_1y,
+          y_2y = EXCLUDED.y_2y, y_3y = EXCLUDED.y_3y, y_5y = EXCLUDED.y_5y, y_7y = EXCLUDED.y_7y,
+          y_10y = EXCLUDED.y_10y, y_20y = EXCLUDED.y_20y, y_30y = EXCLUDED.y_30y,
+          spread_2s10s = EXCLUDED.spread_2s10s, spread_3m10y = EXCLUDED.spread_3m10y,
+          spread_2s30s = EXCLUDED.spread_2s30s, curvature = EXCLUDED.curvature, level = EXCLUDED.level,
+          is_inverted_2s10s = EXCLUDED.is_inverted_2s10s, is_inverted_3m10y = EXCLUDED.is_inverted_3m10y`
+      : `INSERT OR REPLACE INTO yield_curve (
+          curve_date,
+          y_1m, y_3m, y_6m, y_1y, y_2y, y_3y, y_5y, y_7y, y_10y, y_20y, y_30y,
+          spread_2s10s, spread_3m10y, spread_2s30s,
+          curvature, level,
+          is_inverted_2s10s, is_inverted_3m10y
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`;
+
+    await database.query(upsertSql, [
       today,
       yields.y_1m, yields.y_3m, yields.y_6m, yields.y_1y,
       yields.y_2y, yields.y_3y, yields.y_5y, yields.y_7y,
@@ -379,7 +442,7 @@ class FREDService {
       curvature, level,
       spread_2s10s < 0 ? 1 : 0,
       spread_3m10y && spread_3m10y < 0 ? 1 : 0
-    );
+    ]);
 
     console.log(`  Yield curve: 2s10s=${spread_2s10s?.toFixed(2)}%, inverted=${spread_2s10s < 0}`);
   }
@@ -388,13 +451,17 @@ class FREDService {
    * Get current macro snapshot
    */
   async getMacroSnapshot() {
-    const indicators = await (await this.db.prepare(`
-      SELECT * FROM v_latest_economic_indicators
-    `)).all();
+    const database = await getDatabaseAsync();
 
-    const yieldCurve = await (await this.db.prepare(`
+    const indicatorsResult = await database.query(`
+      SELECT * FROM v_latest_economic_indicators
+    `);
+    const indicators = indicatorsResult.rows;
+
+    const yieldCurveResult = await database.query(`
       SELECT * FROM v_current_yield_curve
-    `)).get();
+    `);
+    const yieldCurve = yieldCurveResult.rows[0];
 
     // Organize by category
     const snapshot = {
@@ -428,13 +495,20 @@ class FREDService {
    * Get key macro signals for trading
    */
   async getMacroSignals() {
-    const yc = await (await this.db.prepare(`SELECT * FROM v_current_yield_curve`)).get();
-    const vix = await (await this.db.prepare(`
-      SELECT value FROM v_latest_economic_indicators WHERE series_id = 'VIXCLS'
-    `)).get();
-    const hySpread = await (await this.db.prepare(`
-      SELECT value FROM v_latest_economic_indicators WHERE series_id = 'BAMLH0A0HYM2'
-    `)).get();
+    const database = await getDatabaseAsync();
+
+    const ycResult = await database.query(`SELECT * FROM v_current_yield_curve`);
+    const yc = ycResult.rows[0];
+
+    const vixResult = await database.query(`
+      SELECT value FROM v_latest_economic_indicators WHERE series_id = $1
+    `, ['VIXCLS']);
+    const vix = vixResult.rows[0];
+
+    const hySpreadResult = await database.query(`
+      SELECT value FROM v_latest_economic_indicators WHERE series_id = $1
+    `, ['BAMLH0A0HYM2']);
+    const hySpread = hySpreadResult.rows[0];
 
     const signals = [];
 
@@ -540,26 +614,45 @@ class FREDService {
 
       console.log(`   Found ${data.length} observations`);
 
-      // Store in economic_indicators table
-      const insert = await this.db.prepare(`
-        INSERT OR REPLACE INTO economic_indicators
-        (series_id, series_name, category, observation_date, value, source, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'FRED', datetime('now'))
-      `);
+      const database = await getDatabaseAsync();
 
-      const transaction = this.db.transaction(async () => {
+      // Store in economic_indicators table
+      // PostgreSQL uses ON CONFLICT, SQLite uses INSERT OR REPLACE
+      const upsertSql = isUsingPostgres()
+        ? `INSERT INTO economic_indicators
+           (series_id, series_name, category, observation_date, value, source, updated_at)
+           VALUES ($1, $2, $3, $4, $5, 'FRED', NOW())
+           ON CONFLICT (series_id, observation_date)
+           DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`
+        : `INSERT OR REPLACE INTO economic_indicators
+           (series_id, series_name, category, observation_date, value, source, updated_at)
+           VALUES ($1, $2, $3, $4, $5, 'FRED', datetime('now'))`;
+
+      // Process in transaction
+      if (isUsingPostgres()) {
+        await database.query('BEGIN');
+      }
+
+      try {
         for (const obs of data) {
-          await insert.run(
+          await database.query(upsertSql, [
             'WILL5000IND',
             'Wilshire 5000 Total Market Index',
             'market_valuation',
             obs.date,
             obs.value
-          );
+          ]);
         }
-      });
 
-      await transaction();
+        if (isUsingPostgres()) {
+          await database.query('COMMIT');
+        }
+      } catch (error) {
+        if (isUsingPostgres()) {
+          await database.query('ROLLBACK');
+        }
+        throw error;
+      }
 
       // Get date range stored
       const firstDate = data[0]?.date;
@@ -589,16 +682,18 @@ class FREDService {
    * @returns {Object|null} { date, value } or null if not found
    */
   async getWilshire5000ForDate(targetDate) {
-    const result = await (await this.db.prepare(`
+    const database = await getDatabaseAsync();
+
+    const result = await database.query(`
       SELECT observation_date as date, value
       FROM economic_indicators
-      WHERE series_id = 'WILL5000IND'
-        AND observation_date <= ?
+      WHERE series_id = $1
+        AND observation_date <= $2
       ORDER BY observation_date DESC
       LIMIT 1
-    `)).get(targetDate);
+    `, ['WILL5000IND', targetDate]);
 
-    return result || null;
+    return result.rows[0] || null;
   }
 
   /**
@@ -606,20 +701,24 @@ class FREDService {
    * @returns {Object} Coverage statistics
    */
   async getWilshire5000Coverage() {
-    const result = await (await this.db.prepare(`
+    const database = await getDatabaseAsync();
+
+    const queryResult = await database.query(`
       SELECT
         MIN(observation_date) as first_date,
         MAX(observation_date) as last_date,
         COUNT(*) as observation_count
       FROM economic_indicators
-      WHERE series_id = 'WILL5000IND'
-    `)).get();
+      WHERE series_id = $1
+    `, ['WILL5000IND']);
+
+    const result = queryResult.rows[0];
 
     return {
-      hasData: result.observation_count > 0,
+      hasData: parseInt(result.observation_count) > 0,
       firstDate: result.first_date,
       lastDate: result.last_date,
-      count: result.observation_count,
+      count: parseInt(result.observation_count),
     };
   }
 }
