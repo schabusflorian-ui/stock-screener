@@ -624,28 +624,13 @@ app.get('/api/health/detailed', async (req, res) => {
 const frontendBuildPath = path.join(__dirname, '../../frontend/build');
 app.use(express.static(frontendBuildPath));
 
-// Import error handlers
-const { notFoundHandler, errorHandler } = require('../middleware/errorHandler');
-
-// 404 handler (only for API routes now)
-app.use(notFoundHandler);
-
-// Sentry error handler (captures errors to Sentry before main handler)
-app.use(sentry.getErrorHandler());
-
-// Error handler (sanitizes errors in production)
-app.use(errorHandler);
-
-// Catch-all handler: Serve React app for all non-API GET requests
-// This enables client-side routing (React Router)
-// IMPORTANT: Must come AFTER error handlers so API errors return JSON, not HTML
+// SPA fallback: Serve React index.html for non-API GET requests BEFORE 404 handler
+// This enables client-side routing (React Router) for routes like /capital, /portfolio, etc.
+// Must come before notFoundHandler so direct navigation/refresh to /capital returns HTML, not JSON 404
 app.use((req, res, next) => {
-  // Skip API routes and health check endpoint
   if (req.method !== 'GET' || req.path.startsWith('/api/') || req.path === '/health') {
     return next();
   }
-
-  // Serve React index.html for all other GET requests
   res.sendFile(path.join(frontendBuildPath, 'index.html'), (err) => {
     if (err) {
       console.error('Error serving index.html:', err);
@@ -653,6 +638,18 @@ app.use((req, res, next) => {
     }
   });
 });
+
+// Import error handlers
+const { notFoundHandler, errorHandler } = require('../middleware/errorHandler');
+
+// 404 handler - catches unmatched API routes and other requests
+app.use(notFoundHandler);
+
+// Sentry error handler (captures errors to Sentry before main handler)
+app.use(sentry.getErrorHandler());
+
+// Error handler (sanitizes errors in production)
+app.use(errorHandler);
 
 // Import HTTP/2 server support
 const { createServer, getServerInfo, http2InfoMiddleware } = require('../lib/http2Server');

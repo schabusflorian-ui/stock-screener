@@ -15,6 +15,7 @@ const fs = require('fs');
 const POSTGRES_MIGRATIONS = [
   '000-postgres-base-schema.js',
   '001-add-all-missing-tables.js',
+  'add-dividend-metrics.js',
 ];
 
 async function runMigrations() {

@@ -1,13 +1,14 @@
 # nixpacks.toml
 # Configuration for Railway Nixpacks builder
 # Updated: 2026-01-30 to fix cache conflicts
+# Updated: 2026-02-10 to add Python for AI analyst service (analystBridge.js spawns python3)
 
 [variables]
 # No environment variables needed at build time
 # All sensitive vars are runtime-only
 
 [phases.setup]
-aptPkgs = ["curl"]
+aptPkgs = ["curl", "python3", "python3-pip"]
 
 [phases.build]
 cmds = ["cd frontend && npm ci --legacy-peer-deps && CI=false npm run build"]
