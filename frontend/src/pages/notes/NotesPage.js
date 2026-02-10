@@ -273,7 +273,7 @@ function NotesPage() {
       <PageHeader
         title="Research"
         subtitle="Notes and investment theses in one place"
-        icon={<Book size={28} />}
+        icon={Book}
         actions={
           <div className="header-actions">
             <Button

@@ -79,7 +79,7 @@ function MarketSignalsPage() {
       <PageHeader
         title="Market Signals"
         subtitle="Multi-source market intelligence"
-        icon={<TrendingUp size={24} />}
+        icon={TrendingUp}
       />
 
       {/* Tab Navigation */}

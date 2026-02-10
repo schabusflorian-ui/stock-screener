@@ -625,11 +625,12 @@ app.get('/api/health/detailed', async (req, res) => {
 const frontendBuildPath = path.join(__dirname, '../../frontend/build');
 app.use(express.static(frontendBuildPath));
 
-// SPA fallback: Serve React index.html for non-API GET requests BEFORE 404 handler
+// SPA fallback: Serve React index.html for non-API GET/HEAD requests BEFORE 404 handler
 // This enables client-side routing (React Router) for routes like /capital, /portfolio, etc.
 // Must come before notFoundHandler so direct navigation/refresh to /capital returns HTML, not JSON 404
+// HEAD is included so prefetches, crawlers, and service workers get 200 instead of 404
 app.use((req, res, next) => {
-  if (req.method !== 'GET' || req.path.startsWith('/api/') || req.path === '/health') {
+  if ((req.method !== 'GET' && req.method !== 'HEAD') || req.path.startsWith('/api/') || req.path === '/health') {
     return next();
   }
   res.sendFile(path.join(frontendBuildPath, 'index.html'), (err) => {

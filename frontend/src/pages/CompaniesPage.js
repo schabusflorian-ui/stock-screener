@@ -184,7 +184,7 @@ function CompaniesPage() {
       <div className="companies-page" {...askAIProps}>
         <PageHeader title="All Companies" />
         <EmptyState
-          icon={<Building2 size={48} />}
+          icon={Building2}
           title="Error Loading Companies"
           description={error}
         />
@@ -247,7 +247,7 @@ function CompaniesPage() {
       {/* Results Table */}
       {filteredCompanies.length === 0 ? (
         <EmptyState
-          icon={<Building2 size={48} />}
+          icon={Building2}
           title="No Companies Found"
           description="Try adjusting your search or filters"
         />

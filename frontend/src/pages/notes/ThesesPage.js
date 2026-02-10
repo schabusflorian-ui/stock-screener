@@ -80,7 +80,7 @@ function ThesesPage() {
       <PageHeader
         title="Investment Theses"
         subtitle="Track your investment theses with assumptions and catalysts"
-        icon={<Target size={28} />}
+        icon={Target}
         actions={
           <div className="header-actions">
             <Button
