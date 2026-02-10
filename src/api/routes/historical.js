@@ -1071,28 +1071,36 @@ router.post('/classify-all-investors', async (req, res) => {
     });
   } catch (err) {
     const msg = (err && err.message) ? String(err.message) : '';
-    const code = err?.code || '';
+    const code = String(err?.code || '');
     console.error('[classify-all-investors] Error:', msg, code || err);
 
-    // Missing tables or relation: return 200 so UI doesn't show 500
-    const isMissingTable = /does not exist|relation.*does not exist|undefined table|no such table/i.test(msg) ||
-      code === '42P01'; // Postgres undefined_table
+    const isMissingTable = /does not exist|relation.*does not exist|undefined table|no such table|undefined column/i.test(msg) ||
+      code === '42P01' || code === '42703';
 
+    let message = 'Classification unavailable. Check server logs for details.';
     if (isMissingTable) {
-      return res.json({
+      try {
+        const database = await getDatabaseAsync();
+        const runMigration002 = require('../../database-migrations/002-add-historical-intelligence-tables.js');
+        await runMigration002(database);
+        console.log('[classify-all-investors] Created investment_decisions and decision_factor_context via migration 002');
+        message = 'Historical tables were missing and have been created. Click "Classify all" again to run classification.';
+      } catch (migErr) {
+        console.error('[classify-all-investors] Migration 002 failed:', migErr?.message);
+        message = 'Historical investor data not available. Run Postgres migration 002-add-historical-intelligence-tables manually.';
+      }
+    }
+
+    if (!res.headersSent) {
+      res.status(200).json({
         success: true,
         classified: 0,
         errors: 0,
         total: 0,
         results: [],
-        message: 'Historical investor data not available. Run Postgres migration 002-add-historical-intelligence-tables to create investment_decisions and decision_factor_context.'
+        message
       });
     }
-
-    res.status(500).json({
-      error: msg || 'Classification failed',
-      code: code || 'CLASSIFY_ERROR'
-    });
   }
 });
 
