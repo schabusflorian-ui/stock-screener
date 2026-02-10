@@ -11,8 +11,8 @@ const { SnapshotService, getSnapshotService } = require('./snapshotService');
  * @returns {Object} - Object containing all notes services
  */
 function createNotesServices(db) {
-  const notesService = getNotesService(db);
-  const thesisService = getThesisService(db, notesService);
+  const notesService = getNotesService();
+  const thesisService = getThesisService(notesService);
   const snapshotService = getSnapshotService(db);
 
   return {
