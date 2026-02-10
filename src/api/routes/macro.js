@@ -327,10 +327,10 @@ function applyRollingAverage(series, window = 4) {
 router.get('/market-indicators/history', async (req, res) => {
   try {
     const startQuarter = req.query.startQuarter || '2015-Q1';
-    const dbConn = await require('../../database').getDatabaseAsync();
+    const database = await require('../../database').getDatabaseAsync();
 
     // Read pre-calculated data from table (instant!)
-    const data = await dbConn.all(`
+    const result = await database.query(`
       SELECT
         quarter,
         quarter_end_date as date,
@@ -347,7 +347,8 @@ router.get('/market-indicators/history', async (req, res) => {
       FROM market_indicator_history
       WHERE quarter >= ?
       ORDER BY quarter ASC
-    `, startQuarter);
+    `, [startQuarter]);
+    const data = result.rows;
 
     if (data.length === 0) {
       return res.json({

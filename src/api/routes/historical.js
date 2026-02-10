@@ -49,37 +49,38 @@ router.get('/decisions', async (req, res) => {
       WHERE 1=1
     `;
     const params = [];
+    let paramIndex = 1;
 
     if (investor_id) {
-      query += ' AND d.investor_id = ?';
+      query += ` AND d.investor_id = $${paramIndex++}`;
       params.push(investor_id);
     }
     if (symbol) {
-      query += ' AND d.symbol = ?';
+      query += ` AND d.symbol = $${paramIndex++}`;
       params.push(symbol.toUpperCase());
     }
     if (decision_type) {
-      query += ' AND d.decision_type = ?';
+      query += ` AND d.decision_type = $${paramIndex++}`;
       params.push(decision_type);
     }
     if (sector) {
-      query += ' AND d.sector = ?';
+      query += ` AND d.sector = $${paramIndex++}`;
       params.push(sector);
     }
     if (start_date) {
-      query += ' AND d.decision_date >= ?';
+      query += ` AND d.decision_date >= $${paramIndex++}`;
       params.push(start_date);
     }
     if (end_date) {
-      query += ' AND d.decision_date <= ?';
+      query += ` AND d.decision_date <= $${paramIndex++}`;
       params.push(end_date);
     }
     if (min_value) {
-      query += ' AND d.position_value >= ?';
+      query += ` AND d.position_value >= $${paramIndex++}`;
       params.push(parseFloat(min_value));
     }
 
-    query += ' ORDER BY d.decision_date DESC LIMIT ? OFFSET ?';
+    query += ` ORDER BY d.decision_date DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
     params.push(parseInt(limit), parseInt(offset));
 
     const decisionsResult = await database.query(query, params);
@@ -110,48 +111,51 @@ router.get('/decisions', async (req, res) => {
  * GET /api/historical/investors/:id/patterns
  * Get investment patterns for a specific investor
  */
-router.get('/investors/:id/patterns', (req, res) => {
+router.get('/investors/:id/patterns', async (req, res) => {
   try {
     const { id } = req.params;
-    const db = getDb();
+    const database = await getDatabaseAsync();
 
     // Get investor info
-    const investor = db.prepare(`
-      SELECT * FROM famous_investors WHERE id = ?
-    `).get(id);
+    const investorResult = await database.query(`
+      SELECT * FROM famous_investors WHERE id = $1
+    `, [id]);
+    const investor = investorResult.rows[0];
 
     if (!investor) {
       return res.status(404).json({ error: 'Investor not found' });
     }
 
     // Get decision type distribution
-    const decisionTypes = db.prepare(`
+    const decisionTypesResult = await database.query(`
       SELECT
         decision_type,
         COUNT(*) as count,
         AVG(position_value) as avg_position_value,
         AVG(return_1y) as avg_return_1y
       FROM investment_decisions
-      WHERE investor_id = ?
+      WHERE investor_id = $1
       GROUP BY decision_type
-    `).all(id);
+    `, [id]);
+    const decisionTypes = decisionTypesResult.rows;
 
     // Get sector preferences
-    const sectorPreferences = db.prepare(`
+    const sectorPreferencesResult = await database.query(`
       SELECT
         sector,
         COUNT(*) as decision_count,
         SUM(position_value) as total_value,
         AVG(return_1y) as avg_return_1y
       FROM investment_decisions
-      WHERE investor_id = ? AND sector IS NOT NULL
+      WHERE investor_id = $1 AND sector IS NOT NULL
       GROUP BY sector
       ORDER BY total_value DESC
       LIMIT 10
-    `).all(id);
+    `, [id]);
+    const sectorPreferences = sectorPreferencesResult.rows;
 
     // Get top performing decisions
-    const topDecisions = db.prepare(`
+    const topDecisionsResult = await database.query(`
       SELECT
         symbol,
         security_name,
@@ -161,13 +165,14 @@ router.get('/investors/:id/patterns', (req, res) => {
         return_1y,
         alpha_1y
       FROM investment_decisions
-      WHERE investor_id = ? AND return_1y IS NOT NULL
+      WHERE investor_id = $1 AND return_1y IS NOT NULL
       ORDER BY return_1y DESC
       LIMIT 10
-    `).all(id);
+    `, [id]);
+    const topDecisions = topDecisionsResult.rows;
 
     // Get worst performing decisions
-    const worstDecisions = db.prepare(`
+    const worstDecisionsResult = await database.query(`
       SELECT
         symbol,
         security_name,
@@ -177,21 +182,23 @@ router.get('/investors/:id/patterns', (req, res) => {
         return_1y,
         alpha_1y
       FROM investment_decisions
-      WHERE investor_id = ? AND return_1y IS NOT NULL
+      WHERE investor_id = $1 AND return_1y IS NOT NULL
       ORDER BY return_1y ASC
       LIMIT 10
-    `).all(id);
+    `, [id]);
+    const worstDecisions = worstDecisionsResult.rows;
 
     // Get timing stats
-    const timingStats = db.prepare(`
+    const timingStatsResult = await database.query(`
       SELECT
         COUNT(*) as total_decisions,
         SUM(CASE WHEN beat_market_1y = 1 THEN 1 ELSE 0 END) as beat_market_count,
         AVG(return_1y) as avg_return,
         AVG(alpha_1y) as avg_alpha
       FROM investment_decisions
-      WHERE investor_id = ? AND return_1y IS NOT NULL
-    `).get(id);
+      WHERE investor_id = $1 AND return_1y IS NOT NULL
+    `, [id]);
+    const timingStats = timingStatsResult.rows[0];
 
     res.json({
       investor,
@@ -218,13 +225,13 @@ router.get('/investors/:id/patterns', (req, res) => {
  * GET /api/historical/stocks/:symbol/investors
  * Get which famous investors hold/have held a stock
  */
-router.get('/stocks/:symbol/investors', (req, res) => {
+router.get('/stocks/:symbol/investors', async (req, res) => {
   try {
     const { symbol } = req.params;
-    const db = getDb();
+    const database = await getDatabaseAsync();
 
     // Get current holders
-    const currentHolders = db.prepare(`
+    const currentHoldersResult = await database.query(`
       SELECT
         fi.id as investor_id,
         fi.name,
@@ -237,15 +244,16 @@ router.get('/stocks/:symbol/investors', (req, res) => {
       FROM investor_holdings ih
       JOIN famous_investors fi ON ih.investor_id = fi.id
       JOIN companies c ON ih.company_id = c.id
-      WHERE c.symbol = ?
+      WHERE c.symbol = $1
         AND ih.filing_date = (
           SELECT MAX(filing_date) FROM investor_holdings WHERE investor_id = ih.investor_id
         )
       ORDER BY ih.market_value DESC
-    `).all(symbol.toUpperCase());
+    `, [symbol.toUpperCase()]);
+    const currentHolders = currentHoldersResult.rows;
 
     // Get historical decisions on this stock
-    const historicalDecisions = db.prepare(`
+    const historicalDecisionsResult = await database.query(`
       SELECT
         d.id,
         d.decision_date,
@@ -260,13 +268,14 @@ router.get('/stocks/:symbol/investors', (req, res) => {
         fi.investment_style
       FROM investment_decisions d
       JOIN famous_investors fi ON d.investor_id = fi.id
-      WHERE d.symbol = ?
+      WHERE d.symbol = $1
       ORDER BY d.decision_date DESC
       LIMIT 50
-    `).all(symbol.toUpperCase());
+    `, [symbol.toUpperCase()]);
+    const historicalDecisions = historicalDecisionsResult.rows;
 
     // Aggregate stats
-    const stats = db.prepare(`
+    const statsResult = await database.query(`
       SELECT
         COUNT(DISTINCT d.investor_id) as unique_investors,
         COUNT(*) as total_decisions,
@@ -276,8 +285,9 @@ router.get('/stocks/:symbol/investors', (req, res) => {
         SUM(CASE WHEN d.decision_type = 'sold_out' THEN 1 ELSE 0 END) as sold_outs,
         AVG(d.return_1y) as avg_return_1y
       FROM investment_decisions d
-      WHERE d.symbol = ?
-    `).get(symbol.toUpperCase());
+      WHERE d.symbol = $1
+    `, [symbol.toUpperCase()]);
+    const stats = statsResult.rows[0];
 
     res.json({
       symbol: symbol.toUpperCase(),
@@ -295,7 +305,7 @@ router.get('/stocks/:symbol/investors', (req, res) => {
  * GET /api/historical/similar-decisions
  * Find decisions similar to a pattern (e.g., "value investors buying tech")
  */
-router.get('/similar-decisions', (req, res) => {
+router.get('/similar-decisions', async (req, res) => {
   try {
     const {
       investment_style,
@@ -306,6 +316,7 @@ router.get('/similar-decisions', (req, res) => {
       limit = 50
     } = req.query;
 
+    const database = await getDatabaseAsync();
     let query = `
       SELECT
         d.id,
@@ -325,31 +336,33 @@ router.get('/similar-decisions', (req, res) => {
       WHERE 1=1
     `;
     const params = [];
+    let paramIndex = 1;
 
     if (investment_style) {
-      query += ' AND fi.investment_style = ?';
+      query += ` AND fi.investment_style = $${paramIndex++}`;
       params.push(investment_style);
     }
     if (sector) {
-      query += ' AND d.sector = ?';
+      query += ` AND d.sector = $${paramIndex++}`;
       params.push(sector);
     }
     if (decision_type) {
-      query += ' AND d.decision_type = ?';
+      query += ` AND d.decision_type = $${paramIndex++}`;
       params.push(decision_type);
     }
     if (min_portfolio_weight) {
-      query += ' AND d.portfolio_weight >= ?';
+      query += ` AND d.portfolio_weight >= $${paramIndex++}`;
       params.push(parseFloat(min_portfolio_weight));
     }
     if (has_positive_return === 'true') {
       query += ' AND d.return_1y > 0';
     }
 
-    query += ' ORDER BY d.decision_date DESC LIMIT ?';
+    query += ` ORDER BY d.decision_date DESC LIMIT $${paramIndex++}`;
     params.push(parseInt(limit));
 
-    const decisions = getDb().prepare(query).all(...params);
+    const decisionsResult = await database.query(query, params);
+    const decisions = decisionsResult.rows;
 
     res.json({ decisions });
   } catch (err) {
@@ -362,15 +375,15 @@ router.get('/similar-decisions', (req, res) => {
  * GET /api/historical/performance-by-factor
  * Analyze decision performance by factor characteristics
  */
-router.get('/performance-by-factor', (req, res) => {
+router.get('/performance-by-factor', async (req, res) => {
   try {
     const { factor = 'value', min_decisions = 50 } = req.query;
-    const db = getDb();
+    const database = await getDatabaseAsync();
 
     // Get performance breakdown by factor quintile
     const factorColumn = `${factor}_percentile`;
 
-    const performance = db.prepare(`
+    const performanceResult = await database.query(`
       SELECT
         CASE
           WHEN dfc.${factorColumn} >= 80 THEN 'Top 20%'
@@ -388,7 +401,7 @@ router.get('/performance-by-factor', (req, res) => {
       WHERE d.return_1y IS NOT NULL
         AND dfc.${factorColumn} IS NOT NULL
       GROUP BY factor_quintile
-      HAVING COUNT(*) >= ?
+      HAVING COUNT(*) >= $1
       ORDER BY
         CASE factor_quintile
           WHEN 'Top 20%' THEN 1
@@ -397,7 +410,8 @@ router.get('/performance-by-factor', (req, res) => {
           WHEN '20-40%' THEN 4
           ELSE 5
         END
-    `).all(parseInt(min_decisions));
+    `, [parseInt(min_decisions)]);
+    const performance = performanceResult.rows;
 
     res.json({
       factor,
@@ -575,7 +589,7 @@ router.post('/calculate-investor-track-record', async (req, res) => {
  * GET /api/historical/investor-track-record/:id
  * Get pre-calculated track record for an investor
  */
-router.get('/investor-track-record/:id', (req, res) => {
+router.get('/investor-track-record/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { periodType = 'all_time' } = req.query;
@@ -599,11 +613,11 @@ router.get('/investor-track-record/:id', (req, res) => {
  * GET /api/historical/stats
  * Get overall historical intelligence statistics
  */
-router.get('/stats', (req, res) => {
+router.get('/stats', async (req, res) => {
   try {
-    const db = getDb();
+    const database = await getDatabaseAsync();
 
-    const decisionStats = db.prepare(`
+    const decisionStatsResult = await database.query(`
       SELECT
         COUNT(*) as total_decisions,
         COUNT(DISTINCT investor_id) as unique_investors,
@@ -613,23 +627,26 @@ router.get('/stats', (req, res) => {
         SUM(CASE WHEN return_1y IS NOT NULL THEN 1 ELSE 0 END) as decisions_with_returns,
         AVG(CASE WHEN return_1y IS NOT NULL THEN return_1y ELSE NULL END) as avg_return_1y
       FROM investment_decisions
-    `).get();
+    `, []);
+    const decisionStats = decisionStatsResult.rows[0];
 
-    const decisionTypeBreakdown = db.prepare(`
+    const decisionTypeBreakdownResult = await database.query(`
       SELECT decision_type, COUNT(*) as count
       FROM investment_decisions
       GROUP BY decision_type
       ORDER BY count DESC
-    `).all();
+    `, []);
+    const decisionTypeBreakdown = decisionTypeBreakdownResult.rows;
 
-    const topSectors = db.prepare(`
+    const topSectorsResult = await database.query(`
       SELECT sector, COUNT(*) as count
       FROM investment_decisions
       WHERE sector IS NOT NULL
       GROUP BY sector
       ORDER BY count DESC
       LIMIT 10
-    `).all();
+    `, []);
+    const topSectors = topSectorsResult.rows;
 
     res.json({
       overview: decisionStats,
@@ -646,17 +663,17 @@ router.get('/stats', (req, res) => {
  * GET /api/historical/factor-timeseries
  * Get factor performance over time for charting
  */
-router.get('/factor-timeseries', (req, res) => {
+router.get('/factor-timeseries', async (req, res) => {
   try {
     const { factor = 'value', groupBy = 'quarter' } = req.query;
-    const db = getDb();
+    const database = await getDatabaseAsync();
     const factorColumn = `${factor}_percentile`;
 
     // Get performance by time period and quintile
-    const timeseries = db.prepare(`
+    const timeseriesResult = await database.query(`
       SELECT
         CASE
-          WHEN ? = 'quarter' THEN substr(d.decision_date, 1, 4) || '-Q' ||
+          WHEN $1 = 'quarter' THEN substr(d.decision_date, 1, 4) || '-Q' ||
             CASE
               WHEN substr(d.decision_date, 6, 2) IN ('01','02','03') THEN '1'
               WHEN substr(d.decision_date, 6, 2) IN ('04','05','06') THEN '2'
@@ -681,7 +698,8 @@ router.get('/factor-timeseries', (req, res) => {
       GROUP BY period, quintile
       HAVING COUNT(*) >= 10
       ORDER BY period
-    `).all(groupBy);
+    `, [groupBy]);
+    const timeseries = timeseriesResult.rows;
 
     // Pivot data for charting
     const pivoted = {};
@@ -707,10 +725,10 @@ router.get('/factor-timeseries', (req, res) => {
  * GET /api/historical/decision-heatmap
  * Get decision count heatmap by sector and time
  */
-router.get('/decision-heatmap', (req, res) => {
+router.get('/decision-heatmap', async (req, res) => {
   try {
     const { decisionType } = req.query;
-    const db = getDb();
+    const database = await getDatabaseAsync();
 
     let query = `
       SELECT
@@ -728,9 +746,10 @@ router.get('/decision-heatmap', (req, res) => {
       WHERE sector IS NOT NULL
     `;
     const params = [];
+    let paramIndex = 1;
 
     if (decisionType) {
-      query += ' AND decision_type = ?';
+      query += ` AND decision_type = $${paramIndex++}`;
       params.push(decisionType);
     }
 
@@ -740,7 +759,8 @@ router.get('/decision-heatmap', (req, res) => {
       ORDER BY sector, period
     `;
 
-    const heatmapData = db.prepare(query).all(...params);
+    const heatmapDataResult = await database.query(query, params);
+    const heatmapData = heatmapDataResult.rows;
 
     // Get unique sectors and periods
     const sectors = [...new Set(heatmapData.map(d => d.sector))];
@@ -761,12 +781,12 @@ router.get('/decision-heatmap', (req, res) => {
  * GET /api/historical/investor-styles
  * Get investors grouped by classified style with performance
  */
-router.get('/investor-styles', (req, res) => {
+router.get('/investor-styles', async (req, res) => {
   try {
-    const db = getDb();
+    const database = await getDatabaseAsync();
 
     // Get style performance summary
-    const stylePerformance = db.prepare(`
+    const stylePerformanceResult = await database.query(`
       SELECT
         fi.investment_style,
         COUNT(DISTINCT fi.id) as investor_count,
@@ -781,10 +801,11 @@ router.get('/investor-styles', (req, res) => {
       GROUP BY fi.investment_style
       HAVING COUNT(d.id) >= 50
       ORDER BY avg_alpha DESC NULLS LAST
-    `).all();
+    `, []);
+    const stylePerformance = stylePerformanceResult.rows;
 
     // Get top investors per style
-    const topByStyle = db.prepare(`
+    const topByStyleResult = await database.query(`
       SELECT
         fi.id,
         fi.name,
@@ -800,7 +821,8 @@ router.get('/investor-styles', (req, res) => {
       GROUP BY fi.id
       HAVING COUNT(d.id) >= 20
       ORDER BY avg_alpha DESC
-    `).all();
+    `, []);
+    const topByStyle = topByStyleResult.rows;
 
     // Group top investors by style
     const investorsByStyle = {};
@@ -834,10 +856,10 @@ router.post('/classify-investor-style', async (req, res) => {
       return res.status(400).json({ error: 'investorId is required' });
     }
 
-    const db = getDb();
+    const database = await getDatabaseAsync();
 
     // Get investor's decision patterns
-    const patterns = db.prepare(`
+    const patternsResult = await database.query(`
       SELECT
         -- Factor preferences (what percentile stocks do they buy)
         AVG(dfc.value_percentile) as avg_value_pct,
@@ -858,8 +880,9 @@ router.post('/classify-investor-style', async (req, res) => {
         COUNT(*) as total_decisions
       FROM investment_decisions d
       LEFT JOIN decision_factor_context dfc ON d.id = dfc.decision_id
-      WHERE d.investor_id = ?
-    `).get(investorId);
+      WHERE d.investor_id = $1
+    `, [investorId]);
+    const patterns = patternsResult.rows[0];
 
     if (!patterns || patterns.total_decisions < 10) {
       return res.status(400).json({ error: 'Insufficient decision data for classification' });
@@ -900,11 +923,11 @@ router.post('/classify-investor-style', async (req, res) => {
     }
 
     // Update the investor's style
-    db.prepare(`
+    await database.query(`
       UPDATE famous_investors
-      SET investment_style = ?, updated_at = datetime('now')
-      WHERE id = ?
-    `).run(style, investorId);
+      SET investment_style = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+    `, [style, investorId]);
 
     res.json({
       investorId,
@@ -934,16 +957,17 @@ router.post('/classify-investor-style', async (req, res) => {
 router.post('/classify-all-investors', async (req, res) => {
   try {
     const { minDecisions = 20 } = req.body;
-    const db = getDb();
+    const database = await getDatabaseAsync();
 
     // Get all investors with enough decisions
-    const investors = db.prepare(`
+    const investorsResult = await database.query(`
       SELECT fi.id, fi.name, COUNT(d.id) as decision_count
       FROM famous_investors fi
       JOIN investment_decisions d ON fi.id = d.investor_id
       GROUP BY fi.id
-      HAVING COUNT(d.id) >= ?
-    `).all(minDecisions);
+      HAVING COUNT(d.id) >= $1
+    `, [minDecisions]);
+    const investors = investorsResult.rows;
 
     const results = [];
     let classified = 0;
@@ -952,7 +976,7 @@ router.post('/classify-all-investors', async (req, res) => {
     for (const inv of investors) {
       try {
         // Get investor's factor preferences
-        const patterns = db.prepare(`
+        const patternsResult = await database.query(`
           SELECT
             AVG(dfc.value_percentile) as avg_value_pct,
             AVG(dfc.quality_percentile) as avg_quality_pct,
@@ -960,8 +984,9 @@ router.post('/classify-all-investors', async (req, res) => {
             AVG(dfc.growth_percentile) as avg_growth_pct
           FROM investment_decisions d
           LEFT JOIN decision_factor_context dfc ON d.id = dfc.decision_id
-          WHERE d.investor_id = ?
-        `).get(inv.id);
+          WHERE d.investor_id = $1
+        `, [inv.id]);
+        const patterns = patternsResult.rows[0];
 
         // Simple classification
         let style = 'Diversified';
@@ -979,9 +1004,9 @@ router.post('/classify-all-investors', async (req, res) => {
           style = 'GARP';
         }
 
-        db.prepare(`
-          UPDATE famous_investors SET investment_style = ? WHERE id = ?
-        `).run(style, inv.id);
+        await database.query(`
+          UPDATE famous_investors SET investment_style = $1 WHERE id = $2
+        `, [style, inv.id]);
 
         results.push({ id: inv.id, name: inv.name, style, decisions: inv.decision_count });
         classified++;
