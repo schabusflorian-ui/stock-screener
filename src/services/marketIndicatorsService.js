@@ -128,48 +128,32 @@ class MarketIndicatorsService {
   /**
    * Get aggregate Tobin's Q from stock data
    * Tobin's Q = Market Value / Book Value
+   * Uses CTE instead of correlated subqueries
    */
   async getMarketTobinQ() {
     try {
       const database = await getDatabaseAsync();
 
-      const resultQuery = await database.query(`
-        SELECT
-          SUM(c.market_cap) as total_market_cap,
-          COUNT(*) as stock_count
-        FROM companies c
-        JOIN calculated_metrics cm ON c.id = cm.company_id
-        WHERE c.market_cap > 0
-          AND c.is_active = 1
-          AND cm.period_type = 'annual'
-          AND cm.tobins_q IS NOT NULL
-          AND cm.fiscal_period = (
-            SELECT MAX(cm2.fiscal_period)
-            FROM calculated_metrics cm2
-            WHERE cm2.company_id = cm.company_id
-              AND cm2.period_type = 'annual'
-          )
-      `);
-      const result = resultQuery.rows[0];
-
-      // Calculate weighted average Tobin's Q
       const tobinDataResult = await database.query(`
-        SELECT
-          c.market_cap,
-          cm.tobins_q
+        WITH latest_metrics AS (
+          SELECT cm.company_id, cm.tobins_q
+          FROM calculated_metrics cm
+          INNER JOIN (
+            SELECT company_id, MAX(fiscal_period) as max_period
+            FROM calculated_metrics
+            WHERE period_type = 'annual'
+            GROUP BY company_id
+          ) latest ON cm.company_id = latest.company_id
+            AND cm.fiscal_period = latest.max_period
+            AND cm.period_type = 'annual'
+          JOIN companies c ON cm.company_id = c.id
+          WHERE c.market_cap > 0 AND c.is_active = 1
+            AND cm.tobins_q > 0 AND cm.tobins_q < 50
+        )
+        SELECT c.market_cap, lm.tobins_q
         FROM companies c
-        JOIN calculated_metrics cm ON c.id = cm.company_id
-        WHERE c.market_cap > 0
-          AND c.is_active = 1
-          AND cm.period_type = 'annual'
-          AND cm.tobins_q > 0
-          AND cm.tobins_q < 50
-          AND cm.fiscal_period = (
-            SELECT MAX(cm2.fiscal_period)
-            FROM calculated_metrics cm2
-            WHERE cm2.company_id = cm.company_id
-              AND cm2.period_type = 'annual'
-          )
+        JOIN latest_metrics lm ON c.id = lm.company_id
+        WHERE c.market_cap > 0 AND c.is_active = 1
       `);
       const tobinData = tobinDataResult.rows;
 
@@ -212,105 +196,42 @@ class MarketIndicatorsService {
 
   /**
    * Get aggregate valuation metrics from stock data
+   * Single query with CTE instead of 4 sequential correlated-subquery queries
    */
   async getAggregateValuationMetrics() {
     try {
       const database = await getDatabaseAsync();
 
-      // Get P/E ratios
-      const peResult = await database.query(`
-        SELECT cm.pe_ratio
-        FROM calculated_metrics cm
-        JOIN companies c ON cm.company_id = c.id
-        WHERE cm.pe_ratio > 0 AND cm.pe_ratio < 200
-          AND cm.period_type = 'annual'
-          AND c.is_active = 1
-          AND cm.fiscal_period = (
-            SELECT MAX(cm2.fiscal_period)
-            FROM calculated_metrics cm2
-            WHERE cm2.company_id = cm.company_id
-              AND cm2.period_type = 'annual'
-          )
-        ORDER BY cm.pe_ratio
+      const result = await database.query(`
+        WITH latest_metrics AS (
+          SELECT cm.pe_ratio, cm.pb_ratio, cm.fcf_yield, cm.msi
+          FROM calculated_metrics cm
+          INNER JOIN (
+            SELECT company_id, MAX(fiscal_period) as max_period
+            FROM calculated_metrics
+            WHERE period_type = 'annual'
+            GROUP BY company_id
+          ) latest ON cm.company_id = latest.company_id
+            AND cm.fiscal_period = latest.max_period
+            AND cm.period_type = 'annual'
+          JOIN companies c ON cm.company_id = c.id AND c.is_active = 1
+        )
+        SELECT pe_ratio, pb_ratio, fcf_yield, msi FROM latest_metrics
       `);
-      const peData = peResult.rows.map(r => r.pe_ratio);
+      const rows = result.rows || [];
 
-      const medianPE = peData.length > 0
-        ? peData[Math.floor(peData.length / 2)]
-        : null;
+      const peData = rows.filter(r => r.pe_ratio > 0 && r.pe_ratio < 200).map(r => r.pe_ratio).sort((a, b) => a - b);
+      const pbData = rows.filter(r => r.pb_ratio > 0 && r.pb_ratio < 50).map(r => r.pb_ratio).sort((a, b) => a - b);
+      const fcfData = rows.filter(r => r.fcf_yield != null && r.fcf_yield > -1 && r.fcf_yield < 1).map(r => r.fcf_yield).sort((a, b) => a - b);
+      const msiData = rows.filter(r => r.msi > 0 && r.msi < 50).map(r => r.msi).sort((a, b) => a - b);
 
-      // Get P/B ratios
-      const pbResult = await database.query(`
-        SELECT cm.pb_ratio
-        FROM calculated_metrics cm
-        JOIN companies c ON cm.company_id = c.id
-        WHERE cm.pb_ratio > 0 AND cm.pb_ratio < 50
-          AND cm.period_type = 'annual'
-          AND c.is_active = 1
-          AND cm.fiscal_period = (
-            SELECT MAX(cm2.fiscal_period)
-            FROM calculated_metrics cm2
-            WHERE cm2.company_id = cm.company_id
-              AND cm2.period_type = 'annual'
-          )
-        ORDER BY cm.pb_ratio
-      `);
-      const pbData = pbResult.rows.map(r => r.pb_ratio);
-
-      const medianPB = pbData.length > 0
-        ? pbData[Math.floor(pbData.length / 2)]
-        : null;
-
-      // Get FCF yield data
-      const fcfResult = await database.query(`
-        SELECT cm.fcf_yield
-        FROM calculated_metrics cm
-        JOIN companies c ON cm.company_id = c.id
-        WHERE cm.fcf_yield IS NOT NULL AND cm.fcf_yield > -1 AND cm.fcf_yield < 1
-          AND cm.period_type = 'annual'
-          AND c.is_active = 1
-          AND cm.fiscal_period = (
-            SELECT MAX(cm2.fiscal_period)
-            FROM calculated_metrics cm2
-            WHERE cm2.company_id = cm.company_id
-              AND cm2.period_type = 'annual'
-          )
-        ORDER BY cm.fcf_yield
-      `);
-      const fcfData = fcfResult.rows.map(r => r.fcf_yield);
-
-      const medianFCFYield = fcfData.length > 0
-        ? fcfData[Math.floor(fcfData.length / 2)]
-        : null;
-
-      // Get MSI (Misean Stationarity Index = Enterprise Value / Book Value)
-      const msiResult = await database.query(`
-        SELECT cm.msi
-        FROM calculated_metrics cm
-        JOIN companies c ON cm.company_id = c.id
-        WHERE cm.msi > 0 AND cm.msi < 50
-          AND cm.period_type = 'annual'
-          AND c.is_active = 1
-          AND cm.fiscal_period = (
-            SELECT MAX(cm2.fiscal_period)
-            FROM calculated_metrics cm2
-            WHERE cm2.company_id = cm.company_id
-              AND cm2.period_type = 'annual'
-          )
-        ORDER BY cm.msi
-      `);
-      const msiData = msiResult.rows.map(r => r.msi);
-
-      const medianMSI = msiData.length > 0
-        ? msiData[Math.floor(msiData.length / 2)]
-        : null;
-
-      // Calculate % undervalued (stocks with P/E below historical median of ~16)
+      const medianPE = peData.length > 0 ? peData[Math.floor(peData.length / 2)] : null;
+      const medianPB = pbData.length > 0 ? pbData[Math.floor(pbData.length / 2)] : null;
+      const medianFCFYield = fcfData.length > 0 ? fcfData[Math.floor(fcfData.length / 2)] : null;
+      const medianMSI = msiData.length > 0 ? msiData[Math.floor(msiData.length / 2)] : null;
       const undervaluedCount = peData.filter(pe => pe < 16).length;
       const totalCount = peData.length;
-      const pctUndervalued = totalCount > 0
-        ? (undervaluedCount / totalCount) * 100
-        : null;
+      const pctUndervalued = totalCount > 0 ? (undervaluedCount / totalCount) * 100 : null;
 
       return {
         medianPE,
@@ -370,53 +291,59 @@ class MarketIndicatorsService {
 
   /**
    * Get treasury yields and yield curve data
+   * Batched: 1 query for all yields (was 9 sequential round-trips), 1 for yield curve
    */
   async getTreasuryYields() {
     const database = await getDatabaseAsync();
+    const seriesIds = ['DGS3MO', 'DGS6MO', 'DGS1', 'DGS2', 'DGS5', 'DGS10', 'DGS20', 'DGS30'];
+    const ph1 = seriesIds.map((_, i) => `$${i + 1}`).join(', ');
+    const ph2 = seriesIds.map((_, i) => `$${i + 9}`).join(', ');
+    const params = [...seriesIds, ...seriesIds];
 
-    const getValue = async (seriesId) => {
-      const result = await database.query(`
-        SELECT value, observation_date
-        FROM economic_indicators
-        WHERE series_id = $1
-        ORDER BY observation_date DESC
+    const [yieldsResult, yieldCurveResult] = await Promise.all([
+      database.query(`
+        SELECT e.series_id, e.value
+        FROM economic_indicators e
+        INNER JOIN (
+          SELECT series_id, MAX(observation_date) as max_date
+          FROM economic_indicators
+          WHERE series_id IN (${ph1})
+          GROUP BY series_id
+        ) latest ON e.series_id = latest.series_id AND e.observation_date = latest.max_date
+        WHERE e.series_id IN (${ph2})
+      `, params),
+      database.query(`
+        SELECT * FROM yield_curve
+        ORDER BY curve_date DESC
         LIMIT 1
-      `, [seriesId]);
-      return result.rows[0]?.value;
-    };
+      `)
+    ]);
 
-    const twoYear = await getValue('DGS2');
-    const tenYear = await getValue('DGS10');
-    const thirtyYear = await getValue('DGS30');
-    const threeMonth = await getValue('DGS3MO');
-    const fiveYear = await getValue('DGS5');
-
-    const spread2s10s = tenYear && twoYear ? tenYear - twoYear : null;
-    const spread3m10y = tenYear && threeMonth ? tenYear - threeMonth : null;
-
-    // Get full yield curve
-    const yieldCurveResult = await database.query(`
-      SELECT * FROM yield_curve
-      ORDER BY curve_date DESC
-      LIMIT 1
-    `);
-    const yieldCurve = yieldCurveResult.rows[0];
+    const values = Object.fromEntries(
+      (yieldsResult.rows || []).map(r => [r.series_id, r.value])
+    );
+    const twoYear = values.DGS2;
+    const tenYear = values.DGS10;
+    const thirtyYear = values.DGS30;
+    const threeMonth = values.DGS3MO;
+    const spread2s10s = tenYear != null && twoYear != null ? tenYear - twoYear : null;
+    const spread3m10y = tenYear != null && threeMonth != null ? tenYear - threeMonth : null;
 
     return {
       threeMonth,
-      sixMonth: await getValue('DGS6MO'),
-      oneYear: await getValue('DGS1'),
+      sixMonth: values.DGS6MO,
+      oneYear: values.DGS1,
       twoYear,
-      fiveYear,
+      fiveYear: values.DGS5,
       tenYear,
-      twentyYear: await getValue('DGS20'),
+      twentyYear: values.DGS20,
       thirtyYear,
       spread2s10s,
       spread3m10y,
       curveInverted: spread2s10s !== null && spread2s10s < 0,
       curveInverted3m10y: spread3m10y !== null && spread3m10y < 0,
       assessment: this.assessYieldCurve(spread2s10s),
-      fullCurve: yieldCurve
+      fullCurve: yieldCurveResult.rows?.[0] || null
     };
   }
 
@@ -432,22 +359,34 @@ class MarketIndicatorsService {
   /**
    * Get safe haven stocks
    * Criteria: High defensive score, low debt, positive FCF, dividend paying
+   * Uses CTE instead of correlated subqueries
    */
   async getSafeHavens(limit = 10) {
     try {
       const database = await getDatabaseAsync();
 
-      // Use defensive_score instead of beta since beta data isn't populated
-      // Get only the latest factor score per company
       const safeHavensResult = await database.query(`
         WITH latest_factors AS (
-          SELECT fs.*
+          SELECT fs.company_id, fs.defensive_score
           FROM stock_factor_scores fs
-          WHERE fs.score_date = (
-            SELECT MAX(fs2.score_date)
-            FROM stock_factor_scores fs2
-            WHERE fs2.company_id = fs.company_id
-          )
+          INNER JOIN (
+            SELECT company_id, MAX(score_date) as max_date
+            FROM stock_factor_scores
+            GROUP BY company_id
+          ) latest ON fs.company_id = latest.company_id AND fs.score_date = latest.max_date
+        ),
+        latest_metrics AS (
+          SELECT cm.company_id, cm.debt_to_equity, cm.fcf_yield, cm.dividend_yield,
+                 cm.current_ratio, cm.pe_ratio, cm.roic
+          FROM calculated_metrics cm
+          INNER JOIN (
+            SELECT company_id, MAX(fiscal_period) as max_period
+            FROM calculated_metrics
+            WHERE period_type = 'annual'
+            GROUP BY company_id
+          ) lm ON cm.company_id = lm.company_id
+            AND cm.fiscal_period = lm.max_period
+            AND cm.period_type = 'annual'
         )
         SELECT
           c.symbol,
@@ -462,22 +401,15 @@ class MarketIndicatorsService {
           cm.pe_ratio,
           cm.roic
         FROM companies c
-        JOIN calculated_metrics cm ON c.id = cm.company_id
+        JOIN latest_metrics cm ON c.id = cm.company_id
         LEFT JOIN latest_factors lf ON c.id = lf.company_id
-        WHERE cm.period_type = 'annual'
-          AND c.is_active = 1
+        WHERE c.is_active = 1
           AND c.market_cap > 10000000000
           AND lf.defensive_score IS NOT NULL
           AND lf.defensive_score > 0.6
           AND (cm.debt_to_equity IS NULL OR cm.debt_to_equity < 0.8)
           AND cm.fcf_yield > 0
           AND cm.dividend_yield > 0
-          AND cm.fiscal_period = (
-            SELECT MAX(cm2.fiscal_period)
-            FROM calculated_metrics cm2
-            WHERE cm2.company_id = cm.company_id
-              AND cm2.period_type = 'annual'
-          )
         ORDER BY lf.defensive_score DESC, cm.dividend_yield DESC
         LIMIT $1
       `, [limit]);
@@ -520,27 +452,31 @@ class MarketIndicatorsService {
   /**
    * Get undervalued quality stocks
    * Quality stocks trading below their sector median P/E
+   * Uses CTE instead of correlated subqueries
    */
   async getUndervaluedQuality(limit = 10) {
     try {
       const database = await getDatabaseAsync();
 
       const opportunitiesResult = await database.query(`
-        WITH sector_medians AS (
-          SELECT
-            c.sector,
-            AVG(cm.pe_ratio) as avg_pe
-          FROM companies c
-          JOIN calculated_metrics cm ON c.id = cm.company_id
-          WHERE cm.pe_ratio > 0 AND cm.pe_ratio < 100
+        WITH latest_metrics AS (
+          SELECT cm.company_id, cm.pe_ratio, cm.roic, cm.fcf_yield, cm.revenue_growth_yoy
+          FROM calculated_metrics cm
+          INNER JOIN (
+            SELECT company_id, MAX(fiscal_period) as max_period
+            FROM calculated_metrics
+            WHERE period_type = 'annual'
+            GROUP BY company_id
+          ) latest ON cm.company_id = latest.company_id
+            AND cm.fiscal_period = latest.max_period
             AND cm.period_type = 'annual'
-            AND c.is_active = 1
-            AND cm.fiscal_period = (
-              SELECT MAX(cm2.fiscal_period)
-              FROM calculated_metrics cm2
-              WHERE cm2.company_id = cm.company_id
-                AND cm2.period_type = 'annual'
-            )
+          JOIN companies c ON cm.company_id = c.id
+          WHERE c.is_active = 1 AND cm.pe_ratio > 0 AND cm.pe_ratio < 100
+        ),
+        sector_medians AS (
+          SELECT c.sector, AVG(lm.pe_ratio) as avg_pe
+          FROM companies c
+          JOIN latest_metrics lm ON c.id = lm.company_id
           GROUP BY c.sector
         )
         SELECT
@@ -548,28 +484,21 @@ class MarketIndicatorsService {
           c.name,
           c.sector,
           c.market_cap,
-          cm.pe_ratio,
+          lm.pe_ratio,
           sm.avg_pe as sector_avg_pe,
-          cm.roic,
-          cm.fcf_yield,
-          cm.revenue_growth_yoy,
-          (sm.avg_pe - cm.pe_ratio) / sm.avg_pe * 100 as discount_pct
+          lm.roic,
+          lm.fcf_yield,
+          lm.revenue_growth_yoy,
+          (sm.avg_pe - lm.pe_ratio) / sm.avg_pe * 100 as discount_pct
         FROM companies c
-        JOIN calculated_metrics cm ON c.id = cm.company_id
+        JOIN latest_metrics lm ON c.id = lm.company_id
         JOIN sector_medians sm ON c.sector = sm.sector
-        WHERE cm.pe_ratio > 0
-          AND cm.pe_ratio < sm.avg_pe * 0.8
-          AND cm.roic > 0.1
-          AND cm.fcf_yield > 0
-          AND cm.period_type = 'annual'
+        WHERE lm.pe_ratio > 0
+          AND lm.pe_ratio < sm.avg_pe * 0.8
+          AND lm.roic > 0.1
+          AND lm.fcf_yield > 0
           AND c.is_active = 1
           AND c.market_cap > 5000000000
-          AND cm.fiscal_period = (
-            SELECT MAX(cm2.fiscal_period)
-            FROM calculated_metrics cm2
-            WHERE cm2.company_id = cm.company_id
-              AND cm2.period_type = 'annual'
-          )
         ORDER BY discount_pct DESC
         LIMIT $1
       `, [limit]);
@@ -583,33 +512,33 @@ class MarketIndicatorsService {
 
   /**
    * Get S&P 500 cap-weighted P/E ratio
+   * Uses CTE instead of correlated subquery
    */
   async getSP500PE() {
     try {
       const database = await getDatabaseAsync();
 
       const resultQuery = await database.query(`
-        WITH sp500_data AS (
-          SELECT
-            c.id,
-            c.symbol,
-            c.market_cap,
-            cm.pe_ratio
+        WITH latest_metrics AS (
+          SELECT cm.company_id, cm.pe_ratio
+          FROM calculated_metrics cm
+          INNER JOIN (
+            SELECT company_id, MAX(fiscal_period) as max_period
+            FROM calculated_metrics
+            WHERE period_type = 'annual'
+            GROUP BY company_id
+          ) latest ON cm.company_id = latest.company_id
+            AND cm.fiscal_period = latest.max_period
+            AND cm.period_type = 'annual'
+          WHERE cm.pe_ratio IS NOT NULL AND cm.pe_ratio > 0 AND cm.pe_ratio < 500
+        ),
+        sp500_data AS (
+          SELECT c.id, c.symbol, c.market_cap, lm.pe_ratio
           FROM index_constituents ic
           JOIN companies c ON ic.company_id = c.id
-          JOIN calculated_metrics cm ON cm.company_id = c.id
-          WHERE ic.index_id = 1  -- S&P 500
-            AND cm.period_type = 'annual'
-            AND cm.pe_ratio IS NOT NULL
-            AND cm.pe_ratio > 0
-            AND cm.pe_ratio < 500
+          JOIN latest_metrics lm ON lm.company_id = c.id
+          WHERE ic.index_id = 1
             AND c.market_cap > 0
-            AND cm.fiscal_period = (
-              SELECT MAX(cm2.fiscal_period)
-              FROM calculated_metrics cm2
-              WHERE cm2.company_id = c.id
-                AND cm2.period_type = 'annual'
-            )
         )
         SELECT
           SUM(market_cap) as total_market_cap,

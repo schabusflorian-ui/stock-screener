@@ -439,12 +439,19 @@ router.get('/market-indicators/history', async (req, res) => {
 /**
  * GET /api/macro/market-indicators
  * Get comprehensive market valuation indicators
+ * Cached 1 hour - getAllIndicators() is expensive (many DB queries)
  */
 router.get('/market-indicators', async (req, res) => {
   try {
+    const cacheKey = 'market-indicators-current';
+    const cached = marketIndicatorsCache.get(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
     const { MarketIndicatorsService } = require('../../services/marketIndicatorsService');
     const service = new MarketIndicatorsService();
     const indicators = await service.getAllIndicators();
+    marketIndicatorsCache.set(cacheKey, indicators);
     res.json(indicators);
   } catch (error) {
     console.error('Market indicators error:', error);
