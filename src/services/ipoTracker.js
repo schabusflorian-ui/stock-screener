@@ -1374,7 +1374,7 @@ class IPOTracker {
     const stats = await statsStmt.get(...regionParams);
 
     const recentCompletedDateCondition = isUsingPostgres()
-      ? "trading_date > CURRENT_DATE - INTERVAL '30 days'"
+      ? "trading_date::date > CURRENT_DATE - INTERVAL '30 days'"
       : "trading_date > date('now', '-30 days')";
 
     const recentCompletedStmt = await this.db.prepare(`
@@ -1386,7 +1386,7 @@ class IPOTracker {
     const recentCompleted = await recentCompletedStmt.get(...regionParams);
 
     const withdrawnDateCondition = isUsingPostgres()
-      ? "withdrawn_date > CURRENT_DATE - INTERVAL '90 days'"
+      ? "withdrawn_date::date > CURRENT_DATE - INTERVAL '90 days'"
       : "withdrawn_date > date('now', '-90 days')";
 
     const withdrawnStmt = await this.db.prepare(`
