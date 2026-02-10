@@ -330,7 +330,7 @@ router.get('/market-indicators/history', async (req, res) => {
     const database = await require('../../database').getDatabaseAsync();
 
     // Read pre-calculated data from table (instant!)
-    const result = await database.query(`
+    const queryResult = await database.query(`
       SELECT
         quarter,
         quarter_end_date as date,
@@ -348,7 +348,7 @@ router.get('/market-indicators/history', async (req, res) => {
       WHERE quarter >= ?
       ORDER BY quarter ASC
     `, [startQuarter]);
-    const data = result.rows;
+    const data = queryResult.rows;
 
     if (data.length === 0) {
       return res.json({
