@@ -994,12 +994,12 @@ router.post('/classify-all-investors', async (req, res) => {
     const { minDecisions = 20 } = req.body;
     const database = await getDatabaseAsync();
 
-    // Get all investors with enough decisions
+    // Get all investors with enough decisions (Postgres: cast count)
     const investorsResult = await database.query(`
-      SELECT fi.id, fi.name, COUNT(d.id) as decision_count
+      SELECT fi.id, fi.name, COUNT(d.id)::int as decision_count
       FROM famous_investors fi
       JOIN investment_decisions d ON fi.id = d.investor_id
-      GROUP BY fi.id
+      GROUP BY fi.id, fi.name
       HAVING COUNT(d.id) >= $1
     `, [minDecisions]);
     const investors = investorsResult.rows;
@@ -1026,15 +1026,15 @@ router.post('/classify-all-investors', async (req, res) => {
         // Simple classification
         let style = 'Diversified';
 
-        if (patterns.avg_value_pct && patterns.avg_value_pct > 65) {
+        if (patterns && patterns.avg_value_pct && patterns.avg_value_pct > 65) {
           style = 'Value';
-        } else if (patterns.avg_growth_pct && patterns.avg_growth_pct > 65) {
+        } else if (patterns && patterns.avg_growth_pct && patterns.avg_growth_pct > 65) {
           style = 'Growth';
-        } else if (patterns.avg_momentum_pct && patterns.avg_momentum_pct > 65) {
+        } else if (patterns && patterns.avg_momentum_pct && patterns.avg_momentum_pct > 65) {
           style = 'Momentum';
-        } else if (patterns.avg_quality_pct && patterns.avg_quality_pct > 65) {
+        } else if (patterns && patterns.avg_quality_pct && patterns.avg_quality_pct > 65) {
           style = 'Quality';
-        } else if (patterns.avg_value_pct && patterns.avg_growth_pct &&
+        } else if (patterns && patterns.avg_value_pct && patterns.avg_growth_pct &&
                    Math.abs(patterns.avg_value_pct - patterns.avg_growth_pct) < 15) {
           style = 'GARP';
         }
@@ -1059,6 +1059,18 @@ router.post('/classify-all-investors', async (req, res) => {
     });
   } catch (err) {
     console.error('Error batch classifying:', err);
+    // Missing tables (e.g. investment_decisions) on Postgres — return success with zero so UI doesn't break
+    const msg = err.message || '';
+    if (msg.includes('does not exist') || msg.includes('relation') || msg.includes('undefined table')) {
+      return res.json({
+        success: true,
+        classified: 0,
+        errors: 0,
+        total: 0,
+        results: [],
+        message: 'Historical investor data not available. Run historical intelligence migration to enable classification.'
+      });
+    }
     res.status(500).json({ error: err.message });
   }
 });
