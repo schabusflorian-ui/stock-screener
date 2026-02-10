@@ -420,7 +420,7 @@ router.get('/liquidity/:symbol', async (req, res) => {
  * GET /api/tca/history
  * Get recent TCA benchmark results
  */
-router.get('/history', (req, res) => {
+router.get('/history', async (req, res) => {
   try {
     const manager = await getResultsManager(req);
     if (!manager) {
@@ -447,7 +447,7 @@ router.get('/history', (req, res) => {
  * GET /api/tca/history/latest
  * Get the most recent TCA benchmark result
  */
-router.get('/history/latest', (req, res) => {
+router.get('/history/latest', async (req, res) => {
   try {
     const manager = await getResultsManager(req);
     if (!manager) {
@@ -478,7 +478,7 @@ router.get('/history/latest', (req, res) => {
  * GET /api/tca/history/stats
  * Get summary statistics for TCA benchmark results over a period
  */
-router.get('/history/stats', (req, res) => {
+router.get('/history/stats', async (req, res) => {
   try {
     const manager = await getResultsManager(req);
     if (!manager) {
@@ -502,7 +502,7 @@ router.get('/history/stats', (req, res) => {
  * GET /api/tca/history/trend
  * Get daily trend data for charting TCA metrics over time
  */
-router.get('/history/trend', (req, res) => {
+router.get('/history/trend', async (req, res) => {
   try {
     const manager = await getResultsManager(req);
     if (!manager) {
@@ -530,7 +530,7 @@ router.get('/history/trend', (req, res) => {
  * GET /api/tca/history/comparison
  * Compare TCA metrics between two time periods
  */
-router.get('/history/comparison', (req, res) => {
+router.get('/history/comparison', async (req, res) => {
   try {
     const manager = await getResultsManager(req);
     if (!manager) {
@@ -556,7 +556,7 @@ router.get('/history/comparison', (req, res) => {
  * GET /api/tca/history/range
  * Get TCA benchmark results within a date range
  */
-router.get('/history/range', (req, res) => {
+router.get('/history/range', async (req, res) => {
   try {
     const manager = await getResultsManager(req);
     if (!manager) {
