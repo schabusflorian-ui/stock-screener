@@ -156,7 +156,7 @@ router.get('/cache-stats', async (req, res) => {
 });
 
 // POST /api/factors/cache-clear - Clear the factor cache
-router.post('/cache-clear', async (req, res) => {
+router.post('/cache-clear', requireAuth, async (req, res) => {
   try {
     const { pattern } = req.body;
 
@@ -290,7 +290,7 @@ router.get('/performance-dashboard', async (req, res) => {
 });
 
 // POST /api/factors/decay-analysis - Detect IC decay for a factor
-router.post('/decay-analysis', async (req, res) => {
+router.post('/decay-analysis', requireAuth, async (req, res) => {
   try {
     const { factorId, formula, icHistory } = req.body;
 
@@ -707,7 +707,7 @@ router.get('/returns', requireAuth, requireFeature('factor_analysis'), async (re
 // ============================================
 
 // POST /api/factors/calculate - Calculate factor scores for a date
-router.post('/calculate', async (req, res) => {
+router.post('/calculate', requireAuth, async (req, res) => {
   try {
     const { date, universeFilter } = req.body;
 
@@ -729,7 +729,7 @@ router.post('/calculate', async (req, res) => {
 });
 
 // POST /api/factors/calculate-historical - Calculate historical factor scores
-router.post('/calculate-historical', async (req, res) => {
+router.post('/calculate-historical', requireAuth, async (req, res) => {
   try {
     const { startDate, endDate, frequency = 'monthly' } = req.body;
 
@@ -749,7 +749,7 @@ router.post('/calculate-historical', async (req, res) => {
 });
 
 // POST /api/factors/portfolio-exposures - Calculate portfolio exposures
-router.post('/portfolio-exposures', async (req, res) => {
+router.post('/portfolio-exposures', requireAuth, async (req, res) => {
   try {
     const { investorId, snapshotDate, benchmark = 'market' } = req.body;
 
@@ -775,7 +775,7 @@ router.post('/portfolio-exposures', async (req, res) => {
 });
 
 // POST /api/factors/attribution - Calculate factor attribution
-router.post('/attribution', async (req, res) => {
+router.post('/attribution', requireAuth, async (req, res) => {
   try {
     const { investorId, periodStart, periodEnd } = req.body;
 
@@ -800,7 +800,7 @@ router.post('/attribution', async (req, res) => {
 });
 
 // POST /api/factors/enrich-decisions - Enrich decisions with factor context
-router.post('/enrich-decisions', async (req, res) => {
+router.post('/enrich-decisions', requireAuth, async (req, res) => {
   try {
     const { limit = 10000 } = req.body;
 
@@ -869,7 +869,7 @@ router.get('/available-metrics', async (req, res) => {
 });
 
 // POST /api/factors/define - Create a new custom factor
-router.post('/define', async (req, res) => {
+router.post('/define', requireAuth, async (req, res) => {
   try {
     const repo = getFactorRepository();
     if (!repo) {
@@ -1013,7 +1013,7 @@ router.delete('/user/:id', async (req, res) => {
 });
 
 // POST /api/factors/user/:id/toggle-active - Toggle factor active status
-router.post('/user/:id/toggle-active', async (req, res) => {
+router.post('/user/:id/toggle-active', requireAuth, async (req, res) => {
   try {
     const repo = getFactorRepository();
     if (!repo) {
@@ -1039,7 +1039,7 @@ router.post('/user/:id/toggle-active', async (req, res) => {
 // ============================================
 
 // POST /api/factors/validate - Validate a factor formula
-router.post('/validate', async (req, res) => {
+router.post('/validate', requireAuth, async (req, res) => {
   try {
     const calc = getCustomFactorCalculator();
     if (!calc) {
@@ -1085,7 +1085,7 @@ router.post('/validate', async (req, res) => {
 });
 
 // POST /api/factors/preview - Preview factor values for a sample of stocks
-router.post('/preview', async (req, res) => {
+router.post('/preview', requireAuth, async (req, res) => {
   try {
     const calc = getCustomFactorCalculator();
     if (!calc) {
@@ -1127,7 +1127,7 @@ router.post('/preview', async (req, res) => {
 });
 
 // POST /api/factors/calculate-custom - Calculate custom factor values
-router.post('/calculate-custom', async (req, res) => {
+router.post('/calculate-custom', requireAuth, async (req, res) => {
   try {
     const calc = getCustomFactorCalculator();
     if (!calc) {
@@ -1193,7 +1193,7 @@ router.post('/calculate-custom', async (req, res) => {
 });
 
 // POST /api/factors/ic-analysis - Run IC analysis on a custom factor
-router.post('/ic-analysis', async (req, res) => {
+router.post('/ic-analysis', requireAuth, async (req, res) => {
   try {
     const {
       factorId,
@@ -1413,7 +1413,7 @@ router.post('/ic-analysis', async (req, res) => {
 });
 
 // POST /api/factors/correlation - Calculate correlation with standard factors
-router.post('/correlation', async (req, res) => {
+router.post('/correlation', requireAuth, async (req, res) => {
   try {
     const { formula, asOfDate, skipCache = false } = req.body;
 
@@ -1551,7 +1551,7 @@ router.post('/correlation', async (req, res) => {
 });
 
 // POST /api/factors/custom-sector-exposures - Calculate sector exposures for a custom factor
-router.post('/custom-sector-exposures', async (req, res) => {
+router.post('/custom-sector-exposures', requireAuth, async (req, res) => {
   try {
     const { formula, factorId, factorName } = req.body;
 
@@ -1702,7 +1702,7 @@ router.get('/user/:id/ic-history', async (req, res) => {
 });
 
 // POST /api/factors/ic-history-calculate - Calculate IC history on-the-fly for a formula
-router.post('/ic-history-calculate', async (req, res) => {
+router.post('/ic-history-calculate', requireAuth, async (req, res) => {
   try {
     const { formula, horizon = 21, monthsBack = 60 } = req.body;
 
@@ -1903,7 +1903,7 @@ function getRanks(arr) {
 // ============================================
 
 // POST /api/factors/signals - Generate buy signals based on factor scores
-router.post('/signals', async (req, res) => {
+router.post('/signals', requireAuth, async (req, res) => {
   try {
     const {
       factorId,
@@ -1999,7 +1999,7 @@ const SECTOR_GICS_MAP = {
 };
 
 // POST /api/factors/sector-exposures - Get factor exposures by sector
-router.post('/sector-exposures', async (req, res) => {
+router.post('/sector-exposures', requireAuth, async (req, res) => {
   try {
     const { factors = ['Value', 'Quality', 'Momentum', 'Growth', 'Size', 'Volatility'] } = req.body;
 
@@ -2217,7 +2217,7 @@ router.get('/sector-stocks/:sector', async (req, res) => {
 // ============================================
 
 // POST /api/factors/walk-forward - Run walk-forward validation on a factor
-router.post('/walk-forward', async (req, res) => {
+router.post('/walk-forward', requireAuth, async (req, res) => {
   try {
     const { factorId, formula, config = {} } = req.body;
 
@@ -2325,7 +2325,7 @@ function calculateWalkForwardVerdict(wfe, hitRate) {
 // ============================================
 
 // POST /api/factors/backtest - Run factor backtest with long-short portfolio
-router.post('/backtest', async (req, res) => {
+router.post('/backtest', requireAuth, async (req, res) => {
   try {
     const { factorId, formula, config = {} } = req.body;
 
@@ -2407,7 +2407,7 @@ router.get('/:id/backfill-status', async (req, res) => {
 });
 
 // POST /api/factors/backfill - Calculate and store historical factor values for ML training
-router.post('/backfill', async (req, res) => {
+router.post('/backfill', requireAuth, async (req, res) => {
   try {
     const { factorId, formula, startDate, endDate, frequency = 'monthly' } = req.body;
 
@@ -2490,7 +2490,7 @@ router.post('/backfill', async (req, res) => {
 });
 
 // POST /api/factors/:id/clear-cache - Manually clear cached values for a factor
-router.post('/:id/clear-cache', async (req, res) => {
+router.post('/:id/clear-cache', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const repo = getFactorRepository();
