@@ -556,10 +556,10 @@ router.get('/key-metrics', async (req, res) => {
 router.get('/buffett-comparison', async (req, res) => {
   try {
     const startQuarter = req.query.startQuarter || '2015-Q1';
-    const dbConn = await require('../../database').getDatabaseAsync();
+    const database = await require('../../database').getDatabaseAsync();
 
     // Read pre-calculated data from table (instant!)
-    const data = await dbConn.all(`
+    const result = await database.query(`
       SELECT
         quarter,
         quarter_end_date as date,
@@ -572,7 +572,8 @@ router.get('/buffett-comparison', async (req, res) => {
       WHERE quarter >= ?
         AND buffett_indicator IS NOT NULL
       ORDER BY quarter ASC
-    `, startQuarter);
+    `, [startQuarter]);
+    const data = result.rows;
 
     if (data.length === 0) {
       return res.json({

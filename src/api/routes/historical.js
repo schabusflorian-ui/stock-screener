@@ -3,21 +3,15 @@
 
 const express = require('express');
 const router = express.Router();
-
-let db;
-function getDb() {
-  if (!db) {
-    db = require('../../database').db;
-  }
-  return db;
-}
+const { getDatabaseAsync } = require('../../database');
 
 /**
  * GET /api/historical/decisions
  * Query investment decisions with filters
  */
-router.get('/decisions', (req, res) => {
+router.get('/decisions', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const {
       investor_id,
       symbol,
@@ -88,13 +82,15 @@ router.get('/decisions', (req, res) => {
     query += ' ORDER BY d.decision_date DESC LIMIT ? OFFSET ?';
     params.push(parseInt(limit), parseInt(offset));
 
-    const decisions = getDb().prepare(query).all(...params);
+    const decisionsResult = await database.query(query, params);
+    const decisions = decisionsResult.rows;
 
     // Get total count
     const countQuery = query.replace(/SELECT[\s\S]*?FROM/, 'SELECT COUNT(*) as count FROM')
       .replace(/ORDER BY[\s\S]*$/, '');
     const countParams = params.slice(0, -2);
-    const { count } = getDb().prepare(countQuery).get(...countParams);
+    const countResult = await database.query(countQuery, countParams);
+    const count = countResult.rows[0].count;
 
     res.json({
       decisions,

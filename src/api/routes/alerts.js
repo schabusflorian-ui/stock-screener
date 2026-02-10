@@ -122,7 +122,7 @@ router.get('/', async (req, res) => {
  */
 router.get('/summary', async (req, res) => {
   try {
-    const summary = await alertService.getAlertSummary();
+    const summary = await alertService.getAlertSummary(database);
 
     res.json({
       success: true,
