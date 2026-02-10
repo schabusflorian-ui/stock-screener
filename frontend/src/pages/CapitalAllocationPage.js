@@ -30,6 +30,13 @@ const formatPercent = (value) => {
   return `${n.toFixed(2)}%`;
 };
 
+// Format number with decimals (for years, etc. - PostgreSQL may return numerics as strings)
+const formatNum = (value, decimals = 1) => {
+  const n = Number(value);
+  if (value == null || value === '' || isNaN(n)) return '-';
+  return n.toFixed(decimals);
+};
+
 // Format date
 const formatDate = (dateStr) => {
   if (!dateStr) return '-';
@@ -145,7 +152,7 @@ const DividendYielderRow = ({ company }) => {
       <td>{company.sector || '-'}</td>
       <td style={{ textAlign: 'right' }}>{formatMarketCap(company.market_cap)}</td>
       <td className="highlight" style={{ textAlign: 'right' }}>{formatPercent(company.dividend_yield)}</td>
-      <td style={{ textAlign: 'right' }}>${company.current_annual_dividend?.toFixed(2) || '-'}</td>
+      <td style={{ textAlign: 'right' }}>{formatCurrency(company.current_annual_dividend)}</td>
       <td style={{ textAlign: 'right' }} className={company.dividend_growth_5y > 0 ? 'positive' : company.dividend_growth_5y < 0 ? 'negative' : ''}>
         {formatPercent(company.dividend_growth_5y)}
       </td>
@@ -178,7 +185,7 @@ const DividendGrowthRow = ({ company }) => {
         {company.years_of_growth > 0 && <span className="streak-badge">{company.years_of_growth}</span>}
         {!company.years_of_growth && '-'}
       </td>
-      <td style={{ textAlign: 'right' }}>${company.current_annual_dividend?.toFixed(2) || '-'}</td>
+      <td style={{ textAlign: 'right' }}>{formatCurrency(company.current_annual_dividend)}</td>
       <td><WatchlistButton symbol={company.symbol} compact /></td>
     </tr>
   );
@@ -204,7 +211,7 @@ const AristocratRow = ({ company }) => {
       <td style={{ textAlign: 'right' }} className={company.dividend_growth_5y > 0 ? 'positive' : ''}>
         {formatPercent(company.dividend_growth_5y)}
       </td>
-      <td style={{ textAlign: 'right' }}>${company.current_annual_dividend?.toFixed(2) || company.avg_annual_dividend?.toFixed(2) || '-'}</td>
+      <td style={{ textAlign: 'right' }}>{formatCurrency(company.current_annual_dividend ?? company.avg_annual_dividend)}</td>
       <td><WatchlistButton symbol={company.symbol} compact /></td>
     </tr>
   );
@@ -481,7 +488,7 @@ function CapitalAllocationPage() {
         <div className="stats-grid">
           <AskAIProvider value={{ type: 'metric', metric: 'dividend_payers_count', label: 'Dividend Payers Count', value: stats.dividends?.total_dividend_payers }}>
             <div className="stat-card" data-ask-ai="true">
-              <span className="stat-value">{(stats.dividends?.total_dividend_payers || 0).toLocaleString()}</span>
+              <span className="stat-value">{Number(stats.dividends?.total_dividend_payers || 0).toLocaleString()}</span>
               <span className="stat-label">Dividend Payers</span>
             </div>
           </AskAIProvider>
@@ -493,7 +500,7 @@ function CapitalAllocationPage() {
           </AskAIProvider>
           <AskAIProvider value={{ type: 'metric', metric: 'buyback_companies_count', label: 'Companies with Buybacks', value: stats.buybacks?.companies_with_programs }}>
             <div className="stat-card" data-ask-ai="true">
-              <span className="stat-value">{(stats.buybacks?.companies_with_programs || 0).toLocaleString()}</span>
+              <span className="stat-value">{Number(stats.buybacks?.companies_with_programs || 0).toLocaleString()}</span>
               <span className="stat-label">Companies with Buybacks</span>
             </div>
           </AskAIProvider>
@@ -535,7 +542,7 @@ function CapitalAllocationPage() {
                   <YAxis type="category" dataKey="sector" width={150} tick={{ fill: 'var(--text-secondary)', fontSize: 10 }} />
                   <Tooltip
                     contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}
-                    formatter={(value) => `${value?.toFixed(2)}%`}
+                    formatter={(value) => formatPercent(value)}
                   />
                   <Bar dataKey="avg_yield" name="Avg Yield" fill="#059669" />
                 </BarChart>
@@ -605,7 +612,7 @@ function CapitalAllocationPage() {
                     <td style={{ textAlign: 'right' }}>{sector.company_count}</td>
                     <td className="highlight" style={{ textAlign: 'right' }}>{formatPercent(sector.avg_yield)}</td>
                     <td style={{ textAlign: 'right' }}>{formatPercent(sector.avg_5y_growth)}</td>
-                    <td style={{ textAlign: 'right' }}>{sector.avg_years_growth?.toFixed(1) || '-'}</td>
+                    <td style={{ textAlign: 'right' }}>{formatNum(sector.avg_years_growth, 1)}</td>
                     <td style={{ textAlign: 'right' }}>{sector.aristocrats || 0}</td>
                   </tr>
                 ))
@@ -977,7 +984,7 @@ function CapitalAllocationPage() {
               <span className="update-date">{lastUpdated}</span>
               {stats && (
                 <span className="update-stats">
-                  {stats.dividends?.total_dividend_payers?.toLocaleString() || 0} dividend payers | {stats.buybacks?.companies_with_programs?.toLocaleString() || 0} buyback companies
+                  {Number(stats.dividends?.total_dividend_payers || 0).toLocaleString()} dividend payers | {Number(stats.buybacks?.companies_with_programs || 0).toLocaleString()} buyback companies
                 </span>
               )}
             </div>
