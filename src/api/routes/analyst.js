@@ -19,6 +19,7 @@ const router = express.Router();
 const { AnalystService } = require('../../services/analystBridge');
 const { requireAuth } = require('../../middleware/auth');
 const { requireFeature, checkUsageLimit } = require('../../middleware/subscription');
+const { asyncHandler } = require('../../middleware/errorHandler');
 
 // Create service instance
 const analystService = new AnalystService();
@@ -27,7 +28,7 @@ const analystService = new AnalystService();
  * GET /api/analyst/personas
  * List all available analysts
  */
-router.get('/personas', requireAuth, async (req, res) => {
+router.get('/personas', requireAuth, asyncHandler(async (req, res) => {
   try {
     const analysts = await analystService.getAnalysts();
     res.json({
@@ -41,13 +42,13 @@ router.get('/personas', requireAuth, async (req, res) => {
       error: error.message
     });
   }
-});
+}));
 
 /**
  * GET /api/analyst/personas/:id
  * Get specific analyst details
  */
-router.get('/personas/:id', requireAuth, async (req, res) => {
+router.get('/personas/:id', requireAuth, asyncHandler(async (req, res) => {
   try {
     const analyst = await analystService.getAnalystInfo(req.params.id);
     res.json({
@@ -61,7 +62,7 @@ router.get('/personas/:id', requireAuth, async (req, res) => {
       error: error.message
     });
   }
-});
+}));
 
 /**
  * GET /api/analyst/conversations
@@ -72,7 +73,7 @@ router.get('/personas/:id', requireAuth, async (req, res) => {
  * - companySymbol: string (optional) - Filter by company
  * - limit: number (optional) - Max results (default 50)
  */
-router.get('/conversations', requireAuth, async (req, res) => {
+router.get('/conversations', requireAuth, asyncHandler(async (req, res) => {
   try {
     const { analystId, companySymbol, limit } = req.query;
     const conversations = await analystService.listConversations({
@@ -93,7 +94,7 @@ router.get('/conversations', requireAuth, async (req, res) => {
       error: error.message
     });
   }
-});
+}));
 
 /**
  * POST /api/analyst/conversations
@@ -104,7 +105,7 @@ router.get('/conversations', requireAuth, async (req, res) => {
  * - companyId: number (optional) - Company ID for context
  * - companySymbol: string (optional) - Company symbol for context
  */
-router.post('/conversations', requireAuth, requireFeature('ai_research_agents'), async (req, res) => {
+router.post('/conversations', requireAuth, requireFeature('ai_research_agents'), asyncHandler(async (req, res) => {
   try {
     const { analystId, companyId, companySymbol } = req.body;
 
@@ -132,13 +133,13 @@ router.post('/conversations', requireAuth, requireFeature('ai_research_agents'),
       error: error.message
     });
   }
-});
+}));
 
 /**
  * GET /api/analyst/conversations/:id
  * Get a conversation by ID
  */
-router.get('/conversations/:id', requireAuth, async (req, res) => {
+router.get('/conversations/:id', requireAuth, asyncHandler(async (req, res) => {
   try {
     const conversation = await analystService.getConversation(req.params.id);
 
@@ -160,13 +161,13 @@ router.get('/conversations/:id', requireAuth, async (req, res) => {
       error: error.message
     });
   }
-});
+}));
 
 /**
  * DELETE /api/analyst/conversations/:id
  * Delete a conversation
  */
-router.delete('/conversations/:id', requireAuth, async (req, res) => {
+router.delete('/conversations/:id', requireAuth, asyncHandler(async (req, res) => {
   try {
     await analystService.deleteConversation(req.params.id);
     res.json({
@@ -180,7 +181,7 @@ router.delete('/conversations/:id', requireAuth, async (req, res) => {
       error: error.message
     });
   }
-});
+}));
 
 /**
  * POST /api/analyst/conversations/:id/messages/stream
@@ -190,7 +191,7 @@ router.delete('/conversations/:id', requireAuth, async (req, res) => {
  * - message: string (required) - The user's message
  * - companyContext: object (optional) - Company context data
  */
-router.post('/conversations/:id/messages/stream', requireAuth, requireFeature('ai_research_agents'), async (req, res) => {
+router.post('/conversations/:id/messages/stream', requireAuth, requireFeature('ai_research_agents'), asyncHandler(async (req, res) => {
   const { message, companyContext } = req.body;
 
   if (!message || typeof message !== 'string' || message.trim().length === 0) {
@@ -296,7 +297,7 @@ router.post('/conversations/:id/messages/stream', requireAuth, requireFeature('a
 
   // Start processing
   processNext();
-});
+}));
 
 /**
  * POST /api/analyst/conversations/:id/messages
@@ -311,7 +312,7 @@ router.post('/conversations/:id/messages/stream', requireAuth, requireFeature('a
  *   - sentiment: { overall_score, news_sentiment, ... }
  *   - analyst_ratings: { consensus, target_price, ... }
  */
-router.post('/conversations/:id/messages', requireAuth, requireFeature('ai_research_agents'), async (req, res) => {
+router.post('/conversations/:id/messages', requireAuth, requireFeature('ai_research_agents'), asyncHandler(async (req, res) => {
   try {
     const { message, companyContext } = req.body;
 
@@ -347,7 +348,7 @@ router.post('/conversations/:id/messages', requireAuth, requireFeature('ai_resea
       error: error.message
     });
   }
-});
+}));
 
 /**
  * POST /api/analyst/analyze
@@ -360,7 +361,7 @@ router.post('/conversations/:id/messages', requireAuth, requireFeature('ai_resea
  *   - metrics: { pe_ratio, roe, ... }
  * - question: string (optional) - Specific question to answer
  */
-router.post('/analyze', requireAuth, requireFeature('ai_research_agents'), async (req, res) => {
+router.post('/analyze', requireAuth, requireFeature('ai_research_agents'), asyncHandler(async (req, res) => {
   try {
     const { analystId, companyData, question } = req.body;
 
@@ -395,13 +396,13 @@ router.post('/analyze', requireAuth, requireFeature('ai_research_agents'), async
       error: error.message
     });
   }
-});
+}));
 
 /**
  * GET /api/analyst/stats
  * Get conversation statistics
  */
-router.get('/stats', requireAuth, async (req, res) => {
+router.get('/stats', requireAuth, asyncHandler(async (req, res) => {
   try {
     const stats = await analystService.getConversationStats();
     res.json({
@@ -415,13 +416,13 @@ router.get('/stats', requireAuth, async (req, res) => {
       error: error.message
     });
   }
-});
+}));
 
 /**
  * GET /api/analyst/health
  * Health check for analyst service with Python service connectivity test
  */
-router.get('/health', async (req, res) => {
+router.get('/health', asyncHandler(async (req, res) => {
   try {
     const analysts = await analystService.getAnalysts();
     const hasAnthropicKey = !!process.env.ANTHROPIC_API_KEY;
@@ -477,6 +478,6 @@ router.get('/health', async (req, res) => {
       error: error.message
     });
   }
-});
+}));
 
 module.exports = router;
