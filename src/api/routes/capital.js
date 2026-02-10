@@ -1109,49 +1109,65 @@ router.get('/dividend-calendar', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
     const { days = 30 } = req.query;
+    const daysInt = parseInt(days, 10) || 30;
+    let upcoming = [];
 
-    // Try dividend_metrics first (has ex_dividend_date from yfinance)
-    const upcomingQuery = await database.query(`
-      SELECT
-        c.id as company_id,
-        c.symbol,
-        c.name as company_name,
-        c.sector,
-        dm.ex_dividend_date,
-        dm.dividend_yield,
-        dm.current_annual_dividend,
-        ROUND((dm.current_annual_dividend / 4)::numeric, 4) as est_quarterly_dividend,
-        dm.dividend_frequency,
-        dm.years_of_growth,
-        dm.is_dividend_aristocrat,
-        dm.is_dividend_king
-      FROM dividend_metrics dm
-      JOIN companies c ON dm.company_id = c.id
-      WHERE dm.ex_dividend_date::date >= CURRENT_DATE
-        AND dm.ex_dividend_date::date <= CURRENT_DATE + ($1 || ' days')::INTERVAL
-        AND dm.dividend_yield > 0
-      ORDER BY dm.ex_dividend_date ASC
-    `, [parseInt(days)]);
-    let upcoming = upcomingQuery.rows;
-
-    // Fallback to old dividends table if dividend_metrics has no upcoming
-    if (upcoming.length === 0) {
-      const fallbackQuery = await database.query(`
+    // Try dividend_metrics first if table exists (has ex_dividend_date from yfinance)
+    try {
+      const upcomingQuery = await database.query(`
         SELECT
-          d.company_id,
+          c.id as company_id,
           c.symbol,
           c.name as company_name,
           c.sector,
-          d.ex_dividend_date,
-          d.dividend_amount,
-          d.frequency as dividend_frequency
-        FROM dividends d
-        JOIN companies c ON d.company_id = c.id
-        WHERE d.ex_dividend_date::date >= CURRENT_DATE
-          AND d.ex_dividend_date::date <= CURRENT_DATE + $1 * INTERVAL '1 day'
-        ORDER BY d.ex_dividend_date ASC
-      `, [parseInt(days)]);
-      upcoming = fallbackQuery.rows;
+          dm.ex_dividend_date,
+          dm.dividend_yield,
+          dm.current_annual_dividend,
+          ROUND((dm.current_annual_dividend / 4)::numeric, 4) as est_quarterly_dividend,
+          dm.dividend_frequency,
+          dm.years_of_growth,
+          dm.is_dividend_aristocrat,
+          dm.is_dividend_king
+        FROM dividend_metrics dm
+        JOIN companies c ON dm.company_id = c.id
+        WHERE dm.ex_dividend_date IS NOT NULL
+          AND dm.ex_dividend_date::date >= CURRENT_DATE
+          AND dm.ex_dividend_date::date <= CURRENT_DATE + $1 * INTERVAL '1 day'
+          AND (dm.dividend_yield IS NULL OR dm.dividend_yield > 0)
+        ORDER BY dm.ex_dividend_date ASC
+      `, [daysInt]);
+      upcoming = upcomingQuery.rows || [];
+    } catch (dmErr) {
+      // dividend_metrics may not exist in Postgres yet; fall through to dividends table
+      if (dmErr.code !== '42P01' && dmErr.code !== '42P07') {
+        console.error('[capital] dividend-calendar dividend_metrics query:', dmErr.message);
+      }
+    }
+
+    // Fallback to dividends table if no rows or dividend_metrics failed
+    if (upcoming.length === 0) {
+      try {
+        const fallbackQuery = await database.query(`
+          SELECT
+            d.company_id,
+            c.symbol,
+            c.name as company_name,
+            c.sector,
+            d.ex_dividend_date,
+            d.dividend_amount,
+            d.frequency as dividend_frequency
+          FROM dividends d
+          JOIN companies c ON d.company_id = c.id
+          WHERE d.ex_dividend_date IS NOT NULL
+            AND d.ex_dividend_date::date >= CURRENT_DATE
+            AND d.ex_dividend_date::date <= CURRENT_DATE + $1 * INTERVAL '1 day'
+          ORDER BY d.ex_dividend_date ASC
+        `, [daysInt]);
+        upcoming = fallbackQuery.rows || [];
+      } catch (divErr) {
+        console.error('[capital] dividend-calendar dividends fallback:', divErr.message);
+        throw divErr;
+      }
     }
 
     // Group by date
@@ -1165,12 +1181,13 @@ router.get('/dividend-calendar', async (req, res) => {
     });
 
     res.json({
-      days: parseInt(days),
+      days: daysInt,
       count: upcoming.length,
       byDate,
       list: upcoming
     });
   } catch (error) {
+    console.error('[capital] dividend-calendar error:', error.message);
     res.status(500).json({ error: error.message });
   }
 });

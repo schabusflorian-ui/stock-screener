@@ -1,5 +1,5 @@
 // src/services/sectorAnalysisService.js
-const { getDatabaseAsync } = require('../lib/db');
+const { getDatabaseAsync, isUsingPostgres } = require('../lib/db');
 
 /**
  * Sector Analysis Service
@@ -10,18 +10,42 @@ const { getDatabaseAsync } = require('../lib/db');
  * NOTE: For cross-currency comparison, we use market_cap_usd (USD-normalized)
  * instead of market_cap to ensure apples-to-apples sector aggregations.
  * Ratio metrics (ROIC, margins, PE, etc.) are already currency-agnostic.
+ * When price_metrics table is missing (e.g. migration not yet run), falls back
+ * to using companies.market_cap so sector endpoints still work.
  */
 class SectorAnalysisService {
-  // No constructor needed for PostgreSQL
+  constructor() {
+    this._priceMetricsExists = null; // cached: true/false, null = not checked
+  }
+
+  /** Return true if price_metrics table exists (Postgres only). Cached per instance. */
+  async _hasPriceMetrics() {
+    if (this._priceMetricsExists !== null) return this._priceMetricsExists;
+    if (!isUsingPostgres()) {
+      this._priceMetricsExists = true;
+      return true;
+    }
+    try {
+      const database = await getDatabaseAsync();
+      const r = await database.query(
+        `SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'price_metrics'`
+      );
+      this._priceMetricsExists = (r.rows && r.rows.length > 0);
+    } catch {
+      this._priceMetricsExists = false;
+    }
+    return this._priceMetricsExists;
+  }
 
   /**
    * Get all sectors with aggregate metrics
    */
   async getSectorOverview(periodType = 'annual') {
     const database = await getDatabaseAsync();
+    const usePm = await this._hasPriceMetrics();
     // Use bounded averages to exclude extreme outliers
-    // Reasonable bounds: ROIC/ROE -100 to 200%, margins -100 to 100%, growth -100 to 500%
-    const sql = `
+    const sql = usePm
+      ? `
       WITH latest_metrics AS (
         SELECT
           m.*,
@@ -46,40 +70,68 @@ class SectorAnalysisService {
       SELECT
         sector,
         COUNT(DISTINCT symbol) as company_count,
-
-        -- Profitability (bounded to exclude extreme outliers, tightened to -50% min)
         ROUND(AVG(CASE WHEN roic BETWEEN -50 AND 200 THEN roic END), 2) as avg_roic,
         ROUND(AVG(CASE WHEN roe BETWEEN -50 AND 200 THEN roe END), 2) as avg_roe,
         ROUND(AVG(CASE WHEN roa BETWEEN -50 AND 100 THEN roa END), 2) as avg_roa,
-
-        -- Margins (bounded -50% to 100%, tightened to exclude deeply distressed)
         ROUND(AVG(CASE WHEN gross_margin BETWEEN -50 AND 100 THEN gross_margin END), 2) as avg_gross_margin,
         ROUND(AVG(CASE WHEN operating_margin BETWEEN -50 AND 100 THEN operating_margin END), 2) as avg_operating_margin,
         ROUND(AVG(CASE WHEN net_margin BETWEEN -50 AND 100 THEN net_margin END), 2) as avg_net_margin,
-
-        -- Valuation (bounded to reasonable ranges)
         ROUND(AVG(CASE WHEN pe_ratio BETWEEN 0 AND 500 THEN pe_ratio END), 2) as avg_pe_ratio,
         ROUND(AVG(CASE WHEN pb_ratio BETWEEN 0 AND 50 THEN pb_ratio END), 2) as avg_pb_ratio,
         ROUND(AVG(CASE WHEN ev_ebitda BETWEEN 0 AND 100 THEN ev_ebitda END), 2) as avg_ev_ebitda,
-
-        -- Financial Health
         ROUND(AVG(CASE WHEN debt_to_equity BETWEEN 0 AND 10 THEN debt_to_equity END), 2) as avg_debt_to_equity,
         ROUND(AVG(CASE WHEN current_ratio BETWEEN 0 AND 20 THEN current_ratio END), 2) as avg_current_ratio,
-
-        -- Growth (bounded -100% to 500%)
         ROUND(AVG(CASE WHEN revenue_growth_yoy BETWEEN -100 AND 500 THEN revenue_growth_yoy END), 2) as avg_revenue_growth,
         ROUND(AVG(CASE WHEN earnings_growth_yoy BETWEEN -100 AND 500 THEN earnings_growth_yoy END), 2) as avg_earnings_growth,
-
-        -- Cash Flow
         ROUND(AVG(CASE WHEN fcf_yield BETWEEN -100 AND 100 THEN fcf_yield END), 2) as avg_fcf_yield,
         ROUND(AVG(CASE WHEN fcf_margin BETWEEN -100 AND 100 THEN fcf_margin END), 2) as avg_fcf_margin,
-
-        -- Market Cap totals (USD-normalized for cross-currency comparison)
         ROUND(SUM(COALESCE(market_cap_usd, market_cap)) / 1e9, 2) as total_market_cap_b,
-
-        -- Quality
         ROUND(AVG(data_quality_score), 1) as avg_quality_score
-
+      FROM latest_metrics
+      GROUP BY sector
+      ORDER BY company_count DESC
+    `
+      : `
+      WITH latest_metrics AS (
+        SELECT
+          m.*,
+          c.sector,
+          c.industry,
+          c.symbol,
+          c.name,
+          c.market_cap as market_cap,
+          c.market_cap as market_cap_usd
+        FROM calculated_metrics m
+        JOIN companies c ON m.company_id = c.id
+        WHERE m.period_type = $1
+          AND m.fiscal_period = (
+            SELECT MAX(m2.fiscal_period)
+            FROM calculated_metrics m2
+            WHERE m2.company_id = m.company_id
+              AND m2.period_type = $2
+          )
+          AND c.sector IS NOT NULL
+      )
+      SELECT
+        sector,
+        COUNT(DISTINCT symbol) as company_count,
+        ROUND(AVG(CASE WHEN roic BETWEEN -50 AND 200 THEN roic END), 2) as avg_roic,
+        ROUND(AVG(CASE WHEN roe BETWEEN -50 AND 200 THEN roe END), 2) as avg_roe,
+        ROUND(AVG(CASE WHEN roa BETWEEN -50 AND 100 THEN roa END), 2) as avg_roa,
+        ROUND(AVG(CASE WHEN gross_margin BETWEEN -50 AND 100 THEN gross_margin END), 2) as avg_gross_margin,
+        ROUND(AVG(CASE WHEN operating_margin BETWEEN -50 AND 100 THEN operating_margin END), 2) as avg_operating_margin,
+        ROUND(AVG(CASE WHEN net_margin BETWEEN -50 AND 100 THEN net_margin END), 2) as avg_net_margin,
+        ROUND(AVG(CASE WHEN pe_ratio BETWEEN 0 AND 500 THEN pe_ratio END), 2) as avg_pe_ratio,
+        ROUND(AVG(CASE WHEN pb_ratio BETWEEN 0 AND 50 THEN pb_ratio END), 2) as avg_pb_ratio,
+        ROUND(AVG(CASE WHEN ev_ebitda BETWEEN 0 AND 100 THEN ev_ebitda END), 2) as avg_ev_ebitda,
+        ROUND(AVG(CASE WHEN debt_to_equity BETWEEN 0 AND 10 THEN debt_to_equity END), 2) as avg_debt_to_equity,
+        ROUND(AVG(CASE WHEN current_ratio BETWEEN 0 AND 20 THEN current_ratio END), 2) as avg_current_ratio,
+        ROUND(AVG(CASE WHEN revenue_growth_yoy BETWEEN -100 AND 500 THEN revenue_growth_yoy END), 2) as avg_revenue_growth,
+        ROUND(AVG(CASE WHEN earnings_growth_yoy BETWEEN -100 AND 500 THEN earnings_growth_yoy END), 2) as avg_earnings_growth,
+        ROUND(AVG(CASE WHEN fcf_yield BETWEEN -100 AND 100 THEN fcf_yield END), 2) as avg_fcf_yield,
+        ROUND(AVG(CASE WHEN fcf_margin BETWEEN -100 AND 100 THEN fcf_margin END), 2) as avg_fcf_margin,
+        ROUND(SUM(COALESCE(market_cap_usd, market_cap)) / 1e9, 2) as total_market_cap_b,
+        ROUND(AVG(data_quality_score), 1) as avg_quality_score
       FROM latest_metrics
       GROUP BY sector
       ORDER BY company_count DESC
@@ -107,7 +159,9 @@ class SectorAnalysisService {
    */
   async getIndustriesBySector(sector, periodType = 'annual') {
     const database = await getDatabaseAsync();
-    const sql = `
+    const usePm = await this._hasPriceMetrics();
+    const sql = usePm
+      ? `
       WITH latest_metrics AS (
         SELECT
           m.*,
@@ -133,34 +187,61 @@ class SectorAnalysisService {
       SELECT
         industry,
         COUNT(DISTINCT symbol) as company_count,
-
-        -- Profitability (bounded to exclude extreme outliers, tightened to -50% min)
         ROUND(AVG(CASE WHEN roic BETWEEN -50 AND 200 THEN roic END), 2) as avg_roic,
         ROUND(AVG(CASE WHEN roe BETWEEN -50 AND 200 THEN roe END), 2) as avg_roe,
         ROUND(AVG(CASE WHEN roa BETWEEN -50 AND 100 THEN roa END), 2) as avg_roa,
-
-        -- Margins (bounded -50% to 100%, tightened to exclude deeply distressed)
         ROUND(AVG(CASE WHEN gross_margin BETWEEN -50 AND 100 THEN gross_margin END), 2) as avg_gross_margin,
         ROUND(AVG(CASE WHEN operating_margin BETWEEN -50 AND 100 THEN operating_margin END), 2) as avg_operating_margin,
         ROUND(AVG(CASE WHEN net_margin BETWEEN -50 AND 100 THEN net_margin END), 2) as avg_net_margin,
-
-        -- Valuation
         ROUND(AVG(CASE WHEN pe_ratio BETWEEN 0 AND 500 THEN pe_ratio END), 2) as avg_pe_ratio,
         ROUND(AVG(CASE WHEN pb_ratio BETWEEN 0 AND 50 THEN pb_ratio END), 2) as avg_pb_ratio,
-
-        -- Financial Health
         ROUND(AVG(CASE WHEN debt_to_equity BETWEEN 0 AND 10 THEN debt_to_equity END), 2) as avg_debt_to_equity,
         ROUND(AVG(CASE WHEN current_ratio BETWEEN 0 AND 20 THEN current_ratio END), 2) as avg_current_ratio,
-
-        -- Growth
         ROUND(AVG(CASE WHEN revenue_growth_yoy BETWEEN -100 AND 500 THEN revenue_growth_yoy END), 2) as avg_revenue_growth,
-
-        -- Cash Flow
         ROUND(AVG(CASE WHEN fcf_yield BETWEEN -100 AND 100 THEN fcf_yield END), 2) as avg_fcf_yield,
-
-        -- Market Cap (USD-normalized for cross-currency comparison)
         ROUND(SUM(COALESCE(market_cap_usd, market_cap)) / 1e9, 2) as total_market_cap_b
-
+      FROM latest_metrics
+      GROUP BY industry
+      ORDER BY company_count DESC
+    `
+      : `
+      WITH latest_metrics AS (
+        SELECT
+          m.*,
+          c.sector,
+          c.industry,
+          c.symbol,
+          c.name,
+          c.market_cap as market_cap,
+          c.market_cap as market_cap_usd
+        FROM calculated_metrics m
+        JOIN companies c ON m.company_id = c.id
+        WHERE m.period_type = $1
+          AND m.fiscal_period = (
+            SELECT MAX(m2.fiscal_period)
+            FROM calculated_metrics m2
+            WHERE m2.company_id = m.company_id
+              AND m2.period_type = $2
+          )
+          AND c.sector = $3
+          AND c.industry IS NOT NULL
+      )
+      SELECT
+        industry,
+        COUNT(DISTINCT symbol) as company_count,
+        ROUND(AVG(CASE WHEN roic BETWEEN -50 AND 200 THEN roic END), 2) as avg_roic,
+        ROUND(AVG(CASE WHEN roe BETWEEN -50 AND 200 THEN roe END), 2) as avg_roe,
+        ROUND(AVG(CASE WHEN roa BETWEEN -50 AND 100 THEN roa END), 2) as avg_roa,
+        ROUND(AVG(CASE WHEN gross_margin BETWEEN -50 AND 100 THEN gross_margin END), 2) as avg_gross_margin,
+        ROUND(AVG(CASE WHEN operating_margin BETWEEN -50 AND 100 THEN operating_margin END), 2) as avg_operating_margin,
+        ROUND(AVG(CASE WHEN net_margin BETWEEN -50 AND 100 THEN net_margin END), 2) as avg_net_margin,
+        ROUND(AVG(CASE WHEN pe_ratio BETWEEN 0 AND 500 THEN pe_ratio END), 2) as avg_pe_ratio,
+        ROUND(AVG(CASE WHEN pb_ratio BETWEEN 0 AND 50 THEN pb_ratio END), 2) as avg_pb_ratio,
+        ROUND(AVG(CASE WHEN debt_to_equity BETWEEN 0 AND 10 THEN debt_to_equity END), 2) as avg_debt_to_equity,
+        ROUND(AVG(CASE WHEN current_ratio BETWEEN 0 AND 20 THEN current_ratio END), 2) as avg_current_ratio,
+        ROUND(AVG(CASE WHEN revenue_growth_yoy BETWEEN -100 AND 500 THEN revenue_growth_yoy END), 2) as avg_revenue_growth,
+        ROUND(AVG(CASE WHEN fcf_yield BETWEEN -100 AND 100 THEN fcf_yield END), 2) as avg_fcf_yield,
+        ROUND(SUM(COALESCE(market_cap_usd, market_cap)) / 1e9, 2) as total_market_cap_b
       FROM latest_metrics
       GROUP BY industry
       ORDER BY company_count DESC
@@ -175,14 +256,15 @@ class SectorAnalysisService {
    */
   async getTopPerformersBySector(metric = 'roic', limit = 5, periodType = 'annual') {
     const database = await getDatabaseAsync();
-    // Validate metric to prevent SQL injection
     const validMetrics = [
       'roic', 'roe', 'roa', 'net_margin', 'operating_margin', 'gross_margin',
       'fcf_yield', 'fcf_margin', 'revenue_growth_yoy', 'earnings_growth_yoy'
     ];
     const safeMetric = validMetrics.includes(metric) ? metric : 'roic';
+    const usePm = await this._hasPriceMetrics();
 
-    const sql = `
+    const sql = usePm
+      ? `
       WITH latest_metrics AS (
         SELECT
           m.*,
@@ -190,7 +272,6 @@ class SectorAnalysisService {
           c.industry,
           c.symbol,
           c.name,
-          -- Use USD-normalized market cap for cross-currency comparison
           COALESCE(pm.market_cap_usd, pm.market_cap, c.market_cap) as market_cap_usd
         FROM calculated_metrics m
         JOIN companies c ON m.company_id = c.id
@@ -206,6 +287,53 @@ class SectorAnalysisService {
           AND m.${safeMetric} IS NOT NULL
           AND c.symbol NOT LIKE 'CIK_%'
           AND COALESCE(pm.market_cap_usd, pm.market_cap, c.market_cap) IS NOT NULL
+      ),
+      ranked AS (
+        SELECT
+          *,
+          ROW_NUMBER() OVER (PARTITION BY sector ORDER BY ${safeMetric} DESC) as rank
+        FROM latest_metrics
+      )
+      SELECT
+        sector,
+        symbol,
+        name,
+        industry,
+        ROUND(roic, 2) as roic,
+        ROUND(roe, 2) as roe,
+        ROUND(net_margin, 2) as net_margin,
+        ROUND(operating_margin, 2) as operating_margin,
+        ROUND(fcf_yield, 2) as fcf_yield,
+        ROUND(revenue_growth_yoy, 2) as revenue_growth,
+        ROUND(market_cap_usd / 1e9, 2) as market_cap_b,
+        fiscal_period,
+        rank
+      FROM ranked
+      WHERE rank <= $3
+      ORDER BY sector, rank
+    `
+      : `
+      WITH latest_metrics AS (
+        SELECT
+          m.*,
+          c.sector,
+          c.industry,
+          c.symbol,
+          c.name,
+          c.market_cap as market_cap_usd
+        FROM calculated_metrics m
+        JOIN companies c ON m.company_id = c.id
+        WHERE m.period_type = $1
+          AND m.fiscal_period = (
+            SELECT MAX(m2.fiscal_period)
+            FROM calculated_metrics m2
+            WHERE m2.company_id = m.company_id
+              AND m2.period_type = $2
+          )
+          AND c.sector IS NOT NULL
+          AND m.${safeMetric} IS NOT NULL
+          AND c.symbol NOT LIKE 'CIK_%'
+          AND c.market_cap IS NOT NULL
       ),
       ranked AS (
         SELECT
@@ -413,7 +541,9 @@ class SectorAnalysisService {
    */
   async getSectorDetail(sector, periodType = 'annual') {
     const database = await getDatabaseAsync();
-    const sql = `
+    const usePm = await this._hasPriceMetrics();
+    const sql = usePm
+      ? `
       WITH latest_metrics AS (
         SELECT
           m.*,
@@ -433,14 +563,14 @@ class SectorAnalysisService {
         FROM calculated_metrics m
         JOIN companies c ON m.company_id = c.id
         LEFT JOIN price_metrics pm ON pm.company_id = c.id
-        WHERE m.period_type = ?
+        WHERE m.period_type = $1
           AND m.fiscal_period = (
             SELECT MAX(m2.fiscal_period)
             FROM calculated_metrics m2
             WHERE m2.company_id = m.company_id
-              AND m2.period_type = ?
+              AND m2.period_type = $2
           )
-          AND c.sector = ?
+          AND c.sector = $3
       )
       SELECT
         symbol,
@@ -448,8 +578,67 @@ class SectorAnalysisService {
         industry,
         ROUND(market_cap / 1e9, 2) as market_cap_b,
         fiscal_period,
-
-        -- Price data
+        ROUND(last_price, 2) as current_price,
+        ROUND(change_1d, 2) as change_1d,
+        ROUND(change_1w, 2) as change_1w,
+        ROUND(change_1m, 2) as change_1m,
+        ROUND(change_ytd, 2) as change_ytd,
+        ROUND(change_1y, 2) as change_1y,
+        ROUND(high_52w, 2) as high_52w,
+        ROUND(low_52w, 2) as low_52w,
+        ROUND(roic, 2) as roic,
+        ROUND(roe, 2) as roe,
+        ROUND(roa, 2) as roa,
+        ROUND(gross_margin, 2) as gross_margin,
+        ROUND(operating_margin, 2) as operating_margin,
+        ROUND(net_margin, 2) as net_margin,
+        ROUND(pe_ratio, 2) as pe_ratio,
+        ROUND(pb_ratio, 2) as pb_ratio,
+        ROUND(ev_ebitda, 2) as ev_ebitda,
+        ROUND(debt_to_equity, 2) as debt_to_equity,
+        ROUND(current_ratio, 2) as current_ratio,
+        ROUND(revenue_growth_yoy, 2) as revenue_growth,
+        ROUND(earnings_growth_yoy, 2) as earnings_growth,
+        ROUND(fcf_yield, 2) as fcf_yield,
+        ROUND(fcf_margin, 2) as fcf_margin,
+        data_quality_score as quality_score
+      FROM latest_metrics
+      ORDER BY market_cap DESC
+    `
+      : `
+      WITH latest_metrics AS (
+        SELECT
+          m.*,
+          c.sector,
+          c.industry,
+          c.symbol,
+          c.name,
+          c.market_cap,
+          NULL::numeric as last_price,
+          NULL::numeric as change_1d,
+          NULL::numeric as change_1w,
+          NULL::numeric as change_1m,
+          NULL::numeric as change_ytd,
+          NULL::numeric as change_1y,
+          NULL::numeric as high_52w,
+          NULL::numeric as low_52w
+        FROM calculated_metrics m
+        JOIN companies c ON m.company_id = c.id
+        WHERE m.period_type = $1
+          AND m.fiscal_period = (
+            SELECT MAX(m2.fiscal_period)
+            FROM calculated_metrics m2
+            WHERE m2.company_id = m.company_id
+              AND m2.period_type = $2
+          )
+          AND c.sector = $3
+      )
+      SELECT
+        symbol,
+        name,
+        industry,
+        ROUND(market_cap / 1e9, 2) as market_cap_b,
+        fiscal_period,
         ROUND(last_price, 2) as current_price,
         ROUND(change_1d, 2) as change_1d,
         ROUND(change_1w, 2) as change_1w,
@@ -529,7 +718,9 @@ class SectorAnalysisService {
    */
   async getIndustryDetail(industry, periodType = 'annual') {
     const database = await getDatabaseAsync();
-    const sql = `
+    const usePm = await this._hasPriceMetrics();
+    const sql = usePm
+      ? `
       WITH latest_metrics AS (
         SELECT
           m.*,
@@ -561,14 +752,11 @@ class SectorAnalysisService {
         sector,
         ROUND(market_cap / 1e9, 2) as market_cap_b,
         fiscal_period,
-
-        -- Price data
         ROUND(last_price, 2) as current_price,
         ROUND(change_1d, 2) as change_1d,
         ROUND(change_1w, 2) as change_1w,
         ROUND(change_ytd, 2) as change_ytd,
         ROUND(change_1y, 2) as change_1y,
-
         ROUND(roic, 2) as roic,
         ROUND(roe, 2) as roe,
         ROUND(gross_margin, 2) as gross_margin,
@@ -578,9 +766,56 @@ class SectorAnalysisService {
         ROUND(debt_to_equity, 2) as debt_to_equity,
         ROUND(revenue_growth_yoy, 2) as revenue_growth,
         ROUND(fcf_yield, 2) as fcf_yield,
-
         data_quality_score as quality_score
-
+      FROM latest_metrics
+      ORDER BY market_cap DESC
+    `
+      : `
+      WITH latest_metrics AS (
+        SELECT
+          m.*,
+          c.sector,
+          c.industry,
+          c.symbol,
+          c.name,
+          c.market_cap,
+          NULL::numeric as last_price,
+          NULL::numeric as change_1d,
+          NULL::numeric as change_1w,
+          NULL::numeric as change_ytd,
+          NULL::numeric as change_1y
+        FROM calculated_metrics m
+        JOIN companies c ON m.company_id = c.id
+        WHERE m.period_type = $1
+          AND m.fiscal_period = (
+            SELECT MAX(m2.fiscal_period)
+            FROM calculated_metrics m2
+            WHERE m2.company_id = m.company_id
+              AND m2.period_type = $2
+          )
+          AND c.industry = $3
+      )
+      SELECT
+        symbol,
+        name,
+        sector,
+        ROUND(market_cap / 1e9, 2) as market_cap_b,
+        fiscal_period,
+        ROUND(last_price, 2) as current_price,
+        ROUND(change_1d, 2) as change_1d,
+        ROUND(change_1w, 2) as change_1w,
+        ROUND(change_ytd, 2) as change_ytd,
+        ROUND(change_1y, 2) as change_1y,
+        ROUND(roic, 2) as roic,
+        ROUND(roe, 2) as roe,
+        ROUND(gross_margin, 2) as gross_margin,
+        ROUND(operating_margin, 2) as operating_margin,
+        ROUND(net_margin, 2) as net_margin,
+        ROUND(pe_ratio, 2) as pe_ratio,
+        ROUND(debt_to_equity, 2) as debt_to_equity,
+        ROUND(revenue_growth_yoy, 2) as revenue_growth,
+        ROUND(fcf_yield, 2) as fcf_yield,
+        data_quality_score as quality_score
       FROM latest_metrics
       ORDER BY market_cap DESC
     `;

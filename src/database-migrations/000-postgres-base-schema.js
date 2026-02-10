@@ -3,22 +3,24 @@
 // Creates core tables with PostgreSQL syntax when DATABASE_URL is set
 //
 // Usage:
-//   DATABASE_URL=postgres://... node src/database-migrations/000-postgres-base-schema.js
+//   Standalone: DATABASE_URL=postgres://... node src/database-migrations/000-postgres-base-schema.js
+//   Via runner: run-postgres-migrations.js calls migrate(db)
 
-const { getDatabase, isUsingPostgres, dialect } = require('../lib/db');
+const { getDatabase, isUsingPostgres } = require('../lib/db');
 
-async function runMigration() {
-  const isPostgres = isUsingPostgres();
-
-  if (!isPostgres) {
+/**
+ * @param {object} [dbFromRunner] - When provided by run-postgres-migrations.js, use this db; don't create schema_migrations or close.
+ */
+async function runMigration(dbFromRunner) {
+  const isRunner = !!dbFromRunner;
+  if (!isRunner && !isUsingPostgres()) {
     console.log('⏭️  Skipping PostgreSQL migration - SQLite mode detected');
-    console.log('   Set DATABASE_URL=postgres://... to run PostgreSQL migrations');
     return;
   }
 
   console.log('🐘 Starting PostgreSQL base schema migration...');
 
-  const db = await getDatabase();
+  const db = dbFromRunner || await getDatabase();
 
   // ============================================
   // TABLE 1: Companies
@@ -569,34 +571,33 @@ async function runMigration() {
     CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at DESC);
   `);
 
-  // ============================================
-  // Migrations Tracking Table
-  // ============================================
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      id SERIAL PRIMARY KEY,
-      migration_name TEXT UNIQUE NOT NULL,
-      applied_at TIMESTAMP DEFAULT NOW()
-    )
-  `);
-  console.log('✓ Created schema_migrations table');
-
-  // Record this migration
-  await db.query(`
-    INSERT INTO schema_migrations (migration_name)
-    VALUES ('000-postgres-base-schema')
-    ON CONFLICT (migration_name) DO NOTHING
-  `);
+  // When run standalone (not by runner), create our own schema_migrations and record
+  if (!isRunner) {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        id SERIAL PRIMARY KEY,
+        migration_name TEXT UNIQUE NOT NULL,
+        applied_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await db.query(`
+      INSERT INTO schema_migrations (migration_name)
+      VALUES ('000-postgres-base-schema')
+      ON CONFLICT (migration_name) DO NOTHING
+    `);
+    await db.close();
+  }
 
   console.log('');
   console.log('🎉 PostgreSQL base schema migration complete!');
-  console.log('   All core tables created successfully.');
-
-  await db.close();
 }
 
-// Run migration
-runMigration().catch(err => {
-  console.error('❌ Migration failed:', err.message);
-  process.exit(1);
-});
+module.exports = runMigration;
+
+// Run when executed directly (e.g. npm run db:migrate:postgres:base)
+if (require.main === module) {
+  runMigration().catch(err => {
+    console.error('❌ Migration failed:', err.message);
+    process.exit(1);
+  });
+}

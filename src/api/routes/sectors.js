@@ -5,6 +5,23 @@ const SectorAnalysisService = require('../../services/sectorAnalysisService');
 
 const sectorService = new SectorAnalysisService();
 
+// Log full error for debugging (Railway logs, etc.)
+function logSectorError(route, error) {
+  console.error(`[sectors] ${route}:`, error.message);
+  if (error.code) console.error('[sectors] pg code:', error.code);
+  if (error.detail) console.error('[sectors] pg detail:', error.detail);
+  if (error.where) console.error('[sectors] pg where:', error.where);
+  console.error('[sectors] stack:', error.stack);
+}
+
+// Build 500 JSON so client/Network tab can see actual DB error (e.g. relation does not exist)
+function sectorErrorPayload(error) {
+  const payload = { error: error.message };
+  if (error.code) payload.code = error.code;
+  if (error.detail) payload.detail = error.detail;
+  return payload;
+}
+
 /**
  * GET /api/sectors
  * Get all sectors with aggregate metrics
@@ -20,8 +37,8 @@ router.get('/', async (req, res) => {
       periodType
     });
   } catch (error) {
-    console.error('Error getting sector overview:', error);
-    res.status(500).json({ error: error.message });
+    logSectorError('GET / (sector overview)', error);
+    res.status(500).json(sectorErrorPayload(error));
   }
 });
 
@@ -39,8 +56,8 @@ router.get('/rankings', async (req, res) => {
       periodType
     });
   } catch (error) {
-    console.error('Error getting sector rankings:', error);
-    res.status(500).json({ error: error.message });
+    logSectorError('GET /rankings', error);
+    res.status(500).json(sectorErrorPayload(error));
   }
 });
 
@@ -59,8 +76,8 @@ router.get('/rotation', async (req, res) => {
       periodType
     });
   } catch (error) {
-    console.error('Error getting sector rotation:', error);
-    res.status(500).json({ error: error.message });
+    logSectorError('GET /rotation', error);
+    res.status(500).json(sectorErrorPayload(error));
   }
 });
 
@@ -80,8 +97,8 @@ router.get('/top-performers', async (req, res) => {
       periodType
     });
   } catch (error) {
-    console.error('Error getting top performers:', error);
-    res.status(500).json({ error: error.message });
+    logSectorError('GET /top-performers', error);
+    res.status(500).json(sectorErrorPayload(error));
   }
 });
 
@@ -100,8 +117,8 @@ router.get('/margins', async (req, res) => {
       periodType
     });
   } catch (error) {
-    console.error('Error getting margin comparison:', error);
-    res.status(500).json({ error: error.message });
+    logSectorError('GET /margins', error);
+    res.status(500).json(sectorErrorPayload(error));
   }
 });
 
@@ -121,8 +138,8 @@ router.get('/:sector', async (req, res) => {
 
     res.json(detail);
   } catch (error) {
-    console.error('Error getting sector detail:', error);
-    res.status(500).json({ error: error.message });
+    logSectorError('GET /:sector (detail)', error);
+    res.status(500).json(sectorErrorPayload(error));
   }
 });
 
@@ -143,8 +160,8 @@ router.get('/:sector/industries', async (req, res) => {
       periodType
     });
   } catch (error) {
-    console.error('Error getting industries:', error);
-    res.status(500).json({ error: error.message });
+    logSectorError('GET /:sector/industries', error);
+    res.status(500).json(sectorErrorPayload(error));
   }
 });
 
@@ -164,8 +181,8 @@ router.get('/industry/:industry', async (req, res) => {
 
     res.json(detail);
   } catch (error) {
-    console.error('Error getting industry detail:', error);
-    res.status(500).json({ error: error.message });
+    logSectorError('GET /industry/:industry', error);
+    res.status(500).json(sectorErrorPayload(error));
   }
 });
 
