@@ -98,7 +98,7 @@ router.get('/catalysts/upcoming', async (req, res) => {
 // ============================================
 
 // GET /api/theses/company/:symbol - Get theses for a company
-router.get('/company/:symbol', (req, res) => {
+router.get('/company/:symbol', async (req, res) => {
   try {
     const { thesis } = await getServices(req);
     const symbol = req.params.symbol.toUpperCase();
@@ -122,7 +122,7 @@ router.get('/company/:symbol', (req, res) => {
 // ============================================
 
 // GET /api/theses - List all theses
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { thesis } = await getServices(req);
     const { status } = req.query;
@@ -145,7 +145,7 @@ router.get('/', (req, res) => {
 });
 
 // GET /api/theses/:id - Get a specific thesis
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
     const { thesis, snapshot } = await getServices(req);
     const thesisId = parseInt(req.params.id);
@@ -171,7 +171,7 @@ router.get('/:id', (req, res) => {
 });
 
 // POST /api/theses - Create a new thesis
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const { thesis, snapshot } = await getServices(req);
     const {
@@ -228,7 +228,7 @@ router.post('/', (req, res) => {
 });
 
 // PUT /api/theses/:id - Update a thesis
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
   try {
     const { thesis, notes } = await getServices(req);
     const thesisId = parseInt(req.params.id);
@@ -275,7 +275,7 @@ router.put('/:id', (req, res) => {
 });
 
 // PUT /api/theses/:id/status - Update thesis status
-router.put('/:id/status', (req, res) => {
+router.put('/:id/status', async (req, res) => {
   try {
     const { thesis } = await getServices(req);
     const thesisId = parseInt(req.params.id);
@@ -304,7 +304,7 @@ router.put('/:id/status', (req, res) => {
 });
 
 // DELETE /api/theses/:id - Delete a thesis
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
     const { thesis } = await getServices(req);
     const thesisId = parseInt(req.params.id);
@@ -325,7 +325,7 @@ router.delete('/:id', (req, res) => {
 // ============================================
 
 // GET /api/theses/:id/assumptions - Get assumptions for a thesis
-router.get('/:id/assumptions', (req, res) => {
+router.get('/:id/assumptions', async (req, res) => {
   try {
     const { thesis } = await getServices(req);
     const thesisId = parseInt(req.params.id);
@@ -343,7 +343,7 @@ router.get('/:id/assumptions', (req, res) => {
 });
 
 // POST /api/theses/:id/assumptions - Add assumption
-router.post('/:id/assumptions', (req, res) => {
+router.post('/:id/assumptions', async (req, res) => {
   try {
     const { thesis } = await getServices(req);
     const thesisId = parseInt(req.params.id);
@@ -381,7 +381,7 @@ router.post('/:id/assumptions', (req, res) => {
 });
 
 // PUT /api/theses/:thesisId/assumptions/:assumptionId - Update assumption
-router.put('/:thesisId/assumptions/:assumptionId', (req, res) => {
+router.put('/:thesisId/assumptions/:assumptionId', async (req, res) => {
   try {
     const { thesis } = await getServices(req);
     const assumptionId = parseInt(req.params.assumptionId);
@@ -417,7 +417,7 @@ router.put('/:thesisId/assumptions/:assumptionId', (req, res) => {
 });
 
 // PUT /api/theses/:thesisId/assumptions/:assumptionId/status - Update assumption status
-router.put('/:thesisId/assumptions/:assumptionId/status', (req, res) => {
+router.put('/:thesisId/assumptions/:assumptionId/status', async (req, res) => {
   try {
     const { thesis } = await getServices(req);
     const assumptionId = parseInt(req.params.assumptionId);
@@ -443,7 +443,7 @@ router.put('/:thesisId/assumptions/:assumptionId/status', (req, res) => {
 });
 
 // DELETE /api/theses/:thesisId/assumptions/:assumptionId - Delete assumption
-router.delete('/:thesisId/assumptions/:assumptionId', (req, res) => {
+router.delete('/:thesisId/assumptions/:assumptionId', async (req, res) => {
   try {
     const { thesis } = await getServices(req);
     const assumptionId = parseInt(req.params.assumptionId);
@@ -464,7 +464,7 @@ router.delete('/:thesisId/assumptions/:assumptionId', (req, res) => {
 // ============================================
 
 // GET /api/theses/:id/catalysts - Get catalysts for a thesis
-router.get('/:id/catalysts', (req, res) => {
+router.get('/:id/catalysts', async (req, res) => {
   try {
     const { thesis } = await getServices(req);
     const thesisId = parseInt(req.params.id);
@@ -482,7 +482,7 @@ router.get('/:id/catalysts', (req, res) => {
 });
 
 // POST /api/theses/:id/catalysts - Add catalyst
-router.post('/:id/catalysts', (req, res) => {
+router.post('/:id/catalysts', async (req, res) => {
   try {
     const { thesis } = await getServices(req);
     const thesisId = parseInt(req.params.id);
@@ -516,7 +516,7 @@ router.post('/:id/catalysts', (req, res) => {
 });
 
 // PUT /api/theses/:thesisId/catalysts/:catalystId - Update catalyst
-router.put('/:thesisId/catalysts/:catalystId', (req, res) => {
+router.put('/:thesisId/catalysts/:catalystId', async (req, res) => {
   try {
     const { thesis } = await getServices(req);
     const catalystId = parseInt(req.params.catalystId);
@@ -548,7 +548,7 @@ router.put('/:thesisId/catalysts/:catalystId', (req, res) => {
 });
 
 // PUT /api/theses/:thesisId/catalysts/:catalystId/status - Update catalyst status
-router.put('/:thesisId/catalysts/:catalystId/status', (req, res) => {
+router.put('/:thesisId/catalysts/:catalystId/status', async (req, res) => {
   try {
     const { thesis } = await getServices(req);
     const catalystId = parseInt(req.params.catalystId);
@@ -575,7 +575,7 @@ router.put('/:thesisId/catalysts/:catalystId/status', (req, res) => {
 });
 
 // DELETE /api/theses/:thesisId/catalysts/:catalystId - Delete catalyst
-router.delete('/:thesisId/catalysts/:catalystId', (req, res) => {
+router.delete('/:thesisId/catalysts/:catalystId', async (req, res) => {
   try {
     const { thesis } = await getServices(req);
     const catalystId = parseInt(req.params.catalystId);
