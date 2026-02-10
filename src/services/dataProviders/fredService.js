@@ -453,13 +453,23 @@ class FREDService {
   async getMacroSnapshot() {
     const database = await getDatabaseAsync();
 
+    // Get latest economic indicators (replacing v_latest_economic_indicators view)
     const indicatorsResult = await database.query(`
-      SELECT * FROM v_latest_economic_indicators
+      SELECT ei.*
+      FROM economic_indicators ei
+      INNER JOIN (
+        SELECT series_id, MAX(observation_date) as max_date
+        FROM economic_indicators
+        GROUP BY series_id
+      ) latest ON ei.series_id = latest.series_id AND ei.observation_date = latest.max_date
     `);
     const indicators = indicatorsResult.rows;
 
+    // Get current yield curve (replacing v_current_yield_curve view)
     const yieldCurveResult = await database.query(`
-      SELECT * FROM v_current_yield_curve
+      SELECT * FROM yield_curve
+      ORDER BY curve_date DESC
+      LIMIT 1
     `);
     const yieldCurve = yieldCurveResult.rows[0];
 
@@ -497,16 +507,29 @@ class FREDService {
   async getMacroSignals() {
     const database = await getDatabaseAsync();
 
-    const ycResult = await database.query(`SELECT * FROM v_current_yield_curve`);
+    // Get current yield curve (replacing v_current_yield_curve view)
+    const ycResult = await database.query(`
+      SELECT * FROM yield_curve
+      ORDER BY curve_date DESC
+      LIMIT 1
+    `);
     const yc = ycResult.rows[0];
 
+    // Get latest VIX (replacing v_latest_economic_indicators view)
     const vixResult = await database.query(`
-      SELECT value FROM v_latest_economic_indicators WHERE series_id = $1
+      SELECT value FROM economic_indicators
+      WHERE series_id = $1
+      ORDER BY observation_date DESC
+      LIMIT 1
     `, ['VIXCLS']);
     const vix = vixResult.rows[0];
 
+    // Get latest HY spread (replacing v_latest_economic_indicators view)
     const hySpreadResult = await database.query(`
-      SELECT value FROM v_latest_economic_indicators WHERE series_id = $1
+      SELECT value FROM economic_indicators
+      WHERE series_id = $1
+      ORDER BY observation_date DESC
+      LIMIT 1
     `, ['BAMLH0A0HYM2']);
     const hySpread = hySpreadResult.rows[0];
 
