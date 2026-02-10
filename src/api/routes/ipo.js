@@ -5,6 +5,7 @@ const express = require('express');
 const router = express.Router();
 const { getDatabaseAsync } = require('../../database');
 const { IPOTracker, IPO_STAGES, IPO_FORM_TYPES, IPO_REGIONS } = require('../../services/ipoTracker');
+const { asyncHandler } = require('../../middleware/errorHandler');
 
 // Lazy async initialization to avoid sync database access
 let ipoTracker = null;
@@ -135,20 +136,15 @@ router.get('/recent', async (req, res) => {
  * Get pipeline statistics
  * Query params: region (US|EU|UK|all)
  */
-router.get('/statistics', async (req, res) => {
-  try {
-    const { region } = req.query;
-    const tracker = await getIPOTracker();
-    const stats = await tracker.getStatistics({ region: region || 'all' });
-    res.json({
-      region: region || 'all',
-      ...stats
-    });
-  } catch (error) {
-    console.error('Error fetching statistics:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+router.get('/statistics', asyncHandler(async (req, res) => {
+  const { region } = req.query;
+  const tracker = await getIPOTracker();
+  const stats = await tracker.getStatistics({ region: region || 'all' });
+  res.json({
+    region: region || 'all',
+    ...stats
+  });
+}));
 
 /**
  * GET /api/ipo/sectors
