@@ -22,15 +22,26 @@ const apiLong = axios.create({
   withCredentials: true
 });
 
-// Request interceptor to add admin bypass header when in dev admin mode
-const addAdminBypassHeader = (config) => {
+// CSRF token for production POST/PUT/PATCH/DELETE (403 fix on Railway)
+let csrfTokenPromise = null;
+async function getCsrfToken() {
+  if (csrfTokenPromise) return csrfTokenPromise;
+  csrfTokenPromise = api.get('/csrf-token').then(res => res.data?.csrfToken).catch(() => null);
+  return csrfTokenPromise;
+}
+
+const addCsrfAndAdminHeader = async (config) => {
   if (localStorage.getItem('adminAccess') === 'true') {
     config.headers['X-Admin-Bypass'] = 'true';
   }
+  if (['post', 'put', 'patch', 'delete'].includes(config.method?.toLowerCase())) {
+    const token = await getCsrfToken();
+    if (token) config.headers['X-CSRF-Token'] = token;
+  }
   return config;
 };
-api.interceptors.request.use(addAdminBypassHeader);
-apiLong.interceptors.request.use(addAdminBypassHeader);
+api.interceptors.request.use(addCsrfAndAdminHeader);
+apiLong.interceptors.request.use(addCsrfAndAdminHeader);
 
 // Response interceptor to handle errors consistently
 api.interceptors.response.use(
@@ -49,6 +60,11 @@ api.interceptors.response.use(
     // Handle 401 (unauthorized) - redirect to login (unless admin)
     if (error.response?.status === 401 && localStorage.getItem('adminAccess') !== 'true') {
       window.location.href = '/login';
+    }
+
+    // On 403 CSRF, clear cached token so next request fetches fresh one
+    if (error.response?.status === 403 && error.response?.data?.code === 'CSRF_INVALID') {
+      csrfTokenPromise = null;
     }
 
     // Extract standardized error format from response
@@ -81,6 +97,10 @@ apiLong.interceptors.response.use(
     // Handle 401 (unauthorized) - redirect to login (unless admin)
     if (error.response?.status === 401 && localStorage.getItem('adminAccess') !== 'true') {
       window.location.href = '/login';
+    }
+
+    if (error.response?.status === 403 && error.response?.data?.code === 'CSRF_INVALID') {
+      csrfTokenPromise = null;
     }
 
     const errorData = error.response?.data?.error || error.response?.data;

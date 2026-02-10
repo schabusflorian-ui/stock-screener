@@ -20,7 +20,7 @@ const cookieParser = require('cookie-parser');
 const SQLiteStore = require('better-sqlite3-session-store')(session);
 const db = require('../database');
 const { configurePassport } = require('../auth/passport');
-const { conditionalCsrf, csrfErrorHandler, getCsrfToken } = require('../middleware/csrf');
+const { conditionalCsrf, csrfErrorHandler, csrfProtection } = require('../middleware/csrf');
 
 // Import logger early for session store setup logging
 const logger = require('../lib/logger');
@@ -436,11 +436,12 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // CSRF Token endpoint - frontend fetches this to get a token
-app.get('/api/csrf-token', (req, res) => {
+// Must run csrfProtection so req.csrfToken() exists (conditionalCsrf skips GET)
+app.get('/api/csrf-token', csrfProtection, (req, res) => {
   if (process.env.NODE_ENV !== 'production') {
     return res.json({ success: true, csrfToken: 'dev-mode-no-csrf' });
   }
-  getCsrfToken(req, res);
+  res.json({ success: true, csrfToken: req.csrfToken() });
 });
 
 // Use routes
