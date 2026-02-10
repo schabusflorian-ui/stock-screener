@@ -1103,7 +1103,8 @@ router.get('/trending-enhanced', async (req, res) => {
  */
 router.get('/:symbol', async (req, res) => {
   try {
-    if (!redditFetcher || !signalGenerator) {
+    const services = await getSentimentServices();
+    if (!services.redditFetcher || !services.signalGenerator) {
       return res.status(503).json({ error: 'Sentiment service unavailable' });
     }
 
@@ -1123,11 +1124,11 @@ router.get('/:symbol', async (req, res) => {
 
     // Optionally refresh data from Reddit
     if (refresh === 'true') {
-      await redditFetcher.fetchTickerSentiment(symbol.toUpperCase(), company.id);
+      await services.redditFetcher.fetchTickerSentiment(symbol.toUpperCase(), company.id);
     }
 
     // Calculate signal
-    const signal = await signalGenerator.calculateSignal(company.id, symbol, period);
+    const signal = await services.signalGenerator.calculateSignal(company.id, symbol, period);
 
     // Get recent posts for display
     const recentPostsQuery = await database.query(`
@@ -1161,7 +1162,8 @@ router.get('/:symbol', async (req, res) => {
  */
 router.get('/:symbol/combined', async (req, res) => {
   try {
-    if (!sentimentAggregator) {
+    const services = await getSentimentServices();
+    if (!services.sentimentAggregator) {
       return res.status(503).json({ error: 'Sentiment aggregator unavailable' });
     }
 
@@ -1179,7 +1181,7 @@ router.get('/:symbol/combined', async (req, res) => {
       return res.status(404).json({ error: 'Company not found' });
     }
 
-    const combined = await sentimentAggregator.aggregateSentiment(
+    const combined = await services.sentimentAggregator.aggregateSentiment(
       symbol.toUpperCase(),
       company.id,
       { skipCache: refresh === 'true', region }
@@ -1266,7 +1268,8 @@ router.get('/:symbol/stocktwits', async (req, res) => {
  */
 router.post('/:symbol/refresh', async (req, res) => {
   try {
-    if (!redditFetcher || !signalGenerator) {
+    const services = await getSentimentServices();
+    if (!services.redditFetcher || !services.signalGenerator) {
       return res.status(503).json({ error: 'Sentiment service unavailable' });
     }
 
@@ -1285,14 +1288,14 @@ router.post('/:symbol/refresh', async (req, res) => {
     }
 
     // Fetch fresh data
-    const posts = await redditFetcher.fetchTickerSentiment(
+    const posts = await services.redditFetcher.fetchTickerSentiment(
       symbol.toUpperCase(),
       company.id,
       { region }
     );
 
     // Recalculate signal
-    const signal = await signalGenerator.calculateSignal(company.id, symbol, '7d');
+    const signal = await services.signalGenerator.calculateSignal(company.id, symbol, '7d');
 
     res.json({
       message: `Fetched ${posts.length} posts for ${symbol}`,
@@ -1313,7 +1316,8 @@ router.post('/:symbol/refresh', async (req, res) => {
  */
 router.post('/:symbol/refresh-all', async (req, res) => {
   try {
-    if (!sentimentAggregator) {
+    const services = await getSentimentServices();
+    if (!services.sentimentAggregator) {
       return res.status(503).json({ error: 'Sentiment aggregator unavailable' });
     }
 
@@ -1332,7 +1336,7 @@ router.post('/:symbol/refresh-all', async (req, res) => {
     }
 
     // Force refresh all sources
-    const combined = await sentimentAggregator.aggregateSentiment(
+    const combined = await services.sentimentAggregator.aggregateSentiment(
       symbol.toUpperCase(),
       company.id,
       { skipCache: true, region }
@@ -1356,7 +1360,8 @@ router.post('/:symbol/refresh-all', async (req, res) => {
  */
 router.get('/:symbol/history', async (req, res) => {
   try {
-    if (!signalGenerator) {
+    const services = await getSentimentServices();
+    if (!services.signalGenerator) {
       return res.status(503).json({ error: 'Sentiment service unavailable' });
     }
 
@@ -1376,15 +1381,15 @@ router.get('/:symbol/history', async (req, res) => {
 
     let history;
 
-    if (source === 'combined' && sentimentAggregator) {
-      history = sentimentAggregator.getSentimentHistory(company.id, parseInt(days));
+    if (source === 'combined' && services.sentimentAggregator) {
+      history = services.sentimentAggregator.getSentimentHistory(company.id, parseInt(days));
     } else {
       // Try to get from history table first
-      history = signalGenerator.getHistory(company.id, parseInt(days));
+      history = services.signalGenerator.getHistory(company.id, parseInt(days));
 
       // If no history data, try to aggregate from posts
       if (history.length === 0) {
-        history = signalGenerator.getHistoryFromPosts(company.id, parseInt(days));
+        history = services.signalGenerator.getHistoryFromPosts(company.id, parseInt(days));
       }
     }
 

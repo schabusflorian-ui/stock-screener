@@ -394,8 +394,9 @@ function getHoldingChanges(investorId) {
  * Get investors who own a specific stock
  * Consolidates multiple holdings per investor (13F filings report separate entries for voting authority)
  */
-function getInvestorsByStock(companyId) {
-  return db.prepare(`
+async function getInvestorsByStock(companyId) {
+  const database = await getDatabaseAsync();
+  const result = await database.query(`
     SELECT
       fi.id,
       fi.name as investor_name,
@@ -412,20 +413,26 @@ function getInvestorsByStock(companyId) {
       MAX(ih.filing_date) as filing_date
     FROM investor_holdings ih
     JOIN famous_investors fi ON ih.investor_id = fi.id
-    WHERE ih.company_id = ?
+    WHERE ih.company_id = $1
       AND ih.filing_date = fi.latest_filing_date
       AND fi.is_active = 1
     GROUP BY fi.id
     HAVING SUM(ih.shares) > 0
     ORDER BY SUM(ih.market_value) DESC
-  `).all(companyId);
+  `, [companyId]);
+  return result.rows;
 }
 
 /**
  * Get investors by stock symbol
  */
-function getInvestorsBySymbol(symbol) {
-  const company = db.prepare('SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)').get(symbol);
+async function getInvestorsBySymbol(symbol) {
+  const database = await getDatabaseAsync();
+  const companyResult = await database.query(
+    'SELECT id FROM companies WHERE UPPER(symbol) = UPPER($1)',
+    [symbol]
+  );
+  const company = companyResult.rows[0];
   if (!company) return [];
   return getInvestorsByStock(company.id);
 }

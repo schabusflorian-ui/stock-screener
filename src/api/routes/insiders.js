@@ -71,7 +71,7 @@ router.get('/recent', async (req, res) => {
       whereClause = "AND it.transaction_type = 'sell'";
     }
 
-    const stmt1 = await database.prepare(`
+    const result = await database.query(`
       SELECT
         it.*,
         c.symbol,
@@ -87,9 +87,9 @@ router.get('/recent', async (req, res) => {
       WHERE it.transaction_date IS NOT NULL
       ${whereClause}
       ORDER BY it.transaction_date DESC
-      LIMIT ?
-    `);
-    const transactions = await stmt1.all(parseInt(limit));
+      LIMIT $1
+    `, [parseInt(limit)]);
+    const transactions = result.rows;
 
     res.json({
       count: transactions.length,
@@ -113,12 +113,7 @@ router.get('/signals', async (req, res) => {
     const database = await getDatabaseAsync();
     const { period = '3m', signal = 'all' } = req.query;
 
-    let whereClause = '';
-    if (signal !== 'all') {
-      whereClause = `AND ias.insider_signal = '${signal}'`;
-    }
-
-    const stmt2 = await database.prepare(`
+    let sql = `
       SELECT
         ias.*,
         c.symbol,
@@ -127,11 +122,17 @@ router.get('/signals', async (req, res) => {
         c.industry
       FROM insider_activity_summary ias
       JOIN companies c ON ias.company_id = c.id
-      WHERE ias.period = ?
-      ${whereClause}
-      ORDER BY ias.signal_score DESC
-    `);
-    const signals = await stmt2.all(period);
+      WHERE ias.period = $1
+    `;
+    const params = [period];
+    if (signal !== 'all') {
+      sql += ' AND ias.insider_signal = $2';
+      params.push(signal);
+    }
+    sql += ' ORDER BY ias.signal_score DESC';
+
+    const result = await database.query(sql, params);
+    const signals = result.rows;
 
     // Group by signal type
     const grouped = {
@@ -170,10 +171,11 @@ router.get('/company/:symbol', async (req, res) => {
     const { symbol } = req.params;
     const { months = 12, type = 'all' } = req.query;
 
-    const stmt3 = await database.prepare(
-      'SELECT id, symbol, name FROM companies WHERE LOWER(symbol) = LOWER(?)'
+    const companyResult = await database.query(
+      'SELECT id, symbol, name FROM companies WHERE UPPER(symbol) = UPPER($1)',
+      [symbol]
     );
-    const company = await stmt3.get(symbol.toUpperCase());
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -192,20 +194,20 @@ router.get('/company/:symbol', async (req, res) => {
     }
 
     // Get list of insiders for this company
-    const stmt4 = await database.prepare(`
+    const insidersResult = await database.query(`
       SELECT
         i.*,
-        COUNT(it.id) as transaction_count,
-        SUM(CASE WHEN it.transaction_type = 'buy' THEN it.total_value ELSE 0 END) as total_bought,
-        SUM(CASE WHEN it.transaction_type = 'sell' THEN it.total_value ELSE 0 END) as total_sold,
+        COUNT(it.id)::int as transaction_count,
+        COALESCE(SUM(CASE WHEN it.transaction_type = 'buy' THEN it.total_value ELSE 0 END), 0) as total_bought,
+        COALESCE(SUM(CASE WHEN it.transaction_type = 'sell' THEN it.total_value ELSE 0 END), 0) as total_sold,
         MAX(it.transaction_date) as last_transaction
       FROM insiders i
       LEFT JOIN insider_transactions it ON i.id = it.insider_id
-      WHERE i.company_id = ?
+      WHERE i.company_id = $1
       GROUP BY i.id
       ORDER BY i.is_officer DESC, transaction_count DESC
-    `);
-    const insiders = await stmt4.all(company.id);
+    `, [company.id]);
+    const insiders = insidersResult.rows;
 
     res.json({
       company: {
@@ -233,10 +235,11 @@ router.get('/company/:symbol/chart', async (req, res) => {
     const { symbol } = req.params;
     const { months = 24 } = req.query;
 
-    const stmt5 = await database.prepare(
-      'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)'
+    const companyResult = await database.query(
+      'SELECT id FROM companies WHERE UPPER(symbol) = UPPER($1)',
+      [symbol]
     );
-    const company = await stmt5.get(symbol.toUpperCase());
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -246,28 +249,28 @@ router.get('/company/:symbol/chart', async (req, res) => {
     startDate.setMonth(startDate.getMonth() - parseInt(months));
     const startDateStr = startDate.toISOString().split('T')[0];
 
-    // Get monthly aggregated data
-    const stmt6 = await database.prepare(`
+    // Get monthly aggregated data (Postgres: TO_CHAR for month)
+    const monthlyResult = await database.query(`
       SELECT
-        strftime('%Y-%m', transaction_date) as month,
+        TO_CHAR(transaction_date, 'YYYY-MM') as month,
         SUM(CASE WHEN transaction_type = 'buy' THEN total_value ELSE 0 END) as buy_value,
         SUM(CASE WHEN transaction_type = 'sell' THEN total_value ELSE 0 END) as sell_value,
         SUM(CASE WHEN transaction_type = 'buy' THEN shares_transacted ELSE 0 END) as buy_shares,
         SUM(CASE WHEN transaction_type = 'sell' THEN shares_transacted ELSE 0 END) as sell_shares,
-        COUNT(CASE WHEN transaction_type = 'buy' THEN 1 END) as buy_count,
-        COUNT(CASE WHEN transaction_type = 'sell' THEN 1 END) as sell_count,
-        COUNT(DISTINCT insider_id) as unique_insiders
+        COUNT(CASE WHEN transaction_type = 'buy' THEN 1 END)::int as buy_count,
+        COUNT(CASE WHEN transaction_type = 'sell' THEN 1 END)::int as sell_count,
+        COUNT(DISTINCT insider_id)::int as unique_insiders
       FROM insider_transactions
-      WHERE company_id = ?
-        AND transaction_date >= ?
+      WHERE company_id = $1
+        AND transaction_date >= $2::date
         AND transaction_type IN ('buy', 'sell')
-      GROUP BY strftime('%Y-%m', transaction_date)
+      GROUP BY TO_CHAR(transaction_date, 'YYYY-MM')
       ORDER BY month ASC
-    `);
-    const monthlyData = await stmt6.all(company.id, startDateStr);
+    `, [company.id, startDateStr]);
+    const monthlyData = monthlyResult.rows;
 
     // Get individual transactions for scatter plot
-    const stmt7 = await database.prepare(`
+    const transactionsResult = await database.query(`
       SELECT
         it.transaction_date as date,
         it.transaction_type as type,
@@ -280,12 +283,12 @@ router.get('/company/:symbol/chart', async (req, res) => {
         i.is_director
       FROM insider_transactions it
       JOIN insiders i ON it.insider_id = i.id
-      WHERE it.company_id = ?
-        AND it.transaction_date >= ?
+      WHERE it.company_id = $1
+        AND it.transaction_date >= $2::date
         AND it.transaction_type IN ('buy', 'sell')
       ORDER BY it.transaction_date ASC
-    `);
-    const transactions = await stmt7.all(company.id, startDateStr);
+    `, [company.id, startDateStr]);
+    const transactions = transactionsResult.rows;
 
     res.json({
       monthly: monthlyData,
@@ -305,20 +308,20 @@ router.get('/insider/:cik', async (req, res) => {
     const database = await getDatabaseAsync();
     const { cik } = req.params;
 
-    const stmt8 = await database.prepare(`
+    const insiderResult = await database.query(`
       SELECT i.*, c.symbol, c.name as company_name
       FROM insiders i
       JOIN companies c ON i.company_id = c.id
-      WHERE i.cik = ?
-    `);
-    const insider = await stmt8.all(cik);
+      WHERE i.cik = $1
+    `, [cik]);
+    const insider = insiderResult.rows;
 
     if (insider.length === 0) {
       return res.status(404).json({ error: 'Insider not found' });
     }
 
     // Get all transactions for this insider
-    const stmt9 = await database.prepare(`
+    const transactionsResult = await database.query(`
       SELECT
         it.*,
         c.symbol,
@@ -326,10 +329,10 @@ router.get('/insider/:cik', async (req, res) => {
       FROM insider_transactions it
       JOIN insiders i ON it.insider_id = i.id
       JOIN companies c ON it.company_id = c.id
-      WHERE i.cik = ?
+      WHERE i.cik = $1
       ORDER BY it.transaction_date DESC
-    `);
-    const transactions = await stmt9.all(cik);
+    `, [cik]);
+    const transactions = transactionsResult.rows;
 
     // Calculate totals
     const totals = {
@@ -382,29 +385,29 @@ router.get('/cluster-buying', async (req, res) => {
     startDate.setDate(startDate.getDate() - parseInt(days));
     const startDateStr = startDate.toISOString().split('T')[0];
 
-    const stmt10 = await database.prepare(`
+    const clustersResult = await database.query(`
       SELECT
         c.id as company_id,
         c.symbol,
         c.name as company_name,
         c.sector,
-        COUNT(DISTINCT it.insider_id) as unique_buyers,
+        COUNT(DISTINCT it.insider_id)::int as unique_buyers,
         SUM(it.total_value) as total_buy_value,
         SUM(it.shares_transacted) as total_shares,
         MIN(it.transaction_date) as first_buy,
         MAX(it.transaction_date) as last_buy,
-        GROUP_CONCAT(DISTINCT i.name) as buyer_names
+        STRING_AGG(DISTINCT i.name, ',') as buyer_names
       FROM insider_transactions it
       JOIN companies c ON it.company_id = c.id
       JOIN insiders i ON it.insider_id = i.id
       WHERE it.transaction_type = 'buy'
-        AND it.transaction_date >= ?
-        AND it.is_derivative = 0
+        AND it.transaction_date >= $1::date
+        AND (it.is_derivative = 0 OR it.is_derivative IS NULL)
       GROUP BY c.id
-      HAVING COUNT(DISTINCT it.insider_id) >= ?
+      HAVING COUNT(DISTINCT it.insider_id) >= $2
       ORDER BY unique_buyers DESC, total_buy_value DESC
-    `);
-    const clusters = await stmt10.all(startDateStr, parseInt(minInsiders));
+    `, [startDateStr, parseInt(minInsiders)]);
+    const clusters = clustersResult.rows;
 
     res.json({
       criteria: {
@@ -466,25 +469,25 @@ router.get('/update-status', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
     // Get counts and latest transaction date
-    const stmt11 = await database.prepare(`
+    const statsResult = await database.query(`
       SELECT
-        COUNT(DISTINCT company_id) as companies_with_data,
-        COUNT(DISTINCT insider_id) as total_insiders,
-        COUNT(*) as total_transactions,
+        COUNT(DISTINCT company_id)::int as companies_with_data,
+        COUNT(DISTINCT insider_id)::int as total_insiders,
+        COUNT(*)::int as total_transactions,
         MAX(created_at) as last_import_time,
         MAX(transaction_date) as latest_transaction
       FROM insider_transactions
     `);
-    const stats = await stmt11.get();
+    const stats = statsResult.rows[0];
 
     // Get signal distribution
-    const stmt12 = await database.prepare(`
-      SELECT insider_signal, COUNT(*) as count
+    const signalsResult = await database.query(`
+      SELECT insider_signal, COUNT(*)::int as count
       FROM insider_activity_summary
       WHERE period = '3m'
       GROUP BY insider_signal
     `);
-    const signals = await stmt12.all();
+    const signals = signalsResult.rows;
 
     res.json({
       lastImport: stats.last_import_time,
@@ -506,46 +509,46 @@ router.get('/update-status', async (req, res) => {
 router.get('/stats', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
-    // Overall stats
-    const stmt13 = await database.prepare(`
+    // Overall stats (Postgres: CURRENT_DATE - INTERVAL)
+    const statsResult = await database.query(`
       SELECT
-        COUNT(DISTINCT it.company_id) as companies_with_activity,
-        COUNT(DISTINCT it.insider_id) as active_insiders,
-        COUNT(*) as total_transactions,
-        SUM(CASE WHEN it.transaction_type = 'buy' THEN 1 ELSE 0 END) as buy_count,
-        SUM(CASE WHEN it.transaction_type = 'sell' THEN 1 ELSE 0 END) as sell_count,
-        SUM(CASE WHEN it.transaction_type = 'buy' THEN it.total_value ELSE 0 END) as total_buy_value,
-        SUM(CASE WHEN it.transaction_type = 'sell' THEN it.total_value ELSE 0 END) as total_sell_value
+        COUNT(DISTINCT it.company_id)::int as companies_with_activity,
+        COUNT(DISTINCT it.insider_id)::int as active_insiders,
+        COUNT(*)::int as total_transactions,
+        SUM(CASE WHEN it.transaction_type = 'buy' THEN 1 ELSE 0 END)::int as buy_count,
+        SUM(CASE WHEN it.transaction_type = 'sell' THEN 1 ELSE 0 END)::int as sell_count,
+        COALESCE(SUM(CASE WHEN it.transaction_type = 'buy' THEN it.total_value ELSE 0 END), 0) as total_buy_value,
+        COALESCE(SUM(CASE WHEN it.transaction_type = 'sell' THEN it.total_value ELSE 0 END), 0) as total_sell_value
       FROM insider_transactions it
-      WHERE it.transaction_date >= date('now', '-1 year')
+      WHERE it.transaction_date >= CURRENT_DATE - INTERVAL '1 year'
     `);
-    const stats = await stmt13.get();
+    const stats = statsResult.rows[0];
 
-    // Monthly trend
-    const stmt14 = await database.prepare(`
+    // Monthly trend (Postgres: TO_CHAR, CURRENT_DATE - INTERVAL)
+    const monthlyTrendResult = await database.query(`
       SELECT
-        strftime('%Y-%m', transaction_date) as month,
+        TO_CHAR(transaction_date, 'YYYY-MM') as month,
         SUM(CASE WHEN transaction_type = 'buy' THEN total_value ELSE 0 END) as buy_value,
         SUM(CASE WHEN transaction_type = 'sell' THEN total_value ELSE 0 END) as sell_value,
-        COUNT(CASE WHEN transaction_type = 'buy' THEN 1 END) as buy_count,
-        COUNT(CASE WHEN transaction_type = 'sell' THEN 1 END) as sell_count
+        COUNT(CASE WHEN transaction_type = 'buy' THEN 1 END)::int as buy_count,
+        COUNT(CASE WHEN transaction_type = 'sell' THEN 1 END)::int as sell_count
       FROM insider_transactions
-      WHERE transaction_date >= date('now', '-12 months')
-      GROUP BY strftime('%Y-%m', transaction_date)
+      WHERE transaction_date >= CURRENT_DATE - INTERVAL '12 months'
+      GROUP BY TO_CHAR(transaction_date, 'YYYY-MM')
       ORDER BY month ASC
     `);
-    const monthlyTrend = await stmt14.all();
+    const monthlyTrend = monthlyTrendResult.rows;
 
     // Signal distribution
-    const stmt15 = await database.prepare(`
+    const signalDistResult = await database.query(`
       SELECT
         insider_signal,
-        COUNT(*) as count
+        COUNT(*)::int as count
       FROM insider_activity_summary
       WHERE period = '3m'
       GROUP BY insider_signal
     `);
-    const signalDistribution = await stmt15.all();
+    const signalDistribution = signalDistResult.rows;
 
     res.json({
       yearToDate: stats,
