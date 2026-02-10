@@ -1,7 +1,7 @@
 // src/services/portfolio/investorService.js
 // Service for managing famous investors and fetching 13F filings from SEC EDGAR
 
-const db = require('../../database').db;
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 const { SEC_13F_CONFIG, HOLDING_CHANGE_TYPES } = require('../../constants/portfolio');
 
 // Rate limiting for SEC requests
@@ -34,8 +34,10 @@ const rateLimitedFetch = async (url, options = {}) => {
 /**
  * Get all famous investors
  */
-function getAllInvestors() {
-  const stmt = db.prepare(`
+async function getAllInvestors() {
+  const database = await getDatabaseAsync();
+
+  const result = await database.query(`
     SELECT
       fi.*,
       (SELECT COUNT(*) FROM investor_holdings ih WHERE ih.investor_id = fi.id AND ih.filing_date = fi.latest_filing_date) as current_positions
@@ -43,37 +45,43 @@ function getAllInvestors() {
     WHERE fi.is_active = 1
     ORDER BY fi.display_order ASC
   `);
-  return stmt.all();
+
+  return result.rows;
 }
 
 /**
  * Get single investor by ID with stats
  */
-function getInvestor(id) {
-  const investor = db.prepare(`
-    SELECT * FROM famous_investors WHERE id = ?
-  `).get(id);
+async function getInvestor(id) {
+  const database = await getDatabaseAsync();
+
+  const investorResult = await database.query(`
+    SELECT * FROM famous_investors WHERE id = $1
+  `, [id]);
+  const investor = investorResult.rows[0];
 
   if (!investor) return null;
 
   // Get filing history
-  const filings = db.prepare(`
+  const filingsResult = await database.query(`
     SELECT * FROM investor_filings
-    WHERE investor_id = ?
+    WHERE investor_id = $1
     ORDER BY filing_date DESC
     LIMIT 8
-  `).all(id);
+  `, [id]);
+  const filings = filingsResult.rows;
 
   // Get change summary from latest filing
-  const changeSummary = db.prepare(`
+  const changeSummaryResult = await database.query(`
     SELECT
       change_type,
       COUNT(*) as count,
       SUM(market_value) as total_value
     FROM investor_holdings
-    WHERE investor_id = ? AND filing_date = ?
+    WHERE investor_id = $1 AND filing_date = $2
     GROUP BY change_type
-  `).all(id, investor.latest_filing_date);
+  `, [id, investor.latest_filing_date]);
+  const changeSummary = changeSummaryResult.rows;
 
   return {
     ...investor,
@@ -85,8 +93,15 @@ function getInvestor(id) {
 /**
  * Get investor by CIK
  */
-function getInvestorByCik(cik) {
-  return db.prepare('SELECT * FROM famous_investors WHERE cik = ?').get(cik);
+async function getInvestorByCik(cik) {
+  const database = await getDatabaseAsync();
+
+  const result = await database.query(
+    'SELECT * FROM famous_investors WHERE cik = $1',
+    [cik]
+  );
+
+  return result.rows[0];
 }
 
 // ============================================
