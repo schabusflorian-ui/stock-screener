@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const ScreeningService = require('../../services/screeningService');
+const { requireAuth } = require('../../middleware/auth');
 const { requireFeature } = require('../../middleware/subscription');
 
 const screener = new ScreeningService();
@@ -23,7 +24,7 @@ router.get('/options', async (req, res) => {
  * POST /api/screening/custom
  * Run custom screen with advanced criteria
  */
-router.post('/custom', requireFeature('advanced_screener'), async (req, res) => {
+router.post('/custom', requireAuth, requireFeature('advanced_screener'), async (req, res) => {
   try {
     const criteria = req.body;
     const result = await screener.screen(criteria);

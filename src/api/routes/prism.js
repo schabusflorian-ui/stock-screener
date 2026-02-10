@@ -232,7 +232,7 @@ router.get('/:symbol/sec-filings', async (req, res) => {
  * POST /api/prism/:symbol/refresh
  * Force regeneration of PRISM report
  */
-router.post('/:symbol/refresh', requireFeature('prism_reports'), async (req, res) => {
+router.post('/:symbol/refresh', requireAuth, requireFeature('prism_reports'), async (req, res) => {
   const { symbol } = req.params;
 
   try {
