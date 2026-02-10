@@ -556,7 +556,9 @@ let instance = null;
 
 function getFactorAnalysisService() {
   if (!instance) {
-    const db = require('../../database').db;
+    const { db } = require('../../database');
+    // In PostgreSQL mode, db is a proxy that returns stubs
+    // The service handles both sync (SQLite) and async (PostgreSQL) operations
     instance = new FactorAnalysisService(db);
   }
   return instance;

@@ -17,6 +17,7 @@
 const express = require('express');
 const router = express.Router();
 const { AnalystService } = require('../../services/analystBridge');
+const { requireAuth } = require('../../middleware/auth');
 const { requireFeature, checkUsageLimit } = require('../../middleware/subscription');
 
 // Create service instance
@@ -26,7 +27,7 @@ const analystService = new AnalystService();
  * GET /api/analyst/personas
  * List all available analysts
  */
-router.get('/personas', async (req, res) => {
+router.get('/personas', requireAuth, async (req, res) => {
   try {
     const analysts = await analystService.getAnalysts();
     res.json({
@@ -46,7 +47,7 @@ router.get('/personas', async (req, res) => {
  * GET /api/analyst/personas/:id
  * Get specific analyst details
  */
-router.get('/personas/:id', async (req, res) => {
+router.get('/personas/:id', requireAuth, async (req, res) => {
   try {
     const analyst = await analystService.getAnalystInfo(req.params.id);
     res.json({
@@ -71,7 +72,7 @@ router.get('/personas/:id', async (req, res) => {
  * - companySymbol: string (optional) - Filter by company
  * - limit: number (optional) - Max results (default 50)
  */
-router.get('/conversations', async (req, res) => {
+router.get('/conversations', requireAuth, async (req, res) => {
   try {
     const { analystId, companySymbol, limit } = req.query;
     const conversations = await analystService.listConversations({
@@ -103,7 +104,7 @@ router.get('/conversations', async (req, res) => {
  * - companyId: number (optional) - Company ID for context
  * - companySymbol: string (optional) - Company symbol for context
  */
-router.post('/conversations', requireFeature('ai_research_agents'), async (req, res) => {
+router.post('/conversations', requireAuth, requireFeature('ai_research_agents'), async (req, res) => {
   try {
     const { analystId, companyId, companySymbol } = req.body;
 
@@ -137,7 +138,7 @@ router.post('/conversations', requireFeature('ai_research_agents'), async (req, 
  * GET /api/analyst/conversations/:id
  * Get a conversation by ID
  */
-router.get('/conversations/:id', async (req, res) => {
+router.get('/conversations/:id', requireAuth, async (req, res) => {
   try {
     const conversation = await analystService.getConversation(req.params.id);
 
@@ -165,7 +166,7 @@ router.get('/conversations/:id', async (req, res) => {
  * DELETE /api/analyst/conversations/:id
  * Delete a conversation
  */
-router.delete('/conversations/:id', async (req, res) => {
+router.delete('/conversations/:id', requireAuth, async (req, res) => {
   try {
     await analystService.deleteConversation(req.params.id);
     res.json({
@@ -189,7 +190,7 @@ router.delete('/conversations/:id', async (req, res) => {
  * - message: string (required) - The user's message
  * - companyContext: object (optional) - Company context data
  */
-router.post('/conversations/:id/messages/stream', requireFeature('ai_research_agents'), async (req, res) => {
+router.post('/conversations/:id/messages/stream', requireAuth, requireFeature('ai_research_agents'), async (req, res) => {
   const { message, companyContext } = req.body;
 
   if (!message || typeof message !== 'string' || message.trim().length === 0) {
@@ -310,7 +311,7 @@ router.post('/conversations/:id/messages/stream', requireFeature('ai_research_ag
  *   - sentiment: { overall_score, news_sentiment, ... }
  *   - analyst_ratings: { consensus, target_price, ... }
  */
-router.post('/conversations/:id/messages', requireFeature('ai_research_agents'), async (req, res) => {
+router.post('/conversations/:id/messages', requireAuth, requireFeature('ai_research_agents'), async (req, res) => {
   try {
     const { message, companyContext } = req.body;
 
@@ -359,7 +360,7 @@ router.post('/conversations/:id/messages', requireFeature('ai_research_agents'),
  *   - metrics: { pe_ratio, roe, ... }
  * - question: string (optional) - Specific question to answer
  */
-router.post('/analyze', requireFeature('ai_research_agents'), async (req, res) => {
+router.post('/analyze', requireAuth, requireFeature('ai_research_agents'), async (req, res) => {
   try {
     const { analystId, companyData, question } = req.body;
 
@@ -400,7 +401,7 @@ router.post('/analyze', requireFeature('ai_research_agents'), async (req, res) =
  * GET /api/analyst/stats
  * Get conversation statistics
  */
-router.get('/stats', async (req, res) => {
+router.get('/stats', requireAuth, async (req, res) => {
   try {
     const stats = await analystService.getConversationStats();
     res.json({

@@ -30,7 +30,10 @@ class FactorContextProvider {
   _ensureInitialized() {
     if (!this.factorService) {
       this.factorService = getFactorAnalysisService();
-      this.db = require('../../database').db;
+      const { db } = require('../../database');
+      // In PostgreSQL mode, db is a proxy that returns stubs
+      // Methods that need real database access should use getDatabaseAsync()
+      this.db = db;
     }
   }
 
