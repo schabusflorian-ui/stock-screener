@@ -6,6 +6,7 @@ const router = express.Router();
 const { getDatabaseAsync } = require('../../database');
 const SECFilingParser = require('../../services/secFilingParser');
 const PRISMReportGeneratorV2 = require('../../services/prismReportGeneratorV2');
+const { requireAuth } = require('../../middleware/auth');
 const { requireFeature } = require('../../middleware/subscription');
 
 const secParser = new SECFilingParser();
@@ -15,7 +16,7 @@ const reportGenerator = new PRISMReportGeneratorV2();
  * GET /api/prism/:symbol/report
  * Get full PRISM report for a company
  */
-router.get('/:symbol/report', requireFeature('prism_reports'), async (req, res) => {
+router.get('/:symbol/report', requireAuth, requireFeature('prism_reports'), async (req, res) => {
   const { symbol } = req.params;
   const { refresh } = req.query;
 
