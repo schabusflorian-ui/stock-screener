@@ -2850,12 +2850,12 @@ export const macroAPI = {
   // Get key macro metrics summary
   getKeyMetrics: () => api.get('/macro/key-metrics'),
 
-  // Get market valuation indicators
-  getMarketIndicators: () => api.get('/macro/market-indicators'),
+  // Get market valuation indicators (60s timeout - heavy computation on cold start)
+  getMarketIndicators: () => api.get('/macro/market-indicators', { timeout: 60000 }),
 
   // Get historical market indicators
   getMarketIndicatorsHistory: (startQuarter = '2015-Q1', indicator = 'all') =>
-    api.get(`/macro/market-indicators/history?startQuarter=${startQuarter}&indicator=${indicator}`),
+    api.get(`/macro/market-indicators/history?startQuarter=${startQuarter}&indicator=${indicator}`, { timeout: 60000 }),
 
   // Get safe haven stocks
   getSafeHavens: (limit = 10) => api.get(`/macro/safe-havens?limit=${limit}`),
