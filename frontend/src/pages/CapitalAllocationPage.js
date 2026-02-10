@@ -12,20 +12,22 @@ import { SectionErrorBoundary } from '../components/ErrorBoundary';
 import { useAskAI, AskAIProvider } from '../hooks';
 import './CapitalAllocationPage.css';
 
-// Format currency values
+// Format currency values (coerce to number - PostgreSQL may return numerics as strings)
 const formatCurrency = (value) => {
-  if (!value || isNaN(value)) return '-';
-  if (Math.abs(value) >= 1e12) return `$${(value / 1e12).toFixed(1)}T`;
-  if (Math.abs(value) >= 1e9) return `$${(value / 1e9).toFixed(1)}B`;
-  if (Math.abs(value) >= 1e6) return `$${(value / 1e6).toFixed(1)}M`;
-  if (Math.abs(value) >= 1e3) return `$${(value / 1e3).toFixed(0)}K`;
-  return `$${value.toFixed(2)}`;
+  const n = Number(value);
+  if (value == null || value === '' || isNaN(n)) return '-';
+  if (Math.abs(n) >= 1e12) return `$${(n / 1e12).toFixed(1)}T`;
+  if (Math.abs(n) >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
+  if (Math.abs(n) >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
+  if (Math.abs(n) >= 1e3) return `$${(n / 1e3).toFixed(0)}K`;
+  return `$${n.toFixed(2)}`;
 };
 
-// Format percentage
+// Format percentage (coerce to number - PostgreSQL may return numerics as strings)
 const formatPercent = (value) => {
-  if (value === null || value === undefined || isNaN(value)) return '-';
-  return `${value.toFixed(2)}%`;
+  const n = Number(value);
+  if (value == null || value === '' || isNaN(n)) return '-';
+  return `${n.toFixed(2)}%`;
 };
 
 // Format date
@@ -38,13 +40,14 @@ const formatDate = (dateStr) => {
   });
 };
 
-// Format market cap
+// Format market cap (coerce to number - PostgreSQL may return numerics as strings)
 const formatMarketCap = (value) => {
-  if (!value || isNaN(value)) return '-';
-  if (value >= 1e12) return `$${(value / 1e12).toFixed(2)}T`;
-  if (value >= 1e9) return `$${(value / 1e9).toFixed(1)}B`;
-  if (value >= 1e6) return `$${(value / 1e6).toFixed(0)}M`;
-  return `$${value.toLocaleString()}`;
+  const n = Number(value);
+  if (value == null || value === '' || isNaN(n)) return '-';
+  if (n >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
+  if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(0)}M`;
+  return `$${n.toLocaleString()}`;
 };
 
 // Event type badge
