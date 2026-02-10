@@ -4,7 +4,10 @@
 //
 // Usage:
 //   DATABASE_URL=postgres://... node src/database-migrations/run-postgres-migrations.js
-//   Or: npm run migrate:postgres
+//   Or: npm run db:migrate:postgres
+//
+// Load .env if present (for local runs with DATABASE_URL in .env)
+require('dotenv').config();
 
 const { getDatabase, isUsingPostgres } = require('../lib/db');
 const path = require('path');
@@ -15,6 +18,8 @@ const fs = require('fs');
 const POSTGRES_MIGRATIONS = [
   '000-postgres-base-schema.js',
   '001-add-all-missing-tables.js',
+  '002-add-historical-intelligence-tables.js',
+  'add-postgres-alert-system.js',
   'add-dividend-metrics.js',
   'add-price-metrics.js',
   'add-help-tables.js',

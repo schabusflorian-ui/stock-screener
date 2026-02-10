@@ -985,13 +985,20 @@ router.post('/classify-investor-style', async (req, res) => {
   }
 });
 
+/** Coerce to number for comparisons (Postgres driver may return numeric as string) */
+function toNum(v) {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 /**
  * POST /api/historical/classify-all-investors
  * Batch classify all investors based on their decision patterns
  */
 router.post('/classify-all-investors', async (req, res) => {
   try {
-    const { minDecisions = 20 } = req.body;
+    const minDecisions = Math.max(1, parseInt(req.body?.minDecisions, 10) || 20);
     const database = await getDatabaseAsync();
 
     // Get all investors with enough decisions (Postgres: cast count)
@@ -1002,7 +1009,7 @@ router.post('/classify-all-investors', async (req, res) => {
       GROUP BY fi.id, fi.name
       HAVING COUNT(d.id) >= $1
     `, [minDecisions]);
-    const investors = investorsResult.rows;
+    const investors = investorsResult.rows || [];
 
     const results = [];
     let classified = 0;
@@ -1010,43 +1017,48 @@ router.post('/classify-all-investors', async (req, res) => {
 
     for (const inv of investors) {
       try {
-        // Get investor's factor preferences
         const patternsResult = await database.query(`
           SELECT
-            AVG(dfc.value_percentile) as avg_value_pct,
-            AVG(dfc.quality_percentile) as avg_quality_pct,
-            AVG(dfc.momentum_percentile) as avg_momentum_pct,
-            AVG(dfc.growth_percentile) as avg_growth_pct
+            AVG(dfc.value_percentile)::float as avg_value_pct,
+            AVG(dfc.quality_percentile)::float as avg_quality_pct,
+            AVG(dfc.momentum_percentile)::float as avg_momentum_pct,
+            AVG(dfc.growth_percentile)::float as avg_growth_pct
           FROM investment_decisions d
           LEFT JOIN decision_factor_context dfc ON d.id = dfc.decision_id
           WHERE d.investor_id = $1
         `, [inv.id]);
-        const patterns = patternsResult.rows[0];
+        const raw = patternsResult.rows[0];
+        const avgValue = toNum(raw?.avg_value_pct);
+        const avgQuality = toNum(raw?.avg_quality_pct);
+        const avgMomentum = toNum(raw?.avg_momentum_pct);
+        const avgGrowth = toNum(raw?.avg_growth_pct);
 
-        // Simple classification
         let style = 'Diversified';
-
-        if (patterns && patterns.avg_value_pct && patterns.avg_value_pct > 65) {
+        if (avgValue != null && avgValue > 65) {
           style = 'Value';
-        } else if (patterns && patterns.avg_growth_pct && patterns.avg_growth_pct > 65) {
+        } else if (avgGrowth != null && avgGrowth > 65) {
           style = 'Growth';
-        } else if (patterns && patterns.avg_momentum_pct && patterns.avg_momentum_pct > 65) {
+        } else if (avgMomentum != null && avgMomentum > 65) {
           style = 'Momentum';
-        } else if (patterns && patterns.avg_quality_pct && patterns.avg_quality_pct > 65) {
+        } else if (avgQuality != null && avgQuality > 65) {
           style = 'Quality';
-        } else if (patterns && patterns.avg_value_pct && patterns.avg_growth_pct &&
-                   Math.abs(patterns.avg_value_pct - patterns.avg_growth_pct) < 15) {
+        } else if (avgValue != null && avgGrowth != null && Math.abs(avgValue - avgGrowth) < 15) {
           style = 'GARP';
         }
 
-        await database.query(`
-          UPDATE famous_investors SET investment_style = $1 WHERE id = $2
-        `, [style, inv.id]);
+        await database.query(
+          `UPDATE famous_investors SET investment_style = $1 WHERE id = $2`,
+          [style, inv.id]
+        );
 
-        results.push({ id: inv.id, name: inv.name, style, decisions: inv.decision_count });
+        const decisionCount = inv.decision_count != null ? Number(inv.decision_count) : 0;
+        results.push({ id: inv.id, name: inv.name, style, decisions: decisionCount });
         classified++;
-      } catch (err) {
+      } catch (innerErr) {
         errors++;
+        if (errors <= 3) {
+          console.warn('[classify-all-investors] per-investor error:', innerErr?.message, 'investor_id:', inv?.id);
+        }
       }
     }
 
@@ -1055,23 +1067,32 @@ router.post('/classify-all-investors', async (req, res) => {
       classified,
       errors,
       total: investors.length,
-      results: results.slice(0, 20) // Return first 20 as sample
+      results: results.slice(0, 20)
     });
   } catch (err) {
-    console.error('Error batch classifying:', err);
-    // Missing tables (e.g. investment_decisions) on Postgres — return success with zero so UI doesn't break
-    const msg = err.message || '';
-    if (msg.includes('does not exist') || msg.includes('relation') || msg.includes('undefined table')) {
+    const msg = (err && err.message) ? String(err.message) : '';
+    const code = err?.code || '';
+    console.error('[classify-all-investors] Error:', msg, code || err);
+
+    // Missing tables or relation: return 200 so UI doesn't show 500
+    const isMissingTable = /does not exist|relation.*does not exist|undefined table|no such table/i.test(msg) ||
+      code === '42P01'; // Postgres undefined_table
+
+    if (isMissingTable) {
       return res.json({
         success: true,
         classified: 0,
         errors: 0,
         total: 0,
         results: [],
-        message: 'Historical investor data not available. Run historical intelligence migration to enable classification.'
+        message: 'Historical investor data not available. Run Postgres migration 002-add-historical-intelligence-tables to create investment_decisions and decision_factor_context.'
       });
     }
-    res.status(500).json({ error: err.message });
+
+    res.status(500).json({
+      error: msg || 'Classification failed',
+      code: code || 'CLASSIFY_ERROR'
+    });
   }
 });
 

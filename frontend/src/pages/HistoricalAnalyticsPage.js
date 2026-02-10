@@ -319,10 +319,21 @@ export default function HistoricalAnalyticsPage() {
       setClassifying(true);
       const response = await historicalAPI.classifyAllInvestors(20);
       setStyleData(null); // Reset to trigger refetch
-      alert(`Classified ${response.data.classified} investors`);
+      const { classified = 0, total = 0, message } = response.data || {};
+      if (total === 0 && message) {
+        alert(message);
+      } else {
+        alert(`Classified ${classified} investors`);
+      }
     } catch (err) {
-      setError('Failed to classify investors');
-      console.error(err);
+      // Backend may return 500 when historical tables are missing; treat as unavailable
+      const is500 = err?.response?.status === 500 || err?.status === 500;
+      if (is500) {
+        alert('Classification is not available. Historical investor data may not be set up yet.');
+      } else {
+        setError('Failed to classify investors');
+        console.error(err);
+      }
     } finally {
       setClassifying(false);
     }
