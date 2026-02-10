@@ -5,6 +5,7 @@ const express = require('express');
 const router = express.Router();
 const agentService = require('../../services/agent/agentService');
 const { validateBody, validateQuery, schemas } = require('../../middleware/validation');
+const { asyncHandler } = require('../../middleware/errorHandler');
 
 // Authentication and subscription middleware
 const { requireAuth } = require('../../middleware/auth');
@@ -18,21 +19,16 @@ const { requireFeature, checkResourceLimit } = require('../../middleware/subscri
  * GET /api/agents
  * List all active trading agents
  */
-router.get('/', requireAuth, async (req, res) => {
-  try {
-    const agents = await agentService.getAllAgents();
-    res.json({ success: true, data: agents });
-  } catch (error) {
-    console.error('Error fetching agents:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+router.get('/', requireAuth, asyncHandler(async (req, res) => {
+  const agents = await agentService.getAllAgents();
+  res.json({ success: true, data: agents });
+}));
 
 /**
  * GET /api/agents/presets
  * Get available strategy presets
  */
-router.get('/presets', async (req, res) => {
+router.get('/presets', asyncHandler(async (req, res) => {
   try {
     const presets = await agentService.getStrategyPresets();
     res.json({ success: true, data: presets });
@@ -40,14 +36,14 @@ router.get('/presets', async (req, res) => {
     console.error('Error fetching presets:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * POST /api/agents
  * Create a new trading agent
  * Requires: Ultra tier (paper_trading_bots feature)
  */
-router.post('/', requireAuth, requireFeature('paper_trading_bots'), checkResourceLimit('agents'), validateBody('createAgent'), async (req, res) => {
+router.post('/', requireAuth, requireFeature('paper_trading_bots'), checkResourceLimit('agents'), validateBody('createAgent'), asyncHandler(async (req, res) => {
   try {
     const agent = await agentService.createAgent(req.body);
     res.status(201).json({ success: true, data: agent });
@@ -55,13 +51,13 @@ router.post('/', requireAuth, requireFeature('paper_trading_bots'), checkResourc
     console.error('Error creating agent:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * GET /api/agents/:id
  * Get a single agent with details
  */
-router.get('/:id', async (req, res) => {
+router.get('/:id', asyncHandler(async (req, res) => {
   try {
     const agent = await agentService.getAgent(parseInt(req.params.id, 10));
     if (!agent) {
@@ -72,13 +68,13 @@ router.get('/:id', async (req, res) => {
     console.error('Error fetching agent:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * PUT /api/agents/:id
  * Update an agent
  */
-router.put('/:id', validateBody('updateAgent'), async (req, res) => {
+router.put('/:id', validateBody('updateAgent'), asyncHandler(async (req, res) => {
   try {
     const agent = await agentService.updateAgent(parseInt(req.params.id, 10), req.body);
     if (!agent) {
@@ -89,13 +85,13 @@ router.put('/:id', validateBody('updateAgent'), async (req, res) => {
     console.error('Error updating agent:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * DELETE /api/agents/:id
  * Delete (soft delete) an agent
  */
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', asyncHandler(async (req, res) => {
   try {
     const result = await agentService.deleteAgent(parseInt(req.params.id, 10));
     res.json({ success: true, data: result });
@@ -103,7 +99,7 @@ router.delete('/:id', async (req, res) => {
     console.error('Error deleting agent:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 // ============================================
 // Agent Lifecycle Routes
@@ -113,7 +109,7 @@ router.delete('/:id', async (req, res) => {
  * GET /api/agents/:id/status
  * Get agent status
  */
-router.get('/:id/status', async (req, res) => {
+router.get('/:id/status', asyncHandler(async (req, res) => {
   try {
     const status = await agentService.getAgentStatus(parseInt(req.params.id, 10));
     if (!status) {
@@ -124,13 +120,13 @@ router.get('/:id/status', async (req, res) => {
     console.error('Error fetching agent status:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * POST /api/agents/:id/start
  * Start an agent
  */
-router.post('/:id/start', async (req, res) => {
+router.post('/:id/start', asyncHandler(async (req, res) => {
   try {
     const status = await agentService.startAgent(parseInt(req.params.id, 10));
     res.json({ success: true, data: status });
@@ -138,13 +134,13 @@ router.post('/:id/start', async (req, res) => {
     console.error('Error starting agent:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * POST /api/agents/:id/pause
  * Pause an agent
  */
-router.post('/:id/pause', async (req, res) => {
+router.post('/:id/pause', asyncHandler(async (req, res) => {
   try {
     const status = await agentService.pauseAgent(parseInt(req.params.id, 10));
     res.json({ success: true, data: status });
@@ -152,14 +148,14 @@ router.post('/:id/pause', async (req, res) => {
     console.error('Error pausing agent:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * POST /api/agents/:id/scan
  * Trigger an immediate scan for an agent
  * Runs the TradingAgent to generate signals for the agent's universe
  */
-router.post('/:id/scan', async (req, res) => {
+router.post('/:id/scan', asyncHandler(async (req, res) => {
   try {
     const agentId = parseInt(req.params.id, 10);
     const agent = agentService.getAgent(agentId);
@@ -184,7 +180,7 @@ router.post('/:id/scan', async (req, res) => {
     console.error('Error triggering scan:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 // ============================================
 // Signal Routes
@@ -194,7 +190,7 @@ router.post('/:id/scan', async (req, res) => {
  * GET /api/agents/:id/signals
  * Get signals for an agent
  */
-router.get('/:id/signals', async (req, res) => {
+router.get('/:id/signals', asyncHandler(async (req, res) => {
   try {
     const { status, limit = 50, offset = 0, sortBy, sortOrder } = req.query;
     const signals = await agentService.getSignals(parseInt(req.params.id, 10), {
@@ -209,13 +205,13 @@ router.get('/:id/signals', async (req, res) => {
     console.error('Error fetching signals:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * GET /api/agents/:id/signals/pending
  * Get pending signals for an agent
  */
-router.get('/:id/signals/pending', async (req, res) => {
+router.get('/:id/signals/pending', asyncHandler(async (req, res) => {
   try {
     const signals = await agentService.getPendingSignals(parseInt(req.params.id, 10));
     res.json({ success: true, data: signals });
@@ -223,13 +219,13 @@ router.get('/:id/signals/pending', async (req, res) => {
     console.error('Error fetching pending signals:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * GET /api/agents/:id/signals/:signalId
  * Get a single signal
  */
-router.get('/:id/signals/:signalId', async (req, res) => {
+router.get('/:id/signals/:signalId', asyncHandler(async (req, res) => {
   try {
     const signal = await agentService.getSignal(parseInt(req.params.signalId, 10));
     if (!signal) {
@@ -240,13 +236,13 @@ router.get('/:id/signals/:signalId', async (req, res) => {
     console.error('Error fetching signal:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * POST /api/agents/:id/signals/:signalId/approve
  * Approve a signal
  */
-router.post('/:id/signals/:signalId/approve', validateBody('approveSignal'), async (req, res) => {
+router.post('/:id/signals/:signalId/approve', validateBody('approveSignal'), asyncHandler(async (req, res) => {
   try {
     const { portfolioId } = req.body || {};
     const signal = await agentService.approveSignal(
@@ -261,13 +257,13 @@ router.post('/:id/signals/:signalId/approve', validateBody('approveSignal'), asy
     console.error('Error approving signal:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * POST /api/agents/:id/signals/:signalId/reject
  * Reject a signal
  */
-router.post('/:id/signals/:signalId/reject', validateBody('rejectSignal'), async (req, res) => {
+router.post('/:id/signals/:signalId/reject', validateBody('rejectSignal'), asyncHandler(async (req, res) => {
   try {
     const { reason } = req.body || {};
     const signal = await agentService.rejectSignal(
@@ -282,13 +278,13 @@ router.post('/:id/signals/:signalId/reject', validateBody('rejectSignal'), async
     console.error('Error rejecting signal:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * POST /api/agents/:id/signals/approve-all
  * Approve all pending signals
  */
-router.post('/:id/signals/approve-all', async (req, res) => {
+router.post('/:id/signals/approve-all', asyncHandler(async (req, res) => {
   try {
     const { portfolioId } = req.body;
     const approved = await agentService.approveAllPendingSignals(
@@ -300,13 +296,13 @@ router.post('/:id/signals/approve-all', async (req, res) => {
     console.error('Error approving all signals:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * POST /api/agents/:id/signals/:signalId/execute
  * Execute an approved signal (triggers paper/live trading)
  */
-router.post('/:id/signals/:signalId/execute', async (req, res) => {
+router.post('/:id/signals/:signalId/execute', asyncHandler(async (req, res) => {
   try {
     const result = await agentService.executeApproved(parseInt(req.params.signalId, 10));
     if (!result) {
@@ -317,13 +313,13 @@ router.post('/:id/signals/:signalId/execute', async (req, res) => {
     console.error('Error executing signal:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * POST /api/agents/:id/signals/execute-all
  * Execute all approved signals for this agent
  */
-router.post('/:id/signals/execute-all', async (req, res) => {
+router.post('/:id/signals/execute-all', asyncHandler(async (req, res) => {
   try {
     const executed = await agentService.executeAllApproved(parseInt(req.params.id, 10));
     res.json({ success: true, data: { executed: executed.length, signals: executed } });
@@ -331,7 +327,7 @@ router.post('/:id/signals/execute-all', async (req, res) => {
     console.error('Error executing all signals:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 // ============================================
 // Portfolio Routes
@@ -341,7 +337,7 @@ router.post('/:id/signals/execute-all', async (req, res) => {
  * GET /api/agents/:id/portfolios
  * Get portfolios managed by an agent
  */
-router.get('/:id/portfolios', async (req, res) => {
+router.get('/:id/portfolios', asyncHandler(async (req, res) => {
   try {
     const portfolios = await agentService.getAgentPortfolios(parseInt(req.params.id, 10));
     res.json({ success: true, data: portfolios });
@@ -349,13 +345,13 @@ router.get('/:id/portfolios', async (req, res) => {
     console.error('Error fetching agent portfolios:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * POST /api/agents/:id/portfolios
  * Create a new portfolio for an agent
  */
-router.post('/:id/portfolios', async (req, res) => {
+router.post('/:id/portfolios', asyncHandler(async (req, res) => {
   try {
     const { name, initial_capital, mode = 'paper' } = req.body;
 
@@ -375,13 +371,13 @@ router.post('/:id/portfolios', async (req, res) => {
     console.error('Error creating portfolio for agent:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * POST /api/agents/:id/portfolios/attach
  * Attach an existing portfolio to an agent
  */
-router.post('/:id/portfolios/attach', async (req, res) => {
+router.post('/:id/portfolios/attach', asyncHandler(async (req, res) => {
   try {
     const { portfolioId, mode = 'paper' } = req.body;
 
@@ -402,13 +398,13 @@ router.post('/:id/portfolios/attach', async (req, res) => {
     console.error('Error attaching portfolio:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * DELETE /api/agents/:id/portfolios/:portfolioId
  * Detach a portfolio from an agent
  */
-router.delete('/:id/portfolios/:portfolioId', async (req, res) => {
+router.delete('/:id/portfolios/:portfolioId', asyncHandler(async (req, res) => {
   try {
     const result = await agentService.detachPortfolio(
       parseInt(req.params.id, 10),
@@ -419,7 +415,7 @@ router.delete('/:id/portfolios/:portfolioId', async (req, res) => {
     console.error('Error detaching portfolio:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 // ============================================
 // Performance & Activity Routes
@@ -429,7 +425,7 @@ router.delete('/:id/portfolios/:portfolioId', async (req, res) => {
  * GET /api/agents/:id/performance
  * Get agent performance metrics
  */
-router.get('/:id/performance', async (req, res) => {
+router.get('/:id/performance', asyncHandler(async (req, res) => {
   try {
     const agentId = parseInt(req.params.id, 10);
 
@@ -465,13 +461,13 @@ router.get('/:id/performance', async (req, res) => {
     console.error('Error fetching agent performance:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * GET /api/agents/:id/activity
  * Get agent activity log
  */
-router.get('/:id/activity', async (req, res) => {
+router.get('/:id/activity', asyncHandler(async (req, res) => {
   try {
     const { limit = 50 } = req.query;
     const activity = await agentService.getActivityLog(
@@ -483,13 +479,13 @@ router.get('/:id/activity', async (req, res) => {
     console.error('Error fetching agent activity:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * GET /api/agents/:id/config
  * Get agent configuration for TradingAgent
  */
-router.get('/:id/config', async (req, res) => {
+router.get('/:id/config', asyncHandler(async (req, res) => {
   try {
     const config = await agentService.getAgentConfig(parseInt(req.params.id, 10));
     if (!config) {
@@ -500,7 +496,7 @@ router.get('/:id/config', async (req, res) => {
     console.error('Error fetching agent config:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 // ============================================
 // Execution Routes
@@ -510,7 +506,7 @@ router.get('/:id/config', async (req, res) => {
  * GET /api/agents/:id/executions
  * Get all executions for an agent (pending, approved, and executed)
  */
-router.get('/:id/executions', async (req, res) => {
+router.get('/:id/executions', asyncHandler(async (req, res) => {
   try {
     const agentId = parseInt(req.params.id, 10);
     const executions = await agentService.getExecutions(agentId);
@@ -519,13 +515,13 @@ router.get('/:id/executions', async (req, res) => {
     console.error('Error fetching executions:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * POST /api/agents/:id/executions/:executionId/approve
  * Approve an execution (move from pending to approved)
  */
-router.post('/:id/executions/:executionId/approve', async (req, res) => {
+router.post('/:id/executions/:executionId/approve', asyncHandler(async (req, res) => {
   try {
     const executionId = parseInt(req.params.executionId, 10);
     const execution = await agentService.approveExecution(executionId);
@@ -537,13 +533,13 @@ router.post('/:id/executions/:executionId/approve', async (req, res) => {
     console.error('Error approving execution:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * POST /api/agents/:id/executions/:executionId/reject
  * Reject an execution
  */
-router.post('/:id/executions/:executionId/reject', async (req, res) => {
+router.post('/:id/executions/:executionId/reject', asyncHandler(async (req, res) => {
   try {
     const executionId = parseInt(req.params.executionId, 10);
     const { reason } = req.body;
@@ -556,13 +552,13 @@ router.post('/:id/executions/:executionId/reject', async (req, res) => {
     console.error('Error rejecting execution:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * POST /api/agents/:id/executions/:executionId/execute
  * Execute an approved trade
  */
-router.post('/:id/executions/:executionId/execute', async (req, res) => {
+router.post('/:id/executions/:executionId/execute', asyncHandler(async (req, res) => {
   try {
     const executionId = parseInt(req.params.executionId, 10);
     const execution = await agentService.executeApproved(executionId);
@@ -574,13 +570,13 @@ router.post('/:id/executions/:executionId/execute', async (req, res) => {
     console.error('Error executing trade:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * POST /api/agents/:id/executions/approve-all
  * Approve all pending executions
  */
-router.post('/:id/executions/approve-all', async (req, res) => {
+router.post('/:id/executions/approve-all', asyncHandler(async (req, res) => {
   try {
     const agentId = parseInt(req.params.id, 10);
     const approved = await agentService.approveAllExecutions(agentId);
@@ -589,13 +585,13 @@ router.post('/:id/executions/approve-all', async (req, res) => {
     console.error('Error approving all executions:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * POST /api/agents/:id/executions/execute-all
  * Execute all approved trades
  */
-router.post('/:id/executions/execute-all', async (req, res) => {
+router.post('/:id/executions/execute-all', asyncHandler(async (req, res) => {
   try {
     const agentId = parseInt(req.params.id, 10);
     const executed = await agentService.executeAllApproved(agentId);
@@ -604,13 +600,13 @@ router.post('/:id/executions/execute-all', async (req, res) => {
     console.error('Error executing all trades:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * PUT /api/agents/:id/settings
  * Update agent settings
  */
-router.put('/:id/settings', async (req, res) => {
+router.put('/:id/settings', asyncHandler(async (req, res) => {
   try {
     const agentId = parseInt(req.params.id, 10);
     const agent = await agentService.updateAgentSettings(agentId, req.body);
@@ -622,13 +618,13 @@ router.put('/:id/settings', async (req, res) => {
     console.error('Error updating agent settings:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * GET /api/agents/:id/live-status
  * Lightweight status endpoint for polling
  */
-router.get('/:id/live-status', async (req, res) => {
+router.get('/:id/live-status', asyncHandler(async (req, res) => {
   try {
     const agentId = parseInt(req.params.id, 10);
     const status = await agentService.getLiveStatus(agentId);
@@ -640,7 +636,7 @@ router.get('/:id/live-status', async (req, res) => {
     console.error('Error fetching live status:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 // ============================================
 // Beginner Strategy Routes
@@ -652,7 +648,7 @@ const { BeginnerStrategyEngine, STRATEGY_TYPES, FREQUENCIES } = require('../../s
  * GET /api/agents/beginner/presets
  * Get beginner strategy presets
  */
-router.get('/beginner/presets', async (req, res) => {
+router.get('/beginner/presets', asyncHandler(async (req, res) => {
   try {
     const presets = await agentService.getBeginnerPresets();
     res.json({ success: true, data: presets });
@@ -660,13 +656,13 @@ router.get('/beginner/presets', async (req, res) => {
     console.error('Error fetching beginner presets:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * GET /api/agents/beginner/strategy-types
  * Get available beginner strategy types with descriptions
  */
-router.get('/beginner/strategy-types', async (req, res) => {
+router.get('/beginner/strategy-types', asyncHandler(async (req, res) => {
   try {
     const types = [
       {
@@ -730,13 +726,13 @@ router.get('/beginner/strategy-types', async (req, res) => {
     console.error('Error fetching strategy types:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * POST /api/agents/beginner
  * Create a new beginner strategy agent
  */
-router.post('/beginner', async (req, res) => {
+router.post('/beginner', asyncHandler(async (req, res) => {
   try {
     const {
       name,
@@ -776,13 +772,13 @@ router.post('/beginner', async (req, res) => {
     console.error('Error creating beginner agent:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * GET /api/agents/:id/contributions
  * Get contribution history for a beginner agent
  */
-router.get('/:id/contributions', async (req, res) => {
+router.get('/:id/contributions', asyncHandler(async (req, res) => {
   try {
     const agentId = parseInt(req.params.id, 10);
     const { limit = 50 } = req.query;
@@ -795,13 +791,13 @@ router.get('/:id/contributions', async (req, res) => {
     console.error('Error fetching contributions:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * POST /api/agents/:id/contributions/preview
  * Preview the next contribution for a beginner agent
  */
-router.post('/:id/contributions/preview', async (req, res) => {
+router.post('/:id/contributions/preview', asyncHandler(async (req, res) => {
   try {
     const agentId = parseInt(req.params.id, 10);
 
@@ -822,13 +818,13 @@ router.post('/:id/contributions/preview', async (req, res) => {
     console.error('Error previewing contribution:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * POST /api/agents/:id/contributions/execute
  * Execute the next contribution for a beginner agent
  */
-router.post('/:id/contributions/execute', async (req, res) => {
+router.post('/:id/contributions/execute', asyncHandler(async (req, res) => {
   try {
     const agentId = parseInt(req.params.id, 10);
 
@@ -879,13 +875,13 @@ router.post('/:id/contributions/execute', async (req, res) => {
     console.error('Error executing contribution:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * GET /api/agents/:id/projection
  * Project future portfolio value for a beginner agent
  */
-router.get('/:id/projection', async (req, res) => {
+router.get('/:id/projection', asyncHandler(async (req, res) => {
   try {
     const agentId = parseInt(req.params.id, 10);
     const { years = 10 } = req.query;
@@ -898,13 +894,13 @@ router.get('/:id/projection', async (req, res) => {
     console.error('Error calculating projection:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 /**
  * GET /api/agents/:id/schedule
  * Get the contribution schedule for a beginner agent
  */
-router.get('/:id/schedule', async (req, res) => {
+router.get('/:id/schedule', asyncHandler(async (req, res) => {
   try {
     const agentId = parseInt(req.params.id, 10);
     const agent = agentService.getAgent(agentId);
@@ -936,6 +932,6 @@ router.get('/:id/schedule', async (req, res) => {
     console.error('Error fetching schedule:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}));
 
 module.exports = router;
