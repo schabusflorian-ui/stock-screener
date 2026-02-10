@@ -3,11 +3,12 @@
 
 const express = require('express');
 const router = express.Router();
+const { getDatabaseAsync } = require('../../database');
 const { createNotesServices } = require('../../services/notes');
 
-// Middleware to get notes services
-const getServices = (req) => {
-  const db = req.app.get('db');
+// Middleware to get notes services (async)
+const getServices = async (req) => {
+  const db = await getDatabaseAsync();
   return createNotesServices(db);
 };
 
@@ -18,7 +19,7 @@ const getServices = (req) => {
 // GET /api/notes/notebooks - List all notebooks
 router.get('/notebooks', async (req, res) => {
   try {
-    const { notes } = getServices(req);
+    const { notes } = await getServices(req);
     const notebooks = await notes.getAllNotebooks();
     res.json({
       success: true,
@@ -33,7 +34,7 @@ router.get('/notebooks', async (req, res) => {
 // POST /api/notes/notebooks - Create a new notebook
 router.post('/notebooks', async (req, res) => {
   try {
-    const { notes } = getServices(req);
+    const { notes } = await getServices(req);
     const { name, description, notebookType, color, icon } = req.body;
 
     if (!name) {
@@ -55,7 +56,7 @@ router.post('/notebooks', async (req, res) => {
 // PUT /api/notes/notebooks/:id - Update a notebook
 router.put('/notebooks/:id', async (req, res) => {
   try {
-    const { notes } = getServices(req);
+    const { notes } = await getServices(req);
     const notebookId = parseInt(req.params.id);
     const { name, description, color, icon } = req.body;
 
@@ -74,7 +75,7 @@ router.put('/notebooks/:id', async (req, res) => {
 // DELETE /api/notes/notebooks/:id - Archive a notebook
 router.delete('/notebooks/:id', async (req, res) => {
   try {
-    const { notes } = getServices(req);
+    const { notes } = await getServices(req);
     const notebookId = parseInt(req.params.id);
 
     await notes.archiveNotebook(notebookId);
@@ -95,7 +96,7 @@ router.delete('/notebooks/:id', async (req, res) => {
 // GET /api/notes/tags - List all tags
 router.get('/tags', async (req, res) => {
   try {
-    const { notes } = getServices(req);
+    const { notes } = await getServices(req);
     const tags = await notes.getAllTags();
     res.json({
       success: true,
@@ -110,7 +111,7 @@ router.get('/tags', async (req, res) => {
 // POST /api/notes/tags - Create a new tag
 router.post('/tags', async (req, res) => {
   try {
-    const { notes } = getServices(req);
+    const { notes } = await getServices(req);
     const { name, color } = req.body;
 
     if (!name) {
@@ -141,7 +142,7 @@ router.post('/tags', async (req, res) => {
 // PUT /api/notes/tags/:id - Update a tag
 router.put('/tags/:id', async (req, res) => {
   try {
-    const { notes } = getServices(req);
+    const { notes } = await getServices(req);
     const tagId = parseInt(req.params.id);
     const { name, color } = req.body;
 
@@ -159,7 +160,7 @@ router.put('/tags/:id', async (req, res) => {
 // DELETE /api/notes/tags/:id - Delete a tag
 router.delete('/tags/:id', async (req, res) => {
   try {
-    const { notes } = getServices(req);
+    const { notes } = await getServices(req);
     const tagId = parseInt(req.params.id);
 
     await notes.deleteTag(tagId);
@@ -180,7 +181,7 @@ router.delete('/tags/:id', async (req, res) => {
 // GET /api/notes/activity - Get recent activity
 router.get('/activity', async (req, res) => {
   try {
-    const { notes } = getServices(req);
+    const { notes } = await getServices(req);
     const { limit = 50 } = req.query;
 
     const activity = await notes.getRecentActivity(parseInt(limit));
@@ -202,7 +203,7 @@ router.get('/activity', async (req, res) => {
 // GET /api/notes/search - Search notes
 router.get('/search', async (req, res) => {
   try {
-    const { notes } = getServices(req);
+    const { notes } = await getServices(req);
     const { q, limit = 50 } = req.query;
 
     if (!q) {
@@ -229,7 +230,7 @@ router.get('/search', async (req, res) => {
 // GET /api/notes/company/:symbol - Get notes for a company
 router.get('/company/:symbol', async (req, res) => {
   try {
-    const { notes, thesis, snapshot } = getServices(req);
+    const { notes, thesis, snapshot } = await getServices(req);
     const symbol = req.params.symbol.toUpperCase();
 
     const companyNotes = await notes.getNotesBySymbol(symbol);
@@ -253,7 +254,7 @@ router.get('/company/:symbol', async (req, res) => {
 // GET /api/notes/portfolio/:portfolioId - Get notes for a portfolio
 router.get('/portfolio/:portfolioId', async (req, res) => {
   try {
-    const { notes } = getServices(req);
+    const { notes } = await getServices(req);
     const portfolioId = parseInt(req.params.portfolioId);
 
     const portfolioNotes = await notes.getNotesByPortfolio(portfolioId);
@@ -275,7 +276,7 @@ router.get('/portfolio/:portfolioId', async (req, res) => {
 // GET /api/notes - List all notes
 router.get('/', async (req, res) => {
   try {
-    const { notes } = getServices(req);
+    const { notes } = await getServices(req);
     const { notebookId, limit = 100 } = req.query;
 
     let notesList;
@@ -298,7 +299,7 @@ router.get('/', async (req, res) => {
 // GET /api/notes/:id - Get a specific note
 router.get('/:id', async (req, res) => {
   try {
-    const { notes, snapshot } = getServices(req);
+    const { notes, snapshot } = await getServices(req);
     const noteId = parseInt(req.params.id);
 
     const note = await notes.getNote(noteId);
@@ -324,7 +325,7 @@ router.get('/:id', async (req, res) => {
 // POST /api/notes - Create a new note
 router.post('/', async (req, res) => {
   try {
-    const { notes, snapshot } = getServices(req);
+    const { notes, snapshot } = await getServices(req);
     const {
       notebookId,
       title,
@@ -371,7 +372,7 @@ router.post('/', async (req, res) => {
 // PUT /api/notes/:id - Update a note
 router.put('/:id', async (req, res) => {
   try {
-    const { notes } = getServices(req);
+    const { notes } = await getServices(req);
     const noteId = parseInt(req.params.id);
     const {
       title,
@@ -409,7 +410,7 @@ router.put('/:id', async (req, res) => {
 // DELETE /api/notes/:id - Delete a note
 router.delete('/:id', async (req, res) => {
   try {
-    const { notes } = getServices(req);
+    const { notes } = await getServices(req);
     const noteId = parseInt(req.params.id);
     const { hard = false } = req.query;
 
@@ -427,7 +428,7 @@ router.delete('/:id', async (req, res) => {
 // POST /api/notes/:id/pin - Pin/unpin a note
 router.post('/:id/pin', async (req, res) => {
   try {
-    const { notes } = getServices(req);
+    const { notes } = await getServices(req);
     const noteId = parseInt(req.params.id);
     const { isPinned = true } = req.body;
 
@@ -446,7 +447,7 @@ router.post('/:id/pin', async (req, res) => {
 // POST /api/notes/:id/publish - Publish a note
 router.post('/:id/publish', async (req, res) => {
   try {
-    const { notes } = getServices(req);
+    const { notes } = await getServices(req);
     const noteId = parseInt(req.params.id);
 
     await notes.publishNote(noteId);
@@ -468,7 +469,7 @@ router.post('/:id/publish', async (req, res) => {
 // POST /api/notes/:id/attachments - Add attachment
 router.post('/:id/attachments', async (req, res) => {
   try {
-    const { notes } = getServices(req);
+    const { notes } = await getServices(req);
     const noteId = parseInt(req.params.id);
     const { type, symbol, portfolioId, sector, industry, isPrimary } = req.body;
 
@@ -493,7 +494,7 @@ router.post('/:id/attachments', async (req, res) => {
 // DELETE /api/notes/:id/attachments/:attachmentId - Remove attachment
 router.delete('/:id/attachments/:attachmentId', async (req, res) => {
   try {
-    const { notes } = getServices(req);
+    const { notes } = await getServices(req);
     const attachmentId = parseInt(req.params.attachmentId);
 
     await notes.removeAttachment(attachmentId);
@@ -514,7 +515,7 @@ router.delete('/:id/attachments/:attachmentId', async (req, res) => {
 // POST /api/notes/:id/tags/:tagId - Add tag to note
 router.post('/:id/tags/:tagId', async (req, res) => {
   try {
-    const { notes } = getServices(req);
+    const { notes } = await getServices(req);
     const noteId = parseInt(req.params.id);
     const tagId = parseInt(req.params.tagId);
 
@@ -533,7 +534,7 @@ router.post('/:id/tags/:tagId', async (req, res) => {
 // DELETE /api/notes/:id/tags/:tagId - Remove tag from note
 router.delete('/:id/tags/:tagId', async (req, res) => {
   try {
-    const { notes } = getServices(req);
+    const { notes } = await getServices(req);
     const noteId = parseInt(req.params.id);
     const tagId = parseInt(req.params.tagId);
 
@@ -556,7 +557,7 @@ router.delete('/:id/tags/:tagId', async (req, res) => {
 // GET /api/notes/:id/versions - Get all versions
 router.get('/:id/versions', async (req, res) => {
   try {
-    const { notes } = getServices(req);
+    const { notes } = await getServices(req);
     const noteId = parseInt(req.params.id);
 
     const versions = await notes.getVersions(noteId);
@@ -574,7 +575,7 @@ router.get('/:id/versions', async (req, res) => {
 // GET /api/notes/:id/versions/:versionNumber - Get specific version
 router.get('/:id/versions/:versionNumber', async (req, res) => {
   try {
-    const { notes } = getServices(req);
+    const { notes } = await getServices(req);
     const noteId = parseInt(req.params.id);
     const versionNumber = parseInt(req.params.versionNumber);
 
@@ -595,7 +596,7 @@ router.get('/:id/versions/:versionNumber', async (req, res) => {
 // POST /api/notes/:id/versions/:versionNumber/restore - Restore version
 router.post('/:id/versions/:versionNumber/restore', async (req, res) => {
   try {
-    const { notes } = getServices(req);
+    const { notes } = await getServices(req);
     const noteId = parseInt(req.params.id);
     const versionNumber = parseInt(req.params.versionNumber);
 
@@ -619,7 +620,7 @@ router.post('/:id/versions/:versionNumber/restore', async (req, res) => {
 // GET /api/notes/:id/snapshots - Get snapshots for a note
 router.get('/:id/snapshots', async (req, res) => {
   try {
-    const { snapshot } = getServices(req);
+    const { snapshot } = await getServices(req);
     const noteId = parseInt(req.params.id);
 
     const snapshots = await snapshot.getSnapshotsByNote(noteId);
@@ -637,7 +638,7 @@ router.get('/:id/snapshots', async (req, res) => {
 // POST /api/notes/:id/snapshots - Capture new snapshot
 router.post('/:id/snapshots', async (req, res) => {
   try {
-    const { snapshot } = getServices(req);
+    const { snapshot } = await getServices(req);
     const noteId = parseInt(req.params.id);
     const { symbol, symbols } = req.body;
 
@@ -661,7 +662,7 @@ router.post('/:id/snapshots', async (req, res) => {
 // GET /api/notes/snapshots/:snapshotId/compare - Compare snapshot to current
 router.get('/snapshots/:snapshotId/compare', async (req, res) => {
   try {
-    const { snapshot } = getServices(req);
+    const { snapshot } = await getServices(req);
     const snapshotId = parseInt(req.params.snapshotId);
 
     const result = await snapshot.compareSnapshotToCurrent(snapshotId);
@@ -675,7 +676,7 @@ router.get('/snapshots/:snapshotId/compare', async (req, res) => {
 // DELETE /api/notes/snapshots/:snapshotId - Delete a snapshot
 router.delete('/snapshots/:snapshotId', async (req, res) => {
   try {
-    const { snapshot } = getServices(req);
+    const { snapshot } = await getServices(req);
     const snapshotId = parseInt(req.params.snapshotId);
 
     await snapshot.deleteSnapshot(snapshotId);

@@ -3,11 +3,12 @@
 
 const express = require('express');
 const router = express.Router();
+const { getDatabaseAsync } = require('../../database');
 const { createNotesServices } = require('../../services/notes');
 
-// Middleware to get notes services
-const getServices = (req) => {
-  const db = req.app.get('db');
+// Middleware to get notes services (async)
+const getServices = async (req) => {
+  const db = await getDatabaseAsync();
   return createNotesServices(db);
 };
 
@@ -18,7 +19,7 @@ const getServices = (req) => {
 // GET /api/theses/dashboard - Get thesis dashboard data
 router.get('/dashboard', async (req, res) => {
   try {
-    const { thesis } = getServices(req);
+    const { thesis } = await getServices(req);
     const dashboard = await thesis.getThesisDashboard();
 
     res.json({
@@ -37,7 +38,7 @@ router.get('/dashboard', async (req, res) => {
 // GET /api/theses/templates - List all templates
 router.get('/templates', async (req, res) => {
   try {
-    const { thesis } = getServices(req);
+    const { thesis } = await getServices(req);
     const templates = await thesis.getAllTemplates();
 
     res.json({
@@ -53,7 +54,7 @@ router.get('/templates', async (req, res) => {
 // GET /api/theses/templates/:id - Get specific template
 router.get('/templates/:id', async (req, res) => {
   try {
-    const { thesis } = getServices(req);
+    const { thesis } = await getServices(req);
     const templateId = req.params.id;
 
     const template = await thesis.getTemplate(templateId);
@@ -77,7 +78,7 @@ router.get('/templates/:id', async (req, res) => {
 // GET /api/theses/catalysts/upcoming - Get upcoming catalysts across all theses
 router.get('/catalysts/upcoming', async (req, res) => {
   try {
-    const { thesis } = getServices(req);
+    const { thesis } = await getServices(req);
     const { limit = 20 } = req.query;
 
     const catalysts = await thesis.getUpcomingCatalysts(parseInt(limit));
@@ -99,7 +100,7 @@ router.get('/catalysts/upcoming', async (req, res) => {
 // GET /api/theses/company/:symbol - Get theses for a company
 router.get('/company/:symbol', (req, res) => {
   try {
-    const { thesis } = getServices(req);
+    const { thesis } = await getServices(req);
     const symbol = req.params.symbol.toUpperCase();
 
     const theses = thesis.getThesesBySymbol(symbol);
@@ -123,7 +124,7 @@ router.get('/company/:symbol', (req, res) => {
 // GET /api/theses - List all theses
 router.get('/', (req, res) => {
   try {
-    const { thesis } = getServices(req);
+    const { thesis } = await getServices(req);
     const { status } = req.query;
 
     let theses;
@@ -146,7 +147,7 @@ router.get('/', (req, res) => {
 // GET /api/theses/:id - Get a specific thesis
 router.get('/:id', (req, res) => {
   try {
-    const { thesis, snapshot } = getServices(req);
+    const { thesis, snapshot } = await getServices(req);
     const thesisId = parseInt(req.params.id);
 
     const thesisData = thesis.getThesis(thesisId);
@@ -172,7 +173,7 @@ router.get('/:id', (req, res) => {
 // POST /api/theses - Create a new thesis
 router.post('/', (req, res) => {
   try {
-    const { thesis, snapshot } = getServices(req);
+    const { thesis, snapshot } = await getServices(req);
     const {
       symbol,
       title,
@@ -229,7 +230,7 @@ router.post('/', (req, res) => {
 // PUT /api/theses/:id - Update a thesis
 router.put('/:id', (req, res) => {
   try {
-    const { thesis, notes } = getServices(req);
+    const { thesis, notes } = await getServices(req);
     const thesisId = parseInt(req.params.id);
     const {
       title,
@@ -276,7 +277,7 @@ router.put('/:id', (req, res) => {
 // PUT /api/theses/:id/status - Update thesis status
 router.put('/:id/status', (req, res) => {
   try {
-    const { thesis } = getServices(req);
+    const { thesis } = await getServices(req);
     const thesisId = parseInt(req.params.id);
     const { status, reason, actualReturnPct, outcomeNotes } = req.body;
 
@@ -305,7 +306,7 @@ router.put('/:id/status', (req, res) => {
 // DELETE /api/theses/:id - Delete a thesis
 router.delete('/:id', (req, res) => {
   try {
-    const { thesis } = getServices(req);
+    const { thesis } = await getServices(req);
     const thesisId = parseInt(req.params.id);
 
     thesis.deleteThesis(thesisId);
@@ -326,7 +327,7 @@ router.delete('/:id', (req, res) => {
 // GET /api/theses/:id/assumptions - Get assumptions for a thesis
 router.get('/:id/assumptions', (req, res) => {
   try {
-    const { thesis } = getServices(req);
+    const { thesis } = await getServices(req);
     const thesisId = parseInt(req.params.id);
 
     const assumptions = thesis.getAssumptions(thesisId);
@@ -344,7 +345,7 @@ router.get('/:id/assumptions', (req, res) => {
 // POST /api/theses/:id/assumptions - Add assumption
 router.post('/:id/assumptions', (req, res) => {
   try {
-    const { thesis } = getServices(req);
+    const { thesis } = await getServices(req);
     const thesisId = parseInt(req.params.id);
     const {
       text,
@@ -382,7 +383,7 @@ router.post('/:id/assumptions', (req, res) => {
 // PUT /api/theses/:thesisId/assumptions/:assumptionId - Update assumption
 router.put('/:thesisId/assumptions/:assumptionId', (req, res) => {
   try {
-    const { thesis } = getServices(req);
+    const { thesis } = await getServices(req);
     const assumptionId = parseInt(req.params.assumptionId);
     const {
       text,
@@ -418,7 +419,7 @@ router.put('/:thesisId/assumptions/:assumptionId', (req, res) => {
 // PUT /api/theses/:thesisId/assumptions/:assumptionId/status - Update assumption status
 router.put('/:thesisId/assumptions/:assumptionId/status', (req, res) => {
   try {
-    const { thesis } = getServices(req);
+    const { thesis } = await getServices(req);
     const assumptionId = parseInt(req.params.assumptionId);
     const { status, currentValue, notes } = req.body;
 
@@ -444,7 +445,7 @@ router.put('/:thesisId/assumptions/:assumptionId/status', (req, res) => {
 // DELETE /api/theses/:thesisId/assumptions/:assumptionId - Delete assumption
 router.delete('/:thesisId/assumptions/:assumptionId', (req, res) => {
   try {
-    const { thesis } = getServices(req);
+    const { thesis } = await getServices(req);
     const assumptionId = parseInt(req.params.assumptionId);
 
     thesis.deleteAssumption(assumptionId);
@@ -465,7 +466,7 @@ router.delete('/:thesisId/assumptions/:assumptionId', (req, res) => {
 // GET /api/theses/:id/catalysts - Get catalysts for a thesis
 router.get('/:id/catalysts', (req, res) => {
   try {
-    const { thesis } = getServices(req);
+    const { thesis } = await getServices(req);
     const thesisId = parseInt(req.params.id);
 
     const catalysts = thesis.getCatalysts(thesisId);
@@ -483,7 +484,7 @@ router.get('/:id/catalysts', (req, res) => {
 // POST /api/theses/:id/catalysts - Add catalyst
 router.post('/:id/catalysts', (req, res) => {
   try {
-    const { thesis } = getServices(req);
+    const { thesis } = await getServices(req);
     const thesisId = parseInt(req.params.id);
     const {
       text,
@@ -517,7 +518,7 @@ router.post('/:id/catalysts', (req, res) => {
 // PUT /api/theses/:thesisId/catalysts/:catalystId - Update catalyst
 router.put('/:thesisId/catalysts/:catalystId', (req, res) => {
   try {
-    const { thesis } = getServices(req);
+    const { thesis } = await getServices(req);
     const catalystId = parseInt(req.params.catalystId);
     const {
       text,
@@ -549,7 +550,7 @@ router.put('/:thesisId/catalysts/:catalystId', (req, res) => {
 // PUT /api/theses/:thesisId/catalysts/:catalystId/status - Update catalyst status
 router.put('/:thesisId/catalysts/:catalystId/status', (req, res) => {
   try {
-    const { thesis } = getServices(req);
+    const { thesis } = await getServices(req);
     const catalystId = parseInt(req.params.catalystId);
     const { status, actualDate, outcome, outcomeNotes } = req.body;
 
@@ -576,7 +577,7 @@ router.put('/:thesisId/catalysts/:catalystId/status', (req, res) => {
 // DELETE /api/theses/:thesisId/catalysts/:catalystId - Delete catalyst
 router.delete('/:thesisId/catalysts/:catalystId', (req, res) => {
   try {
-    const { thesis } = getServices(req);
+    const { thesis } = await getServices(req);
     const catalystId = parseInt(req.params.catalystId);
 
     thesis.deleteCatalyst(catalystId);

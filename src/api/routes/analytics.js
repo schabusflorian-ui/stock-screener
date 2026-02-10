@@ -17,7 +17,7 @@ const { optionalAuth, requireAdmin, attachUserId } = require('../../middleware/a
  */
 router.post('/track', optionalAuth, attachUserId, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const {
       event,
       category,
@@ -150,7 +150,7 @@ router.post('/track/batch', optionalAuth, attachUserId, async (req, res) => {
  */
 router.post('/session/start', optionalAuth, attachUserId, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const {
       sessionId,
       device,
@@ -219,7 +219,7 @@ router.post('/session/start', optionalAuth, attachUserId, async (req, res) => {
  */
 router.post('/session/end', async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const { sessionId, duration, pageViews, eventsCount } = req.body || {};
 
     if (!sessionId) {
@@ -255,7 +255,7 @@ router.post('/session/end', async (req, res) => {
  */
 router.get('/admin/summary', requireAdmin, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const { period = '7d' } = req.query;
 
     // Parse period
@@ -382,7 +382,7 @@ router.get('/admin/summary', requireAdmin, async (req, res) => {
  */
 router.get('/admin/features', requireAdmin, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const { period = '30d' } = req.query;
 
     const days = period === '7d' ? 7 : period === '90d' ? 90 : 30;
@@ -452,7 +452,7 @@ router.get('/admin/features', requireAdmin, async (req, res) => {
  */
 router.get('/admin/funnel', requireAdmin, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const { funnel = 'onboarding', period = '30d' } = req.query;
 
     const days = period === '7d' ? 7 : period === '90d' ? 90 : 30;
@@ -540,7 +540,7 @@ router.get('/admin/funnel', requireAdmin, async (req, res) => {
  */
 router.get('/admin/feedback', requireAdmin, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const { period = '30d', status = 'all' } = req.query;
 
     const days = period === '7d' ? 7 : period === '90d' ? 90 : 30;
@@ -632,7 +632,7 @@ router.get('/admin/feedback', requireAdmin, async (req, res) => {
  */
 router.get('/admin/events', requireAdmin, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const {
       period = '7d',
       category,
@@ -717,7 +717,7 @@ router.get('/admin/events', requireAdmin, async (req, res) => {
  */
 router.get('/user/summary', optionalAuth, attachUserId, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
 
     if (!req.userId) {
       return res.status(401).json({

@@ -8,6 +8,7 @@
  * - attachSubscription: Add subscription info to request
  */
 
+const { getDatabaseAsync } = require('../lib/db');
 const { getSubscriptionService, TIER_HIERARCHY } = require('../services/subscriptionService');
 
 /**
@@ -94,7 +95,7 @@ function requireFeature(featureName, options = {}) {
       });
     }
 
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const subscriptionService = getSubscriptionService(db);
     const hasAccess = await subscriptionService.hasFeature(userId, featureName);
 
@@ -151,7 +152,7 @@ function requireTier(minimumTier) {
       });
     }
 
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const subscriptionService = getSubscriptionService(db);
     const hasAccess = await subscriptionService.hasTierAccess(userId, minimumTier);
 
@@ -212,7 +213,7 @@ function checkUsageLimit(usageType, options = {}) {
       });
     }
 
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const subscriptionService = getSubscriptionService(db);
 
     try {
@@ -300,7 +301,7 @@ function checkResourceLimit(resourceType, options = {}) {
       });
     }
 
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const subscriptionService = getSubscriptionService(db);
     const limit = await subscriptionService.getLimit(userId, resourceType);
 
@@ -314,7 +315,7 @@ function checkResourceLimit(resourceType, options = {}) {
     if (countFn) {
       currentCount = await countFn(req, userId, db);
     } else {
-      currentCount = getDefaultResourceCount(db, userId, resourceType);
+      currentCount = await getDefaultResourceCount(db, userId, resourceType);
     }
 
     if (currentCount >= limit) {
@@ -346,7 +347,7 @@ function checkResourceLimit(resourceType, options = {}) {
 /**
  * Get default resource count from database
  */
-function getDefaultResourceCount(db, userId, resourceType) {
+async function getDefaultResourceCount(db, userId, resourceType) {
   const queries = {
     watchlist_stocks: 'SELECT COUNT(*) as count FROM user_watchlists WHERE user_id = ?',
     portfolios: 'SELECT COUNT(*) as count FROM portfolios WHERE user_id = ?',
@@ -361,7 +362,7 @@ function getDefaultResourceCount(db, userId, resourceType) {
   }
 
   try {
-    const result = db.prepare(query).get(userId);
+    const result = await db.prepare(query).get(userId);
     return result?.count || 0;
   } catch (error) {
     console.error(`Error counting ${resourceType}:`, error);
@@ -377,7 +378,7 @@ function getDefaultResourceCount(db, userId, resourceType) {
 async function attachSubscription(req, res, next) {
   if (req.user?.id) {
     try {
-      const db = req.app.get('db');
+      const db = await getDatabaseAsync();
       const subscriptionService = getSubscriptionService(db);
       req.subscription = await subscriptionService.getUserSubscription(req.user.id);
       req.userTier = req.subscription?.tier_name || 'free';
@@ -398,7 +399,7 @@ async function attachSubscription(req, res, next) {
 function optionalFeatureCheck(featureName) {
   return async (req, res, next) => {
     if (req.user?.id) {
-      const db = req.app.get('db');
+      const db = await getDatabaseAsync();
       const subscriptionService = getSubscriptionService(db);
       req.hasFeature = req.hasFeature || {};
       req.hasFeature[featureName] = await subscriptionService.hasFeature(req.user.id, featureName);

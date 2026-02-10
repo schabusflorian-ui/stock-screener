@@ -1,6 +1,7 @@
 // src/middleware/auth.js
 // Authentication and authorization middleware
 
+const { getDatabaseAsync } = require('../lib/db');
 const { getPortfolioService } = require('../services/portfolio');
 
 // Check if OAuth is configured
@@ -174,8 +175,8 @@ const requireAdmin = (req, res, next) => {
  * Allows access if user owns portfolio OR is admin
  * In dev mode without OAuth, all users have access
  */
-const requirePortfolioOwnership = (req, res, next) => {
-  const db = req.app.get('db');
+const requirePortfolioOwnership = async (req, res, next) => {
+  const db = await getDatabaseAsync();
   const service = getPortfolioService(db);
   const portfolioId = parseInt(req.params.id);
 
@@ -187,7 +188,7 @@ const requirePortfolioOwnership = (req, res, next) => {
   }
 
   // Check if portfolio exists
-  const portfolio = service.getPortfolio(portfolioId);
+  const portfolio = await service.getPortfolio(portfolioId);
   if (!portfolio) {
     return res.status(404).json({
       error: 'Portfolio not found',
@@ -218,7 +219,7 @@ const requirePortfolioOwnership = (req, res, next) => {
   }
 
   // Check ownership
-  if (service.isPortfolioOwner(portfolioId, userId)) {
+  if (await service.isPortfolioOwner(portfolioId, userId)) {
     return next();
   }
 

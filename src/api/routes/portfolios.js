@@ -1528,7 +1528,7 @@ router.get('/:id/export/dividends', asyncHandler(async (req, res) => {
 // GET /api/portfolios/:id/hedge-suggestions - Get hedge recommendations
 router.get('/:id/hedge-suggestions', asyncHandler(async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const { HedgeOptimizer } = require('../../services/portfolio/hedgeOptimizer');
     const hedgeOptimizer = new HedgeOptimizer(db);
 
@@ -1561,7 +1561,7 @@ router.get('/:id/hedge-suggestions', asyncHandler(async (req, res) => {
 // GET /api/portfolios/:id/hedge-history - Get hedge suggestion history
 router.get('/:id/hedge-history', asyncHandler(async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const { HedgeOptimizer } = require('../../services/portfolio/hedgeOptimizer');
     const hedgeOptimizer = new HedgeOptimizer(db);
 
@@ -1584,7 +1584,7 @@ router.get('/:id/hedge-history', asyncHandler(async (req, res) => {
 // POST /api/portfolios/:id/hedge-suggestions/:suggestionId/status - Update suggestion status
 router.post('/:id/hedge-suggestions/:suggestionId/status', asyncHandler(async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const { HedgeOptimizer } = require('../../services/portfolio/hedgeOptimizer');
     const hedgeOptimizer = new HedgeOptimizer(db);
 
@@ -1610,7 +1610,7 @@ router.post('/:id/hedge-suggestions/:suggestionId/status', asyncHandler(async (r
 // GET /api/portfolios/:id/hedge-summary - Get hedge summary
 router.get('/:id/hedge-summary', asyncHandler(async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const { HedgeOptimizer } = require('../../services/portfolio/hedgeOptimizer');
     const hedgeOptimizer = new HedgeOptimizer(db);
 
@@ -1634,7 +1634,7 @@ router.get('/:id/hedge-summary', asyncHandler(async (req, res) => {
 // POST /api/portfolios/process-dividends - Process dividends for all portfolios
 router.post('/process-dividends', asyncHandler(async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const { getDividendProcessor } = require('../../services/portfolio/dividendProcessor');
     const processor = getDividendProcessor(db);
 
@@ -1657,7 +1657,7 @@ router.post('/process-dividends', asyncHandler(async (req, res) => {
 // GET /api/portfolios/pending-dividends - Preview pending dividends
 router.get('/pending-dividends', asyncHandler(async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const { getDividendProcessor } = require('../../services/portfolio/dividendProcessor');
     const processor = getDividendProcessor(db);
 
@@ -1677,7 +1677,7 @@ router.get('/pending-dividends', asyncHandler(async (req, res) => {
 // POST /api/portfolios/:id/process-dividends - Process dividends for a specific portfolio
 router.post('/:id/process-dividends', asyncHandler(async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const { getDividendProcessor } = require('../../services/portfolio/dividendProcessor');
     const processor = getDividendProcessor(db);
 
@@ -1702,7 +1702,7 @@ router.post('/:id/process-dividends', asyncHandler(async (req, res) => {
 // GET /api/portfolios/:id/pending-dividends - Preview pending dividends for a portfolio
 router.get('/:id/pending-dividends', asyncHandler(async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const { getDividendProcessor } = require('../../services/portfolio/dividendProcessor');
     const processor = getDividendProcessor(db);
 
@@ -1724,7 +1724,7 @@ router.get('/:id/pending-dividends', asyncHandler(async (req, res) => {
 // GET /api/portfolios/:id/dividend-history - Get dividend transaction history
 router.get('/:id/dividend-history', asyncHandler(async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const { getDividendProcessor } = require('../../services/portfolio/dividendProcessor');
     const processor = getDividendProcessor(db);
 

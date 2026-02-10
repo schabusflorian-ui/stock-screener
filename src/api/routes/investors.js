@@ -3,6 +3,7 @@
 
 const express = require('express');
 const router = express.Router();
+const { getDatabaseAsync } = require('../../database');
 const investorService = require('../../services/portfolio/investorService');
 const { responseCacheMiddleware } = require('../../middleware/apiOptimization');
 
@@ -167,7 +168,7 @@ router.get('/status', async (req, res) => {
       return res.json({ ...investorStatusCache.data, cached: true });
     }
 
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     // Simple fast query - just get counts and latest filing date
     const stats = await db.prepare(`
       SELECT

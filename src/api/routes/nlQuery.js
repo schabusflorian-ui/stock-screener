@@ -472,7 +472,7 @@ function buildFollowUpSuggestions(intent, symbols) {
  */
 router.post('/query', optionalAuth, attachSubscription, checkUsageLimit('ai_queries_monthly'), async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const { query, context, conversation_id, session_id } = req.body;
 
     if (!query || typeof query !== 'string') {
@@ -633,7 +633,7 @@ router.post('/query/stream', optionalAuth, attachSubscription, checkUsageLimit('
   };
 
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const { query, context, conversation_id, session_id } = req.body;
 
     if (!query || typeof query !== 'string') {
@@ -1122,7 +1122,7 @@ router.get('/health', async (req, res) => {
  */
 router.get('/conversations', async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const { limit = 20, session_id } = req.query;
 
     let query = `
@@ -1165,7 +1165,7 @@ router.get('/conversations', async (req, res) => {
  */
 router.get('/conversation/:id', async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const { id } = req.params;
     const { limit = 20 } = req.query;
 
@@ -1196,7 +1196,7 @@ router.get('/conversation/:id', async (req, res) => {
  */
 router.delete('/conversation/:id', async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const { id } = req.params;
 
     // Delete messages first (foreign key)
@@ -1222,7 +1222,7 @@ router.delete('/conversation/:id', async (req, res) => {
  */
 router.post('/conversation/new', async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const { session_id, clear_previous } = req.body;
 
     // Optionally clear previous conversations for this session

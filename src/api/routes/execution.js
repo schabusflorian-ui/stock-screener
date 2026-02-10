@@ -3,12 +3,13 @@
 
 const express = require('express');
 const router = express.Router();
+const { getDatabaseAsync } = require('../../database');
 const { AutoExecutor } = require('../../services/agent/autoExecutor');
 const { getExecutor: getAlgoExecutor, ALGORITHMS, URGENCY } = require('../../services/execution/algorithmicExecutor');
 
-// Middleware to get executor service
-const getExecutor = (req) => {
-  const db = req.app.get('db');
+// Middleware to get executor service (async)
+const getExecutor = async (req) => {
+  const db = await getDatabaseAsync();
   return new AutoExecutor(db);
 };
 
@@ -17,9 +18,9 @@ const getExecutor = (req) => {
 // ============================================
 
 // GET /api/execution/portfolios/:id/settings - Get execution settings
-router.get('/portfolios/:id/settings', (req, res) => {
+router.get('/portfolios/:id/settings', async (req, res) => {
   try {
-    const executor = getExecutor(req);
+    const executor = await getExecutor(req);
     const { id } = req.params;
 
     const settings = executor.getPortfolioSettings(parseInt(id));
@@ -39,9 +40,9 @@ router.get('/portfolios/:id/settings', (req, res) => {
 });
 
 // PUT /api/execution/portfolios/:id/settings - Update execution settings
-router.put('/portfolios/:id/settings', (req, res) => {
+router.put('/portfolios/:id/settings', async (req, res) => {
   try {
-    const executor = getExecutor(req);
+    const executor = await getExecutor(req);
     const { id } = req.params;
     const {
       autoExecute,
@@ -79,9 +80,9 @@ router.put('/portfolios/:id/settings', (req, res) => {
 // ============================================
 
 // GET /api/execution/pending - Get all pending executions
-router.get('/pending', (req, res) => {
+router.get('/pending', async (req, res) => {
   try {
-    const executor = getExecutor(req);
+    const executor = await getExecutor(req);
     const { portfolioId } = req.query;
 
     const pending = executor.getPendingExecutions(
@@ -100,9 +101,9 @@ router.get('/pending', (req, res) => {
 });
 
 // GET /api/execution/portfolios/:id/pending - Get pending for specific portfolio
-router.get('/portfolios/:id/pending', (req, res) => {
+router.get('/portfolios/:id/pending', async (req, res) => {
   try {
-    const executor = getExecutor(req);
+    const executor = await getExecutor(req);
     const { id } = req.params;
 
     const pending = executor.getPendingExecutions(parseInt(id));
@@ -124,9 +125,9 @@ router.get('/portfolios/:id/pending', (req, res) => {
 // ============================================
 
 // POST /api/execution/:id/approve - Approve a pending execution
-router.post('/:id/approve', (req, res) => {
+router.post('/:id/approve', async (req, res) => {
   try {
-    const executor = getExecutor(req);
+    const executor = await getExecutor(req);
     const { id } = req.params;
     const { approvedBy = 'user' } = req.body;
 
@@ -144,9 +145,9 @@ router.post('/:id/approve', (req, res) => {
 });
 
 // POST /api/execution/:id/reject - Reject a pending execution
-router.post('/:id/reject', (req, res) => {
+router.post('/:id/reject', async (req, res) => {
   try {
-    const executor = getExecutor(req);
+    const executor = await getExecutor(req);
     const { id } = req.params;
     const { reason, rejectedBy = 'user' } = req.body;
 
@@ -164,9 +165,9 @@ router.post('/:id/reject', (req, res) => {
 });
 
 // POST /api/execution/:id/execute - Execute an approved trade
-router.post('/:id/execute', (req, res) => {
+router.post('/:id/execute', async (req, res) => {
   try {
-    const executor = getExecutor(req);
+    const executor = await getExecutor(req);
     const { id } = req.params;
     const { actualPrice, actualShares } = req.body;
 
@@ -188,9 +189,9 @@ router.post('/:id/execute', (req, res) => {
 });
 
 // POST /api/execution/portfolios/:id/approve-all - Approve all pending
-router.post('/portfolios/:id/approve-all', (req, res) => {
+router.post('/portfolios/:id/approve-all', async (req, res) => {
   try {
-    const executor = getExecutor(req);
+    const executor = await getExecutor(req);
     const { id } = req.params;
     const { approvedBy = 'user' } = req.body;
 
@@ -208,9 +209,9 @@ router.post('/portfolios/:id/approve-all', (req, res) => {
 });
 
 // POST /api/execution/portfolios/:id/reject-all - Reject all pending
-router.post('/portfolios/:id/reject-all', (req, res) => {
+router.post('/portfolios/:id/reject-all', async (req, res) => {
   try {
-    const executor = getExecutor(req);
+    const executor = await getExecutor(req);
     const { id } = req.params;
     const { reason = 'Batch rejection', rejectedBy = 'user' } = req.body;
 
@@ -232,9 +233,9 @@ router.post('/portfolios/:id/reject-all', (req, res) => {
 // ============================================
 
 // GET /api/execution/portfolios/:id/history - Get execution history
-router.get('/portfolios/:id/history', (req, res) => {
+router.get('/portfolios/:id/history', async (req, res) => {
   try {
-    const executor = getExecutor(req);
+    const executor = await getExecutor(req);
     const { id } = req.params;
     const { limit = 50 } = req.query;
 
@@ -253,9 +254,9 @@ router.get('/portfolios/:id/history', (req, res) => {
 });
 
 // GET /api/execution/portfolios/:id/stats - Get execution statistics
-router.get('/portfolios/:id/stats', (req, res) => {
+router.get('/portfolios/:id/stats', async (req, res) => {
   try {
-    const executor = getExecutor(req);
+    const executor = await getExecutor(req);
     const { id } = req.params;
 
     const stats = executor.getExecutionStats(parseInt(id));
@@ -276,9 +277,9 @@ router.get('/portfolios/:id/stats', (req, res) => {
 // ============================================
 
 // POST /api/execution/submit-recommendation - Submit a new trading recommendation
-router.post('/submit-recommendation', (req, res) => {
+router.post('/submit-recommendation', async (req, res) => {
   try {
-    const executor = getExecutor(req);
+    const executor = await getExecutor(req);
     const {
       portfolioId,
       symbol,
@@ -335,9 +336,9 @@ router.post('/submit-recommendation', (req, res) => {
 // ============================================
 
 // POST /api/execution/execute-all - Execute all approved trades
-router.post('/execute-all', (req, res) => {
+router.post('/execute-all', async (req, res) => {
   try {
-    const executor = getExecutor(req);
+    const executor = await getExecutor(req);
     const { portfolioId } = req.body;
 
     const result = executor.executeAllApproved(
@@ -356,9 +357,9 @@ router.post('/execute-all', (req, res) => {
 });
 
 // POST /api/execution/portfolios/:id/execute-all - Execute all approved for a portfolio
-router.post('/portfolios/:id/execute-all', (req, res) => {
+router.post('/portfolios/:id/execute-all', async (req, res) => {
   try {
-    const executor = getExecutor(req);
+    const executor = await getExecutor(req);
     const { id } = req.params;
 
     const result = executor.executeAllApproved(parseInt(id));
@@ -376,9 +377,9 @@ router.post('/portfolios/:id/execute-all', (req, res) => {
 });
 
 // GET /api/execution/approved - Get all approved executions awaiting execution
-router.get('/approved', (req, res) => {
+router.get('/approved', async (req, res) => {
   try {
-    const executor = getExecutor(req);
+    const executor = await getExecutor(req);
     const { portfolioId } = req.query;
 
     const approved = executor.getApprovedExecutions(
@@ -401,9 +402,9 @@ router.get('/approved', (req, res) => {
 // ============================================
 
 // POST /api/execution/expire-old - Expire old pending executions
-router.post('/expire-old', (req, res) => {
+router.post('/expire-old', async (req, res) => {
   try {
-    const executor = getExecutor(req);
+    const executor = await getExecutor(req);
 
     const result = executor.expireOldExecutions();
 

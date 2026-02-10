@@ -12,6 +12,7 @@
 
 const express = require('express');
 const router = express.Router();
+const { getDatabaseAsync } = require('../../database');
 const { requireAuth, optionalAuth } = require('../../middleware/auth');
 const { getSubscriptionService } = require('../../services/subscriptionService');
 const { isAdminRequest } = require('../../middleware/subscription');
@@ -72,7 +73,7 @@ router.get('/', requireAuth, async (req, res) => {
       });
     }
 
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const subscriptionService = getSubscriptionService(db);
 
     const subscription = await subscriptionService.getUserSubscription(req.user.id);
@@ -128,7 +129,7 @@ router.get('/', requireAuth, async (req, res) => {
  */
 router.get('/tiers', optionalAuth, async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const subscriptionService = getSubscriptionService(db);
 
     const tiers = await subscriptionService.getAllTiers();
@@ -201,7 +202,7 @@ router.post('/checkout', requireAuth, async (req, res) => {
       });
     }
 
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const subscriptionService = getSubscriptionService(db);
     const currentSub = await subscriptionService.getUserSubscription(req.user.id);
 
@@ -282,7 +283,7 @@ router.post('/portal', requireAuth, async (req, res) => {
   }
 
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const subscriptionService = getSubscriptionService(db);
     const subscription = await subscriptionService.getUserSubscription(req.user.id);
 
@@ -322,7 +323,7 @@ router.post('/cancel', requireAuth, async (req, res) => {
   try {
     const { reason, immediate = false } = req.body;
 
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const subscriptionService = getSubscriptionService(db);
     const subscription = await subscriptionService.getUserSubscription(req.user.id);
 
@@ -391,7 +392,7 @@ router.post('/webhook', async (req, res) => {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  const db = req.app.get('db');
+  const db = await getDatabaseAsync();
   const subscriptionService = getSubscriptionService(db);
 
   // Check idempotency

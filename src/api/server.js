@@ -334,6 +334,19 @@ if (passport) {
   app.use(passport.session());
 }
 
+// Bridge: attach real DB to app for routes that use req.app.get('db')
+// Required because app.set('db') was removed - routes get undefined otherwise
+const { getDatabaseAsync } = require('../lib/db');
+app.use(async (req, res, next) => {
+  try {
+    const database = await getDatabaseAsync();
+    app.set('db', database);
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Import routes
 const authRouter = require('./routes/auth');
 const companiesRouter = require('./routes/companies.js');

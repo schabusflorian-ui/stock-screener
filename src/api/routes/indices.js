@@ -5,6 +5,7 @@
 
 const express = require('express');
 const router = express.Router();
+const { getDatabaseAsync } = require('../../database');
 const indexService = require('../../services/indexService');
 const IndexPriceService = require('../../services/indexPriceService');
 
@@ -224,7 +225,7 @@ router.get('/benchmark', async (req, res) => {
  */
 router.get('/alpha/timeseries/:symbol', async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
     const { symbol } = req.params;
     const { period = '1y', rollingWindow } = req.query;
 

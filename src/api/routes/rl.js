@@ -3,11 +3,12 @@
 
 const express = require('express');
 const router = express.Router();
+const { getDatabaseAsync } = require('../../database');
 const { PythonMLClient } = require('../../services/ml/pythonMLClient');
 
-// Middleware to get ML client
-function getMLClient(req) {
-  const db = req.app.get('db');
+// Middleware to get ML client (async)
+async function getMLClient(req) {
+  const db = await getDatabaseAsync();
   return new PythonMLClient(db);
 }
 
@@ -17,7 +18,7 @@ function getMLClient(req) {
  */
 router.get('/status', async (req, res) => {
   try {
-    const client = getMLClient(req);
+    const client = await getMLClient(req);
     const models = await client.getAvailableRLModels();
 
     res.json({
@@ -87,7 +88,7 @@ router.post('/train', async (req, res) => {
       });
     }
 
-    const client = getMLClient(req);
+    const client = await getMLClient(req);
 
     // Note: Training can take a long time, consider using async job queue
     // For now, set a long timeout and return immediately with job ID
@@ -145,7 +146,7 @@ router.post('/train', async (req, res) => {
 router.post('/train/sync', async (req, res) => {
   try {
     const config = req.body;
-    const client = getMLClient(req);
+    const client = await getMLClient(req);
 
     // Set a long timeout for this request
     req.setTimeout(3600000); // 1 hour
@@ -182,7 +183,7 @@ router.post('/predict', async (req, res) => {
       deterministic = true
     } = req.body;
 
-    const client = getMLClient(req);
+    const client = await getMLClient(req);
     const result = await client.getRLPrediction({
       symbols,
       modelPath,
@@ -223,7 +224,7 @@ router.post('/backtest', async (req, res) => {
       endDate = null
     } = req.body;
 
-    const client = getMLClient(req);
+    const client = await getMLClient(req);
     const result = await client.backtestRLAgent({
       symbols,
       modelPath,
@@ -251,7 +252,7 @@ router.post('/backtest', async (req, res) => {
  */
 router.get('/models', async (req, res) => {
   try {
-    const client = getMLClient(req);
+    const client = await getMLClient(req);
     const models = await client.getAvailableRLModels();
 
     res.json({
@@ -274,7 +275,7 @@ router.get('/models', async (req, res) => {
 router.get('/models/:name', async (req, res) => {
   try {
     const { name } = req.params;
-    const client = getMLClient(req);
+    const client = await getMLClient(req);
 
     // Find model path
     const models = await client.getAvailableRLModels();
@@ -371,7 +372,7 @@ router.post('/compare', async (req, res) => {
       nEpisodes = 10
     } = req.body;
 
-    const client = getMLClient(req);
+    const client = await getMLClient(req);
 
     // Get RL results
     const rlResult = await client.backtestRLAgent({

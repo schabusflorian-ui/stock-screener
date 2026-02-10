@@ -12,13 +12,14 @@
 const express = require('express');
 const router = express.Router();
 const path = require('path');
+const { getDatabaseAsync } = require('../../database');
 
 // Lazy load TCA benchmark to avoid startup issues
 let TCABenchmark = null;
 let TCAMetricsCalculator = null;
 let TCA_THRESHOLDS = null;
 
-function loadTCAModule(db) {
+function loadTCAModule() {
   if (!TCABenchmark) {
     try {
       const tcaModule = require(path.join(__dirname, '../../../tests/benchmarks/transactionCostBenchmark'));
@@ -35,9 +36,8 @@ function loadTCAModule(db) {
 // Lazy load TCA Results Manager
 let resultsManager = null;
 
-function getResultsManager(req) {
-  // Get database from Express app
-  const db = req.app.get('db');
+async function getResultsManager(req) {
+  const db = await getDatabaseAsync();
   if (!db) {
     console.warn('TCA Results Manager not available: database not set on app');
     return null;
@@ -60,12 +60,13 @@ function getResultsManager(req) {
  */
 router.get('/benchmark', async (req, res) => {
   try {
-    const { TCABenchmark } = loadTCAModule(req.app.get('db'));
+    const db = await getDatabaseAsync();
+    const { TCABenchmark } = loadTCAModule();
     if (!TCABenchmark) {
       return res.status(500).json({ success: false, error: 'TCA module not available' });
     }
 
-    const benchmark = new TCABenchmark(req.app.get('db'), { verbose: false });
+    const benchmark = new TCABenchmark(db, { verbose: false });
     const results = await benchmark.runBenchmark();
 
     res.json({
@@ -91,18 +92,19 @@ router.get('/benchmark', async (req, res) => {
  */
 router.post('/benchmark', async (req, res) => {
   try {
-    const { TCABenchmark } = loadTCAModule(req.app.get('db'));
+    const db = await getDatabaseAsync();
+    const { TCABenchmark } = loadTCAModule();
     if (!TCABenchmark) {
       return res.status(500).json({ success: false, error: 'TCA module not available' });
     }
 
     const { runType = 'manual', notes } = req.body;
 
-    const benchmark = new TCABenchmark(req.app.get('db'), { verbose: false });
+    const benchmark = new TCABenchmark(db, { verbose: false });
     const results = await benchmark.runBenchmark();
 
     // Save results to history
-    const manager = getResultsManager(req);
+    const manager = await getResultsManager(req);
     let savedId = null;
     if (manager) {
       try {
@@ -137,7 +139,7 @@ router.post('/benchmark', async (req, res) => {
  */
 router.get('/thresholds', (req, res) => {
   try {
-    const { TCA_THRESHOLDS } = loadTCAModule(req.app.get('db'));
+    const { TCA_THRESHOLDS } = loadTCAModule();
     if (!TCA_THRESHOLDS) {
       return res.status(500).json({ success: false, error: 'TCA module not available' });
     }
@@ -157,7 +159,7 @@ router.get('/thresholds', (req, res) => {
  */
 router.get('/summary', async (req, res) => {
   try {
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
 
     // Get execution benchmarks if they exist
     let benchmarks = [];
@@ -236,7 +238,7 @@ router.get('/summary', async (req, res) => {
 router.get('/orders/:orderId', async (req, res) => {
   try {
     const { orderId } = req.params;
-    const db = req.app.get('db');
+    const db = await getDatabaseAsync();
 
     const order = await db.prepare(`
       SELECT ao.*, eb.*
@@ -299,7 +301,7 @@ router.get('/orders/:orderId', async (req, res) => {
  * POST /api/tca/analyze
  * Analyze a trade's execution quality
  */
-router.post('/analyze', (req, res) => {
+router.post('/analyze', async (req, res) => {
   try {
     const { symbol, side, shares, decisionPrice, executionPrice, executionDate } = req.body;
 
@@ -310,12 +312,13 @@ router.post('/analyze', (req, res) => {
       });
     }
 
-    const { TCAMetricsCalculator, TCA_THRESHOLDS } = loadTCAModule(req.app.get('db'));
+    const db = await getDatabaseAsync();
+    const { TCAMetricsCalculator, TCA_THRESHOLDS } = loadTCAModule();
     if (!TCAMetricsCalculator) {
       return res.status(500).json({ success: false, error: 'TCA module not available' });
     }
 
-    const calculator = new TCAMetricsCalculator(req.app.get('db'));
+    const calculator = new TCAMetricsCalculator(db);
 
     // Calculate all metrics
     const is = calculator.calculateImplementationShortfall(decisionPrice, executionPrice, side);
@@ -371,16 +374,17 @@ router.post('/analyze', (req, res) => {
  * GET /api/tca/liquidity/:symbol
  * Get liquidity tier and cost estimates for a symbol
  */
-router.get('/liquidity/:symbol', (req, res) => {
+router.get('/liquidity/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
-    const { TCAMetricsCalculator, TCA_THRESHOLDS } = loadTCAModule(req.app.get('db'));
+    const db = await getDatabaseAsync();
+    const { TCAMetricsCalculator, TCA_THRESHOLDS } = loadTCAModule();
 
     if (!TCAMetricsCalculator) {
       return res.status(500).json({ success: false, error: 'TCA module not available' });
     }
 
-    const calculator = new TCAMetricsCalculator(req.app.get('db'));
+    const calculator = new TCAMetricsCalculator(db);
 
     const tier = calculator.getLiquidityTier(symbol);
     const spread = calculator.calculateSpreadCost(symbol);
@@ -418,7 +422,7 @@ router.get('/liquidity/:symbol', (req, res) => {
  */
 router.get('/history', (req, res) => {
   try {
-    const manager = getResultsManager(req);
+    const manager = await getResultsManager(req);
     if (!manager) {
       return res.status(500).json({ success: false, error: 'TCA Results Manager not available' });
     }
@@ -445,7 +449,7 @@ router.get('/history', (req, res) => {
  */
 router.get('/history/latest', (req, res) => {
   try {
-    const manager = getResultsManager(req);
+    const manager = await getResultsManager(req);
     if (!manager) {
       return res.status(500).json({ success: false, error: 'TCA Results Manager not available' });
     }
@@ -476,7 +480,7 @@ router.get('/history/latest', (req, res) => {
  */
 router.get('/history/stats', (req, res) => {
   try {
-    const manager = getResultsManager(req);
+    const manager = await getResultsManager(req);
     if (!manager) {
       return res.status(500).json({ success: false, error: 'TCA Results Manager not available' });
     }
@@ -500,7 +504,7 @@ router.get('/history/stats', (req, res) => {
  */
 router.get('/history/trend', (req, res) => {
   try {
-    const manager = getResultsManager(req);
+    const manager = await getResultsManager(req);
     if (!manager) {
       return res.status(500).json({ success: false, error: 'TCA Results Manager not available' });
     }
@@ -528,7 +532,7 @@ router.get('/history/trend', (req, res) => {
  */
 router.get('/history/comparison', (req, res) => {
   try {
-    const manager = getResultsManager(req);
+    const manager = await getResultsManager(req);
     if (!manager) {
       return res.status(500).json({ success: false, error: 'TCA Results Manager not available' });
     }
@@ -554,7 +558,7 @@ router.get('/history/comparison', (req, res) => {
  */
 router.get('/history/range', (req, res) => {
   try {
-    const manager = getResultsManager(req);
+    const manager = await getResultsManager(req);
     if (!manager) {
       return res.status(500).json({ success: false, error: 'TCA Results Manager not available' });
     }

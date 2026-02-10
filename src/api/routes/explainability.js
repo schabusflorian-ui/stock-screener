@@ -3,11 +3,12 @@
 
 const express = require('express');
 const router = express.Router();
+const { getDatabaseAsync } = require('../../database');
 const { PythonMLClient } = require('../../services/ml/pythonMLClient');
 
-// Middleware to get ML client
-function getMLClient(req) {
-  const db = req.app.get('db');
+// Middleware to get ML client (async)
+async function getMLClient(req) {
+  const db = await getDatabaseAsync();
   return new PythonMLClient(db);
 }
 
@@ -17,7 +18,7 @@ function getMLClient(req) {
  */
 router.get('/status', async (req, res) => {
   try {
-    const client = getMLClient(req);
+    const client = await getMLClient(req);
     const availability = await client.checkShapAvailability();
 
     res.json({
@@ -80,7 +81,7 @@ router.post('/explain', async (req, res) => {
       });
     }
 
-    const client = getMLClient(req);
+    const client = await getMLClient(req);
     const result = await client.explainPrediction({
       modelType,
       features,
@@ -118,7 +119,7 @@ router.post('/feature-importance', async (req, res) => {
       nSamples = 200
     } = req.body;
 
-    const client = getMLClient(req);
+    const client = await getMLClient(req);
     const result = await client.getShapFeatureImportance({
       modelType,
       featureNames,
@@ -157,7 +158,7 @@ router.post('/summary', async (req, res) => {
       includeInteractions = true
     } = req.body;
 
-    const client = getMLClient(req);
+    const client = await getMLClient(req);
     const result = await client.getShapSummary({
       modelType,
       featureNames,
@@ -203,7 +204,7 @@ router.post('/stock/:symbol', async (req, res) => {
       });
     }
 
-    const client = getMLClient(req);
+    const client = await getMLClient(req);
     const result = await client.explainStockPrediction(symbol.toUpperCase(), {
       featureNames,
       featureValues
@@ -239,7 +240,7 @@ router.get('/stock/:symbol', async (req, res) => {
       });
     }
 
-    const client = getMLClient(req);
+    const client = await getMLClient(req);
     const result = await client.explainStockPrediction(symbol.toUpperCase(), {});
 
     if (result.success) {
@@ -331,7 +332,7 @@ router.post('/batch', async (req, res) => {
       });
     }
 
-    const client = getMLClient(req);
+    const client = await getMLClient(req);
     const results = [];
     const errors = [];
 
@@ -403,7 +404,7 @@ router.post('/compare', async (req, res) => {
       });
     }
 
-    const client = getMLClient(req);
+    const client = await getMLClient(req);
     const comparisons = {};
 
     for (const modelType of modelTypes) {

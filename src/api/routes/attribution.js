@@ -3,11 +3,12 @@
 
 const express = require('express');
 const router = express.Router();
+const { getDatabaseAsync } = require('../../database');
 const { PerformanceAttribution } = require('../../services/analytics/performanceAttribution');
 const { RegimeDetector, REGIMES, REGIME_DESCRIPTIONS } = require('../../services/trading/regimeDetector');
 
-// Helper to get database from request
-const getDb = (req) => req.app.get('db');
+// Helper to get database (async)
+const getDb = async () => await getDatabaseAsync();
 
 // ============================================
 // Market Regime Routes
@@ -19,7 +20,7 @@ const getDb = (req) => req.app.get('db');
  */
 router.get('/regime', async (req, res) => {
   try {
-    const db = getDb(req);
+    const db = await getDb();
     const detector = new RegimeDetector(db);
     const regime = await detector.detectRegime();
     res.json({ success: true, data: regime });
@@ -35,7 +36,7 @@ router.get('/regime', async (req, res) => {
  */
 router.get('/regime/history', async (req, res) => {
   try {
-    const db = getDb(req);
+    const db = await getDb();
     const { days = 30 } = req.query;
     const detector = new RegimeDetector(db);
     const history = await detector.getRegimeHistory(parseInt(days));
@@ -70,7 +71,7 @@ router.get('/regime/definitions', (req, res) => {
  */
 router.get('/portfolios/:id/summary', async (req, res) => {
   try {
-    const db = getDb(req);
+    const db = await getDb();
     const portfolioId = parseInt(req.params.id);
     const { period = '90d' } = req.query;
     const attribution = new PerformanceAttribution(db);
@@ -88,7 +89,7 @@ router.get('/portfolios/:id/summary', async (req, res) => {
  */
 router.get('/portfolios/:id/factors', async (req, res) => {
   try {
-    const db = getDb(req);
+    const db = await getDb();
     const portfolioId = parseInt(req.params.id);
     const { period = '90d' } = req.query;
     const attribution = new PerformanceAttribution(db);
@@ -106,7 +107,7 @@ router.get('/portfolios/:id/factors', async (req, res) => {
  */
 router.get('/portfolios/:id/regime', async (req, res) => {
   try {
-    const db = getDb(req);
+    const db = await getDb();
     const portfolioId = parseInt(req.params.id);
     const { period = '90d' } = req.query;
     const attribution = new PerformanceAttribution(db);
@@ -131,7 +132,7 @@ router.get('/portfolios/:id/regime', async (req, res) => {
  */
 router.get('/portfolios/:id/sector', async (req, res) => {
   try {
-    const db = getDb(req);
+    const db = await getDb();
     const portfolioId = parseInt(req.params.id);
     const { period = '90d' } = req.query;
     const attribution = new PerformanceAttribution(db);
@@ -156,7 +157,7 @@ router.get('/portfolios/:id/sector', async (req, res) => {
  */
 router.get('/trade/:transactionId', async (req, res) => {
   try {
-    const db = getDb(req);
+    const db = await getDb();
     const transactionId = parseInt(req.params.transactionId);
     const attribution = new PerformanceAttribution(db);
     const analysis = await attribution.analyzeTrade(transactionId);
@@ -181,7 +182,7 @@ router.get('/trade/:transactionId', async (req, res) => {
  */
 router.post('/portfolios/:id/analyze', async (req, res) => {
   try {
-    const db = getDb(req);
+    const db = await getDb();
     const portfolioId = parseInt(req.params.id);
     const { period = '90d' } = req.body;
 
@@ -241,7 +242,7 @@ router.post('/portfolios/:id/analyze', async (req, res) => {
  */
 router.get('/recommendations', async (req, res) => {
   try {
-    const db = getDb(req);
+    const db = await getDb();
     const { portfolioId, limit = 20, executed } = req.query;
 
     let query = `SELECT ar.*, c.symbol, c.name as company_name
@@ -276,7 +277,7 @@ router.get('/recommendations', async (req, res) => {
  */
 router.get('/recommendations/:id', async (req, res) => {
   try {
-    const db = getDb(req);
+    const db = await getDb();
     const id = parseInt(req.params.id);
     const rec = await db.prepare(`SELECT ar.*, c.symbol, c.name as company_name
       FROM agent_recommendations ar
@@ -300,7 +301,7 @@ router.get('/recommendations/:id', async (req, res) => {
  */
 router.get('/portfolios/:id/recommendation', (req, res) => {
   try {
-    const db = getDb(req);
+    const db = await getDb();
     const portfolioId = parseInt(req.params.id);
 
     const rec = db.prepare(`
@@ -333,7 +334,7 @@ router.get('/portfolios/:id/recommendation', (req, res) => {
  */
 router.get('/signals/:symbol', async (req, res) => {
   try {
-    const db = getDb(req);
+    const db = await getDb();
     const symbol = req.params.symbol.toUpperCase();
 
     // Get company
@@ -410,7 +411,7 @@ router.get('/signals/:symbol', async (req, res) => {
  */
 router.get('/portfolios/:id/signals', async (req, res) => {
   try {
-    const db = getDb(req);
+    const db = await getDb();
     const portfolioId = parseInt(req.params.id);
 
     // Default signal data
@@ -496,7 +497,7 @@ router.get('/portfolios/:id/signals', async (req, res) => {
  */
 router.get('/opportunities', async (req, res) => {
   try {
-    const db = getDb(req);
+    const db = await getDb();
     const { limit = 50, triggerType, minScore = 0 } = req.query;
 
     let query = `SELECT osr.*, c.symbol, c.name as company_name
@@ -531,7 +532,7 @@ router.get('/opportunities', async (req, res) => {
  */
 router.get('/portfolios/:id/risk-limits', (req, res) => {
   try {
-    const db = getDb(req);
+    const db = await getDb();
     const portfolioId = parseInt(req.params.id);
     let limits = db.prepare('SELECT * FROM portfolio_risk_limits WHERE portfolio_id = ?').get(portfolioId);
 
@@ -564,7 +565,7 @@ router.get('/portfolios/:id/risk-limits', (req, res) => {
  */
 router.put('/portfolios/:id/risk-limits', (req, res) => {
   try {
-    const db = getDb(req);
+    const db = await getDb();
     const portfolioId = parseInt(req.params.id);
     const limits = req.body;
 
