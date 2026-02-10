@@ -9,9 +9,11 @@ import './SourceBreakdownCards.css';
 
 // Sentiment gauge visualization
 const SentimentGauge = ({ score, size = 'normal' }) => {
-  const percentage = ((score + 1) / 2) * 100;
-  const isPositive = score > 0.05;
-  const isNegative = score < -0.05;
+  const n = Number(score);
+  if (isNaN(n)) return <div className={`sentiment-gauge ${size}`}><span>-</span></div>;
+  const percentage = ((n + 1) / 2) * 100;
+  const isPositive = n > 0.05;
+  const isNegative = n < -0.05;
   const color = isPositive ? 'var(--positive)' : isNegative ? 'var(--negative)' : 'var(--text-tertiary)';
 
   return (
@@ -24,7 +26,7 @@ const SentimentGauge = ({ score, size = 'normal' }) => {
         <div className="gauge-marker" style={{ left: '50%' }} />
       </div>
       <div className="gauge-value" style={{ color }}>
-        {score > 0 ? '+' : ''}{(score * 100).toFixed(0)}
+        {n > 0 ? '+' : ''}{(n * 100).toFixed(0)}
       </div>
     </div>
   );
@@ -62,9 +64,10 @@ const getSentimentLabel = (score) => {
 
 // Individual source card
 const SourceCard = ({ source, icon: Icon, data, color, colorScheme }) => {
-  const label = getSentimentLabel(data.avgSentiment || 0);
-  const isPositive = (data.avgSentiment || 0) > 0.05;
-  const isNegative = (data.avgSentiment || 0) < -0.05;
+  const avg = Number(data?.avgSentiment ?? 0);
+  const label = getSentimentLabel(avg);
+  const isPositive = avg > 0.05;
+  const isNegative = avg < -0.05;
 
   return (
     <div className="source-card">
@@ -77,22 +80,22 @@ const SourceCard = ({ source, icon: Icon, data, color, colorScheme }) => {
           size="small"
           className="source-icon-btn"
         />
-        <div className="source-name">{source}</div>
+        <div className="source-name">{typeof source === 'string' ? source : String(source ?? '')}</div>
       </div>
 
       <div className="source-score">
         <span className={`score-value ${isPositive ? 'positive' : isNegative ? 'negative' : ''}`}>
-          {(data.avgSentiment || 0) > 0 ? '+' : ''}{((data.avgSentiment || 0) * 100).toFixed(0)}
+          {!isNaN(avg) ? (avg > 0 ? '+' : '') + (avg * 100).toFixed(0) : '-'}
         </span>
         <span className="score-label">{label}</span>
       </div>
 
-      <SentimentGauge score={data.avgSentiment || 0} size="small" />
+      <SentimentGauge score={avg} size="small" />
 
       <div className="source-stats">
         <div className="stat">
           <span className="stat-value">
-            {(data.postCount || data.messageCount || data.articleCount || 0).toLocaleString()}
+            {Number(data?.postCount ?? data?.messageCount ?? data?.articleCount ?? 0).toLocaleString()}
           </span>
           <span className="stat-label">
             {data.postCount !== undefined ? 'posts' : data.messageCount !== undefined ? 'msgs' : 'articles'}

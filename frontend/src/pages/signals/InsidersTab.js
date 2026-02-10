@@ -34,9 +34,10 @@ const SignalBadge = ({ signal, score }) => {
     neutral: 'signal-neutral'
   }[signal] || 'signal-neutral';
 
+  const displayScore = score != null && typeof score !== 'object' ? ` (${Number(score)})` : '';
   return (
     <span className={`signal-badge ${signalClass}`}>
-      {signal?.toUpperCase()} {score ? `(${score})` : ''}
+      {typeof signal === 'string' ? signal.toUpperCase() : String(signal ?? '')}{displayScore}
     </span>
   );
 };
@@ -82,17 +83,17 @@ const TopBuyingRow = memo(function TopBuyingRow({ company, priceData, formatCurr
       </td>
       <td className="company-name">{company.company_name}</td>
       <td className="price-cell">
-        {price?.last_price ? `$${price.last_price.toFixed(2)}` : '-'}
+        {price?.last_price != null && !isNaN(Number(price.last_price)) ? `$${Number(price.last_price).toFixed(2)}` : '-'}
       </td>
-      <td className={`change-cell ${price?.change_1m > 0 ? 'positive' : price?.change_1m < 0 ? 'negative' : ''}`}>
-        {price?.change_1m != null ? `${price.change_1m > 0 ? '+' : ''}${price.change_1m.toFixed(1)}%` : '-'}
+      <td className={`change-cell ${Number(price?.change_1m) > 0 ? 'positive' : Number(price?.change_1m) < 0 ? 'negative' : ''}`}>
+        {price?.change_1m != null && !isNaN(Number(price.change_1m)) ? `${Number(price.change_1m) > 0 ? '+' : ''}${Number(price.change_1m).toFixed(1)}%` : '-'}
       </td>
       <td>
         <SignalBadge signal={company.insider_signal} score={company.signal_score} />
       </td>
       <td className="positive">{formatCurrency(company.buy_value)}</td>
       <td>{company.unique_buyers || 0}</td>
-      <td className={company.net_value >= 0 ? 'positive' : 'negative'}>
+      <td className={Number(company.net_value) >= 0 ? 'positive' : 'negative'}>
         {formatCurrency(company.net_value)}
       </td>
       <td>
@@ -130,13 +131,15 @@ function InsidersTab() {
   const fmt = useFormatters();
 
   const formatCurrency = (value) => {
-    if (!value || isNaN(value)) return '-';
-    return fmt.currency(value, { compact: true });
+    const n = Number(value);
+    if (value == null || value === '' || isNaN(n)) return '-';
+    return fmt.currency(n, { compact: true });
   };
 
   const formatNumber = (value) => {
-    if (!value || isNaN(value)) return '-';
-    return fmt.number(value, { compact: false });
+    const n = Number(value);
+    if (value == null || value === '' || isNaN(n)) return '-';
+    return fmt.number(n, { compact: false });
   };
 
   const formatDate = (dateStr) => {

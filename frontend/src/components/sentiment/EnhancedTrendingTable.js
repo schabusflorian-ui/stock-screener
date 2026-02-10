@@ -23,33 +23,38 @@ import './EnhancedTrendingTable.css';
 
 // Sentiment badge with color
 const SentimentBadge = ({ score, size = 'normal' }) => {
+  const n = Number(score);
+  if (isNaN(n)) return <span className={`sentiment-badge ${size}`}>-</span>;
+
   const getClass = () => {
-    if (score > 0.2) return 'very-bullish';
-    if (score > 0.05) return 'bullish';
-    if (score < -0.2) return 'very-bearish';
-    if (score < -0.05) return 'bearish';
+    if (n > 0.2) return 'very-bullish';
+    if (n > 0.05) return 'bullish';
+    if (n < -0.2) return 'very-bearish';
+    if (n < -0.05) return 'bearish';
     return 'neutral';
   };
 
   return (
     <span className={`sentiment-badge ${getClass()} ${size}`}>
-      {score > 0 ? '+' : ''}{(score * 100).toFixed(0)}
+      {n > 0 ? '+' : ''}{(n * 100).toFixed(0)}
     </span>
   );
 };
 
 // Mini sentiment indicator for source columns
 const MiniSentiment = ({ score, count, icon: Icon, tooltip }) => {
+  const n = Number(score);
   if (!count || count === 0) {
     return <span className="mini-sentiment empty">-</span>;
   }
+  if (isNaN(n)) return <span className="mini-sentiment empty">-</span>;
 
-  const color = score > 0.05 ? 'var(--positive)' : score < -0.05 ? 'var(--negative)' : 'var(--text-tertiary)';
+  const color = n > 0.05 ? 'var(--positive)' : n < -0.05 ? 'var(--negative)' : 'var(--text-tertiary)';
 
   return (
     <span className="mini-sentiment" title={tooltip} style={{ color }}>
       <Icon size={12} />
-      <span className="mini-value">{score > 0 ? '+' : ''}{(score * 100).toFixed(0)}</span>
+      <span className="mini-value">{n > 0 ? '+' : ''}{(n * 100).toFixed(0)}</span>
       <span className="mini-count">({count})</span>
     </span>
   );
@@ -57,15 +62,16 @@ const MiniSentiment = ({ score, count, icon: Icon, tooltip }) => {
 
 // Momentum indicator
 const MomentumIndicator = ({ momentum }) => {
-  if (!momentum || Math.abs(momentum) < 0.01) {
+  const n = Number(momentum);
+  if (isNaN(n) || Math.abs(n) < 0.01) {
     return <Minus size={14} className="momentum-icon neutral" />;
   }
 
-  if (momentum > 0) {
+  if (n > 0) {
     return (
       <span className="momentum positive">
         <ArrowUp size={14} />
-        <span>{(momentum * 100).toFixed(0)}</span>
+        <span>{(n * 100).toFixed(0)}</span>
       </span>
     );
   }
@@ -73,7 +79,7 @@ const MomentumIndicator = ({ momentum }) => {
   return (
     <span className="momentum negative">
       <ArrowDown size={14} />
-      <span>{Math.abs(momentum * 100).toFixed(0)}</span>
+      <span>{Math.abs(n * 100).toFixed(0)}</span>
     </span>
   );
 };
@@ -84,19 +90,21 @@ const AnalystSignal = ({ analyst }) => {
     return <span className="analyst-signal empty">-</span>;
   }
 
-  const { buyPercent, upsidePotential } = analyst;
+  const buyPct = Number(analyst?.buyPercent);
+  const upside = Number(analyst?.upsidePotential);
 
   const getColor = () => {
-    if (buyPercent >= 80) return 'var(--positive)';
-    if (buyPercent >= 60) return 'var(--accent)';
-    if (buyPercent <= 30) return 'var(--negative)';
+    if (isNaN(buyPct)) return 'var(--text-secondary)';
+    if (buyPct >= 80) return 'var(--positive)';
+    if (buyPct >= 60) return 'var(--accent)';
+    if (buyPct <= 30) return 'var(--negative)';
     return 'var(--text-secondary)';
   };
 
   return (
-    <span className="analyst-signal" style={{ color: getColor() }} title={`${buyPercent?.toFixed(0)}% buy rating`}>
+    <span className="analyst-signal" style={{ color: getColor() }} title={!isNaN(buyPct) ? `${buyPct.toFixed(0)}% buy rating` : ''}>
       <Target size={12} />
-      {upsidePotential > 0 && <span>+{upsidePotential.toFixed(0)}%</span>}
+      {!isNaN(upside) && upside > 0 && <span>+{upside.toFixed(0)}%</span>}
     </span>
   );
 };

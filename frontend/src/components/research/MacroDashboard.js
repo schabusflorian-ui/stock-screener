@@ -115,24 +115,25 @@ function IndicatorTooltip({ indicator }) {
   );
 }
 
-// Format large numbers
+// Format large numbers (coerce to number - PostgreSQL may return numerics as strings)
 function formatValue(value, category) {
-  if (value === null || value === undefined) return '-';
+  const n = Number(value);
+  if (value == null || value === '' || isNaN(n)) return '-';
 
   // Large numbers (money supply, GDP, etc)
-  if (Math.abs(value) >= 1000000) {
-    return `${(value / 1000000).toFixed(2)}M`;
+  if (Math.abs(n) >= 1000000) {
+    return `${(n / 1000000).toFixed(2)}M`;
   }
-  if (Math.abs(value) >= 1000) {
-    return `${(value / 1000).toFixed(1)}K`;
+  if (Math.abs(n) >= 1000) {
+    return `${(n / 1000).toFixed(1)}K`;
   }
 
   // Percentages and rates
   if (category === 'rates' || category === 'inflation') {
-    return `${value.toFixed(2)}%`;
+    return `${n.toFixed(2)}%`;
   }
 
-  return value.toFixed(2);
+  return n.toFixed(2);
 }
 
 export default function MacroDashboard() {
@@ -296,7 +297,7 @@ export default function MacroDashboard() {
                     <IndicatorTooltip indicator="fedFunds" />
                   </span>
                   <span className="metric-value">
-                    {keyMetrics?.rates?.fedFunds?.toFixed(2) ?? '-'}%
+                    {formatValue(keyMetrics?.rates?.fedFunds, 'rates')}
                   </span>
                 </div>
                 <div className="metric-item">
@@ -305,7 +306,7 @@ export default function MacroDashboard() {
                     <IndicatorTooltip indicator="treasury2y" />
                   </span>
                   <span className="metric-value">
-                    {keyMetrics?.rates?.treasury2y?.toFixed(2) ?? '-'}%
+                    {formatValue(keyMetrics?.rates?.treasury2y, 'rates')}
                   </span>
                 </div>
                 <div className="metric-item">
@@ -314,7 +315,7 @@ export default function MacroDashboard() {
                     <IndicatorTooltip indicator="treasury10y" />
                   </span>
                   <span className="metric-value">
-                    {keyMetrics?.rates?.treasury10y?.toFixed(2) ?? '-'}%
+                    {formatValue(keyMetrics?.rates?.treasury10y, 'rates')}
                   </span>
                 </div>
                 <div className="metric-item highlight">
@@ -323,7 +324,7 @@ export default function MacroDashboard() {
                     <IndicatorTooltip indicator="spread2s10s" />
                   </span>
                   <span className={`metric-value ${(keyMetrics?.rates?.spread2s10s ?? 0) < 0 ? 'negative' : 'positive'}`}>
-                    {keyMetrics?.rates?.spread2s10s?.toFixed(2) ?? '-'}%
+                    {formatValue(keyMetrics?.rates?.spread2s10s, 'rates')}
                     {keyMetrics?.rates?.curveInverted && (
                       <span className="inverted-badge">INVERTED</span>
                     )}
@@ -345,7 +346,7 @@ export default function MacroDashboard() {
               vix1dChange: keyMetrics?.volatility?.vix1dChange,
               vix5dAvg: keyMetrics?.volatility?.vix5dAvg
             },
-            interpretation: `VIX at ${keyMetrics?.volatility?.vix?.toFixed(1)} indicates ${volatility.level} volatility`
+            interpretation: `VIX at ${formatValue(keyMetrics?.volatility?.vix)} indicates ${volatility.level} volatility`
           }}>
             <div className="metric-card volatility" data-ask-ai="true">
               <div className="metric-header">
@@ -359,7 +360,7 @@ export default function MacroDashboard() {
                     <IndicatorTooltip indicator="vix" />
                   </span>
                   <span className="metric-value" style={{ color: volatility.color }}>
-                    {keyMetrics?.volatility?.vix?.toFixed(1) ?? '-'}
+                    {formatValue(keyMetrics?.volatility?.vix)}
                   </span>
                 </div>
                 <div className="metric-item">
@@ -398,7 +399,7 @@ export default function MacroDashboard() {
               hySpread: keyMetrics?.credit?.hySpread,
               stressLevel: credit.level
             },
-            interpretation: `High-yield spread at ${keyMetrics?.credit?.hySpread?.toFixed(2)}% indicates ${credit.level} credit stress`
+            interpretation: `High-yield spread at ${formatValue(keyMetrics?.credit?.hySpread, 'rates')} indicates ${credit.level} credit stress`
           }}>
             <div className="metric-card credit" data-ask-ai="true">
               <div className="metric-header">
@@ -412,7 +413,7 @@ export default function MacroDashboard() {
                     <IndicatorTooltip indicator="hySpread" />
                   </span>
                   <span className="metric-value" style={{ color: credit.color }}>
-                    {keyMetrics?.credit?.hySpread?.toFixed(2) ?? '-'}%
+                    {formatValue(keyMetrics?.credit?.hySpread, 'rates')}
                   </span>
                 </div>
                 <div className="metric-item">
@@ -449,7 +450,7 @@ export default function MacroDashboard() {
                     <IndicatorTooltip indicator="unemployment" />
                   </span>
                   <span className="metric-value">
-                    {keyMetrics?.economy?.unemployment?.toFixed(1) ?? '-'}%
+                    {formatValue(keyMetrics?.economy?.unemployment, 'rates')}
                   </span>
                 </div>
               </div>
@@ -506,7 +507,7 @@ export default function MacroDashboard() {
                         borderRadius: '8px',
                         fontSize: '12px'
                       }}
-                      formatter={(value) => [`${value?.toFixed(2)}%`, 'Yield']}
+                      formatter={(value) => [value != null && !isNaN(Number(value)) ? `${Number(value).toFixed(2)}%` : '-', 'Yield']}
                     />
                     <Area
                       type="monotone"
@@ -565,7 +566,7 @@ export default function MacroDashboard() {
                         borderRadius: '8px',
                         fontSize: '12px'
                       }}
-                      formatter={(value) => [`${value?.toFixed(2)}%`, '2s10s Spread']}
+                      formatter={(value) => [value != null && !isNaN(Number(value)) ? `${Number(value).toFixed(2)}%` : '-', '2s10s Spread']}
                       labelFormatter={(label) => new Date(label).toLocaleDateString()}
                     />
                     <ReferenceLine y={0} stroke="var(--negative)" strokeDasharray="5 5" />
@@ -600,7 +601,7 @@ export default function MacroDashboard() {
             avg: vixHistory.reduce((sum, v) => sum + v.value, 0) / vixHistory.length
           } : undefined,
           periodDays: vixHistory?.length,
-          interpretation: `VIX at ${vixHistory?.[vixHistory.length - 1]?.value?.toFixed(1)}. Levels: <20 = low volatility, 20-30 = elevated, >30 = high fear`
+          interpretation: `VIX at ${formatValue(vixHistory?.[vixHistory.length - 1]?.value)}. Levels: <20 = low volatility, 20-30 = elevated, >30 = high fear`
         }}>
           <div className="macro-section chart-section" data-ask-ai="true">
             <h3>VIX History</h3>
@@ -637,7 +638,7 @@ export default function MacroDashboard() {
                         borderRadius: '8px',
                         fontSize: '12px'
                       }}
-                      formatter={(value) => [value?.toFixed(2), 'VIX']}
+                      formatter={(value) => [value != null && !isNaN(Number(value)) ? Number(value).toFixed(2) : '-', 'VIX']}
                       labelFormatter={(label) => new Date(label).toLocaleDateString()}
                     />
                     <ReferenceLine y={20} stroke="var(--warning)" strokeDasharray="3 3" label={{ value: '20', position: 'right', fontSize: 10 }} />
@@ -670,7 +671,7 @@ export default function MacroDashboard() {
             avg: creditHistory.reduce((sum, v) => sum + v.value, 0) / creditHistory.length
           } : undefined,
           periodDays: creditHistory?.length,
-          interpretation: `HY spread at ${creditHistory?.[creditHistory.length - 1]?.value?.toFixed(2)}%. Levels: <4% = calm, 4-7% = elevated stress, >7% = high stress/crisis`
+          interpretation: `HY spread at ${formatValue(creditHistory?.[creditHistory.length - 1]?.value, 'rates')}. Levels: <4% = calm, 4-7% = elevated stress, >7% = high stress/crisis`
         }}>
           <div className="macro-section chart-section" data-ask-ai="true">
             <h3>High-Yield Spread History</h3>
@@ -708,7 +709,7 @@ export default function MacroDashboard() {
                         borderRadius: '8px',
                         fontSize: '12px'
                       }}
-                      formatter={(value) => [`${value?.toFixed(2)}%`, 'HY Spread']}
+                      formatter={(value) => [value != null && !isNaN(Number(value)) ? `${Number(value).toFixed(2)}%` : '-', 'HY Spread']}
                       labelFormatter={(label) => new Date(label).toLocaleDateString()}
                     />
                     <ReferenceLine y={4} stroke="var(--warning)" strokeDasharray="3 3" label={{ value: '4%', position: 'right', fontSize: 10 }} />
@@ -750,7 +751,7 @@ export default function MacroDashboard() {
                   type="number"
                   stroke="var(--text-tertiary)"
                   fontSize={11}
-                  tickFormatter={v => `${v > 0 ? '+' : ''}${v.toFixed(1)}%`}
+                  tickFormatter={v => v != null && !isNaN(Number(v)) ? `${Number(v) > 0 ? '+' : ''}${Number(v).toFixed(1)}%` : '-'}
                 />
                 <YAxis
                   type="category"
@@ -767,7 +768,7 @@ export default function MacroDashboard() {
                     borderRadius: '8px',
                     fontSize: '12px'
                   }}
-                  formatter={(value) => [`${value > 0 ? '+' : ''}${value?.toFixed(2)}%`, '1M Change']}
+                  formatter={(value) => [value != null && !isNaN(Number(value)) ? `${Number(value) > 0 ? '+' : ''}${Number(value).toFixed(2)}%` : '-', '1M Change']}
                 />
                 <Bar dataKey="change" radius={[0, 4, 4, 0]}>
                   {indicatorChartData.map((entry, index) => (
@@ -831,13 +832,13 @@ export default function MacroDashboard() {
                   {ind.change_1m !== null && (
                     <span className={`ind-change ${ind.change_1m >= 0 ? 'positive' : 'negative'}`}>
                       {ind.change_1m >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-                      {Math.abs(ind.change_1m).toFixed(2)}% 1M
+                      {formatValue(Math.abs(Number(ind.change_1m)), 'rates')} 1M
                     </span>
                   )}
                   {ind.change_1y !== null && (
                     <span className={`ind-change ${ind.change_1y >= 0 ? 'positive' : 'negative'}`}>
                       {ind.change_1y >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-                      {Math.abs(ind.change_1y).toFixed(2)}% 1Y
+                      {formatValue(Math.abs(Number(ind.change_1y)), 'rates')} 1Y
                     </span>
                   )}
                 </div>
