@@ -782,40 +782,43 @@ class IPOTracker {
    * Get IPO by LEI (Legal Entity Identifier)
    * Used for EU/UK companies
    */
-  getIPOByLEI(lei) {
+  async getIPOByLEI(lei) {
     if (!lei) return null;
-    return this.db.prepare(`
+    const stmt = await this.db.prepare(`
       SELECT * FROM ipo_tracker
       WHERE lei = ? AND region IN ('EU', 'UK')
-    `).get(lei);
+    `);
+    return await stmt.get(lei);
   }
 
   /**
    * Get IPO by ISIN
    */
-  getIPOByISIN(isin) {
+  async getIPOByISIN(isin) {
     if (!isin) return null;
-    return this.db.prepare(`
+    const stmt = await this.db.prepare(`
       SELECT * FROM ipo_tracker WHERE isin = ?
-    `).get(isin);
+    `);
+    return await stmt.get(isin);
   }
 
   /**
    * Get IPO by prospectus ID
    */
-  getIPOByProspectusId(prospectusId) {
+  async getIPOByProspectusId(prospectusId) {
     if (!prospectusId) return null;
-    return this.db.prepare(`
+    const stmt = await this.db.prepare(`
       SELECT * FROM ipo_tracker WHERE prospectus_id = ?
-    `).get(prospectusId);
+    `);
+    return await stmt.get(prospectusId);
   }
 
   /**
    * Create EU/UK IPO record from prospectus data
    * Automatically creates company entry if status is TRADING
    */
-  createEUIPO(data) {
-    const stmt = this.db.prepare(`
+  async createEUIPO(data) {
+    const stmt = await this.db.prepare(`
       INSERT INTO ipo_tracker (
         company_name, lei, isin, region, regulator,
         prospectus_id, prospectus_url, home_member_state,
@@ -831,7 +834,7 @@ class IPOTracker {
 
     const status = data.status || 'EFFECTIVE';
 
-    const result = stmt.run({
+    const result = await stmt.run({
       company_name: data.company_name,
       lei: data.lei || null,
       isin: data.isin || null,
@@ -850,21 +853,21 @@ class IPOTracker {
       ticker_final: data.ticker_final || data.ticker || null,
     });
 
-    const ipo = this.getIPO(result.lastInsertRowid);
+    const ipo = await this.getIPO(result.lastInsertRowid);
 
     // Auto-create company if IPO is already trading
     if (status === 'TRADING' && ipo && !ipo.company_id) {
-      this.ensureCompanyExists(ipo);
+      await this.ensureCompanyExists(ipo);
     }
 
-    return this.getIPO(result.lastInsertRowid);
+    return await this.getIPO(result.lastInsertRowid);
   }
 
   /**
    * Update EU/UK IPO with resolved identifiers
    * Called after LEI resolution finds ticker/exchange
    */
-  updateEUIPOIdentifiers(ipoId, identifiers) {
+  async updateEUIPOIdentifiers(ipoId, identifiers) {
     const updates = {};
 
     if (identifiers.ticker) {
@@ -873,7 +876,8 @@ class IPOTracker {
     if (identifiers.exchange) {
       updates.exchange_proposed = identifiers.exchange;
     }
-    if (identifiers.isin && !this.getIPO(ipoId)?.isin) {
+    const ipo = await this.getIPO(ipoId);
+    if (identifiers.isin && !ipo?.isin) {
       updates.isin = identifiers.isin;
     }
     if (identifiers.company_id) {
@@ -882,11 +886,11 @@ class IPOTracker {
 
     if (Object.keys(updates).length > 0) {
       updates.updated_at = new Date().toISOString();
-      this.updateIPO(ipoId, updates);
+      await this.updateIPO(ipoId, updates);
       console.log(`  Updated EU/UK IPO ${ipoId}: ${Object.keys(updates).join(', ')}`);
     }
 
-    return this.getIPO(ipoId);
+    return await this.getIPO(ipoId);
   }
 
   /**
@@ -894,20 +898,21 @@ class IPOTracker {
    * Uses company_identifiers table if available
    */
   async linkEUIPOToCompany(ipoId) {
-    const ipo = this.getIPO(ipoId);
+    const ipo = await this.getIPO(ipoId);
     if (!ipo || !ipo.lei) return null;
 
     // Check if company already linked
     if (ipo.company_id) return ipo.company_id;
 
     // Look up company by LEI in company_identifiers
-    const identifier = this.db.prepare(`
+    const stmt = await this.db.prepare(`
       SELECT company_id FROM company_identifiers
       WHERE identifier_type = 'lei' AND identifier_value = ?
-    `).get(ipo.lei);
+    `);
+    const identifier = await stmt.get(ipo.lei);
 
     if (identifier?.company_id) {
-      this.updateIPO(ipoId, {
+      await this.updateIPO(ipoId, {
         company_id: identifier.company_id,
         updated_at: new Date().toISOString(),
       });
@@ -925,8 +930,8 @@ class IPOTracker {
   /**
    * Create new IPO record
    */
-  createIPO(data) {
-    const stmt = this.db.prepare(`
+  async createIPO(data) {
+    const stmt = await this.db.prepare(`
       INSERT INTO ipo_tracker (
         cik, company_name, ticker_proposed, initial_s1_date,
         exchange_proposed, industry, sector, business_description,
@@ -942,7 +947,7 @@ class IPOTracker {
       )
     `);
 
-    const result = stmt.run({
+    const result = await stmt.run({
       cik: data.cik,
       company_name: data.company_name,
       ticker_proposed: data.ticker_proposed || null,
@@ -962,14 +967,14 @@ class IPOTracker {
       status: data.status || 'S1_FILED'
     });
 
-    return this.getIPO(result.lastInsertRowid);
+    return await this.getIPO(result.lastInsertRowid);
   }
 
   /**
    * Update IPO record
    * Automatically creates company entry when status changes to TRADING
    */
-  updateIPO(ipoId, updates) {
+  async updateIPO(ipoId, updates) {
     const fields = [];
     const values = [];
 
@@ -982,15 +987,16 @@ class IPOTracker {
 
     values.push(ipoId);
 
-    this.db.prepare(`
+    const stmt = await this.db.prepare(`
       UPDATE ipo_tracker SET ${fields.join(', ')} WHERE id = ?
-    `).run(...values);
+    `);
+    await stmt.run(...values);
 
     // Auto-create company when IPO moves to TRADING status
     if (updates.status === 'TRADING') {
-      const ipo = this.getIPO(ipoId);
+      const ipo = await this.getIPO(ipoId);
       if (ipo && !ipo.company_id) {
-        this.ensureCompanyExists(ipo);
+        await this.ensureCompanyExists(ipo);
       }
     }
   }
@@ -1000,7 +1006,7 @@ class IPOTracker {
    * Called automatically when IPO status changes to TRADING
    * Handles US (ticker-based) and EU/UK (ISIN-based) IPOs
    */
-  ensureCompanyExists(ipo) {
+  async ensureCompanyExists(ipo) {
     // Try to determine a ticker/symbol
     let ticker = ipo.ticker_final || ipo.ticker_proposed;
 
@@ -1022,20 +1028,23 @@ class IPOTracker {
 
     try {
       // Check if company already exists by ticker
-      let existing = this.db.prepare(`
+      let tickerStmt = await this.db.prepare(`
         SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
-      `).get(ticker);
+      `);
+      let existing = await tickerStmt.get(ticker);
 
       // Also try ISIN lookup for EU/UK IPOs
       if (!existing && ipo.isin) {
-        existing = this.db.prepare(`
+        const isinStmt = await this.db.prepare(`
           SELECT id FROM companies WHERE isin = ?
-        `).get(ipo.isin);
+        `);
+        existing = await isinStmt.get(ipo.isin);
       }
 
       if (existing) {
         // Link to existing company
-        this.db.prepare('UPDATE ipo_tracker SET company_id = ? WHERE id = ?').run(existing.id, ipo.id);
+        const linkStmt = await this.db.prepare('UPDATE ipo_tracker SET company_id = ? WHERE id = ?');
+        await linkStmt.run(existing.id, ipo.id);
         console.log(`  Linked IPO ${ipo.company_name} to existing company (id: ${existing.id})`);
         return existing.id;
       }
@@ -1047,10 +1056,11 @@ class IPOTracker {
         ipo.home_member_state ||
         (ipo.isin ? ipo.isin.substring(0, 2) : 'XX');
 
-      const result = this.db.prepare(`
+      const insertStmt = await this.db.prepare(`
         INSERT INTO companies (symbol, name, sector, industry, exchange, country, is_active, cik, isin)
         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
-      `).run(
+      `);
+      const result = await insertStmt.run(
         ticker,
         ipo.company_name,
         ipo.sector || null,
@@ -1062,7 +1072,8 @@ class IPOTracker {
       );
 
       const companyId = result.lastInsertRowid;
-      this.db.prepare('UPDATE ipo_tracker SET company_id = ? WHERE id = ?').run(companyId, ipo.id);
+      const updateStmt = await this.db.prepare('UPDATE ipo_tracker SET company_id = ? WHERE id = ?');
+      await updateStmt.run(companyId, ipo.id);
       console.log(`  Created company ${ticker} (id: ${companyId}) for IPO ${ipo.company_name}`);
       return companyId;
     } catch (error) {
@@ -1074,27 +1085,29 @@ class IPOTracker {
   /**
    * Get IPO by ID
    */
-  getIPO(ipoId) {
-    return this.db.prepare('SELECT * FROM ipo_tracker WHERE id = ?').get(ipoId);
+  async getIPO(ipoId) {
+    const stmt = await this.db.prepare('SELECT * FROM ipo_tracker WHERE id = ?');
+    return await stmt.get(ipoId);
   }
 
   /**
    * Get IPO by CIK
    */
-  getIPOByCIK(cik) {
+  async getIPOByCIK(cik) {
     // Normalize CIK (remove leading zeros for comparison)
     const normalizedCik = cik.toString().replace(/^0+/, '');
-    return this.db.prepare(`
+    const stmt = await this.db.prepare(`
       SELECT * FROM ipo_tracker
       WHERE CAST(cik AS TEXT) = ? OR CAST(cik AS TEXT) = ?
-    `).get(normalizedCik, cik);
+    `);
+    return await stmt.get(normalizedCik, cik);
   }
 
   /**
    * Create IPO filing record
    */
-  createIPOFiling(data) {
-    const stmt = this.db.prepare(`
+  async createIPOFiling(data) {
+    const stmt = await this.db.prepare(`
       INSERT OR IGNORE INTO ipo_filings (
         ipo_id, form_type, accession_number, filing_date, filing_url,
         price_range_low, price_range_high, final_price, shares_offered,
@@ -1106,7 +1119,7 @@ class IPOTracker {
       )
     `);
 
-    return stmt.run({
+    return await stmt.run({
       ipo_id: data.ipo_id,
       form_type: data.form_type,
       accession_number: data.accession_number,
@@ -1124,20 +1137,22 @@ class IPOTracker {
   /**
    * Get filing by accession number
    */
-  getFilingByAccession(accessionNumber) {
-    return this.db.prepare(`
+  async getFilingByAccession(accessionNumber) {
+    const stmt = await this.db.prepare(`
       SELECT * FROM ipo_filings WHERE accession_number = ?
-    `).get(accessionNumber);
+    `);
+    return await stmt.get(accessionNumber);
   }
 
   /**
    * Log check activity
    */
-  logCheck(checkType, newFound, updatesFound, errorMessage = null, durationMs = null) {
-    this.db.prepare(`
+  async logCheck(checkType, newFound, updatesFound, errorMessage = null, durationMs = null) {
+    const stmt = await this.db.prepare(`
       INSERT INTO ipo_check_log (check_type, new_filings_found, updates_found, error_message, duration_ms)
       VALUES (?, ?, ?, ?, ?)
-    `).run(checkType, newFound, updatesFound, errorMessage, durationMs);
+    `);
+    await stmt.run(checkType, newFound, updatesFound, errorMessage, durationMs);
   }
 
   // ============================================
@@ -1154,7 +1169,7 @@ class IPOTracker {
    * @param {string} options.sortOrder - 'ASC' or 'DESC'
    * @param {number} options.limit - Max results
    */
-  getPipeline(options = {}) {
+  async getPipeline(options = {}) {
     const { region = 'all', status, sector, sortBy = 'initial_s1_date', sortOrder = 'DESC', limit, includeNeedsReview = false } = options;
 
     let sql = `
@@ -1202,7 +1217,8 @@ class IPOTracker {
       params.push(limit);
     }
 
-    return this.db.prepare(sql).all(...params);
+    const stmt = await this.db.prepare(sql);
+    return await stmt.all(...params);
   }
 
   /**
@@ -1210,7 +1226,7 @@ class IPOTracker {
    * @param {string} region - Filter by region: 'US', 'EU', 'UK', or 'all'
    * @param {boolean} includeNeedsReview - Include entries that need manual review
    */
-  getByStage(region = 'all', includeNeedsReview = false) {
+  async getByStage(region = 'all', includeNeedsReview = false) {
     const stages = {};
 
     for (const status of Object.keys(IPO_STAGES)) {
@@ -1232,7 +1248,8 @@ class IPOTracker {
 
       query += ' ORDER BY COALESCE(initial_s1_date, approval_date) DESC';
 
-      stages[status] = this.db.prepare(query).all(...params);
+      const stmt = await this.db.prepare(query);
+      stages[status] = await stmt.all(...params);
     }
 
     return stages;
@@ -1241,20 +1258,21 @@ class IPOTracker {
   /**
    * Get recently completed IPOs
    */
-  getRecentlyCompleted(limit = 20) {
-    return this.db.prepare(`
+  async getRecentlyCompleted(limit = 20) {
+    const stmt = await this.db.prepare(`
       SELECT * FROM ipo_tracker
       WHERE status = 'TRADING'
       ORDER BY trading_date DESC
       LIMIT ?
-    `).all(limit);
+    `);
+    return await stmt.all(limit);
   }
 
   /**
    * Get IPOs expected soon (have price range)
    */
-  getExpectedSoon() {
-    return this.db.prepare(`
+  async getExpectedSoon() {
+    const stmt = await this.db.prepare(`
       SELECT * FROM ipo_tracker
       WHERE status IN ('PRICE_RANGE_SET', 'EFFECTIVE', 'PRICED')
         AND is_active = 1
@@ -1265,27 +1283,31 @@ class IPOTracker {
           WHEN 'PRICE_RANGE_SET' THEN 3
         END,
         latest_amendment_date DESC
-    `).all();
+    `);
+    return await stmt.all();
   }
 
   /**
    * Get single IPO with all filings
    */
-  getIPOWithFilings(ipoId) {
-    const ipo = this.db.prepare('SELECT * FROM ipo_tracker WHERE id = ?').get(ipoId);
+  async getIPOWithFilings(ipoId) {
+    const ipoStmt = await this.db.prepare('SELECT * FROM ipo_tracker WHERE id = ?');
+    const ipo = await ipoStmt.get(ipoId);
 
     if (!ipo) return null;
 
-    const filings = this.db.prepare(`
+    const filingsStmt = await this.db.prepare(`
       SELECT * FROM ipo_filings
       WHERE ipo_id = ?
       ORDER BY filing_date DESC
-    `).all(ipoId);
+    `);
+    const filings = await filingsStmt.all(ipoId);
 
     // Check if in watchlist
-    const watchlist = this.db.prepare(`
+    const watchlistStmt = await this.db.prepare(`
       SELECT * FROM ipo_watchlist WHERE ipo_id = ?
-    `).get(ipoId);
+    `);
+    const watchlist = await watchlistStmt.get(ipoId);
 
     return {
       ...ipo,
@@ -1298,9 +1320,9 @@ class IPOTracker {
   /**
    * Search IPOs by name, ticker, or industry
    */
-  searchIPOs(query) {
+  async searchIPOs(query) {
     const searchTerm = `%${query}%`;
-    return this.db.prepare(`
+    const stmt = await this.db.prepare(`
       SELECT * FROM ipo_tracker
       WHERE company_name LIKE ?
          OR ticker_proposed LIKE ?
@@ -1315,7 +1337,8 @@ class IPOTracker {
         END,
         initial_s1_date DESC
       LIMIT 50
-    `).all(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+    `);
+    return await stmt.all(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
   }
 
   /**
@@ -1323,7 +1346,7 @@ class IPOTracker {
    * @param {Object} options - Options
    * @param {string} options.region - Filter by region: 'US', 'EU', 'UK', or 'all'
    */
-  getStatistics(options = {}) {
+  async getStatistics(options = {}) {
     const { region = 'all' } = options;
 
     // Build WHERE clause for region
@@ -1334,7 +1357,7 @@ class IPOTracker {
       regionParams.push(region.toUpperCase());
     }
 
-    const stats = this.db.prepare(`
+    const statsStmt = await this.db.prepare(`
       SELECT
         COUNT(*) as total_active,
         SUM(CASE WHEN status = 'S1_FILED' THEN 1 ELSE 0 END) as filed,
@@ -1346,32 +1369,36 @@ class IPOTracker {
         SUM(deal_size) as total_deal_size
       FROM ipo_tracker
       WHERE is_active = 1${regionWhere}
-    `).get(...regionParams);
+    `);
+    const stats = await statsStmt.get(...regionParams);
 
-    const recentCompleted = this.db.prepare(`
+    const recentCompletedStmt = await this.db.prepare(`
       SELECT COUNT(*) as count
       FROM ipo_tracker
       WHERE status = 'TRADING'
         AND trading_date > date('now', '-30 days')${regionWhere}
-    `).get(...regionParams);
+    `);
+    const recentCompleted = await recentCompletedStmt.get(...regionParams);
 
-    const withdrawn = this.db.prepare(`
+    const withdrawnStmt = await this.db.prepare(`
       SELECT COUNT(*) as count
       FROM ipo_tracker
       WHERE status = 'WITHDRAWN'
         AND withdrawn_date > date('now', '-90 days')${regionWhere}
-    `).get(...regionParams);
+    `);
+    const withdrawn = await withdrawnStmt.get(...regionParams);
 
-    const bySector = this.db.prepare(`
+    const bySectorStmt = await this.db.prepare(`
       SELECT sector, COUNT(*) as count
       FROM ipo_tracker
       WHERE is_active = 1 AND sector IS NOT NULL${regionWhere}
       GROUP BY sector
       ORDER BY count DESC
-    `).all(...regionParams);
+    `);
+    const bySector = await bySectorStmt.all(...regionParams);
 
     // Get region breakdown
-    const byRegion = this.db.prepare(`
+    const byRegionStmt = await this.db.prepare(`
       SELECT
         COALESCE(region, 'US') as region,
         COUNT(*) as total,
@@ -1379,20 +1406,23 @@ class IPOTracker {
       FROM ipo_tracker
       GROUP BY region
       ORDER BY total DESC
-    `).all();
+    `);
+    const byRegion = await byRegionStmt.all();
 
-    const lastCheck = this.db.prepare(`
+    const lastCheckStmt = await this.db.prepare(`
       SELECT * FROM ipo_check_log
       ORDER BY checked_at DESC
       LIMIT 1
-    `).get();
+    `);
+    const lastCheck = await lastCheckStmt.get();
 
     // Get last check by region
-    const lastCheckByRegion = this.db.prepare(`
+    const lastCheckByRegionStmt = await this.db.prepare(`
       SELECT region, MAX(checked_at) as last_checked
       FROM ipo_check_log
       GROUP BY region
-    `).all();
+    `);
+    const lastCheckByRegion = await lastCheckByRegionStmt.all();
 
     return {
       ...stats,
@@ -1408,8 +1438,8 @@ class IPOTracker {
   /**
    * Get sector breakdown
    */
-  getSectorBreakdown() {
-    return this.db.prepare(`
+  async getSectorBreakdown() {
+    const stmt = await this.db.prepare(`
       SELECT
         COALESCE(sector, 'Unknown') as sector,
         COUNT(*) as total,
@@ -1418,7 +1448,8 @@ class IPOTracker {
       FROM ipo_tracker
       GROUP BY sector
       ORDER BY total DESC
-    `).all();
+    `);
+    return await stmt.all();
   }
 
   // ============================================
@@ -1428,50 +1459,55 @@ class IPOTracker {
   /**
    * Add IPO to watchlist
    */
-  addToWatchlist(ipoId, notes = null) {
-    return this.db.prepare(`
+  async addToWatchlist(ipoId, notes = null) {
+    const stmt = await this.db.prepare(`
       INSERT OR REPLACE INTO ipo_watchlist (ipo_id, notes)
       VALUES (?, ?)
-    `).run(ipoId, notes);
+    `);
+    return await stmt.run(ipoId, notes);
   }
 
   /**
    * Remove IPO from watchlist
    */
-  removeFromWatchlist(ipoId) {
-    return this.db.prepare(`
+  async removeFromWatchlist(ipoId) {
+    const stmt = await this.db.prepare(`
       DELETE FROM ipo_watchlist WHERE ipo_id = ?
-    `).run(ipoId);
+    `);
+    return await stmt.run(ipoId);
   }
 
   /**
    * Update watchlist notes
    */
-  updateWatchlistNotes(ipoId, notes) {
-    return this.db.prepare(`
+  async updateWatchlistNotes(ipoId, notes) {
+    const stmt = await this.db.prepare(`
       UPDATE ipo_watchlist SET notes = ? WHERE ipo_id = ?
-    `).run(notes, ipoId);
+    `);
+    return await stmt.run(notes, ipoId);
   }
 
   /**
    * Get user's watchlist
    */
-  getWatchlist() {
-    return this.db.prepare(`
+  async getWatchlist() {
+    const stmt = await this.db.prepare(`
       SELECT i.*, w.added_at as watchlist_added_at, w.notes as watchlist_notes
       FROM ipo_tracker i
       JOIN ipo_watchlist w ON i.id = w.ipo_id
       ORDER BY w.added_at DESC
-    `).all();
+    `);
+    return await stmt.all();
   }
 
   /**
    * Check if IPO is in watchlist
    */
-  isInWatchlist(ipoId) {
-    const result = this.db.prepare(`
+  async isInWatchlist(ipoId) {
+    const stmt = await this.db.prepare(`
       SELECT 1 FROM ipo_watchlist WHERE ipo_id = ?
-    `).get(ipoId);
+    `);
+    const result = await stmt.get(ipoId);
     return !!result;
   }
 
@@ -1482,12 +1518,13 @@ class IPOTracker {
   /**
    * Get check history
    */
-  getCheckHistory(limit = 20) {
-    return this.db.prepare(`
+  async getCheckHistory(limit = 20) {
+    const stmt = await this.db.prepare(`
       SELECT * FROM ipo_check_log
       ORDER BY checked_at DESC
       LIMIT ?
-    `).all(limit);
+    `);
+    return await stmt.all(limit);
   }
 
   /**
