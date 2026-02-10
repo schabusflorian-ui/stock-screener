@@ -218,9 +218,9 @@ const ValuationCard = memo(function ValuationCard({ title, subtitle, value, asse
         {subtitle && <span className="valuation-card-subtitle">{subtitle}</span>}
       </div>
       <div className="valuation-card-main">
-        <span className="valuation-card-value">{value}</span>
+        <span className="valuation-card-value">{typeof value === 'string' || typeof value === 'number' ? value : String(value ?? '')}</span>
         <span className={`valuation-card-badge ${assessmentClass}`}>
-          {assessment}
+          {typeof assessment === 'string' || typeof assessment === 'number' ? assessment : String(assessment ?? '')}
         </span>
       </div>
       {chartData && chartData.length > 0 && (

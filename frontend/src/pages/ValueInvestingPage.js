@@ -38,8 +38,8 @@ function MacroCard({ title, value, subtext, status, icon: Icon }) {
         {Icon && <Icon size={18} />}
         <span className="macro-card-title">{title}</span>
       </div>
-      <div className="macro-card-value">{value}</div>
-      {subtext && <div className="macro-card-subtext">{subtext}</div>}
+      <div className="macro-card-value">{typeof value === 'string' || typeof value === 'number' ? value : String(value ?? '')}</div>
+      {subtext != null && <div className="macro-card-subtext">{typeof subtext === 'string' || typeof subtext === 'number' ? subtext : String(subtext)}</div>}
     </div>
   );
 }

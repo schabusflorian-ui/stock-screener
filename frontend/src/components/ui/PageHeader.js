@@ -41,10 +41,12 @@ function PageHeader({
                 <Icon size={24} />
               </span>
             )}
-            {title}
+            {typeof title === 'string' || typeof title === 'number' ? title : String(title ?? '')}
           </h1>
-          {subtitle && (
-            <p className="ui-page-header__subtitle">{subtitle}</p>
+          {subtitle != null && (
+            <p className="ui-page-header__subtitle">
+              {typeof subtitle === 'string' || typeof subtitle === 'number' ? subtitle : String(subtitle)}
+            </p>
           )}
         </div>
 
