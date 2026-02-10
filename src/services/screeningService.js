@@ -977,7 +977,7 @@ class ScreeningService {
     console.log('\n🎯 RECESSION-RESISTANT VALUE SCREEN');
     console.log('   Criteria: Defensive sectors, FCF Yield > 5%, Low debt\n');
 
-    const macro = this.getMacroContext();
+    const macro = await this.getMacroContext();
     if (macro) {
       console.log(`   Macro Context: VIX ${macro.vix?.value?.toFixed(1) || 'N/A'}, ` +
                   `2s10s Spread ${macro.yieldCurve?.spread2s10s?.toFixed(2) || 'N/A'}%\n`);
@@ -1007,7 +1007,7 @@ class ScreeningService {
   async deepValueSafeMacro(limit) {
     console.log('\n🎯 DEEP VALUE + SAFE MACRO SCREEN');
 
-    const macro = this.getMacroContext();
+    const macro = await this.getMacroContext();
     const curveInverted = macro?.yieldCurve?.isInverted2s10s;
 
     if (curveInverted) {
@@ -1042,7 +1042,7 @@ class ScreeningService {
   async garpLowVol(limit) {
     console.log('\n🎯 GARP + LOW VOLATILITY SCREEN');
 
-    const macro = this.getMacroContext();
+    const macro = await this.getMacroContext();
     const vixLevel = macro?.vix?.value;
     const vixElevated = vixLevel > 20;
 
@@ -1080,7 +1080,7 @@ class ScreeningService {
   async cyclicalValue(limit) {
     console.log('\n🎯 CYCLICAL VALUE SCREEN');
 
-    const macro = this.getMacroContext();
+    const macro = await this.getMacroContext();
     const spread = macro?.yieldCurve?.spread2s10s;
     const steepCurve = spread > 1.0;
 
@@ -1120,7 +1120,7 @@ class ScreeningService {
   async fearBuying(limit) {
     console.log('\n🎯 FEAR BUYING SCREEN');
 
-    const macro = this.getMacroContext();
+    const macro = await this.getMacroContext();
     const vixLevel = macro?.vix?.value;
     const fearMode = vixLevel > 25;
 
@@ -1160,7 +1160,7 @@ class ScreeningService {
   async creditStressOpportunities(limit) {
     console.log('\n🎯 CREDIT STRESS OPPORTUNITIES SCREEN');
 
-    const macro = this.getMacroContext();
+    const macro = await this.getMacroContext();
     const hySpread = macro?.credit?.hySpread;
     const stressed = hySpread > 5;
 
@@ -1201,7 +1201,7 @@ class ScreeningService {
   async valueInvestingWithMacro(limit) {
     console.log('\n🎯 VALUE INVESTING + MACRO OVERLAY SCREEN');
 
-    const macro = this.getMacroContext();
+    const macro = await this.getMacroContext();
 
     // Determine market regime
     let regime = 'NEUTRAL';
