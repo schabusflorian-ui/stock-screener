@@ -34,7 +34,8 @@ const DECISION_ICONS = {
   default: BarChart2
 };
 
-const FACTORS = ['value', 'quality', 'momentum', 'growth', 'size', 'volatility'];
+// Only factors with percentile data in decision_factor_context (size/volatility not yet supported)
+const FACTORS = ['value', 'quality', 'momentum', 'growth'];
 
 function formatNumber(num, decimals = 0) {
   if (num === null || num === undefined) return '-';

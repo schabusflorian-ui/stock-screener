@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import { Loader, AlertTriangle, Check, Info, TrendingUp, TrendingDown, FileText } from '../../icons';
+import { factorsAPI } from '../../../services/api';
 
 // Default available metrics (fallback when API returns empty)
 const DEFAULT_METRICS = {
@@ -349,24 +350,16 @@ export default function FactorFormulaBuilder({ onFactorCreated, onRunFullAnalysi
       const savedFactor = saveData.data;
 
       // Step 2: Run IC analysis
-      const icResponse = await fetch('/api/factors/ic-analysis', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          factorId: savedFactor.id,
-          formula,
-          horizons: [1, 5, 21, 63, 126, 252]
-        })
+      const icRes = await factorsAPI.icAnalysis({
+        factorId: savedFactor.id,
+        formula,
+        horizons: [1, 5, 21, 63, 126, 252]
       });
-      const icData = await icResponse.json();
+      const icData = icRes.data;
 
       // Step 3: Run correlation analysis
-      const corrResponse = await fetch('/api/factors/correlation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ formula })
-      });
-      const corrData = await corrResponse.json();
+      const corrRes = await factorsAPI.correlation({ formula });
+      const corrData = corrRes.data;
 
       // Pass results to parent to switch to IC Dashboard tab
       onRunFullAnalysis?.({

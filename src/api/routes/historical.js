@@ -371,6 +371,9 @@ router.get('/similar-decisions', async (req, res) => {
   }
 });
 
+// Factors with percentile columns in decision_factor_context (size, volatility have _score only)
+const SUPPORTED_FACTORS = ['value', 'quality', 'momentum', 'growth'];
+
 /**
  * GET /api/historical/performance-by-factor
  * Analyze decision performance by factor characteristics
@@ -378,9 +381,19 @@ router.get('/similar-decisions', async (req, res) => {
 router.get('/performance-by-factor', async (req, res) => {
   try {
     const { factor = 'value', min_decisions = 50 } = req.query;
+    if (!SUPPORTED_FACTORS.includes(factor)) {
+      return res.status(400).json({
+        error: `Unsupported factor: ${factor}`,
+        supported: SUPPORTED_FACTORS,
+        hint: 'Size and volatility percentiles are not yet populated in decision_factor_context.'
+      });
+    }
+
+    const minDecisions = Math.max(1, Math.min(500, parseInt(min_decisions, 10) || 50));
+
     const database = await getDatabaseAsync();
 
-    // Get performance breakdown by factor quintile
+    // Get performance breakdown by factor quintile (safe column name from allowlist)
     const factorColumn = `${factor}_percentile`;
 
     const performanceResult = await database.query(`
@@ -392,10 +405,10 @@ router.get('/performance-by-factor', async (req, res) => {
           WHEN dfc.${factorColumn} >= 20 THEN '20-40%'
           ELSE 'Bottom 20%'
         END as factor_quintile,
-        COUNT(*) as decision_count,
+        COUNT(*)::int as decision_count,
         AVG(d.return_1y) as avg_return_pct,
         AVG(d.alpha_1y) as avg_alpha_pct,
-        SUM(CASE WHEN d.beat_market_1y = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as beat_market_pct
+        SUM(CASE WHEN (d.beat_market_1y IS TRUE OR d.beat_market_1y = 1) THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0) as beat_market_pct
       FROM decision_factor_context dfc
       JOIN investment_decisions d ON dfc.decision_id = d.id
       WHERE d.return_1y IS NOT NULL
@@ -410,7 +423,7 @@ router.get('/performance-by-factor', async (req, res) => {
           WHEN '20-40%' THEN 4
           ELSE 5
         END
-    `, [parseInt(min_decisions)]);
+    `, [minDecisions]);
     const performance = performanceResult.rows;
 
     res.json({
@@ -420,6 +433,15 @@ router.get('/performance-by-factor', async (req, res) => {
     });
   } catch (err) {
     console.error('Error fetching factor performance:', err);
+    // Missing tables/columns on Postgres — return empty so UI loads
+    const msg = err.message || '';
+    if (msg.includes('does not exist') || msg.includes('relation') || msg.includes('undefined table')) {
+      return res.json({
+        factor: req.query.factor || 'value',
+        performance: [],
+        interpretation: { summary: 'Historical factor data not available.', details: null }
+      });
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -666,6 +688,14 @@ router.get('/stats', async (req, res) => {
 router.get('/factor-timeseries', async (req, res) => {
   try {
     const { factor = 'value', groupBy = 'quarter' } = req.query;
+    if (!SUPPORTED_FACTORS.includes(factor)) {
+      return res.status(400).json({
+        error: `Unsupported factor: ${factor}`,
+        supported: SUPPORTED_FACTORS,
+        hint: 'Size and volatility percentiles are not yet populated in decision_factor_context.'
+      });
+    }
+
     const database = await getDatabaseAsync();
     const factorColumn = `${factor}_percentile`;
 
@@ -785,15 +815,15 @@ router.get('/investor-styles', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
 
-    // Get style performance summary
+    // Get style performance summary (Postgres: beat_market_1y can be int or boolean)
     const stylePerformanceResult = await database.query(`
       SELECT
         fi.investment_style,
-        COUNT(DISTINCT fi.id) as investor_count,
-        COUNT(d.id) as total_decisions,
+        COUNT(DISTINCT fi.id)::int as investor_count,
+        COUNT(d.id)::int as total_decisions,
         AVG(d.return_1y) as avg_return,
         AVG(d.alpha_1y) as avg_alpha,
-        SUM(CASE WHEN d.beat_market_1y = 1 THEN 1 ELSE 0 END) * 100.0 /
+        SUM(CASE WHEN (d.beat_market_1y IS TRUE OR d.beat_market_1y = 1) THEN 1 ELSE 0 END) * 100.0 /
           NULLIF(COUNT(CASE WHEN d.beat_market_1y IS NOT NULL THEN 1 END), 0) as beat_market_pct
       FROM famous_investors fi
       LEFT JOIN investment_decisions d ON fi.id = d.investor_id AND d.return_1y IS NOT NULL
@@ -810,15 +840,15 @@ router.get('/investor-styles', async (req, res) => {
         fi.id,
         fi.name,
         fi.investment_style,
-        COUNT(d.id) as decisions,
+        COUNT(d.id)::int as decisions,
         AVG(d.return_1y) as avg_return,
         AVG(d.alpha_1y) as avg_alpha,
-        SUM(CASE WHEN d.beat_market_1y = 1 THEN 1 ELSE 0 END) * 100.0 /
+        SUM(CASE WHEN (d.beat_market_1y IS TRUE OR d.beat_market_1y = 1) THEN 1 ELSE 0 END) * 100.0 /
           NULLIF(COUNT(CASE WHEN d.beat_market_1y IS NOT NULL THEN 1 END), 0) as beat_market_pct
       FROM famous_investors fi
       JOIN investment_decisions d ON fi.id = d.investor_id
       WHERE fi.investment_style IS NOT NULL AND d.return_1y IS NOT NULL
-      GROUP BY fi.id
+      GROUP BY fi.id, fi.name, fi.investment_style
       HAVING COUNT(d.id) >= 20
       ORDER BY avg_alpha DESC
     `, []);
@@ -841,6 +871,11 @@ router.get('/investor-styles', async (req, res) => {
     });
   } catch (err) {
     console.error('Error fetching investor styles:', err);
+    // Missing tables on Postgres (e.g. migration not run) — return empty so UI loads
+    const msg = err.message || '';
+    if (msg.includes('does not exist') || msg.includes('relation') || msg.includes('undefined table')) {
+      return res.json({ stylePerformance: [], investorsByStyle: {} });
+    }
     res.status(500).json({ error: err.message });
   }
 });

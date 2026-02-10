@@ -10,6 +10,7 @@ import FeatureGate from '../../components/subscription/FeatureGate';
 import './FactorAnalysisTab.css';
 import FactorLab from '../../components/research/FactorLab';
 
+// Only factors with percentile data in decision_factor_context (size/volatility not yet populated)
 const FACTORS = [
   {
     id: 'value',
@@ -34,18 +35,6 @@ const FACTORS = [
     label: 'Growth',
     description: 'Revenue/earnings growth',
     tooltip: 'Measures company growth rates in revenue and earnings. High growth = rapidly expanding businesses, often at premium valuations.'
-  },
-  {
-    id: 'size',
-    label: 'Size',
-    description: 'Market capitalization',
-    tooltip: 'Measures company size by market cap. Small caps historically outperform large caps (size premium) but with higher volatility and liquidity risk.'
-  },
-  {
-    id: 'volatility',
-    label: 'Volatility',
-    description: 'Price volatility',
-    tooltip: 'Measures stock price variability. Low volatility stocks historically provide better risk-adjusted returns (low-vol anomaly). High vol = more risk, not always more return.'
   }
 ];
 

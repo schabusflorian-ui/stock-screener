@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Loader, AlertTriangle, RefreshCw, LayoutGrid, ChevronRight, Sparkles } from '../../icons';
+import { factorsAPI } from '../../../services/api';
 
 // Standard factors
 const FACTORS = ['Value', 'Quality', 'Momentum', 'Growth', 'Size', 'Volatility'];
@@ -127,17 +128,7 @@ export default function SectorFactorHeatmap({ selectedFactor, onSectorClick, hei
     setError(null);
 
     try {
-      const response = await fetch('/api/factors/sector-exposures', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch sector exposures');
-      }
-
-      const result = await response.json();
+      const { data: result } = await factorsAPI.sectorExposures({});
 
       if (result.success) {
         setData(result.data);

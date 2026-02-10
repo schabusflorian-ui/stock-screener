@@ -17,6 +17,7 @@ const POSTGRES_MIGRATIONS = [
   '001-add-all-missing-tables.js',
   'add-dividend-metrics.js',
   'add-price-metrics.js',
+  'add-help-tables.js',
 ];
 
 async function runMigrations() {

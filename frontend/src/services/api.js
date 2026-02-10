@@ -2810,6 +2810,13 @@ export const factorsAPI = {
   // Get factor definitions
   getDefinitions: () => api.get('/factors/definitions'),
 
+  // Get user-defined factors (for Quant Lab)
+  getUserFactors: (params = {}) => {
+    const searchParams = new URLSearchParams(params);
+    const query = searchParams.toString();
+    return api.get(`/factors/user${query ? `?${query}` : ''}`);
+  },
+
   // Get factor scores for a stock
   getStockFactorScores: (symbol, scoreDate = null) => {
     const params = scoreDate ? `?scoreDate=${scoreDate}` : '';
@@ -2835,7 +2842,22 @@ export const factorsAPI = {
 
   // Run factor backtest with extended timeout (backtests can take several minutes)
   backtest: ({ factorId, formula, config }) =>
-    apiLong.post('/factors/backtest', { factorId, formula, config })
+    apiLong.post('/factors/backtest', { factorId, formula, config }),
+
+  // Quant Lab - walk-forward validation (uses api for CSRF)
+  walkForward: (body) => api.post('/factors/walk-forward', body),
+
+  // IC analysis
+  icAnalysis: (body) => api.post('/factors/ic-analysis', body),
+
+  // Factor correlation analysis
+  correlation: (body) => api.post('/factors/correlation', body),
+
+  // Sector exposures heatmap
+  sectorExposures: (body = {}) => api.post('/factors/sector-exposures', body),
+
+  // Generate trading signals from factor
+  signals: (body) => api.post('/factors/signals', body)
 };
 
 // ============================================
@@ -3250,12 +3272,17 @@ export const mlopsAPI = {
 };
 
 // PRISM Investment Reports API
+// Report generation can take 1–3+ minutes (data collection, scoring, AI synthesis)
+const PRISM_REPORT_TIMEOUT = 120000;   // 2 min for cached or first load
+const PRISM_REPORT_REFRESH_TIMEOUT = 180000; // 3 min for refresh/regenerate
+
 export const prismAPI = {
   // Get full PRISM report for a company
   getReport: async (symbol, refresh = false) => {
     try {
       const params = refresh ? '?refresh=true' : '';
-      const response = await api.get(`/prism/${symbol}/report${params}`);
+      const timeout = refresh ? PRISM_REPORT_REFRESH_TIMEOUT : PRISM_REPORT_TIMEOUT;
+      const response = await api.get(`/prism/${symbol}/report${params}`, { timeout });
       return response.data;
     } catch (error) {
       console.error('Error fetching PRISM report:', error);

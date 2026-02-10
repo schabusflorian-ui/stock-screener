@@ -11,6 +11,18 @@ const { getDatabaseAsync, isPostgres } = require('../../database');
 // Middleware imports
 const { optionalAuth, requireAdmin, attachUserId } = require('../../middleware/auth');
 
+// Check if error is due to missing help_articles table (e.g. in fresh PostgreSQL deployments)
+function isTableMissingError(err) {
+  const msg = (err.message || '').toLowerCase();
+  const code = err.code || '';
+  return msg.includes('help_articles') && (
+    msg.includes('does not exist') ||
+    msg.includes('no such table') ||
+    code === '42P01' || // PostgreSQL: undefined_table
+    code === 'SQLITE_ERROR'
+  );
+}
+
 // ============================================
 // PUBLIC HELP ENDPOINTS
 // ============================================
@@ -72,6 +84,9 @@ router.get('/articles', async (req, res) => {
       data: parsedArticles
     });
   } catch (error) {
+    if (isTableMissingError(error)) {
+      return res.json({ success: true, data: [] });
+    }
     console.error('Error fetching help articles:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch articles' });
   }
@@ -122,6 +137,9 @@ router.get('/articles/:slug', optionalAuth, attachUserId, async (req, res) => {
       data: parsedArticle
     });
   } catch (error) {
+    if (isTableMissingError(error)) {
+      return res.status(404).json({ success: false, error: 'Article not found' });
+    }
     console.error('Error fetching article:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch article' });
   }
@@ -176,6 +194,9 @@ router.get('/contextual', async (req, res) => {
       data: articles
     });
   } catch (error) {
+    if (isTableMissingError(error)) {
+      return res.json({ success: true, data: [] });
+    }
     console.error('Error fetching contextual help:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch contextual help' });
   }
@@ -205,6 +226,9 @@ router.get('/categories', async (req, res) => {
       data: categories
     });
   } catch (error) {
+    if (isTableMissingError(error)) {
+      return res.json({ success: true, data: [] });
+    }
     console.error('Error fetching categories:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch categories' });
   }
@@ -239,6 +263,9 @@ router.get('/popular', async (req, res) => {
       data: articles
     });
   } catch (error) {
+    if (isTableMissingError(error)) {
+      return res.json({ success: true, data: [] });
+    }
     console.error('Error fetching popular articles:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch popular articles' });
   }
@@ -282,6 +309,9 @@ router.post('/articles/:slug/helpful', optionalAuth, attachUserId, async (req, r
 
     res.json({ success: true });
   } catch (error) {
+    if (isTableMissingError(error)) {
+      return res.json({ success: true });
+    }
     console.error('Error recording helpfulness:', error);
     res.status(500).json({ success: false, error: 'Failed to record helpfulness' });
   }
@@ -339,6 +369,9 @@ router.get('/search', async (req, res) => {
       query: q
     });
   } catch (error) {
+    if (isTableMissingError(error)) {
+      return res.json({ success: true, data: [], query: q });
+    }
     console.error('Error searching help:', error);
     res.status(500).json({ success: false, error: 'Failed to search' });
   }
@@ -405,6 +438,9 @@ router.get('/admin/articles', requireAdmin, async (req, res) => {
       data: articlesWithStats
     });
   } catch (error) {
+    if (isTableMissingError(error)) {
+      return res.json({ success: true, data: [] });
+    }
     console.error('Error fetching admin articles:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch articles' });
   }
@@ -734,6 +770,18 @@ router.get('/admin/analytics', requireAdmin, async (req, res) => {
       }
     });
   } catch (error) {
+    if (isTableMissingError(error)) {
+      return res.json({
+        success: true,
+        data: {
+          period: { days: 30, startDate: new Date().toISOString().split('T')[0] },
+          overview: { totalViews: 0, helpfulRate: null, helpfulCount: 0, notHelpfulCount: 0 },
+          mostViewed: [],
+          searchQueries: [],
+          needsAttention: []
+        }
+      });
+    }
     console.error('Error fetching help analytics:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch analytics' });
   }

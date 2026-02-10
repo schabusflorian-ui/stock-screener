@@ -10,6 +10,7 @@ import {
   Loader, AlertTriangle, CheckCircle, XCircle,
   Calendar, Target, Layers, RefreshCw
 } from '../../icons';
+import { factorsAPI } from '../../../services/api';
 
 // Default walk-forward configuration
 const DEFAULT_CONFIG = {
@@ -55,17 +56,11 @@ export default function WalkForwardVisualization({
     setDataSource(null);
 
     try {
-      const response = await fetch('/api/factors/walk-forward', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          factorId,
-          formula,
-          config
-        })
+      const { data } = await factorsAPI.walkForward({
+        factorId,
+        formula,
+        config
       });
-
-      const data = await response.json();
 
       // Check standardized response format
       if (!data.success) {

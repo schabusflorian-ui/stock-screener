@@ -9,6 +9,7 @@ import {
   Loader, AlertTriangle, TrendingUp, Download, Plus, Check,
   Eye, Star, RefreshCw, Filter, ChevronDown, ChevronUp, Columns, X
 } from '../../icons';
+import { factorsAPI } from '../../../services/api';
 
 // Sector filter options
 const SECTORS = [
@@ -76,18 +77,13 @@ export default function SignalGenerator({ factor, onAddToPortfolio }) {
     setError(null);
 
     try {
-      const response = await fetch('/api/factors/signals', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          factorId: factor.id,
-          formula: factor.formula,
-          topN: signalCount,
-          higherIsBetter: factor.higherIsBetter !== false,
-          sector: sectorFilter !== 'All Sectors' ? sectorFilter : undefined
-        })
+      const { data } = await factorsAPI.signals({
+        factorId: factor.id,
+        formula: factor.formula,
+        topN: signalCount,
+        higherIsBetter: factor.higherIsBetter !== false,
+        sector: sectorFilter !== 'All Sectors' ? sectorFilter : undefined
       });
-      const data = await response.json();
 
       if (!data.success) {
         throw new Error(data.error || 'Failed to generate signals');

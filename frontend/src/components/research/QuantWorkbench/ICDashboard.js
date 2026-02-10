@@ -4,6 +4,7 @@
 import { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Loader, AlertTriangle, Info, TrendingUp, Check, X, Clock } from '../../icons';
+import { factorsAPI } from '../../../services/api';
 import ICTimeSeriesChart from './ICTimeSeriesChart';
 
 // ============================================================
@@ -65,27 +66,17 @@ export default function ICDashboard({ factor, preloadedResults, triggerAnalysis 
 
     try {
       // Run IC and Correlation analysis in parallel
-      const [icResponse, corrResponse] = await Promise.all([
-        fetch('/api/factors/ic-analysis', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            factorId: factor?.id,
-            formula,
-            horizons: [1, 5, 21, 63, 126, 252]
-          })
+      const [icRes, corrRes] = await Promise.all([
+        factorsAPI.icAnalysis({
+          factorId: factor?.id,
+          formula,
+          horizons: [1, 5, 21, 63, 126, 252]
         }),
-        fetch('/api/factors/correlation', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ formula })
-        })
+        factorsAPI.correlation({ formula })
       ]);
 
-      const [icData, corrData] = await Promise.all([
-        icResponse.json(),
-        corrResponse.json()
-      ]);
+      const icData = icRes.data;
+      const corrData = corrRes.data;
 
       // Check standardized response format
       if (!icData.success) {

@@ -6,6 +6,7 @@ import {
   CheckCircle, AlertTriangle, XCircle, TrendingUp, TrendingDown,
   Minus, RefreshCw, Loader, Activity, Clock
 } from '../../icons';
+import { factorsAPI } from '../../../services/api';
 
 // Standard factors to always show
 const STANDARD_FACTORS = [
@@ -64,16 +65,10 @@ export default function FactorHealthDashboard({ onFactorSelect }) {
             }
 
             // For standard factors or factors without stats, fetch fresh
-            const response = await fetch('/api/factors/ic-analysis', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                formula: factor.formula,
-                horizons: [21]
-              })
+            const { data } = await factorsAPI.icAnalysis({
+              formula: factor.formula,
+              horizons: [21]
             });
-
-            const data = await response.json();
 
             if (data.success && data.data?.ic) {
               const ic21d = data.data.ic.icByHorizon?.[21] || 0;
