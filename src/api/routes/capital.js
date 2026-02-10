@@ -1053,7 +1053,7 @@ router.get('/stats', async (req, res) => {
     const recentEventsQuery = await database.query(`
       SELECT event_type, COUNT(*) as count
       FROM significant_events
-      WHERE event_date >= CURRENT_DATE - INTERVAL '3 months'
+      WHERE event_date::date >= CURRENT_DATE - INTERVAL '3 months'
         AND event_type IN ('buyback_announcement', 'dividend_increase', 'dividend_decrease', 'dividend_initiation')
       GROUP BY event_type
     `);
