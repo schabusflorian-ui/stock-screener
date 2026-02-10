@@ -222,6 +222,17 @@ router.get('/calendar/range', async (req, res) => {
  */
 router.get('/calendar/week', async (req, res) => {
   try {
+    if (!earningsService) {
+      return res.json({
+        success: true,
+        weekStart: new Date().toISOString().split('T')[0],
+        weekEnd: new Date().toISOString().split('T')[0],
+        totalCount: 0,
+        byDay: {},
+        data: []
+      });
+    }
+
     const { sector, limit = 50 } = req.query;
 
     // Calculate this week's range (Monday to Sunday)
@@ -239,13 +250,13 @@ router.get('/calendar/week', async (req, res) => {
       monday.toISOString().split('T')[0],
       sunday.toISOString().split('T')[0],
       { sector, limit: parseInt(limit) }
-    );
+    ) || [];
 
     // Group by day
     const byDay = {};
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-    earnings.forEach(e => {
+    (earnings || []).forEach(e => {
       const date = new Date(e.date);
       const dayName = days[date.getDay()];
       if (!byDay[dayName]) byDay[dayName] = [];

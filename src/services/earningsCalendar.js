@@ -203,27 +203,33 @@ class EarningsCalendarService {
     const database = await getDatabaseAsync();
     const { sector, limit = 100 } = options;
 
-    // Get companies with analyst data (likely to have earnings data)
-    let query = `
-      SELECT DISTINCT c.id, c.symbol, c.name, c.sector
-      FROM companies c
-      INNER JOIN analyst_estimates ae ON ae.company_id = c.id
-      WHERE c.symbol IS NOT NULL
-    `;
+    let companies = [];
+    try {
+      // Get companies with analyst data (likely to have earnings data)
+      let query = `
+        SELECT DISTINCT c.id, c.symbol, c.name, c.sector
+        FROM companies c
+        INNER JOIN analyst_estimates ae ON ae.company_id = c.id
+        WHERE c.symbol IS NOT NULL
+      `;
 
-    let paramCounter = 1;
-    const params = [];
+      let paramCounter = 1;
+      const params = [];
 
-    if (sector) {
-      query += ` AND c.sector = $${paramCounter++}`;
-      params.push(sector);
+      if (sector) {
+        query += ` AND c.sector = $${paramCounter++}`;
+        params.push(sector);
+      }
+
+      query += ` ORDER BY ae.number_of_analysts DESC LIMIT $${paramCounter}`;
+      params.push(limit);
+
+      const result = await database.query(query, params);
+      companies = result.rows || [];
+    } catch (err) {
+      console.error('getEarningsInRange: failed to fetch companies:', err.message);
+      return [];
     }
-
-    query += ` ORDER BY ae.number_of_analysts DESC LIMIT $${paramCounter}`;
-    params.push(limit);
-
-    const result = await database.query(query, params);
-    const companies = result.rows;
 
     const results = [];
     const start = new Date(startDate);

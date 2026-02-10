@@ -576,13 +576,13 @@ router.get('/recent-events', async (req, res) => {
         yoy.event_type,
         CASE
           WHEN yoy.event_type = 'dividend_increase'
-          THEN 'Dividend Increased ' || ROUND(yoy.change_pct, 1) || '%'
+          THEN 'Dividend Increased ' || ROUND(yoy.change_pct::numeric, 1) || '%'
           WHEN yoy.event_type = 'dividend_decrease'
-          THEN 'Dividend Decreased ' || ROUND(ABS(yoy.change_pct), 1) || '%'
+          THEN 'Dividend Decreased ' || ROUND(ABS(yoy.change_pct)::numeric, 1) || '%'
           WHEN yoy.event_type = 'dividend_initiation'
           THEN 'Dividend Initiated'
           WHEN yoy.event_type = 'large_buyback'
-          THEN 'Large Buyback: $' || ROUND(yoy.current_buybacks / 1000000000.0, 1) || 'B'
+          THEN 'Large Buyback: $' || ROUND((yoy.current_buybacks / 1000000000.0)::numeric, 1) || 'B'
           ELSE 'Capital Event'
         END as headline,
         yoy.current_dividends as value,
