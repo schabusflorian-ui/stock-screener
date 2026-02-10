@@ -140,7 +140,10 @@ export const screeningAPI = {
   flywheel: (limit) => api.get(`/screening/flywheel${limit ? `?limit=${limit}` : ''}`),
   forensic: (limit) => api.get(`/screening/forensic${limit ? `?limit=${limit}` : ''}`),
   asymmetry: (limit) => api.get(`/screening/asymmetry${limit ? `?limit=${limit}` : ''}`),
-  moats: (limit) => api.get(`/screening/moats${limit ? `?limit=${limit}` : ''}`)
+  moats: (limit) => api.get(`/screening/moats${limit ? `?limit=${limit}` : ''}`),
+  // Macro screens (value-with-macro, recession-resistant, etc.)
+  getMacroScreen: (endpoint, limit = 50) =>
+    api.get(`/screening/macro/${endpoint}?limit=${limit}`)
 };
 
 export const trendsAPI = {

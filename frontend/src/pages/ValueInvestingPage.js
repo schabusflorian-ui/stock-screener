@@ -1,6 +1,7 @@
 // frontend/src/pages/ValueInvestingPage.js
 import { useState, useEffect, useCallback, memo } from 'react';
 import { Link } from 'react-router-dom';
+import { macroAPI, screeningAPI } from '../services/api';
 import { PageHeader } from '../components/ui';
 import { WatchlistButton } from '../components';
 import { SkeletonTable } from '../components/Skeleton';
@@ -8,8 +9,6 @@ import { useFormatters } from '../hooks/useFormatters';
 import { useAskAI } from '../hooks/useAskAI';
 import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Activity, DollarSign, BarChart3, Shield } from '../components/icons';
 import './ValueInvestingPage.css';
-
-const API_BASE = process.env.REACT_APP_API_URL ? `${process.env.REACT_APP_API_URL}/api` : '/api';
 
 // Macro regime configuration - colors now handled via CSS classes (Prism Design System)
 const REGIME_CONFIG = {
@@ -167,15 +166,12 @@ export default function ValueInvestingPage() {
   const [screenLoading, setScreenLoading] = useState(false);
   const [screenMeta, setScreenMeta] = useState(null);
 
-  // Fetch macro context
+  // Fetch macro context (use macroAPI for credentials + X-Admin-Bypass)
   useEffect(() => {
     const fetchMacro = async () => {
       try {
-        const response = await fetch(`${API_BASE}/macro/key-metrics`);
-        if (response.ok) {
-          const data = await response.json();
-          setMacroData(data);
-        }
+        const response = await macroAPI.getKeyMetrics();
+        setMacroData(response.data);
       } catch (err) {
         console.error('Failed to fetch macro data:', err);
       } finally {
@@ -185,28 +181,26 @@ export default function ValueInvestingPage() {
     fetchMacro();
   }, []);
 
-  // Fetch screen results
+  // Fetch screen results (use screeningAPI for credentials + X-Admin-Bypass)
   const fetchScreen = useCallback(async (screenId) => {
     setScreenLoading(true);
     try {
       const screen = MACRO_SCREENS.find(s => s.id === screenId);
       if (!screen) return;
 
-      const response = await fetch(`${API_BASE}/screening/macro/${screen.endpoint}?limit=50`);
-      if (response.ok) {
-        const data = await response.json();
-        setScreenResults(data.results || []);
-        setScreenMeta({
-          name: data.screen,
-          description: data.description,
-          regime: data.regime,
-          strategy: data.strategy,
-          recommendation: data.recommendation,
-          warning: data.warning,
-          count: data.count,
-          macroContext: data.macroContext
-        });
-      }
+      const response = await screeningAPI.getMacroScreen(screen.endpoint, 50);
+      const data = response.data;
+      setScreenResults(data.results || []);
+      setScreenMeta({
+        name: data.screen,
+        description: data.description,
+        regime: data.regime,
+        strategy: data.strategy,
+        recommendation: data.recommendation,
+        warning: data.warning,
+        count: data.count,
+        macroContext: data.macroContext
+      });
     } catch (err) {
       console.error('Failed to fetch screen:', err);
       setScreenResults([]);

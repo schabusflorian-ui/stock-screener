@@ -15,7 +15,7 @@ import {
   ChevronUp,
   PrismSparkle
 } from '../components/icons';
-import { statsAPI, indicesAPI, portfoliosAPI, agentsAPI, alertsAPI, macroAPI } from '../services/api';
+import { statsAPI, indicesAPI, portfoliosAPI, agentsAPI, alertsAPI, macroAPI, screeningAPI } from '../services/api';
 import { useFormatters } from '../hooks/useFormatters';
 import { useAskAI, AskAIProvider } from '../hooks';
 import { WatchlistButton, MiniChart, SelectionActionBar } from '../components';
@@ -1328,15 +1328,12 @@ function HomePage() {
     fetchUserData();
   }, []);
 
-  // Fetch market indicators
+  // Fetch market indicators (use macroAPI for credentials + X-Admin-Bypass)
   useEffect(() => {
     const fetchIndicators = async () => {
       try {
-        const response = await fetch(`${API_BASE}/macro/market-indicators`);
-        if (response.ok) {
-          const data = await response.json();
-          setMarketIndicators(data);
-        }
+        const response = await macroAPI.getMarketIndicators();
+        setMarketIndicators(response.data);
       } catch (err) {
         console.error('Failed to fetch market indicators:', err);
       } finally {
@@ -1346,27 +1343,24 @@ function HomePage() {
     fetchIndicators();
   }, []);
 
-  // Fetch historical valuation data
+  // Fetch historical valuation data (use macroAPI for credentials + X-Admin-Bypass)
   useEffect(() => {
     const fetchHistoricalData = async () => {
       try {
-        const response = await fetch(`${API_BASE}/macro/market-indicators/history?startQuarter=2015-Q1`);
-        if (response.ok) {
-          const result = await response.json();
-          if (result.success && result.data) {
-            setValuationHistory({
-              buffett: result.data.buffett || [],
-              tobinQ: result.data.tobinQ || [],
-              medianPE: result.data.medianPE || [],
-              sp500PE: result.data.sp500PE || [],
-              medianMSI: result.data.medianMSI || [],  // Now 4Q rolling average
-              fredMSI: result.data.fredMSI || [],      // FRED official MSI (Equity/Net Worth)
-              stockMSI: result.data.stockMSI || [],    // Stock-based MSI (EV/Book)
-              pctUndervalued: result.data.pctUndervalued || [],
-              // Store smoothed current MSI for display
-              currentMSISmoothed: result.current?.medianMSISmoothed || null
-            });
-          }
+        const result = await macroAPI.getMarketIndicatorsHistory('2015-Q1');
+        if (result.data?.success && result.data?.data) {
+          const d = result.data.data;
+          setValuationHistory({
+            buffett: d.buffett || [],
+            tobinQ: d.tobinQ || [],
+            medianPE: d.medianPE || [],
+            sp500PE: d.sp500PE || [],
+            medianMSI: d.medianMSI || [],
+            fredMSI: d.fredMSI || [],
+            stockMSI: d.stockMSI || [],
+            pctUndervalued: d.pctUndervalued || [],
+            currentMSISmoothed: result.data.current?.medianMSISmoothed || null
+          });
         }
       } catch (err) {
         console.error('Failed to fetch historical valuation data:', err);
@@ -1393,28 +1387,26 @@ function HomePage() {
     fetchBuffettComparison();
   }, []);
 
-  // Fetch screen results
+  // Fetch screen results (use screeningAPI for credentials + X-Admin-Bypass)
   const fetchScreen = useCallback(async (screenId) => {
     setScreenLoading(true);
     try {
       const screen = MACRO_SCREENS.find(s => s.id === screenId);
       if (!screen) return;
 
-      const response = await fetch(`${API_BASE}/screening/macro/${screen.endpoint}?limit=50`);
-      if (response.ok) {
-        const data = await response.json();
-        setScreenResults(data.results || []);
-        setScreenMeta({
-          name: data.screen,
-          description: data.description,
-          regime: data.regime,
-          strategy: data.strategy,
-          recommendation: data.recommendation,
-          warning: data.warning,
-          count: data.count,
-          macroContext: data.macroContext
-        });
-      }
+      const response = await screeningAPI.getMacroScreen(screen.endpoint, 50);
+      const data = response.data;
+      setScreenResults(data.results || []);
+      setScreenMeta({
+        name: data.screen,
+        description: data.description,
+        regime: data.regime,
+        strategy: data.strategy,
+        recommendation: data.recommendation,
+        warning: data.warning,
+        count: data.count,
+        macroContext: data.macroContext
+      });
     } catch (err) {
       console.error('Failed to fetch screen:', err);
       setScreenResults([]);
