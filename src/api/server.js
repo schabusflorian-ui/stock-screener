@@ -224,7 +224,7 @@ app.use(compression({
 }));
 
 const allowedOrigins = process.env.FRONTEND_URL
-  ? [process.env.FRONTEND_URL]
+  ? [process.env.FRONTEND_URL.trim()] // Trim whitespace from env var (Railway may add trailing chars)
   : ['http://localhost:3001', 'http://localhost:3002', 'http://localhost:3003'];
 
 // Auto-add Railway preview URLs in production if FRONTEND_URL not set
