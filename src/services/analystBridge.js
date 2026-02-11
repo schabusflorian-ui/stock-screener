@@ -454,8 +454,11 @@ class AnalystService {
    * Create a new conversation.
    */
   async createConversation(analystId, companyId = null, companySymbol = null) {
+    if (analystId == null || analystId === '' || analystId === 'undefined' || analystId === 'null') {
+      analystId = 'value';
+    }
     if (!ANALYSTS[analystId]) {
-      throw new Error(`Unknown analyst: ${analystId}`);
+      analystId = 'value';
     }
 
     const id = this._generateId();
@@ -581,10 +584,13 @@ class AnalystService {
     }
 
     let analystId = conv.analyst_id;
-    if (analystId == null || analystId === '' || analystId === 'undefined' || analystId === 'null') analystId = 'value';
-    const analyst = ANALYSTS[analystId];
+    if (analystId == null || analystId === '' || analystId === 'undefined' || analystId === 'null') {
+      analystId = 'value';
+    }
+    let analyst = ANALYSTS[analystId];
     if (!analyst) {
-      throw new Error(`Invalid analyst: ${analystId}`);
+      analystId = 'value';
+      analyst = ANALYSTS[analystId];
     }
 
     // Enrich context with factor analysis
@@ -676,10 +682,13 @@ class AnalystService {
     }
 
     let analystId = conv.analyst_id;
-    if (analystId == null || analystId === '' || analystId === 'undefined' || analystId === 'null') analystId = 'value';
-    const analyst = ANALYSTS[analystId];
+    if (analystId == null || analystId === '' || analystId === 'undefined' || analystId === 'null') {
+      analystId = 'value';
+    }
+    let analyst = ANALYSTS[analystId];
     if (!analyst) {
-      throw new Error(`Invalid analyst: ${analystId}`);
+      analystId = 'value';
+      analyst = ANALYSTS[analystId];
     }
 
     // Enrich context with factor analysis

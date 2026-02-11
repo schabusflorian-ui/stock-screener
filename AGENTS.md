@@ -278,9 +278,33 @@ border-radius: 10px;    /* Use var(--radius-lg) = 12px */
 - Return JSON with `{ data: ... }` or `{ error: ... }`
 
 ### Database
-- SQLite database at `data/stocks.db`
+- SQLite (dev) or PostgreSQL (production) – use `lib/db` abstraction
 - Use parameterized queries to prevent SQL injection
 - Keep migrations in `src/database-migrations/`
+
+#### Database Access (MANDATORY for new/updated code)
+
+Use the async pattern – **do not** use sync SQLite APIs:
+
+```javascript
+// ✅ GOOD – async pattern (works with SQLite and Postgres)
+const { getDatabaseAsync } = require('../lib/db');
+const database = await getDatabaseAsync();
+const result = await database.query('SELECT * FROM companies WHERE id = $1', [id]);
+const row = result.rows[0];
+const rows = result.rows;
+```
+
+```javascript
+// ❌ BAD – sync SQLite only
+const db = getDatabaseSync();
+const row = db.prepare('SELECT * FROM companies WHERE id = ?').get(id);
+const rows = db.prepare('SELECT * FROM companies').all();
+```
+
+- Placeholders: use `$1`, `$2`, etc. (lib/db maps to `?` for SQLite)
+- Results: `result.rows` (array) or `result.rows[0]` (single row)
+- Do NOT use: `prepare()`, `.get()`, `.all()`, `.run()`, `getDatabaseSync()`
 
 ### Services
 - Business logic goes in `src/services/`

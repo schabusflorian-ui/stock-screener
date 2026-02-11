@@ -1,7 +1,7 @@
 // src/services/portfolio/stressTestEngine.js
 // Stress Testing Engine - Historical Crisis Simulations (Agent 2)
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 // Built-in historical stress scenarios
 const STRESS_SCENARIOS = {

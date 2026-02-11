@@ -4,7 +4,7 @@
 // Phase 3.3: Optimized with direct service layer access (5-10x faster)
 
 const express = require('express');
-const { getDatabaseAsync, isPostgres } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const router = express.Router();
 const { routeRequest } = require('./batchRouter');
 

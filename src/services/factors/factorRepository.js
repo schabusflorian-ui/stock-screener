@@ -2,7 +2,7 @@
 // CRUD operations for user-defined factors
 
 const crypto = require('crypto');
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { validateFormula } = require('./factorFormulaParser');
 
 /**

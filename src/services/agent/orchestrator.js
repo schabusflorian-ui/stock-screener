@@ -4,6 +4,7 @@
 const { TradingAgent } = require('./tradingAgent');
 const { RiskManager } = require('./riskManager');
 const { OpportunityScanner } = require('./opportunityScanner');
+const { isUsingPostgres } = require('../../lib/db');
 
 class TradingOrchestrator {
   constructor(db, config = {}) {
@@ -44,10 +45,11 @@ class TradingOrchestrator {
 
     try {
       // Validate portfolio exists
-      const portfolio = await this.db.get(
+      const portfolioResult = await this.db.query(
         'SELECT * FROM portfolios WHERE id = $1',
         [portfolioId]
       );
+      const portfolio = portfolioResult.rows[0];
       if (!portfolio) {
         throw new Error(`Portfolio ${portfolioId} not found`);
       }
@@ -166,12 +168,13 @@ class TradingOrchestrator {
    */
   async _detectRegime() {
     // Get market indicators
-    const indicators = await this.db.all(
+    const indicatorsResult = await this.db.query(
       `SELECT indicator_type, indicator_value, indicator_label, components
        FROM market_sentiment
        WHERE indicator_type IN ('vix', 'cnn_fear_greed', 'overall_market')
        ORDER BY fetched_at DESC`
     );
+    const indicators = indicatorsResult.rows;
 
     let vix = null;
     let fearGreed = null;
@@ -188,7 +191,7 @@ class TradingOrchestrator {
     }
 
     // Calculate market breadth from recent price changes
-    const breadthData = await this.db.get(
+    const breadthResult = await this.db.query(
       `SELECT
          COUNT(*) as total,
          SUM(CASE WHEN change_1w > 0 THEN 1 ELSE 0 END) as advancing,
@@ -197,6 +200,7 @@ class TradingOrchestrator {
        FROM price_metrics
        WHERE change_1w IS NOT NULL`
     );
+    const breadthData = breadthResult.rows[0] || { total: 0 };
 
     const breadth = breadthData.total > 0
       ? (breadthData.advancing - breadthData.declining) / breadthData.total
@@ -286,17 +290,19 @@ class TradingOrchestrator {
    * Get portfolio context for recommendations
    */
   async _getPortfolioContext(portfolioId) {
-    const portfolio = await this.db.get(
+    const portfolioResult = await this.db.query(
       'SELECT * FROM portfolios WHERE id = $1',
       [portfolioId]
     );
-    const positions = await this.db.all(
+    const portfolio = portfolioResult.rows[0];
+    const positionsResult = await this.db.query(
       `SELECT pp.*, c.symbol, c.sector
        FROM portfolio_positions pp
        JOIN companies c ON pp.company_id = c.id
        WHERE pp.portfolio_id = $1`,
       [portfolioId]
     );
+    const positions = positionsResult.rows;
 
     const totalPositionsValue = positions.reduce((sum, p) => sum + (p.current_value || 0), 0);
     const cash = portfolio?.current_cash || 0;
@@ -386,7 +392,7 @@ class TradingOrchestrator {
    * Store analysis in database
    */
   async _storeAnalysis(analysis, executionTimeMs) {
-    const result = await this.db.get(
+    const result = await this.db.query(
       `INSERT INTO daily_analyses
        (portfolio_id, date, regime, regime_confidence, regime_description,
         opportunities_count, opportunities, recommendations_count, recommendations,
@@ -411,7 +417,7 @@ class TradingOrchestrator {
       ]
     );
 
-    return result.id;
+    return result.rows[0]?.id ?? result.lastInsertRowid;
   }
 
   /**
@@ -419,7 +425,7 @@ class TradingOrchestrator {
    */
   async _storeRegime(regime) {
     try {
-      await this.db.run(
+      await this.db.query(
         `INSERT INTO market_regime_history
          (date, regime, confidence, vix_level, vix_percentile, market_breadth,
           trend_strength, fear_greed_index, description, indicators)
@@ -455,13 +461,14 @@ class TradingOrchestrator {
    * Get latest analysis for a portfolio
    */
   async getLatestAnalysis(portfolioId) {
-    const row = await this.db.get(
+    const result = await this.db.query(
       `SELECT * FROM daily_analyses
        WHERE portfolio_id = $1
        ORDER BY date DESC, created_at DESC
        LIMIT 1`,
       [portfolioId]
     );
+    const row = result.rows[0];
     if (!row) return null;
 
     return {
@@ -477,13 +484,17 @@ class TradingOrchestrator {
    * Get analysis history for a portfolio
    */
   async getAnalysisHistory(portfolioId, days = 30) {
-    const rows = await this.db.all(
+    const dateCondition = isUsingPostgres()
+      ? `date >= CURRENT_DATE - INTERVAL '1 day' * $2`
+      : "date >= date('now', '-' || $2 || ' days')";
+    const result = await this.db.query(
       `SELECT * FROM daily_analyses
        WHERE portfolio_id = $1
-       AND date >= CURRENT_DATE - INTERVAL '1 day' * $2
+       AND ${dateCondition}
        ORDER BY date DESC`,
       [portfolioId, days]
     );
+    const rows = result.rows;
 
     return rows.map(row => ({
       ...row,
@@ -505,12 +516,16 @@ class TradingOrchestrator {
    * Get regime history
    */
   async getRegimeHistory(days = 30) {
-    const rows = await this.db.all(
+    const dateCondition = isUsingPostgres()
+      ? `date >= CURRENT_DATE - INTERVAL '1 day' * $1`
+      : "date >= date('now', '-' || $1 || ' days')";
+    const result = await this.db.query(
       `SELECT * FROM market_regime_history
-       WHERE date >= CURRENT_DATE - INTERVAL '1 day' * $1
+       WHERE ${dateCondition}
        ORDER BY date DESC`,
       [days]
     );
+    const rows = result.rows;
 
     return rows.map(row => ({
       ...row,
@@ -571,7 +586,14 @@ class TradingOrchestrator {
    * Get summary stats across all portfolios
    */
   async getSystemStats() {
-    const stats = await this.db.get(
+    const dateCondition30 = isUsingPostgres()
+      ? "date >= CURRENT_DATE - INTERVAL '30 days'"
+      : "date >= date('now', '-30 days')";
+    const dateCondition7 = isUsingPostgres()
+      ? "date >= CURRENT_DATE - INTERVAL '7 days'"
+      : "date >= date('now', '-7 days')";
+
+    const statsResult = await this.db.query(
       `SELECT
          COUNT(DISTINCT portfolio_id) as portfolios_analyzed,
          COUNT(*) as total_analyses,
@@ -579,22 +601,25 @@ class TradingOrchestrator {
          SUM(executed_count) as total_executed,
          AVG(execution_time_ms) as avg_execution_time
        FROM daily_analyses
-       WHERE date >= CURRENT_DATE - INTERVAL '30 days'`
+       WHERE ${dateCondition30}`
     );
+    const stats = statsResult.rows[0] || {};
 
-    const regimeBreakdown = await this.db.all(
+    const regimeResult = await this.db.query(
       `SELECT regime, COUNT(*) as count
        FROM market_regime_history
-       WHERE date >= CURRENT_DATE - INTERVAL '30 days'
+       WHERE ${dateCondition30}
        GROUP BY regime`
     );
+    const regimeBreakdown = regimeResult.rows;
 
-    const recentRecommendations = await this.db.all(
+    const recsResult = await this.db.query(
       `SELECT action, COUNT(*) as count
        FROM agent_recommendations
-       WHERE date >= CURRENT_DATE - INTERVAL '7 days'
+       WHERE ${dateCondition7}
        GROUP BY action`
     );
+    const recentRecommendations = recsResult.rows;
 
     return {
       ...stats,

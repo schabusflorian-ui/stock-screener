@@ -2,7 +2,7 @@
 // Automatic dividend processing for portfolio positions
 // Credits dividends to portfolios when stocks go ex-dividend
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 class DividendProcessor {
   constructor() {

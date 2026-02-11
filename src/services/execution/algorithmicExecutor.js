@@ -2,7 +2,7 @@
 // World-Class Algorithmic Execution Engine
 // Implements TWAP, VWAP, Implementation Shortfall, and Adaptive algorithms
 
-const { db } = require('../../database');
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 const EventEmitter = require('events');
 
 /**
@@ -50,13 +50,21 @@ class AlgorithmicExecutor extends EventEmitter {
     this.activeOrders = new Map(); // orderId -> ExecutionOrder
     this.executionStats = new Map(); // orderId -> stats
     this.initialized = false;
+    this.dbPromise = null;
+  }
+
+  async _getDatabase() {
+    if (!this.dbPromise) {
+      this.dbPromise = getDatabaseAsync();
+    }
+    return this.dbPromise;
   }
 
   /**
    * Initialize the executor and load any pending orders
    */
   async initialize() {
-    this._ensureTablesExist();
+    await this._ensureTablesExist();
     await this._loadActiveOrders();
     this.initialized = true;
     console.log(`AlgorithmicExecutor initialized with ${this.activeOrders.size} active orders`);
@@ -65,107 +73,279 @@ class AlgorithmicExecutor extends EventEmitter {
   /**
    * Ensure database tables exist
    */
-  _ensureTablesExist() {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS algo_orders (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        portfolio_id INTEGER NOT NULL,
-        symbol TEXT NOT NULL,
-        side TEXT NOT NULL,
-        total_shares INTEGER NOT NULL,
-        filled_shares INTEGER DEFAULT 0,
-        algorithm TEXT NOT NULL,
-        urgency TEXT DEFAULT 'normal',
+  async _ensureTablesExist() {
+    const database = await this._getDatabase();
 
-        -- Timing
-        start_time TEXT,
-        end_time TEXT,
-        created_at TEXT DEFAULT (datetime('now')),
-        completed_at TEXT,
+    if (!isUsingPostgres() && database.exec) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS algo_orders (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          portfolio_id INTEGER NOT NULL,
+          symbol TEXT NOT NULL,
+          side TEXT NOT NULL,
+          total_shares INTEGER NOT NULL,
+          filled_shares INTEGER DEFAULT 0,
+          algorithm TEXT NOT NULL,
+          urgency TEXT DEFAULT 'normal',
 
-        -- Prices
-        arrival_price REAL,
-        limit_price REAL,
-        avg_fill_price REAL,
+          -- Timing
+          start_time TEXT,
+          end_time TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          completed_at TEXT,
 
-        -- Constraints
-        min_fill_size INTEGER DEFAULT 100,
-        max_participation_rate REAL DEFAULT 0.20,
+          -- Prices
+          arrival_price REAL,
+          limit_price REAL,
+          avg_fill_price REAL,
 
-        -- Status
-        status TEXT DEFAULT 'pending',
+          -- Constraints
+          min_fill_size INTEGER DEFAULT 100,
+          max_participation_rate REAL DEFAULT 0.20,
 
-        -- Parameters (JSON)
-        parameters TEXT,
+          -- Status
+          status TEXT DEFAULT 'pending',
 
-        FOREIGN KEY (portfolio_id) REFERENCES portfolios(id)
-      );
+          -- Parameters (JSON)
+          parameters TEXT,
 
-      CREATE INDEX IF NOT EXISTS idx_algo_orders_status ON algo_orders(status);
-      CREATE INDEX IF NOT EXISTS idx_algo_orders_portfolio ON algo_orders(portfolio_id);
+          FOREIGN KEY (portfolio_id) REFERENCES portfolios(id)
+        );
 
-      CREATE TABLE IF NOT EXISTS algo_executions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        order_id INTEGER NOT NULL,
-        slice_number INTEGER NOT NULL,
-        scheduled_time TEXT,
-        executed_time TEXT,
+        CREATE INDEX IF NOT EXISTS idx_algo_orders_status ON algo_orders(status);
+        CREATE INDEX IF NOT EXISTS idx_algo_orders_portfolio ON algo_orders(portfolio_id);
 
-        -- Execution details
-        target_shares INTEGER,
-        filled_shares INTEGER,
-        price REAL,
+        CREATE TABLE IF NOT EXISTS algo_executions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          order_id INTEGER NOT NULL,
+          slice_number INTEGER NOT NULL,
+          scheduled_time TEXT,
+          executed_time TEXT,
 
-        -- Costs
-        slippage_bps REAL,
-        market_impact_bps REAL,
+          -- Execution details
+          target_shares INTEGER,
+          filled_shares INTEGER,
+          price REAL,
 
-        -- Market conditions
-        volume_at_execution INTEGER,
-        spread_at_execution REAL,
+          -- Costs
+          slippage_bps REAL,
+          market_impact_bps REAL,
 
-        status TEXT DEFAULT 'pending',
+          -- Market conditions
+          volume_at_execution INTEGER,
+          spread_at_execution REAL,
 
-        FOREIGN KEY (order_id) REFERENCES algo_orders(id)
-      );
+          status TEXT DEFAULT 'pending',
 
-      CREATE INDEX IF NOT EXISTS idx_algo_exec_order ON algo_executions(order_id);
+          FOREIGN KEY (order_id) REFERENCES algo_orders(id)
+        );
 
-      CREATE TABLE IF NOT EXISTS execution_benchmarks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        order_id INTEGER NOT NULL,
+        CREATE INDEX IF NOT EXISTS idx_algo_exec_order ON algo_executions(order_id);
 
-        -- Benchmark prices
-        arrival_price REAL,
-        vwap_price REAL,
-        twap_price REAL,
-        close_price REAL,
+        CREATE TABLE IF NOT EXISTS execution_benchmarks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          order_id INTEGER NOT NULL,
 
-        -- Performance vs benchmarks
-        vs_arrival_bps REAL,
-        vs_vwap_bps REAL,
-        vs_twap_bps REAL,
+          -- Benchmark prices
+          arrival_price REAL,
+          vwap_price REAL,
+          twap_price REAL,
+          close_price REAL,
 
-        -- Implementation shortfall breakdown
-        delay_cost_bps REAL,
-        market_impact_bps REAL,
-        timing_cost_bps REAL,
-        opportunity_cost_bps REAL,
+          -- Performance vs benchmarks
+          vs_arrival_bps REAL,
+          vs_vwap_bps REAL,
+          vs_twap_bps REAL,
 
-        created_at TEXT DEFAULT (datetime('now')),
+          -- Implementation shortfall breakdown
+          delay_cost_bps REAL,
+          market_impact_bps REAL,
+          timing_cost_bps REAL,
+          opportunity_cost_bps REAL,
 
-        FOREIGN KEY (order_id) REFERENCES algo_orders(id)
-      );
-    `);
+          created_at TEXT DEFAULT (datetime('now')),
+
+          FOREIGN KEY (order_id) REFERENCES algo_orders(id)
+        );
+      `);
+      return;
+    }
+
+    const statements = isUsingPostgres()
+      ? [
+          `
+            CREATE TABLE IF NOT EXISTS algo_orders (
+              id SERIAL PRIMARY KEY,
+              portfolio_id INTEGER NOT NULL,
+              symbol TEXT NOT NULL,
+              side TEXT NOT NULL,
+              total_shares INTEGER NOT NULL,
+              filled_shares INTEGER DEFAULT 0,
+              algorithm TEXT NOT NULL,
+              urgency TEXT DEFAULT 'normal',
+
+              -- Timing
+              start_time TIMESTAMP,
+              end_time TIMESTAMP,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              completed_at TIMESTAMP,
+
+              -- Prices
+              arrival_price DOUBLE PRECISION,
+              limit_price DOUBLE PRECISION,
+              avg_fill_price DOUBLE PRECISION,
+
+              -- Constraints
+              min_fill_size INTEGER DEFAULT 100,
+              max_participation_rate DOUBLE PRECISION DEFAULT 0.20,
+
+              -- Status
+              status TEXT DEFAULT 'pending',
+
+              -- Parameters (JSON)
+              parameters TEXT,
+
+              FOREIGN KEY (portfolio_id) REFERENCES portfolios(id)
+            );
+          `,
+          'CREATE INDEX IF NOT EXISTS idx_algo_orders_status ON algo_orders(status);',
+          'CREATE INDEX IF NOT EXISTS idx_algo_orders_portfolio ON algo_orders(portfolio_id);',
+          `
+            CREATE TABLE IF NOT EXISTS algo_executions (
+              id SERIAL PRIMARY KEY,
+              order_id INTEGER NOT NULL,
+              slice_number INTEGER NOT NULL,
+              scheduled_time TIMESTAMP,
+              executed_time TIMESTAMP,
+
+              -- Execution details
+              target_shares INTEGER,
+              filled_shares INTEGER,
+              price DOUBLE PRECISION,
+
+              -- Costs
+              slippage_bps DOUBLE PRECISION,
+              market_impact_bps DOUBLE PRECISION,
+
+              -- Market conditions
+              volume_at_execution BIGINT,
+              spread_at_execution DOUBLE PRECISION,
+
+              status TEXT DEFAULT 'pending',
+
+              FOREIGN KEY (order_id) REFERENCES algo_orders(id)
+            );
+          `,
+          'CREATE INDEX IF NOT EXISTS idx_algo_exec_order ON algo_executions(order_id);',
+          `
+            CREATE TABLE IF NOT EXISTS execution_benchmarks (
+              id SERIAL PRIMARY KEY,
+              order_id INTEGER NOT NULL,
+
+              -- Benchmark prices
+              arrival_price DOUBLE PRECISION,
+              vwap_price DOUBLE PRECISION,
+              twap_price DOUBLE PRECISION,
+              close_price DOUBLE PRECISION,
+
+              -- Performance vs benchmarks
+              vs_arrival_bps DOUBLE PRECISION,
+              vs_vwap_bps DOUBLE PRECISION,
+              vs_twap_bps DOUBLE PRECISION,
+
+              -- Implementation shortfall breakdown
+              delay_cost_bps DOUBLE PRECISION,
+              market_impact_bps DOUBLE PRECISION,
+              timing_cost_bps DOUBLE PRECISION,
+              opportunity_cost_bps DOUBLE PRECISION,
+
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+              FOREIGN KEY (order_id) REFERENCES algo_orders(id)
+            );
+          `,
+        ]
+      : [
+          `
+            CREATE TABLE IF NOT EXISTS algo_orders (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              portfolio_id INTEGER NOT NULL,
+              symbol TEXT NOT NULL,
+              side TEXT NOT NULL,
+              total_shares INTEGER NOT NULL,
+              filled_shares INTEGER DEFAULT 0,
+              algorithm TEXT NOT NULL,
+              urgency TEXT DEFAULT 'normal',
+              start_time TEXT,
+              end_time TEXT,
+              created_at TEXT DEFAULT (datetime('now')),
+              completed_at TEXT,
+              arrival_price REAL,
+              limit_price REAL,
+              avg_fill_price REAL,
+              min_fill_size INTEGER DEFAULT 100,
+              max_participation_rate REAL DEFAULT 0.20,
+              status TEXT DEFAULT 'pending',
+              parameters TEXT,
+              FOREIGN KEY (portfolio_id) REFERENCES portfolios(id)
+            );
+          `,
+          'CREATE INDEX IF NOT EXISTS idx_algo_orders_status ON algo_orders(status);',
+          'CREATE INDEX IF NOT EXISTS idx_algo_orders_portfolio ON algo_orders(portfolio_id);',
+          `
+            CREATE TABLE IF NOT EXISTS algo_executions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              order_id INTEGER NOT NULL,
+              slice_number INTEGER NOT NULL,
+              scheduled_time TEXT,
+              executed_time TEXT,
+              target_shares INTEGER,
+              filled_shares INTEGER,
+              price REAL,
+              slippage_bps REAL,
+              market_impact_bps REAL,
+              volume_at_execution INTEGER,
+              spread_at_execution REAL,
+              status TEXT DEFAULT 'pending',
+              FOREIGN KEY (order_id) REFERENCES algo_orders(id)
+            );
+          `,
+          'CREATE INDEX IF NOT EXISTS idx_algo_exec_order ON algo_executions(order_id);',
+          `
+            CREATE TABLE IF NOT EXISTS execution_benchmarks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              order_id INTEGER NOT NULL,
+              arrival_price REAL,
+              vwap_price REAL,
+              twap_price REAL,
+              close_price REAL,
+              vs_arrival_bps REAL,
+              vs_vwap_bps REAL,
+              vs_twap_bps REAL,
+              delay_cost_bps REAL,
+              market_impact_bps REAL,
+              timing_cost_bps REAL,
+              opportunity_cost_bps REAL,
+              created_at TEXT DEFAULT (datetime('now')),
+              FOREIGN KEY (order_id) REFERENCES algo_orders(id)
+            );
+          `,
+        ];
+
+    for (const statement of statements) {
+      await database.query(statement);
+    }
   }
 
   /**
    * Load active orders from database
    */
   async _loadActiveOrders() {
-    const orders = db.prepare(`
+    const database = await this._getDatabase();
+    const ordersRes = await database.query(`
       SELECT * FROM algo_orders WHERE status IN ('pending', 'active', 'paused')
-    `).all();
+    `);
+    const orders = ordersRes.rows;
 
     for (const order of orders) {
       this.activeOrders.set(order.id, {
@@ -219,35 +399,43 @@ class AlgorithmicExecutor extends EventEmitter {
     });
 
     // Insert order
-    const result = db.prepare(`
-      INSERT INTO algo_orders
-      (portfolio_id, symbol, side, total_shares, algorithm, urgency,
-       start_time, end_time, arrival_price, limit_price, parameters, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-    `).run(
-      portfolioId,
-      symbol,
-      side,
-      shares,
-      algorithm,
-      urgency,
-      startTime || this._getMarketOpen(),
-      endTime || this._getMarketClose(),
-      arrivalPrice,
-      limitPrice,
-      JSON.stringify({ ...parameters, schedule })
+    const database = await this._getDatabase();
+    const insertResult = await database.query(
+      `
+        INSERT INTO algo_orders
+        (portfolio_id, symbol, side, total_shares, algorithm, urgency,
+         start_time, end_time, arrival_price, limit_price, parameters, status)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending')
+        ${isUsingPostgres() ? 'RETURNING id' : ''}
+      `,
+      [
+        portfolioId,
+        symbol,
+        side,
+        shares,
+        algorithm,
+        urgency,
+        startTime || this._getMarketOpen(),
+        endTime || this._getMarketClose(),
+        arrivalPrice,
+        limitPrice,
+        JSON.stringify({ ...parameters, schedule })
+      ]
     );
 
-    const orderId = result.lastInsertRowid;
+    const orderId = insertResult.rows?.[0]?.id || insertResult.lastInsertRowid;
 
     // Create execution slices
     for (let i = 0; i < schedule.slices.length; i++) {
       const slice = schedule.slices[i];
-      db.prepare(`
-        INSERT INTO algo_executions
-        (order_id, slice_number, scheduled_time, target_shares, status)
-        VALUES (?, ?, ?, ?, 'pending')
-      `).run(orderId, i + 1, slice.time, slice.shares);
+      await database.query(
+        `
+          INSERT INTO algo_executions
+          (order_id, slice_number, scheduled_time, target_shares, status)
+          VALUES ($1, $2, $3, $4, 'pending')
+        `,
+        [orderId, i + 1, slice.time, slice.shares]
+      );
     }
 
     // Add to active orders
@@ -532,12 +720,17 @@ class AlgorithmicExecutor extends EventEmitter {
     }
 
     // Get next pending slice
-    const slice = db.prepare(`
-      SELECT * FROM algo_executions
-      WHERE order_id = ? AND status = 'pending'
-      ORDER BY slice_number ASC
-      LIMIT 1
-    `).get(orderId);
+    const database = await this._getDatabase();
+    const sliceRes = await database.query(
+      `
+        SELECT * FROM algo_executions
+        WHERE order_id = $1 AND status = 'pending'
+        ORDER BY slice_number ASC
+        LIMIT 1
+      `,
+      [orderId]
+    );
+    const slice = sliceRes.rows[0];
 
     if (!slice) {
       await this._completeOrder(orderId);
@@ -561,25 +754,29 @@ class AlgorithmicExecutor extends EventEmitter {
     const execution = this._simulateSliceExecution(slice, marketData, order);
 
     // Update slice
-    db.prepare(`
-      UPDATE algo_executions
-      SET executed_time = datetime('now'),
-          filled_shares = ?,
-          price = ?,
-          slippage_bps = ?,
-          market_impact_bps = ?,
-          volume_at_execution = ?,
-          spread_at_execution = ?,
-          status = 'filled'
-      WHERE id = ?
-    `).run(
-      execution.filledShares,
-      execution.price,
-      execution.slippageBps,
-      execution.marketImpactBps,
-      marketData.volume,
-      marketData.spread,
-      slice.id
+    const nowExpression = isUsingPostgres() ? 'CURRENT_TIMESTAMP' : "datetime('now')";
+    await database.query(
+      `
+        UPDATE algo_executions
+        SET executed_time = ${nowExpression},
+            filled_shares = $1,
+            price = $2,
+            slippage_bps = $3,
+            market_impact_bps = $4,
+            volume_at_execution = $5,
+            spread_at_execution = $6,
+            status = 'filled'
+        WHERE id = $7
+      `,
+      [
+        execution.filledShares,
+        execution.price,
+        execution.slippageBps,
+        execution.marketImpactBps,
+        marketData.volume,
+        marketData.spread,
+        slice.id
+      ]
     );
 
     // Update order totals
@@ -588,13 +785,16 @@ class AlgorithmicExecutor extends EventEmitter {
       ? ((order.avg_fill_price * order.filled_shares) + (execution.price * execution.filledShares)) / newFilledShares
       : execution.price;
 
-    db.prepare(`
-      UPDATE algo_orders
-      SET filled_shares = ?,
-          avg_fill_price = ?,
-          status = 'active'
-      WHERE id = ?
-    `).run(newFilledShares, newAvgPrice, orderId);
+    await database.query(
+      `
+        UPDATE algo_orders
+        SET filled_shares = $1,
+            avg_fill_price = $2,
+            status = 'active'
+        WHERE id = $3
+      `,
+      [newFilledShares, newAvgPrice, orderId]
+    );
 
     order.filled_shares = newFilledShares;
     order.avg_fill_price = newAvgPrice;
@@ -667,9 +867,14 @@ class AlgorithmicExecutor extends EventEmitter {
     if (!order) return;
 
     // Get all executions
-    const executions = db.prepare(`
-      SELECT * FROM algo_executions WHERE order_id = ? AND status = 'filled'
-    `).all(orderId);
+    const database = await this._getDatabase();
+    const executionsRes = await database.query(
+      `
+        SELECT * FROM algo_executions WHERE order_id = $1 AND status = 'filled'
+      `,
+      [orderId]
+    );
+    const executions = executionsRes.rows;
 
     // Calculate benchmarks
     const currentPrice = await this._getCurrentPrice(order.symbol);
@@ -685,31 +890,38 @@ class AlgorithmicExecutor extends EventEmitter {
     const vsTwapBps = ((avgFillPrice - twapPrice) / twapPrice) * 10000 * (order.side === 'buy' ? 1 : -1);
 
     // Store benchmarks
-    db.prepare(`
-      INSERT INTO execution_benchmarks
-      (order_id, arrival_price, vwap_price, twap_price, close_price,
-       vs_arrival_bps, vs_vwap_bps, vs_twap_bps,
-       market_impact_bps, timing_cost_bps)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      orderId,
-      arrivalPrice,
-      vwapPrice,
-      twapPrice,
-      currentPrice,
-      vsArrivalBps,
-      vsVwapBps,
-      vsTwapBps,
-      executions.reduce((sum, e) => sum + (e.market_impact_bps || 0), 0) / executions.length,
-      executions.reduce((sum, e) => sum + (e.slippage_bps || 0), 0) / executions.length
+    await database.query(
+      `
+        INSERT INTO execution_benchmarks
+        (order_id, arrival_price, vwap_price, twap_price, close_price,
+         vs_arrival_bps, vs_vwap_bps, vs_twap_bps,
+         market_impact_bps, timing_cost_bps)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `,
+      [
+        orderId,
+        arrivalPrice,
+        vwapPrice,
+        twapPrice,
+        currentPrice,
+        vsArrivalBps,
+        vsVwapBps,
+        vsTwapBps,
+        executions.reduce((sum, e) => sum + (e.market_impact_bps || 0), 0) / executions.length,
+        executions.reduce((sum, e) => sum + (e.slippage_bps || 0), 0) / executions.length
+      ]
     );
 
     // Update order status
-    db.prepare(`
-      UPDATE algo_orders
-      SET status = 'completed', completed_at = datetime('now')
-      WHERE id = ?
-    `).run(orderId);
+    const nowExpression = isUsingPostgres() ? 'CURRENT_TIMESTAMP' : "datetime('now')";
+    await database.query(
+      `
+        UPDATE algo_orders
+        SET status = 'completed', completed_at = ${nowExpression}
+        WHERE id = $1
+      `,
+      [orderId]
+    );
 
     order.status = 'completed';
     this.activeOrders.delete(orderId);
@@ -738,18 +950,26 @@ class AlgorithmicExecutor extends EventEmitter {
     }
 
     // Cancel pending slices
-    db.prepare(`
-      UPDATE algo_executions
-      SET status = 'cancelled'
-      WHERE order_id = ? AND status = 'pending'
-    `).run(orderId);
+    const database = await this._getDatabase();
+    await database.query(
+      `
+        UPDATE algo_executions
+        SET status = 'cancelled'
+        WHERE order_id = $1 AND status = 'pending'
+      `,
+      [orderId]
+    );
 
     // Update order
-    db.prepare(`
-      UPDATE algo_orders
-      SET status = 'cancelled', completed_at = datetime('now')
-      WHERE id = ?
-    `).run(orderId);
+    const nowExpression = isUsingPostgres() ? 'CURRENT_TIMESTAMP' : "datetime('now')";
+    await database.query(
+      `
+        UPDATE algo_orders
+        SET status = 'cancelled', completed_at = ${nowExpression}
+        WHERE id = $1
+      `,
+      [orderId]
+    );
 
     this.activeOrders.delete(orderId);
 
@@ -771,16 +991,28 @@ class AlgorithmicExecutor extends EventEmitter {
   /**
    * Get order status and execution progress
    */
-  getOrderStatus(orderId) {
-    const order = this.activeOrders.get(orderId) || db.prepare(`
-      SELECT * FROM algo_orders WHERE id = ?
-    `).get(orderId);
+  async getOrderStatus(orderId) {
+    const database = await this._getDatabase();
+    let order = this.activeOrders.get(orderId);
+    if (!order) {
+      const orderRes = await database.query(
+        `
+          SELECT * FROM algo_orders WHERE id = $1
+        `,
+        [orderId]
+      );
+      order = orderRes.rows[0];
+    }
 
     if (!order) return null;
 
-    const executions = db.prepare(`
-      SELECT * FROM algo_executions WHERE order_id = ?
-    `).all(orderId);
+    const executionsRes = await database.query(
+      `
+        SELECT * FROM algo_executions WHERE order_id = $1
+      `,
+      [orderId]
+    );
+    const executions = executionsRes.rows;
 
     const filledSlices = executions.filter(e => e.status === 'filled');
     const pendingSlices = executions.filter(e => e.status === 'pending');
@@ -842,7 +1074,7 @@ class AlgorithmicExecutor extends EventEmitter {
   /**
    * Get execution analytics across orders
    */
-  getAnalytics(portfolioId, options = {}) {
+  async getAnalytics(portfolioId, options = {}) {
     const { startDate, endDate, algorithm } = options;
 
     let query = `
@@ -861,28 +1093,30 @@ class AlgorithmicExecutor extends EventEmitter {
     const params = [];
 
     if (portfolioId) {
-      query += ' AND ao.portfolio_id = ?';
+      query += ` AND ao.portfolio_id = $${params.length + 1}`;
       params.push(portfolioId);
     }
 
     if (startDate) {
-      query += ' AND ao.created_at >= ?';
+      query += ` AND ao.created_at >= $${params.length + 1}`;
       params.push(startDate);
     }
 
     if (endDate) {
-      query += ' AND ao.created_at <= ?';
+      query += ` AND ao.created_at <= $${params.length + 1}`;
       params.push(endDate);
     }
 
     if (algorithm) {
-      query += ' AND ao.algorithm = ?';
+      query += ` AND ao.algorithm = $${params.length + 1}`;
       params.push(algorithm);
     }
 
     query += ' GROUP BY ao.algorithm';
 
-    const results = db.prepare(query).all(...params);
+    const database = await this._getDatabase();
+    const resultsRes = await database.query(query, params);
+    const results = resultsRes.rows;
 
     return {
       byAlgorithm: results.map(r => ({
@@ -921,27 +1155,36 @@ class AlgorithmicExecutor extends EventEmitter {
 
   // Helper methods
   async _getCurrentPrice(symbol) {
-    const result = db.prepare(`
-      SELECT dp.close as price
-      FROM daily_prices dp
-      JOIN companies c ON dp.company_id = c.id
-      WHERE c.symbol = ?
-      ORDER BY dp.date DESC
-      LIMIT 1
-    `).get(symbol);
-    return result?.price;
+    const database = await this._getDatabase();
+    const resultRes = await database.query(
+      `
+        SELECT dp.close as price
+        FROM daily_prices dp
+        JOIN companies c ON dp.company_id = c.id
+        WHERE c.symbol = $1
+        ORDER BY dp.date DESC
+        LIMIT 1
+      `,
+      [symbol]
+    );
+    return resultRes.rows[0]?.price;
   }
 
   async _getMarketData(symbol) {
     const price = await this._getCurrentPrice(symbol);
-    const volumeData = db.prepare(`
-      SELECT AVG(dp.volume) as avgVolume
-      FROM daily_prices dp
-      JOIN companies c ON dp.company_id = c.id
-      WHERE c.symbol = ?
-      ORDER BY dp.date DESC
-      LIMIT 20
-    `).get(symbol);
+    const database = await this._getDatabase();
+    const volumeRes = await database.query(
+      `
+        SELECT AVG(dp.volume) as avgVolume
+        FROM daily_prices dp
+        JOIN companies c ON dp.company_id = c.id
+        WHERE c.symbol = $1
+        ORDER BY dp.date DESC
+        LIMIT 20
+      `,
+      [symbol]
+    );
+    const volumeData = volumeRes.rows[0];
 
     return {
       price,

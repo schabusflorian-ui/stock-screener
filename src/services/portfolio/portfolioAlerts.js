@@ -3,7 +3,7 @@
  * Monitors portfolios for alert conditions and creates notifications
  */
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const {
   PORTFOLIO_ALERT_TYPES,
   ALERT_SEVERITY,

@@ -259,11 +259,11 @@ class XBRLProvider {
 
     // Look up by company_id in the main companies table
     if (resolved.companyId) {
-      const stmt = this.db.prepare(`
-        SELECT id FROM company_identifiers WHERE company_id = ? LIMIT 1
-      `);
-      const result = stmt.get(resolved.companyId);
-      return result?.id;
+      const result = await this.db.query(
+        `SELECT id FROM company_identifiers WHERE company_id = $1 LIMIT 1`,
+        [resolved.companyId]
+      );
+      return result.rows?.[0]?.id;
     }
 
     return null;

@@ -1,7 +1,7 @@
 // src/services/portfolio/exportService.js
 // Portfolio Export Service - CSV and Summary exports
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 class ExportService {
   // No constructor needed

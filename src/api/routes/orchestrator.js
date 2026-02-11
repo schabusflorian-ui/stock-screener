@@ -3,25 +3,13 @@
 
 const express = require('express');
 const router = express.Router();
-const { getDatabaseSync, isUsingPostgres } = require('../../lib/db');
+const { getDatabaseAsync } = require('../../lib/db');
 const { getOrchestrator } = require('../../services/agent');
 
-// Trading orchestrator endpoints are SQLite-only for now.
-router.use((req, res, next) => {
-  if (isUsingPostgres()) {
-    return res.status(503).json({
-      error: 'Trading orchestrator endpoints are not available in PostgreSQL deployment',
-      code: 'ORCHESTRATOR_NOT_AVAILABLE',
-      message: 'These endpoints use SQLite-specific queries and require migration.'
-    });
-  }
-  next();
-});
-
 let database = null;
-function getDb() {
+async function getDb() {
   if (!database) {
-    database = getDatabaseSync();
+    database = await getDatabaseAsync();
   }
   return database;
 }
@@ -29,9 +17,10 @@ function getDb() {
 // Initialize orchestrator lazily
 let orchestrator = null;
 
-function ensureOrchestrator() {
+async function ensureOrchestrator() {
   if (!orchestrator) {
-    orchestrator = getOrchestrator(getDb());
+    const db = await getDb();
+    orchestrator = getOrchestrator(db);
   }
   return orchestrator;
 }
@@ -46,7 +35,7 @@ function ensureOrchestrator() {
  */
 router.post('/run/:portfolioId', async (req, res) => {
   try {
-    const orch = ensureOrchestrator();
+    const orch = await ensureOrchestrator();
     const portfolioId = parseInt(req.params.portfolioId);
 
     console.log(`API: Starting daily analysis for portfolio ${portfolioId}`);
@@ -70,9 +59,9 @@ router.post('/run/:portfolioId', async (req, res) => {
  * GET /api/orchestrator/latest/:portfolioId
  * Get latest analysis for a portfolio
  */
-router.get('/latest/:portfolioId', (req, res) => {
+router.get('/latest/:portfolioId', async (req, res) => {
   try {
-    const orch = ensureOrchestrator();
+    const orch = await ensureOrchestrator();
     const portfolioId = parseInt(req.params.portfolioId);
 
     const analysis = orch.getLatestAnalysis(portfolioId);
@@ -101,9 +90,9 @@ router.get('/latest/:portfolioId', (req, res) => {
  * GET /api/orchestrator/history/:portfolioId
  * Get analysis history for a portfolio
  */
-router.get('/history/:portfolioId', (req, res) => {
+router.get('/history/:portfolioId', async (req, res) => {
   try {
-    const orch = ensureOrchestrator();
+    const orch = await ensureOrchestrator();
     const portfolioId = parseInt(req.params.portfolioId);
     const days = parseInt(req.query.days) || 30;
 
@@ -135,7 +124,7 @@ router.get('/history/:portfolioId', (req, res) => {
  */
 router.get('/quick-scan', async (req, res) => {
   try {
-    const orch = ensureOrchestrator();
+    const orch = await ensureOrchestrator();
     const limit = parseInt(req.query.limit) || 10;
     const types = req.query.types ? req.query.types.split(',') : undefined;
 
@@ -160,7 +149,7 @@ router.get('/quick-scan', async (req, res) => {
  */
 router.get('/analyze/:symbol', async (req, res) => {
   try {
-    const orch = ensureOrchestrator();
+    const orch = await ensureOrchestrator();
     const { symbol } = req.params;
     const portfolioId = req.query.portfolioId ? parseInt(req.query.portfolioId) : null;
 
@@ -185,7 +174,7 @@ router.get('/analyze/:symbol', async (req, res) => {
  */
 router.post('/analyze', async (req, res) => {
   try {
-    const orch = ensureOrchestrator();
+    const orch = await ensureOrchestrator();
     const { symbol, portfolioId } = req.body;
 
     if (!symbol) {
@@ -220,7 +209,7 @@ router.post('/analyze', async (req, res) => {
  */
 router.get('/regime', async (req, res) => {
   try {
-    const orch = ensureOrchestrator();
+    const orch = await ensureOrchestrator();
     const regime = await orch.getCurrentRegime();
 
     res.json({
@@ -240,9 +229,9 @@ router.get('/regime', async (req, res) => {
  * GET /api/orchestrator/regime/history
  * Get market regime history
  */
-router.get('/regime/history', (req, res) => {
+router.get('/regime/history', async (req, res) => {
   try {
-    const orch = ensureOrchestrator();
+    const orch = await ensureOrchestrator();
     const days = parseInt(req.query.days) || 30;
 
     const history = orch.getRegimeHistory(days);
@@ -272,7 +261,7 @@ router.get('/regime/history', (req, res) => {
  */
 router.get('/stats', async (req, res) => {
   try {
-    const orch = ensureOrchestrator();
+    const orch = await ensureOrchestrator();
     const stats = await orch.getSystemStats();
 
     res.json({
@@ -294,48 +283,51 @@ router.get('/stats', async (req, res) => {
  */
 router.get('/dashboard', async (req, res) => {
   try {
-    const database = getDb();
+    const database = await getDb();
 
     // Get all portfolios with their latest analysis
-    const portfolios = database.prepare(`
+    const portfoliosResult = await database.query(`
       SELECT p.id, p.name, p.current_value, p.current_cash,
         (SELECT COUNT(*) FROM portfolio_positions WHERE portfolio_id = p.id) as position_count
       FROM portfolios p
       WHERE p.is_archived = 0
       ORDER BY p.current_value DESC
-    `).all();
+    `);
+    const portfolios = portfoliosResult.rows;
 
     // Get latest analysis for each
-    const portfolioSummaries = portfolios.map(p => {
-      const latestAnalysis = database.prepare(`
+    const portfolioSummaries = [];
+    for (const p of portfolios) {
+      const latestResult = await database.query(`
         SELECT * FROM daily_analyses
-        WHERE portfolio_id = ?
+        WHERE portfolio_id = $1
         ORDER BY date DESC, created_at DESC
         LIMIT 1
-      `).get(p.id);
-
-      return {
+      `, [p.id]);
+      const latestAnalysis = latestResult.rows[0];
+      portfolioSummaries.push({
         portfolio: p,
         hasRecentAnalysis: latestAnalysis && latestAnalysis.date === new Date().toISOString().split('T')[0],
         lastAnalysisDate: latestAnalysis?.date,
         regime: latestAnalysis?.regime,
         recommendationsCount: latestAnalysis?.recommendations_count || 0,
-      };
-    });
+      });
+    }
 
     // Get current regime
-    const orch = ensureOrchestrator();
+    const orch = await ensureOrchestrator();
     const currentRegime = await orch.getCurrentRegime();
 
     // Get recent recommendations
-    const recentRecommendations = database.prepare(`
+    const recentResult = await database.query(`
       SELECT ar.*, c.symbol, c.name as company_name
       FROM agent_recommendations ar
       JOIN companies c ON ar.company_id = c.id
       WHERE ar.action IN ('strong_buy', 'buy', 'strong_sell', 'sell')
       ORDER BY ar.created_at DESC
       LIMIT 10
-    `).all();
+    `);
+    const recentRecommendations = recentResult.rows;
 
     res.json({
       success: true,
@@ -366,13 +358,14 @@ router.get('/dashboard', async (req, res) => {
  */
 router.post('/run-all', async (req, res) => {
   try {
-    const database = getDb();
-    const orch = ensureOrchestrator();
+    const database = await getDb();
+    const orch = await ensureOrchestrator();
 
     // Get all active portfolios
-    const portfolios = database.prepare(`
+    const portfoliosResult = await database.query(`
       SELECT id, name FROM portfolios WHERE is_archived = 0
-    `).all();
+    `);
+    const portfolios = portfoliosResult.rows;
 
     const results = [];
 

@@ -1,7 +1,7 @@
 // src/api/routes/xbrl.js
 const express = require('express');
 const router = express.Router();
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const {
   XBRLFilingsClient,
   CompaniesHouseClient,

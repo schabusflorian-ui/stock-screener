@@ -3,7 +3,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const AlertService = require('../../services/alerts');
 const { SIGNAL_CONFIG, ALERT_TYPE_CONFIG } = require('../../services/alerts/alertDefinitions');
 const { DigestManager, DIGEST_MODES } = require('../../services/alerts/digestManager');
@@ -667,37 +667,37 @@ router.get('/stats', async (req, res) => {
     const weekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
     const monthAgo = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    const statsStmt = database.prepare(`
+    const statsRes = await database.query(`
       SELECT
-        COUNT(CASE WHEN triggered_at > ? THEN 1 END) as alerts_24h,
-        COUNT(CASE WHEN triggered_at > ? THEN 1 END) as alerts_7d,
-        COUNT(CASE WHEN triggered_at > ? THEN 1 END) as alerts_30d,
-        COUNT(CASE WHEN triggered_at > ? AND is_read = 0 THEN 1 END) as unread_7d,
-        COUNT(CASE WHEN triggered_at > ? AND is_dismissed = 1 THEN 1 END) as dismissed_7d,
-        COUNT(CASE WHEN triggered_at > ? AND priority >= 4 THEN 1 END) as high_priority_7d,
+        COUNT(CASE WHEN triggered_at > $1 THEN 1 END) as alerts_24h,
+        COUNT(CASE WHEN triggered_at > $2 THEN 1 END) as alerts_7d,
+        COUNT(CASE WHEN triggered_at > $3 THEN 1 END) as alerts_30d,
+        COUNT(CASE WHEN triggered_at > $4 AND is_read = 0 THEN 1 END) as unread_7d,
+        COUNT(CASE WHEN triggered_at > $5 AND is_dismissed = 1 THEN 1 END) as dismissed_7d,
+        COUNT(CASE WHEN triggered_at > $6 AND priority >= 4 THEN 1 END) as high_priority_7d,
         COUNT(DISTINCT company_id) as unique_companies_7d
       FROM alerts
-      WHERE triggered_at > ?
-    `);
-    const stats = await statsStmt.get(dayAgo, weekAgo, monthAgo, weekAgo, weekAgo, weekAgo, monthAgo);
+      WHERE triggered_at > $7
+    `, [dayAgo, weekAgo, monthAgo, weekAgo, weekAgo, weekAgo, monthAgo]);
+    const stats = statsRes.rows[0];
 
-    const byTypeStmt = database.prepare(`
+    const byTypeRes = await database.query(`
       SELECT alert_type, COUNT(*) as count
       FROM alerts
-      WHERE triggered_at > ?
+      WHERE triggered_at > $1
       GROUP BY alert_type
       ORDER BY count DESC
-    `);
-    const byType = await byTypeStmt.all(weekAgo);
+    `, [weekAgo]);
+    const byType = byTypeRes.rows;
 
-    const bySignalStmt = database.prepare(`
+    const bySignalRes = await database.query(`
       SELECT signal_type, COUNT(*) as count
       FROM alerts
-      WHERE triggered_at > ?
+      WHERE triggered_at > $1
       GROUP BY signal_type
       ORDER BY count DESC
-    `);
-    const bySignal = await bySignalStmt.all(weekAgo);
+    `, [weekAgo]);
+    const bySignal = bySignalRes.rows;
 
     res.json({
       success: true,

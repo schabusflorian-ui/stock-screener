@@ -2,7 +2,7 @@
 // Correlation Manager - Simons-inspired diversification with correlation awareness
 // Manages position correlations to reduce idiosyncratic risk and avoid concentration
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * CorrelationManager - Correlation-aware portfolio management

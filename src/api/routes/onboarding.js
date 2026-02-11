@@ -1,7 +1,7 @@
 // src/api/routes/onboarding.js
 const express = require('express');
 const router = express.Router();
-const { getDatabaseAsync, isPostgres } = require('../../database');
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 
 /**
  * Save user's onboarding preferences
@@ -68,7 +68,7 @@ router.post('/preferences', async (req, res) => {
         try {
           // Find company by symbol (case-insensitive)
           const companyResult = await database.query(
-            isPostgres()
+            isUsingPostgres()
               ? 'SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)'
               : 'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)',
             [stock.symbol]
@@ -78,7 +78,7 @@ router.post('/preferences', async (req, res) => {
             const companyId = companyResult.rows[0].id;
 
             // Insert into watchlist, ignore if already exists
-            if (isPostgres()) {
+            if (isUsingPostgres()) {
               await database.query(
                 `INSERT INTO user_watchlists (user_id, company_id, added_at)
                  VALUES ($1, $2, NOW())

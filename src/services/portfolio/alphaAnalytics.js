@@ -1,7 +1,7 @@
 // src/services/portfolio/alphaAnalytics.js
 // Advanced Alpha Analytics - Multiple alpha calculation methods
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 const TRADING_DAYS_PER_YEAR = 252;
 const RISK_FREE_RATE = 0.05; // 5% annual

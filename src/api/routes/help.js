@@ -6,7 +6,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { getDatabaseAsync, isPostgres } = require('../../database');
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 
 // Middleware imports
 const { optionalAuth, requireAdmin, attachUserId } = require('../../middleware/auth');
@@ -250,7 +250,7 @@ router.get('/popular', async (req, res) => {
         COUNT(hav.id) as view_count
       FROM help_articles ha
       LEFT JOIN help_article_views hav ON ha.id = hav.article_id
-        AND hav.viewed_at >= ${isPostgres ? "NOW() - INTERVAL '30 days'" : "datetime('now', '-30 days')"}
+        AND hav.viewed_at >= ${isUsingPostgres() ? "NOW() - INTERVAL '30 days'" : "datetime('now', '-30 days')"}
       WHERE ha.status = 'published'
       GROUP BY ha.id
       ORDER BY view_count DESC, ha.sort_order ASC

@@ -12,7 +12,7 @@
 const express = require('express');
 const router = express.Router();
 const path = require('path');
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 // Lazy load TCA benchmark to avoid startup issues
 let TCABenchmark = null;

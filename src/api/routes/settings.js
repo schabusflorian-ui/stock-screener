@@ -3,7 +3,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { createSettingsService } = require('../../services/settingsService');
 
 // Get settings service instance (async)

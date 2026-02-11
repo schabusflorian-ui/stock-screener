@@ -291,7 +291,7 @@ async function routeQuery(query, context = {}) {
 
   // 3. Check for invalid symbols (semantic validation)
   if (context.db) {
-    const symbolCheck = checkForInvalidSymbols(sanitizedQuery, context.db);
+    const symbolCheck = await checkForInvalidSymbols(sanitizedQuery, context.db);
     if (!symbolCheck.valid) {
       console.log(`[QueryRouter] Query rejected: ${symbolCheck.code} - "${sanitizedQuery.slice(0, 30)}..."`);
       return {

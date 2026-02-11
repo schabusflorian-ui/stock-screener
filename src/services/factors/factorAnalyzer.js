@@ -1,7 +1,7 @@
 // src/services/factors/factorAnalyzer.js
 // Analyzes factor exposures at the portfolio and investor level
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * FactorAnalyzer

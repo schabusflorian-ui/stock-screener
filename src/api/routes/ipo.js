@@ -3,7 +3,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { IPOTracker, IPO_STAGES, IPO_FORM_TYPES, IPO_REGIONS } = require('../../services/ipoTracker');
 const { asyncHandler } = require('../../middleware/errorHandler');
 

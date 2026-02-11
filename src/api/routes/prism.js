@@ -3,7 +3,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const SECFilingParser = require('../../services/secFilingParser');
 const PRISMReportGeneratorV2 = require('../../services/prismReportGeneratorV2');
 const { requireAuth } = require('../../middleware/auth');

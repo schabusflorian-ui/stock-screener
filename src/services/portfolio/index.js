@@ -1,7 +1,7 @@
 // src/services/portfolio/index.js
 // Main portfolio service - orchestrates holdings and order engines
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const HoldingsEngine = require('./holdingsEngine');
 const OrderEngine = require('./orderEngine');
 const PortfolioAlertsService = require('./portfolioAlerts');

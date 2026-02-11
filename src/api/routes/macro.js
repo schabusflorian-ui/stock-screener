@@ -7,14 +7,14 @@
 const express = require('express');
 const router = express.Router();
 const { FREDService } = require('../../services/dataProviders');
-const db = require('../../database');
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 
 // Initialize service
 let fredService = null;
 
 function getService() {
   if (!fredService) {
-    fredService = new FREDService(db);
+    fredService = new FREDService();
   }
   return fredService;
 }
@@ -68,7 +68,7 @@ function isMissingRelation(err) {
  */
 router.get('/yield-curve', async (req, res) => {
   try {
-    const dbConn = await db.getDatabaseAsync();
+    const dbConn = await getDatabaseAsync();
     const result = await dbConn.query(`
       SELECT * FROM yield_curve
       ORDER BY curve_date DESC
@@ -373,7 +373,7 @@ function applyRollingAverage(series, window = 4) {
 router.get('/market-indicators/history', async (req, res) => {
   try {
     const startQuarter = req.query.startQuarter || '2015-Q1';
-    const database = await require('../../database').getDatabaseAsync();
+    const database = await getDatabaseAsync();
 
     // Read pre-calculated data from table (instant!)
     const queryResult = await database.query(`
@@ -391,7 +391,7 @@ router.get('/market-indicators/history', async (req, res) => {
         yield_spread_2s10s,
         data_quality
       FROM market_indicator_history
-      WHERE quarter >= ?
+      WHERE quarter >= $1
       ORDER BY quarter ASC
     `, [startQuarter]);
     const data = queryResult.rows;
@@ -618,7 +618,7 @@ router.get('/key-metrics', async (req, res) => {
 router.get('/buffett-comparison', async (req, res) => {
   try {
     const startQuarter = req.query.startQuarter || '2015-Q1';
-    const database = await require('../../database').getDatabaseAsync();
+    const database = await getDatabaseAsync();
 
     // Read pre-calculated data from table (instant!)
     const result = await database.query(`
@@ -631,7 +631,7 @@ router.get('/buffett-comparison', async (req, res) => {
         buffett_stock_count,
         sp500_market_cap
       FROM market_indicator_history
-      WHERE quarter >= ?
+      WHERE quarter >= $1
         AND buffett_indicator IS NOT NULL
       ORDER BY quarter ASC
     `, [startQuarter]);
@@ -715,7 +715,6 @@ router.get('/buffett-comparison', async (req, res) => {
  */
 router.get('/refresh-current-quarter', async (req, res) => {
   try {
-    const { getDatabaseAsync } = require('../../database');
     const database = await getDatabaseAsync();
     const { HistoricalMarketIndicatorsService } = require('../../services/historicalMarketIndicators');
     const service = new HistoricalMarketIndicatorsService(database);
@@ -736,16 +735,7 @@ router.get('/refresh-current-quarter', async (req, res) => {
     const aggregateMetrics = await service.getQuarterMetrics(currentQuarter);
 
     // Upsert into table
-    const stmt = await database.prepare(`
-      INSERT OR REPLACE INTO market_indicator_history (
-        quarter, quarter_end_date,
-        buffett_indicator, buffett_market_cap, buffett_gdp, buffett_stock_count,
-        sp500_pe, sp500_market_cap, sp500_earnings, sp500_company_count,
-        median_pe, median_msi, pct_undervalued, total_stocks_analyzed,
-        calculated_at, data_quality
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
-    `);
-    await stmt.run(
+    const params = [
       currentQuarter,
       quarterEndDate,
       buffett?.value ? Math.round(buffett.value * 100) / 100 : null,
@@ -761,7 +751,39 @@ router.get('/refresh-current-quarter', async (req, res) => {
       aggregateMetrics?.metrics?.pct_undervalued || null,
       aggregateMetrics?.sampleSize || null,
       'complete'
-    );
+    ];
+    const upsertSql = isUsingPostgres()
+      ? `INSERT INTO market_indicator_history (
+           quarter, quarter_end_date,
+           buffett_indicator, buffett_market_cap, buffett_gdp, buffett_stock_count,
+           sp500_pe, sp500_market_cap, sp500_earnings, sp500_company_count,
+           median_pe, median_msi, pct_undervalued, total_stocks_analyzed,
+           calculated_at, data_quality
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), $15)
+         ON CONFLICT (quarter) DO UPDATE SET
+           quarter_end_date = EXCLUDED.quarter_end_date,
+           buffett_indicator = EXCLUDED.buffett_indicator,
+           buffett_market_cap = EXCLUDED.buffett_market_cap,
+           buffett_gdp = EXCLUDED.buffett_gdp,
+           buffett_stock_count = EXCLUDED.buffett_stock_count,
+           sp500_pe = EXCLUDED.sp500_pe,
+           sp500_market_cap = EXCLUDED.sp500_market_cap,
+           sp500_earnings = EXCLUDED.sp500_earnings,
+           sp500_company_count = EXCLUDED.sp500_company_count,
+           median_pe = EXCLUDED.median_pe,
+           median_msi = EXCLUDED.median_msi,
+           pct_undervalued = EXCLUDED.pct_undervalued,
+           total_stocks_analyzed = EXCLUDED.total_stocks_analyzed,
+           calculated_at = EXCLUDED.calculated_at,
+           data_quality = EXCLUDED.data_quality`
+      : `INSERT OR REPLACE INTO market_indicator_history (
+           quarter, quarter_end_date,
+           buffett_indicator, buffett_market_cap, buffett_gdp, buffett_stock_count,
+           sp500_pe, sp500_market_cap, sp500_earnings, sp500_company_count,
+           median_pe, median_msi, pct_undervalued, total_stocks_analyzed,
+           calculated_at, data_quality
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, datetime('now'), $15)`;
+    await database.query(upsertSql, params);
 
     res.json({
       success: true,

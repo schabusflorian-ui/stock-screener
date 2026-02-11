@@ -14,7 +14,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../../middleware/auth');
-const { getDatabaseAsync, isPostgres } = require('../../database');
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 
 /**
  * GET /api/system/health
@@ -172,7 +172,7 @@ router.get('/health', async (req, res) => {
         SELECT
           status,
           COUNT(*) as count,
-          AVG(${isPostgres ? "EXTRACT(EPOCH FROM (NOW() - scheduled_for))" : "julianday('now') - julianday(scheduled_for)) * 86400"}) as avg_latency_sec
+          AVG(${isUsingPostgres ? "EXTRACT(EPOCH FROM (NOW() - scheduled_for))" : "julianday('now') - julianday(scheduled_for)) * 86400"}) as avg_latency_sec
         FROM update_queue
         WHERE status IN ('pending', 'processing')
         GROUP BY status
@@ -188,7 +188,7 @@ router.get('/health', async (req, res) => {
         SELECT COUNT(*) as count
         FROM update_queue
         WHERE status = 'processing'
-          AND (last_heartbeat IS NULL OR last_heartbeat < ${isPostgres ? "NOW() - INTERVAL '10 minutes'" : "datetime('now', '-10 minutes')"})
+          AND (last_heartbeat IS NULL OR last_heartbeat < ${isUsingPostgres ? "NOW() - INTERVAL '10 minutes'" : "datetime('now', '-10 minutes')"})
       `);
       const stalled = stalledResult.rows[0].count;
 
@@ -257,12 +257,12 @@ router.get('/health', async (req, res) => {
     try {
       // Check if api_usage_daily table exists
       const tableExistsResult = await database.query(
-        isPostgres
+        isPostgres: isUsingPostgres()
           ? `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = $1) as exists`
           : `SELECT name FROM sqlite_master WHERE type='table' AND name=?`,
         ['api_usage_daily']
       );
-      const tableExists = isPostgres ? tableExistsResult.rows[0]?.exists : tableExistsResult.rows[0];
+      const tableExists = isUsingPostgres() ? tableExistsResult.rows[0]?.exists : tableExistsResult.rows[0];
 
       if (tableExists) {
         const { getCostTracker } = require('../../services/costs');

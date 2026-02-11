@@ -1,7 +1,7 @@
 // src/services/portfolio/rebalanceCalculator.js
 // Rebalancing Calculator - Drift detection and trade calculation (Agent 2)
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 class RebalanceCalculator {
   // No constructor needed for PostgreSQL async pattern

@@ -1,7 +1,7 @@
 // src/services/factors/factorExposure.js
 // Factor Exposure Analysis - Decompose returns into factor contributions
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * FactorExposureAnalyzer - Analyze portfolio factor exposures

@@ -12,7 +12,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { requireAuth, optionalAuth } = require('../../middleware/auth');
 const { getSubscriptionService } = require('../../services/subscriptionService');
 const { isAdminRequest } = require('../../middleware/subscription');
@@ -524,7 +524,7 @@ async function handlePaymentFailed(subscriptionService, invoice) {
 
   // Update status to past_due
   const db = subscriptionService.db;
-  const { getDatabaseAsync } = require('../../database');
+  const { getDatabaseAsync } = require('../../lib/db');
   const database = await getDatabaseAsync();
 
   await database.query(`
@@ -548,7 +548,7 @@ async function handlePaymentSucceeded(subscriptionService, invoice) {
   if (!userId) return;
 
   // Clear past_due status
-  const { getDatabaseAsync } = require('../../database');
+  const { getDatabaseAsync } = require('../../lib/db');
   const database = await getDatabaseAsync();
 
   await database.query(`

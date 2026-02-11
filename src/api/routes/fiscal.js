@@ -3,7 +3,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const FiscalCalendarService = require('../../services/fiscalCalendar');
 
 // Lazy initialization - service created on first request

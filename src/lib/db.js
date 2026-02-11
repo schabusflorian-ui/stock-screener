@@ -77,6 +77,21 @@ function initSQLite() {
       };
     },
 
+    // pg-promise style helpers (async; TradingAgent and others use these)
+    oneOrNone: async function (sql, params = []) {
+      const res = this.query(sql, params);
+      return (res && res.rows && res.rows[0]) ?? null;
+    },
+    manyOrNone: async function (sql, params = []) {
+      const res = this.query(sql, params);
+      return (res && res.rows) ?? [];
+    },
+    one: async function (sql, params = []) {
+      const res = this.query(sql, params);
+      if (!res || !res.rows || res.rows.length === 0) throw new Error('No data returned from query');
+      return res.rows[0];
+    },
+
     // Execute raw SQL (for schema changes)
     exec: (sql) => sqliteDb.exec(sql),
 
@@ -477,6 +492,21 @@ async function initPostgres() {
       pgSql = convertSQLDialect(pgSql);
 
       return pool.query(pgSql, params);
+    },
+
+    // pg-promise style helpers (TradingAgent and others use these)
+    oneOrNone: async function (sql, params = []) {
+      const res = await this.query(sql, params);
+      return (res && res.rows && res.rows[0]) ?? null;
+    },
+    manyOrNone: async function (sql, params = []) {
+      const res = await this.query(sql, params);
+      return (res && res.rows) ?? [];
+    },
+    one: async function (sql, params = []) {
+      const res = await this.query(sql, params);
+      if (!res || !res.rows || res.rows.length === 0) throw new Error('No data returned from query');
+      return res.rows[0];
     },
 
     // Execute raw SQL

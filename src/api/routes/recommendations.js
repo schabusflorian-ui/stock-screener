@@ -2,7 +2,7 @@
 // API routes for recommendation tracking and performance analytics
 
 const express = require('express');
-const { getDatabaseAsync, isPostgres } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const router = express.Router();
 const { RecommendationTracker } = require('../../services/agent/recommendationTracker');
 

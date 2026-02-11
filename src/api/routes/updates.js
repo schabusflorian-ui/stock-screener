@@ -8,11 +8,11 @@
 const express = require('express');
 const router = express.Router();
 const path = require('path');
-const { isPostgres } = require('../../database');
+const { isUsingPostgres, getDatabaseSync } = require('../../lib/db');
 
 // In PostgreSQL mode, legacy quarterly updates are not available (SQLite-only)
 router.use((req, res, next) => {
-  if (isPostgres) {
+  if (isUsingPostgres()) {
     return res.status(503).json({
       error: 'Quarterly updates are not available in PostgreSQL deployment',
       code: 'UPDATES_NOT_AVAILABLE',
@@ -32,8 +32,7 @@ let updateInProgress = false;
  */
 function initializeUpdater() {
   if (!db) {
-    const database = require('../../database');
-    db = database.getDatabase();
+    db = getDatabaseSync();
   }
 
   if (!updater) {

@@ -25,21 +25,21 @@ const { CreditCycleMonitor } = require('../macro/creditCycleIndicators');
  * - Buffett: Moat scoring, quality focus
  */
 class EnhancedQuantSystem {
-  constructor() {
-    // No database parameter needed - using getDatabaseAsync()
+  constructor(db = null) {
+    this.db = db;
 
-    // Initialize all subsystems
+    // Initialize all subsystems (pass db to those that need it)
     console.log('\n🚀 Initializing Enhanced Quant System...\n');
 
     this.tailHedge = new TailHedgeManager();
     this.factorAttribution = new FactorAttribution();
     this.predictionIntervals = new PredictionIntervalCalculator();
-    this.signalDecorrelator = new SignalDecorrelator();
+    this.signalDecorrelator = new SignalDecorrelator(db);
     this.correlationManager = new CorrelationManager();
-    this.economicRegime = new EconomicRegimeDetector();
+    this.economicRegime = new EconomicRegimeDetector(db);
     this.pairsTrading = new PairsTradingEngine();
-    this.moatScorer = new MoatScorer();
-    this.creditCycle = new CreditCycleMonitor();
+    this.moatScorer = new MoatScorer(db);
+    this.creditCycle = new CreditCycleMonitor(db);
 
     console.log('\n✅ All subsystems initialized\n');
   }

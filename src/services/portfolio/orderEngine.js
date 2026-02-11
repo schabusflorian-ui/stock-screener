@@ -1,7 +1,7 @@
 // src/services/portfolio/orderEngine.js
 // Order engine for managing standing orders (stop loss, limit, trailing stop)
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { ORDER_TYPES, ORDER_STATUS } = require('../../constants/portfolio');
 
 class OrderEngine {
