@@ -22,6 +22,28 @@ class NotificationService {
     this._emailService = null;
   }
 
+  async _query(sql, params = []) {
+    return this.db.query(sql, params);
+  }
+
+  async _get(sql, params = []) {
+    const result = await this._query(sql, params);
+    return result.rows[0] || null;
+  }
+
+  async _all(sql, params = []) {
+    const result = await this._query(sql, params);
+    return result.rows;
+  }
+
+  async _run(sql, params = []) {
+    const result = await this._query(sql, params);
+    return {
+      changes: result.rowCount || 0,
+      lastInsertRowid: result.lastInsertRowid || result.rows?.[0]?.id || null
+    };
+  }
+
   // ============================================
   // NOTIFICATION CREATION
   // ============================================
@@ -29,7 +51,7 @@ class NotificationService {
   /**
    * Create a new notification
    */
-  create(notification) {
+  async create(notification) {
     const {
       userId = this.options.defaultUserId,
       type,
@@ -54,14 +76,14 @@ class NotificationService {
     }
 
     // Check user preferences
-    const shouldCreate = this._checkUserPreferences(userId, category, priority, channels);
+    const shouldCreate = await this._checkUserPreferences(userId, category, priority, channels);
     if (!shouldCreate.allowed) {
       return { created: false, reason: shouldCreate.reason };
     }
 
     // Check for duplicates
     if (groupKey) {
-      const existing = this._findExistingNotification(userId, groupKey);
+      const existing = await this._findExistingNotification(userId, groupKey);
       if (existing) {
         // Update existing notification instead of creating new
         return this._updateExistingNotification(existing.id, notification);
@@ -69,16 +91,16 @@ class NotificationService {
     }
 
     // Insert notification
-    const stmt = this.db.prepare(`
+    const shouldReturnId = this.db.type === 'postgres';
+    const result = await this._run(`
       INSERT INTO notifications (
         user_id, type, category, severity, priority,
         title, body, data, actions, related_entities,
         channels, group_key, expires_at,
         source_type, source_id, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    `);
-
-    const result = stmt.run(
+      ${shouldReturnId ? 'RETURNING id' : ''}
+    `, [
       userId,
       type,
       category,
@@ -94,12 +116,12 @@ class NotificationService {
       expiresAt,
       sourceType,
       sourceId
-    );
+    ]);
 
     const notificationId = result.lastInsertRowid;
 
     // Queue delivery for non-in_app channels
-    this._queueDelivery(notificationId, channels);
+    await this._queueDelivery(notificationId, channels);
 
     return {
       created: true,
@@ -111,28 +133,25 @@ class NotificationService {
   /**
    * Create multiple notifications (batch)
    */
-  createBatch(notifications) {
+  async createBatch(notifications) {
     const results = [];
 
-    const transaction = this.db.transaction(() => {
-      for (const notification of notifications) {
-        try {
-          const result = this.create(notification);
-          results.push({ success: true, ...result });
-        } catch (error) {
-          results.push({ success: false, error: error.message });
-        }
+    for (const notification of notifications) {
+      try {
+        const result = await this.create(notification);
+        results.push({ success: true, ...result });
+      } catch (error) {
+        results.push({ success: false, error: error.message });
       }
-    });
+    }
 
-    transaction();
     return results;
   }
 
   /**
    * Create notification from company alert (adapter for existing AlertService)
    */
-  createFromCompanyAlert(alert, companyData) {
+  async createFromCompanyAlert(alert, companyData) {
     const severity = alert.signal_type === 'warning' ? 'warning' :
                      alert.priority >= 4 ? 'warning' : 'info';
 
@@ -159,7 +178,7 @@ class NotificationService {
   /**
    * Create notification from portfolio alert (adapter for existing PortfolioAlertsService)
    */
-  createFromPortfolioAlert(alert, portfolioData) {
+  async createFromPortfolioAlert(alert, portfolioData) {
     const priority = alert.severity === 'critical' ? 5 :
                      alert.severity === 'warning' ? 4 : 3;
 
@@ -190,7 +209,7 @@ class NotificationService {
   /**
    * Get notifications with filters
    */
-  getNotifications(filters = {}) {
+  async getNotifications(filters = {}) {
     const {
       userId = this.options.defaultUserId,
       status = null,
@@ -288,7 +307,7 @@ class NotificationService {
     sql += ' ORDER BY n.priority DESC, n.created_at DESC LIMIT ? OFFSET ?';
     params.push(Math.min(limit, this.options.maxNotificationsPerQuery), offset);
 
-    const notifications = this.db.prepare(sql).all(...params);
+    const notifications = await this._all(sql, params);
 
     // Parse JSON fields
     return notifications.map(n => this._parseNotification(n));
@@ -297,10 +316,10 @@ class NotificationService {
   /**
    * Get a single notification by ID
    */
-  getNotification(id) {
-    const notification = this.db.prepare(`
+  async getNotification(id) {
+    const notification = await this._get(`
       SELECT * FROM notifications WHERE id = ? AND deleted_at IS NULL
-    `).get(id);
+    `, [id]);
 
     return notification ? this._parseNotification(notification) : null;
   }
@@ -308,8 +327,8 @@ class NotificationService {
   /**
    * Get notification summary for header badge
    */
-  getSummary(userId = this.options.defaultUserId) {
-    const summary = this.db.prepare(`
+  async getSummary(userId = this.options.defaultUserId) {
+    const summary = await this._get(`
       SELECT
         COUNT(*) as total,
         SUM(CASE WHEN status = 'unread' THEN 1 ELSE 0 END) as unread,
@@ -321,10 +340,10 @@ class NotificationService {
         AND deleted_at IS NULL
         AND status NOT IN ('dismissed')
         AND (expires_at IS NULL OR expires_at > datetime('now'))
-    `).get(userId);
+    `, [userId]);
 
     // Get counts by category
-    const byCategory = this.db.prepare(`
+    const byCategory = await this._all(`
       SELECT
         category,
         COUNT(*) as total,
@@ -335,7 +354,7 @@ class NotificationService {
         AND status NOT IN ('dismissed')
         AND (expires_at IS NULL OR expires_at > datetime('now'))
       GROUP BY category
-    `).all(userId);
+    `, [userId]);
 
     return {
       ...summary,
@@ -349,7 +368,7 @@ class NotificationService {
   /**
    * Get dashboard notifications (top priority, unread)
    */
-  getDashboard(userId = this.options.defaultUserId, limit = 10) {
+  async getDashboard(userId = this.options.defaultUserId, limit = 10) {
     return this.getNotifications({
       userId,
       status: 'unread',
@@ -365,19 +384,17 @@ class NotificationService {
   /**
    * Mark notification as read
    */
-  markAsRead(id, userId = null) {
-    const stmt = this.db.prepare(`
+  async markAsRead(id, userId = null) {
+    const result = await this._run(`
       UPDATE notifications
       SET status = 'read', read_at = datetime('now')
       WHERE id = ?
         AND status = 'unread'
         ${userId ? 'AND user_id = ?' : ''}
-    `);
-
-    const result = userId ? stmt.run(id, userId) : stmt.run(id);
+    `, userId ? [id, userId] : [id]);
 
     // Log interaction
-    this._logInteraction(id, userId, 'view');
+    await this._logInteraction(id, userId, 'view');
 
     return { updated: result.changes > 0 };
   }
@@ -385,18 +402,16 @@ class NotificationService {
   /**
    * Mark notification as actioned
    */
-  markAsActioned(id, actionId = null, userId = null) {
-    const stmt = this.db.prepare(`
+  async markAsActioned(id, actionId = null, userId = null) {
+    const result = await this._run(`
       UPDATE notifications
       SET status = 'actioned', actioned_at = datetime('now')
       WHERE id = ?
         ${userId ? 'AND user_id = ?' : ''}
-    `);
-
-    const result = userId ? stmt.run(id, userId) : stmt.run(id);
+    `, userId ? [id, userId] : [id]);
 
     // Log interaction
-    this._logInteraction(id, userId, 'action', { actionId });
+    await this._logInteraction(id, userId, 'action', { actionId });
 
     return { updated: result.changes > 0 };
   }
@@ -404,18 +419,16 @@ class NotificationService {
   /**
    * Dismiss notification
    */
-  dismiss(id, userId = null) {
-    const stmt = this.db.prepare(`
+  async dismiss(id, userId = null) {
+    const result = await this._run(`
       UPDATE notifications
       SET status = 'dismissed', dismissed_at = datetime('now')
       WHERE id = ?
         ${userId ? 'AND user_id = ?' : ''}
-    `);
-
-    const result = userId ? stmt.run(id, userId) : stmt.run(id);
+    `, userId ? [id, userId] : [id]);
 
     // Log interaction
-    this._logInteraction(id, userId, 'dismiss');
+    await this._logInteraction(id, userId, 'dismiss');
 
     return { updated: result.changes > 0 };
   }
@@ -423,7 +436,7 @@ class NotificationService {
   /**
    * Snooze notification
    */
-  snooze(id, until, userId = null) {
+  async snooze(id, until, userId = null) {
     // Parse relative times
     let snoozedUntil;
     if (typeof until === 'string') {
@@ -448,20 +461,18 @@ class NotificationService {
       snoozedUntil = until;
     }
 
-    const stmt = this.db.prepare(`
+    const result = await this._run(`
       UPDATE notifications
       SET status = 'snoozed', snoozed_until = ?
       WHERE id = ?
         ${userId ? 'AND user_id = ?' : ''}
-    `);
-
-    const params = [snoozedUntil.toISOString(), id];
-    if (userId) params.push(userId);
-
-    const result = stmt.run(...params);
+    `, userId
+      ? [snoozedUntil.toISOString(), id, userId]
+      : [snoozedUntil.toISOString(), id]
+    );
 
     // Log interaction
-    this._logInteraction(id, userId, 'snooze', { until: snoozedUntil.toISOString() });
+    await this._logInteraction(id, userId, 'snooze', { until: snoozedUntil.toISOString() });
 
     return { updated: result.changes > 0, snoozedUntil };
   }
@@ -469,7 +480,7 @@ class NotificationService {
   /**
    * Bulk mark as read
    */
-  bulkMarkAsRead(filters = {}) {
+  async bulkMarkAsRead(filters = {}) {
     const { userId = this.options.defaultUserId, ids = null, category = null, minPriority = null } = filters;
 
     let sql = `
@@ -495,14 +506,14 @@ class NotificationService {
       params.push(minPriority);
     }
 
-    const result = this.db.prepare(sql).run(...params);
+    const result = await this._run(sql, params);
     return { updated: result.changes };
   }
 
   /**
    * Bulk dismiss
    */
-  bulkDismiss(filters = {}) {
+  async bulkDismiss(filters = {}) {
     const { userId = this.options.defaultUserId, ids = null, category = null, olderThan = null } = filters;
 
     let sql = `
@@ -528,7 +539,7 @@ class NotificationService {
       params.push(olderThan);
     }
 
-    const result = this.db.prepare(sql).run(...params);
+    const result = await this._run(sql, params);
     return { updated: result.changes };
   }
 
@@ -539,16 +550,16 @@ class NotificationService {
   /**
    * Get user notification preferences
    */
-  getPreferences(userId = this.options.defaultUserId) {
-    let prefs = this.db.prepare(`
+  async getPreferences(userId = this.options.defaultUserId) {
+    let prefs = await this._get(`
       SELECT * FROM user_notification_preferences WHERE user_id = ?
-    `).get(userId);
+    `, [userId]);
 
     if (!prefs) {
       // Return defaults
-      prefs = this.db.prepare(`
+      prefs = await this._get(`
         SELECT * FROM user_notification_preferences WHERE user_id = 'default'
-      `).get();
+      `);
 
       if (!prefs) {
         prefs = this._getDefaultPreferences();
@@ -580,17 +591,17 @@ class NotificationService {
   /**
    * Update user notification preferences
    */
-  updatePreferences(userId, updates) {
+  async updatePreferences(userId, updates) {
     // Check if user has preferences
-    const existing = this.db.prepare(`
+    const existing = await this._get(`
       SELECT id FROM user_notification_preferences WHERE user_id = ?
-    `).get(userId);
+    `, [userId]);
 
     if (!existing) {
       // Create new preferences
-      this.db.prepare(`
+      await this._run(`
         INSERT INTO user_notification_preferences (user_id) VALUES (?)
-      `).run(userId);
+      `, [userId]);
     }
 
     // Build update query
@@ -651,11 +662,11 @@ class NotificationService {
       fields.push('updated_at = datetime(\'now\')');
       params.push(userId);
 
-      this.db.prepare(`
+      await this._run(`
         UPDATE user_notification_preferences
         SET ${fields.join(', ')}
         WHERE user_id = ?
-      `).run(...params);
+      `, params);
     }
 
     return this.getPreferences(userId);
@@ -668,8 +679,8 @@ class NotificationService {
   /**
    * Get notification clusters
    */
-  getClusters(userId = this.options.defaultUserId, limit = 20) {
-    const clusters = this.db.prepare(`
+  async getClusters(userId = this.options.defaultUserId, limit = 20) {
+    const clusters = await this._all(`
       SELECT nc.*,
         (SELECT COUNT(*) FROM notifications n WHERE n.cluster_id = nc.id) as actual_count
       FROM notification_clusters nc
@@ -677,7 +688,7 @@ class NotificationService {
         AND nc.status = 'active'
       ORDER BY nc.highest_priority DESC, nc.created_at DESC
       LIMIT ?
-    `).all(userId, limit);
+    `, [userId, limit]);
 
     return clusters.map(c => ({
       ...c,
@@ -689,7 +700,7 @@ class NotificationService {
   /**
    * Create or update a cluster
    */
-  createCluster(cluster) {
+  async createCluster(cluster) {
     const {
       userId = this.options.defaultUserId,
       clusterType,
@@ -703,20 +714,22 @@ class NotificationService {
     // Get highest priority from notifications
     let highestPriority = 3;
     if (notificationIds.length > 0) {
-      const priorities = this.db.prepare(`
+      const priorities = await this._get(`
         SELECT MAX(priority) as max_priority FROM notifications WHERE id IN (${notificationIds.map(() => '?').join(',')})
-      `).get(...notificationIds);
+      `, notificationIds);
       highestPriority = priorities.max_priority || 3;
     }
 
     // Insert cluster
-    const result = this.db.prepare(`
+    const shouldReturnId = this.db.type === 'postgres';
+    const result = await this._run(`
       INSERT INTO notification_clusters (
         user_id, cluster_type, title, summary,
         notification_count, highest_priority,
         related_companies, related_portfolios
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+      ${shouldReturnId ? 'RETURNING id' : ''}
+    `, [
       userId,
       clusterType,
       title,
@@ -725,15 +738,15 @@ class NotificationService {
       highestPriority,
       JSON.stringify(relatedCompanies),
       JSON.stringify(relatedPortfolios)
-    );
+    ]);
 
     const clusterId = result.lastInsertRowid;
 
     // Update notifications with cluster ID
     if (notificationIds.length > 0) {
-      this.db.prepare(`
+      await this._run(`
         UPDATE notifications SET cluster_id = ? WHERE id IN (${notificationIds.map(() => '?').join(',')})
-      `).run(clusterId, ...notificationIds);
+      `, [clusterId, ...notificationIds]);
     }
 
     return { id: clusterId, notificationCount: notificationIds.length };
@@ -746,32 +759,32 @@ class NotificationService {
   /**
    * Clean up old notifications
    */
-  cleanup(options = {}) {
+  async cleanup(options = {}) {
     const { daysOld = 30, keepDismissed = 7 } = options;
 
     // Soft delete old dismissed notifications
-    const dismissed = this.db.prepare(`
+    const dismissed = await this._run(`
       UPDATE notifications
       SET deleted_at = datetime('now')
       WHERE status = 'dismissed'
         AND dismissed_at < datetime('now', '-' || ? || ' days')
         AND deleted_at IS NULL
-    `).run(keepDismissed);
+    `, [keepDismissed]);
 
     // Soft delete old read notifications
-    const old = this.db.prepare(`
+    const old = await this._run(`
       UPDATE notifications
       SET deleted_at = datetime('now')
       WHERE status IN ('read', 'actioned')
         AND read_at < datetime('now', '-' || ? || ' days')
         AND deleted_at IS NULL
-    `).run(daysOld);
+    `, [daysOld]);
 
     // Hard delete very old notifications
-    const hardDelete = this.db.prepare(`
+    const hardDelete = await this._run(`
       DELETE FROM notifications
       WHERE deleted_at < datetime('now', '-' || ? || ' days')
-    `).run(daysOld * 2);
+    `, [daysOld * 2]);
 
     return {
       dismissedDeleted: dismissed.changes,
@@ -783,13 +796,13 @@ class NotificationService {
   /**
    * Unsnooze notifications whose snooze time has passed
    */
-  processSnoozed() {
-    const result = this.db.prepare(`
+  async processSnoozed() {
+    const result = await this._run(`
       UPDATE notifications
       SET status = 'unread', snoozed_until = NULL
       WHERE status = 'snoozed'
         AND snoozed_until <= datetime('now')
-    `).run();
+    `);
 
     return { unsnoozed: result.changes };
   }
@@ -826,8 +839,8 @@ class NotificationService {
     };
   }
 
-  _checkUserPreferences(userId, category, priority, channels) {
-    const prefs = this.getPreferences(userId);
+  async _checkUserPreferences(userId, category, priority, channels) {
+    const prefs = await this.getPreferences(userId);
 
     if (!prefs.enabled) {
       return { allowed: false, reason: 'Notifications disabled' };
@@ -863,23 +876,23 @@ class NotificationService {
     return { allowed: true };
   }
 
-  _findExistingNotification(userId, groupKey) {
+  async _findExistingNotification(userId, groupKey) {
     const windowMs = this.options.dedupeWindowHours * 60 * 60 * 1000;
     const cutoff = new Date(Date.now() - windowMs).toISOString();
 
-    return this.db.prepare(`
+    return this._get(`
       SELECT id FROM notifications
       WHERE user_id = ?
         AND group_key = ?
         AND created_at > ?
         AND status NOT IN ('dismissed')
       LIMIT 1
-    `).get(userId, groupKey, cutoff);
+    `, [userId, groupKey, cutoff]);
   }
 
-  _updateExistingNotification(id, notification) {
+  async _updateExistingNotification(id, notification) {
     // Update the notification instead of creating a duplicate
-    this.db.prepare(`
+    await this._run(`
       UPDATE notifications
       SET
         title = ?,
@@ -889,40 +902,40 @@ class NotificationService {
         status = CASE WHEN status = 'read' THEN 'unread' ELSE status END,
         created_at = datetime('now')
       WHERE id = ?
-    `).run(
+    `, [
       notification.title,
       notification.body,
       JSON.stringify(notification.data || {}),
       notification.priority,
       id
-    );
+    ]);
 
     return { created: false, updated: true, id };
   }
 
-  _queueDelivery(notificationId, channels) {
+  async _queueDelivery(notificationId, channels) {
     const nonInAppChannels = channels.filter(c => c !== 'in_app');
 
     for (const channel of nonInAppChannels) {
-      this.db.prepare(`
+      await this._run(`
         INSERT INTO notification_delivery_log (notification_id, channel, status)
         VALUES (?, ?, 'pending')
-      `).run(notificationId, channel);
+      `, [notificationId, channel]);
     }
   }
 
-  _logInteraction(notificationId, userId, interactionType, details = {}) {
+  async _logInteraction(notificationId, userId, interactionType, details = {}) {
     try {
-      this.db.prepare(`
+      await this._run(`
         INSERT INTO notification_interactions (notification_id, user_id, interaction_type, action_id, source)
         VALUES (?, ?, ?, ?, ?)
-      `).run(
+      `, [
         notificationId,
         userId,
         interactionType,
         details.actionId || null,
         details.source || null
-      );
+      ]);
     } catch (err) {
       // Don't fail if interaction logging fails
       console.error('Error logging notification interaction:', err.message);
@@ -965,8 +978,8 @@ class NotificationService {
    * Check if user should be prompted to enable watchlist-only mode
    * Called when user has high alert volume
    */
-  shouldSuggestWatchlistOnly(userId = this.options.defaultUserId) {
-    const prefs = this.getPreferences(userId);
+  async shouldSuggestWatchlistOnly(userId = this.options.defaultUserId) {
+    const prefs = await this.getPreferences(userId);
 
     // Already using watchlist-only
     if (prefs.watchlistOnly) {
@@ -975,10 +988,10 @@ class NotificationService {
 
     // Check alert volume in past 7 days
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const alertCount = this.db.prepare(`
+    const alertCount = await this._get(`
       SELECT COUNT(*) as count FROM notifications
       WHERE user_id = ? AND created_at > ?
-    `).get(userId, weekAgo);
+    `, [userId, weekAgo]);
 
     // Suggest if more than 50 alerts per week
     if (alertCount.count >= 50) {
@@ -996,13 +1009,13 @@ class NotificationService {
   /**
    * Get alert volume statistics for a user
    */
-  getAlertVolumeStats(userId = this.options.defaultUserId) {
+  async getAlertVolumeStats(userId = this.options.defaultUserId) {
     const now = new Date();
     const dayAgo = new Date(now - 24 * 60 * 60 * 1000).toISOString();
     const weekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
     const monthAgo = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    const stats = this.db.prepare(`
+    const stats = await this._get(`
       SELECT
         COUNT(CASE WHEN created_at > ? THEN 1 END) as alerts_24h,
         COUNT(CASE WHEN created_at > ? THEN 1 END) as alerts_7d,
@@ -1011,7 +1024,7 @@ class NotificationService {
         COUNT(CASE WHEN created_at > ? AND status = 'dismissed' THEN 1 END) as dismissed_7d
       FROM notifications
       WHERE user_id = ?
-    `).get(dayAgo, weekAgo, monthAgo, weekAgo, weekAgo, userId);
+    `, [dayAgo, weekAgo, monthAgo, weekAgo, weekAgo, userId]);
 
     const dismissRate = stats.alerts_7d > 0
       ? (stats.dismissed_7d / stats.alerts_7d * 100).toFixed(1)

@@ -7,7 +7,7 @@
 
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const {
   AlternativeDataAggregator,
   QuiverQuantitativeService,
@@ -19,10 +19,9 @@ let aggregator, quiver, finra;
 
 function initServices() {
   if (!aggregator) {
-    const dbConn = db.getDatabase();
-    aggregator = new AlternativeDataAggregator(dbConn);
-    quiver = new QuiverQuantitativeService(dbConn);
-    finra = new FinraShortInterestService(dbConn);
+    aggregator = new AlternativeDataAggregator();
+    quiver = new QuiverQuantitativeService();
+    finra = new FinraShortInterestService();
   }
 }
 
@@ -35,12 +34,12 @@ function initServices() {
  * Get top congressional stock purchases
  * NOTE: This route must come BEFORE /congress/:symbol to avoid being matched as a symbol
  */
-router.get('/congress/top-buys', (req, res) => {
+router.get('/congress/top-buys', async (req, res) => {
   try {
     initServices();
     const { lookback = '-30 days', limit = 20 } = req.query;
 
-    const topBuys = aggregator.getTopCongressBuys({
+    const topBuys = await aggregator.getTopCongressBuys({
       lookbackDays: lookback,
       limit: parseInt(limit)
     });
@@ -59,13 +58,13 @@ router.get('/congress/top-buys', (req, res) => {
  * GET /api/alt-data/congress/:symbol
  * Get congressional trading activity for a symbol
  */
-router.get('/congress/:symbol', (req, res) => {
+router.get('/congress/:symbol', async (req, res) => {
   try {
     initServices();
     const { symbol } = req.params;
     const { lookback = '-90 days' } = req.query;
 
-    const signal = quiver.getCongressSignal(symbol.toUpperCase(), lookback);
+    const signal = await quiver.getCongressSignal(symbol.toUpperCase(), lookback);
 
     res.json({
       symbol: symbol.toUpperCase(),
@@ -105,13 +104,13 @@ router.post('/congress/fetch/:symbol', async (req, res) => {
  * GET /api/alt-data/short-interest/:symbol
  * Get short interest data for a symbol
  */
-router.get('/short-interest/:symbol', (req, res) => {
+router.get('/short-interest/:symbol', async (req, res) => {
   try {
     initServices();
     const { symbol } = req.params;
 
-    const signal = finra.getShortInterestSignal(symbol.toUpperCase());
-    const trends = finra.analyzeShortTrends(symbol.toUpperCase());
+    const signal = await finra.getShortInterestSignal(symbol.toUpperCase());
+    const trends = await finra.analyzeShortTrends(symbol.toUpperCase());
 
     res.json({
       symbol: symbol.toUpperCase(),
@@ -127,13 +126,13 @@ router.get('/short-interest/:symbol', (req, res) => {
  * GET /api/alt-data/short-interest/:symbol/history
  * Get short interest history for a symbol
  */
-router.get('/short-interest/:symbol/history', (req, res) => {
+router.get('/short-interest/:symbol/history', async (req, res) => {
   try {
     initServices();
     const { symbol } = req.params;
     const { lookback = '-365 days' } = req.query;
 
-    const history = finra.getHistory(symbol.toUpperCase(), lookback);
+    const history = await finra.getHistory(symbol.toUpperCase(), lookback);
 
     res.json({
       symbol: symbol.toUpperCase(),
@@ -150,12 +149,12 @@ router.get('/short-interest/:symbol/history', (req, res) => {
  * GET /api/alt-data/squeeze-candidates
  * Get potential short squeeze candidates
  */
-router.get('/squeeze-candidates', (req, res) => {
+router.get('/squeeze-candidates', async (req, res) => {
   try {
     initServices();
     const { limit = 20 } = req.query;
 
-    const candidates = aggregator.getSqueezeCandidatesWithContext(parseInt(limit));
+    const candidates = await aggregator.getSqueezeCandidatesWithContext(parseInt(limit));
 
     res.json({
       count: candidates.length,
@@ -170,12 +169,12 @@ router.get('/squeeze-candidates', (req, res) => {
  * GET /api/alt-data/most-shorted
  * Get most shorted stocks
  */
-router.get('/most-shorted', (req, res) => {
+router.get('/most-shorted', async (req, res) => {
   try {
     initServices();
     const { limit = 20 } = req.query;
 
-    const mostShorted = finra.getMostShorted(parseInt(limit));
+    const mostShorted = await finra.getMostShorted(parseInt(limit));
 
     res.json({
       count: mostShorted.length,
@@ -214,13 +213,13 @@ router.post('/short-interest/update/:symbol', async (req, res) => {
  * GET /api/alt-data/contracts/:symbol
  * Get government contract activity for a symbol
  */
-router.get('/contracts/:symbol', (req, res) => {
+router.get('/contracts/:symbol', async (req, res) => {
   try {
     initServices();
     const { symbol } = req.params;
     const { lookback = '-365 days' } = req.query;
 
-    const signal = quiver.getContractSignal(symbol.toUpperCase(), lookback);
+    const signal = await quiver.getContractSignal(symbol.toUpperCase(), lookback);
 
     res.json({
       symbol: symbol.toUpperCase(),
@@ -260,14 +259,14 @@ router.post('/contracts/fetch/:symbol', async (req, res) => {
  * GET /api/alt-data/signals/:symbol
  * Get all alternative data signals for a symbol
  */
-router.get('/signals/:symbol', (req, res) => {
+router.get('/signals/:symbol', async (req, res) => {
   try {
     initServices();
     const { symbol } = req.params;
 
-    const signals = aggregator.getSignals(symbol.toUpperCase());
+    const signals = await aggregator.getSignals(symbol.toUpperCase());
     const combined = aggregator.calculateCombinedScore(signals);
-    const screening = aggregator.getScreeningData(symbol.toUpperCase());
+    const screening = await aggregator.getScreeningData(symbol.toUpperCase());
 
     res.json({
       symbol: symbol.toUpperCase(),
@@ -302,14 +301,14 @@ router.post('/signals/update/:symbol', async (req, res) => {
  * GET /api/alt-data/top-signals
  * Get top bullish alternative data signals
  */
-router.get('/top-signals', (req, res) => {
+router.get('/top-signals', async (req, res) => {
   try {
     initServices();
     const { limit = 20, direction = 'bullish' } = req.query;
 
     const signals = direction === 'bearish'
-      ? aggregator.getTopBearish(parseInt(limit))
-      : aggregator.getTopBullish(parseInt(limit));
+      ? await aggregator.getTopBearish(parseInt(limit))
+      : await aggregator.getTopBullish(parseInt(limit));
 
     res.json({
       direction,
@@ -325,10 +324,10 @@ router.get('/top-signals', (req, res) => {
  * GET /api/alt-data/summary
  * Get summary of all alternative data signals
  */
-router.get('/summary', (req, res) => {
+router.get('/summary', async (req, res) => {
   try {
     initServices();
-    const summary = aggregator.getSummary();
+    const summary = await aggregator.getSummary();
 
     res.json(summary);
   } catch (error) {
@@ -349,17 +348,17 @@ router.post('/batch-update', async (req, res) => {
 
     // If no symbols provided, get top by market cap
     if (!targetSymbols || targetSymbols.length === 0) {
-      const dbConn = db.getDatabase();
-      const companies = dbConn.prepare(`
+      const database = await getDatabaseAsync();
+      const companiesResult = await database.query(`
         SELECT c.symbol
         FROM companies c
         JOIN price_metrics pm ON pm.company_id = c.id
         WHERE c.symbol NOT LIKE 'CIK_%'
           AND pm.market_cap IS NOT NULL
         ORDER BY pm.market_cap DESC
-        LIMIT ?
-      `).all(limit || 100);
-      targetSymbols = companies.map(c => c.symbol);
+        LIMIT $1
+      `, [limit || 100]);
+      targetSymbols = companiesResult.rows.map(c => c.symbol);
     }
 
     const results = await aggregator.batchUpdate(targetSymbols, { fetchNew });

@@ -155,6 +155,12 @@ async function calculateMissingQ4Data(database, companyId, existingQuarterly, li
  *   - include_cik: 'true' to include CIK-based symbols (default: false)
  *   - include_inactive: 'true' to include inactive/delisted companies (default: false)
  */
+// On list/search errors (e.g. tables not migrated), return 200 with empty data so UI loads
+function handleCompaniesListError(res, error) {
+  console.warn('[Companies API]', error.message);
+  return res.status(200).json({ count: 0, companies: [] });
+}
+
 router.get('/', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
@@ -261,7 +267,7 @@ router.get('/', async (req, res) => {
       companies
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    handleCompaniesListError(res, error);
   }
 });
 

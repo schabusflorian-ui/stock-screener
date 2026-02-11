@@ -12,6 +12,16 @@ const getServices = async (req) => {
   return createNotesServices(db);
 };
 
+// On list endpoint errors (e.g. tables not migrated yet), return 200 with empty data so UI loads
+function handleListError(res, error, emptyKey, emptyValue = []) {
+  console.warn('[Notes API]', error.message);
+  return res.status(200).json({
+    success: true,
+    count: emptyValue.length,
+    [emptyKey]: emptyValue
+  });
+}
+
 // ============================================
 // Notebook Routes
 // ============================================
@@ -27,7 +37,7 @@ router.get('/notebooks', async (req, res) => {
       notebooks
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    handleListError(res, error, 'notebooks', []);
   }
 });
 
@@ -104,7 +114,7 @@ router.get('/tags', async (req, res) => {
       tags
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    handleListError(res, error, 'tags', []);
   }
 });
 
@@ -292,7 +302,7 @@ router.get('/', async (req, res) => {
       notes: notesList
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    handleListError(res, error, 'notes', []);
   }
 });
 

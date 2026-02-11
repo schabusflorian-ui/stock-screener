@@ -7,16 +7,17 @@
 
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { NotificationService } = require('../../services/notifications');
 const { CATEGORY_CONFIG, SEVERITY_CONFIG, SNOOZE_OPTIONS } = require('../../services/notifications/constants');
 
 // Initialize notification service
 let notificationService = null;
 
-const getNotificationService = () => {
+const getNotificationService = async () => {
   if (!notificationService) {
-    notificationService = new NotificationService(db.getDatabase());
+    const database = await getDatabaseAsync();
+    notificationService = new NotificationService(database);
   }
   return notificationService;
 };
@@ -34,7 +35,7 @@ const getUserId = (req) => {
  * GET /api/notifications
  * Get all notifications with filters
  */
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const userId = getUserId(req);
     const {
@@ -70,8 +71,9 @@ router.get('/', (req, res) => {
       offset: parseInt(offset) || 0
     };
 
-    const notifications = getNotificationService().getNotifications(filters);
-    const summary = getNotificationService().getSummary(userId);
+    const service = await getNotificationService();
+    const notifications = await service.getNotifications(filters);
+    const summary = await service.getSummary(userId);
 
     res.json({
       success: true,
@@ -98,10 +100,10 @@ router.get('/', (req, res) => {
  * GET /api/notifications/summary
  * Get notification summary for header badge
  */
-router.get('/summary', (req, res) => {
+router.get('/summary', async (req, res) => {
   try {
     const userId = getUserId(req);
-    const summary = getNotificationService().getSummary(userId);
+    const summary = await (await getNotificationService()).getSummary(userId);
 
     res.json({
       success: true,
@@ -117,12 +119,12 @@ router.get('/summary', (req, res) => {
  * GET /api/notifications/dashboard
  * Get dashboard notifications (top priority, unread)
  */
-router.get('/dashboard', (req, res) => {
+router.get('/dashboard', async (req, res) => {
   try {
     const userId = getUserId(req);
     const limit = Math.min(parseInt(req.query.limit) || 10, 50);
 
-    const notifications = getNotificationService().getDashboard(userId, limit);
+    const notifications = await (await getNotificationService()).getDashboard(userId, limit);
 
     res.json({
       success: true,
@@ -138,9 +140,9 @@ router.get('/dashboard', (req, res) => {
  * GET /api/notifications/:id
  * Get a single notification
  */
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
-    const notification = getNotificationService().getNotification(parseInt(req.params.id));
+    const notification = await (await getNotificationService()).getNotification(parseInt(req.params.id));
 
     if (!notification) {
       return res.status(404).json({ success: false, error: 'Notification not found' });
@@ -160,12 +162,12 @@ router.get('/:id', (req, res) => {
  * GET /api/notifications/clusters
  * Get notification clusters
  */
-router.get('/groups/clusters', (req, res) => {
+router.get('/groups/clusters', async (req, res) => {
   try {
     const userId = getUserId(req);
     const limit = Math.min(parseInt(req.query.limit) || 20, 50);
 
-    const clusters = getNotificationService().getClusters(userId, limit);
+    const clusters = await (await getNotificationService()).getClusters(userId, limit);
 
     res.json({
       success: true,
@@ -185,10 +187,10 @@ router.get('/groups/clusters', (req, res) => {
  * POST /api/notifications/:id/read
  * Mark notification as read
  */
-router.post('/:id/read', (req, res) => {
+router.post('/:id/read', async (req, res) => {
   try {
     const userId = getUserId(req);
-    const result = getNotificationService().markAsRead(parseInt(req.params.id), userId);
+    const result = await (await getNotificationService()).markAsRead(parseInt(req.params.id), userId);
 
     res.json({
       success: true,
@@ -204,11 +206,11 @@ router.post('/:id/read', (req, res) => {
  * POST /api/notifications/:id/action
  * Mark notification as actioned
  */
-router.post('/:id/action', (req, res) => {
+router.post('/:id/action', async (req, res) => {
   try {
     const userId = getUserId(req);
     const { actionId } = req.body;
-    const result = getNotificationService().markAsActioned(parseInt(req.params.id), actionId, userId);
+    const result = await (await getNotificationService()).markAsActioned(parseInt(req.params.id), actionId, userId);
 
     res.json({
       success: true,
@@ -224,10 +226,10 @@ router.post('/:id/action', (req, res) => {
  * POST /api/notifications/:id/dismiss
  * Dismiss notification
  */
-router.post('/:id/dismiss', (req, res) => {
+router.post('/:id/dismiss', async (req, res) => {
   try {
     const userId = getUserId(req);
-    const result = getNotificationService().dismiss(parseInt(req.params.id), userId);
+    const result = await (await getNotificationService()).dismiss(parseInt(req.params.id), userId);
 
     res.json({
       success: true,
@@ -243,7 +245,7 @@ router.post('/:id/dismiss', (req, res) => {
  * POST /api/notifications/:id/snooze
  * Snooze notification
  */
-router.post('/:id/snooze', (req, res) => {
+router.post('/:id/snooze', async (req, res) => {
   try {
     const userId = getUserId(req);
     const { until } = req.body;
@@ -252,7 +254,7 @@ router.post('/:id/snooze', (req, res) => {
       return res.status(400).json({ success: false, error: 'Missing required field: until' });
     }
 
-    const result = getNotificationService().snooze(parseInt(req.params.id), until, userId);
+    const result = await (await getNotificationService()).snooze(parseInt(req.params.id), until, userId);
 
     res.json({
       success: true,
@@ -272,12 +274,12 @@ router.post('/:id/snooze', (req, res) => {
  * POST /api/notifications/bulk-read
  * Mark multiple notifications as read
  */
-router.post('/bulk-read', (req, res) => {
+router.post('/bulk-read', async (req, res) => {
   try {
     const userId = getUserId(req);
     const { ids, category, minPriority } = req.body;
 
-    const result = getNotificationService().bulkMarkAsRead({
+    const result = await (await getNotificationService()).bulkMarkAsRead({
       userId,
       ids: ids || null,
       category: category || null,
@@ -298,12 +300,12 @@ router.post('/bulk-read', (req, res) => {
  * POST /api/notifications/bulk-dismiss
  * Dismiss multiple notifications
  */
-router.post('/bulk-dismiss', (req, res) => {
+router.post('/bulk-dismiss', async (req, res) => {
   try {
     const userId = getUserId(req);
     const { ids, category, olderThan } = req.body;
 
-    const result = getNotificationService().bulkDismiss({
+    const result = await (await getNotificationService()).bulkDismiss({
       userId,
       ids: ids || null,
       category: category || null,
@@ -328,10 +330,10 @@ router.post('/bulk-dismiss', (req, res) => {
  * GET /api/notifications/preferences
  * Get user notification preferences
  */
-router.get('/user/preferences', (req, res) => {
+router.get('/user/preferences', async (req, res) => {
   try {
     const userId = getUserId(req);
-    const preferences = getNotificationService().getPreferences(userId);
+    const preferences = await (await getNotificationService()).getPreferences(userId);
 
     res.json({
       success: true,
@@ -347,12 +349,12 @@ router.get('/user/preferences', (req, res) => {
  * PUT /api/notifications/preferences
  * Update user notification preferences
  */
-router.put('/user/preferences', (req, res) => {
+router.put('/user/preferences', async (req, res) => {
   try {
     const userId = getUserId(req);
     const updates = req.body;
 
-    const preferences = getNotificationService().updatePreferences(userId, updates);
+    const preferences = await (await getNotificationService()).updatePreferences(userId, updates);
 
     res.json({
       success: true,
@@ -372,7 +374,7 @@ router.put('/user/preferences', (req, res) => {
  * POST /api/notifications
  * Create a new notification (for internal services)
  */
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const notification = req.body;
 
@@ -384,7 +386,7 @@ router.post('/', (req, res) => {
       });
     }
 
-    const result = getNotificationService().create(notification);
+    const result = await (await getNotificationService()).create(notification);
 
     res.json({
       success: true,
@@ -400,7 +402,7 @@ router.post('/', (req, res) => {
  * POST /api/notifications/batch
  * Create multiple notifications
  */
-router.post('/batch', (req, res) => {
+router.post('/batch', async (req, res) => {
   try {
     const { notifications } = req.body;
 
@@ -411,7 +413,7 @@ router.post('/batch', (req, res) => {
       });
     }
 
-    const results = getNotificationService().createBatch(notifications);
+    const results = await (await getNotificationService()).createBatch(notifications);
 
     res.json({
       success: true,
@@ -437,11 +439,11 @@ router.post('/batch', (req, res) => {
  * POST /api/notifications/cleanup
  * Clean up old notifications
  */
-router.post('/maintenance/cleanup', (req, res) => {
+router.post('/maintenance/cleanup', async (req, res) => {
   try {
     const { daysOld = 30, keepDismissed = 7 } = req.body;
 
-    const result = getNotificationService().cleanup({
+    const result = await (await getNotificationService()).cleanup({
       daysOld: parseInt(daysOld),
       keepDismissed: parseInt(keepDismissed)
     });
@@ -460,9 +462,9 @@ router.post('/maintenance/cleanup', (req, res) => {
  * POST /api/notifications/process-snoozed
  * Process snoozed notifications that should be unsnoozed
  */
-router.post('/maintenance/process-snoozed', (req, res) => {
+router.post('/maintenance/process-snoozed', async (req, res) => {
   try {
-    const result = getNotificationService().processSnoozed();
+    const result = await (await getNotificationService()).processSnoozed();
 
     res.json({
       success: true,
