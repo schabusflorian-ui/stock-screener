@@ -83,27 +83,42 @@ async function migrate(db) {
   await db.query(`CREATE INDEX IF NOT EXISTS idx_alert_clusters_company ON alert_clusters(company_id)`);
   console.log('  ✓ alert_clusters');
 
-  // 3b. Ensure alert_clusters has PRIMARY KEY (handles table created by partial run without PK)
+  // 3b. Ensure alert_clusters has PRIMARY KEY (handles table created by partial run without PK).
+  // If table already has duplicate id/NULLs, adding PK fails — catch and continue so migration completes.
+  let alertClustersHasPk = false;
   const pkCheck = await db.query(`
     SELECT 1 FROM pg_constraint c
     JOIN pg_class t ON c.conrelid = t.oid
     WHERE t.relname = 'alert_clusters' AND c.contype = 'p'
   `);
-  if (pkCheck.rows.length === 0) {
-    await db.query(`ALTER TABLE alert_clusters ADD PRIMARY KEY (id)`);
-    console.log('  ✓ alert_clusters primary key added');
+  if (pkCheck.rows.length > 0) {
+    alertClustersHasPk = true;
+  } else {
+    try {
+      await db.query(`ALTER TABLE alert_clusters ADD PRIMARY KEY (id)`);
+      console.log('  ✓ alert_clusters primary key added');
+      alertClustersHasPk = true;
+    } catch (e) {
+      if (/could not create unique index|duplicate key|already exists/i.test(e.message)) {
+        console.log('  ⚠ alert_clusters: could not add primary key (duplicate/null id); skipping FK from alerts');
+      } else {
+        throw e;
+      }
+    }
   }
 
-  // 4. Add FK for alerts.cluster_id if not exists (ignore if constraint exists)
-  try {
-    await db.query(`
-      ALTER TABLE alerts
-      ADD CONSTRAINT fk_alerts_cluster
-      FOREIGN KEY (cluster_id) REFERENCES alert_clusters(id) ON DELETE SET NULL
-    `);
-    console.log('  ✓ fk_alerts_cluster');
-  } catch (e) {
-    if (!e.message?.includes('already exists')) throw e;
+  // 4. Add FK for alerts.cluster_id only if alert_clusters has a PK (so FK can reference it)
+  if (alertClustersHasPk) {
+    try {
+      await db.query(`
+        ALTER TABLE alerts
+        ADD CONSTRAINT fk_alerts_cluster
+        FOREIGN KEY (cluster_id) REFERENCES alert_clusters(id) ON DELETE SET NULL
+      `);
+      console.log('  ✓ fk_alerts_cluster');
+    } catch (e) {
+      if (!e.message?.includes('already exists')) throw e;
+    }
   }
 
   // 5. user_digest_preferences
