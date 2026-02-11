@@ -358,8 +358,8 @@ function AgentListPage() {
   const stats = useMemo(() => ({
     total: agents.length,
     running: agents.filter(a => a.status === 'running').length,
-    totalPortfolios: agents.reduce((sum, a) => sum + (a.portfolio_count || 0), 0),
-    totalSignals: agents.reduce((sum, a) => sum + (a.total_signals_generated || 0), 0)
+    totalPortfolios: agents.reduce((sum, a) => sum + (parseInt(a.portfolio_count, 10) || 0), 0),
+    totalSignals: agents.reduce((sum, a) => sum + (parseInt(a.total_signals_generated, 10) || 0), 0)
   }), [agents]);
 
   if (loading) {
