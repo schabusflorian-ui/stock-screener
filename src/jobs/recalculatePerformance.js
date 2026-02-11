@@ -28,7 +28,7 @@ async function recalculateAll() {
   console.log('📊 Recalculating performance for all investors...\n');
 
   const startTime = Date.now();
-  const results = investorService.recalculateAllPerformance();
+  const results = await investorService.recalculateAllPerformance();
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
@@ -52,7 +52,7 @@ async function recalculateInvestor(investorId) {
 
   try {
     const startTime = Date.now();
-    const data = investorService.calculateAndCachePerformance(investorId);
+    const data = await investorService.calculateAndCachePerformance(investorId);
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
     if (data.returns && data.returns.length > 0) {
@@ -73,10 +73,10 @@ async function recalculateInvestor(investorId) {
   }
 }
 
-function showStatus() {
+async function showStatus() {
   console.log('📊 Performance Cache Status:\n');
 
-  const status = investorService.getPerformanceCacheStatus();
+  const status = await investorService.getPerformanceCacheStatus();
 
   const cachedCount = status.filter(s => s.cached_quarters > 0).length;
   const uncachedCount = status.filter(s => s.cached_quarters === 0).length;
@@ -101,17 +101,16 @@ function showStatus() {
   }
 }
 
-function verifyCache() {
+async function verifyCache() {
   console.log('🔍 Verifying performance cache integrity...\n');
 
-  const status = investorService.getPerformanceCacheStatus();
+  const status = await investorService.getPerformanceCacheStatus();
   let issues = 0;
 
   for (const inv of status) {
-    // Check if cached data matches what would be recalculated
     if (inv.cached_quarters > 0) {
       try {
-        const fresh = investorService.getPortfolioReturns(inv.id, { limit: 50 });
+        const fresh = await investorService.getPortfolioReturns(inv.id, { limit: 50 });
 
         if (fresh.returns && fresh.returns.length !== inv.cached_quarters) {
           console.log(`⚠️  ${inv.name}: Cache has ${inv.cached_quarters} quarters, fresh calc has ${fresh.returns.length}`);
@@ -149,9 +148,9 @@ async function main() {
     }
     await recalculateInvestor(investorId);
   } else if (args.includes('--status')) {
-    showStatus();
+    await showStatus();
   } else if (args.includes('--verify')) {
-    verifyCache();
+    await verifyCache();
   } else {
     console.error('Error: Unknown option');
     printUsage();

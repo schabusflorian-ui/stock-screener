@@ -2,7 +2,6 @@
 // Service for managing famous investors and fetching 13F filings from SEC EDGAR
 
 const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
-const { db } = require('../../database');
 const { SEC_13F_CONFIG, HOLDING_CHANGE_TYPES } = require('../../constants/portfolio');
 
 // Rate limiting for SEC requests
@@ -466,34 +465,40 @@ async function getInvestorsBySymbol(symbol) {
 /**
  * Get holdings history for an investor
  */
-function getHoldingsHistory(investorId, { periods = 4 } = {}) {
-  const filings = db.prepare(`
-    SELECT DISTINCT filing_date
-    FROM investor_holdings
-    WHERE investor_id = ?
-    ORDER BY filing_date DESC
-    LIMIT ?
-  `).all(investorId, periods);
+async function getHoldingsHistory(investorId, { periods = 4 } = {}) {
+  const database = await getDatabaseAsync();
 
-  const history = filings.map(f => {
-    const holdings = db.prepare(`
-      SELECT
+  const filingsRes = await database.query(
+    `SELECT DISTINCT filing_date
+    FROM investor_holdings
+    WHERE investor_id = $1
+    ORDER BY filing_date DESC
+    LIMIT $2`,
+    [investorId, periods]
+  );
+  const filings = filingsRes.rows;
+
+  const history = [];
+  for (const f of filings) {
+    const holdingsRes = await database.query(
+      `SELECT
         ih.*,
         c.symbol,
         c.name as company_name
       FROM investor_holdings ih
       LEFT JOIN companies c ON ih.company_id = c.id
-      WHERE ih.investor_id = ? AND ih.filing_date = ?
-      ORDER BY ih.market_value DESC
-    `).all(investorId, f.filing_date);
-
-    return {
+      WHERE ih.investor_id = $1 AND ih.filing_date = $2
+      ORDER BY ih.market_value DESC`,
+      [investorId, f.filing_date]
+    );
+    const holdings = holdingsRes.rows;
+    history.push({
       filingDate: f.filing_date,
       holdings,
       totalValue: holdings.reduce((sum, h) => sum + (h.market_value || 0), 0),
       positionsCount: holdings.length
-    };
-  });
+    });
+  }
 
   return history;
 }
@@ -503,15 +508,19 @@ function getHoldingsHistory(investorId, { periods = 4 } = {}) {
  * This calculates weighted returns for each quarter using holdings and price data
  * Also includes S&P 500 comparison for alpha calculation
  */
-function getPortfolioReturns(investorId, { limit = 50 } = {}) {
+async function getPortfolioReturns(investorId, { limit = 50 } = {}) {
+  const database = await getDatabaseAsync();
+
   // Get all report dates for this investor
-  const dates = db.prepare(`
-    SELECT DISTINCT report_date
+  const datesRes = await database.query(
+    `SELECT DISTINCT report_date
     FROM investor_holdings
-    WHERE investor_id = ?
+    WHERE investor_id = $1
     ORDER BY report_date ASC
-    LIMIT ?
-  `).all(investorId, limit);
+    LIMIT $2`,
+    [investorId, limit]
+  );
+  const dates = datesRes.rows;
 
   if (dates.length < 2) {
     return { returns: [], summary: null, benchmark: null };
@@ -524,24 +533,28 @@ function getPortfolioReturns(investorId, { limit = 50 } = {}) {
 
   // Get all holdings for all periods in one query
   // Exclude preferred stocks - they have price discontinuities from corporate actions
-  // (conversions, redemptions) that corrupt return calculations
-  // Patterns: USB-PQ, BK-PK (dash-P), BACRP (5+ chars ending in P), but NOT AXP, RPRX
-  const allHoldings = db.prepare(`
-    SELECT
-      h.report_date,
-      c.id as company_id,
-      c.symbol,
-      SUM(h.market_value) as position_value
-    FROM investor_holdings h
-    JOIN companies c ON h.company_id = c.id
-    WHERE h.investor_id = ?
-      AND h.report_date IN (${allDates.map(() => '?').join(',')})
-      AND c.symbol IS NOT NULL
-      AND c.symbol NOT LIKE '%-P%'
-      AND c.symbol NOT LIKE '%.P%'
-      AND NOT (LENGTH(c.symbol) >= 5 AND c.symbol LIKE '%P')
-    GROUP BY h.report_date, c.id
-  `).all(investorId, ...allDates);
+  const allHoldingsSql = isUsingPostgres()
+    ? `SELECT h.report_date, c.id as company_id, c.symbol, SUM(h.market_value) as position_value
+       FROM investor_holdings h
+       JOIN companies c ON h.company_id = c.id
+       WHERE h.investor_id = $1 AND h.report_date = ANY($2)
+         AND c.symbol IS NOT NULL AND c.symbol NOT LIKE '%-P%'
+         AND c.symbol NOT LIKE '%.P%'
+         AND NOT (LENGTH(c.symbol) >= 5 AND c.symbol LIKE '%P')
+       GROUP BY h.report_date, c.id`
+    : `SELECT h.report_date, c.id as company_id, c.symbol, SUM(h.market_value) as position_value
+       FROM investor_holdings h
+       JOIN companies c ON h.company_id = c.id
+       WHERE h.investor_id = $1 AND h.report_date IN (${allDates.map((_, i) => `$${i + 2}`).join(',')})
+         AND c.symbol IS NOT NULL AND c.symbol NOT LIKE '%-P%'
+         AND c.symbol NOT LIKE '%.P%'
+         AND NOT (LENGTH(c.symbol) >= 5 AND c.symbol LIKE '%P')
+       GROUP BY h.report_date, c.id`;
+  const allHoldingsRes = await database.query(
+    allHoldingsSql,
+    isUsingPostgres() ? [investorId, allDates] : [investorId, ...allDates]
+  );
+  const allHoldings = allHoldingsRes.rows;
 
   // Build map of holdings by date
   const holdingsByDate = {};
@@ -553,40 +566,28 @@ function getPortfolioReturns(investorId, { limit = 50 } = {}) {
   // Get all unique company IDs
   const companyIds = [...new Set(allHoldings.map(h => h.company_id))];
 
-  // Fetch prices for each company efficiently using the existing index
-  // This is O(n) queries but each is fast due to covering index on (company_id, date)
+  // Fetch prices for each company efficiently
   const pricesByCompanyDate = {};
   if (companyIds.length > 0) {
-    const priceQuery = db.prepare(`
-      SELECT date, close
-      FROM daily_prices
-      WHERE company_id = ?
-        AND date >= date(?, '-30 days')
-        AND date <= ?
-      ORDER BY date ASC
-    `);
+    const priceSql = isUsingPostgres()
+      ? `SELECT date, close FROM daily_prices
+         WHERE company_id = $1 AND date >= $2::date - INTERVAL '30 days' AND date <= $3
+         ORDER BY date ASC`
+      : `SELECT date, close FROM daily_prices
+         WHERE company_id = $1 AND date >= date($2, '-30 days') AND date <= $3
+         ORDER BY date ASC`;
 
     for (const companyId of companyIds) {
-      // Fetch all prices for this company in the date range
-      const prices = priceQuery.all(companyId, minDate, maxDate);
+      const pricesRes = await database.query(priceSql, [companyId, minDate, maxDate]);
+      const prices = pricesRes.rows;
 
-      // Build a map of date -> price for quick lookup
-      const priceMap = {};
-      prices.forEach(p => {
-        priceMap[p.date] = p.close;
-      });
-
-      // For each target date, find the closest price on or before that date
       for (const targetDate of allDates) {
-        // Find price on or before target date
         let bestPrice = null;
-        let bestDate = null;
         for (const p of prices) {
           if (p.date <= targetDate) {
-            bestDate = p.date;
             bestPrice = p.close;
           } else {
-            break; // prices are sorted ASC, so we can stop here
+            break;
           }
         }
         if (bestPrice !== null) {
@@ -647,7 +648,7 @@ function getPortfolioReturns(investorId, { limit = 50 } = {}) {
   for (const qtr of quarterlyReturns) {
     const cacheKey = `${qtr.startDate}_${qtr.endDate}`;
     if (!spyReturnsCache[cacheKey]) {
-      spyReturnsCache[cacheKey] = getSpyReturn(qtr.startDate, qtr.endDate);
+      spyReturnsCache[cacheKey] = await getSpyReturn(qtr.startDate, qtr.endDate);
     }
     benchmarkReturns.push({
       startDate: qtr.startDate,
@@ -711,21 +712,28 @@ function getPortfolioReturns(investorId, { limit = 50 } = {}) {
  * Get portfolio returns summary for all investors (leaderboard)
  * OPTIMIZED: Single batch query instead of N+1 pattern (Tier 3 optimization)
  */
-function getAllInvestorReturnsSummary() {
+async function getAllInvestorReturnsSummary() {
+  const database = await getDatabaseAsync();
+
   // Step 1: Get all active investors
-  const investors = getAllInvestors();
+  const investors = await getAllInvestors();
   if (investors.length === 0) return [];
 
   const investorIds = investors.map(inv => inv.id);
   const investorMap = new Map(investors.map(inv => [inv.id, inv]));
 
   // Step 2: Batch fetch all report dates for all investors
-  const allDates = db.prepare(`
-    SELECT DISTINCT investor_id, report_date
-    FROM investor_holdings
-    WHERE investor_id IN (${investorIds.map(() => '?').join(',')})
-    ORDER BY investor_id, report_date ASC
-  `).all(...investorIds);
+  const allDatesSql = isUsingPostgres()
+    ? `SELECT DISTINCT investor_id, report_date FROM investor_holdings
+       WHERE investor_id = ANY($1) ORDER BY investor_id, report_date ASC`
+    : `SELECT DISTINCT investor_id, report_date FROM investor_holdings
+       WHERE investor_id IN (${investorIds.map((_, i) => `$${i + 1}`).join(',')})
+       ORDER BY investor_id, report_date ASC`;
+  const allDatesRes = await database.query(
+    allDatesSql,
+    isUsingPostgres() ? [investorIds] : investorIds
+  );
+  const allDates = allDatesRes.rows;
 
   // Group dates by investor
   const datesByInvestor = new Map();
@@ -736,20 +744,21 @@ function getAllInvestorReturnsSummary() {
     datesByInvestor.get(row.investor_id).push(row.report_date);
   }
 
-  // Step 3: Batch fetch all holdings for all investors (grouped by report_date)
-  const allHoldings = db.prepare(`
-    SELECT
-      h.investor_id,
-      h.report_date,
-      c.id as company_id,
-      c.symbol,
-      SUM(h.market_value) as position_value
-    FROM investor_holdings h
-    JOIN companies c ON h.company_id = c.id
-    WHERE h.investor_id IN (${investorIds.map(() => '?').join(',')})
-      AND c.symbol IS NOT NULL
-    GROUP BY h.investor_id, h.report_date, c.id
-  `).all(...investorIds);
+  // Step 3: Batch fetch all holdings for all investors
+  const allHoldingsSql = isUsingPostgres()
+    ? `SELECT h.investor_id, h.report_date, c.id as company_id, c.symbol, SUM(h.market_value) as position_value
+       FROM investor_holdings h JOIN companies c ON h.company_id = c.id
+       WHERE h.investor_id = ANY($1) AND c.symbol IS NOT NULL
+       GROUP BY h.investor_id, h.report_date, c.id`
+    : `SELECT h.investor_id, h.report_date, c.id as company_id, c.symbol, SUM(h.market_value) as position_value
+       FROM investor_holdings h JOIN companies c ON h.company_id = c.id
+       WHERE h.investor_id IN (${investorIds.map((_, i) => `$${i + 1}`).join(',')}) AND c.symbol IS NOT NULL
+       GROUP BY h.investor_id, h.report_date, c.id`;
+  const allHoldingsRes = await database.query(
+    allHoldingsSql,
+    isUsingPostgres() ? [investorIds] : investorIds
+  );
+  const allHoldings = allHoldingsRes.rows;
 
   // Build map: investor_id -> report_date -> holdings[]
   const holdingsMap = new Map();
@@ -761,55 +770,52 @@ function getAllInvestorReturnsSummary() {
     holdingsMap.get(key).push(h);
   }
 
-  // Step 4: Collect all unique (company_id, date) pairs we need prices for
-  const companyDatePairs = new Set();
-  for (const [invId, dates] of datesByInvestor) {
-    for (const date of dates) {
-      const key = `${invId}_${date}`;
-      const holdings = holdingsMap.get(key) || [];
-      for (const h of holdings) {
-        companyDatePairs.add(`${h.company_id}_${date}`);
-      }
-    }
-  }
-
-  // Step 5: Batch fetch all prices in one query using JSON
   const allCompanyIds = [...new Set(allHoldings.map(h => h.company_id))];
   const allUniqueDates = [...new Set(allDates.map(d => d.report_date))];
 
+  // Step 4: Batch fetch all prices (Postgres uses unnest, SQLite uses json_each)
   const pricesByCompanyDate = new Map();
   if (allCompanyIds.length > 0 && allUniqueDates.length > 0) {
-    const prices = db.prepare(`
-      WITH target_dates AS (
-        SELECT value as target_date FROM json_each(?)
-      ),
-      target_companies AS (
-        SELECT value as company_id FROM json_each(?)
-      ),
-      price_lookup AS (
-        SELECT
-          dp.company_id,
-          td.target_date,
-          dp.close,
-          ROW_NUMBER() OVER (PARTITION BY dp.company_id, td.target_date ORDER BY dp.date DESC) as rn
-        FROM daily_prices dp
-        CROSS JOIN target_dates td
-        CROSS JOIN target_companies tc
-        WHERE dp.company_id = tc.company_id
-          AND dp.date <= td.target_date
-          AND dp.date >= date(td.target_date, '-30 days')
-      )
-      SELECT company_id, target_date, close
-      FROM price_lookup
-      WHERE rn = 1
-    `).all(JSON.stringify(allUniqueDates), JSON.stringify(allCompanyIds));
-
-    for (const p of prices) {
+    let pricesRes;
+    if (isUsingPostgres()) {
+      pricesRes = await database.query(`
+        WITH target_dates AS (SELECT unnest($1::text[])::date as target_date),
+             target_companies AS (SELECT unnest($2::int[]) as company_id),
+             price_lookup AS (
+               SELECT dp.company_id, td.target_date, dp.close,
+                 ROW_NUMBER() OVER (PARTITION BY dp.company_id, td.target_date ORDER BY dp.date DESC) as rn
+               FROM daily_prices dp
+               CROSS JOIN target_dates td
+               CROSS JOIN target_companies tc
+               WHERE dp.company_id = tc.company_id
+                 AND dp.date <= td.target_date
+                 AND dp.date >= td.target_date - INTERVAL '30 days'
+             )
+        SELECT company_id, target_date, close FROM price_lookup WHERE rn = 1
+      `, [allUniqueDates, allCompanyIds]);
+    } else {
+      pricesRes = await database.query(`
+        WITH target_dates AS (SELECT value as target_date FROM json_each($1)),
+             target_companies AS (SELECT value as company_id FROM json_each($2)),
+             price_lookup AS (
+               SELECT dp.company_id, td.target_date, dp.close,
+                 ROW_NUMBER() OVER (PARTITION BY dp.company_id, td.target_date ORDER BY dp.date DESC) as rn
+               FROM daily_prices dp
+               CROSS JOIN target_dates td
+               CROSS JOIN target_companies tc
+               WHERE dp.company_id = tc.company_id
+                 AND dp.date <= td.target_date
+                 AND dp.date >= date(td.target_date, '-30 days')
+             )
+        SELECT company_id, target_date, close FROM price_lookup WHERE rn = 1
+      `, [JSON.stringify(allUniqueDates), JSON.stringify(allCompanyIds)]);
+    }
+    for (const p of pricesRes.rows) {
       pricesByCompanyDate.set(`${p.company_id}_${p.target_date}`, p.close);
     }
   }
 
-  // Step 6: Calculate returns for each investor
+  // Step 5: Calculate returns for each investor
   const results = [];
 
   for (const [invId, dates] of datesByInvestor) {
@@ -885,42 +891,45 @@ function getAllInvestorReturnsSummary() {
 /**
  * Get S&P 500 (SPY) return between two dates
  */
-function getSpyReturn(startDate, endDate) {
-  // Try to get SPY prices from daily_prices
-  const spyCompany = db.prepare('SELECT id FROM companies WHERE symbol = \'SPY\'').get();
+async function getSpyReturn(startDate, endDate) {
+  const database = await getDatabaseAsync();
+
+  const spyRes = await database.query(
+    "SELECT id FROM companies WHERE symbol = 'SPY'"
+  );
+  const spyCompany = spyRes.rows[0];
 
   if (!spyCompany) {
-    // Fallback to index_prices table
-    const startPrice = db.prepare(`
-      SELECT close FROM index_prices
-      WHERE symbol = 'SPY' AND date <= ?
-      ORDER BY date DESC LIMIT 1
-    `).get(startDate);
-
-    const endPrice = db.prepare(`
-      SELECT close FROM index_prices
-      WHERE symbol = 'SPY' AND date <= ?
-      ORDER BY date DESC LIMIT 1
-    `).get(endDate);
-
+    const startPriceRes = await database.query(
+      `SELECT close FROM index_prices WHERE symbol = 'SPY' AND date <= $1 ORDER BY date DESC LIMIT 1`,
+      [startDate]
+    );
+    const endPriceRes = await database.query(
+      `SELECT close FROM index_prices WHERE symbol = 'SPY' AND date <= $1 ORDER BY date DESC LIMIT 1`,
+      [endDate]
+    );
+    const startPrice = startPriceRes.rows[0];
+    const endPrice = endPriceRes.rows[0];
     if (startPrice?.close && endPrice?.close && startPrice.close > 0) {
       return ((endPrice.close - startPrice.close) / startPrice.close) * 100;
     }
     return null;
   }
 
-  const startPrice = db.prepare(`
-    SELECT close FROM daily_prices
-    WHERE company_id = ? AND date <= ?
-    ORDER BY date DESC LIMIT 1
-  `).get(spyCompany.id, startDate);
-
-  const endPrice = db.prepare(`
-    SELECT close FROM daily_prices
-    WHERE company_id = ? AND date <= ?
-    ORDER BY date DESC LIMIT 1
-  `).get(spyCompany.id, endDate);
-
+  const startPriceRes = await database.query(
+    `SELECT close FROM daily_prices
+     WHERE company_id = $1 AND date <= $2
+     ORDER BY date DESC LIMIT 1`,
+    [spyCompany.id, startDate]
+  );
+  const endPriceRes = await database.query(
+    `SELECT close FROM daily_prices
+     WHERE company_id = $1 AND date <= $2
+     ORDER BY date DESC LIMIT 1`,
+    [spyCompany.id, endDate]
+  );
+  const startPrice = startPriceRes.rows[0];
+  const endPrice = endPriceRes.rows[0];
   if (startPrice?.close && endPrice?.close && startPrice.close > 0) {
     return ((endPrice.close - startPrice.close) / startPrice.close) * 100;
   }
@@ -931,10 +940,11 @@ function getSpyReturn(startDate, endDate) {
  * Get portfolio value history for performance charts
  * Returns quarterly portfolio values over time with period-over-period returns
  */
-function getPortfolioValueHistory(investorId, { limit = 40 } = {}) {
-  // Get filing-level summaries for performance chart
-  const filings = db.prepare(`
-    SELECT
+async function getPortfolioValueHistory(investorId, { limit = 40 } = {}) {
+  const database = await getDatabaseAsync();
+
+  const filingsRes = await database.query(
+    `SELECT
       if.filing_date,
       if.report_date,
       if.total_value,
@@ -945,12 +955,14 @@ function getPortfolioValueHistory(investorId, { limit = 40 } = {}) {
       if.sold_positions,
       if.unchanged_positions
     FROM investor_filings if
-    WHERE if.investor_id = ?
+    WHERE if.investor_id = $1
       AND if.total_value > 0
       AND if.positions_count > 5
     ORDER BY if.filing_date ASC
-    LIMIT ?
-  `).all(investorId, limit);
+    LIMIT $2`,
+    [investorId, limit]
+  );
+  const filings = filingsRes.rows;
 
   if (filings.length === 0) {
     return { history: [], summary: null };
@@ -1030,7 +1042,7 @@ function getPortfolioValueHistory(investorId, { limit = 40 } = {}) {
  * Fetch latest 13F filing for an investor
  */
 async function fetch13F(investorId) {
-  const investor = getInvestor(investorId);
+  const investor = await getInvestor(investorId);
   if (!investor) {
     throw new Error(`Investor not found: ${investorId}`);
   }
@@ -1049,10 +1061,13 @@ async function fetch13F(investorId) {
     console.log(`📥 Found filing: ${latestFiling.filingDate}`);
 
     // Check if we already have this filing
-    const existingFiling = db.prepare(`
-      SELECT id FROM investor_filings
-      WHERE investor_id = ? AND accession_number = ?
-    `).get(investorId, latestFiling.accessionNumber);
+    const database = await getDatabaseAsync();
+    const existingRes = await database.query(
+      `SELECT id FROM investor_filings
+       WHERE investor_id = $1 AND accession_number = $2`,
+      [investorId, latestFiling.accessionNumber]
+    );
+    const existingFiling = existingRes.rows[0];
 
     if (existingFiling) {
       console.log('✅ Filing already processed');
@@ -1064,16 +1079,16 @@ async function fetch13F(investorId) {
     console.log(`📊 Parsed ${holdings.length} positions`);
 
     // Get previous holdings for comparison
-    const previousHoldings = getPreviousHoldings(investorId);
+    const previousHoldings = await getPreviousHoldings(investorId);
 
     // Match CUSIPs to companies and calculate changes
     const processedHoldings = await processHoldings(holdings, previousHoldings);
 
     // Store holdings
-    storeHoldings(investorId, latestFiling, processedHoldings);
+    await storeHoldings(investorId, latestFiling, processedHoldings);
 
     // Invalidate performance cache since we have new data
-    invalidatePerformanceCache(investorId);
+    await invalidatePerformanceCache(investorId);
     console.log(`🔄 Invalidated performance cache for ${investor.name}`);
 
     // Count unique positions (CUSIP + option_type), not raw row count
@@ -1249,16 +1264,22 @@ function parseInfoTableXml(xmlText) {
 /**
  * Get previous holdings for comparison
  */
-function getPreviousHoldings(investorId) {
-  const investor = db.prepare('SELECT latest_filing_date FROM famous_investors WHERE id = ?').get(investorId);
+async function getPreviousHoldings(investorId) {
+  const database = await getDatabaseAsync();
+  const investorRes = await database.query(
+    'SELECT latest_filing_date FROM famous_investors WHERE id = $1',
+    [investorId]
+  );
+  const investor = investorRes.rows[0];
   if (!investor?.latest_filing_date) return new Map();
 
-  const holdings = db.prepare(`
-    SELECT cusip, shares, market_value, security_name, option_type, title_of_class
-    FROM investor_holdings
-    WHERE investor_id = ? AND filing_date = ?
-  `).all(investorId, investor.latest_filing_date);
-
+  const holdingsRes = await database.query(
+    `SELECT cusip, shares, market_value, security_name, option_type, title_of_class
+     FROM investor_holdings
+     WHERE investor_id = $1 AND filing_date = $2`,
+    [investorId, investor.latest_filing_date]
+  );
+  const holdings = holdingsRes.rows;
   return new Map(holdings.map(h => [h.cusip, h]));
 }
 
@@ -1270,23 +1291,31 @@ async function processHoldings(holdings, previousHoldings) {
   const unmappedSecurities = [];
   const totalValue = holdings.reduce((sum, h) => sum + h.value, 0);
 
+  const database = await getDatabaseAsync();
+
   for (const holding of holdings) {
     // Try to find company by CUSIP
     let companyId = null;
-    const cusipMapping = db.prepare('SELECT company_id, symbol FROM cusip_mapping WHERE cusip = ?').get(holding.cusip);
+    const cusipRes = await database.query(
+      'SELECT company_id, symbol FROM cusip_mapping WHERE cusip = $1',
+      [holding.cusip]
+    );
+    const cusipMapping = cusipRes.rows[0];
 
     if (cusipMapping?.company_id) {
       companyId = cusipMapping.company_id;
     } else {
       // Try to match by name
-      const company = findCompanyByName(holding.securityName);
+      const company = await findCompanyByName(holding.securityName);
       if (company) {
         companyId = company.id;
         // Save mapping for future
-        db.prepare(`
-          INSERT OR REPLACE INTO cusip_mapping (cusip, symbol, company_id, security_name)
-          VALUES (?, ?, ?, ?)
-        `).run(holding.cusip, company.symbol, company.id, holding.securityName);
+        await database.query(
+          `INSERT INTO cusip_mapping (cusip, symbol, company_id, security_name)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (cusip) DO UPDATE SET symbol = $2, company_id = $3, security_name = $4`,
+          [holding.cusip, company.symbol, company.id, holding.securityName]
+        );
       } else {
         // Track unmapped security
         unmappedSecurities.push({
@@ -1341,7 +1370,11 @@ async function processHoldings(holdings, previousHoldings) {
   // Add sold positions
   for (const [cusip, prev] of previousHoldings) {
     if (!holdings.find(h => h.cusip === cusip)) {
-      const cusipMapping = db.prepare('SELECT company_id FROM cusip_mapping WHERE cusip = ?').get(cusip);
+      const cusipRes = await database.query(
+        'SELECT company_id FROM cusip_mapping WHERE cusip = $1',
+        [cusip]
+      );
+      const cusipMapping = cusipRes.rows[0];
       processed.push({
         cusip,
         securityName: prev.security_name || 'Unknown',
@@ -1367,7 +1400,7 @@ async function processHoldings(holdings, previousHoldings) {
   }
 
   // Store unmapped securities for tracking
-  storeUnmappedSecurities(unmappedSecurities);
+  await storeUnmappedSecurities(unmappedSecurities);
 
   return processed;
 }
@@ -1376,73 +1409,98 @@ async function processHoldings(holdings, previousHoldings) {
  * Store unmapped securities for later review/mapping
  * Uses transaction for atomic batch insert
  */
-function storeUnmappedSecurities(securities) {
+async function storeUnmappedSecurities(securities) {
   if (securities.length === 0) return;
 
-  // Ensure table exists
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS unmapped_securities (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      cusip TEXT UNIQUE NOT NULL,
-      security_name TEXT,
-      last_value REAL,
-      last_shares REAL,
-      occurrence_count INTEGER DEFAULT 1,
-      first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      manually_reviewed INTEGER DEFAULT 0,
-      notes TEXT
-    )
-  `);
+  const database = await getDatabaseAsync();
 
-  const upsert = db.prepare(`
-    INSERT INTO unmapped_securities (cusip, security_name, last_value, last_shares)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(cusip) DO UPDATE SET
-      security_name = excluded.security_name,
-      last_value = excluded.last_value,
-      last_shares = excluded.last_shares,
-      occurrence_count = occurrence_count + 1,
-      last_seen_at = CURRENT_TIMESTAMP
-  `);
-
-  // Wrap batch insert in transaction for atomicity and performance
-  const insertAll = db.transaction((items) => {
-    for (const security of items) {
-      upsert.run(security.cusip, security.securityName, security.value, security.shares);
+  // Ensure table exists (SQLite only - Postgres should use migration)
+  if (!isUsingPostgres()) {
+    try {
+      await database.query(`
+        CREATE TABLE IF NOT EXISTS unmapped_securities (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          cusip TEXT UNIQUE NOT NULL,
+          security_name TEXT,
+          last_value REAL,
+          last_shares REAL,
+          occurrence_count INTEGER DEFAULT 1,
+          first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          manually_reviewed INTEGER DEFAULT 0,
+          notes TEXT
+        )
+      `);
+    } catch (e) {
+      // Table may already exist
     }
-  });
+  }
 
-  insertAll(securities);
+  await database.query('BEGIN');
+  try {
+    const upsertSql = isUsingPostgres()
+      ? `INSERT INTO unmapped_securities (cusip, security_name, last_value, last_shares)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT(cusip) DO UPDATE SET
+           security_name = EXCLUDED.security_name,
+           last_value = EXCLUDED.last_value,
+           last_shares = EXCLUDED.last_shares,
+           occurrence_count = unmapped_securities.occurrence_count + 1,
+           last_seen_at = CURRENT_TIMESTAMP`
+      : `INSERT INTO unmapped_securities (cusip, security_name, last_value, last_shares)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT(cusip) DO UPDATE SET
+           security_name = excluded.security_name,
+           last_value = excluded.last_value,
+           last_shares = excluded.last_shares,
+           occurrence_count = occurrence_count + 1,
+           last_seen_at = CURRENT_TIMESTAMP`;
+
+    for (const security of securities) {
+      await database.query(upsertSql, [
+        security.cusip,
+        security.securityName,
+        security.value,
+        security.shares
+      ]);
+    }
+    await database.query('COMMIT');
+  } catch (err) {
+    await database.query('ROLLBACK');
+    throw err;
+  }
 }
 
 /**
  * Find company by name (fuzzy match)
  */
-function findCompanyByName(name) {
+async function findCompanyByName(name) {
   if (!name) return null;
 
-  // Clean up the name for matching
+  const database = await getDatabaseAsync();
+
   const cleanName = name.toUpperCase()
     .replace(/\s+(INC|CORP|CO|LTD|LLC|PLC|CLASS\s+[A-Z]|CL\s+[A-Z]|COM|COMMON|NEW)\.?$/i, '')
     .replace(/[^A-Z0-9\s]/g, '')
     .trim();
 
-  // Try exact match first
-  let company = db.prepare(`
-    SELECT id, symbol FROM companies
-    WHERE UPPER(name) LIKE ?
-    LIMIT 1
-  `).get(`%${cleanName}%`);
+  let companyRes = await database.query(
+    `SELECT id, symbol FROM companies
+     WHERE UPPER(name) LIKE $1
+     LIMIT 1`,
+    [`%${cleanName}%`]
+  );
+  let company = companyRes.rows[0];
 
   if (!company) {
-    // Try matching on first word(s)
     const firstWords = cleanName.split(/\s+/).slice(0, 2).join(' ');
-    company = db.prepare(`
-      SELECT id, symbol FROM companies
-      WHERE UPPER(name) LIKE ?
-      LIMIT 1
-    `).get(`${firstWords}%`);
+    companyRes = await database.query(
+      `SELECT id, symbol FROM companies
+       WHERE UPPER(name) LIKE $1
+       LIMIT 1`,
+      [`${firstWords}%`]
+    );
+    company = companyRes.rows[0];
   }
 
   return company;
@@ -1451,77 +1509,50 @@ function findCompanyByName(name) {
 /**
  * Store holdings in database
  */
-function storeHoldings(investorId, filing, holdings) {
-  const insertHolding = db.prepare(`
-    INSERT INTO investor_holdings (
-      investor_id, company_id, filing_date, report_date, cusip, security_name,
-      shares, market_value, portfolio_weight, prev_shares, shares_change,
-      shares_change_pct, value_change, change_type, option_type, title_of_class
-    ) VALUES (
-      @investorId, @companyId, @filingDate, @reportDate, @cusip, @securityName,
-      @shares, @value, @weight, @prevShares, @sharesChange,
-      @sharesChangePct, @valueChange, @changeType, @optionType, @titleOfClass
-    )
-  `);
+async function storeHoldings(investorId, filing, holdings) {
+  const database = await getDatabaseAsync();
 
-  const insertFiling = db.prepare(`
-    INSERT OR REPLACE INTO investor_filings (
-      investor_id, filing_date, report_date, accession_number, filing_url,
-      total_value, positions_count, new_positions, increased_positions,
-      decreased_positions, sold_positions, unchanged_positions
-    ) VALUES (
-      @investorId, @filingDate, @reportDate, @accessionNumber, @filingUrl,
-      @totalValue, @positionsCount, @newPositions, @increasedPositions,
-      @decreasedPositions, @soldPositions, @unchangedPositions
-    )
-  `);
+  const insertHoldingSql = `INSERT INTO investor_holdings (
+    investor_id, company_id, filing_date, report_date, cusip, security_name,
+    shares, market_value, portfolio_weight, prev_shares, shares_change,
+    shares_change_pct, value_change, change_type, option_type, title_of_class
+  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`;
 
-  const updateInvestor = db.prepare(`
-    UPDATE famous_investors SET
-      latest_filing_date = ?,
-      latest_filing_url = ?,
-      latest_portfolio_value = ?,
-      latest_positions_count = ?,
-      updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `);
+  const insertFilingSql = isUsingPostgres()
+    ? `INSERT INTO investor_filings (
+         investor_id, filing_date, report_date, accession_number, filing_url,
+         total_value, positions_count, new_positions, increased_positions,
+         decreased_positions, sold_positions, unchanged_positions
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       ON CONFLICT (investor_id, accession_number) DO UPDATE SET
+         filing_date = EXCLUDED.filing_date, report_date = EXCLUDED.report_date,
+         filing_url = EXCLUDED.filing_url, total_value = EXCLUDED.total_value,
+         positions_count = EXCLUDED.positions_count, new_positions = EXCLUDED.new_positions,
+         increased_positions = EXCLUDED.increased_positions,
+         decreased_positions = EXCLUDED.decreased_positions,
+         sold_positions = EXCLUDED.sold_positions,
+         unchanged_positions = EXCLUDED.unchanged_positions`
+    : `INSERT OR REPLACE INTO investor_filings (
+         investor_id, filing_date, report_date, accession_number, filing_url,
+         total_value, positions_count, new_positions, increased_positions,
+         decreased_positions, sold_positions, unchanged_positions
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`;
 
-  const transaction = db.transaction(() => {
-    // Count change types
-    const counts = {
-      new: 0,
-      increased: 0,
-      decreased: 0,
-      sold: 0,
-      unchanged: 0
-    };
+  await database.query('BEGIN');
+  try {
+    const counts = { new: 0, increased: 0, decreased: 0, sold: 0, unchanged: 0 };
 
     for (const h of holdings) {
-      insertHolding.run({
-        investorId,
-        companyId: h.companyId,
-        filingDate: filing.filingDate,
-        reportDate: filing.reportDate,
-        cusip: h.cusip,
-        securityName: h.securityName,
-        shares: h.shares,
-        value: h.value,
-        weight: h.weight,
-        prevShares: h.prevShares,
-        sharesChange: h.sharesChange,
-        sharesChangePct: h.sharesChangePct,
-        valueChange: h.valueChange,
-        changeType: h.changeType,
-        optionType: h.optionType || null,     // NEW: 'PUT', 'CALL', or null
-        titleOfClass: h.titleOfClass || null  // NEW: 'COM', 'CL A', 'PREF', etc.
-      });
-
+      await database.query(insertHoldingSql, [
+        investorId, h.companyId, filing.filingDate, filing.reportDate,
+        h.cusip, h.securityName, h.shares, h.value, h.weight,
+        h.prevShares, h.sharesChange, h.sharesChangePct, h.valueChange,
+        h.changeType, h.optionType || null, h.titleOfClass || null
+      ]);
       if (h.changeType) counts[h.changeType]++;
     }
 
     const totalValue = holdings.reduce((sum, h) => sum + h.value, 0);
-    // Count unique positions by CUSIP + option_type (not raw row count)
-    // SEC filings may have multiple rows per security for different voting authorities
     const uniquePositions = new Set(
       holdings
         .filter(h => h.changeType !== HOLDING_CHANGE_TYPES.SOLD)
@@ -1529,44 +1560,37 @@ function storeHoldings(investorId, filing, holdings) {
     );
     const activePositions = uniquePositions.size;
 
-    // Build proper SEC filing URL with accession number for direct access
-    const accessionFormatted = filing.accessionNumber?.replace(/-/g, '') || '';
     const filingUrl = filing.accessionNumber
-      ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${filing.cik}&type=13F-HR&dateb=&owner=include&count=40&search_text=`
-      : `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${filing.cik}&type=13F-HR`;
+      ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${filing.cik || ''}&type=13F-HR&dateb=&owner=include&count=40&search_text=`
+      : `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${filing.cik || ''}&type=13F-HR`;
 
-    insertFiling.run({
-      investorId,
-      filingDate: filing.filingDate,
-      reportDate: filing.reportDate,
-      accessionNumber: filing.accessionNumber,
-      filingUrl,
-      totalValue,
-      positionsCount: activePositions,
-      newPositions: counts.new,
-      increasedPositions: counts.increased,
-      decreasedPositions: counts.decreased,
-      soldPositions: counts.sold,
-      unchangedPositions: counts.unchanged
-    });
+    await database.query(insertFilingSql, [
+      investorId, filing.filingDate, filing.reportDate, filing.accessionNumber,
+      filingUrl, totalValue, activePositions,
+      counts.new, counts.increased, counts.decreased, counts.sold, counts.unchanged
+    ]);
 
-    updateInvestor.run(
-      filing.filingDate,
-      `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${filing.cik}&type=13F-HR`,
-      totalValue,
-      activePositions,
-      investorId
+    await database.query(
+      `UPDATE famous_investors SET
+        latest_filing_date = $1, latest_filing_url = $2,
+        latest_portfolio_value = $3, latest_positions_count = $4,
+        updated_at = CURRENT_TIMESTAMP
+       WHERE id = $5`,
+      [filing.filingDate, filingUrl, totalValue, activePositions, investorId]
     );
-  });
 
-  transaction();
+    await database.query('COMMIT');
+  } catch (err) {
+    await database.query('ROLLBACK');
+    throw err;
+  }
 }
 
 /**
  * Fetch 13F for all active investors
  */
 async function fetchAll13Fs() {
-  const investors = getAllInvestors();
+  const investors = await getAllInvestors();
   const results = [];
 
   for (const investor of investors) {
@@ -1595,28 +1619,26 @@ async function fetchAll13Fs() {
  * @returns {Promise<Array>} Array of filings to process
  */
 async function getHistoricalFilingsToProcess(investorId, yearsBack = 10) {
-  const investor = getInvestor(investorId);
+  const investor = await getInvestor(investorId);
   if (!investor || !investor.cik) {
     throw new Error(`Investor not found or missing CIK: ${investorId}`);
   }
 
-  // Get all filings from SEC EDGAR
   const allFilings = await getFilingsList(investor.cik);
   if (!allFilings || allFilings.length === 0) {
     return [];
   }
 
-  // Calculate cutoff date
   const cutoffDate = new Date();
   cutoffDate.setFullYear(cutoffDate.getFullYear() - yearsBack);
   const cutoffStr = cutoffDate.toISOString().split('T')[0];
 
-  // Get already-processed accession numbers
-  const processedFilings = db.prepare(`
-    SELECT accession_number FROM investor_filings
-    WHERE investor_id = ?
-  `).all(investorId);
-  const processedSet = new Set(processedFilings.map(f => f.accession_number));
+  const database = await getDatabaseAsync();
+  const processedRes = await database.query(
+    'SELECT accession_number FROM investor_filings WHERE investor_id = $1',
+    [investorId]
+  );
+  const processedSet = new Set(processedRes.rows.map(f => f.accession_number));
 
   // Filter to unprocessed filings within date range
   // Exclude amendments (13F-HR/A) to avoid duplicates - they replace original filings
@@ -1635,136 +1657,99 @@ async function getHistoricalFilingsToProcess(investorId, yearsBack = 10) {
 
 /**
  * Get holdings as a Map for a specific filing date (for change tracking during backfill)
- * @param {number} investorId - Investor ID
- * @param {string} filingDate - Filing date to get holdings for
- * @returns {Map} Map of CUSIP -> holding data
  */
-function getHoldingsMapForDate(investorId, filingDate) {
-  const holdings = db.prepare(`
-    SELECT cusip, shares, market_value, security_name, option_type, title_of_class
-    FROM investor_holdings
-    WHERE investor_id = ? AND filing_date = ?
-  `).all(investorId, filingDate);
-
-  return new Map(holdings.map(h => [h.cusip, h]));
+async function getHoldingsMapForDate(investorId, filingDate) {
+  const database = await getDatabaseAsync();
+  const holdingsRes = await database.query(
+    `SELECT cusip, shares, market_value, security_name, option_type, title_of_class
+     FROM investor_holdings
+     WHERE investor_id = $1 AND filing_date = $2`,
+    [investorId, filingDate]
+  );
+  return new Map(holdingsRes.rows.map(h => [h.cusip, h]));
 }
 
 /**
  * Get the most recent filing date before a given date (for change comparison)
- * @param {number} investorId - Investor ID
- * @param {string} beforeDate - Date to look before
- * @returns {string|null} Previous filing date or null
  */
-function getPreviousFilingDate(investorId, beforeDate) {
-  const result = db.prepare(`
-    SELECT filing_date FROM investor_filings
-    WHERE investor_id = ? AND filing_date < ?
-    ORDER BY filing_date DESC
-    LIMIT 1
-  `).get(investorId, beforeDate);
-
-  return result?.filing_date || null;
+async function getPreviousFilingDate(investorId, beforeDate) {
+  const database = await getDatabaseAsync();
+  const result = await database.query(
+    `SELECT filing_date FROM investor_filings
+     WHERE investor_id = $1 AND filing_date < $2
+     ORDER BY filing_date DESC
+     LIMIT 1`,
+    [investorId, beforeDate]
+  );
+  return result.rows[0]?.filing_date || null;
 }
 
 /**
  * Store holdings for a historical filing (does NOT update latest_filing_date)
- * @param {number} investorId - Investor ID
- * @param {Object} filing - Filing metadata
- * @param {Array} holdings - Processed holdings
- * @param {boolean} updateLatest - Whether to update famous_investors.latest_filing_date
  */
-function storeHistoricalHoldings(investorId, filing, holdings, updateLatest = false) {
-  const insertHolding = db.prepare(`
-    INSERT INTO investor_holdings (
-      investor_id, company_id, filing_date, report_date, cusip, security_name,
-      shares, market_value, portfolio_weight, prev_shares, shares_change,
-      shares_change_pct, value_change, change_type, option_type, title_of_class
-    ) VALUES (
-      @investorId, @companyId, @filingDate, @reportDate, @cusip, @securityName,
-      @shares, @value, @weight, @prevShares, @sharesChange,
-      @sharesChangePct, @valueChange, @changeType, @optionType, @titleOfClass
-    )
-  `);
+async function storeHistoricalHoldings(investorId, filing, holdings, updateLatest = false) {
+  const database = await getDatabaseAsync();
 
-  const insertFiling = db.prepare(`
-    INSERT OR REPLACE INTO investor_filings (
-      investor_id, filing_date, report_date, accession_number, filing_url,
-      total_value, positions_count, new_positions, increased_positions,
-      decreased_positions, sold_positions, unchanged_positions
-    ) VALUES (
-      @investorId, @filingDate, @reportDate, @accessionNumber, @filingUrl,
-      @totalValue, @positionsCount, @newPositions, @increasedPositions,
-      @decreasedPositions, @soldPositions, @unchangedPositions
-    )
-  `);
+  const insertHoldingSql = `INSERT INTO investor_holdings (
+    investor_id, company_id, filing_date, report_date, cusip, security_name,
+    shares, market_value, portfolio_weight, prev_shares, shares_change,
+    shares_change_pct, value_change, change_type, option_type, title_of_class
+  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`;
 
-  const updateInvestor = db.prepare(`
-    UPDATE famous_investors SET
-      latest_filing_date = ?,
-      latest_filing_url = ?,
-      latest_portfolio_value = ?,
-      latest_positions_count = ?,
-      updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `);
+  const insertFilingSql = isUsingPostgres()
+    ? `INSERT INTO investor_filings (
+         investor_id, filing_date, report_date, accession_number, filing_url,
+         total_value, positions_count, new_positions, increased_positions,
+         decreased_positions, sold_positions, unchanged_positions
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       ON CONFLICT (investor_id, accession_number) DO UPDATE SET
+         filing_date = EXCLUDED.filing_date, report_date = EXCLUDED.report_date,
+         filing_url = EXCLUDED.filing_url, total_value = EXCLUDED.total_value,
+         positions_count = EXCLUDED.positions_count, new_positions = EXCLUDED.new_positions,
+         increased_positions = EXCLUDED.increased_positions,
+         decreased_positions = EXCLUDED.decreased_positions,
+         sold_positions = EXCLUDED.sold_positions,
+         unchanged_positions = EXCLUDED.unchanged_positions`
+    : `INSERT OR REPLACE INTO investor_filings (
+         investor_id, filing_date, report_date, accession_number, filing_url,
+         total_value, positions_count, new_positions, increased_positions,
+         decreased_positions, sold_positions, unchanged_positions
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`;
 
-  const transaction = db.transaction(() => {
-    // Consolidate by CUSIP+optionType before storing to prevent duplicates
-    // Some 13F filings have multiple entries for the same security (e.g., different share classes)
-    const consolidatedMap = new Map();
-    for (const h of holdings) {
-      const key = `${h.cusip}|${h.optionType || ''}`;
-      if (consolidatedMap.has(key)) {
-        const existing = consolidatedMap.get(key);
-        existing.shares += h.shares || 0;
-        existing.value += h.value || 0;
-        existing.prevShares = (existing.prevShares || 0) + (h.prevShares || 0);
-        existing.sharesChange = (existing.sharesChange || 0) + (h.sharesChange || 0);
-        existing.valueChange = (existing.valueChange || 0) + (h.valueChange || 0);
-        // Keep the first security name, company ID, etc.
-      } else {
-        consolidatedMap.set(key, { ...h });
-      }
+  const consolidatedMap = new Map();
+  for (const h of holdings) {
+    const key = `${h.cusip}|${h.optionType || ''}`;
+    if (consolidatedMap.has(key)) {
+      const existing = consolidatedMap.get(key);
+      existing.shares += h.shares || 0;
+      existing.value += h.value || 0;
+      existing.prevShares = (existing.prevShares || 0) + (h.prevShares || 0);
+      existing.sharesChange = (existing.sharesChange || 0) + (h.sharesChange || 0);
+      existing.valueChange = (existing.valueChange || 0) + (h.valueChange || 0);
+    } else {
+      consolidatedMap.set(key, { ...h });
     }
-    const consolidatedHoldings = Array.from(consolidatedMap.values());
+  }
+  const consolidatedHoldings = Array.from(consolidatedMap.values());
 
-    // Recalculate weights after consolidation
-    const consolidatedTotalValue = consolidatedHoldings.reduce((sum, h) => sum + (h.value || 0), 0);
-    if (consolidatedTotalValue > 0) {
-      for (const h of consolidatedHoldings) {
-        h.weight = ((h.value || 0) / consolidatedTotalValue) * 100;
-      }
-    }
-
-    // Count change types
-    const counts = {
-      new: 0,
-      increased: 0,
-      decreased: 0,
-      sold: 0,
-      unchanged: 0
-    };
-
+  const consolidatedTotalValue = consolidatedHoldings.reduce((sum, h) => sum + (h.value || 0), 0);
+  if (consolidatedTotalValue > 0) {
     for (const h of consolidatedHoldings) {
-      insertHolding.run({
-        investorId,
-        companyId: h.companyId,
-        filingDate: filing.filingDate,
-        reportDate: filing.reportDate,
-        cusip: h.cusip,
-        securityName: h.securityName,
-        shares: h.shares,
-        value: h.value,
-        weight: h.weight,
-        prevShares: h.prevShares,
-        sharesChange: h.sharesChange,
-        sharesChangePct: h.sharesChangePct,
-        valueChange: h.valueChange,
-        changeType: h.changeType,
-        optionType: h.optionType || null,
-        titleOfClass: h.titleOfClass || null
-      });
+      h.weight = ((h.value || 0) / consolidatedTotalValue) * 100;
+    }
+  }
 
+  const counts = { new: 0, increased: 0, decreased: 0, sold: 0, unchanged: 0 };
+
+  await database.query('BEGIN');
+  try {
+    for (const h of consolidatedHoldings) {
+      await database.query(insertHoldingSql, [
+        investorId, h.companyId, filing.filingDate, filing.reportDate,
+        h.cusip, h.securityName, h.shares, h.value, h.weight,
+        h.prevShares, h.sharesChange, h.sharesChangePct, h.valueChange,
+        h.changeType, h.optionType || null, h.titleOfClass || null
+      ]);
       if (h.changeType) counts[h.changeType]++;
     }
 
@@ -1776,40 +1761,37 @@ function storeHistoricalHoldings(investorId, filing, holdings, updateLatest = fa
     );
     const activePositions = uniquePositions.size;
 
-    const accessionFormatted = filing.accessionNumber?.replace(/-/g, '') || '';
-    const cik = db.prepare('SELECT cik FROM famous_investors WHERE id = ?').get(investorId)?.cik || '';
+    const cikRes = await database.query(
+      'SELECT cik FROM famous_investors WHERE id = $1',
+      [investorId]
+    );
+    const cik = cikRes.rows[0]?.cik || '';
     const filingUrl = filing.accessionNumber
       ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${cik}&type=13F&dateb=&owner=include&count=40&search_text=`
       : null;
 
-    insertFiling.run({
-      investorId,
-      filingDate: filing.filingDate,
-      reportDate: filing.reportDate,
-      accessionNumber: filing.accessionNumber,
-      filingUrl,
-      totalValue,
-      positionsCount: activePositions,
-      newPositions: counts.new,
-      increasedPositions: counts.increased,
-      decreasedPositions: counts.decreased,
-      soldPositions: counts.sold,
-      unchangedPositions: counts.unchanged
-    });
+    await database.query(insertFilingSql, [
+      investorId, filing.filingDate, filing.reportDate, filing.accessionNumber,
+      filingUrl, totalValue, activePositions,
+      counts.new, counts.increased, counts.decreased, counts.sold, counts.unchanged
+    ]);
 
-    // Only update latest_filing_date if this is the most recent filing
     if (updateLatest) {
-      updateInvestor.run(
-        filing.filingDate,
-        filingUrl,
-        totalValue,
-        activePositions,
-        investorId
+      await database.query(
+        `UPDATE famous_investors SET
+          latest_filing_date = $1, latest_filing_url = $2,
+          latest_portfolio_value = $3, latest_positions_count = $4,
+          updated_at = CURRENT_TIMESTAMP
+         WHERE id = $5`,
+        [filing.filingDate, filingUrl, totalValue, activePositions, investorId]
       );
     }
-  });
 
-  transaction();
+    await database.query('COMMIT');
+  } catch (err) {
+    await database.query('ROLLBACK');
+    throw err;
+  }
 }
 
 /**
@@ -1820,20 +1802,21 @@ function storeHistoricalHoldings(investorId, filing, holdings, updateLatest = fa
  * @returns {Promise<Object>} Result with holdings map for next iteration
  */
 async function processHistoricalFiling(investorId, filing, previousHoldingsMap = null) {
-  const investor = getInvestor(investorId);
+  const investor = await getInvestor(investorId);
   if (!investor) {
     throw new Error(`Investor not found: ${investorId}`);
   }
 
-  // Check if filing already exists
-  const existingFiling = db.prepare(`
-    SELECT id FROM investor_filings
-    WHERE investor_id = ? AND accession_number = ?
-  `).get(investorId, filing.accessionNumber);
+  const database = await getDatabaseAsync();
+  const existingRes = await database.query(
+    `SELECT id FROM investor_filings
+     WHERE investor_id = $1 AND accession_number = $2`,
+    [investorId, filing.accessionNumber]
+  );
+  const existingFiling = existingRes.rows[0];
 
   if (existingFiling) {
-    // Already processed, just return existing holdings as map
-    const existingHoldings = getHoldingsMapForDate(investorId, filing.filingDate);
+    const existingHoldings = await getHoldingsMapForDate(investorId, filing.filingDate);
     return {
       success: true,
       skipped: true,
@@ -1842,24 +1825,19 @@ async function processHistoricalFiling(investorId, filing, previousHoldingsMap =
     };
   }
 
-  // Parse the filing from SEC
   const holdings = await parseInfoTable(investor.cik, filing.accessionNumber);
 
-  // If no previous holdings provided, try to get from DB
   if (!previousHoldingsMap) {
-    const prevDate = getPreviousFilingDate(investorId, filing.filingDate);
-    previousHoldingsMap = prevDate ? getHoldingsMapForDate(investorId, prevDate) : new Map();
+    const prevDate = await getPreviousFilingDate(investorId, filing.filingDate);
+    previousHoldingsMap = prevDate ? await getHoldingsMapForDate(investorId, prevDate) : new Map();
   }
 
-  // Process holdings (match CUSIPs, calculate changes)
   const processedHoldings = await processHoldings(holdings, previousHoldingsMap);
 
-  // Determine if this should update latest_filing_date
   const currentLatest = investor.latest_filing_date;
   const shouldUpdateLatest = !currentLatest || filing.filingDate > currentLatest;
 
-  // Store the holdings
-  storeHistoricalHoldings(investorId, filing, processedHoldings, shouldUpdateLatest);
+  await storeHistoricalHoldings(investorId, filing, processedHoldings, shouldUpdateLatest);
 
   // Build holdings map for next iteration
   const newHoldingsMap = new Map();
@@ -1904,7 +1882,7 @@ async function backfillInvestorFilings(investorId, options = {}) {
     onError = null
   } = options;
 
-  const investor = getInvestor(investorId);
+  const investor = await getInvestor(investorId);
   if (!investor) {
     throw new Error(`Investor not found: ${investorId}`);
   }
@@ -2107,35 +2085,36 @@ async function getInvestorStats(investorId) {
 /**
  * Get stocks most owned by famous investors
  */
-function getMostOwnedStocks(limit = 20) {
-  return db.prepare(`
-    SELECT
-      c.id,
-      c.symbol,
-      c.name,
-      c.sector,
+async function getMostOwnedStocks(limit = 20) {
+  const database = await getDatabaseAsync();
+  const aggFunc = isUsingPostgres() ? 'STRING_AGG(DISTINCT fi.name, \', \')' : 'GROUP_CONCAT(DISTINCT fi.name)';
+  const res = await database.query(
+    `SELECT
+      c.id, c.symbol, c.name, c.sector,
       COUNT(DISTINCT ih.investor_id) as investor_count,
       SUM(ih.market_value) as total_value,
       AVG(ih.portfolio_weight) as avg_weight,
-      GROUP_CONCAT(DISTINCT fi.name) as investors
+      ${aggFunc} as investors
     FROM investor_holdings ih
     JOIN companies c ON ih.company_id = c.id
     JOIN famous_investors fi ON ih.investor_id = fi.id
-    WHERE ih.filing_date = fi.latest_filing_date
-      AND ih.change_type != 'sold'
+    WHERE ih.filing_date = fi.latest_filing_date AND ih.change_type != 'sold'
     GROUP BY c.id
-    HAVING investor_count >= 2
+    HAVING COUNT(DISTINCT ih.investor_id) >= 2
     ORDER BY investor_count DESC, total_value DESC
-    LIMIT ?
-  `).all(limit);
+    LIMIT $1`,
+    [limit]
+  );
+  return res.rows;
 }
 
 /**
  * Get recent investor activity (new buys, sells)
  */
-function getRecentActivity(limit = 50) {
-  return db.prepare(`
-    SELECT
+async function getRecentActivity(limit = 50) {
+  const database = await getDatabaseAsync();
+  const res = await database.query(
+    `SELECT
       ih.*,
       c.symbol,
       c.name as company_name,
@@ -2149,8 +2128,10 @@ function getRecentActivity(limit = 50) {
     ORDER BY
       CASE ih.change_type WHEN 'new' THEN 1 WHEN 'sold' THEN 2 ELSE 3 END,
       ih.market_value DESC
-    LIMIT ?
-  `).all(limit);
+    LIMIT $1`,
+    [limit]
+  );
+  return res.rows;
 }
 
 // ============================================
@@ -2160,18 +2141,16 @@ function getRecentActivity(limit = 50) {
 /**
  * Get all unmapped securities
  */
-function getUnmappedSecurities({ limit = 100, sortBy = 'last_value', onlyUnreviewed = false } = {}) {
-  const query = `
-    SELECT * FROM unmapped_securities
-    ${onlyUnreviewed ? 'WHERE manually_reviewed = 0' : ''}
-    ORDER BY ${sortBy === 'occurrence_count' ? 'occurrence_count' : 'last_value'} DESC
-    LIMIT ?
-  `;
-
+async function getUnmappedSecurities({ limit = 100, sortBy = 'last_value', onlyUnreviewed = false } = {}) {
   try {
-    return db.prepare(query).all(limit);
+    const database = await getDatabaseAsync();
+    const orderCol = sortBy === 'occurrence_count' ? 'occurrence_count' : 'last_value';
+    const query = onlyUnreviewed
+      ? `SELECT * FROM unmapped_securities WHERE manually_reviewed = 0 ORDER BY ${orderCol} DESC LIMIT $1`
+      : `SELECT * FROM unmapped_securities ORDER BY ${orderCol} DESC LIMIT $1`;
+    const res = await database.query(query, [limit]);
+    return res.rows;
   } catch (e) {
-    // Table might not exist yet
     return [];
   }
 }
@@ -2179,9 +2158,10 @@ function getUnmappedSecurities({ limit = 100, sortBy = 'last_value', onlyUnrevie
 /**
  * Get unmapped securities summary
  */
-function getUnmappedSecuritiesSummary() {
+async function getUnmappedSecuritiesSummary() {
   try {
-    const stats = db.prepare(`
+    const database = await getDatabaseAsync();
+    const res = await database.query(`
       SELECT
         COUNT(*) as total_count,
         SUM(last_value) as total_value,
@@ -2189,8 +2169,8 @@ function getUnmappedSecuritiesSummary() {
         SUM(CASE WHEN manually_reviewed = 0 THEN last_value ELSE 0 END) as unreviewed_value,
         MAX(last_seen_at) as last_updated
       FROM unmapped_securities
-    `).get();
-    return stats || { total_count: 0, total_value: 0, unreviewed_count: 0, unreviewed_value: 0 };
+    `);
+    return res.rows[0] || { total_count: 0, total_value: 0, unreviewed_count: 0, unreviewed_value: 0 };
   } catch (e) {
     return { total_count: 0, total_value: 0, unreviewed_count: 0, unreviewed_value: 0 };
   }
@@ -2198,47 +2178,57 @@ function getUnmappedSecuritiesSummary() {
 
 /**
  * Map an unmapped security to a company
- * Uses transaction to ensure atomic mapping + review marking
  */
-function mapSecurityToCompany(cusip, companyId, symbol) {
-  const mapTransaction = db.transaction(() => {
-    // Get security name for the mapping
-    const security = db.prepare('SELECT security_name FROM unmapped_securities WHERE cusip = ?').get(cusip);
+async function mapSecurityToCompany(cusip, companyId, symbol) {
+  const database = await getDatabaseAsync();
+  await database.query('BEGIN');
+  try {
+    const securityRes = await database.query(
+      'SELECT security_name FROM unmapped_securities WHERE cusip = $1',
+      [cusip]
+    );
+    const security = securityRes.rows[0];
 
-    // Add to cusip_mapping
-    db.prepare(`
-      INSERT OR REPLACE INTO cusip_mapping (cusip, symbol, company_id, security_name)
-      VALUES (?, ?, ?, ?)
-    `).run(cusip, symbol, companyId, security?.security_name);
+    await database.query(
+      `INSERT INTO cusip_mapping (cusip, symbol, company_id, security_name)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (cusip) DO UPDATE SET symbol = $2, company_id = $3, security_name = $4`,
+      [cusip, symbol, companyId, security?.security_name]
+    );
 
-    // Mark as reviewed
-    db.prepare(`
-      UPDATE unmapped_securities SET manually_reviewed = 1, notes = 'Mapped to ' || ? WHERE cusip = ?
-    `).run(symbol, cusip);
+    await database.query(
+      `UPDATE unmapped_securities SET manually_reviewed = 1, notes = 'Mapped to ' || $1 WHERE cusip = $2`,
+      [symbol, cusip]
+    );
 
+    await database.query('COMMIT');
     return { success: true, cusip, mappedTo: symbol };
-  });
-
-  return mapTransaction();
+  } catch (err) {
+    await database.query('ROLLBACK');
+    throw err;
+  }
 }
 
 /**
  * Mark unmapped security as reviewed (skip)
  */
-function markSecurityReviewed(cusip, notes = null) {
-  db.prepare(`
-    UPDATE unmapped_securities SET manually_reviewed = 1, notes = ? WHERE cusip = ?
-  `).run(notes || 'Manually skipped', cusip);
-
+async function markSecurityReviewed(cusip, notes = null) {
+  const database = await getDatabaseAsync();
+  await database.query(
+    'UPDATE unmapped_securities SET manually_reviewed = 1, notes = $1 WHERE cusip = $2',
+    [notes || 'Manually skipped', cusip]
+  );
   return { success: true, cusip };
 }
 
 /**
  * Delete unmapped security entry
  */
-function deleteUnmappedSecurity(cusip) {
-  const result = db.prepare('DELETE FROM unmapped_securities WHERE cusip = ?').run(cusip);
-  return { success: result.changes > 0, cusip };
+async function deleteUnmappedSecurity(cusip) {
+  const database = await getDatabaseAsync();
+  const result = await database.query('DELETE FROM unmapped_securities WHERE cusip = $1', [cusip]);
+  const rowCount = result.rowCount ?? result.changes ?? 0;
+  return { success: rowCount > 0, cusip };
 }
 
 // ============================================
@@ -2248,56 +2238,60 @@ function deleteUnmappedSecurity(cusip) {
 
 /**
  * Calculate performance for an investor and store in cache
- * @param {number} investorId - Investor ID
- * @returns {Object} - The calculated performance data
  */
-function calculateAndCachePerformance(investorId) {
-  // Calculate performance using existing function
-  const data = getPortfolioReturns(investorId, { limit: 50 });
+async function calculateAndCachePerformance(investorId) {
+  const data = await getPortfolioReturns(investorId, { limit: 50 });
 
   if (!data.returns || data.returns.length === 0) {
     return { returns: [], summary: null, cached: false };
   }
 
-  // Clear existing cache for this investor
-  db.prepare('DELETE FROM investor_performance_cache WHERE investor_id = ?').run(investorId);
-  db.prepare('DELETE FROM investor_performance_summary WHERE investor_id = ?').run(investorId);
+  const database = await getDatabaseAsync();
 
-  // Insert each quarter's data
-  const insertQuarter = db.prepare(`
-    INSERT INTO investor_performance_cache
+  await database.query('DELETE FROM investor_performance_cache WHERE investor_id = $1', [investorId]);
+  await database.query('DELETE FROM investor_performance_summary WHERE investor_id = $1', [investorId]);
+
+  const insertQuarterSql = `INSERT INTO investor_performance_cache
     (investor_id, start_date, end_date, portfolio_return, benchmark_return, alpha,
      cumulative_return, cumulative_benchmark, positions_count, calculated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-  `);
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)`;
 
-  const insertMany = db.transaction((returns) => {
-    for (const qtr of returns) {
-      insertQuarter.run(
-        investorId,
-        qtr.startDate,
-        qtr.endDate,
-        qtr.return,
-        qtr.benchmarkReturn,
-        qtr.alpha,
-        qtr.cumulativeReturn,
-        qtr.cumulativeBenchmark,
-        qtr.positions
-      );
-    }
-  });
+  for (const qtr of data.returns) {
+    await database.query(insertQuarterSql, [
+      investorId,
+      qtr.startDate,
+      qtr.endDate,
+      qtr.return,
+      qtr.benchmarkReturn,
+      qtr.alpha,
+      qtr.cumulativeReturn,
+      qtr.cumulativeBenchmark,
+      qtr.positions
+    ]);
+  }
 
-  insertMany(data.returns);
-
-  // Insert summary
   if (data.summary) {
-    db.prepare(`
-      INSERT OR REPLACE INTO investor_performance_summary
-      (investor_id, period_count, first_date, last_date, total_return, benchmark_total_return,
-       avg_quarterly_return, avg_benchmark_return, annualized_return, annualized_benchmark,
-       alpha, positive_quarters, negative_quarters, best_quarter, worst_quarter, calculated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `).run(
+    const upsertSummary = isUsingPostgres()
+      ? `INSERT INTO investor_performance_summary (
+           investor_id, period_count, first_date, last_date, total_return, benchmark_total_return,
+           avg_quarterly_return, avg_benchmark_return, annualized_return, annualized_benchmark,
+           alpha, positive_quarters, negative_quarters, best_quarter, worst_quarter, calculated_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_TIMESTAMP)
+         ON CONFLICT (investor_id) DO UPDATE SET
+           period_count = EXCLUDED.period_count, first_date = EXCLUDED.first_date, last_date = EXCLUDED.last_date,
+           total_return = EXCLUDED.total_return, benchmark_total_return = EXCLUDED.benchmark_total_return,
+           avg_quarterly_return = EXCLUDED.avg_quarterly_return, avg_benchmark_return = EXCLUDED.avg_benchmark_return,
+           annualized_return = EXCLUDED.annualized_return, annualized_benchmark = EXCLUDED.annualized_benchmark,
+           alpha = EXCLUDED.alpha, positive_quarters = EXCLUDED.positive_quarters,
+           negative_quarters = EXCLUDED.negative_quarters, best_quarter = EXCLUDED.best_quarter,
+           worst_quarter = EXCLUDED.worst_quarter, calculated_at = EXCLUDED.calculated_at`
+      : `INSERT OR REPLACE INTO investor_performance_summary (
+           investor_id, period_count, first_date, last_date, total_return, benchmark_total_return,
+           avg_quarterly_return, avg_benchmark_return, annualized_return, annualized_benchmark,
+           alpha, positive_quarters, negative_quarters, best_quarter, worst_quarter, calculated_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_TIMESTAMP)`;
+
+    await database.query(upsertSummary, [
       investorId,
       data.summary.periodCount,
       data.summary.startDate,
@@ -2313,7 +2307,7 @@ function calculateAndCachePerformance(investorId) {
       data.summary.negativeQuarters,
       data.summary.bestQuarter,
       data.summary.worstQuarter
-    );
+    ]);
   }
 
   return { ...data, cached: true };
@@ -2383,21 +2377,18 @@ async function getCachedPerformance(investorId) {
 
 /**
  * Invalidate performance cache for an investor
- * Call this when new filings are processed
- * @param {number} investorId - Investor ID
  */
-function invalidatePerformanceCache(investorId) {
-  db.prepare('DELETE FROM investor_performance_cache WHERE investor_id = ?').run(investorId);
-  db.prepare('DELETE FROM investor_performance_summary WHERE investor_id = ?').run(investorId);
+async function invalidatePerformanceCache(investorId) {
+  const database = await getDatabaseAsync();
+  await database.query('DELETE FROM investor_performance_cache WHERE investor_id = $1', [investorId]);
+  await database.query('DELETE FROM investor_performance_summary WHERE investor_id = $1', [investorId]);
 }
 
 /**
  * Recalculate performance for all investors
- * Used as batch job after backfill or for maintenance
- * @returns {Object} - Summary of recalculation results
  */
-function recalculateAllPerformance() {
-  const investors = getAllInvestors();
+async function recalculateAllPerformance() {
+  const investors = await getAllInvestors();
   const results = {
     total: investors.length,
     success: 0,
@@ -2408,7 +2399,7 @@ function recalculateAllPerformance() {
 
   for (const investor of investors) {
     try {
-      const data = calculateAndCachePerformance(investor.id);
+      const data = await calculateAndCachePerformance(investor.id);
       if (data.returns && data.returns.length > 0) {
         results.success++;
       } else {
@@ -2425,23 +2416,24 @@ function recalculateAllPerformance() {
 
 /**
  * Check cache status for all investors
- * @returns {Array} - Cache status per investor
  */
-function getPerformanceCacheStatus() {
-  return db.prepare(`
+async function getPerformanceCacheStatus() {
+  const database = await getDatabaseAsync();
+  const res = await database.query(`
     SELECT
       fi.id,
       fi.name,
       COUNT(pc.id) as cached_quarters,
-      ps.calculated_at as summary_calculated_at,
-      ps.total_return,
-      ps.alpha
+      MAX(ps.calculated_at) as summary_calculated_at,
+      MAX(ps.total_return) as total_return,
+      MAX(ps.alpha) as alpha
     FROM famous_investors fi
     LEFT JOIN investor_performance_cache pc ON pc.investor_id = fi.id
     LEFT JOIN investor_performance_summary ps ON ps.investor_id = fi.id
-    GROUP BY fi.id
+    GROUP BY fi.id, fi.name
     ORDER BY fi.name
-  `).all();
+  `);
+  return res.rows;
 }
 
 module.exports = {

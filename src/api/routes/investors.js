@@ -176,25 +176,26 @@ router.get('/status', async (req, res) => {
     }
 
     const db = await getDatabaseAsync();
-    // Simple fast query - just get counts and latest filing date
-    const stats = await db.prepare(`
+    const statsRes = await db.query(`
       SELECT
         COUNT(*) as investor_count,
         MAX(latest_filing_date) as latest_filing
       FROM famous_investors
       WHERE latest_filing_date IS NOT NULL
-    `).get();
+    `);
+    const stats = statsRes.rows[0];
 
-    const holdingsCount = await db.prepare(`
-      SELECT COUNT(*) as count FROM investor_holdings
-    `).get();
+    const holdingsRes = await db.query(
+      'SELECT COUNT(*) as count FROM investor_holdings'
+    );
+    const holdingsCount = holdingsRes.rows[0];
 
     const result = {
       success: true,
-      investorCount: stats.investor_count,
-      holdingsCount: holdingsCount.count,
-      latestFiling: stats.latest_filing,
-      lastUpdate: stats.latest_filing
+      investorCount: stats?.investor_count ?? 0,
+      holdingsCount: holdingsCount?.count ?? 0,
+      latestFiling: stats?.latest_filing,
+      lastUpdate: stats?.latest_filing
     };
 
     // Cache it

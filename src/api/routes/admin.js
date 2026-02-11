@@ -2,7 +2,7 @@
 // Admin routes for user and system management
 
 const express = require('express');
-const { getDatabaseAsync, isPostgres } = require('../../database');
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 const router = express.Router();
 const { requireAdmin } = require('../../middleware/auth');
 const { getSubscriptionService } = require('../../services/subscriptionService');
@@ -37,23 +37,23 @@ router.get('/users', async (req, res) => {
     const params = [];
 
     if (search) {
-      query += ' WHERE u.email LIKE ? OR u.name LIKE ?';
+      query += ' WHERE u.email LIKE $1 OR u.name LIKE $2';
       params.push(`%${search}%`, `%${search}%`);
     }
 
-    query += ' ORDER BY u.created_at DESC LIMIT ? OFFSET ?';
+    query += ' ORDER BY u.created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
     params.push(parseInt(limit), parseInt(offset));
 
-    const usersResult = await database.query(query, [...params]);
+    const usersResult = await database.query(query, params);
     const users = usersResult.rows;
 
-    // Get total count
     let countQuery = 'SELECT COUNT(*) as total FROM users';
-    if (search) {
-      countQuery += ' WHERE email LIKE ? OR name LIKE ?';
-    }
     const countParams = search ? [`%${search}%`, `%${search}%`] : [];
-    const { total } = database.prepare(countQuery).get(...countParams);
+    if (search) {
+      countQuery += ' WHERE email LIKE $1 OR name LIKE $2';
+    }
+    const countRes = await database.query(countQuery, countParams);
+    const total = parseInt(countRes.rows[0]?.total ?? 0, 10);
 
     res.json({
       success: true,
@@ -84,7 +84,7 @@ router.get('/users/:id', async (req, res) => {
         u.created_at,
         u.last_login_at
       FROM users u
-      WHERE u.id = ?
+      WHERE u.id = $1
     `, [userId]);
     const user = userResult.rows[0];
 
@@ -92,24 +92,25 @@ router.get('/users/:id', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Get user's portfolios
     const portfoliosResult = await database.query(`
       SELECT id, name, portfolio_type, current_value, created_at
       FROM portfolios
-      WHERE user_id = ? AND is_archived = 0
+      WHERE user_id = $1 AND is_archived = 0
       ORDER BY created_at DESC
     `, [userId]);
     const portfolios = portfoliosResult.rows;
 
-    // Get user's notes count
-    const { notes_count } = database.prepare(`
-      SELECT COUNT(*) as notes_count FROM notes WHERE user_id = ?
-    `).get(userId);
+    const notesRes = await database.query(
+      'SELECT COUNT(*) as notes_count FROM notes WHERE user_id = $1',
+      [userId]
+    );
+    const notes_count = parseInt(notesRes.rows[0]?.notes_count ?? 0, 10);
 
-    // Get user's theses count
-    const { theses_count } = database.prepare(`
-      SELECT COUNT(*) as theses_count FROM theses WHERE user_id = ?
-    `).get(userId);
+    const thesesRes = await database.query(
+      'SELECT COUNT(*) as theses_count FROM theses WHERE user_id = $1',
+      [userId]
+    );
+    const theses_count = parseInt(thesesRes.rows[0]?.theses_count ?? 0, 10);
 
     res.json({
       success: true,
@@ -137,7 +138,7 @@ router.put('/users/:id', async (req, res) => {
     const { name, is_admin } = req.body;
 
     // Check user exists
-    const userResult = await database.query('SELECT id FROM users WHERE id = ?', [userId]);
+    const userResult = await database.query('SELECT id FROM users WHERE id = $1', [userId]);
     const user = userResult.rows[0];
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
@@ -148,17 +149,16 @@ router.put('/users/:id', async (req, res) => {
       return res.status(400).json({ error: 'Cannot remove your own admin status' });
     }
 
-    // Update user
     const updates = [];
     const params = [];
 
     if (name !== undefined) {
-      updates.push('name = ?');
+      updates.push('name = $' + (params.length + 1));
       params.push(name);
     }
 
     if (is_admin !== undefined) {
-      updates.push('is_admin = ?');
+      updates.push('is_admin = $' + (params.length + 1));
       params.push(is_admin ? 1 : 0);
     }
 
@@ -167,12 +167,14 @@ router.put('/users/:id', async (req, res) => {
     }
 
     params.push(userId);
-    database.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+    await database.query(
+      `UPDATE users SET ${updates.join(', ')} WHERE id = $${params.length}`,
+      params
+    );
 
-    // Get updated user
     const updatedUserResult = await database.query(`
       SELECT id, email, name, is_admin, created_at, last_login_at
-      FROM users WHERE id = ?
+      FROM users WHERE id = $1
     `, [userId]);
     const updatedUser = updatedUserResult.rows[0];
 
@@ -194,7 +196,7 @@ router.delete('/users/:id', async (req, res) => {
     const { hard = 'false' } = req.query;
 
     // Check user exists
-    const userResult = await database.query('SELECT id, email FROM users WHERE id = ?', [userId]);
+    const userResult = await database.query('SELECT id, email FROM users WHERE id = $1', [userId]);
     const user = userResult.rows[0];
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
@@ -206,14 +208,8 @@ router.delete('/users/:id', async (req, res) => {
     }
 
     if (hard === 'true') {
-      // Hard delete - remove user and their data
-      // Note: This should cascade due to FK constraints, but we'll be explicit
-
-      // Archive portfolios first (keep data for audit)
-      database.prepare('UPDATE portfolios SET is_archived = 1 WHERE user_id = ?').run(userId);
-
-      // Delete user
-      database.prepare('DELETE FROM users WHERE id = ?').run(userId);
+      await database.query('UPDATE portfolios SET is_archived = 1 WHERE user_id = $1', [userId]);
+      await database.query('DELETE FROM users WHERE id = $1', [userId]);
 
       res.json({
         success: true,
@@ -222,10 +218,8 @@ router.delete('/users/:id', async (req, res) => {
         email: user.email
       });
     } else {
-      // Soft delete - just mark as inactive (future: add is_active column)
-      // For now, we'll remove admin access and archive their portfolios
-      database.prepare('UPDATE users SET is_admin = 0 WHERE id = ?').run(userId);
-      database.prepare('UPDATE portfolios SET is_archived = 1 WHERE user_id = ?').run(userId);
+      await database.query('UPDATE users SET is_admin = 0 WHERE id = $1', [userId]);
+      await database.query('UPDATE portfolios SET is_archived = 1 WHERE user_id = $1', [userId]);
 
       res.json({
         success: true,
@@ -303,13 +297,13 @@ router.post('/users/:id/grant-admin', async (req, res) => {
     const database = await getDatabaseAsync();
     const userId = req.params.id;
 
-    const userResult = await database.query('SELECT id, email FROM users WHERE id = ?', [userId]);
+    const userResult = await database.query('SELECT id, email FROM users WHERE id = $1', [userId]);
     const user = userResult.rows[0];
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    database.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(userId);
+    await database.query('UPDATE users SET is_admin = 1 WHERE id = $1', [userId]);
 
     res.json({
       success: true,
@@ -334,13 +328,13 @@ router.post('/users/:id/revoke-admin', async (req, res) => {
       return res.status(400).json({ error: 'Cannot revoke your own admin access' });
     }
 
-    const userResult = await database.query('SELECT id, email FROM users WHERE id = ?', [userId]);
+    const userResult = await database.query('SELECT id, email FROM users WHERE id = $1', [userId]);
     const user = userResult.rows[0];
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    database.prepare('UPDATE users SET is_admin = 0 WHERE id = ?').run(userId);
+    await database.query('UPDATE users SET is_admin = 0 WHERE id = $1', [userId]);
 
     res.json({
       success: true,
@@ -385,7 +379,7 @@ router.get('/portfolios', async (req, res) => {
     const conditions = [];
 
     if (userId) {
-      conditions.push('p.user_id = ?');
+      conditions.push('p.user_id = $1');
       params.push(userId);
     }
 
@@ -393,20 +387,19 @@ router.get('/portfolios', async (req, res) => {
       query += ' WHERE ' + conditions.join(' AND ');
     }
 
-    query += ' ORDER BY p.created_at DESC LIMIT ? OFFSET ?';
+    query += ' ORDER BY p.created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
     params.push(parseInt(limit), parseInt(offset));
 
-    const portfoliosResult = await database.query(query, [...params]);
+    const portfoliosResult = await database.query(query, params);
     const portfolios = portfoliosResult.rows;
 
-    // Get total
     let countQuery = 'SELECT COUNT(*) as total FROM portfolios';
-    const countParams = [];
+    const countParams = userId ? [userId] : [];
     if (userId) {
-      countQuery += ' WHERE user_id = ?';
-      countParams.push(userId);
+      countQuery += ' WHERE user_id = $1';
     }
-    const { total } = database.prepare(countQuery).get(...countParams);
+    const countRes = await database.query(countQuery, countParams);
+    const total = parseInt(countRes.rows[0]?.total ?? 0, 10);
 
     res.json({
       success: true,
@@ -432,22 +425,19 @@ router.post('/portfolios/:id/transfer', async (req, res) => {
       return res.status(400).json({ error: 'newUserId is required' });
     }
 
-    // Check portfolio exists
-    const portfolioResult = await database.query('SELECT id, name, user_id FROM portfolios WHERE id = ?', [portfolioId]);
+    const portfolioResult = await database.query('SELECT id, name, user_id FROM portfolios WHERE id = $1', [portfolioId]);
     const portfolio = portfolioResult.rows[0];
     if (!portfolio) {
       return res.status(404).json({ error: 'Portfolio not found' });
     }
 
-    // Check new user exists
-    const newUserResult = await database.query('SELECT id, email FROM users WHERE id = ?', [newUserId]);
+    const newUserResult = await database.query('SELECT id, email FROM users WHERE id = $1', [newUserId]);
     const newUser = newUserResult.rows[0];
     if (!newUser) {
       return res.status(404).json({ error: 'Target user not found' });
     }
 
-    // Transfer
-    database.prepare('UPDATE portfolios SET user_id = ? WHERE id = ?').run(newUserId, portfolioId);
+    await database.query('UPDATE portfolios SET user_id = $1 WHERE id = $2', [newUserId, portfolioId]);
 
     res.json({
       success: true,
@@ -472,17 +462,22 @@ router.get('/stats', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
 
+    const runCount = async (sql) => {
+      const r = await database.query(sql);
+      return parseInt(r.rows[0]?.count ?? r.rows[0]?.total ?? 0, 10);
+    };
+
     const stats = {
-      users: database.prepare('SELECT COUNT(*) as count FROM users').get().count,
-      admins: database.prepare('SELECT COUNT(*) as count FROM users WHERE is_admin = 1').get().count,
-      portfolios: database.prepare('SELECT COUNT(*) as count FROM portfolios WHERE is_archived = 0').get().count,
-      portfoliosArchived: database.prepare('SELECT COUNT(*) as count FROM portfolios WHERE is_archived = 1').get().count,
-      totalPortfolioValue: database.prepare('SELECT SUM(current_value) as total FROM portfolios WHERE is_archived = 0').get().total || 0,
-      positions: database.prepare('SELECT COUNT(*) as count FROM portfolio_positions').get().count,
-      transactions: database.prepare('SELECT COUNT(*) as count FROM portfolio_transactions').get().count,
-      notes: database.prepare('SELECT COUNT(*) as count FROM notes').get().count,
-      theses: database.prepare('SELECT COUNT(*) as count FROM theses').get().count,
-      companies: database.prepare('SELECT COUNT(*) as count FROM companies').get().count
+      users: await runCount('SELECT COUNT(*) as count FROM users'),
+      admins: await runCount('SELECT COUNT(*) as count FROM users WHERE is_admin = 1'),
+      portfolios: await runCount('SELECT COUNT(*) as count FROM portfolios WHERE is_archived = 0'),
+      portfoliosArchived: await runCount('SELECT COUNT(*) as count FROM portfolios WHERE is_archived = 1'),
+      totalPortfolioValue: (await database.query('SELECT SUM(current_value) as total FROM portfolios WHERE is_archived = 0')).rows[0]?.total ?? 0,
+      positions: await runCount('SELECT COUNT(*) as count FROM portfolio_positions'),
+      transactions: await runCount('SELECT COUNT(*) as count FROM portfolio_transactions'),
+      notes: await runCount('SELECT COUNT(*) as count FROM notes'),
+      theses: await runCount('SELECT COUNT(*) as count FROM theses'),
+      companies: await runCount('SELECT COUNT(*) as count FROM companies')
     };
 
     // Recent activity
@@ -526,15 +521,15 @@ router.get('/sessions', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
 
-    const sessions = database.prepare(`
-      SELECT
-        sess,
-        expired
+    const expiredExpr = isUsingPostgres() ? 'NOW()' : "datetime('now')";
+    const sessionsRes = await database.query(`
+      SELECT sess, expired
       FROM sessions
-      WHERE expired > datetime('now')
+      WHERE expired > ${expiredExpr}
       ORDER BY expired DESC
       LIMIT 100
-    `).all();
+    `);
+    const sessions = sessionsRes.rows;
 
     // Parse session data to extract user info
     const parsedSessions = sessions.map(s => {
@@ -574,7 +569,7 @@ router.delete('/sessions/:userId', async (req, res) => {
 
     // This is a bit hacky since sessions are stored as JSON strings
     // We need to find sessions containing this user ID
-    const sessionsResult = await database.query('SELECT sid, sess FROM sessions', []);
+    const sessionsResult = await database.query('SELECT sid, sess FROM sessions');
     const sessions = sessionsResult.rows;
 
     let invalidated = 0;
@@ -582,7 +577,7 @@ router.delete('/sessions/:userId', async (req, res) => {
       try {
         const data = JSON.parse(session.sess);
         if (data.passport?.user?.id === userId) {
-          database.prepare('DELETE FROM sessions WHERE sid = ?').run(session.sid);
+          await database.query('DELETE FROM sessions WHERE sid = $1', [session.sid]);
           invalidated++;
         }
       } catch {

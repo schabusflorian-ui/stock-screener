@@ -2067,17 +2067,15 @@ router.post('/sector-exposures', requireAuth, async (req, res) => {
         }
 
         try {
-          const stmt = await db.prepare(`
+          const resultRes = await db.query(`
             SELECT AVG(${metricColumn}) as avg_value
             FROM stocks
             WHERE symbol IN (${symbolList})
               AND ${metricColumn} IS NOT NULL
           `);
+          const result = resultRes.rows[0];
 
-          const result = await stmt.get();
-
-          // Get overall average for z-score
-          const overallStmt = await db.prepare(`
+          const overallRes = await db.query(`
             SELECT AVG(${metricColumn}) as mean,
                    (SUM((${metricColumn} - (SELECT AVG(${metricColumn}) FROM stocks WHERE ${metricColumn} IS NOT NULL)) *
                         (${metricColumn} - (SELECT AVG(${metricColumn}) FROM stocks WHERE ${metricColumn} IS NOT NULL))) /
@@ -2085,8 +2083,7 @@ router.post('/sector-exposures', requireAuth, async (req, res) => {
             FROM stocks
             WHERE ${metricColumn} IS NOT NULL
           `);
-
-          const overall = await overallStmt.get();
+          const overall = overallRes.rows[0];
 
           if (result?.avg_value && overall?.mean && overall?.variance > 0) {
             const zscore = (result.avg_value - overall.mean) / Math.sqrt(overall.variance);
@@ -2165,8 +2162,7 @@ router.get('/sector-stocks/:sector', async (req, res) => {
 
     const symbolList = symbols.map(s => `'${s}'`).join(',');
 
-    // Get stock data
-    const stmt = await db.prepare(`
+    const stocksRes = await db.query(`
       SELECT
         symbol,
         name,
@@ -2179,8 +2175,7 @@ router.get('/sector-stocks/:sector', async (req, res) => {
       WHERE symbol IN (${symbolList})
       ORDER BY market_cap DESC
     `);
-
-    const stocks = await stmt.all();
+    const stocks = stocksRes.rows;
 
     // Calculate factor values and quintiles
     const factorFormula = getStandardFactorFormula(factor);

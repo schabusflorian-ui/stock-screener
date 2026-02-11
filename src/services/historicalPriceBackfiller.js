@@ -288,7 +288,7 @@ class HistoricalPriceBackfiller {
     const investorService = require('./portfolio/investorService');
 
     try {
-      const returns = await investorService.getPortfolioReturns(investorId, 50);
+      const returns = await investorService.getPortfolioReturns(investorId, { limit: 50 });
 
       if (!returns || !returns.returns || returns.returns.length === 0) {
         return { success: false, message: 'No returns data available' };

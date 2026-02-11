@@ -114,7 +114,7 @@ class HistoricalInvestorBackfill {
   async backfillInvestor(investorId, options = {}) {
     const { yearsBack = 10 } = options;
 
-    const investor = investorService.getInvestor(investorId);
+    const investor = await investorService.getInvestor(investorId);
     if (!investor) {
       throw new Error(`Investor not found: ${investorId}`);
     }
@@ -184,7 +184,7 @@ class HistoricalInvestorBackfill {
     console.log('='.repeat(60));
 
     try {
-      const investors = investorService.getAllInvestors()
+      const investors = (await investorService.getAllInvestors())
         .filter(i => i.cik); // Only investors with CIK
 
       this.progress.investorsTotal = investors.length;
@@ -378,7 +378,7 @@ class HistoricalInvestorBackfill {
     for (const inv of investors) {
       if (inv.quarters >= 2) {
         try {
-          const returns = investorService.getPortfolioReturns(inv.id, 50);
+          const returns = await investorService.getPortfolioReturns(inv.id, { limit: 50 });
           const hasReturns = returns && returns.returns && returns.returns.length > 0;
           console.log(`${hasReturns ? '✅' : '❌'} ${inv.name.padEnd(25)} | ${hasReturns ? returns.returns.length + ' periods' : 'No returns data'}`);
         } catch (error) {
