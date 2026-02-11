@@ -432,8 +432,8 @@ async function getInvestorsByStock(companyId) {
       SUM(ih.portfolio_weight) as portfolio_weight,
       MAX(ih.change_type) as change_type,
       CASE
-        WHEN SUM(ih.prev_shares) > 0 THEN (SUM(ih.shares_change) * 100.0 / SUM(ih.prev_shares))
-        ELSE MAX(ih.shares_change_pct)
+        WHEN SUM(ih.prev_shares) > 0 THEN (SUM(ih.shares_change) * 100.0 / NULLIF(SUM(ih.prev_shares), 0))
+        ELSE NULL
       END as shares_change_pct,
       MAX(ih.filing_date) as filing_date
     FROM investor_holdings ih

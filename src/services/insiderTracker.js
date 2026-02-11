@@ -315,8 +315,12 @@ class InsiderTracker {
     summary.signalStrength = signal.strength;
     summary.signalScore = signal.score;
 
-    // Store summary
-    await this.storeSummary(companyId, summary);
+    // Store summary (non-fatal: return summary even if cache write fails)
+    try {
+      await this.storeSummary(companyId, summary);
+    } catch (err) {
+      console.warn('InsiderTracker storeSummary failed (non-fatal):', err.message);
+    }
 
     return summary;
   }
