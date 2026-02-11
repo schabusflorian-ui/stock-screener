@@ -21,8 +21,8 @@ const POSTGRES_MIGRATIONS = [
   '002-add-historical-intelligence-tables.js',
   '003-add-quant-lab-factor-tables.js',
   '004-add-notes-tables-postgres.js',
-  '005-add-market-indices-tables.js', // ← NEW: market_indices + market_index_prices for alpha calculations
-  '005-backfill-historical-company-ids.js',
+  '005-add-market-indices-tables.js',
+  '006-backfill-historical-company-ids.js',
   'add-postgres-alert-system.js',
   'add-dividend-metrics.js',
   'add-price-metrics.js',
@@ -85,9 +85,11 @@ async function runMigrations() {
       // Run the migration
       const migration = require(migrationPath);
 
-      // Check if it's a function (new style) or runs on require (old style)
+      // Support: default function, .run(db), or .up(db) (e.g. 005-add-market-indices-tables)
       if (typeof migration === 'function') {
         await migration(db);
+      } else if (typeof migration.up === 'function') {
+        await migration.up(db);
       } else if (typeof migration.run === 'function') {
         await migration.run(db);
       }

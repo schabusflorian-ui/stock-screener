@@ -14,7 +14,7 @@
 async function up(db) {
   console.log('🔄 Running migration: 005-add-market-indices-tables');
 
-  const query = (sql) => (db.query ? db.query(sql) : db.exec(sql));
+  const query = (sql, params = []) => (db.query ? db.query(sql, params) : db.raw.query(sql, params));
 
   // ============================================
   // TABLE: market_indices
@@ -98,30 +98,19 @@ async function up(db) {
     { symbol: 'EEM', name: 'iShares MSCI Emerging Markets ETF', short_name: 'Emerging Markets', type: 'international', region: 'Global', primary: false }
   ];
 
-  const insertStmt = await db.prepare(`
-    INSERT INTO market_indices (symbol, name, short_name, index_type, region, is_primary)
-    VALUES ($1, $2, $3, $4, $5, $6)
-    ON CONFLICT (symbol) DO NOTHING
-  `);
-
   for (const idx of indices) {
-    await insertStmt.run(
-      idx.symbol,
-      idx.name,
-      idx.short_name,
-      idx.type,
-      idx.region,
-      idx.primary
+    await query(
+      `INSERT INTO market_indices (symbol, name, short_name, index_type, region, is_primary)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (symbol) DO NOTHING`,
+      [idx.symbol, idx.name, idx.short_name, idx.type, idx.region, idx.primary]
     );
   }
 
   console.log(`✓ Seeded ${indices.length} market indices`);
-  
-  // ============================================
-  // Ensure SPY exists in companies table
-  // (For alpha calculation fallback path #1)
-  // ============================================
-  await db.exec(`
+
+  // Ensure SPY exists in companies (alpha calculation fallback)
+  await query(`
     INSERT INTO companies (symbol, name, exchange, type, country, created_at)
     VALUES ('SPY', 'SPDR S&P 500 ETF Trust', 'NYSE Arca', 'ETF', 'US', CURRENT_TIMESTAMP)
     ON CONFLICT (symbol) DO NOTHING
@@ -145,4 +134,7 @@ async function down(db) {
   console.log('✓ Rolled back 005-add-market-indices-tables');
 }
 
-module.exports = { up, down };
+// Runner expects migrate(db) or migration.run(db)
+module.exports = async (db) => up(db);
+module.exports.up = up;
+module.exports.down = down;

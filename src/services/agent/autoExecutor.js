@@ -8,6 +8,7 @@ const { getPortfolioService } = require('../portfolio');
 class AutoExecutor {
   constructor(db = null) {
     this.db = db;
+    this.dbAdapter = null;
     this.portfolioService = null; // Lazy loaded to avoid circular dependency
   }
 
@@ -22,7 +23,52 @@ class AutoExecutor {
   }
 
   async _getDb() {
-    return this.db || await getDatabaseAsync();
+    if (!this.db) {
+      return getDatabaseAsync();
+    }
+
+    if (this.db.query) {
+      return this.db;
+    }
+
+    if (!this.dbAdapter && this.db.prepare) {
+      this.dbAdapter = {
+        type: 'sqlite',
+        query: (sql, params = []) => {
+          let convertedSql = sql;
+          const pgPlaceholders = sql.match(/\$\d+/g);
+          if (pgPlaceholders) {
+            const uniquePlaceholders = [...new Set(pgPlaceholders)].sort((a, b) => {
+              return parseInt(b.substring(1)) - parseInt(a.substring(1));
+            });
+            uniquePlaceholders.forEach(placeholder => {
+              const regex = new RegExp('\\' + placeholder + '\\b', 'g');
+              convertedSql = convertedSql.replace(regex, '?');
+            });
+          }
+
+          const normalizedParams = params.map(param => {
+            if (typeof param === 'boolean') {
+              return param ? 1 : 0;
+            }
+            return param;
+          });
+
+          const stmt = this.db.prepare(convertedSql);
+          if (convertedSql.trim().toUpperCase().startsWith('SELECT')) {
+            return { rows: stmt.all(...normalizedParams) };
+          }
+          const result = stmt.run(...normalizedParams);
+          return {
+            rows: [],
+            rowCount: result.changes,
+            lastInsertRowid: result.lastInsertRowid
+          };
+        }
+      };
+    }
+
+    return this.dbAdapter || this.db;
   }
 
   /**
@@ -615,7 +661,7 @@ class AutoExecutor {
    * Update execution settings for a portfolio
    */
   async updatePortfolioSettings(portfolioId, settings) {
-    const database = await getDatabaseAsync();
+    const database = await this._getDb();
 
     const {
       autoExecute,
@@ -696,7 +742,7 @@ class AutoExecutor {
    * Expire old pending executions
    */
   async expireOldExecutions() {
-    const database = await getDatabaseAsync();
+    const database = await this._getDb();
 
     const result = await database.query(
       `UPDATE pending_executions
@@ -711,7 +757,7 @@ class AutoExecutor {
    * Get execution history for a portfolio
    */
   async getExecutionHistory(portfolioId, limit = 50) {
-    const database = await getDatabaseAsync();
+    const database = await this._getDb();
 
     const result = await database.query(
       `SELECT
@@ -734,7 +780,7 @@ class AutoExecutor {
    * Get execution statistics for a portfolio
    */
   async getExecutionStats(portfolioId) {
-    const database = await getDatabaseAsync();
+    const database = await this._getDb();
 
     const result = await database.query(
       `SELECT
@@ -773,7 +819,7 @@ class AutoExecutor {
    * @returns {Object} Execution results
    */
   async executeAllApproved(portfolioId = null) {
-    const database = await getDatabaseAsync();
+    const database = await this._getDb();
 
     // Get approved executions
     const result = portfolioId
@@ -817,7 +863,7 @@ class AutoExecutor {
    * @returns {Object} Result of submission
    */
   async submitRecommendation(recommendation) {
-    const database = await getDatabaseAsync();
+    const database = await this._getDb();
 
     const {
       portfolioId,
@@ -938,7 +984,7 @@ class AutoExecutor {
    * Get approved executions waiting to be executed
    */
   async getApprovedExecutions(portfolioId = null) {
-    const database = await getDatabaseAsync();
+    const database = await this._getDb();
 
     if (portfolioId) {
       const result = await database.query(

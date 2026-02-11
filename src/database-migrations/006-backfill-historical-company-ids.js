@@ -1,4 +1,4 @@
-// src/database-migrations/005-backfill-historical-company-ids.js
+// src/database-migrations/006-backfill-historical-company-ids.js
 // Backfill investment_decisions.company_id from companies.symbol so outcome calculation can run.
 // Outcome data (return_1y, etc.) is populated by POST /api/historical/calculate-outcomes or scheduler.
 

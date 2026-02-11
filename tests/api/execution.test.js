@@ -22,23 +22,23 @@ describe('Execution API Routes', () => {
   });
 
   describe('GET /api/execution/portfolios/:id/settings', () => {
-    it('should return settings for valid portfolio', () => {
-      const settings = executor.getPortfolioSettings(1);
+    it('should return settings for valid portfolio', async () => {
+      const settings = await executor.getPortfolioSettings(1);
 
       expect(settings).toBeDefined();
       expect(settings.portfolioId).toBe(1);
       expect(settings.autoExecute).toBeDefined();
     });
 
-    it('should return null for invalid portfolio', () => {
-      const settings = executor.getPortfolioSettings(999);
+    it('should return null for invalid portfolio', async () => {
+      const settings = await executor.getPortfolioSettings(999);
       expect(settings).toBeNull();
     });
   });
 
   describe('PUT /api/execution/portfolios/:id/settings', () => {
-    it('should update execution settings', () => {
-      const updated = executor.updatePortfolioSettings(1, {
+    it('should update execution settings', async () => {
+      const updated = await executor.updatePortfolioSettings(1, {
         autoExecute: false,
         executionThreshold: 0.5,
         maxAutoPositionPct: 0.1
@@ -50,15 +50,15 @@ describe('Execution API Routes', () => {
   });
 
   describe('GET /api/execution/pending', () => {
-    it('should return empty array when no pending executions', () => {
-      const pending = executor.getPendingExecutions(1);
+    it('should return empty array when no pending executions', async () => {
+      const pending = await executor.getPendingExecutions(1);
 
       expect(Array.isArray(pending)).toBe(true);
     });
 
-    it('should return pending executions after submission', () => {
+    it('should return pending executions after submission', async () => {
       // Create a pending execution
-      executor.processRecommendation({
+      await executor.processRecommendation({
         symbol: 'AAPL',
         companyId: 1,
         action: 'buy',
@@ -66,14 +66,14 @@ describe('Execution API Routes', () => {
         confidence: 0.8
       }, 2); // Portfolio 2 requires confirmation
 
-      const pending = executor.getPendingExecutions(2);
+      const pending = await executor.getPendingExecutions(2);
       expect(pending.length).toBeGreaterThan(0);
     });
   });
 
   describe('POST /api/execution/submit-recommendation', () => {
-    it('should reject missing required fields', () => {
-      const result = executor.submitRecommendation({
+    it('should reject missing required fields', async () => {
+      const result = await executor.submitRecommendation({
         symbol: 'AAPL'
         // missing portfolioId and action
       });
@@ -82,8 +82,8 @@ describe('Execution API Routes', () => {
       expect(result.error).toContain('Missing required fields');
     });
 
-    it('should reject invalid company', () => {
-      const result = executor.submitRecommendation({
+    it('should reject invalid company', async () => {
+      const result = await executor.submitRecommendation({
         portfolioId: 1,
         symbol: 'INVALID',
         action: 'buy'
@@ -93,8 +93,8 @@ describe('Execution API Routes', () => {
       expect(result.error).toContain('Company not found');
     });
 
-    it('should submit valid recommendation', () => {
-      const result = executor.submitRecommendation({
+    it('should submit valid recommendation', async () => {
+      const result = await executor.submitRecommendation({
         portfolioId: 1,
         symbol: 'AAPL',
         action: 'buy',
@@ -109,9 +109,9 @@ describe('Execution API Routes', () => {
   });
 
   describe('POST /api/execution/:id/approve', () => {
-    it('should approve pending execution', () => {
+    it('should approve pending execution', async () => {
       // Create a pending execution
-      const submitResult = executor.processRecommendation({
+      const submitResult = await executor.processRecommendation({
         symbol: 'AAPL',
         companyId: 1,
         action: 'buy',
@@ -119,14 +119,14 @@ describe('Execution API Routes', () => {
         confidence: 0.8
       }, 2);
 
-      const result = executor.approveExecution(submitResult.pendingExecutionId, 'test_user');
+      const result = await executor.approveExecution(submitResult.pendingExecutionId, 'test_user');
 
       expect(result.success).toBe(true);
       expect(result.message).toBe('Execution approved');
     });
 
-    it('should fail for non-existent execution', () => {
-      const result = executor.approveExecution(9999);
+    it('should fail for non-existent execution', async () => {
+      const result = await executor.approveExecution(9999);
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('not found');
@@ -134,9 +134,9 @@ describe('Execution API Routes', () => {
   });
 
   describe('POST /api/execution/:id/reject', () => {
-    it('should reject pending execution with reason', () => {
+    it('should reject pending execution with reason', async () => {
       // Create a pending execution
-      const submitResult = executor.processRecommendation({
+      const submitResult = await executor.processRecommendation({
         symbol: 'AAPL',
         companyId: 1,
         action: 'buy',
@@ -144,7 +144,7 @@ describe('Execution API Routes', () => {
         confidence: 0.8
       }, 2);
 
-      const result = executor.rejectExecution(
+      const result = await executor.rejectExecution(
         submitResult.pendingExecutionId,
         'Market conditions changed',
         'test_user'
@@ -163,9 +163,9 @@ describe('Execution API Routes', () => {
   });
 
   describe('GET /api/execution/approved', () => {
-    it('should return approved executions', () => {
+    it('should return approved executions', async () => {
       // Create and approve an execution
-      const submitResult = executor.processRecommendation({
+      const submitResult = await executor.processRecommendation({
         symbol: 'AAPL',
         companyId: 1,
         action: 'buy',
@@ -173,9 +173,9 @@ describe('Execution API Routes', () => {
         confidence: 0.8
       }, 2);
 
-      executor.approveExecution(submitResult.pendingExecutionId);
+      await executor.approveExecution(submitResult.pendingExecutionId);
 
-      const approved = executor.getApprovedExecutions(2);
+      const approved = await executor.getApprovedExecutions(2);
 
       expect(Array.isArray(approved)).toBe(true);
       expect(approved.length).toBe(1);
@@ -184,16 +184,16 @@ describe('Execution API Routes', () => {
   });
 
   describe('GET /api/execution/portfolios/:id/history', () => {
-    it('should return execution history', () => {
-      const history = executor.getExecutionHistory(1, 10);
+    it('should return execution history', async () => {
+      const history = await executor.getExecutionHistory(1, 10);
 
       expect(Array.isArray(history)).toBe(true);
     });
   });
 
   describe('GET /api/execution/portfolios/:id/stats', () => {
-    it('should return execution statistics', () => {
-      const stats = executor.getExecutionStats(1);
+    it('should return execution statistics', async () => {
+      const stats = await executor.getExecutionStats(1);
 
       expect(stats).toBeDefined();
       expect(typeof stats.pending).toBe('number');
@@ -204,23 +204,23 @@ describe('Execution API Routes', () => {
   });
 
   describe('POST /api/execution/expire-old', () => {
-    it('should expire old executions', () => {
+    it('should expire old executions', async () => {
       // Create an expired execution by manually setting expires_at
       db.prepare(`
         INSERT INTO pending_executions (portfolio_id, symbol, company_id, action, shares, estimated_price, status, expires_at)
         VALUES (?, ?, ?, ?, ?, ?, 'pending', datetime('now', '-1 day'))
       `).run(1, 'AAPL', 1, 'BUY', 10, 178.0);
 
-      const result = executor.expireOldExecutions();
+      const result = await executor.expireOldExecutions();
 
       expect(result.expired).toBeGreaterThanOrEqual(1);
     });
   });
 
   describe('Batch operations', () => {
-    it('should approve all pending executions', () => {
+    it('should approve all pending executions', async () => {
       // Create multiple pending executions
-      executor.processRecommendation({
+      await executor.processRecommendation({
         symbol: 'AAPL',
         companyId: 1,
         action: 'buy',
@@ -228,7 +228,7 @@ describe('Execution API Routes', () => {
         confidence: 0.8
       }, 2);
 
-      executor.processRecommendation({
+      await executor.processRecommendation({
         symbol: 'GOOGL',
         companyId: 2,
         action: 'buy',
@@ -236,13 +236,13 @@ describe('Execution API Routes', () => {
         confidence: 0.8
       }, 2);
 
-      const result = executor.approveAllPending(2, 'batch_approver');
+      const result = await executor.approveAllPending(2, 'batch_approver');
 
       expect(result.approved).toBe(2);
     });
 
-    it('should reject all pending executions', () => {
-      executor.processRecommendation({
+    it('should reject all pending executions', async () => {
+      await executor.processRecommendation({
         symbol: 'AAPL',
         companyId: 1,
         action: 'buy',
@@ -250,7 +250,7 @@ describe('Execution API Routes', () => {
         confidence: 0.8
       }, 2);
 
-      const result = executor.rejectAllPending(2, 'Market closed', 'user');
+      const result = await executor.rejectAllPending(2, 'Market closed', 'user');
 
       expect(result.rejected).toBe(1);
     });

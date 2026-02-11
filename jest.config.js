@@ -9,7 +9,8 @@ module.exports = {
     ...(process.env.CI ? [
       'tests/integration/',  // Skip integration tests that need real DB
       'tests/portfolio/',    // Skip portfolio tests that use PostgreSQL
-      'tests/factors/'       // Skip factor tests that use PostgreSQL
+      'tests/factors/',      // Skip factor tests that use PostgreSQL
+      'tests/agent/'         // Skip agent tests that use PostgreSQL
     ] : [])
   ],
   collectCoverageFrom: [
