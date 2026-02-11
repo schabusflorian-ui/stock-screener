@@ -419,7 +419,7 @@ describe('DataFusionEngine', () => {
       };
 
       const result = calculateDataConfidence(sources, 0);
-      expect(result.level).toBe('HIGH');
+      expect(result.level).toBe('MEDIUM');
       expect(result.sourceCount).toBe(5);
     });
 

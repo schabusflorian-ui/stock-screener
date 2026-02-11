@@ -150,21 +150,21 @@ describe('responseCacheMiddleware', () => {
     responseCache.clear();
   });
 
-  test('should skip caching for non-GET requests', () => {
+  test('should skip caching for non-GET requests', async () => {
     const mockReq = { method: 'POST', path: '/api/test', query: {} };
     const mockRes = { statusCode: 200, setHeader: jest.fn(), json: jest.fn() };
     const mockNext = jest.fn();
 
-    const middleware = responseCacheMiddleware({ ttl: 1000 });
+    const middleware = responseCacheMiddleware({ ttl: 1000, useRedis: false });
 
-    middleware(mockReq, mockRes, mockNext);
+    await middleware(mockReq, mockRes, mockNext);
 
     expect(mockNext).toHaveBeenCalled();
     expect(mockRes.setHeader).not.toHaveBeenCalled();
   });
 
-  test('should return cached response on cache hit', () => {
-    const middleware = responseCacheMiddleware({ ttl: 1000 });
+  test('should return cached response on cache hit', async () => {
+    const middleware = responseCacheMiddleware({ ttl: 1000, useRedis: false });
     const testData = { result: 'cached' };
 
     // First request - cache miss
@@ -172,7 +172,7 @@ describe('responseCacheMiddleware', () => {
     const mockRes1 = { statusCode: 200, setHeader: jest.fn(), json: jest.fn() };
     const mockNext1 = jest.fn();
 
-    middleware(mockReq1, mockRes1, mockNext1);
+    await middleware(mockReq1, mockRes1, mockNext1);
     mockRes1.json(testData);
 
     // Second request - cache hit (new mock objects)
@@ -180,35 +180,35 @@ describe('responseCacheMiddleware', () => {
     const mockRes2 = { statusCode: 200, setHeader: jest.fn(), json: jest.fn() };
     const mockNext2 = jest.fn();
 
-    middleware(mockReq2, mockRes2, mockNext2);
+    await middleware(mockReq2, mockRes2, mockNext2);
 
     expect(mockRes2.setHeader).toHaveBeenCalledWith('X-Cache', 'HIT');
     expect(mockRes2.json).toHaveBeenCalledWith(testData);
     expect(mockNext2).not.toHaveBeenCalled();
   });
 
-  test('should set X-Cache: MISS on first request', () => {
+  test('should set X-Cache: MISS on first request', async () => {
     const mockReq = { method: 'GET', path: '/api/test', query: {} };
     const mockRes = { statusCode: 200, setHeader: jest.fn(), json: jest.fn() };
     const mockNext = jest.fn();
 
-    const middleware = responseCacheMiddleware({ ttl: 1000 });
+    const middleware = responseCacheMiddleware({ ttl: 1000, useRedis: false });
 
-    middleware(mockReq, mockRes, mockNext);
+    await middleware(mockReq, mockRes, mockNext);
     mockRes.json({ data: 'test' });
 
     expect(mockRes.setHeader).toHaveBeenCalledWith('X-Cache', 'MISS');
   });
 
-  test('should not cache error responses', () => {
-    const middleware = responseCacheMiddleware({ ttl: 1000 });
+  test('should not cache error responses', async () => {
+    const middleware = responseCacheMiddleware({ ttl: 1000, useRedis: false });
 
     // First request - error response
     const mockReq1 = { method: 'GET', path: '/api/test-error', query: {} };
     const mockRes1 = { statusCode: 500, setHeader: jest.fn(), json: jest.fn() };
     const mockNext1 = jest.fn();
 
-    middleware(mockReq1, mockRes1, mockNext1);
+    await middleware(mockReq1, mockRes1, mockNext1);
     mockRes1.json({ error: 'Server error' });
 
     // Second request - should not be cached
@@ -216,23 +216,23 @@ describe('responseCacheMiddleware', () => {
     const mockRes2 = { statusCode: 200, setHeader: jest.fn(), json: jest.fn() };
     const mockNext2 = jest.fn();
 
-    middleware(mockReq2, mockRes2, mockNext2);
+    await middleware(mockReq2, mockRes2, mockNext2);
 
     // Should call next (not cached)
     expect(mockNext1).toHaveBeenCalled();
     expect(mockNext2).toHaveBeenCalled();
   });
 
-  test('should use custom key function if provided', () => {
+  test('should use custom key function if provided', async () => {
     const customKeyFn = (req) => 'custom-key';
-    const middleware = responseCacheMiddleware({ ttl: 1000, keyFn: customKeyFn });
+    const middleware = responseCacheMiddleware({ ttl: 1000, keyFn: customKeyFn, useRedis: false });
 
     // First request with custom key
     const mockReq1 = { method: 'GET', path: '/api/test1', query: {} };
     const mockRes1 = { statusCode: 200, setHeader: jest.fn(), json: jest.fn() };
     const mockNext1 = jest.fn();
 
-    middleware(mockReq1, mockRes1, mockNext1);
+    await middleware(mockReq1, mockRes1, mockNext1);
     mockRes1.json({ data: 'test' });
 
     // Second request with different path but same custom key
@@ -240,7 +240,7 @@ describe('responseCacheMiddleware', () => {
     const mockRes2 = { statusCode: 200, setHeader: jest.fn(), json: jest.fn() };
     const mockNext2 = jest.fn();
 
-    middleware(mockReq2, mockRes2, mockNext2);
+    await middleware(mockReq2, mockRes2, mockNext2);
 
     expect(mockRes2.setHeader).toHaveBeenCalledWith('X-Cache', 'HIT');
   });

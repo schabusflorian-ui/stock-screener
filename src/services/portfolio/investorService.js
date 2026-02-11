@@ -2,6 +2,7 @@
 // Service for managing famous investors and fetching 13F filings from SEC EDGAR
 
 const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
+const { db } = require('../../database');
 const { SEC_13F_CONFIG, HOLDING_CHANGE_TYPES } = require('../../constants/portfolio');
 
 // Rate limiting for SEC requests
@@ -133,10 +134,10 @@ async function getLatestHoldings(investorId, { limit = 100, sortBy = 'market_val
   const holdingsResult = await database.query(`
     SELECT
       MIN(ih.id) as id,
-      ih.investor_id,
-      ih.company_id,
-      ih.filing_date,
-      ih.report_date,
+      MAX(ih.investor_id) as investor_id,
+      MAX(ih.company_id) as company_id,
+      MAX(ih.filing_date) as filing_date,
+      MAX(ih.report_date) as report_date,
       ih.cusip,
       MAX(ih.security_name) as security_name,
       ih.option_type,
@@ -153,11 +154,11 @@ async function getLatestHoldings(investorId, { limit = 100, sortBy = 'market_val
       SUM(ih.value_change) as value_change,
       MAX(ih.change_type) as change_type,
       MAX(ih.created_at) as created_at,
-      c.symbol,
-      c.name as company_name,
-      c.sector,
-      c.industry,
-      c.market_cap
+      MAX(c.symbol) as symbol,
+      MAX(c.name) as company_name,
+      MAX(c.sector) as sector,
+      MAX(c.industry) as industry,
+      MAX(c.market_cap) as market_cap
     FROM investor_holdings ih
     LEFT JOIN companies c ON ih.company_id = c.id
     WHERE ih.investor_id = $1 AND ih.filing_date = $2
@@ -1986,7 +1987,7 @@ async function backfillInvestorFilings(investorId, options = {}) {
  * Note: Actual portfolio creation is done by Agent 1's PortfolioService
  * This function prepares the clone data
  */
-function prepareClone(investorId, options = {}) {
+async function prepareClone(investorId, options = {}) {
   const {
     amount = 10000,
     minWeight = 0,
@@ -1994,7 +1995,7 @@ function prepareClone(investorId, options = {}) {
     excludeSymbols = []
   } = options;
 
-  const { holdings, filingDate, totalValue } = getLatestHoldings(investorId, { limit: 1000 });
+  const { holdings, filingDate, totalValue } = await getLatestHoldings(investorId, { limit: 1000 });
 
   if (!holdings.length) {
     throw new Error('No holdings found for investor');
@@ -2028,11 +2029,13 @@ function prepareClone(investorId, options = {}) {
   });
 
   // Increment follower count
-  db.prepare('UPDATE famous_investors SET followers_count = followers_count + 1 WHERE id = ?').run(investorId);
+  const database = await getDatabaseAsync();
+  await database.query('UPDATE famous_investors SET followers_count = followers_count + 1 WHERE id = $1', [investorId]);
 
+  const inv = await getInvestor(investorId);
   return {
     investorId,
-    investorName: getInvestor(investorId).name,
+    investorName: inv ? inv.name : '',
     filingDate,
     amount,
     trades,
@@ -2318,60 +2321,62 @@ function calculateAndCachePerformance(investorId) {
 
 /**
  * Get cached performance for an investor
- * Falls back to calculateAndCachePerformance if cache miss
+ * Uses async DB for Postgres compatibility. On cache miss returns empty (recalc uses sync db).
  * @param {number} investorId - Investor ID
- * @returns {Object} - Performance data from cache or freshly calculated
+ * @returns {Object} - Performance data from cache or empty when cache miss
  */
-function getCachedPerformance(investorId) {
-  // Check if cache exists
-  const cacheCheck = db.prepare(`
-    SELECT COUNT(*) as count FROM investor_performance_cache WHERE investor_id = ?
-  `).get(investorId);
+async function getCachedPerformance(investorId) {
+  const database = await getDatabaseAsync();
 
-  if (cacheCheck.count === 0) {
-    // Cache miss - calculate and cache
-    return calculateAndCachePerformance(investorId);
+  const cacheCheckRes = await database.query(
+    'SELECT 1 FROM investor_performance_cache WHERE investor_id = $1 LIMIT 1',
+    [investorId]
+  );
+  if (cacheCheckRes.rows.length === 0) {
+    return { returns: [], summary: null, cached: false };
   }
 
-  // Read from cache
-  const cachedReturns = db.prepare(`
+  const cachedReturnsRes = await database.query(`
     SELECT
-      start_date as startDate,
-      end_date as endDate,
+      start_date as "startDate",
+      end_date as "endDate",
       portfolio_return as return,
-      benchmark_return as benchmarkReturn,
+      benchmark_return as "benchmarkReturn",
       alpha,
-      cumulative_return as cumulativeReturn,
-      cumulative_benchmark as cumulativeBenchmark,
+      cumulative_return as "cumulativeReturn",
+      cumulative_benchmark as "cumulativeBenchmark",
       positions_count as positions
     FROM investor_performance_cache
-    WHERE investor_id = ?
+    WHERE investor_id = $1
     ORDER BY start_date ASC
-  `).all(investorId);
+  `, [investorId]);
 
-  const cachedSummary = db.prepare(`
+  const summaryRes = await database.query(`
     SELECT
-      period_count as periodCount,
-      first_date as startDate,
-      last_date as endDate,
-      total_return as totalReturn,
-      benchmark_total_return as benchmarkTotalReturn,
-      avg_quarterly_return as avgQuarterlyReturn,
-      avg_benchmark_return as avgBenchmarkReturn,
-      annualized_return as annualizedReturn,
-      annualized_benchmark as annualizedBenchmark,
+      period_count as "periodCount",
+      first_date as "startDate",
+      last_date as "endDate",
+      total_return as "totalReturn",
+      benchmark_total_return as "benchmarkTotalReturn",
+      avg_quarterly_return as "avgQuarterlyReturn",
+      avg_benchmark_return as "avgBenchmarkReturn",
+      annualized_return as "annualizedReturn",
+      annualized_benchmark as "annualizedBenchmark",
       alpha,
-      positive_quarters as positiveQuarters,
-      negative_quarters as negativeQuarters,
-      best_quarter as bestQuarter,
-      worst_quarter as worstQuarter
+      positive_quarters as "positiveQuarters",
+      negative_quarters as "negativeQuarters",
+      best_quarter as "bestQuarter",
+      worst_quarter as "worstQuarter"
     FROM investor_performance_summary
-    WHERE investor_id = ?
-  `).get(investorId);
+    WHERE investor_id = $1
+  `, [investorId]);
+
+  const cachedSummary = summaryRes.rows[0] || null;
+  const cachedReturns = cachedReturnsRes.rows;
 
   return {
     returns: cachedReturns,
-    summary: cachedSummary || null,
+    summary: cachedSummary,
     cached: true
   };
 }
