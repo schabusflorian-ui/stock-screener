@@ -6,8 +6,8 @@ const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 const { getPortfolioService } = require('../portfolio');
 
 class AutoExecutor {
-  constructor() {
-    // No database parameter needed - using getDatabaseAsync()
+  constructor(db = null) {
+    this.db = db;
     this.portfolioService = null; // Lazy loaded to avoid circular dependency
   }
 
@@ -21,6 +21,10 @@ class AutoExecutor {
     return this.portfolioService;
   }
 
+  async _getDb() {
+    return this.db || await getDatabaseAsync();
+  }
+
   /**
    * Process a recommendation for auto-execution
    * @param {Object} recommendation - The trading recommendation
@@ -28,7 +32,7 @@ class AutoExecutor {
    * @returns {Object} Result of processing
    */
   async processRecommendation(recommendation, portfolioId) {
-    const database = await getDatabaseAsync();
+    const database = await this._getDb();
 
     // Get portfolio settings
     const settings = await database.query(
@@ -212,7 +216,7 @@ class AutoExecutor {
    * Queue trade for user approval
    */
   async _queueForApproval(recommendation, portfolioId, shares, price, value) {
-    const database = await getDatabaseAsync();
+    const database = await this._getDb();
 
     const portfolioResult = await database.query(
       `SELECT current_value as total_value, current_cash as total_cash
@@ -266,7 +270,7 @@ class AutoExecutor {
    * Adds position to portfolio via trade
    */
   async _executeImmediately(recommendation, portfolioId, shares, price) {
-    const database = await getDatabaseAsync();
+    const database = await this._getDb();
 
     // This would integrate with portfolio service to execute
     // For now, we queue with auto-approval
@@ -295,7 +299,7 @@ class AutoExecutor {
    * Approve a pending execution
    */
   async approveExecution(executionId, approvedBy = 'user') {
-    const database = await getDatabaseAsync();
+    const database = await this._getDb();
 
     const result = await database.query(
       `SELECT
@@ -345,7 +349,7 @@ class AutoExecutor {
    * Reject a pending execution
    */
   async rejectExecution(executionId, reason = null, rejectedBy = 'user') {
-    const database = await getDatabaseAsync();
+    const database = await this._getDb();
 
     const result = await database.query(
       `SELECT
@@ -396,7 +400,7 @@ class AutoExecutor {
    * Integrates with portfolio service to add/remove positions
    */
   async executeApprovedTrade(executionId, actualPrice = null, actualShares = null) {
-    const database = await getDatabaseAsync();
+    const database = await this._getDb();
 
     const result = await database.query(
       `SELECT
@@ -512,7 +516,7 @@ class AutoExecutor {
    */
   async _updateRecommendationOutcome(outcomeId, details) {
     try {
-      const database = await getDatabaseAsync();
+      const database = await this._getDb();
       await database.query(
         `UPDATE recommendation_outcomes
         SET executed = true,
@@ -539,7 +543,7 @@ class AutoExecutor {
    * Get pending executions for a portfolio
    */
   async getPendingExecutions(portfolioId = null) {
-    const database = await getDatabaseAsync();
+    const database = await this._getDb();
 
     if (portfolioId) {
       const result = await database.query(
@@ -575,7 +579,7 @@ class AutoExecutor {
    * Get execution settings for a portfolio
    */
   async getPortfolioSettings(portfolioId) {
-    const database = await getDatabaseAsync();
+    const database = await this._getDb();
 
     const result = await database.query(
       `SELECT

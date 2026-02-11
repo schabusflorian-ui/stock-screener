@@ -117,6 +117,29 @@ async function runMigrations() {
   }
 }
 
+// Start background outcome calculation so Historical Intelligence has data (return_1y, etc.)
+function startOutcomeCalculationBackfill() {
+  const cwd = path.join(__dirname, '..');
+  const child = spawn('node', ['scripts/run-calculate-outcomes.js', '500', '365'], {
+    cwd,
+    env: process.env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true
+  });
+  child.unref();
+  child.stdout.on('data', (d) => process.stdout.write('[Outcome backfill] ' + d.toString()));
+  child.stderr.on('data', (d) => process.stderr.write('[Outcome backfill] ' + d.toString()));
+  child.on('error', (err) => console.warn('[Outcome backfill] Failed to start:', err.message));
+  child.on('exit', (code) => {
+    if (code === 0) {
+      console.log('[Outcome backfill] Completed.');
+    } else {
+      console.warn('[Outcome backfill] Exited with code', code, '(non-fatal).');
+    }
+  });
+  console.log('   Started outcome calculation backfill in background (500 decisions).');
+}
+
 // Start the application (API server + Master Scheduler)
 function startApplication() {
   console.log('');
@@ -205,6 +228,9 @@ async function main() {
     console.error(error.stack);
     process.exit(1);
   }
+
+  // Populate historical outcome data in background so Overview/Factor Analysis have data
+  startOutcomeCalculationBackfill();
 
   startApplication();
 }

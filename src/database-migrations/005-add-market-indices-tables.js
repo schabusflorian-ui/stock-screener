@@ -14,22 +14,22 @@
 async function up(db) {
   console.log('🔄 Running migration: 005-add-market-indices-tables');
 
+  const query = (sql) => (db.query ? db.query(sql) : db.exec(sql));
+
   // ============================================
   // TABLE: market_indices
   // ============================================
-  await db.exec(`
+  await query(`
     CREATE TABLE IF NOT EXISTS market_indices (
       id SERIAL PRIMARY KEY,
       symbol VARCHAR(20) NOT NULL UNIQUE,
       name VARCHAR(255) NOT NULL,
       short_name VARCHAR(100),
-      index_type VARCHAR(50) DEFAULT 'market',  -- 'market', 'sector', 'style', 'international'
-      region VARCHAR(50) DEFAULT 'US',           -- 'US', 'EU', 'Asia', 'Global'
+      index_type VARCHAR(50) DEFAULT 'market',
+      region VARCHAR(50) DEFAULT 'US',
       currency VARCHAR(3) DEFAULT 'USD',
-      is_primary BOOLEAN DEFAULT FALSE,          -- TRUE for default benchmark (SPY)
+      is_primary BOOLEAN DEFAULT FALSE,
       description TEXT,
-      
-      -- Metadata
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
@@ -37,49 +37,34 @@ async function up(db) {
 
   console.log('✓ Created market_indices table');
 
-  // Create indices for fast lookups
-  await db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_market_indices_symbol ON market_indices(symbol);
-    CREATE INDEX IF NOT EXISTS idx_market_indices_type ON market_indices(index_type);
-    CREATE INDEX IF NOT EXISTS idx_market_indices_primary ON market_indices(is_primary) WHERE is_primary = TRUE;
-  `);
+  await query('CREATE INDEX IF NOT EXISTS idx_market_indices_symbol ON market_indices(symbol)');
+  await query('CREATE INDEX IF NOT EXISTS idx_market_indices_type ON market_indices(index_type)');
+  await query('CREATE INDEX IF NOT EXISTS idx_market_indices_primary ON market_indices(is_primary) WHERE is_primary = TRUE');
 
   // ============================================
   // TABLE: market_index_prices
   // ============================================
-  await db.exec(`
+  await query(`
     CREATE TABLE IF NOT EXISTS market_index_prices (
       id SERIAL PRIMARY KEY,
       index_id INTEGER NOT NULL REFERENCES market_indices(id) ON DELETE CASCADE,
       date DATE NOT NULL,
-      
-      -- OHLCV data
       open NUMERIC(12, 4),
       high NUMERIC(12, 4),
       low NUMERIC(12, 4),
       close NUMERIC(12, 4) NOT NULL,
       volume BIGINT,
-      
-      -- Additional metrics
       adjusted_close NUMERIC(12, 4),
-      
-      -- Metadata
       data_source VARCHAR(50),
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      
       UNIQUE(index_id, date)
     )
   `);
 
   console.log('✓ Created market_index_prices table');
 
-  // Create indices for fast time-series queries
-  await db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_market_index_prices_index_date 
-      ON market_index_prices(index_id, date DESC);
-    CREATE INDEX IF NOT EXISTS idx_market_index_prices_date 
-      ON market_index_prices(date DESC);
-  `);
+  await query('CREATE INDEX IF NOT EXISTS idx_market_index_prices_index_date ON market_index_prices(index_id, date DESC)');
+  await query('CREATE INDEX IF NOT EXISTS idx_market_index_prices_date ON market_index_prices(date DESC)');
 
   // ============================================
   // Seed default market indices
