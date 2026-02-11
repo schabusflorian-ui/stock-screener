@@ -6,12 +6,22 @@
 //   DATABASE_URL=postgres://... node src/database-migrations/run-postgres-migrations.js
 //   Or: npm run db:migrate:postgres
 //
-// Load .env if present (for local runs with DATABASE_URL in .env)
-require('dotenv').config();
-
-const { getDatabase, isUsingPostgres } = require('../lib/db');
+// Load .env from project root so DATABASE_URL is available when run from any cwd
 const path = require('path');
 const fs = require('fs');
+const envPath = path.join(__dirname, '../../.env');
+require('dotenv').config({ path: envPath });
+// Fallback: parse .env for DATABASE_URL if dotenv didn't load it (e.g. export KEY=value format)
+if (!process.env.DATABASE_URL && fs.existsSync(envPath)) {
+  const content = fs.readFileSync(envPath, 'utf8');
+  const m = content.match(/^\s*(?:export\s+)?DATABASE_URL\s*=\s*["']?([^"'\n]+)["']?/m);
+  if (m) process.env.DATABASE_URL = m[1].trim();
+}
+if (process.env.POSTGRES_URL && !process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = process.env.POSTGRES_URL;
+}
+
+const { getDatabase, isUsingPostgres } = require('../lib/db');
 
 // List of PostgreSQL migrations in order
 // Add new migrations here as they are created

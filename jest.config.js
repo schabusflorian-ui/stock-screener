@@ -10,7 +10,8 @@ module.exports = {
       'tests/integration/',  // Skip integration tests that need real DB
       'tests/portfolio/',    // Skip portfolio tests that use PostgreSQL
       'tests/factors/',      // Skip factor tests that use PostgreSQL
-      'tests/agent/'         // Skip agent tests that use PostgreSQL
+      'tests/agent/',        // Skip agent tests that use PostgreSQL
+      'tests/api/execution.test.js'  // Uses in-memory SQLite; conflicts when CI sets DATABASE_URL=postgres
     ] : [])
   ],
   collectCoverageFrom: [
