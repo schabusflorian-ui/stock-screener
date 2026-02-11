@@ -263,6 +263,7 @@ class AutoExecutor {
    */
   async _queueForApproval(recommendation, portfolioId, shares, price, value) {
     const database = await this._getDb();
+    const isPostgres = database.type === 'postgres' || isUsingPostgres();
 
     const portfolioResult = await database.query(
       `SELECT current_value as total_value, current_cash as total_cash
@@ -273,6 +274,10 @@ class AutoExecutor {
 
     const portfolioData = portfolioResult.rows[0] || { total_value: 1, total_cash: 0 };
     const positionPct = value / (parseFloat(portfolioData.total_value) + parseFloat(portfolioData.total_cash));
+    const expiresAtExpression = isPostgres
+      ? "CURRENT_TIMESTAMP + INTERVAL '24 hours'"
+      : "datetime('now', '+24 hours')";
+    const returningClause = isPostgres ? 'RETURNING id' : '';
 
     const result = await database.query(
       `INSERT INTO pending_executions (
@@ -290,8 +295,8 @@ class AutoExecutor {
         position_pct,
         status,
         expires_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending', CURRENT_TIMESTAMP + INTERVAL '24 hours')
-      RETURNING id`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending', ${expiresAtExpression})
+      ${returningClause}`,
       [
         portfolioId,
         recommendation.trackedOutcomeId || null,
@@ -308,7 +313,7 @@ class AutoExecutor {
       ]
     );
 
-    return result.rows[0].id;
+    return result.rows?.[0]?.id || result.lastInsertRowid;
   }
 
   /**
