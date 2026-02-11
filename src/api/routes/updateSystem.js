@@ -7,6 +7,7 @@
 
 const express = require('express');
 const router = express.Router();
+const { getDatabaseAsync } = require('../../lib/db');
 
 // Lazy load dependencies
 let db = null;
@@ -15,15 +16,17 @@ let orchestrator = null;
 /**
  * Initialize the orchestrator with database connection
  */
-function getOrchestrator() {
+async function getDb() {
   if (!db) {
-    const database = require('../../database');
-    db = database.getDatabase();
+    db = await getDatabaseAsync();
   }
+  return db;
+}
 
+async function getOrchestrator() {
   if (!orchestrator) {
     const { getUpdateOrchestrator } = require('../../services/updates/updateOrchestrator');
-    orchestrator = getUpdateOrchestrator(db);
+    orchestrator = getUpdateOrchestrator();
   }
 
   return orchestrator;
@@ -37,11 +40,12 @@ function getOrchestrator() {
  * GET /api/update-system/bundles
  * List all update bundles with their status
  */
-router.get('/bundles', (req, res) => {
+router.get('/bundles', async (req, res) => {
   try {
-    getOrchestrator();
+    await getOrchestrator();
+    const database = await getDb();
 
-    const bundles = db.prepare(`
+    const bundlesResult = await database.query(`
       SELECT
         b.id,
         b.name,
@@ -62,7 +66,8 @@ router.get('/bundles', (req, res) => {
         ) as running_jobs
       FROM update_bundles b
       ORDER BY b.priority ASC, b.name ASC
-    `).all();
+    `);
+    const bundles = bundlesResult.rows;
 
     res.json({ bundles });
   } catch (error) {
@@ -75,7 +80,7 @@ router.get('/bundles', (req, res) => {
  * PATCH /api/update-system/bundles/:name
  * Toggle bundle automatic mode
  */
-router.patch('/bundles/:name', (req, res) => {
+router.patch('/bundles/:name', async (req, res) => {
   try {
     const { name } = req.params;
     const { automatic } = req.body;
@@ -84,24 +89,29 @@ router.patch('/bundles/:name', (req, res) => {
       return res.status(400).json({ error: 'automatic must be a boolean' });
     }
 
-    const result = db.prepare(`
+    const database = await getDb();
+    const result = await database.query(`
       UPDATE update_bundles
       SET is_automatic = ?, updated_at = datetime('now')
       WHERE name = ?
-    `).run(automatic ? 1 : 0, name);
+    `, [automatic ? 1 : 0, name]);
 
-    if (result.changes === 0) {
+    if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Bundle not found' });
     }
 
     // Get bundle id for updating jobs
-    const bundle = db.prepare('SELECT id FROM update_bundles WHERE name = ?').get(name);
+    const bundleResult = await database.query(
+      'SELECT id FROM update_bundles WHERE name = ?',
+      [name]
+    );
+    const bundle = bundleResult.rows[0];
     if (bundle) {
-      db.prepare(`
+      await database.query(`
         UPDATE update_jobs
         SET is_automatic = ?, updated_at = datetime('now')
         WHERE bundle_id = ?
-      `).run(automatic ? 1 : 0, bundle.id);
+      `, [automatic ? 1 : 0, bundle.id]);
     }
 
     res.json({
@@ -123,9 +133,10 @@ router.patch('/bundles/:name', (req, res) => {
  * GET /api/update-system/jobs
  * List all update jobs with current status
  */
-router.get('/jobs', (req, res) => {
+router.get('/jobs', async (req, res) => {
   try {
     const { bundle, status, automatic } = req.query;
+    const database = await getDb();
 
     let sql = `
       SELECT
@@ -187,7 +198,8 @@ router.get('/jobs', (req, res) => {
 
     sql += ' ORDER BY b.priority ASC, j.job_key ASC';
 
-    const jobs = db.prepare(sql).all(...params);
+    const jobsResult = await database.query(sql, params);
+    const jobs = jobsResult.rows;
 
     // Parse JSON fields
     const parsedJobs = jobs.map(job => ({
@@ -206,28 +218,31 @@ router.get('/jobs', (req, res) => {
  * GET /api/update-system/jobs/:key
  * Get a single job's details
  */
-router.get('/jobs/:key', (req, res) => {
+router.get('/jobs/:key', async (req, res) => {
   try {
     const { key } = req.params;
+    const database = await getDb();
 
-    const job = db.prepare(`
+    const jobResult = await database.query(`
       SELECT j.*, b.name as bundle_name, b.display_name as bundle_display_name
       FROM update_jobs j
       LEFT JOIN update_bundles b ON b.id = j.bundle_id
       WHERE j.job_key = ?
-    `).get(key);
+    `, [key]);
+    const job = jobResult.rows[0];
 
     if (!job) {
       return res.status(404).json({ error: 'Job not found' });
     }
 
     // Get recent runs
-    const runs = db.prepare(`
+    const runsResult = await database.query(`
       SELECT * FROM update_runs
       WHERE job_key = ?
       ORDER BY started_at DESC
       LIMIT 10
-    `).all(key);
+    `, [key]);
+    const runs = runsResult.rows;
 
     res.json({
       job: {
@@ -246,10 +261,11 @@ router.get('/jobs/:key', (req, res) => {
  * PATCH /api/update-system/jobs/:key
  * Update job settings (automatic toggle, cron, etc.)
  */
-router.patch('/jobs/:key', (req, res) => {
+router.patch('/jobs/:key', async (req, res) => {
   try {
     const { key } = req.params;
     const { automatic, cron_expression, priority } = req.body;
+    const database = await getDb();
 
     const updates = [];
     const params = [];
@@ -276,18 +292,18 @@ router.patch('/jobs/:key', (req, res) => {
     updates.push('updated_at = datetime(\'now\')');
     params.push(key);
 
-    const result = db.prepare(`
+    const result = await database.query(`
       UPDATE update_jobs
       SET ${updates.join(', ')}
       WHERE job_key = ?
-    `).run(...params);
+    `, params);
 
-    if (result.changes === 0) {
+    if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Job not found' });
     }
 
     // If changing automatic, might need to reschedule
-    const orch = getOrchestrator();
+    const orch = await getOrchestrator();
     if (typeof automatic === 'boolean' && orch.isRunning) {
       // Re-schedule this job
       orch.scheduleJob(key);
@@ -309,10 +325,15 @@ router.post('/jobs/:key/run', async (req, res) => {
     const { key } = req.params;
     const { force = false, priority = 'normal' } = req.body;
 
-    const orch = getOrchestrator();
+    const database = await getDb();
+    const orch = await getOrchestrator();
 
     // Check if job exists
-    const job = db.prepare('SELECT * FROM update_jobs WHERE job_key = ?').get(key);
+    const jobResult = await database.query(
+      'SELECT * FROM update_jobs WHERE job_key = ?',
+      [key]
+    );
+    const job = jobResult.rows[0];
     if (!job) {
       return res.status(404).json({ error: 'Job not found' });
     }
@@ -326,16 +347,18 @@ router.post('/jobs/:key/run', async (req, res) => {
     }
 
     // Queue the job
-    const queueEntry = db.prepare(`
+    const queueResult = await database.query(`
       INSERT INTO update_queue (job_key, priority, trigger_type, created_at)
       VALUES (?, ?, 'manual', datetime('now'))
-    `).run(key, priority === 'high' ? 0 : priority === 'low' ? 20 : 10);
+      RETURNING id
+    `, [key, priority === 'high' ? 0 : priority === 'low' ? 20 : 10]);
+    const queueEntry = queueResult.rows[0];
 
     // Return immediately, job runs async
     res.json({
       success: true,
       message: `Job ${key} queued for execution`,
-      queueId: queueEntry.lastInsertRowid
+      queueId: queueEntry?.id || null
     });
 
     // Trigger job execution in background
@@ -357,9 +380,10 @@ router.post('/jobs/:key/run', async (req, res) => {
  * GET /api/update-system/runs
  * Get execution history
  */
-router.get('/runs', (req, res) => {
+router.get('/runs', async (req, res) => {
   try {
     const { job_key, status, limit = 50, offset = 0 } = req.query;
+    const database = await getDb();
 
     let sql = `
       SELECT
@@ -387,7 +411,8 @@ router.get('/runs', (req, res) => {
     sql += ' ORDER BY r.started_at DESC LIMIT ? OFFSET ?';
     params.push(parseInt(limit), parseInt(offset));
 
-    const runs = db.prepare(sql).all(...params);
+    const runsResult = await database.query(sql, params);
+    const runs = runsResult.rows;
 
     // Get total count
     let countSql = 'SELECT COUNT(*) as total FROM update_runs WHERE 1=1';
@@ -402,7 +427,8 @@ router.get('/runs', (req, res) => {
       countParams.push(status);
     }
 
-    const { total } = db.prepare(countSql).get(...countParams);
+    const countResult = await database.query(countSql, countParams);
+    const total = countResult.rows[0]?.total || 0;
 
     res.json({
       runs,
@@ -422,11 +448,12 @@ router.get('/runs', (req, res) => {
  * GET /api/update-system/runs/:id
  * Get a single run's details
  */
-router.get('/runs/:id', (req, res) => {
+router.get('/runs/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    const database = await getDb();
 
-    const run = db.prepare(`
+    const runResult = await database.query(`
       SELECT
         r.*,
         j.name as job_display_name,
@@ -435,7 +462,8 @@ router.get('/runs/:id', (req, res) => {
       LEFT JOIN update_jobs j ON j.job_key = r.job_key
       LEFT JOIN update_bundles b ON b.id = j.bundle_id
       WHERE r.id = ?
-    `).get(id);
+    `, [id]);
+    const run = runResult.rows[0];
 
     if (!run) {
       return res.status(404).json({ error: 'Run not found' });
@@ -456,9 +484,10 @@ router.get('/runs/:id', (req, res) => {
  * GET /api/update-system/queue
  * Get current queue status
  */
-router.get('/queue', (req, res) => {
+router.get('/queue', async (req, res) => {
   try {
-    const queue = db.prepare(`
+    const database = await getDb();
+    const queueResult = await database.query(`
       SELECT
         q.*,
         j.name as job_display_name,
@@ -468,7 +497,8 @@ router.get('/queue', (req, res) => {
       LEFT JOIN update_bundles b ON b.id = j.bundle_id
       WHERE q.status IN ('pending', 'running')
       ORDER BY q.priority ASC, q.created_at ASC
-    `).all();
+    `);
+    const queue = queueResult.rows;
 
     res.json({ queue });
   } catch (error) {
@@ -481,17 +511,18 @@ router.get('/queue', (req, res) => {
  * DELETE /api/update-system/queue/:id
  * Cancel a queued job
  */
-router.delete('/queue/:id', (req, res) => {
+router.delete('/queue/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    const database = await getDb();
 
-    const result = db.prepare(`
+    const result = await database.query(`
       UPDATE update_queue
       SET status = 'cancelled', updated_at = datetime('now')
       WHERE id = ? AND status = 'pending'
-    `).run(id);
+    `, [id]);
 
-    if (result.changes === 0) {
+    if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Queue entry not found or not pending' });
     }
 
@@ -510,32 +541,36 @@ router.delete('/queue/:id', (req, res) => {
  * GET /api/update-system/status
  * Get overall system status
  */
-router.get('/status', (req, res) => {
+router.get('/status', async (req, res) => {
   try {
-    const orch = getOrchestrator();
+    const orch = await getOrchestrator();
+    const database = await getDb();
 
     // Get running jobs count
-    const { running_count } = db.prepare(`
+    const runningResult = await database.query(`
       SELECT COUNT(*) as running_count FROM update_jobs WHERE status = 'running'
-    `).get();
+    `);
+    const running_count = runningResult.rows[0]?.running_count || 0;
 
     // Get pending queue count
-    const { pending_count } = db.prepare(`
+    const pendingResult = await database.query(`
       SELECT COUNT(*) as pending_count FROM update_queue WHERE status = 'pending'
-    `).get();
+    `);
+    const pending_count = pendingResult.rows[0]?.pending_count || 0;
 
     // Get recent failures
-    const recent_failures = db.prepare(`
+    const recentFailuresResult = await database.query(`
       SELECT job_key, started_at, error_message
       FROM update_runs
       WHERE status = 'failed'
       AND started_at > datetime('now', '-24 hours')
       ORDER BY started_at DESC
       LIMIT 5
-    `).all();
+    `);
+    const recent_failures = recentFailuresResult.rows;
 
     // Get last successful runs per bundle
-    const bundle_status = db.prepare(`
+    const bundleStatusResult = await database.query(`
       SELECT
         b.name,
         b.display_name,
@@ -553,7 +588,8 @@ router.get('/status', (req, res) => {
         ) as running_jobs
       FROM update_bundles b
       ORDER BY b.priority ASC
-    `).all();
+    `);
+    const bundle_status = bundleStatusResult.rows;
 
     res.json({
       scheduler_running: orch.isRunning,
@@ -573,15 +609,15 @@ router.get('/status', (req, res) => {
  * POST /api/update-system/start
  * Start the scheduler
  */
-router.post('/start', (req, res) => {
+router.post('/start', async (req, res) => {
   try {
-    const orch = getOrchestrator();
+    const orch = await getOrchestrator();
 
     if (orch.isRunning) {
       return res.json({ message: 'Scheduler already running' });
     }
 
-    orch.start();
+    await orch.start();
 
     res.json({
       success: true,
@@ -597,15 +633,15 @@ router.post('/start', (req, res) => {
  * POST /api/update-system/stop
  * Stop the scheduler
  */
-router.post('/stop', (req, res) => {
+router.post('/stop', async (req, res) => {
   try {
-    const orch = getOrchestrator();
+    const orch = await getOrchestrator();
 
     if (!orch.isRunning) {
       return res.json({ message: 'Scheduler already stopped' });
     }
 
-    orch.stop();
+    await orch.stop();
 
     res.json({
       success: true,
@@ -625,11 +661,13 @@ router.post('/stop', (req, res) => {
  * GET /api/update-system/settings
  * Get update system settings
  */
-router.get('/settings', (req, res) => {
+router.get('/settings', async (req, res) => {
   try {
-    const settings = db.prepare(`
+    const database = await getDb();
+    const settingsResult = await database.query(`
       SELECT key, value, description FROM update_settings
-    `).all();
+    `);
+    const settings = settingsResult.rows;
 
     const settingsObj = {};
     for (const s of settings) {
@@ -650,7 +688,7 @@ router.get('/settings', (req, res) => {
  * PATCH /api/update-system/settings/:key
  * Update a setting
  */
-router.patch('/settings/:key', (req, res) => {
+router.patch('/settings/:key', async (req, res) => {
   try {
     const { key } = req.params;
     const { value } = req.body;
@@ -659,13 +697,14 @@ router.patch('/settings/:key', (req, res) => {
       return res.status(400).json({ error: 'value is required' });
     }
 
-    const result = db.prepare(`
+    const database = await getDb();
+    const result = await database.query(`
       UPDATE update_settings
       SET value = ?, updated_at = datetime('now')
       WHERE key = ?
-    `).run(String(value), key);
+    `, [String(value), key]);
 
-    if (result.changes === 0) {
+    if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Setting not found' });
     }
 
@@ -688,32 +727,38 @@ router.post('/bundles/:name/run', async (req, res) => {
   try {
     const { name } = req.params;
     const { sequential = true } = req.body;
+    const database = await getDb();
 
     // Get bundle
-    const bundle = db.prepare('SELECT * FROM update_bundles WHERE name = ?').get(name);
+    const bundleResult = await database.query(
+      'SELECT * FROM update_bundles WHERE name = ?',
+      [name]
+    );
+    const bundle = bundleResult.rows[0];
     if (!bundle) {
       return res.status(404).json({ error: 'Bundle not found' });
     }
 
     // Get all jobs in bundle
-    const jobs = db.prepare(`
+    const jobsResult = await database.query(`
       SELECT job_key FROM update_jobs
       WHERE bundle_id = ?
       ORDER BY id ASC
-    `).all(bundle.id);
+    `, [bundle.id]);
+    const jobs = jobsResult.rows;
 
     if (jobs.length === 0) {
       return res.status(400).json({ error: 'Bundle has no jobs' });
     }
 
-    const orch = getOrchestrator();
+    const orch = await getOrchestrator();
 
     // Queue all jobs
     for (const job of jobs) {
-      db.prepare(`
+      await database.query(`
         INSERT INTO update_queue (job_key, priority, trigger_type, created_at)
         VALUES (?, 10, 'bundle', datetime('now'))
-      `).run(job.job_key);
+      `, [job.job_key]);
     }
 
     res.json({
