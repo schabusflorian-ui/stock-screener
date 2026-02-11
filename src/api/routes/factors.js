@@ -888,7 +888,14 @@ router.post('/define', requireAuth, async (req, res) => {
 
     if (!name || !formula) {
       console.error('[/api/factors/define] Validation error: name and formula are required. Got name:', !!name, 'formula:', !!formula);
-      return sendValidationError(res, 'name and formula are required');
+      const errorDetail = !name && !formula ? 'Both name and formula are missing' :
+                          !name ? 'Name is missing' :
+                          'Formula is missing';
+      return res.status(400).json({
+        success: false,
+        error: `Validation error: ${errorDetail}`,
+        details: { name: !!name, formula: !!formula, body: req.body }
+      });
     }
 
     console.log('[/api/factors/define] Calling repo.createFactor...');

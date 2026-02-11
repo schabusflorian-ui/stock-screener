@@ -5,7 +5,7 @@
  * Focuses on sentiment analysis, guidance tracking, and management credibility.
  */
 
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 // NLP keywords for analysis
 const SENTIMENT_KEYWORDS = {
@@ -34,13 +34,53 @@ const SENTIMENT_KEYWORDS = {
 
 class TranscriptService {
   constructor(dbInstance = null) {
-    this.db = dbInstance || db.getDatabase();
+    this.db = dbInstance;
+    this.dbPromise = null;
+    this.normalizedDb = null;
+    if (this.db) {
+      this.normalizedDb = this._normalizeDb(this.db);
+    }
+  }
+
+  async _getDatabase() {
+    if (this.normalizedDb) return this.normalizedDb;
+    if (this.db) {
+      this.normalizedDb = this._normalizeDb(this.db);
+      return this.normalizedDb;
+    }
+    if (!this.dbPromise) {
+      this.dbPromise = getDatabaseAsync();
+    }
+    return this.dbPromise;
+  }
+
+  _normalizeDb(database) {
+    if (database?.query) return database;
+    if (!database?.prepare) {
+      throw new Error('Unsupported database instance for TranscriptService');
+    }
+
+    return {
+      query: async (sql, params = []) => {
+        const normalizedSql = sql.replace(/\$\d+/g, '?');
+        const normalizedParams = params.map((param) => {
+          if (typeof param === 'boolean') return param ? 1 : 0;
+          return param;
+        });
+        const stmt = database.prepare(normalizedSql);
+        if (/^\s*select\b/i.test(normalizedSql)) {
+          return { rows: stmt.all(normalizedParams) };
+        }
+        const info = stmt.run(normalizedParams);
+        return { rows: [], lastInsertRowid: info.lastInsertRowid, changes: info.changes };
+      },
+    };
   }
 
   /**
    * Store a transcript with NLP analysis
    */
-  storeTranscript(data) {
+  async storeTranscript(data) {
     const {
       companyId,
       symbol,
@@ -58,16 +98,25 @@ class TranscriptService {
       sourceUrl
     } = data;
 
-    // Analyze the transcript
     const analysis = this.analyzeTranscript(fullTranscript || preparedRemarks || '');
 
-    // Get prior quarter's sentiment for comparison
-    const priorCall = this.getLatestTranscript(symbol);
+    const priorCall = await this.getLatestTranscript(symbol);
     const toneChange = priorCall
       ? analysis.sentimentScore - (priorCall.sentiment_score || 0)
       : null;
 
-    const stmt = this.db.prepare(`
+    const params = [
+      companyId, symbol, fiscalYear, fiscalQuarter, callDate, callType,
+      title, fullTranscript, preparedRemarks, qaSection,
+      JSON.stringify(executives || []), JSON.stringify(analysts || []),
+      analysis.sentimentScore, analysis.confidenceScore, analysis.tone,
+      JSON.stringify(analysis.guidanceDetected), analysis.uncertaintyCount,
+      analysis.forwardLookingCount, analysis.riskMentions,
+      toneChange, analysis.guidanceChange,
+      source, sourceUrl
+    ];
+
+    return await this.db.query(`
       INSERT INTO earnings_transcripts (
         company_id, symbol, fiscal_year, fiscal_quarter, call_date, call_type,
         title, full_transcript, prepared_remarks, qa_section,
@@ -76,7 +125,7 @@ class TranscriptService {
         guidance_phrases, uncertainty_phrases, forward_looking_count, risk_mentions,
         tone_change, guidance_change,
         source, source_url
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
       ON CONFLICT(company_id, fiscal_year, fiscal_quarter, call_type) DO UPDATE SET
         title = excluded.title,
         full_transcript = excluded.full_transcript,
@@ -96,18 +145,7 @@ class TranscriptService {
         source = excluded.source,
         source_url = excluded.source_url,
         fetched_at = CURRENT_TIMESTAMP
-    `);
-
-    return stmt.run(
-      companyId, symbol, fiscalYear, fiscalQuarter, callDate, callType,
-      title, fullTranscript, preparedRemarks, qaSection,
-      JSON.stringify(executives || []), JSON.stringify(analysts || []),
-      analysis.sentimentScore, analysis.confidenceScore, analysis.tone,
-      JSON.stringify(analysis.guidanceDetected), analysis.uncertaintyCount,
-      analysis.forwardLookingCount, analysis.riskMentions,
-      toneChange, analysis.guidanceChange,
-      source, sourceUrl
-    );
+    `, params);
   }
 
   /**
@@ -222,44 +260,47 @@ class TranscriptService {
   /**
    * Get latest transcript for a symbol
    */
-  getLatestTranscript(symbol) {
-    return this.db.prepare(`
+  async getLatestTranscript(symbol) {
+    const res = await this.db.query(`
       SELECT * FROM earnings_transcripts
-      WHERE symbol = ?
+      WHERE symbol = $1
       ORDER BY call_date DESC
       LIMIT 1
-    `).get(symbol);
+    `, [symbol]);
+    return res.rows[0];
   }
 
   /**
    * Get transcript history for a company
    */
-  getTranscriptHistory(symbol, limit = 8) {
-    return this.db.prepare(`
+  async getTranscriptHistory(symbol, limit = 8) {
+    const res = await this.db.query(`
       SELECT
         id, symbol, fiscal_year, fiscal_quarter, call_date, call_type,
         title, sentiment_score, confidence_score, tone,
         uncertainty_phrases, forward_looking_count, risk_mentions,
         tone_change, guidance_change, source
       FROM earnings_transcripts
-      WHERE symbol = ?
+      WHERE symbol = $1
       ORDER BY call_date DESC
-      LIMIT ?
-    `).all(symbol, limit);
+      LIMIT $2
+    `, [symbol, limit]);
+    return res.rows;
   }
 
   /**
    * Get sentiment trend for a company
    */
-  getSentimentTrend(symbol, quarters = 8) {
-    const transcripts = this.db.prepare(`
+  async getSentimentTrend(symbol, quarters = 8) {
+    const res = await this.db.query(`
       SELECT fiscal_year, fiscal_quarter, call_date,
              sentiment_score, tone, tone_change, guidance_change
       FROM earnings_transcripts
-      WHERE symbol = ?
+      WHERE symbol = $1
       ORDER BY call_date DESC
-      LIMIT ?
-    `).all(symbol, quarters);
+      LIMIT $2
+    `, [symbol, quarters]);
+    const transcripts = res.rows;
 
     if (transcripts.length < 2) {
       return { trend: 'insufficient_data', transcripts };
@@ -279,8 +320,8 @@ class TranscriptService {
   /**
    * Find companies with deteriorating sentiment
    */
-  findDeterioratingSentiment() {
-    return this.db.prepare(`
+  async findDeterioratingSentiment() {
+    const res = await this.db.query(`
       WITH recent AS (
         SELECT company_id, symbol, sentiment_score, tone_change,
                ROW_NUMBER() OVER (PARTITION BY company_id ORDER BY call_date DESC) as rn
@@ -293,14 +334,15 @@ class TranscriptService {
       WHERE r.rn = 1 AND r.tone_change < -0.2
       ORDER BY r.tone_change ASC
       LIMIT 20
-    `).all();
+    `);
+    return res.rows;
   }
 
   /**
    * Find companies with improving sentiment
    */
-  findImprovingSentiment() {
-    return this.db.prepare(`
+  async findImprovingSentiment() {
+    const res = await this.db.query(`
       WITH recent AS (
         SELECT company_id, symbol, sentiment_score, tone_change,
                ROW_NUMBER() OVER (PARTITION BY company_id ORDER BY call_date DESC) as rn
@@ -313,13 +355,14 @@ class TranscriptService {
       WHERE r.rn = 1 AND r.tone_change > 0.2
       ORDER BY r.tone_change DESC
       LIMIT 20
-    `).all();
+    `);
+    return res.rows;
   }
 
   /**
    * Store management guidance
    */
-  storeGuidance(data) {
+  async storeGuidance(data) {
     const {
       companyId, symbol, guidanceDate, fiscalYear, fiscalQuarter,
       revenueLow, revenueHigh, revenueMid,
@@ -329,14 +372,14 @@ class TranscriptService {
       source
     } = data;
 
-    // Get prior guidance for comparison
-    const prior = this.db.prepare(`
+    const priorRes = await this.db.query(`
       SELECT revenue_low, revenue_high, eps_low, eps_high
       FROM management_guidance
-      WHERE company_id = ? AND fiscal_year = ?
+      WHERE company_id = $1 AND fiscal_year = $2
       ORDER BY guidance_date DESC
       LIMIT 1
-    `).get(companyId, fiscalYear);
+    `, [companyId, fiscalYear]);
+    const prior = priorRes.rows[0];
 
     let revenueChange = 'initiated';
     let epsChange = 'initiated';
@@ -359,20 +402,7 @@ class TranscriptService {
       }
     }
 
-    const stmt = this.db.prepare(`
-      INSERT INTO management_guidance (
-        company_id, symbol, guidance_date, fiscal_year, fiscal_quarter,
-        revenue_low, revenue_high, revenue_mid,
-        revenue_prior_low, revenue_prior_high, revenue_change,
-        eps_low, eps_high, eps_mid,
-        eps_prior_low, eps_prior_high, eps_change,
-        gross_margin_guidance, operating_margin_guidance,
-        tone, key_drivers, headwinds, tailwinds,
-        source
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    return stmt.run(
+    const params = [
       companyId, symbol, guidanceDate, fiscalYear, fiscalQuarter,
       revenueLow, revenueHigh, revenueMid,
       prior?.revenue_low, prior?.revenue_high, revenueChange,
@@ -382,53 +412,67 @@ class TranscriptService {
       tone, JSON.stringify(keyDrivers || []),
       JSON.stringify(headwinds || []), JSON.stringify(tailwinds || []),
       source
-    );
+    ];
+
+    return await this.db.query(`
+      INSERT INTO management_guidance (
+        company_id, symbol, guidance_date, fiscal_year, fiscal_quarter,
+        revenue_low, revenue_high, revenue_mid,
+        revenue_prior_low, revenue_prior_high, revenue_change,
+        eps_low, eps_high, eps_mid,
+        eps_prior_low, eps_prior_high, eps_change,
+        gross_margin_guidance, operating_margin_guidance,
+        tone, key_drivers, headwinds, tailwinds,
+        source
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+    `, params);
   }
 
   /**
    * Get guidance history
    */
-  getGuidanceHistory(symbol, limit = 8) {
-    return this.db.prepare(`
+  async getGuidanceHistory(symbol, limit = 8) {
+    const res = await this.db.query(`
       SELECT * FROM management_guidance
-      WHERE symbol = ?
+      WHERE symbol = $1
       ORDER BY guidance_date DESC
-      LIMIT ?
-    `).all(symbol, limit);
+      LIMIT $2
+    `, [symbol, limit]);
+    return res.rows;
   }
 
   /**
    * Update management track record
    */
-  updateTrackRecord(companyId, symbol) {
-    // Calculate guidance accuracy
-    const guidanceStats = this.db.prepare(`
+  async updateTrackRecord(companyId, symbol) {
+    const guidanceRes = await this.db.query(`
       SELECT
         COUNT(*) as total,
         SUM(CASE WHEN beat_prior_guidance = 1 THEN 1 ELSE 0 END) as beats,
         SUM(CASE WHEN beat_prior_guidance = 0 THEN 1 ELSE 0 END) as misses
       FROM management_guidance
-      WHERE company_id = ?
-    `).get(companyId);
+      WHERE company_id = $1
+    `, [companyId]);
+    const guidanceStats = guidanceRes.rows[0];
 
-    // Calculate earnings beat rate from analyst estimates
-    const earningsStats = this.db.prepare(`
+    const earningsRes = await this.db.query(`
       SELECT
         COUNT(*) as total,
         SUM(CASE WHEN actual_eps > estimated_eps THEN 1 ELSE 0 END) as beats,
         SUM(CASE WHEN actual_eps < estimated_eps THEN 1 ELSE 0 END) as misses
       FROM analyst_estimates
-      WHERE company_id = ? AND actual_eps IS NOT NULL
-    `).get(companyId);
+      WHERE company_id = $1 AND actual_eps IS NOT NULL
+    `, [companyId]);
+    const earningsStats = earningsRes.rows[0];
 
-    // Calculate transparency/consistency from transcripts
-    const sentimentStats = this.db.prepare(`
+    const sentimentRes = await this.db.query(`
       SELECT
         AVG(confidence_score) as avg_confidence,
         STDEV(sentiment_score) as sentiment_volatility
       FROM earnings_transcripts
-      WHERE company_id = ?
-    `).get(companyId);
+      WHERE company_id = $1
+    `, [companyId]);
+    const sentimentStats = sentimentRes.rows[0];
 
     const guidanceAccuracy = guidanceStats?.total > 0
       ? guidanceStats.beats / guidanceStats.total
@@ -455,13 +499,20 @@ class TranscriptService {
       credibilityScore = (components.reduce((a, b) => a + b, 0) / components.length) * 100;
     }
 
-    const stmt = this.db.prepare(`
+    const params = [
+      companyId, symbol,
+      guidanceStats?.total || 0, guidanceStats?.beats || 0, guidanceStats?.misses || 0, guidanceAccuracy,
+      earningsStats?.beats || 0, earningsStats?.misses || 0, earningsBeatRate,
+      transparencyScore, consistencyScore, credibilityScore
+    ];
+
+    return await this.db.query(`
       INSERT INTO management_track_record (
         company_id, symbol,
         total_guidance_given, guidance_beats, guidance_misses, guidance_accuracy_rate,
         earnings_beats, earnings_misses, earnings_beat_rate,
         transparency_score, consistency_score, credibility_score
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       ON CONFLICT(company_id) DO UPDATE SET
         total_guidance_given = excluded.total_guidance_given,
         guidance_beats = excluded.guidance_beats,
@@ -474,21 +525,14 @@ class TranscriptService {
         consistency_score = excluded.consistency_score,
         credibility_score = excluded.credibility_score,
         last_updated = CURRENT_TIMESTAMP
-    `);
-
-    return stmt.run(
-      companyId, symbol,
-      guidanceStats?.total || 0, guidanceStats?.beats || 0, guidanceStats?.misses || 0, guidanceAccuracy,
-      earningsStats?.beats || 0, earningsStats?.misses || 0, earningsBeatRate,
-      transparencyScore, consistencyScore, credibilityScore
-    );
+    `, params);
   }
 
   /**
    * Get most credible management teams
    */
-  getTopCredibleManagement(limit = 20) {
-    return this.db.prepare(`
+  async getTopCredibleManagement(limit = 20) {
+    const res = await this.db.query(`
       SELECT
         mtr.symbol, c.name, c.sector,
         mtr.guidance_accuracy_rate,
@@ -499,8 +543,9 @@ class TranscriptService {
       JOIN companies c ON mtr.company_id = c.id
       WHERE mtr.credibility_score IS NOT NULL
       ORDER BY mtr.credibility_score DESC
-      LIMIT ?
-    `).all(limit);
+      LIMIT $1
+    `, [limit]);
+    return res.rows;
   }
 }
 

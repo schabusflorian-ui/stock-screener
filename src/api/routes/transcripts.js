@@ -217,11 +217,11 @@ router.get('/:symbol/guidance', async (req, res) => {
  * GET /api/transcripts/credibility/top
  * Get most credible management teams
  */
-router.get('/credibility/top', (req, res) => {
+router.get('/credibility/top', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 20;
-    const service = getTranscriptService();
-    const teams = service.getTopCredibleManagement(limit);
+    const service = await getTranscriptService();
+    const teams = await service.getTopCredibleManagement(limit);
 
     res.json({
       count: teams.length,
@@ -241,11 +241,11 @@ router.get('/credibility/top', (req, res) => {
  * GET /api/transcripts/valuation/:symbol
  * Get valuation context for a symbol
  */
-router.get('/valuation/:symbol', (req, res) => {
+router.get('/valuation/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
-    const service = getValuationService();
-    const context = service.getValuationContext(symbol.toUpperCase());
+    const service = await getValuationService();
+    const context = await service.getValuationContext(symbol.toUpperCase());
 
     if (!context.ranges) {
       return res.status(404).json({
@@ -265,11 +265,11 @@ router.get('/valuation/:symbol', (req, res) => {
  * GET /api/transcripts/valuation/:symbol/ranges
  * Get valuation ranges for a symbol
  */
-router.get('/valuation/:symbol/ranges', (req, res) => {
+router.get('/valuation/:symbol/ranges', async (req, res) => {
   try {
     const { symbol } = req.params;
-    const service = getValuationService();
-    const ranges = service.getRanges(symbol.toUpperCase());
+    const service = await getValuationService();
+    const ranges = await service.getRanges(symbol.toUpperCase());
 
     if (!ranges) {
       return res.status(404).json({ error: 'No valuation ranges found for symbol' });
@@ -286,11 +286,11 @@ router.get('/valuation/:symbol/ranges', (req, res) => {
  * GET /api/transcripts/screens/undervalued
  * Find historically undervalued stocks
  */
-router.get('/screens/undervalued', (req, res) => {
+router.get('/screens/undervalued', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 30;
-    const service = getValuationService();
-    const stocks = service.findHistoricallyUndervalued(limit);
+    const service = await getValuationService();
+    const stocks = await service.findHistoricallyUndervalued(limit);
 
     res.json({
       screen: 'historically_undervalued',
@@ -307,11 +307,11 @@ router.get('/screens/undervalued', (req, res) => {
  * GET /api/transcripts/screens/garp
  * Find quality at reasonable price stocks
  */
-router.get('/screens/garp', (req, res) => {
+router.get('/screens/garp', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 30;
-    const service = getValuationService();
-    const stocks = service.findQualityAtReasonablePrice(limit);
+    const service = await getValuationService();
+    const stocks = await service.findQualityAtReasonablePrice(limit);
 
     res.json({
       screen: 'quality_at_reasonable_price',
@@ -328,11 +328,11 @@ router.get('/screens/garp', (req, res) => {
  * GET /api/transcripts/screens/overvalued
  * Find historically overvalued stocks
  */
-router.get('/screens/overvalued', (req, res) => {
+router.get('/screens/overvalued', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 30;
-    const service = getValuationService();
-    const stocks = service.findHistoricallyOvervalued(limit);
+    const service = await getValuationService();
+    const stocks = await service.findHistoricallyOvervalued(limit);
 
     res.json({
       screen: 'historically_overvalued',
@@ -349,11 +349,11 @@ router.get('/screens/overvalued', (req, res) => {
  * POST /api/transcripts/valuation/snapshot
  * Create valuation snapshots for all companies
  */
-router.post('/valuation/snapshot', (req, res) => {
+router.post('/valuation/snapshot', async (req, res) => {
   try {
     const { date } = req.body;
-    const service = getValuationService();
-    const result = service.createAllSnapshots(date);
+    const service = await getValuationService();
+    const result = await service.createAllSnapshots(date);
 
     res.json({
       message: 'Valuation snapshots created',
@@ -369,10 +369,10 @@ router.post('/valuation/snapshot', (req, res) => {
  * POST /api/transcripts/valuation/calculate-ranges
  * Calculate valuation ranges for all companies
  */
-router.post('/valuation/calculate-ranges', (req, res) => {
+router.post('/valuation/calculate-ranges', async (req, res) => {
   try {
-    const service = getValuationService();
-    const result = service.calculateAllRanges();
+    const service = await getValuationService();
+    const result = await service.calculateAllRanges();
 
     res.json({
       message: 'Valuation ranges calculated',

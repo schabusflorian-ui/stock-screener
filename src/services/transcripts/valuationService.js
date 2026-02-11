@@ -5,17 +5,57 @@
  * when stocks are cheap or expensive relative to their own history.
  */
 
-const db = require('../../database');
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 
 class ValuationService {
   constructor(dbInstance = null) {
-    this.db = dbInstance || db.getDatabase();
+    this.db = dbInstance;
+    this.dbPromise = null;
+    this.normalizedDb = null;
+    if (this.db) {
+      this.normalizedDb = this._normalizeDb(this.db);
+    }
+  }
+
+  async _getDatabase() {
+    if (this.normalizedDb) return this.normalizedDb;
+    if (this.db) {
+      this.normalizedDb = this._normalizeDb(this.db);
+      return this.normalizedDb;
+    }
+    if (!this.dbPromise) {
+      this.dbPromise = getDatabaseAsync();
+    }
+    return this.dbPromise;
+  }
+
+  _normalizeDb(database) {
+    if (database?.query) return database;
+    if (!database?.prepare) {
+      throw new Error('Unsupported database instance for ValuationService');
+    }
+
+    return {
+      query: async (sql, params = []) => {
+        const normalizedSql = sql.replace(/\$\d+/g, '?');
+        const normalizedParams = params.map((param) => {
+          if (typeof param === 'boolean') return param ? 1 : 0;
+          return param;
+        });
+        const stmt = database.prepare(normalizedSql);
+        if (/^\s*select\b/i.test(normalizedSql)) {
+          return { rows: stmt.all(normalizedParams) };
+        }
+        const info = stmt.run(normalizedParams);
+        return { rows: [], lastInsertRowid: info.lastInsertRowid, changes: info.changes };
+      },
+    };
   }
 
   /**
    * Store a valuation snapshot for a company
    */
-  storeSnapshot(data) {
+  async storeSnapshot(data) {
     const {
       companyId,
       symbol,
@@ -39,14 +79,23 @@ class ValuationService {
       revenueGrowthYoy
     } = data;
 
-    const stmt = this.db.prepare(`
+    const params = [
+      companyId, symbol, snapshotDate,
+      price, marketCap, enterpriseValue,
+      peRatio, peForward, pbRatio, psRatio,
+      evEbitda, evSales, fcfYield, earningsYield, dividendYield,
+      pegRatio, roic, roe, operatingMargin, revenueGrowthYoy
+    ];
+
+    const database = await this._getDatabase();
+    return database.query(`
       INSERT INTO valuation_history (
         company_id, symbol, snapshot_date,
         price, market_cap, enterprise_value,
         pe_ratio, pe_forward, pb_ratio, ps_ratio,
         ev_ebitda, ev_sales, fcf_yield, earnings_yield, dividend_yield,
         peg_ratio, roic, roe, operating_margin, revenue_growth_yoy
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
       ON CONFLICT(company_id, snapshot_date) DO UPDATE SET
         price = excluded.price,
         market_cap = excluded.market_cap,
@@ -65,25 +114,17 @@ class ValuationService {
         roe = excluded.roe,
         operating_margin = excluded.operating_margin,
         revenue_growth_yoy = excluded.revenue_growth_yoy
-    `);
-
-    return stmt.run(
-      companyId, symbol, snapshotDate,
-      price, marketCap, enterpriseValue,
-      peRatio, peForward, pbRatio, psRatio,
-      evEbitda, evSales, fcfYield, earningsYield, dividendYield,
-      pegRatio, roic, roe, operatingMargin, revenueGrowthYoy
-    );
+    `, params);
   }
 
   /**
    * Create valuation snapshot from current calculated_metrics
    */
-  createSnapshotFromMetrics(symbol, snapshotDate = null) {
+  async createSnapshotFromMetrics(symbol, snapshotDate = null) {
     const date = snapshotDate || new Date().toISOString().split('T')[0];
 
-    // Get current metrics
-    const metrics = this.db.prepare(`
+    const database = await this._getDatabase();
+    const metricsRes = await database.query(`
       SELECT
         c.id as company_id, c.symbol,
         cm.pe_ratio, cm.forward_pe as pe_forward, cm.pb_ratio, cm.ps_ratio,
@@ -94,21 +135,22 @@ class ValuationService {
         cm.market_cap, cm.enterprise_value
       FROM companies c
       JOIN calculated_metrics cm ON c.id = cm.company_id
-      WHERE c.symbol = ?
-    `).get(symbol);
+      WHERE c.symbol = $1
+    `, [symbol]);
+    const metrics = metricsRes.rows[0];
 
     if (!metrics) {
       return null;
     }
 
-    // Get current price
-    const priceData = this.db.prepare(`
+    const priceRes = await database.query(`
       SELECT close as price
       FROM daily_prices
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY price_date DESC
       LIMIT 1
-    `).get(metrics.company_id);
+    `, [metrics.company_id]);
+    const priceData = priceRes.rows[0];
 
     return this.storeSnapshot({
       companyId: metrics.company_id,
@@ -137,11 +179,10 @@ class ValuationService {
   /**
    * Calculate valuation ranges and percentiles for a company
    */
-  calculateRanges(companyId, symbol) {
-    // Get historical data
-    const history1y = this.getHistory(companyId, 365);
-    const history3y = this.getHistory(companyId, 365 * 3);
-    const history5y = this.getHistory(companyId, 365 * 5);
+  async calculateRanges(companyId, symbol) {
+    const history1y = await this.getHistory(companyId, 365);
+    const history3y = await this.getHistory(companyId, 365 * 3);
+    const history5y = await this.getHistory(companyId, 365 * 5);
 
     // Calculate ranges
     const pe1y = this.calculateStats(history1y.map(h => h.pe_ratio).filter(v => v !== null && v > 0 && v < 200));
@@ -153,12 +194,14 @@ class ValuationService {
     const fcfYield5y = this.calculateStats(history5y.map(h => h.fcf_yield).filter(v => v !== null));
 
     // Get current values
-    const current = this.db.prepare(`
+    const database = await this._getDatabase();
+    const currentRes = await database.query(`
       SELECT pe_ratio, pb_ratio, ev_to_ebitda, fcf_yield
       FROM calculated_metrics cm
       JOIN companies c ON cm.company_id = c.id
-      WHERE c.symbol = ?
-    `).get(symbol);
+      WHERE c.symbol = $1
+    `, [symbol]);
+    const current = currentRes.rows[0];
 
     // Calculate current percentiles
     const currentPePercentile = current?.pe_ratio
@@ -187,7 +230,7 @@ class ValuationService {
     }
 
     // Store the ranges
-    const stmt = this.db.prepare(`
+    return database.query(`
       INSERT INTO valuation_ranges (
         company_id, symbol,
         pe_min_1y, pe_max_1y, pe_avg_1y, pe_median_1y,
@@ -200,7 +243,7 @@ class ValuationService {
         current_pb, current_pb_percentile,
         current_fcf_yield, current_fcf_yield_percentile,
         valuation_signal, signal_confidence
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
       ON CONFLICT(company_id) DO UPDATE SET
         pe_min_1y = excluded.pe_min_1y, pe_max_1y = excluded.pe_max_1y,
         pe_avg_1y = excluded.pe_avg_1y, pe_median_1y = excluded.pe_median_1y,
@@ -219,9 +262,7 @@ class ValuationService {
         current_fcf_yield = excluded.current_fcf_yield, current_fcf_yield_percentile = excluded.current_fcf_yield_percentile,
         valuation_signal = excluded.valuation_signal, signal_confidence = excluded.signal_confidence,
         calculated_at = CURRENT_TIMESTAMP
-    `);
-
-    return stmt.run(
+    `, [
       companyId, symbol,
       pe1y.min, pe1y.max, pe1y.avg, pe1y.median,
       pe3y.min, pe3y.max, pe3y.avg, pe3y.median,
@@ -233,19 +274,24 @@ class ValuationService {
       current?.pb_ratio, currentPbPercentile,
       current?.fcf_yield, currentFcfYieldPercentile,
       signal, confidence
-    );
+    ]);
   }
 
   /**
    * Get valuation history
    */
-  getHistory(companyId, days = 365 * 5) {
-    return this.db.prepare(`
+  async getHistory(companyId, days = 365 * 5) {
+    const database = await this._getDatabase();
+    const dateFilter = isUsingPostgres()
+      ? 'snapshot_date >= CURRENT_DATE - ($2 * INTERVAL \'1 day\')'
+      : "snapshot_date >= date('now', '-' || $2 || ' days')";
+    const result = await database.query(`
       SELECT * FROM valuation_history
-      WHERE company_id = ?
-        AND snapshot_date >= date('now', '-' || ? || ' days')
+      WHERE company_id = $1
+        AND ${dateFilter}
       ORDER BY snapshot_date ASC
-    `).all(companyId, days);
+    `, [companyId, days]);
+    return result.rows;
   }
 
   /**
@@ -290,20 +336,23 @@ class ValuationService {
   /**
    * Get valuation ranges for a symbol
    */
-  getRanges(symbol) {
-    return this.db.prepare(`
+  async getRanges(symbol) {
+    const database = await this._getDatabase();
+    const res = await database.query(`
       SELECT vr.*, c.name, c.sector
       FROM valuation_ranges vr
       JOIN companies c ON vr.company_id = c.id
-      WHERE vr.symbol = ?
-    `).get(symbol);
+      WHERE vr.symbol = $1
+    `, [symbol]);
+    return res.rows[0];
   }
 
   /**
    * Find stocks trading at historical lows
    */
-  findHistoricallyUndervalued(limit = 30) {
-    return this.db.prepare(`
+  async findHistoricallyUndervalued(limit = 30) {
+    const database = await this._getDatabase();
+    const res = await database.query(`
       SELECT
         vr.symbol, c.name, c.sector,
         vr.current_pe, vr.pe_avg_5y, vr.current_pe_percentile,
@@ -318,15 +367,17 @@ class ValuationService {
         AND vr.current_pe_percentile < 30
         AND cm.roic > 0.10
       ORDER BY vr.current_pe_percentile ASC
-      LIMIT ?
-    `).all(limit);
+      LIMIT $1
+    `, [limit]);
+    return res.rows;
   }
 
   /**
    * Find quality stocks at fair prices (GARP)
    */
-  findQualityAtReasonablePrice(limit = 30) {
-    return this.db.prepare(`
+  async findQualityAtReasonablePrice(limit = 30) {
+    const database = await this._getDatabase();
+    const res = await database.query(`
       SELECT
         vr.symbol, c.name, c.sector,
         vr.current_pe, vr.pe_median_5y, vr.current_pe_percentile,
@@ -339,15 +390,17 @@ class ValuationService {
         AND cm.roic > 0.15
         AND cm.revenue_growth_yoy > 0.05
       ORDER BY cm.roic DESC
-      LIMIT ?
-    `).all(limit);
+      LIMIT $1
+    `, [limit]);
+    return res.rows;
   }
 
   /**
    * Find stocks trading at historical highs (potential sells)
    */
-  findHistoricallyOvervalued(limit = 30) {
-    return this.db.prepare(`
+  async findHistoricallyOvervalued(limit = 30) {
+    const database = await this._getDatabase();
+    const res = await database.query(`
       SELECT
         vr.symbol, c.name, c.sector,
         vr.current_pe, vr.pe_avg_5y, vr.current_pe_percentile,
@@ -358,27 +411,30 @@ class ValuationService {
       WHERE vr.valuation_signal IN ('expensive', 'very_expensive')
         AND vr.current_pe_percentile > 80
       ORDER BY vr.current_pe_percentile DESC
-      LIMIT ?
-    `).all(limit);
+      LIMIT $1
+    `, [limit]);
+    return res.rows;
   }
 
   /**
    * Batch process: Create snapshots for all companies with metrics
    */
-  createAllSnapshots(date = null) {
+  async createAllSnapshots(date = null) {
     const snapshotDate = date || new Date().toISOString().split('T')[0];
 
-    const companies = this.db.prepare(`
+    const database = await this._getDatabase();
+    const companiesRes = await database.query(`
       SELECT c.symbol
       FROM companies c
       JOIN calculated_metrics cm ON c.id = cm.company_id
       WHERE cm.pe_ratio IS NOT NULL
-    `).all();
+    `);
+    const companies = companiesRes.rows;
 
     let created = 0;
     for (const company of companies) {
       try {
-        this.createSnapshotFromMetrics(company.symbol, snapshotDate);
+        await this.createSnapshotFromMetrics(company.symbol, snapshotDate);
         created++;
       } catch (err) {
         console.error(`Failed to create snapshot for ${company.symbol}:`, err.message);
@@ -391,18 +447,20 @@ class ValuationService {
   /**
    * Batch process: Calculate ranges for all companies
    */
-  calculateAllRanges() {
-    const companies = this.db.prepare(`
+  async calculateAllRanges() {
+    const database = await this._getDatabase();
+    const companiesRes = await database.query(`
       SELECT DISTINCT company_id, symbol
       FROM valuation_history
       GROUP BY company_id
       HAVING COUNT(*) >= 20
-    `).all();
+    `);
+    const companies = companiesRes.rows;
 
     let processed = 0;
     for (const company of companies) {
       try {
-        this.calculateRanges(company.company_id, company.symbol);
+        await this.calculateRanges(company.company_id, company.symbol);
         processed++;
       } catch (err) {
         console.error(`Failed to calculate ranges for ${company.symbol}:`, err.message);
@@ -415,12 +473,12 @@ class ValuationService {
   /**
    * Get valuation context for a symbol
    */
-  getValuationContext(symbol) {
-    const ranges = this.getRanges(symbol);
-    const history = this.getHistory(
-      ranges?.company_id,
-      365 * 5
-    ).map(h => ({
+  async getValuationContext(symbol) {
+    const ranges = await this.getRanges(symbol);
+    const historyRows = ranges
+      ? await this.getHistory(ranges.company_id, 365 * 5)
+      : [];
+    const history = historyRows.map(h => ({
       date: h.snapshot_date,
       pe: h.pe_ratio,
       pb: h.pb_ratio,
