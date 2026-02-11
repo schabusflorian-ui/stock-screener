@@ -2,7 +2,7 @@
 // Advanced Portfolio Analytics - Correlation, Factors, Diversification (Agent 2)
 // Enhanced with Taleb/Spitznagel risk philosophy: tail dependence, crisis correlation, antifragility
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 const TRADING_DAYS_PER_YEAR = 252;
 

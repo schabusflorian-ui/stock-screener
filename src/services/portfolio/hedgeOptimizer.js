@@ -2,7 +2,7 @@
 // Hedge optimization service for tail risk protection
 // Suggests protective hedges during high-risk market regimes
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 class HedgeOptimizer {
   constructor() {

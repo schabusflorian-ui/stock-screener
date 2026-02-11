@@ -1,7 +1,7 @@
 // src/services/factors/factorSignalGenerator.js
 // Factor Signal Generator - Generates actionable buy/sell signals from factor analysis
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * FactorSignalGenerator

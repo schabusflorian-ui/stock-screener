@@ -2,6 +2,8 @@
 // Moat Scoring System - Buffett-inspired competitive advantage assessment
 // Quantifies durable competitive advantages to identify quality businesses
 
+const { isUsingPostgres } = require('../../lib/db');
+
 /**
  * MoatScorer - Quantitative competitive moat assessment
  *
@@ -17,16 +19,17 @@
  */
 class MoatScorer {
   /**
-   * @param {Database} db - better-sqlite3 database instance
+   * @param {Database} db - lib/db wrapper (from getDatabaseAsync) or raw SQLite
    */
   constructor(db) {
     this.db = db;
     this._initializeTables();
-    this._prepareStatements();
     console.log('🏰 MoatScorer initialized');
   }
 
   _initializeTables() {
+    if (isUsingPostgres()) return; // Schema managed via migrations
+    if (typeof this.db.exec !== 'function') return; // lib/db wrapper may not have exec
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS moat_scores (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,73 +65,37 @@ class MoatScorer {
     `);
   }
 
-  _prepareStatements() {
-    this.stmtGetCompany = this.db.prepare(`
-      SELECT id, symbol, name, sector, market_cap
-      FROM companies WHERE id = ?
-    `);
-
-    this.stmtGetCompanyBySymbol = this.db.prepare(`
-      SELECT id, symbol, name, sector, market_cap
-      FROM companies WHERE LOWER(symbol) = LOWER(?)
-    `);
-
-    this.stmtGetMetricsHistory = this.db.prepare(`
-      SELECT *
-      FROM calculated_metrics
-      WHERE company_id = ?
-      ORDER BY fiscal_period DESC
-      LIMIT 20
-    `);
-
-    this.stmtGetSectorMetrics = this.db.prepare(`
-      SELECT AVG(gross_margin) as avg_gross_margin,
-             AVG(roe) as avg_roe,
-             AVG(revenue_growth_yoy) as avg_revenue_growth
-      FROM calculated_metrics cm
-      JOIN companies c ON c.id = cm.company_id
-      WHERE c.sector = ?
-        AND cm.gross_margin IS NOT NULL
-    `);
-
-    this.stmtStoreMoatScore = this.db.prepare(`
-      INSERT OR REPLACE INTO moat_scores (
-        company_id, symbol, score_date, total_score,
-        margin_stability_score, margin_level_score, roic_consistency_score,
-        market_share_score, customer_concentration_score, rd_efficiency_score,
-        switching_cost_score, scale_advantage_score,
-        moat_type, moat_strength, primary_moat, threat_level
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    this.stmtGetMoatScore = this.db.prepare(`
-      SELECT * FROM moat_scores
-      WHERE company_id = ?
-      ORDER BY score_date DESC
-      LIMIT 1
-    `);
-
-    this.stmtStoreThreat = this.db.prepare(`
-      INSERT INTO moat_threats (company_id, threat_date, threat_type, severity, evidence)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-  }
-
   /**
    * Calculate comprehensive moat score (0-100)
    * @param {number} companyId - Company ID
    * @returns {Object} Moat score breakdown
    */
-  calculateMoatScore(companyId) {
-    const company = this.stmtGetCompany.get(companyId);
+  async calculateMoatScore(companyId) {
+    const companyResult = await this.db.query(
+      'SELECT id, symbol, name, sector, market_cap FROM companies WHERE id = $1',
+      [companyId]
+    );
+    const company = companyResult.rows?.[0];
     if (!company) return { error: 'Company not found' };
 
-    const metrics = this.stmtGetMetricsHistory.all(companyId);
+    const metricsResult = await this.db.query(
+      'SELECT * FROM calculated_metrics WHERE company_id = $1 ORDER BY fiscal_period DESC LIMIT 20',
+      [companyId]
+    );
+    const metrics = metricsResult.rows || [];
     if (metrics.length < 2) {
       return { error: 'Insufficient metrics history' };
     }
 
-    const sectorMetrics = this.stmtGetSectorMetrics.get(company.sector);
+    const sectorResult = await this.db.query(
+      `SELECT AVG(gross_margin) as avg_gross_margin, AVG(roe) as avg_roe,
+              AVG(revenue_growth_yoy) as avg_revenue_growth
+       FROM calculated_metrics cm
+       JOIN companies c ON c.id = cm.company_id
+       WHERE c.sector = $1 AND cm.gross_margin IS NOT NULL`,
+      [company.sector]
+    );
+    const sectorMetrics = sectorResult.rows?.[0];
 
     // Calculate individual scores
     const scores = {
@@ -187,13 +154,41 @@ class MoatScorer {
 
     // Store result
     const date = new Date().toISOString().split('T')[0];
-    this.stmtStoreMoatScore.run(
+    const storeParams = [
       companyId, company.symbol, date, result.totalScore,
       scores.marginStability, scores.marginLevel, scores.roicConsistency,
       scores.marketShare, scores.customerConcentration, scores.rdEfficiency,
       scores.switchingCost, scores.scaleAdvantage,
       result.moatStrength, result.moatStrength, primaryMoat, threats.level
-    );
+    ];
+    const storeSql = isUsingPostgres()
+      ? `INSERT INTO moat_scores (
+           company_id, symbol, score_date, total_score,
+           margin_stability_score, margin_level_score, roic_consistency_score,
+           market_share_score, customer_concentration_score, rd_efficiency_score,
+           switching_cost_score, scale_advantage_score,
+           moat_type, moat_strength, primary_moat, threat_level
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+         ON CONFLICT (company_id, score_date) DO UPDATE SET
+           symbol = EXCLUDED.symbol, total_score = EXCLUDED.total_score,
+           margin_stability_score = EXCLUDED.margin_stability_score,
+           margin_level_score = EXCLUDED.margin_level_score,
+           roic_consistency_score = EXCLUDED.roic_consistency_score,
+           market_share_score = EXCLUDED.market_share_score,
+           customer_concentration_score = EXCLUDED.customer_concentration_score,
+           rd_efficiency_score = EXCLUDED.rd_efficiency_score,
+           switching_cost_score = EXCLUDED.switching_cost_score,
+           scale_advantage_score = EXCLUDED.scale_advantage_score,
+           moat_type = EXCLUDED.moat_type, moat_strength = EXCLUDED.moat_strength,
+           primary_moat = EXCLUDED.primary_moat, threat_level = EXCLUDED.threat_level`
+      : `INSERT OR REPLACE INTO moat_scores (
+           company_id, symbol, score_date, total_score,
+           margin_stability_score, margin_level_score, roic_consistency_score,
+           market_share_score, customer_concentration_score, rd_efficiency_score,
+           switching_cost_score, scale_advantage_score,
+           moat_type, moat_strength, primary_moat, threat_level
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`;
+    await this.db.query(storeSql, storeParams);
 
     return result;
   }
@@ -450,11 +445,15 @@ class MoatScorer {
    * @param {number} baseMultiple - Base valuation multiple (e.g., P/E)
    * @returns {Object} Adjusted multiple
    */
-  getMoatAdjustedValuation(companyId, baseMultiple) {
-    let moatScore = this.stmtGetMoatScore.get(companyId);
+  async getMoatAdjustedValuation(companyId, baseMultiple) {
+    const scoreResult = await this.db.query(
+      'SELECT * FROM moat_scores WHERE company_id = $1 ORDER BY score_date DESC LIMIT 1',
+      [companyId]
+    );
+    let moatScore = scoreResult.rows?.[0];
 
     if (!moatScore) {
-      moatScore = this.calculateMoatScore(companyId);
+      moatScore = await this.calculateMoatScore(companyId);
     }
 
     if (moatScore.error) {
@@ -489,13 +488,21 @@ class MoatScorer {
    * @param {string} symbol - Stock symbol
    * @returns {Object} Moat score
    */
-  getMoatScoreBySymbol(symbol) {
-    const company = this.stmtGetCompanyBySymbol.get(symbol);
+  async getMoatScoreBySymbol(symbol) {
+    const companyResult = await this.db.query(
+      'SELECT id, symbol, name, sector, market_cap FROM companies WHERE LOWER(symbol) = LOWER($1)',
+      [symbol]
+    );
+    const company = companyResult.rows?.[0];
     if (!company) return { error: 'Company not found' };
 
-    let score = this.stmtGetMoatScore.get(company.id);
+    const scoreResult = await this.db.query(
+      'SELECT * FROM moat_scores WHERE company_id = $1 ORDER BY score_date DESC LIMIT 1',
+      [company.id]
+    );
+    let score = scoreResult.rows?.[0];
     if (!score) {
-      score = this.calculateMoatScore(company.id);
+      score = await this.calculateMoatScore(company.id);
     }
     return score;
   }

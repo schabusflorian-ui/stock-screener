@@ -2,7 +2,7 @@
 // Calculates factor scores for individual stocks
 
 const crypto = require('crypto');
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * FactorCalculator

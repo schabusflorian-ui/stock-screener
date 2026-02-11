@@ -3,7 +3,7 @@
 // Enhanced with Taleb/Spitznagel safety: Kelly caps, ruin awareness, convexity
 // Integrated with parametric return distributions for fat-tail awareness
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const ParametricDistributions = require('../statistics/parametricDistributions');
 const MatrixOps = require('../../utils/matrixOps');
 

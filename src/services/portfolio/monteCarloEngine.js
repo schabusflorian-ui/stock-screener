@@ -2,7 +2,7 @@
 // Monte Carlo Simulation Engine (Agent 2)
 // Enhanced with Parametric Distribution Support
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { ParametricDistributions } = require('../statistics');
 
 const TRADING_DAYS_PER_YEAR = 252;

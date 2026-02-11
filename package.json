@@ -26,6 +26,8 @@
     "test:postgresql:screening": "node tests/postgresql/services/test-screening.js",
     "lint": "eslint src/ --ext .js",
     "lint:fix": "eslint src/ --ext .js --fix",
+    "check:sync-db": "bash scripts/check-sync-db-usage.sh",
+    "check:sync-db:warn": "bash scripts/check-sync-db-usage.sh --warn",
     "db:migrate": "node src/lib/migrationRunner.js run",
     "db:migrate:status": "node src/lib/migrationRunner.js status",
     "db:migrate:postgres": "node src/database-migrations/run-postgres-migrations.js",

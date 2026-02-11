@@ -1,7 +1,7 @@
 // src/services/portfolio/holdingsEngine.js
 // Holdings engine for managing portfolio positions, lots, and trades
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { TRANSACTION_TYPES, LOT_METHODS } = require('../../constants/portfolio');
 
 class HoldingsEngine {
