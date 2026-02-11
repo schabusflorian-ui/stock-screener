@@ -138,10 +138,14 @@ const requireAuth = (req, res, next) => {
 };
 
 /**
- * Optional auth - attaches user if present but doesn't require it
+ * Optional auth - attaches user if present but doesn't require it.
+ * When X-Admin-Bypass is present (and allowed), sets req.user so downstream subscription/usage checks see an admin.
  */
 const optionalAuth = (req, res, next) => {
-  // User already attached by passport if authenticated
+  if (hasLocalAdminBypass(req)) {
+    req.user = req.user || { id: 'admin', email: 'admin@local', is_admin: true };
+    req.isAdmin = true;
+  }
   next();
 };
 

@@ -256,7 +256,8 @@ app.use(cors({
     console.warn('[CORS] Rejected origin:', origin, 'Allowed:', allowedOrigins);
     return callback(null, false);
   },
-  credentials: true
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Admin-Bypass', 'X-Requested-With', 'Accept']
 }));
 
 // Request logging - JSON format in production for log aggregation

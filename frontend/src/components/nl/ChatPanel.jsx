@@ -20,6 +20,7 @@ import {
 } from '../icons';
 import { useNLQuery } from '../../context/NLQueryContext';
 import { useSubscription } from '../../context/SubscriptionContext';
+import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import ChatBubble from './ChatBubble';
 import TypingIndicator from './TypingIndicator';
@@ -150,6 +151,7 @@ function ChatPanel() {
   } = useNLQuery();
 
   const { getUsageStatus, incrementUsage, promptUpgrade } = useSubscription();
+  const { isAdmin } = useAuth();
   const aiQueryUsage = getUsageStatus('ai_queries_monthly');
 
   const [inputValue, setInputValue] = useState('');
@@ -265,10 +267,12 @@ function ChatPanel() {
 
     try {
       // Use streaming endpoint
+      const headers = { 'Content-Type': 'application/json' };
+      if (isAdmin) headers['X-Admin-Bypass'] = 'true';
       const response = await fetch(`${API_BASE}/api/nl/query/stream`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           query,
           context: effectiveContext,
