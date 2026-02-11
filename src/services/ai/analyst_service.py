@@ -16,20 +16,11 @@ from typing import Dict, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 
-# Support both package import (relative) and standalone run from ai/ (e.g. Node spawn -c "from analyst_service import ...")
-try:
-    from .analysts import get_analyst, list_analysts, AnalystPersona
-except ImportError:
-    from analysts import get_analyst, list_analysts, AnalystPersona
-
-try:
-    from .llm.router import ModelRouter
-    from .llm.base import Message, LLMResponse
-    from .tasks.data_formatter import DataFormatter
-except ImportError:
-    from llm.router import ModelRouter
-    from llm.base import Message, LLMResponse
-    from tasks.data_formatter import DataFormatter
+# Package imports (used when run via cli_runner with cwd=project root: from src.services.ai.analyst_service)
+from .analysts import get_analyst, list_analysts, AnalystPersona
+from .llm.router import ModelRouter
+from .llm.base import Message, LLMResponse
+from .tasks.data_formatter import DataFormatter
 
 # Advanced RAG imports (optional - gracefully degrade if not available)
 try:

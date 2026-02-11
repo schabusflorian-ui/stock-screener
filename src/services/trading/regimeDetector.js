@@ -12,6 +12,8 @@
  * - CRISIS: VIX > 30, extreme conditions
  */
 
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
+
 const REGIMES = {
   BULL: 'BULL',
   BEAR: 'BEAR',
@@ -30,10 +32,8 @@ const REGIME_DESCRIPTIONS = {
 };
 
 class RegimeDetector {
-  constructor(db) {
-    this.db = db.getDatabase ? db.getDatabase() : db;
-
-    // Cache settings
+  constructor(_db) {
+    // _db kept for backwards compatibility (ignored when using getDatabaseAsync)
     this.cache = new Map();
     this.cacheTTL = 15 * 60 * 1000; // 15 minutes
   }
@@ -104,12 +104,10 @@ class RegimeDetector {
 
   /**
    * Classify market regime based on indicators
-   * Enhanced with additional indicators when available
    */
   classify({ currentPrice, sma20, sma50, sma200, volatility, breadth, vix, putCallRatio, creditSpread }) {
     const trendStrength = sma50 > 0 ? (sma20 - sma50) / sma50 : 0;
 
-    // Track which indicators are available for confidence adjustment
     const indicatorsAvailable = {
       vix: vix !== null && vix !== undefined,
       breadth: breadth !== null && breadth !== undefined,
@@ -118,7 +116,6 @@ class RegimeDetector {
     };
     const indicatorCount = Object.values(indicatorsAvailable).filter(Boolean).length;
 
-    // High volatility overrides (VIX-based)
     if (vix > 30) {
       return {
         regime: REGIMES.CRISIS,
@@ -135,7 +132,6 @@ class RegimeDetector {
       };
     }
 
-    // Credit spread stress check (if available)
     if (creditSpread && creditSpread > 5.0) {
       return {
         regime: REGIMES.CRISIS,
@@ -168,15 +164,12 @@ class RegimeDetector {
       };
     }
 
-    // Put/Call ratio extreme check (if available)
-    // High put/call (>1.2) = bearish sentiment, Low (<0.7) = bullish
     let sentimentAdjustment = 0;
     if (putCallRatio) {
-      if (putCallRatio > 1.2) sentimentAdjustment = -0.02; // More bearish
-      if (putCallRatio < 0.7) sentimentAdjustment = 0.02;  // More bullish
+      if (putCallRatio > 1.2) sentimentAdjustment = -0.02;
+      if (putCallRatio < 0.7) sentimentAdjustment = 0.02;
     }
 
-    // Trend-based classification with enhanced signals
     const adjustedTrend = trendStrength + sentimentAdjustment;
 
     if (adjustedTrend > 0.03 && breadth > 55) {
@@ -235,24 +228,26 @@ class RegimeDetector {
     const cutoffStr = cutoff.toISOString().split('T')[0];
 
     try {
-      const company = this.db.prepare(`
-        SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
-      `).get(symbol);
+      const db = await getDatabaseAsync();
+      const companyResult = await db.query(
+        `SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)`,
+        [symbol]
+      );
+      const company = companyResult.rows[0];
 
       if (!company) {
         console.log(`RegimeDetector: Company ${symbol} not found`);
         return null;
       }
 
-      const prices = this.db.prepare(`
-        SELECT date, open, high, low, close, volume
-        FROM daily_prices
-        WHERE company_id = ?
-          AND date >= ?
-        ORDER BY date ASC
-      `).all(company.id, cutoffStr);
-
-      return prices;
+      const pricesResult = await db.query(
+        `SELECT date, open, high, low, close, volume
+         FROM daily_prices
+         WHERE company_id = $1 AND date >= $2
+         ORDER BY date ASC`,
+        [company.id, cutoffStr]
+      );
+      return pricesResult.rows;
     } catch (error) {
       console.error(`Error fetching prices for ${symbol}:`, error.message);
       return null;
@@ -260,99 +255,78 @@ class RegimeDetector {
   }
 
   /**
-   * Get VIX value
-   * First checks market_sentiment table, then falls back to a default
+   * Get VIX value from market_sentiment table
    */
   async getVIX() {
-    // Check cache
     const cached = this.getCached('vix');
     if (cached !== null) {
       return cached;
     }
 
     try {
-      // Try to get from market_sentiment table
-      const result = this.db.prepare(`
-        SELECT indicator_value
-        FROM market_sentiment
-        WHERE indicator_type = 'vix'
-        ORDER BY fetched_at DESC
-        LIMIT 1
-      `).get();
+      const db = await getDatabaseAsync();
 
-      if (result && result.indicator_value) {
-        const vix = result.indicator_value;
+      const vixResult = await db.query(
+        `SELECT indicator_value FROM market_sentiment
+         WHERE indicator_type = 'vix' ORDER BY fetched_at DESC LIMIT 1`
+      );
+      const row = vixResult.rows[0];
+      if (row && row.indicator_value != null) {
+        const vix = parseFloat(row.indicator_value);
         this.setCache('vix', vix);
         return vix;
       }
 
-      // Try fear/greed as proxy (0-100 scale, invert for VIX-like behavior)
-      const fearGreed = this.db.prepare(`
-        SELECT indicator_value
-        FROM market_sentiment
-        WHERE indicator_type = 'cnn_fear_greed'
-        ORDER BY fetched_at DESC
-        LIMIT 1
-      `).get();
-
-      if (fearGreed && fearGreed.indicator_value !== null) {
-        // Convert fear/greed (0=extreme fear, 100=extreme greed) to VIX-like (higher = more fear)
-        // Fear = 0-25 -> VIX ~25-35
-        // Neutral = 45-55 -> VIX ~15-20
-        // Greed = 75-100 -> VIX ~10-15
-        const fg = fearGreed.indicator_value;
-        const estimatedVix = 30 - (fg * 0.2); // Rough approximation
+      const fearGreedResult = await db.query(
+        `SELECT indicator_value FROM market_sentiment
+         WHERE indicator_type = 'cnn_fear_greed' ORDER BY fetched_at DESC LIMIT 1`
+      );
+      const fgRow = fearGreedResult.rows[0];
+      if (fgRow && fgRow.indicator_value != null) {
+        const fg = parseFloat(fgRow.indicator_value);
+        const estimatedVix = 30 - (fg * 0.2);
         this.setCache('vix', estimatedVix);
         return estimatedVix;
       }
 
-      // Default to normal volatility
       this.setCache('vix', 18);
       return 18;
     } catch (error) {
       console.error('Error fetching VIX:', error.message);
-      return 18; // Default to normal volatility
+      return 18;
     }
   }
 
   /**
    * Get Put/Call ratio from market_sentiment table
-   * Returns null if not available (graceful degradation)
    */
   async getPutCallRatio() {
     try {
-      const result = this.db.prepare(`
-        SELECT indicator_value
-        FROM market_sentiment
-        WHERE indicator_type = 'put_call_ratio'
-        ORDER BY fetched_at DESC
-        LIMIT 1
-      `).get();
-
-      return result?.indicator_value || null;
-    } catch (error) {
-      // Graceful degradation - indicator not critical
+      const db = await getDatabaseAsync();
+      const result = await db.query(
+        `SELECT indicator_value FROM market_sentiment
+         WHERE indicator_type = 'put_call_ratio' ORDER BY fetched_at DESC LIMIT 1`
+      );
+      const row = result.rows[0];
+      return row?.indicator_value != null ? parseFloat(row.indicator_value) : null;
+    } catch {
       return null;
     }
   }
 
   /**
    * Get High Yield credit spread from market_sentiment table
-   * Returns null if not available (graceful degradation)
    */
   async getCreditSpread() {
     try {
-      const result = this.db.prepare(`
-        SELECT indicator_value
-        FROM market_sentiment
-        WHERE indicator_type = 'high_yield_spread'
-        ORDER BY fetched_at DESC
-        LIMIT 1
-      `).get();
-
-      return result?.indicator_value || null;
-    } catch (error) {
-      // Graceful degradation - indicator not critical
+      const db = await getDatabaseAsync();
+      const result = await db.query(
+        `SELECT indicator_value FROM market_sentiment
+         WHERE indicator_type = 'high_yield_spread' ORDER BY fetched_at DESC LIMIT 1`
+      );
+      const row = result.rows[0];
+      return row?.indicator_value != null ? parseFloat(row.indicator_value) : null;
+    } catch {
       return null;
     }
   }
@@ -361,76 +335,75 @@ class RegimeDetector {
    * Calculate market breadth - percentage of stocks above their 50-day MA
    */
   async getMarketBreadth() {
-    // Check cache
     const cached = this.getCached('breadth');
     if (cached !== null) {
       return cached;
     }
 
     try {
-      // Calculate from actual price data
-      const result = this.db.prepare(`
-        WITH stock_smas AS (
-          SELECT
-            dp.company_id,
-            dp.close as current_close,
-            (
-              SELECT AVG(dp2.close)
-              FROM daily_prices dp2
-              WHERE dp2.company_id = dp.company_id
-                AND dp2.date <= dp.date
-              ORDER BY dp2.date DESC
-              LIMIT 50
-            ) as sma_50
-          FROM daily_prices dp
-          INNER JOIN (
-            SELECT company_id, MAX(date) as max_date
-            FROM daily_prices
-            GROUP BY company_id
-          ) latest ON dp.company_id = latest.company_id AND dp.date = latest.max_date
-        )
-        SELECT
-          COUNT(CASE WHEN current_close > sma_50 THEN 1 END) * 100.0 / COUNT(*) as breadth
-        FROM stock_smas
-        WHERE sma_50 IS NOT NULL
-      `).get();
+      const db = await getDatabaseAsync();
 
-      const breadth = result?.breadth || 50;
+      const breadthQuery = isUsingPostgres()
+        ? `
+          WITH stock_smas AS (
+            SELECT dp.company_id, dp.close as current_close,
+              (SELECT AVG(dp2.close)
+               FROM daily_prices dp2
+               WHERE dp2.company_id = dp.company_id AND dp2.date <= dp.date
+               ORDER BY dp2.date DESC LIMIT 50) as sma_50
+            FROM daily_prices dp
+            INNER JOIN (
+              SELECT company_id, MAX(date) as max_date
+              FROM daily_prices GROUP BY company_id
+            ) latest ON dp.company_id = latest.company_id AND dp.date = latest.max_date
+          )
+          SELECT COUNT(CASE WHEN current_close > sma_50 THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0) as breadth
+          FROM stock_smas WHERE sma_50 IS NOT NULL
+        `
+        : `
+          WITH stock_smas AS (
+            SELECT dp.company_id, dp.close as current_close,
+              (SELECT AVG(dp2.close)
+               FROM daily_prices dp2
+               WHERE dp2.company_id = dp.company_id AND dp2.date <= dp.date
+               ORDER BY dp2.date DESC LIMIT 50) as sma_50
+            FROM daily_prices dp
+            INNER JOIN (
+              SELECT company_id, MAX(date) as max_date
+              FROM daily_prices GROUP BY company_id
+            ) latest ON dp.company_id = latest.company_id AND dp.date = latest.max_date
+          )
+          SELECT COUNT(CASE WHEN current_close > sma_50 THEN 1 END) * 100.0 / COUNT(*) as breadth
+          FROM stock_smas WHERE sma_50 IS NOT NULL
+        `;
+
+      const result = await db.query(breadthQuery);
+      const breadth = result.rows[0]?.breadth != null ? parseFloat(result.rows[0].breadth) : 50;
       this.setCache('breadth', breadth);
       return breadth;
     } catch (error) {
       console.error('Error calculating market breadth:', error.message);
-      return 50; // Default to neutral
+      return 50;
     }
   }
 
-  /**
-   * Calculate Simple Moving Average
-   */
   calculateSMA(values, period) {
     if (values.length < period) return null;
     const slice = values.slice(-period);
-    const sum = slice.reduce((a, b) => a + b, 0);
-    return sum / period;
+    return slice.reduce((a, b) => a + b, 0) / period;
   }
 
-  /**
-   * Calculate annualized volatility
-   */
   calculateVolatility(prices, period) {
     if (prices.length < period + 1) return null;
-
     const returns = [];
     for (let i = 1; i < prices.length; i++) {
       const ret = (prices[i].close - prices[i - 1].close) / prices[i - 1].close;
       returns.push(ret);
     }
-
     const recentReturns = returns.slice(-period);
     const mean = recentReturns.reduce((a, b) => a + b, 0) / period;
     const variance = recentReturns.reduce((a, r) => a + Math.pow(r - mean, 2), 0) / period;
-
-    return Math.sqrt(variance) * Math.sqrt(252); // Annualized
+    return Math.sqrt(variance) * Math.sqrt(252);
   }
 
   /**
@@ -440,27 +413,69 @@ class RegimeDetector {
     const today = new Date().toISOString().split('T')[0];
 
     try {
-      this.db.prepare(`
-        INSERT OR REPLACE INTO market_regimes (
-          date, regime, confidence, vix, breadth_pct, sma_spread,
-          volatility_20d, spy_price, spy_sma20, spy_sma50, spy_sma200,
-          trend_strength, description, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-      `).run(
-        today,
-        regime.regime,
-        regime.confidence,
-        regime.vix,
-        regime.breadth,
-        regime.trendStrength,
-        regime.volatility,
-        regime.spy?.price || null,
-        regime.spy?.sma20 || null,
-        regime.spy?.sma50 || null,
-        regime.spy?.sma200 || null,
-        regime.trendStrength,
-        regime.description
-      );
+      const db = await getDatabaseAsync();
+
+      if (isUsingPostgres()) {
+        await db.query(
+          `INSERT INTO market_regimes (
+            date, regime, confidence, vix, breadth_pct, sma_spread,
+            volatility_20d, spy_price, spy_sma20, spy_sma50, spy_sma200,
+            trend_strength, description, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+          ON CONFLICT (date) DO UPDATE SET
+            regime = EXCLUDED.regime,
+            confidence = EXCLUDED.confidence,
+            vix = EXCLUDED.vix,
+            breadth_pct = EXCLUDED.breadth_pct,
+            sma_spread = EXCLUDED.sma_spread,
+            volatility_20d = EXCLUDED.volatility_20d,
+            spy_price = EXCLUDED.spy_price,
+            spy_sma20 = EXCLUDED.spy_sma20,
+            spy_sma50 = EXCLUDED.spy_sma50,
+            spy_sma200 = EXCLUDED.spy_sma200,
+            trend_strength = EXCLUDED.trend_strength,
+            description = EXCLUDED.description,
+            updated_at = NOW()`,
+          [
+            today,
+            regime.regime,
+            regime.confidence,
+            regime.vix,
+            regime.breadth,
+            regime.trendStrength,
+            regime.volatility,
+            regime.spy?.price ?? null,
+            regime.spy?.sma20 ?? null,
+            regime.spy?.sma50 ?? null,
+            regime.spy?.sma200 ?? null,
+            regime.trendStrength,
+            regime.description,
+          ]
+        );
+      } else {
+        await db.query(
+          `INSERT OR REPLACE INTO market_regimes (
+            date, regime, confidence, vix, breadth_pct, sma_spread,
+            volatility_20d, spy_price, spy_sma20, spy_sma50, spy_sma200,
+            trend_strength, description, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, datetime('now'))`,
+          [
+            today,
+            regime.regime,
+            regime.confidence,
+            regime.vix,
+            regime.breadth,
+            regime.trendStrength,
+            regime.volatility,
+            regime.spy?.price ?? null,
+            regime.spy?.sma20 ?? null,
+            regime.spy?.sma50 ?? null,
+            regime.spy?.sma200 ?? null,
+            regime.trendStrength,
+            regime.description,
+          ]
+        );
+      }
     } catch (error) {
       console.error('Error storing regime:', error.message);
     }
@@ -471,11 +486,16 @@ class RegimeDetector {
    */
   async getRegimeHistory(days = 30) {
     try {
-      return this.db.prepare(`
-        SELECT * FROM market_regimes
-        WHERE date >= date('now', '-' || ? || ' days')
-        ORDER BY date DESC
-      `).all(days);
+      const db = await getDatabaseAsync();
+      const dateFilter = isUsingPostgres()
+        ? `CURRENT_DATE - INTERVAL '1 day' * $1`
+        : `date('now', '-' || $1 || ' days')`;
+
+      const result = await db.query(
+        `SELECT * FROM market_regimes WHERE date >= ${dateFilter} ORDER BY date DESC`,
+        [days]
+      );
+      return result.rows;
     } catch (error) {
       console.error('Error fetching regime history:', error.message);
       return [];
@@ -483,24 +503,21 @@ class RegimeDetector {
   }
 
   /**
-   * Get the most recent stored regime (for fast lookups)
+   * Get the most recent stored regime
    */
-  getStoredRegime() {
+  async getStoredRegime() {
     try {
-      return this.db.prepare(`
-        SELECT * FROM market_regimes
-        ORDER BY date DESC
-        LIMIT 1
-      `).get();
+      const db = await getDatabaseAsync();
+      const result = await db.query(
+        `SELECT * FROM market_regimes ORDER BY date DESC LIMIT 1`
+      );
+      return result.rows[0] || null;
     } catch (error) {
       console.error('Error fetching stored regime:', error.message);
       return null;
     }
   }
 
-  /**
-   * Create a default regime when data is insufficient
-   */
   createDefaultRegime(reason) {
     return {
       regime: REGIMES.SIDEWAYS,
@@ -515,7 +532,6 @@ class RegimeDetector {
     };
   }
 
-  // Cache helpers
   getCached(key) {
     const cached = this.cache.get(key);
     if (cached && Date.now() - cached.timestamp < this.cacheTTL) {

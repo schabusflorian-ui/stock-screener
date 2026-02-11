@@ -309,7 +309,7 @@ router.get('/:id/positions/:positionId/lots', asyncHandler(async (req, res) => {
 router.get('/:id/underlying', asyncHandler(async (req, res) => {
   try {
     const service = await getService(req);
-    const db = require('../../database').getDatabase();
+    const database = await getDatabaseAsync();
     const { getEtfService } = require('../../services/etfService');
     const etfService = getEtfService();
 
@@ -335,7 +335,11 @@ router.get('/:id/underlying', asyncHandler(async (req, res) => {
 
     for (const pos of etfPositions) {
       // Check if this is an ETF in our database
-      const etf = await db.prepare('SELECT id, symbol FROM etf_definitions WHERE symbol = ?').get(pos.symbol);
+      const etfResult = await database.query(
+        'SELECT id, symbol FROM etf_definitions WHERE symbol = $1',
+        [pos.symbol]
+      );
+      const etf = etfResult.rows[0];
 
       if (etf) {
         // Get holdings (fetch from Yahoo if needed)
@@ -419,7 +423,7 @@ router.get('/:id/underlying', asyncHandler(async (req, res) => {
 router.post('/:id/trade', requireAuth, requirePortfolioOwnership, asyncHandler(async (req, res) => {
   try {
     const service = await getService(req);
-    const db = require('../../database').getDatabase();
+    const database = await getDatabaseAsync();
     const portfolioId = parseInt(req.params.id);
     let {
       companyId,
@@ -443,7 +447,11 @@ router.post('/:id/trade', requireAuth, requirePortfolioOwnership, asyncHandler(a
 
     // Look up companyId from symbol if not provided
     if (!companyId && symbol) {
-      const company = await db.prepare('SELECT id FROM companies WHERE symbol = ?').get(symbol.toUpperCase());
+      const companyResult = await database.query(
+        'SELECT id FROM companies WHERE symbol = $1',
+        [symbol.toUpperCase()]
+      );
+      const company = companyResult.rows[0];
       if (!company) {
         return res.status(400).json({
           error: `Symbol not found: ${symbol}`
@@ -473,7 +481,7 @@ router.post('/:id/trade', requireAuth, requirePortfolioOwnership, asyncHandler(a
     if (side === 'buy' && !skipRiskCheck) {
       try {
         const { BuffettTalebRiskManager } = require('../../services/riskManagement');
-        const riskManager = new BuffettTalebRiskManager(db);
+        const riskManager = new BuffettTalebRiskManager();
 
         riskAssessment = await riskManager.assessTradeRisk(
           portfolioId,
@@ -1160,12 +1168,16 @@ router.post('/:id/close-position', asyncHandler(async (req, res) => {
 router.post('/stock-split', asyncHandler(async (req, res) => {
   try {
     const service = await getService(req);
-    const db = require('../../database').getDatabase();
+    const database = await getDatabaseAsync();
     let { companyId, symbol, splitRatio, effectiveDate } = req.body;
 
     // Look up companyId from symbol if not provided
     if (!companyId && symbol) {
-      const company = await db.prepare('SELECT id FROM companies WHERE symbol = ?').get(symbol.toUpperCase());
+      const companyResult = await database.query(
+        'SELECT id FROM companies WHERE symbol = $1',
+        [symbol.toUpperCase()]
+      );
+      const company = companyResult.rows[0];
       if (!company) {
         return res.status(400).json({ error: `Symbol not found: ${symbol}` });
       }
@@ -1193,13 +1205,17 @@ router.post('/stock-split', asyncHandler(async (req, res) => {
 router.post('/:id/stock-split', asyncHandler(async (req, res) => {
   try {
     const service = await getService(req);
-    const db = require('../../database').getDatabase();
+    const database = await getDatabaseAsync();
     const portfolioId = parseInt(req.params.id);
     let { companyId, symbol, splitRatio, effectiveDate } = req.body;
 
     // Look up companyId from symbol if not provided
     if (!companyId && symbol) {
-      const company = await db.prepare('SELECT id FROM companies WHERE symbol = ?').get(symbol.toUpperCase());
+      const companyResult = await database.query(
+        'SELECT id FROM companies WHERE symbol = $1',
+        [symbol.toUpperCase()]
+      );
+      const company = companyResult.rows[0];
       if (!company) {
         return res.status(400).json({ error: `Symbol not found: ${symbol}` });
       }
@@ -1232,13 +1248,17 @@ router.post('/:id/stock-split', asyncHandler(async (req, res) => {
 router.post('/:id/validate-trade', asyncHandler(async (req, res) => {
   try {
     const service = await getService(req);
-    const db = require('../../database').getDatabase();
+    const database = await getDatabaseAsync();
     const portfolioId = parseInt(req.params.id);
     let { companyId, symbol, side, shares, price, includeRisk = true } = req.body;
 
     // Look up companyId from symbol if needed
     if (!companyId && symbol) {
-      const company = await db.prepare('SELECT id FROM companies WHERE symbol = ?').get(symbol.toUpperCase());
+      const companyResult = await database.query(
+        'SELECT id FROM companies WHERE symbol = $1',
+        [symbol.toUpperCase()]
+      );
+      const company = companyResult.rows[0];
       if (company) companyId = company.id;
     }
 
@@ -1255,7 +1275,7 @@ router.post('/:id/validate-trade', asyncHandler(async (req, res) => {
     if (includeRisk && side === 'buy' && companyId) {
       try {
         const { BuffettTalebRiskManager } = require('../../services/riskManagement');
-        const riskManager = new BuffettTalebRiskManager(db);
+        const riskManager = new BuffettTalebRiskManager();
 
         const positionValue = parseFloat(shares) * parseFloat(price);
         riskAssessment = await riskManager.assessTradeRisk(
@@ -1274,7 +1294,7 @@ router.post('/:id/validate-trade', asyncHandler(async (req, res) => {
     if (companyId) {
       try {
         const { MarginOfSafetyCalculator } = require('../../services/riskManagement');
-        const mosCalc = new MarginOfSafetyCalculator(db);
+        const mosCalc = new MarginOfSafetyCalculator();
         const mosResult = await mosCalc.calculateIntrinsicValue(parseInt(companyId));
         if (mosResult.success) {
           marginOfSafety = {

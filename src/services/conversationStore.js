@@ -82,9 +82,19 @@ class ConversationStore {
       metadata: m.metadata ? JSON.parse(m.metadata) : {}
     }));
 
+    // Root cause: ensure every conversation has an analyst_id (backfill legacy NULLs)
+    let analystId = row.analyst_id;
+    if (analystId == null || analystId === '') {
+      analystId = 'value';
+      await database.query(
+        `UPDATE analyst_conversations SET analyst_id = $1 WHERE id = $2`,
+        [analystId, id]
+      );
+    }
+
     const conversation = {
       id: row.id,
-      analyst_id: row.analyst_id,
+      analyst_id: analystId,
       company_id: row.company_id,
       company_symbol: row.company_symbol,
       title: row.title,

@@ -145,71 +145,59 @@ const ANALYSTS = {
   }
 };
 
+// Project root so Python runs as package (src.services.ai) and relative imports work
+const PROJECT_ROOT = path.join(__dirname, '..', '..');
+
+/** CLI command mapping: bridge command -> cli_runner analyst:action */
+const ANALYST_CLI_COMMANDS = {
+  list_analysts: 'analyst:list',
+  get_analyst: 'analyst:get',
+  create_conversation: 'analyst:create_conversation',
+  get_conversation: 'analyst:get_conversation',
+  chat: 'analyst:chat',
+  quick_analyze: 'analyst:analyze'
+};
+
 /**
- * Execute Python analyst service command.
+ * Unwrap CLI response to the shape bridge callers expect.
+ */
+function unwrapAnalystResult(command, result) {
+  if (result.error) {
+    throw new Error(result.error);
+  }
+  switch (command) {
+    case 'list_analysts':
+      return result.analysts != null ? result.analysts : [];
+    case 'get_analyst':
+      return result.analyst;
+    case 'create_conversation':
+      return result.conversation;
+    case 'get_conversation':
+      return result.conversation || null;
+    case 'chat':
+      return result.message;
+    case 'quick_analyze':
+      const a = result.analysis;
+      return a ? { content: a.content, model: a.model, tokens_used: a.tokens_used } : null;
+    default:
+      return result;
+  }
+}
+
+/**
+ * Execute Python analyst service command via cli_runner.
+ * Runs with cwd=project root so "from src.services.ai.analyst_service" works (relative imports in analyst_service).
  */
 async function executePython(command, args = {}) {
+  const cliCommand = ANALYST_CLI_COMMANDS[command];
+  if (!cliCommand) {
+    return Promise.reject(new Error(`Unknown analyst command: ${command}`));
+  }
   return new Promise((resolve, reject) => {
-    const pythonPath = path.join(__dirname, 'ai');
-    const script = `
-import sys
-import json
-sys.path.insert(0, '${pythonPath}')
-
-from analyst_service import get_analyst_service
-
-service = get_analyst_service()
-command = '${command}'
-args = ${JSON.stringify(args)}
-
-try:
-    if command == 'list_analysts':
-        result = service.get_analysts()
-    elif command == 'get_analyst':
-        result = service.get_analyst_info(args['analyst_id'])
-    elif command == 'create_conversation':
-        conv = service.create_conversation(
-            args['analyst_id'],
-            args.get('company_id'),
-            args.get('company_symbol')
-        )
-        result = conv.to_dict()
-    elif command == 'get_conversation':
-        conv = service.get_conversation(args['conversation_id'])
-        result = conv.to_dict() if conv else None
-    elif command == 'chat':
-        msg = service.chat(
-            args['conversation_id'],
-            args['message'],
-            args.get('company_context')
-        )
-        result = {
-            'id': msg.id,
-            'role': msg.role,
-            'content': msg.content,
-            'timestamp': msg.timestamp,
-            'metadata': msg.metadata
-        }
-    elif command == 'quick_analyze':
-        response = service.quick_analyze(
-            args['analyst_id'],
-            args['company_data'],
-            args.get('question')
-        )
-        result = {
-            'content': response.content,
-            'model': response.model,
-            'tokens': response.tokens_used
-        }
-    else:
-        result = {'error': f'Unknown command: {command}'}
-
-    print(json.dumps(result))
-except Exception as e:
-    print(json.dumps({'error': str(e)}))
-`;
-
-    const python = spawn('python3', ['-c', script]);
+    const cliRunnerPath = path.join(__dirname, 'ai', 'cli_runner.py');
+    const python = spawn('python3', [cliRunnerPath, cliCommand, JSON.stringify(args)], {
+      cwd: PROJECT_ROOT
+    });
     let stdout = '';
     let stderr = '';
 
@@ -227,14 +215,9 @@ except Exception as e:
         reject(new Error(`Python process exited with code ${code}: ${stderr}`));
         return;
       }
-
       try {
         const result = JSON.parse(stdout.trim());
-        if (result.error) {
-          reject(new Error(result.error));
-        } else {
-          resolve(result);
-        }
+        resolve(unwrapAnalystResult(command, result));
       } catch (e) {
         reject(new Error(`Failed to parse Python output: ${stdout}`));
       }
@@ -295,7 +278,9 @@ async function* streamFromPython(conversationId, message, companyContext) {
     company_context: companyContext
   });
 
-  const python = spawn('python3', [cliRunnerPath, 'analyst:chat_stream', args]);
+  const python = spawn('python3', [cliRunnerPath, 'analyst:chat_stream', args], {
+    cwd: PROJECT_ROOT
+  });
 
   // Queue for incoming chunks and synchronization
   const chunks = [];
@@ -594,7 +579,7 @@ class AnalystService {
       throw new Error(`Conversation not found: ${conversationId}`);
     }
 
-    const analystId = conv.analyst_id || 'value';
+    const analystId = conv.analyst_id;
     const analyst = ANALYSTS[analystId];
     if (!analyst) {
       throw new Error(`Invalid analyst: ${analystId}`);
@@ -688,7 +673,7 @@ class AnalystService {
       throw new Error(`Conversation not found: ${conversationId}`);
     }
 
-    const analystId = conv.analyst_id || 'value';
+    const analystId = conv.analyst_id;
     const analyst = ANALYSTS[analystId];
     if (!analyst) {
       throw new Error(`Invalid analyst: ${analystId}`);

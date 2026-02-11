@@ -22,16 +22,12 @@ import json
 import logging
 import os
 
-# Add project root to path for imports
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-sys.path.insert(0, PROJECT_ROOT)
+# Add project root to path so "from src.services.ai..." resolves (Node runs with cwd=project root)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
-# Use relative imports from within the ai package
-try:
-    from src.services.ai.analyst_service import get_analyst_service
-except ImportError:
-    # Fallback for when running from within the package
-    from analyst_service import get_analyst_service
+from src.services.ai.analyst_service import get_analyst_service
 
 # Configure logging to stderr (stdout is for JSON output)
 logging.basicConfig(

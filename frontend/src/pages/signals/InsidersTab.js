@@ -365,36 +365,78 @@ function InsidersTab() {
     }
   }, [viewMode, loadSignals, loadRecent, loadClusterBuying, loadCongressional]);
 
+  // Check if stats are all zeros (no data)
+  const hasNoData = stats && (
+    (stats.total_transactions || 0) === 0 &&
+    (stats.buy_count || 0) === 0 &&
+    (stats.sell_count || 0) === 0 &&
+    (stats.active_insiders || 0) === 0
+  );
+
   // Overview view
   const renderOverview = () => (
     <div className="overview-content">
       {stats && (
-        <div className="stats-grid">
-          <div className="stat-card">
-            <span className="stat-value">{stats.total_transactions?.toLocaleString() || 0}</span>
-            <span className="stat-label">Total Transactions</span>
+        <>
+          {hasNoData && (
+            <div className="card" style={{ 
+              padding: 'var(--space-8)', 
+              textAlign: 'center',
+              marginBottom: 'var(--space-6)',
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border-primary)'
+            }}>
+              <div style={{ 
+                fontSize: 'var(--text-2xl)', 
+                marginBottom: 'var(--space-3)',
+                opacity: 0.5
+              }}>
+                📊
+              </div>
+              <h3 style={{ 
+                fontSize: 'var(--text-lg)', 
+                color: 'var(--text-primary)',
+                marginBottom: 'var(--space-2)' 
+              }}>
+                No Insider Data Available
+              </h3>
+              <p style={{ 
+                color: 'var(--text-secondary)', 
+                fontSize: 'var(--text-sm)',
+                maxWidth: '600px',
+                margin: '0 auto'
+              }}>
+                Insider trading data has not been loaded yet. Use the "Update Data" button to fetch the latest insider transactions.
+              </p>
+            </div>
+          )}
+          <div className="stats-grid">
+            <div className="stat-card">
+              <span className="stat-value">{stats.total_transactions?.toLocaleString() || 0}</span>
+              <span className="stat-label">Total Transactions</span>
+            </div>
+            <div className="stat-card positive">
+              <span className="stat-value">{stats.buy_count?.toLocaleString() || 0}</span>
+              <span className="stat-label">Buy Transactions</span>
+            </div>
+            <div className="stat-card negative">
+              <span className="stat-value">{stats.sell_count?.toLocaleString() || 0}</span>
+              <span className="stat-label">Sell Transactions</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-value">{stats.active_insiders?.toLocaleString() || 0}</span>
+              <span className="stat-label">Active Insiders</span>
+            </div>
+            <div className="stat-card positive">
+              <span className="stat-value">{formatCurrency(stats.total_buy_value)}</span>
+              <span className="stat-label">Total Buy Value</span>
+            </div>
+            <div className="stat-card negative">
+              <span className="stat-value">{formatCurrency(stats.total_sell_value)}</span>
+              <span className="stat-label">Total Sell Value</span>
+            </div>
           </div>
-          <div className="stat-card positive">
-            <span className="stat-value">{stats.buy_count?.toLocaleString() || 0}</span>
-            <span className="stat-label">Buy Transactions</span>
-          </div>
-          <div className="stat-card negative">
-            <span className="stat-value">{stats.sell_count?.toLocaleString() || 0}</span>
-            <span className="stat-label">Sell Transactions</span>
-          </div>
-          <div className="stat-card">
-            <span className="stat-value">{stats.active_insiders?.toLocaleString() || 0}</span>
-            <span className="stat-label">Active Insiders</span>
-          </div>
-          <div className="stat-card positive">
-            <span className="stat-value">{formatCurrency(stats.total_buy_value)}</span>
-            <span className="stat-label">Total Buy Value</span>
-          </div>
-          <div className="stat-card negative">
-            <span className="stat-value">{formatCurrency(stats.total_sell_value)}</span>
-            <span className="stat-label">Total Sell Value</span>
-          </div>
-        </div>
+        </>
       )}
 
       {monthlyTrend.length > 0 && (
