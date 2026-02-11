@@ -117,24 +117,53 @@ async function runMigrations() {
   }
 }
 
-// Start the application
+// Start the application (API server + Master Scheduler)
 function startApplication() {
   console.log('');
-  console.log('🚀 Starting application server...');
+  console.log('🚀 Starting application server and update scheduler...');
   console.log('');
 
+  const cwd = path.join(__dirname, '..');
+  const env = { ...process.env };
+  const startScheduler = process.env.START_SCHEDULER !== 'false';
+
+  let scheduler;
+  if (startScheduler) {
+    // Start Master Scheduler so updates run on schedule (prices, sentiment, SEC, etc.)
+    scheduler = spawn('node', ['src/jobs/masterScheduler.js'], {
+      cwd,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    scheduler.stdout.on('data', (d) => process.stdout.write(d));
+    scheduler.stderr.on('data', (d) => process.stderr.write(d));
+    scheduler.on('error', (err) => {
+      console.error('❌ Scheduler failed to start:', err.message);
+    });
+    scheduler.on('exit', (code) => {
+      if (code !== 0 && code !== null) {
+        console.warn(`Scheduler exited with code ${code} (API continues)`);
+      }
+    });
+  } else {
+    console.log('   Scheduler disabled (START_SCHEDULER=false)');
+  }
+
+  // Start API server (primary process - exit if it dies)
   const server = spawn('node', ['src/api/server.js'], {
     stdio: 'inherit',
-    cwd: path.join(__dirname, '..'),
-    env: process.env
+    cwd,
+    env
   });
 
   server.on('error', (error) => {
     console.error('❌ Failed to start server:', error.message);
+    if (scheduler) scheduler.kill();
     process.exit(1);
   });
 
   server.on('exit', (code, signal) => {
+    if (scheduler) scheduler.kill(signal || 'SIGTERM');
     if (signal) {
       console.log(`Server terminated by signal: ${signal}`);
     } else if (code !== 0) {
@@ -143,10 +172,11 @@ function startApplication() {
     process.exit(code || 0);
   });
 
-  // Forward signals to child process
+  // Forward signals to both children
   ['SIGINT', 'SIGTERM', 'SIGQUIT'].forEach(signal => {
     process.on(signal, () => {
       console.log(`\nReceived ${signal}, shutting down gracefully...`);
+      if (scheduler) scheduler.kill(signal);
       server.kill(signal);
     });
   });

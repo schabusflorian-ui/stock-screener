@@ -262,6 +262,60 @@ https://your-app.railway.app
 
 ---
 
+## Update services in production
+
+In a **PostgreSQL (Railway) deployment**, update behaviour differs from local SQLite:
+
+### 1. Update Orchestrator – not started in cloud
+
+The **Update Orchestrator** (`src/services/updates/updateOrchestrator.js`) and its bundles (price, fundamentals, ETF, market, sentiment, knowledge, SEC, IPO, maintenance, analytics) are **skipped when `DATABASE_URL` is PostgreSQL**. The API server logs: *"Update Scheduler: Skipped in PostgreSQL mode (SQLite-only feature)"*.
+
+- **Implication:** No in-process cron jobs from the orchestrator in production.
+- **Future:** Enabling it in cloud would require Postgres migrations for `update_jobs`, `update_bundles`, `update_runs`, `update_queue`, `update_locks`, `update_settings`, and making `/api/update-system/*` use the async DB layer.
+
+### 2. Master Scheduler – started automatically in production
+
+The **Master Scheduler** (`src/jobs/masterScheduler.js`) runs all scheduled jobs (price updates, sentiment, knowledge base, SEC, 13F, EU/UK XBRL, dividends, ETFs, earnings, agent scans, etc.). **As of the update-services validation work, the production start script starts the scheduler alongside the API.** When you run `npm run start:production` (Railway’s default), it:
+
+1. Runs PostgreSQL migrations
+2. Starts the **Master Scheduler** in the background (cron jobs run on schedule)
+3. Starts the **API server** in the foreground
+
+So a single Railway service runs both; no separate worker service is required. The scheduler uses **Redis** for distributed locks when `REDIS_URL` is set, so if you later run multiple replicas, only one instance will run each job.
+
+**Optional – Separate Railway service:** If you prefer the scheduler in its own service (e.g. to scale or restart it independently), create a second service with start command `node src/jobs/masterScheduler.js` and the same env vars as the API. Then you can disable the in-process scheduler by setting `START_SCHEDULER=false` in the API service (see below).
+
+**Required env vars for scheduler**
+
+- `DATABASE_URL` – PostgreSQL connection (same as API).
+- `REDIS_URL` – Optional but recommended; enables distributed locking so one job runs across instances.
+- API keys used by jobs: `ALPHA_VANTAGE_KEY`, `FMP_API_KEY`, etc. (see job code for exact names).
+- `NODE_ENV=production`.
+
+**Jobs that call external APIs (rate limits / keys):**
+
+- Price updates → Alpha Vantage / FMP / Yahoo
+- Sentiment → Reddit / StockTwits (if configured)
+- SEC filings → SEC EDGAR (no key; respect rate limits)
+- 13F → SEC
+- FRED (market indicators) → FRED API key if used
+- EU/UK XBRL → filings.xbrl.org (no key)
+
+### 3. Legacy `/api/updates` – not supported in PostgreSQL
+
+The **legacy updates API** (`/api/updates/status`, `/api/updates/run`, `/api/updates/quarters`, etc.) is backed by **QuarterlyUpdater** and **SQLite** (`data/stocks.db`, `company_data_freshness`, etc.). In production with PostgreSQL, `db.prepare()` is stubbed, so these routes would return incorrect or empty data. They are **guarded** in Postgres: requests return **503** with a clear message that quarterly updates are not available in PostgreSQL deployment. Do not rely on `/api/updates/*` in cloud; use the Master Scheduler (and, when available, the Update Orchestrator) for data refresh.
+
+### 4. Routes that are N/A or limited in cloud
+
+| Route / feature              | In PostgreSQL cloud      |
+|-----------------------------|---------------------------|
+| `GET/POST /api/updates/*`   | 503 – not available       |
+| `/api/update-system/*`      | SQLite-only; not usable with Postgres |
+| Update Orchestrator cron    | Not started               |
+| Master Scheduler jobs       | Only if run as separate service |
+
+---
+
 ## What's Working (90 Services)
 
 ### ✅ Fully Converted & Tested

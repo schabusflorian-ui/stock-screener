@@ -30,6 +30,7 @@
     "db:migrate:status": "node src/lib/migrationRunner.js status",
     "db:migrate:postgres": "node src/database-migrations/run-postgres-migrations.js",
     "db:migrate:postgres:base": "node src/database-migrations/000-postgres-base-schema.js",
+    "db:sync-data": "node scripts/migrate-to-postgres.js --data-only",
     "db:backup": "./scripts/backup-db.sh",
     "scheduler": "node src/jobs/masterScheduler.js",
     "scheduler:status": "node src/jobs/masterScheduler.js --status",

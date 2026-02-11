@@ -118,7 +118,12 @@ export default function AnalystPage() {
       setConversation(response.data.conversation);
     } catch (err) {
       console.error('Failed to create conversation:', err);
-      setError('Failed to start conversation. Please try again.');
+      const isFeatureRestricted = err?.code === 'FEATURE_RESTRICTED' || err?.status === 403;
+      setError(
+        isFeatureRestricted
+          ? 'AI Analysts require a Pro subscription. Upgrade in Settings or enable Admin access for testing.'
+          : 'Failed to start conversation. Please try again.'
+      );
     }
   };
 

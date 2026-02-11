@@ -17,11 +17,13 @@ const database = db.getDatabase();
 let earningsService;
 
 try {
-  earningsService = new EarningsCalendarService(database);
-  earningsService.createTable();
+  earningsService = new EarningsCalendarService();
+  if (typeof earningsService.createTable === 'function') {
+    earningsService.createTable();
+  }
 } catch (error) {
-  console.error('Failed to initialize earnings service:', error.message);
-  process.exit(1);
+  console.warn('Earnings service init failed (earnings refresh will be skipped):', error.message);
+  earningsService = null;
 }
 
 /**
@@ -39,6 +41,11 @@ async function refreshEarnings(options = {}) {
   console.log('\n📅 Refreshing earnings calendar data...');
   console.log(`   Stale threshold: ${staleHours} hours`);
   console.log(`   Max companies: ${maxCompanies}`);
+
+  if (!earningsService) {
+    console.log('   Skipped: earnings service not initialized');
+    return { refreshed: 0, errors: 0, skipped: 0 };
+  }
 
   try {
     // Build query for companies needing refresh

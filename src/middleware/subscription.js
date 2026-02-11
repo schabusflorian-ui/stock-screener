@@ -26,9 +26,9 @@ function isAdminRequest(req) {
   const adminEmails = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase());
   if (req.user?.email && adminEmails.includes(req.user.email.toLowerCase())) return true;
 
-  // Check for local admin bypass header (dev mode)
-  const hasAdminBypass = req.headers['x-admin-bypass'] === 'true';
-  if (hasAdminBypass && process.env.ALLOW_DEV_AUTH === 'true') return true;
+  // Admin bypass header: dev (ALLOW_DEV_AUTH) or production (ALLOW_ADMIN_BYPASS, e.g. Railway)
+  const hasAdminBypass = req.headers['x-admin-bypass'] === 'true' || req.get('X-Admin-Bypass') === 'true';
+  if (hasAdminBypass && (process.env.ALLOW_DEV_AUTH === 'true' || process.env.ALLOW_ADMIN_BYPASS === 'true')) return true;
 
   return false;
 }

@@ -155,7 +155,13 @@ router.get('/:symbol', async (req, res) => {
     const company = companyResult.rows[0];
 
     if (!company) {
-      return res.status(404).json({ success: false, error: 'Company not found' });
+      return res.status(404).json({
+        success: false,
+        error: 'Company not found',
+        symbol,
+        code: 'COMPANY_NOT_FOUND',
+        hint: 'Symbol may not exist in database. Try /api/companies?search=' + encodeURIComponent(symbol) + ' to find available symbols.'
+      });
     }
 
     // Determine date range based on period
@@ -234,7 +240,13 @@ router.get('/:symbol/metrics', async (req, res) => {
     const company = companyResult.rows[0];
 
     if (!company) {
-      return res.status(404).json({ success: false, error: 'Company not found' });
+      return res.status(404).json({
+        success: false,
+        error: 'Company not found',
+        symbol,
+        code: 'COMPANY_NOT_FOUND',
+        hint: 'Symbol may not exist in database. Try /api/companies?search=' + encodeURIComponent(symbol) + ' to find available symbols.'
+      });
     }
 
     const metricsResult = await database.query('SELECT * FROM price_metrics WHERE company_id = $1', [company.id]);

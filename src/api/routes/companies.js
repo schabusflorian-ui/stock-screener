@@ -280,7 +280,12 @@ router.get('/:symbol', async (req, res) => {
     const company = companyResult.rows[0];
 
     if (!company) {
-      return res.status(404).json({ error: 'Company not found' });
+      return res.status(404).json({
+        error: 'Company not found',
+        symbol,
+        code: 'COMPANY_NOT_FOUND',
+        hint: 'Symbol may not exist in database. Try /api/companies?search=' + encodeURIComponent(symbol) + ' to find available symbols.'
+      });
     }
 
     // Get latest metrics - prioritize records with COMPLETE valuation metrics

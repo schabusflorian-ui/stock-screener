@@ -75,8 +75,6 @@ async function getSentimentServices() {
 /**
  * Safely map period parameter to SQLite datetime interval
  * Prevents SQL injection by using allowlist approach
- * @param {string} period - Period string ('24h', '7d', '30d', etc.)
- * @returns {string} - Safe SQLite interval string
  */
 function getSafeDateInterval(period) {
   const PERIOD_MAP = {
@@ -88,7 +86,16 @@ function getSafeDateInterval(period) {
     '30d': '-30 days',
     '90d': '-90 days',
   };
-  return PERIOD_MAP[period] || '-7 days'; // Default to 7 days if invalid
+  return PERIOD_MAP[period] || '-7 days';
+}
+
+/** Postgres: interval literal for NOW() - INTERVAL (allowlist) */
+function getSafePostgresInterval(period) {
+  const MAP = {
+    '24h': '1 day', '1d': '1 day', '3d': '3 days', '7d': '7 days',
+    '14d': '14 days', '30d': '30 days', '90d': '90 days',
+  };
+  return MAP[period] || '7 days';
 }
 
 /**
@@ -189,14 +196,21 @@ router.get('/status', async (req, res) => {
  */
 router.get('/trending', async (req, res) => {
   try {
-    if (!redditFetcher) {
+    let services;
+    try {
+      services = await getSentimentServices();
+    } catch (initErr) {
+      console.error('Sentiment services init failed:', initErr?.message);
+      return res.status(503).json({ error: 'Sentiment service unavailable' });
+    }
+    if (!services?.redditFetcher) {
       return res.status(503).json({ error: 'Sentiment service unavailable' });
     }
 
     const { period = '24h', limit = 20, refresh = 'false', region = 'US' } = req.query;
 
     if (refresh === 'true') {
-      await redditFetcher.scanTrendingTickers({ region });
+      await services.redditFetcher.scanTrendingTickers({ region });
     }
 
     // Use region-specific period key for EU
@@ -350,30 +364,34 @@ router.get('/sources-overview', async (req, res) => {
     const { period = '24h' } = req.query;
 
     const database = await getDatabaseAsync();
-    // Reddit sentiment summary
-    const dateInterval = getSafeDateInterval(period);
-    const redditStatsQuery = await database.query(`
-      SELECT
-        COUNT(*) as post_count,
-        AVG(sentiment_score) as avg_sentiment,
-        SUM(CASE WHEN sentiment_score > 0.05 THEN 1 ELSE 0 END) as bullish_count,
-        SUM(CASE WHEN sentiment_score < -0.05 THEN 1 ELSE 0 END) as bearish_count,
-        SUM(CASE WHEN sentiment_score BETWEEN -0.05 AND 0.05 THEN 1 ELSE 0 END) as neutral_count
-      FROM reddit_posts
-      WHERE posted_at >= CURRENT_TIMESTAMP + INTERVAL $1
-    `, [dateInterval]);
-    const redditStats = redditStatsQuery.rows[0];
+    const intervalLiteral = getSafePostgresInterval(period);
 
-    // Top subreddits
-    const topSubredditsQuery = await database.query(`
-      SELECT subreddit, COUNT(*) as count
-      FROM reddit_posts
-      WHERE posted_at >= CURRENT_TIMESTAMP + INTERVAL $1
-      GROUP BY subreddit
-      ORDER BY count DESC
-      LIMIT 5
-    `, [dateInterval]);
-    const topSubreddits = topSubredditsQuery.rows;
+    let redditStats = null;
+    let topSubreddits = [];
+    try {
+      const redditStatsQuery = await database.query(`
+        SELECT
+          COUNT(*)::int as post_count,
+          AVG(sentiment_score)::float as avg_sentiment,
+          SUM(CASE WHEN sentiment_score > 0.05 THEN 1 ELSE 0 END)::int as bullish_count,
+          SUM(CASE WHEN sentiment_score < -0.05 THEN 1 ELSE 0 END)::int as bearish_count,
+          SUM(CASE WHEN sentiment_score BETWEEN -0.05 AND 0.05 THEN 1 ELSE 0 END)::int as neutral_count
+        FROM reddit_posts
+        WHERE posted_at >= NOW() - $1::interval
+      `, [intervalLiteral]);
+      redditStats = redditStatsQuery.rows[0];
+      const topSubredditsQuery = await database.query(`
+        SELECT subreddit, COUNT(*)::int as count
+        FROM reddit_posts
+        WHERE posted_at >= NOW() - $1::interval
+        GROUP BY subreddit
+        ORDER BY count DESC
+        LIMIT 5
+      `, [intervalLiteral]);
+      topSubreddits = topSubredditsQuery.rows || [];
+    } catch (e) {
+      console.warn('Sources-overview reddit:', e?.message);
+    }
 
     // StockTwits sentiment summary
     let stocktwitsStats = { message_count: 0, avg_sentiment: 0, bullish_count: 0, bearish_count: 0, neutral_count: 0 };
@@ -386,8 +404,8 @@ router.get('/sources-overview', async (req, res) => {
           SUM(CASE WHEN user_sentiment = 'Bearish' OR nlp_sentiment_score < -0.05 THEN 1 ELSE 0 END) as bearish_count,
           SUM(CASE WHEN user_sentiment IS NULL AND nlp_sentiment_score BETWEEN -0.05 AND 0.05 THEN 1 ELSE 0 END) as neutral_count
         FROM stocktwits_messages
-        WHERE posted_at >= CURRENT_TIMESTAMP + INTERVAL $1
-      `, [dateInterval]);
+        WHERE posted_at >= NOW() - $1::interval
+      `, [intervalLiteral]);
       stocktwitsStats = stocktwitsStatsQuery.rows[0] || stocktwitsStats;
     } catch (e) {
       // Table may not exist
@@ -404,8 +422,8 @@ router.get('/sources-overview', async (req, res) => {
           SUM(CASE WHEN sentiment_score < -0.05 THEN 1 ELSE 0 END) as bearish_count,
           SUM(CASE WHEN sentiment_score BETWEEN -0.05 AND 0.05 THEN 1 ELSE 0 END) as neutral_count
         FROM news_articles
-        WHERE published_at >= CURRENT_TIMESTAMP + INTERVAL $1
-      `, [dateInterval]);
+        WHERE published_at >= NOW() - $1::interval
+      `, [intervalLiteral]);
       newsStats = newsStatsQuery.rows[0] || newsStats;
     } catch (e) {
       // Table may not exist
@@ -417,11 +435,11 @@ router.get('/sources-overview', async (req, res) => {
       const topNewsSourcesQuery = await database.query(`
         SELECT source, COUNT(*) as count
         FROM news_articles
-        WHERE published_at >= CURRENT_TIMESTAMP + INTERVAL $1
+        WHERE published_at >= NOW() - $1::interval
         GROUP BY source
         ORDER BY count DESC
         LIMIT 5
-      `, [dateInterval]);
+      `, [intervalLiteral]);
       topNewsSources = topNewsSourcesQuery.rows;
     } catch (e) {
       // Table may not exist
@@ -441,7 +459,7 @@ router.get('/sources-overview', async (req, res) => {
             SELECT AVG(sentiment_score)
             FROM news_articles na
             WHERE na.company_id = c.id
-              AND na.published_at >= CURRENT_TIMESTAMP + INTERVAL $1
+              AND na.published_at >= NOW() - $1::interval
           ) as news_sentiment
         FROM trending_tickers t
         JOIN companies c ON t.symbol = c.symbol
@@ -449,7 +467,7 @@ router.get('/sources-overview', async (req, res) => {
           AND t.avg_sentiment IS NOT NULL
         ORDER BY t.mention_count DESC
         LIMIT 50
-      `, [dateInterval, period]);
+      `, [intervalLiteral, period]);
       const tickersWithDivergences = tickersWithDivergencesQuery.rows;
 
       for (const ticker of tickersWithDivergences) {
@@ -821,7 +839,7 @@ router.get('/trending-enhanced', async (req, res) => {
   try {
     const { period = '24h', limit = 30, region = 'US' } = req.query;
     const database = await getDatabaseAsync();
-    const dateInterval = getSafeDateInterval(period);
+    const intervalLiteral = getSafePostgresInterval(period);
     // Use region-specific period key for EU
     const periodKey = region === 'US' ? period : `${period}_${region}`;
 
@@ -862,9 +880,9 @@ router.get('/trending-enhanced', async (req, res) => {
           SUM(score) as total_score
         FROM reddit_posts
         WHERE company_id IN (${companyIdPlaceholders})
-          AND posted_at >= CURRENT_TIMESTAMP + INTERVAL $${companyIds.length + 1}
+          AND posted_at >= NOW() - $${companyIds.length + 1}::interval
         GROUP BY company_id
-      `, [...companyIds, dateInterval]);
+      `, [...companyIds, intervalLiteral]);
       const redditRows = redditRowsQuery.rows;
       for (const row of redditRows) {
         redditDataMap.set(row.company_id, row);
@@ -881,9 +899,9 @@ router.get('/trending-enhanced', async (req, res) => {
           AVG(nlp_sentiment_score) as avg_sentiment
         FROM stocktwits_messages
         WHERE company_id IN (${companyIdPlaceholders})
-          AND posted_at >= CURRENT_TIMESTAMP + INTERVAL $${companyIds.length + 1}
+          AND posted_at >= NOW() - $${companyIds.length + 1}::interval
         GROUP BY company_id
-      `, [...companyIds, dateInterval]);
+      `, [...companyIds, intervalLiteral]);
       const stocktwitsRows = stocktwitsRowsQuery.rows;
       for (const row of stocktwitsRows) {
         stocktwitsDataMap.set(row.company_id, row);
@@ -900,9 +918,9 @@ router.get('/trending-enhanced', async (req, res) => {
           AVG(sentiment_score) as avg_sentiment
         FROM news_articles
         WHERE company_id IN (${companyIdPlaceholders})
-          AND published_at >= CURRENT_TIMESTAMP + INTERVAL $${companyIds.length + 1}
+          AND published_at >= NOW() - $${companyIds.length + 1}::interval
         GROUP BY company_id
-      `, [...companyIds, dateInterval]);
+      `, [...companyIds, intervalLiteral]);
       const newsRows = newsRowsQuery.rows;
       for (const row of newsRows) {
         newsDataMap.set(row.company_id, row);
@@ -1580,30 +1598,34 @@ router.get('/sources-overview', async (req, res) => {
     const { period = '24h' } = req.query;
 
     const database = await getDatabaseAsync();
-    // Reddit sentiment summary
-    const dateInterval = getSafeDateInterval(period);
-    const redditStatsQuery = await database.query(`
-      SELECT
-        COUNT(*) as post_count,
-        AVG(sentiment_score) as avg_sentiment,
-        SUM(CASE WHEN sentiment_score > 0.05 THEN 1 ELSE 0 END) as bullish_count,
-        SUM(CASE WHEN sentiment_score < -0.05 THEN 1 ELSE 0 END) as bearish_count,
-        SUM(CASE WHEN sentiment_score BETWEEN -0.05 AND 0.05 THEN 1 ELSE 0 END) as neutral_count
-      FROM reddit_posts
-      WHERE posted_at >= CURRENT_TIMESTAMP + INTERVAL $1
-    `, [dateInterval]);
-    const redditStats = redditStatsQuery.rows[0];
+    const intervalLiteral = getSafePostgresInterval(period);
 
-    // Top subreddits
-    const topSubredditsQuery = await database.query(`
-      SELECT subreddit, COUNT(*) as count
-      FROM reddit_posts
-      WHERE posted_at >= CURRENT_TIMESTAMP + INTERVAL $1
-      GROUP BY subreddit
-      ORDER BY count DESC
-      LIMIT 5
-    `, [dateInterval]);
-    const topSubreddits = topSubredditsQuery.rows;
+    let redditStats = null;
+    let topSubreddits = [];
+    try {
+      const redditStatsQuery = await database.query(`
+        SELECT
+          COUNT(*)::int as post_count,
+          AVG(sentiment_score)::float as avg_sentiment,
+          SUM(CASE WHEN sentiment_score > 0.05 THEN 1 ELSE 0 END)::int as bullish_count,
+          SUM(CASE WHEN sentiment_score < -0.05 THEN 1 ELSE 0 END)::int as bearish_count,
+          SUM(CASE WHEN sentiment_score BETWEEN -0.05 AND 0.05 THEN 1 ELSE 0 END)::int as neutral_count
+        FROM reddit_posts
+        WHERE posted_at >= NOW() - $1::interval
+      `, [intervalLiteral]);
+      redditStats = redditStatsQuery.rows[0];
+      const topSubredditsQuery = await database.query(`
+        SELECT subreddit, COUNT(*)::int as count
+        FROM reddit_posts
+        WHERE posted_at >= NOW() - $1::interval
+        GROUP BY subreddit
+        ORDER BY count DESC
+        LIMIT 5
+      `, [intervalLiteral]);
+      topSubreddits = topSubredditsQuery.rows || [];
+    } catch (e) {
+      console.warn('Sources-overview reddit:', e?.message);
+    }
 
     // StockTwits sentiment summary
     let stocktwitsStats = { message_count: 0, avg_sentiment: 0, bullish_count: 0, bearish_count: 0, neutral_count: 0 };
@@ -1616,8 +1638,8 @@ router.get('/sources-overview', async (req, res) => {
           SUM(CASE WHEN user_sentiment = 'Bearish' OR nlp_sentiment_score < -0.05 THEN 1 ELSE 0 END) as bearish_count,
           SUM(CASE WHEN user_sentiment IS NULL AND nlp_sentiment_score BETWEEN -0.05 AND 0.05 THEN 1 ELSE 0 END) as neutral_count
         FROM stocktwits_messages
-        WHERE posted_at >= CURRENT_TIMESTAMP + INTERVAL $1
-      `, [dateInterval]);
+        WHERE posted_at >= NOW() - $1::interval
+      `, [intervalLiteral]);
       stocktwitsStats = stocktwitsStatsQuery.rows[0] || stocktwitsStats;
     } catch (e) {
       // Table may not exist
@@ -1634,8 +1656,8 @@ router.get('/sources-overview', async (req, res) => {
           SUM(CASE WHEN sentiment_score < -0.05 THEN 1 ELSE 0 END) as bearish_count,
           SUM(CASE WHEN sentiment_score BETWEEN -0.05 AND 0.05 THEN 1 ELSE 0 END) as neutral_count
         FROM news_articles
-        WHERE published_at >= CURRENT_TIMESTAMP + INTERVAL $1
-      `, [dateInterval]);
+        WHERE published_at >= NOW() - $1::interval
+      `, [intervalLiteral]);
       newsStats = newsStatsQuery.rows[0] || newsStats;
     } catch (e) {
       // Table may not exist
@@ -1647,11 +1669,11 @@ router.get('/sources-overview', async (req, res) => {
       const topNewsSourcesQuery = await database.query(`
         SELECT source, COUNT(*) as count
         FROM news_articles
-        WHERE published_at >= CURRENT_TIMESTAMP + INTERVAL $1
+        WHERE published_at >= NOW() - $1::interval
         GROUP BY source
         ORDER BY count DESC
         LIMIT 5
-      `, [dateInterval]);
+      `, [intervalLiteral]);
       topNewsSources = topNewsSourcesQuery.rows;
     } catch (e) {
       // Table may not exist
@@ -1671,7 +1693,7 @@ router.get('/sources-overview', async (req, res) => {
             SELECT AVG(sentiment_score)
             FROM news_articles na
             WHERE na.company_id = c.id
-              AND na.published_at >= CURRENT_TIMESTAMP + INTERVAL $1
+              AND na.published_at >= NOW() - $1::interval
           ) as news_sentiment
         FROM trending_tickers t
         JOIN companies c ON t.symbol = c.symbol
@@ -1679,7 +1701,7 @@ router.get('/sources-overview', async (req, res) => {
           AND t.avg_sentiment IS NOT NULL
         ORDER BY t.mention_count DESC
         LIMIT 50
-      `, [dateInterval, period]);
+      `, [intervalLiteral, period]);
       const tickersWithDivergences = tickersWithDivergencesQuery.rows;
 
       for (const ticker of tickersWithDivergences) {

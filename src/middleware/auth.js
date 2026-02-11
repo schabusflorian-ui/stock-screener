@@ -128,7 +128,14 @@ const optionalAuth = (req, res, next) => {
  * In dev mode: requires ALLOW_DEV_AUTH=true for bypass
  */
 const requireAdmin = (req, res, next) => {
-  // Production: strict admin check only
+  // Admin bypass (production when ALLOW_ADMIN_BYPASS=true, dev when ALLOW_DEV_AUTH=true)
+  if (hasLocalAdminBypass(req)) {
+    req.user = req.user || { id: 'admin', email: 'admin@local', is_admin: true };
+    req.isAdmin = true;
+    return next();
+  }
+
+  // Production: require authenticated session
   if (process.env.NODE_ENV === 'production') {
     if (!req.isAuthenticated || !req.isAuthenticated()) {
       return res.status(401).json({
@@ -138,13 +145,7 @@ const requireAdmin = (req, res, next) => {
     }
     // Continue to admin check below
   } else {
-    // Development mode
-    // Check for local admin bypass (requires ALLOW_DEV_AUTH=true)
-    if (hasLocalAdminBypass(req)) {
-      req.user = req.user || { id: 'admin', email: 'admin@local', is_admin: true };
-      req.isAdmin = true;
-      return next();
-    }
+    // Development mode (bypass already handled above when ALLOW_DEV_AUTH=true)
 
     // Dev mode without OAuth - warn but DON'T auto-grant admin
     if (isDevModeEnabled() && !isOAuthConfigured()) {

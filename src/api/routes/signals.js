@@ -3,14 +3,14 @@
 
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../database');
 
 let signalEnhancements = null;
 
-function getSignalEnhancements() {
+async function getSignalEnhancements() {
   if (!signalEnhancements) {
     const { SignalEnhancements } = require('../../services/signalEnhancements');
-    signalEnhancements = new SignalEnhancements(db.getDatabase());
+    signalEnhancements = new SignalEnhancements();
   }
   return signalEnhancements;
 }
@@ -26,13 +26,14 @@ function getSignalEnhancements() {
 router.get('/13f/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
-    const database = db.getDatabase();
-    const se = getSignalEnhancements();
+    const database = await getDatabaseAsync();
+    const se = await getSignalEnhancements();
 
-    // Get company ID
-    const company = await database.prepare(
-      'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)'
-    ).get(symbol.toUpperCase());
+    const companyResult = await database.query(
+      'SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)',
+      [symbol.toUpperCase()]
+    );
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -58,7 +59,7 @@ router.get('/13f/:symbol', async (req, res) => {
 router.get('/13f/top/new-positions', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 30;
-    const se = getSignalEnhancements();
+    const se = await getSignalEnhancements();
     const all = await se.getTop13FOpportunities(limit);
 
     res.json({
@@ -79,7 +80,7 @@ router.get('/13f/top/new-positions', async (req, res) => {
 router.get('/13f/top/increases', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 30;
-    const se = getSignalEnhancements();
+    const se = await getSignalEnhancements();
     const all = await se.getTop13FOpportunities(limit);
 
     res.json({
@@ -100,7 +101,7 @@ router.get('/13f/top/increases', async (req, res) => {
 router.get('/13f/top/exits', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 30;
-    const se = getSignalEnhancements();
+    const se = await getSignalEnhancements();
     const all = await se.getTop13FOpportunities(limit);
 
     res.json({
@@ -125,12 +126,14 @@ router.get('/13f/top/exits', async (req, res) => {
 router.get('/insiders/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
-    const database = db.getDatabase();
-    const se = getSignalEnhancements();
+    const database = await getDatabaseAsync();
+    const se = await getSignalEnhancements();
 
-    const company = await database.prepare(
-      'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)'
-    ).get(symbol.toUpperCase());
+    const companyResult = await database.query(
+      'SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)',
+      [symbol.toUpperCase()]
+    );
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -156,7 +159,7 @@ router.get('/insiders/:symbol', async (req, res) => {
 router.get('/insiders/top/open-market-buys', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 30;
-    const se = getSignalEnhancements();
+    const se = await getSignalEnhancements();
     const opportunities = await se.getTopOpenMarketBuys(limit);
 
     res.json({
@@ -181,12 +184,14 @@ router.get('/insiders/top/open-market-buys', async (req, res) => {
 router.get('/earnings/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
-    const database = db.getDatabase();
-    const se = getSignalEnhancements();
+    const database = await getDatabaseAsync();
+    const se = await getSignalEnhancements();
 
-    const company = await database.prepare(
-      'SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)'
-    ).get(symbol.toUpperCase());
+    const companyResult = await database.query(
+      'SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)',
+      [symbol.toUpperCase()]
+    );
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -213,7 +218,7 @@ router.get('/earnings/top/momentum', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 30;
     const minBeats = parseInt(req.query.minBeats) || 2;
-    const se = getSignalEnhancements();
+    const se = await getSignalEnhancements();
     const opportunities = await se.getEarningsMomentumOpportunities(minBeats, limit);
 
     res.json({
@@ -239,12 +244,14 @@ router.get('/earnings/top/momentum', async (req, res) => {
 router.get('/combined/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
-    const database = db.getDatabase();
-    const se = getSignalEnhancements();
+    const database = await getDatabaseAsync();
+    const se = await getSignalEnhancements();
 
-    const company = await database.prepare(
-      'SELECT id, name, sector, industry FROM companies WHERE LOWER(symbol) = LOWER(?)'
-    ).get(symbol.toUpperCase());
+    const companyResult = await database.query(
+      'SELECT id, name, sector, industry FROM companies WHERE LOWER(symbol) = LOWER($1)',
+      [symbol.toUpperCase()]
+    );
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -304,63 +311,83 @@ router.get('/combined/:symbol', async (req, res) => {
  */
 router.get('/summary', async (req, res) => {
   try {
-    const se = getSignalEnhancements();
-    const database = db.getDatabase();
+    const se = await getSignalEnhancements();
+    const database = await getDatabaseAsync();
 
-    // Count recent 13F activity
-    const thirteenFStats = await database.prepare(`
-      SELECT
-        COUNT(DISTINCT ih.company_id) as companies_with_activity,
-        SUM(CASE WHEN ih.change_type = 'new' THEN 1 ELSE 0 END) as new_positions,
-        SUM(CASE WHEN ih.change_type = 'increased' THEN 1 ELSE 0 END) as increases,
-        SUM(CASE WHEN ih.change_type = 'sold' THEN 1 ELSE 0 END) as exits
-      FROM investor_holdings ih
-      WHERE ih.filing_date >= date('now', '-90 days')
-    `).get();
+    const defaultNum = (v) => (v != null && Number.isFinite(Number(v)) ? Number(v) : 0);
+
+    // Count recent 13F activity (Postgres: CURRENT_DATE - INTERVAL)
+    let thirteenFStats = { companies_with_activity: 0, new_positions: 0, increases: 0, exits: 0 };
+    try {
+      const r = await database.query(`
+        SELECT
+          COUNT(DISTINCT ih.company_id)::int as companies_with_activity,
+          SUM(CASE WHEN ih.change_type = 'new' THEN 1 ELSE 0 END)::int as new_positions,
+          SUM(CASE WHEN ih.change_type = 'increased' THEN 1 ELSE 0 END)::int as increases,
+          SUM(CASE WHEN ih.change_type = 'sold' THEN 1 ELSE 0 END)::int as exits
+        FROM investor_holdings ih
+        WHERE ih.filing_date >= CURRENT_DATE - INTERVAL '90 days'
+      `);
+      if (r.rows[0]) thirteenFStats = r.rows[0];
+    } catch (e) {
+      console.warn('Signals summary 13F:', e?.message);
+    }
 
     // Count open market buys
-    const insiderStats = await database.prepare(`
-      SELECT
-        COUNT(DISTINCT it.company_id) as companies_with_buys,
-        COUNT(*) as total_buys,
-        SUM(it.total_value) as total_value
-      FROM insider_transactions it
-      WHERE it.transaction_code = 'P'
-        AND it.acquisition_disposition = 'A'
-        AND it.transaction_date >= date('now', '-60 days')
-        AND it.total_value >= 10000
-    `).get();
+    let insiderStats = { companies_with_buys: 0, total_buys: 0, total_value: 0 };
+    try {
+      const r = await database.query(`
+        SELECT
+          COUNT(DISTINCT it.company_id)::int as companies_with_buys,
+          COUNT(*)::int as total_buys,
+          COALESCE(SUM(it.total_value), 0)::float as total_value
+        FROM insider_transactions it
+        WHERE it.transaction_code = 'P'
+          AND it.acquisition_disposition = 'A'
+          AND it.transaction_date >= CURRENT_DATE - INTERVAL '60 days'
+          AND it.total_value >= 10000
+      `);
+      if (r.rows[0]) insiderStats = r.rows[0];
+    } catch (e) {
+      console.warn('Signals summary insiders:', e?.message);
+    }
 
-    // Count earnings momentum
-    const earningsStats = await database.prepare(`
-      SELECT
-        COUNT(*) as companies_with_momentum,
-        AVG(consecutive_beats) as avg_consecutive_beats,
-        AVG(avg_surprise) as avg_surprise_pct
-      FROM earnings_calendar
-      WHERE consecutive_beats >= 2
-    `).get();
+    // Count earnings momentum (table may not exist)
+    let earningsStats = { companies_with_momentum: 0, avg_consecutive_beats: 0, avg_surprise_pct: 0 };
+    try {
+      const r = await database.query(`
+        SELECT
+          COUNT(*)::int as companies_with_momentum,
+          AVG(consecutive_beats)::float as avg_consecutive_beats,
+          AVG(avg_surprise)::float as avg_surprise_pct
+        FROM earnings_calendar
+        WHERE consecutive_beats >= 2
+      `);
+      if (r.rows[0]) earningsStats = r.rows[0];
+    } catch (e) {
+      console.warn('Signals summary earnings:', e?.message);
+    }
 
     res.json({
       success: true,
       summary: {
         thirteenF: {
-          companiesWithActivity: thirteenFStats.companies_with_activity,
-          newPositions: thirteenFStats.new_positions,
-          increases: thirteenFStats.increases,
-          exits: thirteenFStats.exits,
+          companiesWithActivity: defaultNum(thirteenFStats.companies_with_activity),
+          newPositions: defaultNum(thirteenFStats.new_positions),
+          increases: defaultNum(thirteenFStats.increases),
+          exits: defaultNum(thirteenFStats.exits),
           lookbackDays: 90
         },
         insiderOpenMarketBuys: {
-          companiesWithBuys: insiderStats.companies_with_buys,
-          totalBuys: insiderStats.total_buys,
-          totalValue: insiderStats.total_value,
+          companiesWithBuys: defaultNum(insiderStats.companies_with_buys),
+          totalBuys: defaultNum(insiderStats.total_buys),
+          totalValue: defaultNum(insiderStats.total_value),
           lookbackDays: 60
         },
         earningsMomentum: {
-          companiesWithMomentum: earningsStats.companies_with_momentum,
-          avgConsecutiveBeats: earningsStats.avg_consecutive_beats,
-          avgSurprisePct: earningsStats.avg_surprise_pct
+          companiesWithMomentum: defaultNum(earningsStats.companies_with_momentum),
+          avgConsecutiveBeats: defaultNum(earningsStats.avg_consecutive_beats),
+          avgSurprisePct: defaultNum(earningsStats.avg_surprise_pct)
         }
       }
     });

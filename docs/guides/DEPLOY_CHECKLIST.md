@@ -73,6 +73,27 @@ railway variables
 DATABASE_URL=<railway_database_url> npm run db:migrate:postgres
 ```
 
+### Step 10: Populate Company Data (Compare page, screening, etc.)
+The Compare page and many features require company data. If `/api/companies/BAC` returns 404, the companies table is empty.
+
+**Option A – Sync from local SQLite (recommended):**
+```bash
+# Get DATABASE_URL from Railway
+railway variables
+
+# Sync data into existing Postgres tables (companies, daily_prices, etc.)
+DATABASE_URL=postgresql://... npm run db:sync-data
+# Or: DATABASE_URL=postgresql://... node scripts/migrate-to-postgres.js --data-only
+```
+
+Requires local SQLite at `./data/stocks.db` or `./database.sqlite` with company data. Uses column intersection so schema differences between SQLite and Postgres are handled.
+
+**Option B – Full migration (fresh Postgres):**
+```bash
+DATABASE_URL=postgresql://... node scripts/migrate-to-postgres.js
+```
+Creates tables and migrates all data. Use when Postgres is empty.
+
 ---
 
 ## Option B: Deploy to Vercel + Supabase

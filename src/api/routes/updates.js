@@ -2,11 +2,25 @@
  * Updates API Routes
  *
  * Endpoints for triggering and monitoring quarterly SEC data updates.
+ * In PostgreSQL (cloud) deployment these routes return 503 - use Master Scheduler for data refresh.
  */
 
 const express = require('express');
 const router = express.Router();
 const path = require('path');
+const { isPostgres } = require('../../database');
+
+// In PostgreSQL mode, legacy quarterly updates are not available (SQLite-only)
+router.use((req, res, next) => {
+  if (isPostgres) {
+    return res.status(503).json({
+      error: 'Quarterly updates are not available in PostgreSQL deployment',
+      code: 'UPDATES_NOT_AVAILABLE',
+      message: 'Use the Master Scheduler or Update Orchestrator for data refresh in cloud.'
+    });
+  }
+  next();
+});
 
 // Lazy load dependencies to avoid circular imports
 let db = null;

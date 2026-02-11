@@ -1,8 +1,9 @@
 // test-quarterly-update.js
 // Quick test to verify quarterly update system works correctly
 
-const db = require('./src/database');
-const QuarterlyUpdater = require('./src/services/quarterlyUpdater');
+const path = require('path');
+const db = require(path.join(__dirname, '../../src/database'));
+const QuarterlyUpdater = require(path.join(__dirname, '../../src/services/quarterlyUpdater'));
 
 async function testQuarterlyUpdate() {
   console.log('\n=== QUARTERLY UPDATE SYSTEM TEST ===\n');
@@ -32,7 +33,8 @@ async function testQuarterlyUpdate() {
 
   // Test 4: Check update history
   console.log('\n4. Update history:');
-  const history = updater.getUpdateHistory(3);
+  let history = updater.getUpdateHistory(3);
+  if (!Array.isArray(history)) history = [];
   if (history.length === 0) {
     console.log('   No previous updates recorded');
   } else {
@@ -44,7 +46,7 @@ async function testQuarterlyUpdate() {
   // Test 5: Verify unified importer is accessible
   console.log('\n5. Unified importer check:');
   try {
-    const SECBulkImporterUnified = require('./src/bulk-import/importSECBulkUnified');
+    const SECBulkImporterUnified = require(path.join(__dirname, '../../src/bulk-import/importSECBulkUnified'));
     const importer = new SECBulkImporterUnified();
     console.log('   ✓ SECBulkImporterUnified loads correctly');
     console.log(`   ✓ Tag mapper initialized: ${!!importer.tagMapper}`);

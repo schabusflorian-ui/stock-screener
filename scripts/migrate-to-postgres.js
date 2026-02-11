@@ -232,9 +232,26 @@ function sleep(ms) {
 }
 
 /**
- * Migrate data from SQLite table to PostgreSQL with automatic retry on connection failures
+ * Get column names for a table in PostgreSQL
  */
-async function migrateTableData(pgClientRef, sqliteDb, tableName) {
+async function getPostgresTableColumns(pgClient, tableName) {
+  const result = await pgClient.query(`
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = $1
+    ORDER BY ordinal_position
+  `, [tableName]);
+  return result.rows.map(r => r.column_name);
+}
+
+/**
+ * Migrate data from SQLite table to PostgreSQL with automatic retry on connection failures
+ * @param {Object} opts - Options
+ * @param {boolean} opts.dataOnly - If true, only insert into columns that exist in both SQLite and Postgres (for existing tables)
+ */
+async function migrateTableData(pgClientRef, sqliteDb, tableName, opts = {}) {
+  const { dataOnly = false } = opts;
+
   // Check if table exists in SQLite
   const tableExists = sqliteDb.prepare(`
     SELECT name FROM sqlite_master
@@ -245,6 +262,30 @@ async function migrateTableData(pgClientRef, sqliteDb, tableName) {
     return { skipped: true, rows: 0 };
   }
 
+  // In data-only mode, check table exists in Postgres and get column intersection
+  let columns = getTableInfo(sqliteDb, tableName);
+  if (dataOnly) {
+    try {
+      const pgColumns = await getPostgresTableColumns(pgClientRef.client, tableName);
+      if (pgColumns.length === 0) {
+        console.log(`  ⏭️  ${tableName}: table does not exist in Postgres, skipping`);
+        return { skipped: true, rows: 0 };
+      }
+      const pgColSet = new Set(pgColumns);
+      columns = columns.filter(c => pgColSet.has(c.name));
+      if (columns.length === 0) {
+        console.log(`  ⏭️  ${tableName}: no common columns, skipping`);
+        return { skipped: true, rows: 0 };
+      }
+      if (columns.length < getTableInfo(sqliteDb, tableName).length) {
+        console.log(`  ℹ️  ${tableName}: using ${columns.length} shared columns (Postgres schema may differ)`);
+      }
+    } catch (err) {
+      console.error(`  ❌ ${tableName}: could not read Postgres schema: ${err.message}`);
+      return { skipped: true, rows: 0 };
+    }
+  }
+
   // Get row count
   const { count } = sqliteDb.prepare(`SELECT COUNT(*) as count FROM "${tableName}"`).get();
 
@@ -253,8 +294,6 @@ async function migrateTableData(pgClientRef, sqliteDb, tableName) {
     return { skipped: false, rows: 0 };
   }
 
-  // Get column names
-  const columns = getTableInfo(sqliteDb, tableName);
   const columnNames = columns.map(c => `"${c.name}"`);
 
   console.log(`  📦 ${tableName}: migrating ${count} rows...`);
@@ -494,10 +533,26 @@ async function resetSequences(pgClient, tableName) {
 }
 
 /**
+ * Parse command-line args for --data-only flag
+ */
+function parseArgs() {
+  const args = process.argv.slice(2);
+  const dataOnly = args.includes('--data-only');
+  return { dataOnly };
+}
+
+/**
  * Main migration function
  */
 async function migrate() {
-  console.log('\n🚀 SQLite to PostgreSQL Migration\n');
+  const { dataOnly } = parseArgs();
+
+  console.log('\n🚀 SQLite to PostgreSQL Migration');
+  if (dataOnly) {
+    console.log('   Mode: --data-only (insert into existing tables)\n');
+  } else {
+    console.log('   Mode: full (create tables + migrate data)\n');
+  }
 
   // Validate environment
   if (!process.env.DATABASE_URL) {
@@ -505,24 +560,26 @@ async function migrate() {
     console.log('');
     console.log('Usage:');
     console.log('  DATABASE_URL=postgresql://user:pass@host:5432/dbname node scripts/migrate-to-postgres.js');
+    console.log('  DATABASE_URL=postgresql://... node scripts/migrate-to-postgres.js --data-only  # Sync data into existing tables');
     process.exit(1);
   }
 
-  // Connect to SQLite
+  // Connect to SQLite - try multiple paths
   const sqlitePath = process.env.SQLITE_PATH || './data/stocks.db';
-  if (!fs.existsSync(sqlitePath)) {
-    console.error(`❌ SQLite database not found: ${sqlitePath}`);
+  const altSqlitePath = './database.sqlite';
+  const resolvedPath = fs.existsSync(sqlitePath) ? sqlitePath : (fs.existsSync(altSqlitePath) ? altSqlitePath : null);
+  if (!resolvedPath) {
+    console.error(`❌ SQLite database not found. Tried: ${sqlitePath}, ${altSqlitePath}`);
     process.exit(1);
   }
 
-  console.log(`📂 Source: ${sqlitePath}`);
+  console.log(`📂 Source: ${resolvedPath}`);
   console.log(`📂 Target: ${process.env.DATABASE_URL.replace(/:[^:@]+@/, ':***@')}`);
   console.log('');
 
-  const sqliteDb = new Database(sqlitePath, { readonly: true });
+  const sqliteDb = new Database(resolvedPath, { readonly: true });
 
   // Connect to PostgreSQL - use reference object so we can replace client on reconnect
-  // Global connection error handler (logs but doesn't crash, migration loop will handle reconnection)
   const globalConnectionErrorHandler = (err) => {
     console.log(`\n⚠️  Global connection error: ${err.message}`);
   };
@@ -543,33 +600,50 @@ async function migrate() {
       totalRows: 0,
     };
 
-    // Get already-migrated tables from PostgreSQL
-    console.log('🔍 Checking for already-migrated tables...');
-    const pgTablesResult = await pgClientRef.client.query(`
-      SELECT tablename
-      FROM pg_tables
-      WHERE schemaname = 'public'
-      ORDER BY tablename
-    `);
-    const alreadyMigrated = pgTablesResult.rows.map(r => r.tablename);
-    console.log(`✅ Found ${alreadyMigrated.length} already-migrated tables in PostgreSQL\n`);
+    let TABLES;
 
-    // Get all tables from SQLite database, excluding already-migrated tables
-    const TABLES = getAllTableNames(sqliteDb, alreadyMigrated);
-    console.log(`📋 Found ${TABLES.length} tables to migrate from SQLite database\n`);
+    if (dataOnly) {
+      // Data-only: migrate into tables that exist in BOTH SQLite and Postgres
+      const sqliteTables = getAllTableNames(sqliteDb, []);
+      const pgTablesResult = await pgClientRef.client.query(`
+        SELECT tablename FROM pg_tables
+        WHERE schemaname = 'public' ORDER BY tablename
+      `);
+      const pgTableSet = new Set(pgTablesResult.rows.map(r => r.tablename));
+      TABLES = sqliteTables.filter(t => pgTableSet.has(t));
+      console.log(`📋 Data-only: migrating ${TABLES.length} tables (exist in both SQLite and Postgres)\n`);
+    } else {
+      // Full: create tables that don't exist in Postgres
+      const pgTablesResult = await pgClientRef.client.query(`
+        SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename
+      `);
+      const alreadyMigrated = pgTablesResult.rows.map(r => r.tablename);
+      TABLES = getAllTableNames(sqliteDb, alreadyMigrated);
+      console.log(`📋 Full mode: ${TABLES.length} tables to create and migrate\n`);
+    }
 
-    // Create tables and migrate data
     for (const table of TABLES) {
-      const created = await createPostgresTable(pgClientRef.client, sqliteDb, table);
-      if (created) {
-        results.created++;
-        const { skipped, rows } = await migrateTableData(pgClientRef, sqliteDb, table);
+      if (dataOnly) {
+        const { skipped, rows } = await migrateTableData(pgClientRef, sqliteDb, table, { dataOnly: true });
         if (!skipped) {
           results.migrated++;
           results.totalRows += rows;
           await resetSequences(pgClientRef.client, table);
         } else {
           results.skipped++;
+        }
+      } else {
+        const created = await createPostgresTable(pgClientRef.client, sqliteDb, table);
+        if (created) {
+          results.created++;
+          const { skipped, rows } = await migrateTableData(pgClientRef, sqliteDb, table);
+          if (!skipped) {
+            results.migrated++;
+            results.totalRows += rows;
+            await resetSequences(pgClientRef.client, table);
+          } else {
+            results.skipped++;
+          }
         }
       }
     }
@@ -581,7 +655,9 @@ async function migrate() {
     console.log('\n' + '='.repeat(50));
     console.log('📊 Migration Summary');
     console.log('='.repeat(50));
-    console.log(`   Tables created: ${results.created}`);
+    if (!dataOnly) {
+      console.log(`   Tables created: ${results.created}`);
+    }
     console.log(`   Tables migrated: ${results.migrated}`);
     console.log(`   Tables skipped: ${results.skipped}`);
     console.log(`   Total rows: ${results.totalRows.toLocaleString()}`);

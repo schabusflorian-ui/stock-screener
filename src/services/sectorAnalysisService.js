@@ -85,7 +85,7 @@ class SectorAnalysisService {
         ROUND(AVG(CASE WHEN earnings_growth_yoy BETWEEN -100 AND 500 THEN earnings_growth_yoy END)::numeric, 2) as avg_earnings_growth,
         ROUND(AVG(CASE WHEN fcf_yield BETWEEN -100 AND 100 THEN fcf_yield END)::numeric, 2) as avg_fcf_yield,
         ROUND(AVG(CASE WHEN fcf_margin BETWEEN -100 AND 100 THEN fcf_margin END)::numeric, 2) as avg_fcf_margin,
-        ROUND(SUM(COALESCE(market_cap_usd, market_cap)) / 1e9)::numeric, 2) as total_market_cap_b,
+        ROUND((SUM(COALESCE(market_cap_usd, market_cap)) / 1e9)::numeric, 2) as total_market_cap_b,
         ROUND((AVG(data_quality_score))::numeric, 1) as avg_quality_score
       FROM latest_metrics
       GROUP BY sector
@@ -130,7 +130,7 @@ class SectorAnalysisService {
         ROUND(AVG(CASE WHEN earnings_growth_yoy BETWEEN -100 AND 500 THEN earnings_growth_yoy END)::numeric, 2) as avg_earnings_growth,
         ROUND(AVG(CASE WHEN fcf_yield BETWEEN -100 AND 100 THEN fcf_yield END)::numeric, 2) as avg_fcf_yield,
         ROUND(AVG(CASE WHEN fcf_margin BETWEEN -100 AND 100 THEN fcf_margin END)::numeric, 2) as avg_fcf_margin,
-        ROUND(SUM(COALESCE(market_cap_usd, market_cap)) / 1e9)::numeric, 2) as total_market_cap_b,
+        ROUND((SUM(COALESCE(market_cap_usd, market_cap)) / 1e9)::numeric, 2) as total_market_cap_b,
         ROUND((AVG(data_quality_score))::numeric, 1) as avg_quality_score
       FROM latest_metrics
       GROUP BY sector
@@ -305,7 +305,7 @@ class SectorAnalysisService {
         ROUND(operating_margin::numeric, 2) as operating_margin,
         ROUND(fcf_yield::numeric, 2) as fcf_yield,
         ROUND(revenue_growth_yoy::numeric, 2) as revenue_growth,
-        ROUND(market_cap_usd / 1e9)::numeric, 2) as market_cap_b,
+        ROUND((market_cap_usd / 1e9)::numeric, 2) as market_cap_b,
         fiscal_period,
         rank
       FROM ranked
@@ -352,7 +352,7 @@ class SectorAnalysisService {
         ROUND(operating_margin::numeric, 2) as operating_margin,
         ROUND(fcf_yield::numeric, 2) as fcf_yield,
         ROUND(revenue_growth_yoy::numeric, 2) as revenue_growth,
-        ROUND(market_cap_usd / 1e9)::numeric, 2) as market_cap_b,
+        ROUND((market_cap_usd / 1e9)::numeric, 2) as market_cap_b,
         fiscal_period,
         rank
       FROM ranked
@@ -576,7 +576,7 @@ class SectorAnalysisService {
         symbol,
         name,
         industry,
-        ROUND(market_cap / 1e9)::numeric, 2) as market_cap_b,
+        ROUND((market_cap / 1e9)::numeric, 2) as market_cap_b,
         fiscal_period,
         ROUND(last_price::numeric, 2) as current_price,
         ROUND(change_1d::numeric, 2) as change_1d,
@@ -637,7 +637,7 @@ class SectorAnalysisService {
         symbol,
         name,
         industry,
-        ROUND(market_cap / 1e9)::numeric, 2) as market_cap_b,
+        ROUND((market_cap / 1e9)::numeric, 2) as market_cap_b,
         fiscal_period,
         ROUND(last_price::numeric, 2) as current_price,
         ROUND(change_1d::numeric, 2) as change_1d,
@@ -750,7 +750,7 @@ class SectorAnalysisService {
         symbol,
         name,
         sector,
-        ROUND(market_cap / 1e9)::numeric, 2) as market_cap_b,
+        ROUND((market_cap / 1e9)::numeric, 2) as market_cap_b,
         fiscal_period,
         ROUND(last_price::numeric, 2) as current_price,
         ROUND(change_1d::numeric, 2) as change_1d,
@@ -799,7 +799,7 @@ class SectorAnalysisService {
         symbol,
         name,
         sector,
-        ROUND(market_cap / 1e9)::numeric, 2) as market_cap_b,
+        ROUND((market_cap / 1e9)::numeric, 2) as market_cap_b,
         fiscal_period,
         ROUND(last_price::numeric, 2) as current_price,
         ROUND(change_1d::numeric, 2) as change_1d,

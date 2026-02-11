@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { companyAPI, pricesAPI, indicesAPI, screeningAPI } from '../services/api';
-import { PageHeader } from '../components/ui';
+import { PageHeader, Callout } from '../components/ui';
 import { useAskAI, AskAIProvider } from '../hooks';
 import {
   Sparkles, Building2, Pill, Cpu, Tv, Zap,
@@ -229,6 +229,7 @@ function ComparePage() {
   const [selectedIndices, setSelectedIndices] = useState([]);
   const [indexPriceData, setIndexPriceData] = useState({});
   const [companyPrices, setCompanyPrices] = useState({});
+  const [notFoundMessage, setNotFoundMessage] = useState(null);
   // Advanced tab state
   const [correlationType, setCorrelationType] = useState('pearson');
   const [advancedMetric, setAdvancedMetric] = useState('roic');
@@ -288,7 +289,6 @@ function ComparePage() {
         companyAPI.getBreakdown(symbol, { limit: 5, periodType }),
         pricesAPI.getMetrics(symbol).catch(() => ({ data: null }))
       ]);
-
       // Parse price metrics - access nested data object (API returns { success, data: {...} })
       const pm = priceMetricsRes.data?.data;
       const priceMetrics = pm ? {
@@ -349,7 +349,8 @@ function ComparePage() {
       };
     } catch (error) {
       console.error(`Error loading data for ${symbol}:`, error);
-      return null;
+      const isNotFound = error.response?.status === 404 || error.response?.data?.code === 'COMPANY_NOT_FOUND';
+      return { failed: true, symbol, isNotFound };
     }
   }, [periodType]);
 
@@ -362,7 +363,7 @@ function ComparePage() {
       const newBreakdown = {};
       for (const symbol of selectedCompanies) {
         const data = await loadCompanyData(symbol);
-        if (data) {
+        if (data && !data.failed) {
           newData[symbol] = data;
           newBreakdown[symbol] = data.breakdown;
         }
@@ -387,13 +388,21 @@ function ComparePage() {
     setLoading(true);
     setUnifiedQuery('');
     setUnifiedResults([]);
+    setNotFoundMessage(null);
 
     const [data, priceRes] = await Promise.all([
       loadCompanyData(symbol),
       pricesAPI.get(symbol, { period: '1y' }).catch(() => ({ data: null }))
     ]);
 
-    if (data) {
+    if (data?.failed) {
+      setSelectedCompanies(prev => prev.filter(s => s !== symbol));
+      setNotFoundMessage(
+        data.isNotFound
+          ? `${symbol} not found. This symbol may not be in our database yet. Try symbols from the search or predefined groups.`
+          : `Failed to load ${symbol}. Please try again.`
+      );
+    } else if (data) {
       setCompanyData(prev => ({ ...prev, [symbol]: data }));
       setBreakdownData(prev => ({ ...prev, [symbol]: data.breakdown }));
     }
@@ -1090,6 +1099,16 @@ function ComparePage() {
         title="Company Comparison"
         subtitle="Compare up to 5 companies with detailed metrics and analysis"
       />
+
+      {notFoundMessage && (
+        <Callout
+          type="warning"
+          title="Symbol not found"
+          onDismiss={() => setNotFoundMessage(null)}
+        >
+          {notFoundMessage}
+        </Callout>
+      )}
 
       {/* Unified Search Bar - PRISM AI Design */}
       <div className="unified-search-section">

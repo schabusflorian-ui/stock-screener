@@ -5,6 +5,7 @@ const express = require('express');
 const { getDatabaseAsync, isPostgres } = require('../../database');
 const router = express.Router();
 const { requireAdmin } = require('../../middleware/auth');
+const { getSubscriptionService } = require('../../services/subscriptionService');
 
 // All admin routes require admin access
 router.use(requireAdmin);
@@ -235,6 +236,63 @@ router.delete('/users/:id', async (req, res) => {
     }
   } catch (error) {
     console.error('Error deleting user:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/admin/users/set-tier-by-email - Set subscription tier by email (production-safe)
+router.post('/users/set-tier-by-email', async (req, res) => {
+  try {
+    const { email, tier } = req.body;
+    if (!email || !tier) {
+      return res.status(400).json({ error: 'email and tier are required' });
+    }
+    const tierName = String(tier).toLowerCase();
+    const validTiers = ['free', 'pro', 'ultra'];
+    if (!validTiers.includes(tierName)) {
+      return res.status(400).json({ error: 'tier must be one of: free, pro, ultra' });
+    }
+
+    const database = await getDatabaseAsync();
+    const userResult = await database.query(
+      'SELECT id, email, name FROM users WHERE LOWER(email) = LOWER($1)',
+      [email.trim()]
+    );
+    const user = userResult.rows[0];
+    if (!user) {
+      return res.status(404).json({ error: `No user found with email: ${email}` });
+    }
+
+    const tierResult = await database.query(
+      'SELECT id, name, display_name FROM subscription_tiers WHERE name = $1 AND is_active = 1',
+      [tierName]
+    );
+    const tierRow = tierResult.rows[0];
+    if (!tierRow) {
+      return res.status(404).json({ error: `Tier "${tierName}" not found` });
+    }
+
+    const subscriptionService = getSubscriptionService();
+    const now = new Date();
+    const periodEnd = new Date(now);
+    periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+    await subscriptionService.createOrUpdateSubscription(user.id, {
+      tierId: tierRow.id,
+      status: 'active',
+      billingPeriod: 'monthly',
+      currentPeriodStart: now.toISOString(),
+      currentPeriodEnd: periodEnd.toISOString()
+    });
+
+    res.json({
+      success: true,
+      email: user.email,
+      userId: user.id,
+      tier: tierRow.display_name,
+      tierName: tierRow.name
+    });
+  } catch (error) {
+    console.error('Error setting tier by email:', error);
     res.status(500).json({ error: error.message });
   }
 });
