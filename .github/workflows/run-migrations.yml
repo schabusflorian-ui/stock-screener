@@ -1,0 +1,39 @@
+# Run PostgreSQL migrations (e.g. for cloud DB).
+# Trigger: manual (workflow_dispatch) or on push to main.
+# Required secret: DATABASE_URL (postgres://user:pass@host:port/dbname)
+
+name: Run Postgres migrations
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/database-migrations/**'
+      - 'src/lib/db.js'
+      - '.github/workflows/run-migrations.yml'
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Postgres migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node src/database-migrations/run-postgres-migrations.js
+        continue-on-error: false
