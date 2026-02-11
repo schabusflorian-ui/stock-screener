@@ -608,6 +608,47 @@ router.get('/update-status', async (req, res) => {
 });
 
 /**
+ * GET /api/insiders/stats/debug
+ * Debug endpoint to check table existence
+ */
+router.get('/stats/debug', async (req, res) => {
+  try {
+    const database = await getDatabaseAsync();
+    const tables = {};
+    
+    // Check each table
+    const tablesToCheck = ['insider_transactions', 'insider_activity_summary', 'insiders', 'companies'];
+    
+    for (const tableName of tablesToCheck) {
+      try {
+        const result = await database.query(`SELECT COUNT(*) as count FROM ${tableName}`);
+        tables[tableName] = { exists: true, count: result.rows[0].count };
+      } catch (err) {
+        tables[tableName] = { 
+          exists: false, 
+          error: err.message,
+          code: err.code 
+        };
+      }
+    }
+    
+    res.json({
+      success: true,
+      deployment_time: new Date().toISOString(),
+      tables,
+      errorHandlerVersion: 'v2-comprehensive'
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false,
+      error: error.message,
+      code: error.code,
+      detail: error.detail
+    });
+  }
+});
+
+/**
  * GET /api/insiders/stats
  * Get overall insider trading statistics
  */
@@ -627,8 +668,12 @@ router.get('/stats', async (req, res) => {
   });
 
   try {
+    console.log('[insiders/stats] Starting request...');
     const database = await getDatabaseAsync();
+    console.log('[insiders/stats] Database obtained');
+    
     // Overall stats (Postgres: CURRENT_DATE - INTERVAL)
+    console.log('[insiders/stats] Querying overall stats...');
     const statsResult = await database.query(`
       SELECT
         COUNT(DISTINCT it.company_id)::int as companies_with_activity,
@@ -642,8 +687,10 @@ router.get('/stats', async (req, res) => {
       WHERE it.transaction_date >= CURRENT_DATE - INTERVAL '1 year'
     `);
     const stats = statsResult.rows[0];
+    console.log('[insiders/stats] Stats retrieved:', stats);
 
     // Monthly trend (Postgres: TO_CHAR, CURRENT_DATE - INTERVAL)
+    console.log('[insiders/stats] Querying monthly trend...');
     const monthlyTrendResult = await database.query(`
       SELECT
         TO_CHAR(transaction_date, 'YYYY-MM') as month,
@@ -657,10 +704,12 @@ router.get('/stats', async (req, res) => {
       ORDER BY month ASC
     `);
     const monthlyTrend = monthlyTrendResult.rows;
+    console.log('[insiders/stats] Monthly trend retrieved, rows:', monthlyTrend.length);
 
     // Signal distribution (insider_activity_summary may not exist)
     let signalDistribution = {};
     try {
+      console.log('[insiders/stats] Querying signal distribution...');
       const signalDistResult = await database.query(`
         SELECT
           insider_signal,
@@ -672,10 +721,13 @@ router.get('/stats', async (req, res) => {
       signalDistribution = Object.fromEntries(
         signalDistResult.rows.map(s => [s.insider_signal, s.count])
       );
+      console.log('[insiders/stats] Signal distribution retrieved');
     } catch (signalErr) {
+      console.log('[insiders/stats] Signal distribution query failed:', signalErr.message);
       if (!isInsiderTableMissingError(signalErr)) throw signalErr;
     }
 
+    console.log('[insiders/stats] Sending response...');
     res.json({
       yearToDate: stats,
       monthlyTrend,
@@ -683,20 +735,25 @@ router.get('/stats', async (req, res) => {
     });
   } catch (error) {
     // Log full error details for debugging
-    console.error('Error fetching insider stats:', {
+    console.error('[insiders/stats] ERROR:', {
       message: error.message,
       code: error.code,
       detail: error.detail,
-      stack: error.stack?.split('\n').slice(0, 3).join('\n')
+      name: error.name,
+      stack: error.stack?.split('\n').slice(0, 5).join('\n')
     });
     
     if (isInsiderTableMissingError(error)) {
-      console.log('Insider tables missing - returning empty response');
+      console.log('[insiders/stats] Insider tables missing - returning empty response');
       return res.json(emptyResponse());
     }
     
+    // Always return a response, even if headers were sent
     if (!res.headersSent) {
-      res.status(500).json({ error: error.message });
+      console.error('[insiders/stats] Sending 500 error response');
+      res.status(500).json({ error: error.message, code: error.code });
+    } else {
+      console.error('[insiders/stats] Headers already sent, cannot send error response');
     }
   }
 });
