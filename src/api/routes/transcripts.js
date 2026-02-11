@@ -8,22 +8,24 @@
 const express = require('express');
 const router = express.Router();
 const { TranscriptService, ValuationService } = require('../../services/transcripts');
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
-// Initialize services
 let transcriptService = null;
 let valuationService = null;
+let cachedDb = null;
 
-function getTranscriptService() {
+async function getTranscriptService() {
   if (!transcriptService) {
-    transcriptService = new TranscriptService(db.getDatabase());
+    cachedDb = cachedDb || await getDatabaseAsync();
+    transcriptService = new TranscriptService(cachedDb);
   }
   return transcriptService;
 }
 
-function getValuationService() {
+async function getValuationService() {
   if (!valuationService) {
-    valuationService = new ValuationService(db.getDatabase());
+    cachedDb = cachedDb || await getDatabaseAsync();
+    valuationService = new ValuationService(cachedDb);
   }
   return valuationService;
 }
@@ -36,13 +38,13 @@ function getValuationService() {
  * GET /api/transcripts/:symbol
  * Get transcript history for a symbol
  */
-router.get('/:symbol', (req, res) => {
+router.get('/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
     const limit = parseInt(req.query.limit) || 8;
 
-    const service = getTranscriptService();
-    const transcripts = service.getTranscriptHistory(symbol.toUpperCase(), limit);
+    const service = await getTranscriptService();
+    const transcripts = await service.getTranscriptHistory(symbol.toUpperCase(), limit);
 
     res.json({
       symbol: symbol.toUpperCase(),
@@ -59,11 +61,11 @@ router.get('/:symbol', (req, res) => {
  * GET /api/transcripts/:symbol/latest
  * Get latest transcript for a symbol
  */
-router.get('/:symbol/latest', (req, res) => {
+router.get('/:symbol/latest', async (req, res) => {
   try {
     const { symbol } = req.params;
-    const service = getTranscriptService();
-    const transcript = service.getLatestTranscript(symbol.toUpperCase());
+    const service = await getTranscriptService();
+    const transcript = await service.getLatestTranscript(symbol.toUpperCase());
 
     if (!transcript) {
       return res.status(404).json({ error: 'No transcript found for symbol' });
@@ -80,13 +82,13 @@ router.get('/:symbol/latest', (req, res) => {
  * GET /api/transcripts/:symbol/sentiment-trend
  * Get sentiment trend over recent quarters
  */
-router.get('/:symbol/sentiment-trend', (req, res) => {
+router.get('/:symbol/sentiment-trend', async (req, res) => {
   try {
     const { symbol } = req.params;
     const quarters = parseInt(req.query.quarters) || 8;
 
-    const service = getTranscriptService();
-    const trend = service.getSentimentTrend(symbol.toUpperCase(), quarters);
+    const service = await getTranscriptService();
+    const trend = await service.getSentimentTrend(symbol.toUpperCase(), quarters);
 
     res.json({
       symbol: symbol.toUpperCase(),
@@ -102,10 +104,10 @@ router.get('/:symbol/sentiment-trend', (req, res) => {
  * GET /api/transcripts/signals/improving
  * Find companies with improving sentiment
  */
-router.get('/signals/improving', (req, res) => {
+router.get('/signals/improving', async (req, res) => {
   try {
-    const service = getTranscriptService();
-    const companies = service.findImprovingSentiment();
+    const service = await getTranscriptService();
+    const companies = await service.findImprovingSentiment();
 
     res.json({
       signal: 'improving_sentiment',
@@ -122,10 +124,10 @@ router.get('/signals/improving', (req, res) => {
  * GET /api/transcripts/signals/deteriorating
  * Find companies with deteriorating sentiment
  */
-router.get('/signals/deteriorating', (req, res) => {
+router.get('/signals/deteriorating', async (req, res) => {
   try {
-    const service = getTranscriptService();
-    const companies = service.findDeterioratingSentiment();
+    const service = await getTranscriptService();
+    const companies = await service.findDeterioratingSentiment();
 
     res.json({
       signal: 'deteriorating_sentiment',
@@ -142,7 +144,7 @@ router.get('/signals/deteriorating', (req, res) => {
  * POST /api/transcripts/:symbol/analyze
  * Analyze transcript text (for manual input)
  */
-router.post('/:symbol/analyze', (req, res) => {
+router.post('/:symbol/analyze', async (req, res) => {
   try {
     const { symbol } = req.params;
     const { text, fiscalYear, fiscalQuarter, callDate } = req.body;
@@ -151,16 +153,15 @@ router.post('/:symbol/analyze', (req, res) => {
       return res.status(400).json({ error: 'Transcript text is required' });
     }
 
-    const service = getTranscriptService();
+    const service = await getTranscriptService();
     const analysis = service.analyzeTranscript(text);
 
-    // Get company ID
-    const company = db.getDatabase().prepare('SELECT id FROM companies WHERE symbol = ?')
-      .get(symbol.toUpperCase());
+    const db = await getDatabaseAsync();
+    const companyRes = await db.query('SELECT id FROM companies WHERE symbol = $1', [symbol.toUpperCase()]);
+    const company = companyRes.rows[0];
 
     if (company && fiscalYear && fiscalQuarter && callDate) {
-      // Store the transcript
-      service.storeTranscript({
+      await service.storeTranscript({
         companyId: company.id,
         symbol: symbol.toUpperCase(),
         fiscalYear,
@@ -189,13 +190,13 @@ router.post('/:symbol/analyze', (req, res) => {
  * GET /api/transcripts/:symbol/guidance
  * Get guidance history for a symbol
  */
-router.get('/:symbol/guidance', (req, res) => {
+router.get('/:symbol/guidance', async (req, res) => {
   try {
     const { symbol } = req.params;
     const limit = parseInt(req.query.limit) || 8;
 
-    const service = getTranscriptService();
-    const guidance = service.getGuidanceHistory(symbol.toUpperCase(), limit);
+    const service = await getTranscriptService();
+    const guidance = await service.getGuidanceHistory(symbol.toUpperCase(), limit);
 
     res.json({
       symbol: symbol.toUpperCase(),

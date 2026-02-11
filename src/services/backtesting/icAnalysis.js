@@ -2,7 +2,7 @@
 // Information Coefficient (IC) Analysis for Signal Quality Testing
 // Measures predictive power of trading signals using rank correlation
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * Calculate Spearman rank correlation coefficient

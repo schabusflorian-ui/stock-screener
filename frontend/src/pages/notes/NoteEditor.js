@@ -28,7 +28,7 @@ function NoteEditor({ note, notebooks, tags: initialTags, onSave, onClose }) {
   // Form state
   const [title, setTitle] = useState(note?.title || '');
   const [content, setContent] = useState(note?.content || '');
-  const [notebookId, setNotebookId] = useState(note?.notebook_id || notebooks[0]?.id);
+  const [notebookId, setNotebookId] = useState(note?.notebook_id || notebooks?.[0]?.id);
   const [noteType, setNoteType] = useState(note?.note_type || 'general');
   const [selectedTags, setSelectedTags] = useState(getInitialSelectedTags());
   const [symbols, setSymbols] = useState(note?.attachments?.filter(a => a.attachment_type === 'company').map(a => a.symbol) || note?.symbols || []);

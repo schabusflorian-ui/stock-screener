@@ -2,7 +2,7 @@
 // Regime-Conditional Performance Analysis
 // Analyzes strategy performance across different market regimes
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { calculateMetrics } = require('./walkForwardEngine');
 
 /**

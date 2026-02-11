@@ -1,13 +1,21 @@
 // src/services/scheduler/beginnerStrategyScheduler.js
 // Scheduler for checking and creating beginner strategy contribution signals
 
-const db = require('../../database').db;
+const { getDatabaseAsync } = require('../../lib/db');
 
 class BeginnerStrategyScheduler {
   constructor() {
     this.isRunning = false;
     this.checkInterval = null;
     this.lastCheck = null;
+    this.dbPromise = null;
+  }
+
+  async _getDb() {
+    if (!this.dbPromise) {
+      this.dbPromise = getDatabaseAsync();
+    }
+    return this.dbPromise;
   }
 
   /**
@@ -58,14 +66,16 @@ class BeginnerStrategyScheduler {
     console.log('[BeginnerScheduler] Checking for due contributions...');
 
     try {
+      const database = await this._getDb();
       // Get all active beginner agents
-      const beginnerAgents = db.prepare(`
+      const beginnerAgentsResult = await database.query(`
         SELECT * FROM trading_agents
         WHERE agent_category = 'beginner'
           AND is_active = 1
           AND status != 'paused'
           AND beginner_config IS NOT NULL
-      `).all();
+      `);
+      const beginnerAgents = beginnerAgentsResult.rows;
 
       console.log(`[BeginnerScheduler] Found ${beginnerAgents.length} active beginner agents`);
 
@@ -80,12 +90,13 @@ class BeginnerStrategyScheduler {
           // Check if contribution is due
           if (nextContributionDate && nextContributionDate <= today) {
             // Check if we already have a pending contribution for today
-            const existingContribution = db.prepare(`
+            const existingContributionResult = await database.query(`
               SELECT * FROM beginner_contributions
-              WHERE agent_id = ?
-                AND contribution_date = ?
+              WHERE agent_id = $1
+                AND contribution_date = $2
                 AND status IN ('pending', 'executed')
-            `).get(agent.id, today);
+            `, [agent.id, today]);
+            const existingContribution = existingContributionResult.rows[0];
 
             if (!existingContribution) {
               // Create contribution signals
@@ -94,7 +105,7 @@ class BeginnerStrategyScheduler {
                 contributionsCreated++;
 
                 // Update next contribution date
-                this.updateNextContributionDate(agent.id, config);
+                await this.updateNextContributionDate(agent.id, config);
               }
             } else {
               console.log(`[BeginnerScheduler] Agent ${agent.id}: Contribution already exists for ${today}`);
@@ -121,8 +132,9 @@ class BeginnerStrategyScheduler {
    * Create contribution signals for a beginner agent
    */
   async createContributionSignals(agent, config) {
+    const database = await this._getDb();
     const BeginnerStrategyEngine = require('../strategy/beginnerStrategyEngine');
-    const engine = new BeginnerStrategyEngine(db);
+    const engine = new BeginnerStrategyEngine(database);
 
     const signals = await engine.generateSignals(agent.id);
 
@@ -135,23 +147,25 @@ class BeginnerStrategyScheduler {
     const signalIds = [];
 
     // Get agent's portfolio
-    const portfolio = db.prepare(`
+    const portfolioResult = await database.query(`
       SELECT ap.portfolio_id FROM agent_portfolios ap
-      WHERE ap.agent_id = ? AND ap.is_active = 1
+      WHERE ap.agent_id = $1 AND ap.is_active = 1
       LIMIT 1
-    `).get(agent.id);
+    `, [agent.id]);
+    const portfolio = portfolioResult.rows[0];
 
     // Create signals in agent_signals table
     for (const signal of signals) {
-      const result = db.prepare(`
+      const result = await database.query(`
         INSERT INTO agent_signals (
           agent_id, symbol, signal_date, action,
           overall_score, confidence, price_at_signal,
           position_value, suggested_shares,
           contribution_type, contribution_amount,
           reasoning, status
-        ) VALUES (?, ?, CURRENT_TIMESTAMP, ?, 1.0, 1.0, ?, ?, ?, ?, ?, ?, 'pending')
-      `).run(
+        ) VALUES ($1, $2, CURRENT_TIMESTAMP, $3, 1.0, 1.0, $4, $5, $6, $7, $8, $9, 'pending')
+        RETURNING id
+      `, [
         agent.id,
         signal.symbol,
         signal.action,
@@ -161,19 +175,19 @@ class BeginnerStrategyScheduler {
         config.strategy_type,
         signal.amount,
         JSON.stringify({ reason: signal.reason, strategy: config.strategy_type })
-      );
+      ]);
 
-      signalIds.push(result.lastInsertRowid);
+      signalIds.push(result.rows?.[0]?.id || result.lastInsertRowid);
     }
 
     // Record in beginner_contributions table
     const totalAmount = signals.reduce((sum, s) => sum + (s.amount || 0), 0);
-    db.prepare(`
+    await database.query(`
       INSERT INTO beginner_contributions (
         agent_id, portfolio_id, contribution_date, strategy_type,
         planned_amount, status, signal_ids, notes
-      ) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
-    `).run(
+      ) VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7)
+    `, [
       agent.id,
       portfolio?.portfolio_id || null,
       today,
@@ -181,17 +195,17 @@ class BeginnerStrategyScheduler {
       totalAmount,
       JSON.stringify(signalIds),
       `Scheduled ${config.strategy_type} contribution`
-    );
+    ]);
 
     // Log activity
-    db.prepare(`
+    await database.query(`
       INSERT INTO agent_activity_log (agent_id, portfolio_id, activity_type, description)
-      VALUES (?, ?, 'contribution_scheduled', ?)
-    `).run(
+      VALUES ($1, $2, 'contribution_scheduled', $3)
+    `, [
       agent.id,
       portfolio?.portfolio_id || null,
       `Scheduled ${config.strategy_type} contribution: $${totalAmount.toFixed(2)} across ${signals.length} assets`
-    );
+    ]);
 
     console.log(`[BeginnerScheduler] Agent ${agent.id}: Created ${signals.length} signals for $${totalAmount.toFixed(2)}`);
 
@@ -201,7 +215,8 @@ class BeginnerStrategyScheduler {
   /**
    * Update the next contribution date after a contribution is created
    */
-  updateNextContributionDate(agentId, config) {
+  async updateNextContributionDate(agentId, config) {
+    const database = await this._getDb();
     const frequency = config.frequency || config.dca_frequency || 'monthly';
     const frequencyDay = config.frequency_day || 1;
 
@@ -214,11 +229,11 @@ class BeginnerStrategyScheduler {
       last_contribution_date: new Date().toISOString().split('T')[0]
     };
 
-    db.prepare(`
+    await database.query(`
       UPDATE trading_agents
-      SET beginner_config = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(JSON.stringify(newConfig), agentId);
+      SET beginner_config = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+    `, [JSON.stringify(newConfig), agentId]);
 
     console.log(`[BeginnerScheduler] Agent ${agentId}: Next contribution date set to ${nextDate}`);
   }
@@ -282,10 +297,12 @@ class BeginnerStrategyScheduler {
    * Manually trigger a contribution check for a specific agent
    */
   async triggerAgentCheck(agentId) {
-    const agent = db.prepare(`
+    const database = await this._getDb();
+    const agentResult = await database.query(`
       SELECT * FROM trading_agents
-      WHERE id = ? AND agent_category = 'beginner'
-    `).get(agentId);
+      WHERE id = $1 AND agent_category = 'beginner'
+    `, [agentId]);
+    const agent = agentResult.rows[0];
 
     if (!agent) {
       throw new Error(`Beginner agent ${agentId} not found`);
@@ -298,21 +315,23 @@ class BeginnerStrategyScheduler {
   /**
    * Get due contributions summary
    */
-  getDueContributions() {
+  async getDueContributions() {
+    const database = await this._getDb();
     const today = new Date().toISOString().split('T')[0];
 
-    const dueAgents = db.prepare(`
+    const dueAgentsResult = await database.query(`
       SELECT
         ta.id,
         ta.name,
         ta.beginner_config,
         (SELECT COUNT(*) FROM beginner_contributions bc
-         WHERE bc.agent_id = ta.id AND bc.contribution_date = ? AND bc.status = 'pending') as pending_today
+         WHERE bc.agent_id = ta.id AND bc.contribution_date = $1 AND bc.status = 'pending') as pending_today
       FROM trading_agents ta
       WHERE ta.agent_category = 'beginner'
         AND ta.is_active = 1
         AND ta.beginner_config IS NOT NULL
-    `).all(today);
+    `, [today]);
+    const dueAgents = dueAgentsResult.rows;
 
     return dueAgents.map(agent => {
       const config = JSON.parse(agent.beginner_config);
@@ -330,13 +349,15 @@ class BeginnerStrategyScheduler {
   /**
    * Get contribution history for an agent
    */
-  getContributionHistory(agentId, limit = 20) {
-    return db.prepare(`
+  async getContributionHistory(agentId, limit = 20) {
+    const database = await this._getDb();
+    const result = await database.query(`
       SELECT * FROM beginner_contributions
-      WHERE agent_id = ?
+      WHERE agent_id = $1
       ORDER BY contribution_date DESC
-      LIMIT ?
-    `).all(agentId, limit);
+      LIMIT $2
+    `, [agentId, limit]);
+    return result.rows;
   }
 }
 

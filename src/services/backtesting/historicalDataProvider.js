@@ -2,7 +2,7 @@
 // Provides point-in-time data access for historical backtesting
 // Ensures no lookahead bias by filtering all queries to simulationDate
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * HistoricalDataProvider - Time-travel layer for backtesting

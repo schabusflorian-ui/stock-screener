@@ -2,7 +2,7 @@
 // Statistical Validation Framework for Alpha Significance Testing
 // Implements t-tests, bootstrap confidence intervals, Deflated Sharpe Ratio, and multiple testing corrections
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * Normal distribution CDF

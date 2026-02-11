@@ -4,7 +4,7 @@
 
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const {
   VaRCalculator,
   EfficientFrontierCalculator,
@@ -24,15 +24,15 @@ const { SignalEnhancer } = require('../../services/agent');
 router.get('/var/:portfolioId', async (req, res) => {
   try {
     const { portfolioId } = req.params;
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
-    // Get portfolio snapshots for returns
-    const snapshots = database.prepare(`
+    const snapshotsRes = await database.query(`
       SELECT snapshot_date, total_value FROM portfolio_snapshots
-      WHERE portfolio_id = ?
+      WHERE portfolio_id = $1
       ORDER BY snapshot_date DESC
       LIMIT 365
-    `).all(portfolioId);
+    `, [portfolioId]);
+    const snapshots = snapshotsRes.rows;
 
     if (snapshots.length < 30) {
       return res.status(400).json({
@@ -42,8 +42,8 @@ router.get('/var/:portfolioId', async (req, res) => {
       });
     }
 
-    // Get current portfolio value
-    const portfolio = database.prepare('SELECT current_value FROM portfolios WHERE id = ?').get(portfolioId);
+    const portfolioRes = await database.query('SELECT current_value FROM portfolios WHERE id = $1', [portfolioId]);
+    const portfolio = portfolioRes.rows[0];
     if (!portfolio) {
       return res.status(404).json({ success: false, error: 'Portfolio not found' });
     }
@@ -80,20 +80,22 @@ router.post('/var/stress-test/:portfolioId', async (req, res) => {
   try {
     const { portfolioId } = req.params;
     const { scenarios } = req.body;
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
-    const snapshots = database.prepare(`
+    const snapshotsRes = await database.query(`
       SELECT total_value FROM portfolio_snapshots
-      WHERE portfolio_id = ?
+      WHERE portfolio_id = $1
       ORDER BY snapshot_date DESC
       LIMIT 365
-    `).all(portfolioId);
+    `, [portfolioId]);
+    const snapshots = snapshotsRes.rows;
 
     if (snapshots.length < 30) {
       return res.status(400).json({ success: false, error: 'Insufficient history' });
     }
 
-    const portfolio = database.prepare('SELECT current_value FROM portfolios WHERE id = ?').get(portfolioId);
+    const portfolioRes = await database.query('SELECT current_value FROM portfolios WHERE id = $1', [portfolioId]);
+    const portfolio = portfolioRes.rows[0];
 
     const returns = [];
     for (let i = 0; i < snapshots.length - 1; i++) {
@@ -129,7 +131,7 @@ router.post('/var/stress-test/:portfolioId', async (req, res) => {
 router.post('/efficient-frontier', async (req, res) => {
   try {
     const { symbols, constraints, riskFreeRate } = req.body;
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
     if (!symbols || !Array.isArray(symbols) || symbols.length < 2) {
       return res.status(400).json({
@@ -138,21 +140,23 @@ router.post('/efficient-frontier', async (req, res) => {
       });
     }
 
-    // Gather asset data
     const assets = [];
     for (const symbol of symbols) {
-      const company = database.prepare(`
-        SELECT id, symbol FROM companies WHERE LOWER(symbol) = LOWER(?)
-      `).get(symbol);
+      const companyRes = await database.query(
+        'SELECT id, symbol FROM companies WHERE LOWER(symbol) = LOWER($1)',
+        [symbol]
+      );
+      const company = companyRes.rows[0];
 
       if (!company) continue;
 
-      const prices = database.prepare(`
+      const pricesRes = await database.query(`
         SELECT date, close FROM daily_prices
-        WHERE company_id = ?
+        WHERE company_id = $1
         ORDER BY date DESC
         LIMIT 252
-      `).all(company.id);
+      `, [company.id]);
+      const prices = pricesRes.rows;
 
       if (prices.length < 60) continue;
 
@@ -199,7 +203,7 @@ router.post('/efficient-frontier', async (req, res) => {
 router.post('/max-sharpe', async (req, res) => {
   try {
     const { symbols, constraints, riskFreeRate } = req.body;
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
     if (!symbols || symbols.length < 2) {
       return res.status(400).json({ success: false, error: 'Need at least 2 symbols' });
@@ -230,7 +234,7 @@ router.post('/max-sharpe', async (req, res) => {
 router.post('/black-litterman', async (req, res) => {
   try {
     const { symbols, views, marketCaps } = req.body;
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
     if (!symbols || symbols.length < 2) {
       return res.status(400).json({ success: false, error: 'Need at least 2 symbols' });
@@ -269,7 +273,7 @@ router.post('/black-litterman', async (req, res) => {
 router.post('/hrp', async (req, res) => {
   try {
     const { symbols } = req.body;
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
     if (!symbols || symbols.length < 2) {
       return res.status(400).json({ success: false, error: 'Need at least 2 symbols' });
@@ -300,7 +304,7 @@ router.post('/hrp', async (req, res) => {
 router.post('/hrp/compare', async (req, res) => {
   try {
     const { symbols } = req.body;
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
     if (!symbols || symbols.length < 2) {
       return res.status(400).json({ success: false, error: 'Need at least 2 symbols' });
@@ -331,16 +335,16 @@ router.post('/hrp/compare', async (req, res) => {
 router.get('/portfolio/:portfolioId/optimize', async (req, res) => {
   try {
     const { portfolioId } = req.params;
-    const method = req.query.method || 'hrp'; // hrp, sharpe, min-variance
-    const database = db.getDatabase();
+    const method = req.query.method || 'hrp';
+    const database = await getDatabaseAsync();
 
-    // Get current positions
-    const positions = database.prepare(`
+    const positionsRes = await database.query(`
       SELECT pp.company_id, pp.current_value, c.symbol
       FROM portfolio_positions pp
       JOIN companies c ON pp.company_id = c.id
-      WHERE pp.portfolio_id = ?
-    `).all(portfolioId);
+      WHERE pp.portfolio_id = $1
+    `, [portfolioId]);
+    const positions = positionsRes.rows;
 
     if (positions.length < 2) {
       return res.status(400).json({
@@ -416,9 +420,10 @@ router.get('/attribution/:portfolioId', async (req, res) => {
   try {
     const { portfolioId } = req.params;
     const { startDate, endDate } = req.query;
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
-    const portfolio = database.prepare('SELECT * FROM portfolios WHERE id = ?').get(portfolioId);
+    const portfolioRes = await database.query('SELECT * FROM portfolios WHERE id = $1', [portfolioId]);
+    const portfolio = portfolioRes.rows[0];
     if (!portfolio) {
       return res.status(404).json({ success: false, error: 'Portfolio not found' });
     }
@@ -438,13 +443,13 @@ router.get('/attribution/:portfolioId', async (req, res) => {
       'Materials': 0.02,
     };
 
-    // Get portfolio sector weights and returns
-    const positions = database.prepare(`
+    const positionsRes = await database.query(`
       SELECT pp.*, c.symbol, c.sector
       FROM portfolio_positions pp
       JOIN companies c ON pp.company_id = c.id
-      WHERE pp.portfolio_id = ?
-    `).all(portfolioId);
+      WHERE pp.portfolio_id = $1
+    `, [portfolioId]);
+    const positions = positionsRes.rows;
 
     const totalValue = positions.reduce((sum, p) => sum + (p.current_value || 0), 0);
 
@@ -513,20 +518,21 @@ router.get('/attribution/:portfolioId', async (req, res) => {
 router.get('/factor-attribution/:portfolioId', async (req, res) => {
   try {
     const { portfolioId } = req.params;
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
-    const portfolio = database.prepare('SELECT * FROM portfolios WHERE id = ?').get(portfolioId);
+    const portfolioRes = await database.query('SELECT * FROM portfolios WHERE id = $1', [portfolioId]);
+    const portfolio = portfolioRes.rows[0];
     if (!portfolio) {
       return res.status(404).json({ success: false, error: 'Portfolio not found' });
     }
 
-    // Get portfolio returns from snapshots
-    const snapshots = database.prepare(`
+    const snapshotsRes = await database.query(`
       SELECT snapshot_date, total_value FROM portfolio_snapshots
-      WHERE portfolio_id = ?
+      WHERE portfolio_id = $1
       ORDER BY snapshot_date ASC
       LIMIT 252
-    `).all(portfolioId);
+    `, [portfolioId]);
+    const snapshots = snapshotsRes.rows;
 
     if (snapshots.length < 30) {
       return res.status(400).json({
@@ -546,13 +552,13 @@ router.get('/factor-attribution/:portfolioId', async (req, res) => {
       }
     }
 
-    // Get market returns (S&P 500)
-    const marketPrices = database.prepare(`
+    const marketPricesRes = await database.query(`
       SELECT date, close FROM market_index_prices
       WHERE index_id = 1
       ORDER BY date DESC
       LIMIT 252
-    `).all();
+    `);
+    const marketPrices = marketPricesRes.rows;
 
     const marketReturns = [];
     for (let i = 0; i < marketPrices.length - 1; i++) {
@@ -591,7 +597,7 @@ router.get('/factor-attribution/:portfolioId', async (req, res) => {
 router.get('/holdings-attribution/:portfolioId', async (req, res) => {
   try {
     const { portfolioId } = req.params;
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
     const attribution = new PerformanceAttribution(database);
     const result = attribution.holdingsAttribution(portfolioId);
@@ -617,7 +623,7 @@ router.get('/holdings-attribution/:portfolioId', async (req, res) => {
  */
 router.get('/signal-ic', async (req, res) => {
   try {
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
     const enhancer = new SignalEnhancer(database);
     const dashboard = enhancer.getSignalICDashboard();
 
@@ -639,7 +645,7 @@ router.get('/signal-ic/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
     const lookbackDays = parseInt(req.query.lookback) || 60;
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
     const enhancer = new SignalEnhancer(database);
     const result = enhancer.calculateSignalIC(symbol, lookbackDays);
@@ -661,7 +667,7 @@ router.get('/signal-ic/:symbol', async (req, res) => {
 router.post('/transaction-costs', async (req, res) => {
   try {
     const { symbol, shares, price, avgDailyVolume } = req.body;
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
     if (!symbol || !shares || !price) {
       return res.status(400).json({
@@ -670,23 +676,25 @@ router.post('/transaction-costs', async (req, res) => {
       });
     }
 
-    // Get average volume from database if not provided
     let volume = avgDailyVolume;
     if (!volume) {
-      const company = database.prepare(`
-        SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
-      `).get(symbol);
+      const companyRes = await database.query(
+        'SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)',
+        [symbol]
+      );
+      const company = companyRes.rows[0];
 
       if (company) {
-        const volumeData = database.prepare(`
+        const volumeRes = await database.query(`
           SELECT AVG(volume) as avg_vol FROM daily_prices
-          WHERE company_id = ?
+          WHERE company_id = $1
           ORDER BY date DESC
           LIMIT 30
-        `).get(company.id);
+        `, [company.id]);
+        const volumeData = volumeRes.rows[0];
         volume = volumeData?.avg_vol || 1000000;
       } else {
-        volume = 1000000; // Default
+        volume = 1000000;
       }
     }
 
@@ -716,7 +724,7 @@ router.post('/transaction-costs', async (req, res) => {
 router.post('/execution-strategy', async (req, res) => {
   try {
     const { symbol, shares, avgDailyVolume, urgency } = req.body;
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
     if (!symbol || !shares) {
       return res.status(400).json({
@@ -725,20 +733,22 @@ router.post('/execution-strategy', async (req, res) => {
       });
     }
 
-    // Get average volume from database if not provided
     let volume = avgDailyVolume;
     if (!volume) {
-      const company = database.prepare(`
-        SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
-      `).get(symbol);
+      const companyRes = await database.query(
+        'SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)',
+        [symbol]
+      );
+      const company = companyRes.rows[0];
 
       if (company) {
-        const volumeData = database.prepare(`
+        const volumeRes = await database.query(`
           SELECT AVG(volume) as avg_vol FROM daily_prices
-          WHERE company_id = ?
+          WHERE company_id = $1
           ORDER BY date DESC
           LIMIT 30
-        `).get(company.id);
+        `, [company.id]);
+        const volumeData = volumeRes.rows[0];
         volume = volumeData?.avg_vol || 1000000;
       } else {
         volume = 1000000;
@@ -773,18 +783,21 @@ async function gatherAssetData(database, symbols) {
   const assets = [];
 
   for (const symbol of symbols) {
-    const company = database.prepare(`
-      SELECT id, symbol FROM companies WHERE LOWER(symbol) = LOWER(?)
-    `).get(symbol);
+    const companyRes = await database.query(
+      'SELECT id, symbol FROM companies WHERE LOWER(symbol) = LOWER($1)',
+      [symbol]
+    );
+    const company = companyRes.rows[0];
 
     if (!company) continue;
 
-    const prices = database.prepare(`
+    const pricesRes = await database.query(`
       SELECT date, close FROM daily_prices
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY date DESC
       LIMIT 252
-    `).all(company.id);
+    `, [company.id]);
+    const prices = pricesRes.rows;
 
     if (prices.length < 60) continue;
 

@@ -10,7 +10,7 @@
 
 const path = require('path');
 const { spawn } = require('child_process');
-const { getDatabaseAsync } = require('../../../database');
+const { getDatabaseAsync } = require('../../../lib/db');
 
 class SECBundle {
   constructor() {

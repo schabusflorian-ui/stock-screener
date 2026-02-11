@@ -2,7 +2,7 @@
 // Strategy Capacity Analysis
 // Estimates maximum AUM before execution costs significantly degrade returns
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { squareRootImpact } = require('./executionSimulator');
 
 /**

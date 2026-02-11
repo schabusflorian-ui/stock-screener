@@ -10,7 +10,7 @@
  * - etf.promotion - Tier 3 to Tier 2 promotion checks
  */
 
-const { getDatabaseAsync } = require('../../../database');
+const { getDatabaseAsync, isUsingPostgres } = require('../../../lib/db');
 const { getETFUpdateScheduler } = require('../../../jobs/etfUpdateScheduler');
 
 class ETFBundle {
@@ -82,10 +82,13 @@ class ETFBundle {
     const etfService = getEtfService();
 
     // Get ETFs that need holdings update (tier 1 and 2, no recent update)
+    const holdingsCutoff = isUsingPostgres()
+      ? `CURRENT_DATE - INTERVAL '90 days'`
+      : `date('now', '-90 days')`;
     const result = await database.query(`
       SELECT symbol FROM etf_definitions
       WHERE tier IN (1, 2)
-      AND (last_holdings_update IS NULL OR last_holdings_update < CURRENT_DATE - INTERVAL '90 days')
+      AND (last_holdings_update IS NULL OR last_holdings_update < ${holdingsCutoff})
       ORDER BY tier ASC, symbol ASC
     `);
     const etfs = result.rows;

@@ -1,6 +1,6 @@
 // src/services/xbrl/valuationService.js
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * Valuation Service

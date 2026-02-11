@@ -1,7 +1,7 @@
 // src/services/backtesting/screeningBacktestEngine.js
 // Screening Backtest Engine - Tests stock screening strategies historically
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { calculateMetrics } = require('./walkForwardEngine');
 
 /**

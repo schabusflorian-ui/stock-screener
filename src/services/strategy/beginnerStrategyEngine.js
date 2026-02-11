@@ -1,7 +1,7 @@
 // src/services/strategy/beginnerStrategyEngine.js
 // Engine for beginner-friendly trading strategies: DCA, Value Averaging, DRIP, Rebalancing, Lump Sum Hybrid
 
-const { getDatabase } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 // Strategy type constants
 const STRATEGY_TYPES = {
@@ -23,7 +23,16 @@ const FREQUENCIES = {
 
 class BeginnerStrategyEngine {
   constructor(db = null) {
-    this.db = db || getDatabase();
+    this.db = db;
+    this.dbPromise = null;
+  }
+
+  async _getDb() {
+    if (this.db) return this.db;
+    if (!this.dbPromise) {
+      this.dbPromise = getDatabaseAsync();
+    }
+    return this.dbPromise;
   }
 
   // ============================================
@@ -318,55 +327,59 @@ class BeginnerStrategyEngine {
    * Create pending contribution record
    */
   async createPendingContribution(agentId, signals) {
+    const database = await this._getDb();
     const agent = await this.getAgent(agentId);
     const portfolioLink = await this._getAgentPortfolio(agentId);
     const config = this._parseConfig(agent.beginner_config);
 
     const totalAmount = signals.reduce((sum, s) => sum + (s.amount || 0), 0);
 
-    const result = this.db.prepare(`
+    const result = await database.query(`
       INSERT INTO beginner_contributions
       (agent_id, portfolio_id, contribution_date, strategy_type, planned_amount, status)
-      VALUES (?, ?, ?, ?, ?, 'pending')
-    `).run(
+      VALUES ($1, $2, $3, $4, $5, 'pending')
+    `, [
       agentId,
       portfolioLink?.portfolio_id || null,
       new Date().toISOString().split('T')[0],
       config.strategy_type,
       totalAmount
-    );
+    ]);
 
-    return result.lastInsertRowid;
+    return result.rows?.[0]?.id || result.lastInsertRowid;
   }
 
   /**
    * Record executed contribution
    */
   async recordContribution(contributionId, executionDetails) {
-    this.db.prepare(`
+    const database = await this._getDb();
+    await database.query(`
       UPDATE beginner_contributions
       SET status = 'executed',
-          actual_amount = ?,
-          execution_details = ?,
+          actual_amount = $1,
+          execution_details = $2,
           executed_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(
+      WHERE id = $3
+    `, [
       executionDetails.totalAmount,
       JSON.stringify(executionDetails),
       contributionId
-    );
+    ]);
   }
 
   /**
    * Get contribution history for an agent
    */
   async getContributionHistory(agentId, limit = 50) {
-    return this.db.prepare(`
+    const database = await this._getDb();
+    const result = await database.query(`
       SELECT * FROM beginner_contributions
-      WHERE agent_id = ?
+      WHERE agent_id = $1
       ORDER BY contribution_date DESC
-      LIMIT ?
-    `).all(agentId, limit);
+      LIMIT $2
+    `, [agentId, limit]);
+    return result.rows;
   }
 
   // ============================================
@@ -458,21 +471,27 @@ class BeginnerStrategyEngine {
   // ============================================
 
   async getAgent(agentId) {
-    return this.db.prepare(`
-      SELECT * FROM trading_agents WHERE id = ?
-    `).get(agentId);
+    const database = await this._getDb();
+    const result = await database.query(
+      `SELECT * FROM trading_agents WHERE id = $1`,
+      [agentId]
+    );
+    return result.rows[0];
   }
 
   async _getAgentPortfolio(agentId) {
-    return this.db.prepare(`
+    const database = await this._getDb();
+    const result = await database.query(`
       SELECT * FROM agent_portfolios
-      WHERE agent_id = ? AND is_active = 1
+      WHERE agent_id = $1 AND is_active = 1
       LIMIT 1
-    `).get(agentId);
+    `, [agentId]);
+    return result.rows[0];
   }
 
   async _getPortfolioHoldings(portfolioId) {
-    return this.db.prepare(`
+    const database = await this._getDb();
+    const result = await database.query(`
       SELECT h.*, c.symbol, c.name as company_name,
              h.shares * h.average_cost as cost_basis,
              h.shares * COALESCE(
@@ -481,8 +500,9 @@ class BeginnerStrategyEngine {
              ) as current_value
       FROM holdings h
       JOIN companies c ON h.company_id = c.id
-      WHERE h.portfolio_id = ? AND h.shares > 0
-    `).all(portfolioId);
+      WHERE h.portfolio_id = $1 AND h.shares > 0
+    `, [portfolioId]);
+    return result.rows;
   }
 
   async _getPortfolioValue(portfolioId) {
@@ -501,32 +521,35 @@ class BeginnerStrategyEngine {
   }
 
   async _getCurrentPrice(symbol) {
-    const result = this.db.prepare(`
+    const database = await this._getDb();
+    const result = await database.query(`
       SELECT dp.close as price
       FROM daily_prices dp
       JOIN companies c ON dp.company_id = c.id
-      WHERE c.symbol = ?
+      WHERE c.symbol = $1
       ORDER BY dp.date DESC
       LIMIT 1
-    `).get(symbol);
+    `, [symbol]);
 
-    return result?.price || null;
+    return result.rows[0]?.price || null;
   }
 
   async _getUnreinvestedDividends(portfolioId, agentId) {
+    const database = await this._getDb();
     // Get dividends that haven't been processed by DRIP
-    return this.db.prepare(`
+    const result = await database.query(`
       SELECT t.id, t.symbol, t.total_amount as amount, t.created_at
       FROM transactions t
-      WHERE t.portfolio_id = ?
+      WHERE t.portfolio_id = $1
         AND t.transaction_type = 'dividend'
         AND t.id NOT IN (
           SELECT CAST(json_extract(execution_details, '$.dividend_id') AS INTEGER)
           FROM beginner_contributions
-          WHERE agent_id = ? AND strategy_type = 'drip' AND status = 'executed'
+          WHERE agent_id = $2 AND strategy_type = 'drip' AND status = 'executed'
         )
       ORDER BY t.created_at DESC
-    `).all(portfolioId, agentId);
+    `, [portfolioId, agentId]);
+    return result.rows;
   }
 
   _parseConfig(configStr) {
@@ -652,6 +675,7 @@ class BeginnerStrategyEngine {
    * Update agent's next contribution date after execution
    */
   async updateNextContributionDate(agentId) {
+    const database = await this._getDb();
     const agent = await this.getAgent(agentId);
     const config = this._parseConfig(agent.beginner_config);
 
@@ -671,11 +695,11 @@ class BeginnerStrategyEngine {
       }
     }
 
-    this.db.prepare(`
+    await database.query(`
       UPDATE trading_agents
-      SET beginner_config = ?
-      WHERE id = ?
-    `).run(JSON.stringify(config), agentId);
+      SET beginner_config = $1
+      WHERE id = $2
+    `, [JSON.stringify(config), agentId]);
   }
 }
 

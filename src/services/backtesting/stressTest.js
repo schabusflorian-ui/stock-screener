@@ -2,7 +2,7 @@
 // Stress Testing Framework for Portfolio Risk Assessment
 // Implements historical, hypothetical, factor, and reverse stress tests
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * Predefined Historical Stress Scenarios

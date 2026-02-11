@@ -3,7 +3,7 @@
 // Runs comparative backtests to measure improvement from quant enhancements
 
 const path = require('path');
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { HistoricalAgentBacktester } = require('./historicalAgentBacktester');
 const { EnhancedQuantSystem } = require('../quant/enhancedQuantSystem');
 

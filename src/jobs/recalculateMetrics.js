@@ -205,7 +205,7 @@ async function main() {
     console.log('='.repeat(60));
 
     // Check sample historical P/E values
-    const sampleChecks = database.prepare(`
+    const sampleRes = await database.query(`
       SELECT
         c.symbol,
         cm.fiscal_period,
@@ -229,7 +229,8 @@ async function main() {
         AND cm.period_type = 'annual'
         AND cm.fiscal_period LIKE '2015%'
       ORDER BY c.symbol
-    `).all();
+    `);
+    const sampleChecks = sampleRes.rows;
 
     console.log('\nSample 2015 P/E Values (should be ~15-35x, not 100+):');
     console.log('-'.repeat(50));
@@ -239,7 +240,7 @@ async function main() {
     }
 
     // Check aggregate S&P 500 P/E for 2015
-    const sp500PE2015 = database.prepare(`
+    const sp500Res = await database.query(`
       SELECT
         ROUND(SUM(cm.pe_ratio * c.market_cap) / SUM(c.market_cap), 2) as weighted_pe,
         COUNT(*) as companies
@@ -252,7 +253,8 @@ async function main() {
         AND c.market_cap > 0
         AND cm.period_type = 'annual'
         AND cm.fiscal_period LIKE '2015%'
-    `).get();
+    `);
+    const sp500PE2015 = sp500Res.rows[0];
 
     console.log('\nS&P 500 Weighted P/E (2015):');
     console.log(`  Value: ${sp500PE2015?.weighted_pe || 'N/A'}x (should be ~18-22x)`);

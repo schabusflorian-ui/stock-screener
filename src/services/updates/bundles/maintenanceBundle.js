@@ -11,7 +11,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { getDatabaseAsync } = require('../../../database');
+const { getDatabaseAsync } = require('../../../lib/db');
 
 class MaintenanceBundle {
   constructor() {

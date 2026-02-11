@@ -9,7 +9,7 @@
  */
 
 const path = require('path');
-const { getDatabaseAsync } = require('../../../database');
+const { getDatabaseAsync } = require('../../../lib/db');
 
 class MarketBundle {
   constructor() {

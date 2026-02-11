@@ -14,7 +14,7 @@ const { XBRLFilingsClient } = require('./xbrlFilingsClient');
 const { CompaniesHouseClient } = require('./companiesHouseClient');
 const { XBRLParser } = require('./xbrlParser');
 const { FundamentalStore } = require('./fundamentalStore');
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 // Test configuration
 const TEST_COUNTRY = 'GB'; // UK has good coverage
@@ -215,11 +215,11 @@ async function runTests() {
   console.log('-'.repeat(50));
 
   try {
-    const database = db.getDatabase();
-    const store = new FundamentalStore(database);
+    const database = await getDatabaseAsync();
+    const store = new FundamentalStore();
 
     // Test upsert identifier
-    const testIdentifier = store.upsertIdentifier({
+    const testIdentifier = await store.upsertIdentifier({
       lei: 'TEST123456789012345',
       companyName: 'Test Company PLC',
       country: 'GB',
@@ -230,14 +230,14 @@ async function runTests() {
     console.log(`   ✅ Created identifier: ID ${testIdentifier.id}`);
 
     // Test get identifier
-    const retrieved = store.getIdentifierByLEI('TEST123456789012345');
+    const retrieved = await store.getIdentifierByLEI('TEST123456789012345');
     if (!retrieved) {
       throw new Error('Failed to retrieve identifier');
     }
     console.log(`   ✅ Retrieved identifier: ${retrieved.company_name}`);
 
     // Test store filing
-    const testFiling = store.storeFiling({
+    const testFiling = await store.storeFiling({
       hash: 'test-hash-' + Date.now(),
       entityLEI: 'TEST123456789012345',
       entityName: 'Test Company PLC',
@@ -250,7 +250,7 @@ async function runTests() {
 
     // Test store metrics (if we have flat record from previous test)
     if (flatRecord) {
-      const storedMetrics = store.storeMetrics(
+      const storedMetrics = await store.storeMetrics(
         { ...flatRecord, period_end: '2024-12-31' },
         testIdentifier.id,
         testFiling.id
@@ -337,8 +337,8 @@ async function runTests() {
   try {
     const client = new XBRLFilingsClient();
     const parser = new XBRLParser();
-    const database = db.getDatabase();
-    const store = new FundamentalStore(database);
+    const database = await getDatabaseAsync();
+    const store = new FundamentalStore();
 
     // Fetch a real filing - use GB which we know works from earlier tests
     const { filings } = await client.getFilingsByCountry('GB', { pageSize: 20 });

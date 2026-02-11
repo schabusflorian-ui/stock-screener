@@ -11,7 +11,7 @@
 
 const { spawn } = require('child_process');
 const path = require('path');
-const { getDatabaseAsync } = require('../../../database');
+const { getDatabaseAsync } = require('../../../lib/db');
 
 // Import existing price update infrastructure
 const PriceUpdateScheduler = require('../../../jobs/priceUpdateScheduler');

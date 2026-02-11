@@ -12,7 +12,7 @@
  * - analytics.market_indicators - Update Buffett Indicator, S&P P/E, MSI (FRED + stock-based)
  */
 
-const { getDatabaseAsync } = require('../../../database');
+const { getDatabaseAsync } = require('../../../lib/db');
 
 class AnalyticsBundle {
   constructor() {

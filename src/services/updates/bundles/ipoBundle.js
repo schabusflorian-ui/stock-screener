@@ -7,17 +7,17 @@
  * - ipo.check_status - Check and update IPO status based on trading dates
  */
 
-const { getDatabaseAsync } = require('../../../database');
+const { getDatabaseAsync } = require('../../../lib/db');
 
 class IPOBundle {
   constructor() {
     this.ipoTracker = null;
   }
 
-  getIPOTracker() {
+  getIPOTracker(database) {
     if (!this.ipoTracker) {
       const IPOTracker = require('../../ipoTracker');
-      this.ipoTracker = new IPOTracker();
+      this.ipoTracker = new IPOTracker(database);
     }
     return this.ipoTracker;
   }
@@ -65,7 +65,7 @@ class IPOBundle {
         };
       }
 
-      const tracker = this.getIPOTracker();
+      const tracker = this.getIPOTracker(database);
       let processed = 0;
       let created = 0;
       let linked = 0;
@@ -211,7 +211,7 @@ class IPOBundle {
       let updated = 0;
       let failed = 0;
 
-      const tracker = this.getIPOTracker();
+      const tracker = this.getIPOTracker(database);
 
       for (const ipo of shouldBeTrading) {
         processed++;

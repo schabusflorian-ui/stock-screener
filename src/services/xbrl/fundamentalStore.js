@@ -1,6 +1,6 @@
 // src/services/xbrl/fundamentalStore.js
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * Fundamental Store

@@ -10,7 +10,7 @@
 
 const { spawn } = require('child_process');
 const path = require('path');
-const { getDatabaseAsync } = require('../../../database');
+const { getDatabaseAsync } = require('../../../lib/db');
 
 class SentimentBundle {
   constructor() {

@@ -18,6 +18,8 @@
  * - getAccountBalance()
  */
 
+const { getDatabaseSync, isUsingPostgres } = require('../../lib/db');
+
 /**
  * Order types supported across all brokers
  */
@@ -120,8 +122,10 @@ class PaperTradingAdapter extends BrokerAdapter {
 
   async connect() {
     const { PaperTradingEngine } = require('./paperTrading');
-    const database = require('../../database');
-    const db = database.getDatabase();
+    if (isUsingPostgres()) {
+      throw new Error('Paper trading requires SQLite. PostgreSQL is not supported yet.');
+    }
+    const db = getDatabaseSync();
 
     this.engine = new PaperTradingEngine(db, this.config);
 

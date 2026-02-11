@@ -10,7 +10,7 @@
  */
 
 const axios = require('axios');
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 class EnrichmentService {
   constructor() {

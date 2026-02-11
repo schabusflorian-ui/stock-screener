@@ -349,10 +349,10 @@ function checkResourceLimit(resourceType, options = {}) {
  */
 async function getDefaultResourceCount(db, userId, resourceType) {
   const queries = {
-    watchlist_stocks: 'SELECT COUNT(*) as count FROM user_watchlists WHERE user_id = ?',
-    portfolios: 'SELECT COUNT(*) as count FROM portfolios WHERE user_id = ?',
-    alerts: 'SELECT COUNT(*) as count FROM user_alerts WHERE user_id = ? AND is_active = 1',
-    agents: 'SELECT COUNT(*) as count FROM trading_agents WHERE user_id = ? AND deleted_at IS NULL'
+    watchlist_stocks: 'SELECT COUNT(*) as count FROM user_watchlists WHERE user_id = $1',
+    portfolios: 'SELECT COUNT(*) as count FROM portfolios WHERE user_id = $1',
+    alerts: 'SELECT COUNT(*) as count FROM user_alerts WHERE user_id = $1 AND is_active = 1',
+    agents: 'SELECT COUNT(*) as count FROM trading_agents WHERE user_id = $1 AND deleted_at IS NULL'
   };
 
   const query = queries[resourceType];
@@ -362,8 +362,8 @@ async function getDefaultResourceCount(db, userId, resourceType) {
   }
 
   try {
-    const result = await db.prepare(query).get(userId);
-    return result?.count || 0;
+    const result = await db.query(query, [userId]);
+    return parseInt(result.rows[0]?.count ?? 0, 10);
   } catch (error) {
     console.error(`Error counting ${resourceType}:`, error);
     return 0;

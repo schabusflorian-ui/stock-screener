@@ -10,7 +10,7 @@
  * Coverage: All EU + UK listed companies since 2021 (ESEF mandate)
  */
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { XBRLFilingsClient } = require('./xbrlFilingsClient');
 const { XBRLParser } = require('./xbrlParser');
 const { FundamentalStore } = require('./fundamentalStore');

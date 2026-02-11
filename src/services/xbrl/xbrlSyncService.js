@@ -12,7 +12,7 @@
  * This is the critical integration layer that makes XBRL data seamless.
  */
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { SymbolResolver } = require('../identifiers/symbolResolver');
 
 class XBRLSyncService {

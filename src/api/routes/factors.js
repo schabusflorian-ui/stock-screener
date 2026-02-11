@@ -870,20 +870,28 @@ router.get('/available-metrics', async (req, res) => {
 // POST /api/factors/define - Create a new custom factor
 router.post('/define', requireAuth, async (req, res) => {
   try {
-    console.log('[/api/factors/define] Request body:', req.body);
+    console.log('[/api/factors/define] Request body:', JSON.stringify(req.body, null, 2));
+    console.log('[/api/factors/define] Request headers:', JSON.stringify({
+      'x-admin-bypass': req.headers['x-admin-bypass'],
+      'content-type': req.headers['content-type'],
+      'user-agent': req.headers['user-agent']
+    }, null, 2));
     
     const repo = getFactorRepository();
     if (!repo) {
+      console.error('[/api/factors/define] Factor repository is null!');
       return sendServiceUnavailable(res, 'Factor repository not available. Run migration first.');
     }
 
     const { name, formula, description, higherIsBetter, transformations } = req.body;
+    console.log('[/api/factors/define] Extracted fields:', { name, formula: formula?.substring(0, 50), description, higherIsBetter, transformations });
 
     if (!name || !formula) {
-      console.error('[/api/factors/define] Validation error: name and formula are required');
+      console.error('[/api/factors/define] Validation error: name and formula are required. Got name:', !!name, 'formula:', !!formula);
       return sendValidationError(res, 'name and formula are required');
     }
 
+    console.log('[/api/factors/define] Calling repo.createFactor...');
     const result = await repo.createFactor({
       name,
       formula,
@@ -892,7 +900,10 @@ router.post('/define', requireAuth, async (req, res) => {
       transformations
     });
 
+    console.log('[/api/factors/define] createFactor result:', JSON.stringify(result, null, 2));
+
     if (!result.success) {
+      console.error('[/api/factors/define] createFactor failed:', result.error || result);
       return sendValidationError(res, result.error || result);
     }
 
@@ -901,7 +912,8 @@ router.post('/define', requireAuth, async (req, res) => {
       data: result.factor
     });
   } catch (error) {
-    console.error('Error creating custom factor:', error);
+    console.error('[/api/factors/define] Exception:', error.message);
+    console.error('[/api/factors/define] Stack:', error.stack);
     sendError(res, error);
   }
 });

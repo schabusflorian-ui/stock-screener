@@ -2,7 +2,7 @@
 // Walk-Forward Optimization Engine for HF-style backtesting
 // Implements rolling and anchored walk-forward analysis with CPCV support
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * Calculate basic performance metrics for a returns series

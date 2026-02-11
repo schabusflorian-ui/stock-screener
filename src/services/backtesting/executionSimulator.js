@@ -2,7 +2,7 @@
 // Execution Simulation for Realistic Backtest Performance
 // Models slippage, market impact, and execution costs
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * Market Impact Models

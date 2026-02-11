@@ -1,7 +1,7 @@
 // src/services/backtesting/factorBacktestEngine.js
 // Factor Combination Backtester - Tests weighted factor combinations historically
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { calculateMetrics } = require('./walkForwardEngine');
 
 /**

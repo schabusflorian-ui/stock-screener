@@ -2,7 +2,7 @@
 // Historical Agent Backtester - Runs trading agents against historical data
 // Enables accelerated testing with point-in-time data to prevent lookahead bias
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { HistoricalDataProvider } = require('./historicalDataProvider');
 
 /**

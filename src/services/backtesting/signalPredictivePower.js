@@ -2,7 +2,7 @@
 // Signal Predictive Power Analyzer
 // Measures and ranks the predictive power of each signal type
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const {
   calculateIC,
   calculateICIR,

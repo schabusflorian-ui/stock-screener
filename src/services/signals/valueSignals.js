@@ -2,7 +2,7 @@
 // Value Investing Signals: Piotroski F-Score, Altman Z-Score, Magic Formula
 // These signals are specifically designed for value/quality investing strategies
 
-const db = require('../../database');
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 
 /**
  * ValueSignals
@@ -29,16 +29,52 @@ const db = require('../../database');
  * 5. Contrarian Value: Insider buying during drawdowns
  */
 class ValueSignals {
-  constructor() {
-    this.database = db.getDatabase();
-    this._prepareStatements();
+  constructor(dbInstance = null) {
+    this.db = dbInstance;
+    this.dbPromise = null;
+    this.normalizedDb = null;
     console.log('📊 Value Signals initialized (Piotroski, Altman, Magic Formula)');
   }
 
-  _prepareStatements() {
-    this.stmts = {
-      // Get latest financials for a company
-      getFinancials: this.database.prepare(`
+  async _getDatabase() {
+    if (this.normalizedDb) return this.normalizedDb;
+    if (this.db) {
+      this.normalizedDb = this._normalizeDb(this.db);
+      return this.normalizedDb;
+    }
+    if (!this.dbPromise) {
+      this.dbPromise = getDatabaseAsync();
+    }
+    return this.dbPromise;
+  }
+
+  _normalizeDb(database) {
+    if (database?.query) return database;
+    if (!database?.prepare) {
+      throw new Error('Unsupported database instance for ValueSignals');
+    }
+
+    return {
+      query: async (sql, params = []) => {
+        const normalizedSql = sql.replace(/\$\d+/g, '?');
+        const normalizedParams = params.map((param) => {
+          if (typeof param === 'boolean') return param ? 1 : 0;
+          return param;
+        });
+        const stmt = database.prepare(normalizedSql);
+        if (/^\s*select\b/i.test(normalizedSql)) {
+          return { rows: stmt.all(normalizedParams) };
+        }
+        const info = stmt.run(normalizedParams);
+        return { rows: [], lastInsertRowid: info.lastInsertRowid, changes: info.changes };
+      },
+    };
+  }
+
+  async _getFinancials(companyId) {
+    const database = await this._getDatabase();
+    const result = await database.query(
+      `
         SELECT
           f.*,
           c.symbol,
@@ -47,69 +83,89 @@ class ValueSignals {
           c.market_cap
         FROM financial_data f
         JOIN companies c ON f.company_id = c.id
-        WHERE f.company_id = ?
+        WHERE f.company_id = $1
           AND f.statement_type = 'income_statement'
           AND f.period_type = 'annual'
         ORDER BY f.fiscal_date_ending DESC
         LIMIT 2
-      `),
+      `,
+      [companyId]
+    );
+    return result.rows;
+  }
 
-      // Get balance sheet data
-      getBalanceSheet: this.database.prepare(`
+  async _getBalanceSheet(companyId) {
+    const database = await this._getDatabase();
+    const result = await database.query(
+      `
         SELECT *
         FROM financial_data
-        WHERE company_id = ?
+        WHERE company_id = $1
           AND statement_type = 'balance_sheet'
           AND period_type = 'annual'
         ORDER BY fiscal_date_ending DESC
         LIMIT 2
-      `),
+      `,
+      [companyId]
+    );
+    return result.rows;
+  }
 
-      // Get cash flow data
-      getCashFlow: this.database.prepare(`
+  async _getCashFlow(companyId) {
+    const database = await this._getDatabase();
+    const result = await database.query(
+      `
         SELECT *
         FROM financial_data
-        WHERE company_id = ?
+        WHERE company_id = $1
           AND statement_type = 'cash_flow'
           AND period_type = 'annual'
         ORDER BY fiscal_date_ending DESC
         LIMIT 2
-      `),
+      `,
+      [companyId]
+    );
+    return result.rows;
+  }
 
-      // Get calculated metrics
-      getMetrics: this.database.prepare(`
-        SELECT *
-        FROM calculated_metrics
-        WHERE company_id = ?
-        ORDER BY fiscal_period DESC
-        LIMIT 1
-      `),
-
-      // Get price metrics
-      getPriceMetrics: this.database.prepare(`
+  async _getPriceMetrics(companyId) {
+    const database = await this._getDatabase();
+    const result = await database.query(
+      `
         SELECT *
         FROM price_metrics
-        WHERE company_id = ?
-      `),
+        WHERE company_id = $1
+      `,
+      [companyId]
+    );
+    return result.rows[0];
+  }
 
-      // Get company by symbol
-      getCompany: this.database.prepare(`
-        SELECT id, symbol, name, sector, market_cap
-        FROM companies
-        WHERE LOWER(symbol) = LOWER(?)
-      `),
+  async _getPriceDrawdown(companyId) {
+    const database = await this._getDatabase();
+    const result = await database.query(
+      `
+        SELECT
+          pm.high_52w,
+          pm.last_price,
+          pm.change_1m,
+          pm.change_3m
+        FROM price_metrics pm
+        WHERE pm.company_id = $1
+        LIMIT 1
+      `,
+      [companyId]
+    );
+    return result.rows[0];
+  }
 
-      // Get all companies for screening
-      getAllCompanies: this.database.prepare(`
-        SELECT id, symbol, name, sector, market_cap
-        FROM companies
-        WHERE market_cap > 0
-          AND symbol NOT LIKE 'CIK_%'
-        ORDER BY market_cap DESC
-      `),
-
-      // Get insider buys during drawdowns
-      getInsiderBuysDuringDrawdown: this.database.prepare(`
+  async _getInsiderBuysDuringDrawdown(companyId) {
+    const database = await this._getDatabase();
+    const dateFilter = isUsingPostgres()
+      ? "CURRENT_DATE - INTERVAL '90 days'"
+      : "date('now', '-90 days')";
+    const result = await database.query(
+      `
         SELECT
           it.transaction_date,
           it.shares_transacted,
@@ -118,25 +174,29 @@ class ValueSignals {
           i.title
         FROM insider_transactions it
         JOIN insiders i ON it.insider_id = i.id
-        WHERE it.company_id = ?
+        WHERE it.company_id = $1
           AND it.transaction_code = 'P'
           AND it.acquisition_disposition = 'A'
-          AND it.transaction_date >= date('now', '-90 days')
+          AND it.transaction_date >= ${dateFilter}
         ORDER BY it.transaction_date DESC
-      `),
+      `,
+      [companyId]
+    );
+    return result.rows;
+  }
 
-      // Get price drawdown
-      getPriceDrawdown: this.database.prepare(`
-        SELECT
-          pm.high_52w,
-          pm.last_price,
-          pm.change_1m,
-          pm.change_3m
-        FROM price_metrics pm
-        WHERE pm.company_id = ?
-        LIMIT 1
-      `),
-    };
+  async _getAllCompanies() {
+    const database = await this._getDatabase();
+    const result = await database.query(
+      `
+        SELECT id, symbol, name, sector, market_cap
+        FROM companies
+        WHERE market_cap > 0
+          AND symbol NOT LIKE 'CIK_%'
+        ORDER BY market_cap DESC
+      `
+    );
+    return result.rows;
   }
 
   // ============================================
@@ -161,10 +221,10 @@ class ValueSignals {
    * 8. Gross margin increasing
    * 9. Asset turnover increasing
    */
-  calculatePiotroskiScore(companyId) {
-    const incomeData = this.stmts.getFinancials.all(companyId);
-    const balanceData = this.stmts.getBalanceSheet.all(companyId);
-    const cashFlowData = this.stmts.getCashFlow.all(companyId);
+  async calculatePiotroskiScore(companyId) {
+    const incomeData = await this._getFinancials(companyId);
+    const balanceData = await this._getBalanceSheet(companyId);
+    const cashFlowData = await this._getCashFlow(companyId);
 
     if (incomeData.length < 2 || balanceData.length < 2 || cashFlowData.length < 2) {
       return { score: null, details: null, error: 'Insufficient historical data' };
@@ -338,10 +398,10 @@ class ValueSignals {
    * 1.81 < Z < 2.99: Grey (uncertain)
    * Z < 1.81: Distress (high bankruptcy risk)
    */
-  calculateAltmanZScore(companyId) {
-    const balanceData = this.stmts.getBalanceSheet.all(companyId);
-    const incomeData = this.stmts.getFinancials.all(companyId);
-    const priceMetrics = this.stmts.getPriceMetrics.get(companyId);
+  async calculateAltmanZScore(companyId) {
+    const balanceData = await this._getBalanceSheet(companyId);
+    const incomeData = await this._getFinancials(companyId);
+    const priceMetrics = await this._getPriceMetrics(companyId);
 
     if (balanceData.length === 0 || incomeData.length === 0) {
       return { zScore: null, zone: null, error: 'Insufficient data' };
@@ -414,10 +474,10 @@ class ValueSignals {
    *
    * Combined rank (lowest = best) identifies cheap, high-quality stocks
    */
-  calculateMagicFormula(companyId) {
-    const balanceData = this.stmts.getBalanceSheet.all(companyId);
-    const incomeData = this.stmts.getFinancials.all(companyId);
-    const priceMetrics = this.stmts.getPriceMetrics.get(companyId);
+  async calculateMagicFormula(companyId) {
+    const balanceData = await this._getBalanceSheet(companyId);
+    const incomeData = await this._getFinancials(companyId);
+    const priceMetrics = await this._getPriceMetrics(companyId);
 
     if (balanceData.length === 0 || incomeData.length === 0) {
       return { earningsYield: null, returnOnCapital: null, error: 'Insufficient data' };
@@ -479,10 +539,12 @@ class ValueSignals {
   /**
    * Calculate comprehensive value score combining all signals
    */
-  calculateCombinedValueScore(companyId) {
-    const piotroski = this.calculatePiotroskiScore(companyId);
-    const altman = this.calculateAltmanZScore(companyId);
-    const magicFormula = this.calculateMagicFormula(companyId);
+  async calculateCombinedValueScore(companyId) {
+    const [piotroski, altman, magicFormula] = await Promise.all([
+      this.calculatePiotroskiScore(companyId),
+      this.calculateAltmanZScore(companyId),
+      this.calculateMagicFormula(companyId),
+    ]);
 
     // Normalize scores to 0-100 scale
     let score = 0;
@@ -558,9 +620,9 @@ class ValueSignals {
    * Detect insider buying during price drawdowns
    * This is a strong contrarian bullish signal
    */
-  getContrarianSignal(companyId) {
-    const drawdown = this.stmts.getPriceDrawdown.get(companyId);
-    const insiderBuys = this.stmts.getInsiderBuysDuringDrawdown.all(companyId);
+  async getContrarianSignal(companyId) {
+    const drawdown = await this._getPriceDrawdown(companyId);
+    const insiderBuys = await this._getInsiderBuysDuringDrawdown(companyId);
 
     if (!drawdown) {
       return { signal: 'neutral', confidence: 0, error: 'No price data' };
@@ -643,14 +705,14 @@ class ValueSignals {
   async screenMagicFormula(options = {}) {
     const { limit = 50, minMarketCap = 500000000, excludeFinancials = true } = options;
 
-    const companies = this.stmts.getAllCompanies.all();
+    const companies = await this._getAllCompanies();
     const results = [];
 
     for (const company of companies) {
       if (company.market_cap < minMarketCap) continue;
       if (excludeFinancials && company.sector?.toLowerCase().includes('financial')) continue;
 
-      const mf = this.calculateMagicFormula(company.id);
+      const mf = await this.calculateMagicFormula(company.id);
       if (mf.earningsYield === null || mf.returnOnCapital === null) continue;
 
       results.push({
@@ -687,13 +749,13 @@ class ValueSignals {
   async screenPiotroski(options = {}) {
     const { minScore = 7, limit = 50, minMarketCap = 100000000 } = options;
 
-    const companies = this.stmts.getAllCompanies.all();
+    const companies = await this._getAllCompanies();
     const results = [];
 
     for (const company of companies) {
       if (company.market_cap < minMarketCap) continue;
 
-      const piotroski = this.calculatePiotroskiScore(company.id);
+      const piotroski = await this.calculatePiotroskiScore(company.id);
       if (piotroski.score === null || piotroski.score < minScore) continue;
 
       results.push({
@@ -725,9 +787,11 @@ class ValueSignals {
    * Combines Piotroski, Altman, Magic Formula, and Contrarian signals
    * @returns {{ score: number, confidence: number, source: string, details: object, interpretation: string }}
    */
-  getCombinedValueSignal(companyId) {
-    const combined = this.calculateCombinedValueScore(companyId);
-    const contrarian = this.getContrarianSignal(companyId);
+  async getCombinedValueSignal(companyId) {
+    const [combined, contrarian] = await Promise.all([
+      this.calculateCombinedValueScore(companyId),
+      this.getContrarianSignal(companyId),
+    ]);
 
     // Default to no signal
     if (combined.confidence === 0 && contrarian.confidence === 0) {

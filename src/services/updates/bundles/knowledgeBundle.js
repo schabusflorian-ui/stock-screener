@@ -7,7 +7,7 @@
  * - knowledge.full - Weekly full rebuild
  */
 
-const { getDatabaseAsync } = require('../../../database');
+const { getDatabaseAsync } = require('../../../lib/db');
 const KnowledgeBaseRefresh = require('../../../jobs/knowledgeBaseRefresh');
 
 class KnowledgeBundle {

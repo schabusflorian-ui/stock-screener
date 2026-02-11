@@ -267,8 +267,8 @@ router.get('/company/:symbol', async (req, res) => {
       transactions: activity
     });
   } catch (error) {
+    const { symbol } = req.params;
     if (isInsiderTableMissingError(error)) {
-      const { symbol } = req.params;
       return res.json({
         company: { symbol, name: symbol },
         summaries: { '1m': null, '3m': null, '6m': null, '1y': null },
@@ -278,7 +278,12 @@ router.get('/company/:symbol', async (req, res) => {
     }
     console.error('Error fetching company insider data:', error);
     if (!res.headersSent) {
-      res.status(500).json({ error: error.message });
+      res.json({
+        company: { symbol, name: symbol },
+        summaries: { '1m': null, '3m': null, '6m': null, '1y': null },
+        insiders: [],
+        transactions: []
+      });
     }
   }
 });

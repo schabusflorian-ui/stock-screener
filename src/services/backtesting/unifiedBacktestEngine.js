@@ -2,7 +2,7 @@
 // Unified Backtesting Engine - Full validation suite for strategy testing
 // Integrates walk-forward analysis, overfitting detection, stress testing, and factor attribution
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { UnifiedStrategyEngine } = require('../strategy/unifiedStrategyEngine');
 const { StrategyManager } = require('../strategy/strategyManager');
 const { MultiStrategyOrchestrator, createOrchestratorIfMulti } = require('../strategy/multiStrategyOrchestrator');

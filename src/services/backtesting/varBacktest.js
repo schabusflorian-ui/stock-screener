@@ -2,7 +2,7 @@
 // VaR (Value at Risk) Backtesting with Statistical Validation
 // Implements Kupiec Test, Christoffersen Test, and Basel Traffic Light System
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * Chi-squared distribution quantile approximation

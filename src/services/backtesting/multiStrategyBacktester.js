@@ -1,7 +1,7 @@
 // src/services/backtesting/multiStrategyBacktester.js
 // Multi-strategy backtest runner for testing MetaAllocator
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { MetaAllocator } = require('../agent/metaAllocator');
 const { HistoricalDataProvider } = require('./historicalDataProvider');
 const { StrategyConfigManager } = require('../agent/strategyConfig');

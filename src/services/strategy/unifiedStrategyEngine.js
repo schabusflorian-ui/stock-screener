@@ -1036,11 +1036,11 @@ class UnifiedStrategyEngine {
     }
   }
 
-  _calculateValueQualitySignal(companyId) {
+  async _calculateValueQualitySignal(companyId) {
     if (!this.signals.valueSignals) return null;
     try {
       // Get Piotroski F-Score
-      const piotroski = this.signals.valueSignals.calculatePiotroskiScore(companyId);
+      const piotroski = await this.signals.valueSignals.calculatePiotroskiScore(companyId);
 
       if (!piotroski || piotroski.error) return null;
 
@@ -1146,10 +1146,10 @@ class UnifiedStrategyEngine {
     }
   }
 
-  _calculateMagicFormulaSignal(companyId) {
+  async _calculateMagicFormulaSignal(companyId) {
     if (!this.signals.valueSignals) return null;
     try {
-      const result = this.signals.valueSignals.calculateMagicFormula(companyId);
+      const result = await this.signals.valueSignals.calculateMagicFormula(companyId);
       if (result && result.combinedRank !== undefined) {
         // Lower rank = better, convert to score
         // Assuming ranks 1-100, normalize to 1 to -1

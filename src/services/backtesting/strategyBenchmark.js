@@ -3,7 +3,7 @@
 // Provides comprehensive trading behavior statistics
 
 const path = require('path');
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { StrategyConfigManager } = require('../agent/strategyConfig');
 const { ConfigurableStrategyAgent } = require('../agent/configurableStrategyAgent');
 const { HistoricalDataProvider } = require('./historicalDataProvider');

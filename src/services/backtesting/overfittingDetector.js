@@ -3,7 +3,7 @@
 // Implements 6 diagnostic tests to identify overfitting in backtest results
 // Based on Bailey & Lopez de Prado research and Nassim Taleb principles
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * Overfitting Detector

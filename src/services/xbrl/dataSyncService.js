@@ -1,5 +1,5 @@
 // src/services/xbrl/dataSyncService.js
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { XBRLFilingsClient } = require('./xbrlFilingsClient');
 const { CompaniesHouseClient } = require('./companiesHouseClient');
 const { XBRLParser } = require('./xbrlParser');

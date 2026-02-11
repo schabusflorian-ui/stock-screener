@@ -2,7 +2,7 @@
 // Weight Optimization Engine for Signal Weighting
 // Finds optimal signal weights through grid search and ablation studies
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { HistoricalAgentBacktester } = require('./historicalAgentBacktester');
 const { SignalPredictivePowerAnalyzer, SIGNAL_TYPES, REGIMES } = require('./signalPredictivePower');
 const { deflatedSharpeRatio, correctForMultipleTesting, bootstrapConfidenceInterval,
