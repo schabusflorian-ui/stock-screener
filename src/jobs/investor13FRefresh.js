@@ -165,55 +165,48 @@ class Investor13FRefresh {
 
 // CLI handling
 if (require.main === module) {
-  const args = process.argv.slice(2);
-  const scheduler = new Investor13FRefresh();
+  (async () => {
+    const args = process.argv.slice(2);
+    const scheduler = new Investor13FRefresh();
 
-  if (args.includes('--now')) {
-    scheduler.fetchAll()
-      .then(result => {
-        console.log('Refresh completed:', result);
-        process.exit(0);
-      })
-      .catch(error => {
-        console.error('Refresh failed:', error);
+    if (args.includes('--now')) {
+      const result = await scheduler.fetchAll();
+      console.log('Refresh completed:', result);
+      process.exit(0);
+    } else if (args.includes('--investor')) {
+      const investorIdx = args.indexOf('--investor');
+      const investorId = parseInt(args[investorIdx + 1]);
+
+      if (!investorId) {
+        console.error('Please provide an investor ID: --investor <id>');
         process.exit(1);
-      });
-  } else if (args.includes('--investor')) {
-    const investorIdx = args.indexOf('--investor');
-    const investorId = parseInt(args[investorIdx + 1]);
+      }
 
-    if (!investorId) {
-      console.error('Please provide an investor ID: --investor <id>');
-      process.exit(1);
+      const result = await scheduler.fetchSingle(investorId);
+      console.log('Fetch completed:', result);
+      process.exit(0);
+    } else if (args.includes('--status')) {
+      const status = await scheduler.getStatus();
+      console.log('\n13F Refresh Status:');
+      console.log('='.repeat(40));
+      console.log('Running:', status.isRunning);
+      console.log('Last Run:', status.lastRun || 'Never');
+      console.log('\nInvestors:');
+      console.log(`  Total: ${status.investors.total}`);
+      console.log(`  Active: ${status.investors.active}`);
+      console.log(`  Latest Filing: ${status.investors.latest_filing || 'None'}`);
+      console.log('\nRecent Filings:');
+      status.recentFilings.forEach(f => {
+        console.log(`  - ${f.name}: ${f.form_type} (${f.report_date})`);
+      });
+      process.exit(0);
+    } else {
+      scheduler.start();
     }
-
-    scheduler.fetchSingle(investorId)
-      .then(result => {
-        console.log('Fetch completed:', result);
-        process.exit(0);
-      })
-      .catch(error => {
-        console.error('Fetch failed:', error);
-        process.exit(1);
-      });
-  } else if (args.includes('--status')) {
-    const status = await scheduler.getStatus();
-    console.log('\n13F Refresh Status:');
-    console.log('='.repeat(40));
-    console.log('Running:', status.isRunning);
-    console.log('Last Run:', status.lastRun || 'Never');
-    console.log('\nInvestors:');
-    console.log(`  Total: ${status.investors.total}`);
-    console.log(`  Active: ${status.investors.active}`);
-    console.log(`  Latest Filing: ${status.investors.latest_filing || 'None'}`);
-    console.log('\nRecent Filings:');
-    status.recentFilings.forEach(f => {
-      console.log(`  - ${f.name}: ${f.form_type} (${f.report_date})`);
-    });
-    process.exit(0);
-  } else {
-    scheduler.start();
-  }
+  })().catch(error => {
+    console.error('Error:', error);
+    process.exit(1);
+  });
 }
 
 module.exports = Investor13FRefresh;

@@ -36,6 +36,7 @@ const POSTGRES_MIGRATIONS = [
   '017-add-index-prices-postgres.js',
   '018-add-trading-regime-tables-postgres.js',
   '019-backfill-analyst-conversations-analyst-id-postgres.js',
+  '020-add-trading-signals-tables-postgres.js',
   'add-postgres-alert-system.js',
   'add-dividend-metrics.js',
   'add-price-metrics.js',

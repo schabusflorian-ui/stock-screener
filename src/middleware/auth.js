@@ -38,13 +38,17 @@ const isDevModeEnabled = () => {
 };
 
 // Check for local admin bypass header (matches frontend localStorage admin bypass)
-// Works in dev mode with ALLOW_DEV_AUTH, or in production with ALLOW_ADMIN_BYPASS
+// Works in dev mode with ALLOW_DEV_AUTH, or in production when ADMIN_EMAILS is configured
 const hasAdminBypassHeader = (req) => {
   return req.headers['x-admin-bypass'] === 'true' || req.get('X-Admin-Bypass') === 'true';
 };
 
 // Production admin bypass - enable with ALLOW_ADMIN_BYPASS=true (e.g. Railway testing)
-const isAdminBypassEnabled = () => process.env.ALLOW_ADMIN_BYPASS === 'true';
+// OR allow if ADMIN_EMAILS is configured (admins can use bypass without OAuth)
+const isAdminBypassEnabled = () => {
+  return process.env.ALLOW_ADMIN_BYPASS === 'true' || 
+         (process.env.ADMIN_EMAILS && process.env.ADMIN_EMAILS.trim().length > 0);
+};
 
 const hasLocalAdminBypass = (req) => {
   // Production: honor bypass when explicitly enabled

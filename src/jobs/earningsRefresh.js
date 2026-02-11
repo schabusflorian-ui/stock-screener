@@ -10,7 +10,7 @@
  * without needing to fetch from Yahoo Finance each time.
  */
 
-const { getDatabaseAsync } = require('../lib/db');
+const { getDatabaseAsync, isUsingPostgres } = require('../lib/db');
 const EarningsCalendarService = require('../services/earningsCalendar');
 
 let earningsService;
@@ -78,10 +78,21 @@ async function refreshEarnings(options = {}) {
         LEFT JOIN earnings_calendar`);
     }
 
+    const isPostgres = isUsingPostgres();
+    const params = [];
+    const addParam = (value) => {
+      params.push(value);
+      return `$${params.length}`;
+    };
+    const staleHoursParam = addParam(staleHours);
+    const staleCutoff = isPostgres
+      ? `CURRENT_TIMESTAMP - (${staleHoursParam} || ' hours')::interval`
+      : `datetime('now', '-' || ${staleHoursParam} || ' hours')`;
+
     // Filter for stale or missing data
     conditions.push(`(
       ec.fetched_at IS NULL
-      OR ec.fetched_at < datetime('now', '-${staleHours} hours')
+      OR ec.fetched_at < ${staleCutoff}
     )`);
 
     query += ` WHERE ${conditions.join(' AND ')}`;
@@ -93,10 +104,11 @@ async function refreshEarnings(options = {}) {
       query += ' ORDER BY ec.fetched_at ASC NULLS FIRST';
     }
 
-    query += ' LIMIT ?';
-
     const database = await getDatabase();
-    const companiesResult = await database.query(query, [maxCompanies]);
+    const limitParam = addParam(maxCompanies);
+    query += ` LIMIT ${limitParam}`;
+
+    const companiesResult = await database.query(query, params);
     const companies = companiesResult.rows;
 
     console.log(`   Found ${companies.length} companies to refresh\n`);
@@ -170,6 +182,11 @@ async function refreshWatchlistEarnings(options = {}) {
 
   try {
     const database = await getDatabase();
+    const isPostgres = isUsingPostgres();
+    const staleCutoff = isPostgres
+      ? `CURRENT_TIMESTAMP - ($1 || ' hours')::interval`
+      : `datetime('now', '-' || $1 || ' hours')`;
+
     const watchlistResult = await database.query(`
       SELECT c.id, c.symbol, c.name,
              ec.fetched_at as last_fetched
@@ -177,9 +194,9 @@ async function refreshWatchlistEarnings(options = {}) {
       JOIN companies c ON c.id = w.company_id
       LEFT JOIN earnings_calendar ec ON ec.company_id = c.id
       WHERE ec.fetched_at IS NULL
-         OR ec.fetched_at < datetime('now', '-${staleHours} hours')
+         OR ec.fetched_at < ${staleCutoff}
       ORDER BY w.added_at DESC
-    `);
+    `, [staleHours]);
     const watchlist = watchlistResult.rows;
 
     console.log(`   Found ${watchlist.length} watchlist companies to refresh\n`);
@@ -230,7 +247,20 @@ async function refreshWatchlistEarnings(options = {}) {
  */
 async function getEarningsSummary() {
   const database = await getDatabase();
-  const statsResult = await database.query(`
+  const isPostgres = isUsingPostgres();
+  const statsQuery = isPostgres ? `
+    SELECT
+      COUNT(*) as total_stored,
+      COUNT(CASE WHEN fetched_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours' THEN 1 END) as fresh_24h,
+      COUNT(CASE WHEN fetched_at >= CURRENT_TIMESTAMP - INTERVAL '7 days' THEN 1 END) as fresh_7d,
+      COUNT(CASE WHEN next_earnings_date >= CURRENT_DATE
+                  AND next_earnings_date <= CURRENT_DATE + INTERVAL '7 days' THEN 1 END) as earnings_this_week,
+      COUNT(CASE WHEN next_earnings_date >= CURRENT_DATE
+                  AND next_earnings_date <= CURRENT_DATE + INTERVAL '30 days' THEN 1 END) as earnings_this_month,
+      MIN(fetched_at) as oldest_fetch,
+      MAX(fetched_at) as newest_fetch
+    FROM earnings_calendar
+  ` : `
     SELECT
       COUNT(*) as total_stored,
       COUNT(CASE WHEN fetched_at >= datetime('now', '-24 hours') THEN 1 END) as fresh_24h,
@@ -242,10 +272,20 @@ async function getEarningsSummary() {
       MIN(fetched_at) as oldest_fetch,
       MAX(fetched_at) as newest_fetch
     FROM earnings_calendar
-  `);
+  `;
+
+  const statsResult = await database.query(statsQuery);
   const stats = statsResult.rows[0];
 
-  const watchlistCoverageResult = await database.query(`
+  const watchlistCoverageQuery = isPostgres ? `
+    SELECT
+      COUNT(*) as total_watchlist,
+      COUNT(ec.id) as with_earnings_data,
+      COUNT(CASE WHEN ec.fetched_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours' THEN 1 END) as fresh_24h
+    FROM watchlist w
+    JOIN companies c ON c.id = w.company_id
+    LEFT JOIN earnings_calendar ec ON ec.company_id = c.id
+  ` : `
     SELECT
       COUNT(*) as total_watchlist,
       COUNT(ec.id) as with_earnings_data,
@@ -253,7 +293,9 @@ async function getEarningsSummary() {
     FROM watchlist w
     JOIN companies c ON c.id = w.company_id
     LEFT JOIN earnings_calendar ec ON ec.company_id = c.id
-  `);
+  `;
+
+  const watchlistCoverageResult = await database.query(watchlistCoverageQuery);
   const watchlistCoverage = watchlistCoverageResult.rows[0];
 
   return { overall: stats, watchlist: watchlistCoverage };

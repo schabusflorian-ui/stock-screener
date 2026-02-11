@@ -3,19 +3,13 @@
  *
  * Normalizes and combines signals from multiple sources into a unified format
  * for Agent 2 (Trading Logic) to consume.
- *
- * Sources:
- * - Technical signals (RSI, MACD, SMAs, etc.)
- * - Sentiment signals (Reddit, StockTwits, News)
- * - Insider activity signals
- * - Analyst signals (price targets, ratings)
- * - Market regime context
+ * Works with both SQLite and PostgreSQL.
  */
 
 const { TechnicalSignals } = require('./technicalSignals');
 const { RegimeDetector } = require('./regimeDetector');
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 
-// Signal source weights for overall score
 const SOURCE_WEIGHTS = {
   technical: 0.30,
   sentiment: 0.25,
@@ -24,18 +18,12 @@ const SOURCE_WEIGHTS = {
 };
 
 class SignalAggregator {
-  constructor(db) {
-    this.db = db.getDatabase ? db.getDatabase() : db;
-    this.technical = new TechnicalSignals(this.db);
-    this.regime = new RegimeDetector(this.db);
+  constructor(_db) {
+    this.technical = new TechnicalSignals();
+    this.regime = new RegimeDetector();
   }
 
-  /**
-   * Aggregate all signals for a symbol
-   * Returns unified signal object for Agent 2
-   */
   async aggregateSignals(symbol) {
-    // Fetch all signals in parallel
     const [technical, sentiment, insider, analyst, regime] = await Promise.all([
       this.technical.calculate(symbol),
       this.getSentimentSignal(symbol),
@@ -44,11 +32,8 @@ class SignalAggregator {
       this.regime.detectRegime(),
     ]);
 
-    // Calculate summary metrics
     const signals = { technical, sentiment, insider, analyst };
     const summary = this.calculateSummary(signals);
-
-    // Generate overall signal
     const overall = this.generateOverallSignal(signals, regime);
 
     const result = {
@@ -66,43 +51,37 @@ class SignalAggregator {
       context: this.generateContext(signals, regime, summary),
     };
 
-    // Store aggregated signal
     await this.storeAggregatedSignal(symbol, result);
-
     return result;
   }
 
-  /**
-   * Get sentiment signal from sentiment_summary table
-   */
   async getSentimentSignal(symbol) {
     try {
-      const company = this.db.prepare(`
-        SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
-      `).get(symbol);
-
+      const db = await getDatabaseAsync();
+      const companyResult = await db.query(
+        `SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)`,
+        [symbol]
+      );
+      const company = companyResult.rows[0];
       if (!company) {
         return { score: 0, confidence: 0, signal: 'hold', source: 'sentiment' };
       }
 
-      const result = this.db.prepare(`
-        SELECT signal, weighted_sentiment, confidence, total_posts
-        FROM sentiment_summary
-        WHERE company_id = ?
-        AND period = '7d'
-        ORDER BY calculated_at DESC
-        LIMIT 1
-      `).get(company.id);
-
-      if (!result) {
+      const result = await db.query(
+        `SELECT signal, weighted_sentiment, confidence, total_posts FROM sentiment_summary
+         WHERE company_id = $1 AND period = '7d' ORDER BY calculated_at DESC LIMIT 1`,
+        [company.id]
+      );
+      const row = result.rows[0];
+      if (!row) {
         return { score: 0, confidence: 0, signal: 'hold', source: 'sentiment' };
       }
 
       return {
-        score: result.weighted_sentiment || 0,
-        confidence: result.confidence || 0,
-        signal: result.signal || 'hold',
-        totalPosts: result.total_posts,
+        score: parseFloat(row.weighted_sentiment) || 0,
+        confidence: parseFloat(row.confidence) || 0,
+        signal: row.signal || 'hold',
+        totalPosts: row.total_posts,
         source: 'sentiment',
       };
     } catch (error) {
@@ -111,48 +90,41 @@ class SignalAggregator {
     }
   }
 
-  /**
-   * Get insider signal from insider_activity_summary table
-   */
   async getInsiderSignal(symbol) {
     try {
-      const company = this.db.prepare(`
-        SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
-      `).get(symbol);
-
+      const db = await getDatabaseAsync();
+      const companyResult = await db.query(
+        `SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)`,
+        [symbol]
+      );
+      const company = companyResult.rows[0];
       if (!company) {
         return { score: 0, confidence: 0, signal: 'neutral', source: 'insider' };
       }
 
-      const result = this.db.prepare(`
-        SELECT insider_signal, signal_strength, buy_value, sell_value, unique_buyers
-        FROM insider_activity_summary
-        WHERE company_id = ?
-        AND period = '90d'
-        ORDER BY updated_at DESC
-        LIMIT 1
-      `).get(company.id);
-
-      if (!result) {
+      const result = await db.query(
+        `SELECT insider_signal, signal_strength, buy_value, sell_value, unique_buyers
+         FROM insider_activity_summary WHERE company_id = $1 AND period = '90d'
+         ORDER BY updated_at DESC LIMIT 1`,
+        [company.id]
+      );
+      const row = result.rows[0];
+      if (!row) {
         return { score: 0, confidence: 0, signal: 'neutral', source: 'insider' };
       }
 
-      // Convert categorical signal to score
       const signalMap = {
-        'bullish': 0.8,
-        'slightly_bullish': 0.4,
-        'neutral': 0,
-        'slightly_bearish': -0.4,
-        'bearish': -0.8,
+        bullish: 0.8, slightly_bullish: 0.4, neutral: 0,
+        slightly_bearish: -0.4, bearish: -0.8,
       };
 
       return {
-        score: signalMap[result.insider_signal] || 0,
-        confidence: Math.min((result.signal_strength || 0) / 5, 1),
-        signal: result.insider_signal || 'neutral',
-        buyValue: result.buy_value,
-        sellValue: result.sell_value,
-        uniqueBuyers: result.unique_buyers,
+        score: signalMap[row.insider_signal] || 0,
+        confidence: Math.min((parseFloat(row.signal_strength) || 0) / 5, 1),
+        signal: row.insider_signal || 'neutral',
+        buyValue: row.buy_value,
+        sellValue: row.sell_value,
+        uniqueBuyers: row.unique_buyers,
         source: 'insider',
       };
     } catch (error) {
@@ -161,64 +133,50 @@ class SignalAggregator {
     }
   }
 
-  /**
-   * Get analyst signal from analyst_estimates table
-   */
   async getAnalystSignal(symbol) {
     try {
-      const company = this.db.prepare(`
-        SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
-      `).get(symbol);
-
+      const db = await getDatabaseAsync();
+      const companyResult = await db.query(
+        `SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)`,
+        [symbol]
+      );
+      const company = companyResult.rows[0];
       if (!company) {
         return { score: 0, confidence: 0, signal: 'hold', source: 'analyst' };
       }
 
-      const result = this.db.prepare(`
-        SELECT
-          signal, signal_strength, signal_confidence,
-          recommendation_mean, upside_potential,
-          strong_buy, buy, hold, sell, strong_sell,
-          number_of_analysts
-        FROM analyst_estimates
-        WHERE company_id = ?
-        ORDER BY fetched_at DESC
-        LIMIT 1
-      `).get(company.id);
-
-      if (!result) {
+      const result = await db.query(
+        `SELECT signal, signal_strength, signal_confidence, recommendation_mean, upside_potential,
+         strong_buy, buy, hold, sell, strong_sell, number_of_analysts
+         FROM analyst_estimates WHERE company_id = $1 ORDER BY fetched_at DESC LIMIT 1`,
+        [company.id]
+      );
+      const row = result.rows[0];
+      if (!row) {
         return { score: 0, confidence: 0, signal: 'hold', source: 'analyst' };
       }
 
-      // Convert recommendation (1-5 scale where 1=strong buy, 5=strong sell) to -1 to +1
-      // 1 -> +1, 3 -> 0, 5 -> -1
-      const recScore = result.recommendation_mean
-        ? (3 - result.recommendation_mean) / 2
+      const recScore = row.recommendation_mean != null ? (3 - row.recommendation_mean) / 2 : 0;
+      const upsideScore = row.upside_potential != null
+        ? Math.max(-1, Math.min(1, row.upside_potential / 50))
         : 0;
-
-      // Also consider upside potential
-      const upsideScore = result.upside_potential
-        ? Math.max(-1, Math.min(1, result.upside_potential / 50))
-        : 0;
-
-      // Blend recommendation and upside
       const score = recScore * 0.6 + upsideScore * 0.4;
 
       return {
         score: Math.round(score * 1000) / 1000,
-        confidence: result.signal_confidence || 0.5,
-        signal: result.signal || 'hold',
-        signalStrength: result.signal_strength,
-        recommendationMean: result.recommendation_mean,
-        upsidePotential: result.upside_potential,
+        confidence: parseFloat(row.signal_confidence) || 0.5,
+        signal: row.signal || 'hold',
+        signalStrength: row.signal_strength,
+        recommendationMean: row.recommendation_mean,
+        upsidePotential: row.upside_potential,
         distribution: {
-          strongBuy: result.strong_buy,
-          buy: result.buy,
-          hold: result.hold,
-          sell: result.sell,
-          strongSell: result.strong_sell,
+          strongBuy: row.strong_buy,
+          buy: row.buy,
+          hold: row.hold,
+          sell: row.sell,
+          strongSell: row.strong_sell,
         },
-        numberOfAnalysts: result.number_of_analysts,
+        numberOfAnalysts: row.number_of_analysts,
         source: 'analyst',
       };
     } catch (error) {
@@ -227,22 +185,16 @@ class SignalAggregator {
     }
   }
 
-  /**
-   * Normalize signal to consistent format
-   */
   normalizeSignal(signal, source) {
     return {
-      score: signal.score || 0,
-      confidence: signal.confidence || 0,
-      signal: signal.signal || 'hold',
+      score: signal?.score || 0,
+      confidence: signal?.confidence || 0,
+      signal: signal?.signal || 'hold',
       source,
       details: { ...signal },
     };
   }
 
-  /**
-   * Calculate summary metrics
-   */
   calculateSummary(signals) {
     const scores = [
       signals.technical?.score || 0,
@@ -250,30 +202,24 @@ class SignalAggregator {
       signals.insider?.score || 0,
       signals.analyst?.score || 0,
     ];
-
     const confidences = [
       signals.technical?.confidence || 0,
       signals.sentiment?.confidence || 0,
       signals.insider?.confidence || 0,
       signals.analyst?.confidence || 0,
     ];
-
     const bullishCount = scores.filter(s => s > 0.2).length;
     const bearishCount = scores.filter(s => s < -0.2).length;
     const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
     const highestConfidence = Math.max(...confidences);
 
-    // Weighted score (by confidence)
-    let weightedSum = 0;
-    let weightTotal = 0;
+    let weightedSum = 0, weightTotal = 0;
     const sources = ['technical', 'sentiment', 'insider', 'analyst'];
-
     sources.forEach((source, i) => {
       const weight = SOURCE_WEIGHTS[source] * confidences[i];
       weightedSum += scores[i] * weight;
       weightTotal += weight;
     });
-
     const weightedScore = weightTotal > 0 ? weightedSum / weightTotal : avgScore;
 
     return {
@@ -287,228 +233,153 @@ class SignalAggregator {
     };
   }
 
-  /**
-   * Generate overall signal from all sources
-   */
   generateOverallSignal(signals, regime) {
     const summary = this.calculateSummary(signals);
-
-    // Adjust score based on regime
     let adjustedScore = summary.weightedScore;
+    if (regime?.regime === 'CRISIS') adjustedScore *= 0.5;
+    else if (regime?.regime === 'HIGH_VOL') adjustedScore *= 0.7;
+    else if (regime?.regime === 'BEAR' && adjustedScore > 0) adjustedScore *= 0.8;
 
-    // In crisis/high-vol regimes, be more conservative
-    if (regime.regime === 'CRISIS') {
-      adjustedScore *= 0.5;
-    } else if (regime.regime === 'HIGH_VOL') {
-      adjustedScore *= 0.7;
-    } else if (regime.regime === 'BEAR') {
-      // In bear markets, bullish signals should be weaker
-      if (adjustedScore > 0) {
-        adjustedScore *= 0.8;
-      }
-    }
-
-    // Convert to signal
     let signal, strength;
-    if (adjustedScore >= 0.5) {
-      signal = 'strong_buy'; strength = 5;
-    } else if (adjustedScore >= 0.3) {
-      signal = 'buy'; strength = 4;
-    } else if (adjustedScore >= 0.1) {
-      signal = 'lean_buy'; strength = 3;
-    } else if (adjustedScore <= -0.5) {
-      signal = 'strong_sell'; strength = 5;
-    } else if (adjustedScore <= -0.3) {
-      signal = 'sell'; strength = 4;
-    } else if (adjustedScore <= -0.1) {
-      signal = 'lean_sell'; strength = 3;
-    } else {
-      signal = 'hold'; strength = 2;
-    }
+    if (adjustedScore >= 0.5) { signal = 'strong_buy'; strength = 5; }
+    else if (adjustedScore >= 0.3) { signal = 'buy'; strength = 4; }
+    else if (adjustedScore >= 0.1) { signal = 'lean_buy'; strength = 3; }
+    else if (adjustedScore <= -0.5) { signal = 'strong_sell'; strength = 5; }
+    else if (adjustedScore <= -0.3) { signal = 'sell'; strength = 4; }
+    else if (adjustedScore <= -0.1) { signal = 'lean_sell'; strength = 3; }
+    else { signal = 'hold'; strength = 2; }
 
-    // Calculate overall confidence
     const avgConfidence = (
       (signals.technical?.confidence || 0) +
       (signals.sentiment?.confidence || 0) +
       (signals.insider?.confidence || 0) +
       (signals.analyst?.confidence || 0)
     ) / 4;
-
-    // Boost confidence if signals agree
     let confidence = avgConfidence;
-    if (summary.agreement === 'strong') {
-      confidence = Math.min(1, confidence * 1.2);
-    } else if (summary.agreement === 'mixed') {
-      confidence *= 0.8;
-    }
+    if (summary.agreement === 'strong') confidence = Math.min(1, confidence * 1.2);
+    else if (summary.agreement === 'mixed') confidence *= 0.8;
 
     return {
       signal,
       strength,
       score: Math.round(adjustedScore * 1000) / 1000,
       confidence: Math.round(confidence * 100) / 100,
-      regimeAdjusted: regime.regime !== 'BULL' && regime.regime !== 'SIDEWAYS',
+      regimeAdjusted: regime?.regime && regime.regime !== 'BULL' && regime.regime !== 'SIDEWAYS',
     };
   }
 
-  /**
-   * Generate context object for Agent 2
-   */
   generateContext(signals, regime, summary) {
     const context = {
-      marketCondition: regime.regime,
-      marketVolatility: regime.vix > 25 ? 'high' : regime.vix > 18 ? 'moderate' : 'low',
+      marketCondition: regime?.regime || 'UNKNOWN',
+      marketVolatility: regime?.vix > 25 ? 'high' : regime?.vix > 18 ? 'moderate' : 'low',
       signalAgreement: summary.agreement,
-
-      // Specific warnings/notes
       notes: [],
     };
-
-    // Add relevant notes
-    if (regime.regime === 'CRISIS') {
-      context.notes.push('CRISIS regime: Minimize new positions, prioritize capital preservation');
-    } else if (regime.regime === 'HIGH_VOL') {
-      context.notes.push('HIGH_VOL regime: Reduce position sizes, widen stops');
-    }
-
-    if (summary.agreement === 'mixed') {
-      context.notes.push('Mixed signals: Wait for clearer confirmation');
-    }
-
-    // Technical-specific notes
-    if (signals.technical?.indicators?.rsi?.value < 30) {
-      context.notes.push('RSI oversold: Potential bounce opportunity');
-    } else if (signals.technical?.indicators?.rsi?.value > 70) {
-      context.notes.push('RSI overbought: Consider taking profits');
-    }
-
-    // Insider-specific notes
-    if (signals.insider?.uniqueBuyers >= 3) {
-      context.notes.push('Cluster buying: Multiple insiders buying recently');
-    }
-
-    // Analyst-specific notes
-    if (signals.analyst?.upsidePotential > 30) {
-      context.notes.push(`High analyst upside: ${signals.analyst.upsidePotential.toFixed(1)}% to target`);
-    } else if (signals.analyst?.upsidePotential < -10) {
-      context.notes.push('Negative analyst outlook: Stock above price targets');
-    }
-
+    if (regime?.regime === 'CRISIS') context.notes.push('CRISIS regime: Minimize new positions');
+    else if (regime?.regime === 'HIGH_VOL') context.notes.push('HIGH_VOL regime: Reduce position sizes');
+    if (summary.agreement === 'mixed') context.notes.push('Mixed signals: Wait for clearer confirmation');
+    if (signals.technical?.indicators?.rsi?.value < 30) context.notes.push('RSI oversold: Potential bounce');
+    else if (signals.technical?.indicators?.rsi?.value > 70) context.notes.push('RSI overbought: Consider taking profits');
+    if (signals.insider?.uniqueBuyers >= 3) context.notes.push('Cluster buying: Multiple insiders buying');
+    if (signals.analyst?.upsidePotential > 30) context.notes.push(`High analyst upside: ${signals.analyst.upsidePotential?.toFixed(1)}%`);
+    else if (signals.analyst?.upsidePotential < -10) context.notes.push('Negative analyst outlook');
     return context;
   }
 
-  /**
-   * Store aggregated signal in database
-   */
   async storeAggregatedSignal(symbol, result) {
     try {
-      const company = this.db.prepare(`
-        SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
-      `).get(symbol);
-
+      const db = await getDatabaseAsync();
+      const companyResult = await db.query(
+        `SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)`,
+        [symbol]
+      );
+      const company = companyResult.rows[0];
       if (!company) return;
 
-      this.db.prepare(`
-        INSERT OR REPLACE INTO aggregated_signals (
-          company_id, symbol, calculated_at,
-          market_regime, regime_confidence,
-          technical_score, technical_confidence, technical_signal,
-          sentiment_score, sentiment_confidence, sentiment_signal,
-          insider_score, insider_confidence, insider_signal,
-          analyst_score, analyst_confidence, analyst_signal,
-          avg_score, weighted_score, bullish_count, bearish_count, highest_confidence,
-          overall_signal, overall_strength, overall_confidence,
-          context
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        company.id,
-        symbol,
-        result.timestamp,
-        result.regime.regime,
-        result.regime.confidence,
-        result.signals.technical.score,
-        result.signals.technical.confidence,
-        result.signals.technical.signal,
-        result.signals.sentiment.score,
-        result.signals.sentiment.confidence,
-        result.signals.sentiment.signal,
-        result.signals.insider.score,
-        result.signals.insider.confidence,
-        result.signals.insider.signal,
-        result.signals.analyst.score,
-        result.signals.analyst.confidence,
-        result.signals.analyst.signal,
-        result.summary.avgScore,
-        result.summary.weightedScore,
-        result.summary.bullishCount,
-        result.summary.bearishCount,
-        result.summary.highestConfidence,
-        result.overall.signal,
-        result.overall.strength,
-        result.overall.confidence,
-        JSON.stringify(result.context)
-      );
+      const upsertSql = isUsingPostgres()
+        ? `INSERT INTO aggregated_signals (
+            company_id, symbol, calculated_at, market_regime, regime_confidence,
+            technical_score, technical_confidence, technical_signal,
+            sentiment_score, sentiment_confidence, sentiment_signal,
+            insider_score, insider_confidence, insider_signal,
+            analyst_score, analyst_confidence, analyst_signal,
+            avg_score, weighted_score, bullish_count, bearish_count, highest_confidence,
+            overall_signal, overall_strength, overall_confidence, context
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+          ON CONFLICT (company_id, DATE(calculated_at)) DO UPDATE SET
+            market_regime = EXCLUDED.market_regime, regime_confidence = EXCLUDED.regime_confidence,
+            technical_score = EXCLUDED.technical_score, technical_confidence = EXCLUDED.technical_confidence, technical_signal = EXCLUDED.technical_signal,
+            sentiment_score = EXCLUDED.sentiment_score, sentiment_confidence = EXCLUDED.sentiment_confidence, sentiment_signal = EXCLUDED.sentiment_signal,
+            insider_score = EXCLUDED.insider_score, insider_confidence = EXCLUDED.insider_confidence, insider_signal = EXCLUDED.insider_signal,
+            analyst_score = EXCLUDED.analyst_score, analyst_confidence = EXCLUDED.analyst_confidence, analyst_signal = EXCLUDED.analyst_signal,
+            avg_score = EXCLUDED.avg_score, weighted_score = EXCLUDED.weighted_score, bullish_count = EXCLUDED.bullish_count, bearish_count = EXCLUDED.bearish_count, highest_confidence = EXCLUDED.highest_confidence,
+            overall_signal = EXCLUDED.overall_signal, overall_strength = EXCLUDED.overall_strength, overall_confidence = EXCLUDED.overall_confidence, context = EXCLUDED.context`
+        : `INSERT OR REPLACE INTO aggregated_signals (
+            company_id, symbol, calculated_at, market_regime, regime_confidence,
+            technical_score, technical_confidence, technical_signal,
+            sentiment_score, sentiment_confidence, sentiment_signal,
+            insider_score, insider_confidence, insider_signal,
+            analyst_score, analyst_confidence, analyst_signal,
+            avg_score, weighted_score, bullish_count, bearish_count, highest_confidence,
+            overall_signal, overall_strength, overall_confidence, context
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)`;
+
+      await db.query(upsertSql, [
+        company.id, symbol, result.timestamp, result.regime?.regime, result.regime?.confidence,
+        result.signals.technical.score, result.signals.technical.confidence, result.signals.technical.signal,
+        result.signals.sentiment.score, result.signals.sentiment.confidence, result.signals.sentiment.signal,
+        result.signals.insider.score, result.signals.insider.confidence, result.signals.insider.signal,
+        result.signals.analyst.score, result.signals.analyst.confidence, result.signals.analyst.signal,
+        result.summary.avgScore, result.summary.weightedScore, result.summary.bullishCount, result.summary.bearishCount, result.summary.highestConfidence,
+        result.overall.signal, result.overall.strength, result.overall.confidence, JSON.stringify(result.context)
+      ]);
     } catch (error) {
       console.error(`Error storing aggregated signal for ${symbol}:`, error.message);
     }
   }
 
-  /**
-   * Batch aggregate for multiple symbols
-   */
   async aggregateBatch(symbols) {
     const results = [];
     for (const symbol of symbols) {
       try {
-        const result = await this.aggregateSignals(symbol);
-        results.push(result);
+        results.push(await this.aggregateSignals(symbol));
       } catch (error) {
         console.error(`Error aggregating signals for ${symbol}:`, error.message);
-        results.push({
-          symbol,
-          error: error.message,
-          timestamp: new Date().toISOString(),
-        });
+        results.push({ symbol, error: error.message, timestamp: new Date().toISOString() });
       }
     }
     return results;
   }
 
-  /**
-   * Get top bullish signals
-   */
-  getTopBullishSignals(limit = 20) {
+  async getTopBullishSignals(limit = 20) {
     try {
-      return this.db.prepare(`
-        SELECT
-          ags.*,
-          c.name as company_name,
-          c.sector,
-          c.industry
-        FROM aggregated_signals ags
-        JOIN companies c ON ags.company_id = c.id
-        WHERE ags.overall_signal IN ('strong_buy', 'buy', 'lean_buy')
-          AND date(ags.calculated_at) = date('now')
-        ORDER BY ags.weighted_score DESC
-        LIMIT ?
-      `).all(limit);
+      const db = await getDatabaseAsync();
+      const dateFilter = isUsingPostgres()
+        ? `DATE(calculated_at) = CURRENT_DATE`
+        : `date(calculated_at) = date('now')`;
+      const result = await db.query(
+        `SELECT ags.*, c.name as company_name, c.sector, c.industry
+         FROM aggregated_signals ags
+         JOIN companies c ON ags.company_id = c.id
+         WHERE ags.overall_signal IN ('strong_buy', 'buy', 'lean_buy') AND ${dateFilter}
+         ORDER BY ags.weighted_score DESC LIMIT $1`,
+        [limit]
+      );
+      return result.rows;
     } catch (error) {
       console.error('Error getting top bullish signals:', error.message);
       return [];
     }
   }
 
-  /**
-   * Get stored signal for a symbol
-   */
-  getStoredSignal(symbol) {
+  async getStoredSignal(symbol) {
     try {
-      return this.db.prepare(`
-        SELECT * FROM aggregated_signals
-        WHERE LOWER(symbol) = LOWER(?)
-        ORDER BY calculated_at DESC
-        LIMIT 1
-      `).get(symbol);
+      const db = await getDatabaseAsync();
+      const result = await db.query(
+        `SELECT * FROM aggregated_signals WHERE LOWER(symbol) = LOWER($1) ORDER BY calculated_at DESC LIMIT 1`,
+        [symbol]
+      );
+      return result.rows[0] || null;
     } catch (error) {
       console.error(`Error fetching stored signal for ${symbol}:`, error.message);
       return null;

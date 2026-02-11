@@ -9,54 +9,18 @@ const express = require('express');
 const router = express.Router();
 const { RegimeDetector, TechnicalSignals, SignalAggregator, REGIMES } = require('../../services/trading');
 const { LiquidityRefresh } = require('../../jobs/liquidityRefresh');
-const { getDatabaseSync, isUsingPostgres } = require('../../lib/db');
+const { getDatabaseAsync } = require('../../lib/db');
 
-// Regime endpoints work with Postgres; other trading endpoints are SQLite-only for now.
-router.use((req, res, next) => {
-  if (isUsingPostgres() && req.path.startsWith('/regime')) {
-    return next(); // Regime endpoints migrated to Postgres
-  }
-  if (isUsingPostgres()) {
-    return res.status(503).json({
-      error: 'Trading endpoints are not available in PostgreSQL deployment',
-      code: 'TRADING_NOT_AVAILABLE',
-      message: 'These endpoints use SQLite-specific queries and require migration.'
-    });
-  }
-  next();
-});
-
-let database = null;
-function getDb() {
-  if (!database) {
-    database = getDatabaseSync();
-  }
-  return database;
-}
-
-// Initialize services
 let regimeDetector = null;
 let technicalSignals = null;
 let signalAggregator = null;
 let liquidityRefresh = null;
 
 function getServices() {
-  // RegimeDetector uses getDatabaseAsync internally - works with both SQLite and Postgres
-  if (!regimeDetector) {
-    regimeDetector = new RegimeDetector();
-  }
-  // Other services require SQLite (getDatabaseSync)
-  if (!isUsingPostgres()) {
-    if (!technicalSignals) {
-      technicalSignals = new TechnicalSignals(getDb());
-    }
-    if (!signalAggregator) {
-      signalAggregator = new SignalAggregator(getDb());
-    }
-    if (!liquidityRefresh) {
-      liquidityRefresh = new LiquidityRefresh(getDb());
-    }
-  }
+  if (!regimeDetector) regimeDetector = new RegimeDetector();
+  if (!technicalSignals) technicalSignals = new TechnicalSignals();
+  if (!signalAggregator) signalAggregator = new SignalAggregator();
+  if (!liquidityRefresh) liquidityRefresh = new LiquidityRefresh();
   return { regimeDetector, technicalSignals, signalAggregator, liquidityRefresh };
 }
 
@@ -209,7 +173,7 @@ router.get('/signals/top/bullish', async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 20, 50);
     const { signalAggregator } = getServices();
-    const signals = signalAggregator.getTopBullishSignals(limit);
+    const signals = await signalAggregator.getTopBullishSignals(limit);
     res.json(signals);
   } catch (error) {
     console.error('Top bullish signals error:', error);
@@ -231,9 +195,11 @@ router.get('/summary/:symbol', async (req, res) => {
     const { signalAggregator, technicalSignals, regimeDetector } = getServices();
 
     // Try to get cached signals first
-    const storedSignal = signalAggregator.getStoredSignal(symbol.toUpperCase());
-    const storedTechnical = technicalSignals.getStoredSignal(symbol.toUpperCase());
-    const storedRegime = await regimeDetector.getStoredRegime();
+    const [storedSignal, storedTechnical, storedRegime] = await Promise.all([
+      signalAggregator.getStoredSignal(symbol.toUpperCase()),
+      technicalSignals.getStoredSignal(symbol.toUpperCase()),
+      regimeDetector.getStoredRegime(),
+    ]);
 
     // If we have recent data (within last hour), use it
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
@@ -390,11 +356,11 @@ router.post('/liquidity/refresh', async (req, res) => {
  * Get most liquid stocks
  * Query params: limit (default 50)
  */
-router.get('/liquidity/top', (req, res) => {
+router.get('/liquidity/top', async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 50, 100);
     const { liquidityRefresh } = getServices();
-    const stocks = liquidityRefresh.getMostLiquid(limit);
+    const stocks = await liquidityRefresh.getMostLiquid(limit);
     res.json(stocks);
   } catch (error) {
     res.status(500).json({ error: 'Failed to get liquid stocks', message: error.message });
@@ -406,11 +372,11 @@ router.get('/liquidity/top', (req, res) => {
  * Get most volatile stocks
  * Query params: limit (default 50)
  */
-router.get('/liquidity/volatile', (req, res) => {
+router.get('/liquidity/volatile', async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 50, 100);
     const { liquidityRefresh } = getServices();
-    const stocks = liquidityRefresh.getMostVolatile(limit);
+    const stocks = await liquidityRefresh.getMostVolatile(limit);
     res.json(stocks);
   } catch (error) {
     res.status(500).json({ error: 'Failed to get volatile stocks', message: error.message });
@@ -421,21 +387,22 @@ router.get('/liquidity/volatile', (req, res) => {
  * GET /api/trading/liquidity/:symbol
  * Get liquidity metrics for a specific symbol
  */
-router.get('/liquidity/:symbol', (req, res) => {
+router.get('/liquidity/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
-    const database = getDb();
-
-    const company = database.prepare(`
-      SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
-    `).get(symbol);
+    const db = await getDatabaseAsync();
+    const companyResult = await db.query(
+      `SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)`,
+      [symbol]
+    );
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Symbol not found' });
     }
 
     const { liquidityRefresh } = getServices();
-    const metrics = liquidityRefresh.getLiquidity(company.id);
+    const metrics = await liquidityRefresh.getLiquidity(company.id);
 
     if (!metrics) {
       return res.status(404).json({ error: 'No liquidity data for this symbol' });
@@ -454,21 +421,22 @@ router.get('/liquidity/:symbol', (req, res) => {
  * GET /api/trading/liquidity/stats/summary
  * Get overall liquidity statistics
  */
-router.get('/liquidity/stats/summary', (req, res) => {
+router.get('/liquidity/stats/summary', async (req, res) => {
   try {
-    const database = getDb();
+    const db = await getDatabaseAsync();
 
-    const stats = database.prepare(`
+    const statsResult = await db.query(`
       SELECT
-        COUNT(*) as total_stocks,
+        COUNT(*)::int as total_stocks,
         AVG(avg_value_30d) as avg_daily_value,
         AVG(volatility_30d) as avg_volatility,
         AVG(bid_ask_spread_bps) as avg_spread_bps,
         MAX(updated_at) as last_updated
       FROM liquidity_metrics
-    `).get();
+    `);
+    const stats = statsResult.rows[0];
 
-    const distribution = database.prepare(`
+    const distResult = await db.query(`
       SELECT
         CASE
           WHEN avg_value_30d >= 1000000000 THEN 'mega_liquid'
@@ -477,18 +445,17 @@ router.get('/liquidity/stats/summary', (req, res) => {
           WHEN avg_value_30d >= 1000000 THEN 'moderate'
           ELSE 'illiquid'
         END as category,
-        COUNT(*) as count
+        COUNT(*)::int as count
       FROM liquidity_metrics
-      GROUP BY category
-      ORDER BY
-        CASE category
-          WHEN 'mega_liquid' THEN 1
-          WHEN 'very_liquid' THEN 2
-          WHEN 'liquid' THEN 3
-          WHEN 'moderate' THEN 4
-          ELSE 5
-        END
-    `).all();
+      GROUP BY 1
+      ORDER BY CASE category
+        WHEN 'mega_liquid' THEN 1
+        WHEN 'very_liquid' THEN 2
+        WHEN 'liquid' THEN 3
+        WHEN 'moderate' THEN 4
+        ELSE 5
+      END
+    `);
 
     res.json({
       summary: {
@@ -498,7 +465,7 @@ router.get('/liquidity/stats/summary', (req, res) => {
         avgSpreadBps: stats.avg_spread_bps,
         lastUpdated: stats.last_updated,
       },
-      distribution,
+      distribution: distResult.rows,
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to get liquidity stats', message: error.message });
