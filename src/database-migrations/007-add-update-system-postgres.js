@@ -145,10 +145,11 @@ async function migrate(db) {
     ['analytics', 'Analytics', 'Factor analysis, outcomes, investor styles', 45, 1]
   ];
   for (const [name, display_name, description, priority, is_automatic] of bundles) {
+    // Use WHERE NOT EXISTS instead of ON CONFLICT for safety
     await db.query(
       `INSERT INTO update_bundles (name, display_name, description, priority, is_automatic)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (name) DO NOTHING`,
+       SELECT $1, $2, $3, $4, $5
+       WHERE NOT EXISTS (SELECT 1 FROM update_bundles WHERE name = $1)`,
       [name, display_name, description, priority, is_automatic]
     );
   }
@@ -163,8 +164,8 @@ async function migrate(db) {
     for (const row of jobs) {
       await db.query(
         `INSERT INTO update_jobs (bundle_id, job_key, name, description, cron_expression, is_automatic, batch_size, batch_delay_ms, timeout_seconds)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         ON CONFLICT (job_key) DO NOTHING`,
+         SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9
+         WHERE NOT EXISTS (SELECT 1 FROM update_jobs WHERE job_key = $2)`,
         row
       );
     }

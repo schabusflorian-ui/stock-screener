@@ -116,18 +116,21 @@ async function getInvestorByCik(cik) {
  *
  * OPTIMIZED: Uses batch queries instead of correlated subqueries to avoid N+1 problem
  */
-function getLatestHoldings(investorId, { limit = 100, sortBy = 'market_value', sortOrder = 'DESC', includePerformance = true } = {}) {
-  const investor = db.prepare('SELECT latest_filing_date FROM famous_investors WHERE id = ?').get(investorId);
-  if (!investor || !investor.latest_filing_date) {
+async function getLatestHoldings(investorId, { limit = 100, sortBy = 'market_value', sortOrder = 'DESC', includePerformance = true } = {}) {
+  const database = await getDatabaseAsync();
+  const investorRes = await database.query('SELECT latest_filing_date FROM famous_investors WHERE id = $1', [investorId]);
+  const investorData = investorRes.rows[0];
+  if (!investorData || !investorData.latest_filing_date) {
     return { holdings: [], filingDate: null, totalValue: 0 };
   }
+  const latestFilingDate = investorData.latest_filing_date;
 
   const validSortColumns = ['market_value', 'shares', 'portfolio_weight', 'shares_change_pct', 'security_name', 'gain_loss_pct', 'entry_gain_loss_pct'];
   const sortColumn = validSortColumns.includes(sortBy) ? sortBy : 'market_value';
   const order = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
   // STEP 1: Get base holdings without price subqueries (eliminates N+1)
-  const holdings = db.prepare(`
+  const holdingsResult = await database.query(`
     SELECT
       MIN(ih.id) as id,
       ih.investor_id,
@@ -157,31 +160,42 @@ function getLatestHoldings(investorId, { limit = 100, sortBy = 'market_value', s
       c.market_cap
     FROM investor_holdings ih
     LEFT JOIN companies c ON ih.company_id = c.id
-    WHERE ih.investor_id = ? AND ih.filing_date = ?
+    WHERE ih.investor_id = $1 AND ih.filing_date = $2
     GROUP BY ih.cusip, ih.option_type
     HAVING SUM(ih.shares) > 0
     ORDER BY ${sortColumn} ${order}
-    LIMIT ?
-  `).all(investorId, investor.latest_filing_date, limit);
+    LIMIT $3
+  `, [investorId, latestFilingDate, limit]);
+  const holdings = holdingsResult.rows;
 
   if (holdings.length === 0) {
-    return { holdings: [], filingDate: investor.latest_filing_date, totalValue: 0 };
+    return { holdings: [], filingDate: latestFilingDate, totalValue: 0 };
   }
 
   // STEP 2: Batch fetch latest prices for all companies (single query)
   const companyIds = [...new Set(holdings.filter(h => h.company_id).map(h => h.company_id))];
   const latestPricesMap = {};
   if (companyIds.length > 0) {
-    const placeholders = companyIds.map(() => '?').join(',');
-    const latestPrices = db.prepare(`
-      SELECT company_id, close as current_price, date as price_date
-      FROM daily_prices
-      WHERE id IN (
-        SELECT MAX(id) FROM daily_prices
-        WHERE company_id IN (${placeholders})
-        GROUP BY company_id
-      )
-    `).all(...companyIds);
+    const latestPricesRes = isUsingPostgres()
+      ? await database.query(`
+          SELECT company_id, close as current_price, date as price_date
+          FROM daily_prices
+          WHERE id IN (
+            SELECT MAX(id) FROM daily_prices
+            WHERE company_id = ANY($1)
+            GROUP BY company_id
+          )
+        `, [companyIds])
+      : await database.query(`
+          SELECT company_id, close as current_price, date as price_date
+          FROM daily_prices
+          WHERE id IN (
+            SELECT MAX(id) FROM daily_prices
+            WHERE company_id IN (${companyIds.map(() => '?').join(',')})
+            GROUP BY company_id
+          )
+        `, companyIds);
+    const latestPrices = latestPricesRes.rows;
     latestPrices.forEach(p => {
       latestPricesMap[p.company_id] = { current_price: p.current_price, price_date: p.price_date };
     });
@@ -190,17 +204,28 @@ function getLatestHoldings(investorId, { limit = 100, sortBy = 'market_value', s
   // STEP 3: Batch fetch filing date prices (single query)
   const filingPricesMap = {};
   if (companyIds.length > 0) {
-    const placeholders = companyIds.map(() => '?').join(',');
-    const filingPrices = db.prepare(`
-      SELECT dp.company_id, dp.close as filing_price
-      FROM daily_prices dp
-      INNER JOIN (
-        SELECT company_id, MAX(date) as max_date
-        FROM daily_prices
-        WHERE company_id IN (${placeholders}) AND date <= ?
-        GROUP BY company_id
-      ) sub ON dp.company_id = sub.company_id AND dp.date = sub.max_date
-    `).all(...companyIds, investor.latest_filing_date);
+    const filingPricesRes = isUsingPostgres()
+      ? await database.query(`
+          SELECT dp.company_id, dp.close as filing_price
+          FROM daily_prices dp
+          INNER JOIN (
+            SELECT company_id, MAX(date) as max_date
+            FROM daily_prices
+            WHERE company_id = ANY($1) AND date <= $2
+            GROUP BY company_id
+          ) sub ON dp.company_id = sub.company_id AND dp.date = sub.max_date
+        `, [companyIds, latestFilingDate])
+      : await database.query(`
+          SELECT dp.company_id, dp.close as filing_price
+          FROM daily_prices dp
+          INNER JOIN (
+            SELECT company_id, MAX(date) as max_date
+            FROM daily_prices
+            WHERE company_id IN (${companyIds.map(() => '?').join(',')}) AND date <= ?
+            GROUP BY company_id
+          ) sub ON dp.company_id = sub.company_id AND dp.date = sub.max_date
+        `, [...companyIds, latestFilingDate]);
+    const filingPrices = filingPricesRes.rows;
     filingPrices.forEach(p => {
       filingPricesMap[p.company_id] = p.filing_price;
     });
@@ -208,50 +233,48 @@ function getLatestHoldings(investorId, { limit = 100, sortBy = 'market_value', s
 
   // STEP 4: Batch fetch first filing dates for all holdings
   const firstFilingMap = {};
-  const cusipKeys = holdings.map(h => `${h.cusip}|${h.option_type || ''}`);
-  if (cusipKeys.length > 0) {
-    const firstFilings = db.prepare(`
+  if (holdings.length > 0) {
+    const firstFilingsRes = await database.query(`
       SELECT cusip, COALESCE(option_type, '') as opt, MIN(filing_date) as first_filing_date
       FROM investor_holdings
-      WHERE investor_id = ?
+      WHERE investor_id = $1
       GROUP BY cusip, COALESCE(option_type, '')
-    `).all(investorId);
+    `, [investorId]);
+    const firstFilings = firstFilingsRes.rows;
     firstFilings.forEach(f => {
       firstFilingMap[`${f.cusip}|${f.opt}`] = f.first_filing_date;
     });
   }
 
   // STEP 5: Batch fetch entry prices (prices at first filing date)
-  // Collect unique (company_id, first_filing_date) pairs
-  const entryPriceQueries = new Map();
-  holdings.forEach(h => {
-    if (h.company_id) {
-      const firstDate = firstFilingMap[`${h.cusip}|${h.option_type || ''}`];
-      if (firstDate) {
-        const key = `${h.company_id}|${firstDate}`;
-        if (!entryPriceQueries.has(key)) {
-          entryPriceQueries.set(key, { company_id: h.company_id, date: firstDate });
-        }
+  const entryPriceEntries = [...(await (async () => {
+    const pairs = [];
+    holdings.forEach(h => {
+      if (h.company_id) {
+        const firstDate = firstFilingMap[`${h.cusip}|${h.option_type || ''}`];
+        if (firstDate) pairs.push({ company_id: h.company_id, date: firstDate });
       }
-    }
+    });
+    return pairs;
+  })())];
+  const seen = new Set();
+  const uniquePairs = entryPriceEntries.filter(p => {
+    const k = `${p.company_id}|${p.date}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
   });
-
   const entryPricesMap = {};
-  if (entryPriceQueries.size > 0) {
-    // Batch fetch entry prices - use a single query with UNION for efficiency
-    const entryPriceResults = [];
-    for (const [key, { company_id, date }] of entryPriceQueries) {
-      const result = db.prepare(`
-        SELECT ? as lookup_key, close as entry_price
-        FROM daily_prices
-        WHERE company_id = ? AND date <= ?
-        ORDER BY date DESC
-        LIMIT 1
-      `).get(key, company_id, date);
-      if (result) {
-        entryPricesMap[result.lookup_key] = result.entry_price;
-      }
-    }
+  for (const { company_id, date } of uniquePairs) {
+    const res = await database.query(`
+      SELECT close as entry_price
+      FROM daily_prices
+      WHERE company_id = $1 AND date <= $2
+      ORDER BY date DESC
+      LIMIT 1
+    `, [company_id, date]);
+    const row = res.rows[0];
+    if (row) entryPricesMap[`${company_id}|${date}`] = row.entry_price;
   }
 
   // STEP 6: Merge all data into holdings
@@ -335,7 +358,7 @@ function getLatestHoldings(investorId, { limit = 100, sortBy = 'market_value', s
 
   return {
     holdings: holdingsWithPerformance,
-    filingDate: investor.latest_filing_date,
+    filingDate: latestFilingDate,
     totalValue,
     totalCurrentValue: totalCurrentValue || null,
     totalGainLoss: totalGainLoss || null,
@@ -348,14 +371,15 @@ function getLatestHoldings(investorId, { limit = 100, sortBy = 'market_value', s
  * Get holding changes from latest filing
  * Consolidates by CUSIP for accurate change tracking
  */
-function getHoldingChanges(investorId) {
-  const investor = db.prepare('SELECT latest_filing_date FROM famous_investors WHERE id = ?').get(investorId);
+async function getHoldingChanges(investorId) {
+  const database = await getDatabaseAsync();
+  const investorRes = await database.query('SELECT latest_filing_date FROM famous_investors WHERE id = $1', [investorId]);
+  const investor = investorRes.rows[0];
   if (!investor || !investor.latest_filing_date) {
     return { new: [], increased: [], decreased: [], sold: [], unchanged: [] };
   }
 
-  // Consolidate by CUSIP to get accurate totals
-  const holdings = db.prepare(`
+  const holdingsRes = await database.query(`
     SELECT
       ih.cusip,
       MAX(ih.security_name) as security_name,
@@ -376,10 +400,11 @@ function getHoldingChanges(investorId) {
       c.sector
     FROM investor_holdings ih
     LEFT JOIN companies c ON ih.company_id = c.id
-    WHERE ih.investor_id = ? AND ih.filing_date = ?
+    WHERE ih.investor_id = $1 AND ih.filing_date = $2
     GROUP BY ih.cusip
     ORDER BY SUM(ih.market_value) DESC
-  `).all(investorId, investor.latest_filing_date);
+  `, [investorId, investor.latest_filing_date]);
+  const holdings = holdingsRes.rows;
 
   return {
     new: holdings.filter(h => h.change_type === HOLDING_CHANGE_TYPES.NEW),
@@ -2024,12 +2049,13 @@ function prepareClone(investorId, options = {}) {
  * Get investor statistics
  * Consolidates by CUSIP for accurate sector allocation and top positions
  */
-function getInvestorStats(investorId) {
-  const investor = getInvestor(investorId);
+async function getInvestorStats(investorId) {
+  const investor = await getInvestor(investorId);
   if (!investor) return null;
 
-  // Get sector allocation (consolidated by CUSIP first, then by sector)
-  const sectorAllocation = db.prepare(`
+  const database = await getDatabaseAsync();
+
+  const sectorRes = await database.query(`
     SELECT
       sector,
       SUM(total_value) as total_value,
@@ -2043,15 +2069,14 @@ function getInvestorStats(investorId) {
         SUM(ih.portfolio_weight) as total_weight
       FROM investor_holdings ih
       LEFT JOIN companies c ON ih.company_id = c.id
-      WHERE ih.investor_id = ? AND ih.filing_date = ?
+      WHERE ih.investor_id = $1 AND ih.filing_date = $2
       GROUP BY ih.cusip, c.sector
     )
     GROUP BY sector
     ORDER BY total_value DESC
-  `).all(investorId, investor.latest_filing_date);
+  `, [investorId, investor.latest_filing_date]);
 
-  // Get top positions (consolidated by CUSIP)
-  const topPositions = db.prepare(`
+  const topRes = await database.query(`
     SELECT
       ih.cusip,
       MAX(ih.security_name) as security_name,
@@ -2063,16 +2088,16 @@ function getInvestorStats(investorId) {
       c.name as company_name
     FROM investor_holdings ih
     LEFT JOIN companies c ON ih.company_id = c.id
-    WHERE ih.investor_id = ? AND ih.filing_date = ?
+    WHERE ih.investor_id = $1 AND ih.filing_date = $2
     GROUP BY ih.cusip
     ORDER BY SUM(ih.portfolio_weight) DESC
     LIMIT 10
-  `).all(investorId, investor.latest_filing_date);
+  `, [investorId, investor.latest_filing_date]);
 
   return {
     ...investor,
-    sectorAllocation,
-    topPositions
+    sectorAllocation: sectorRes.rows,
+    topPositions: topRes.rows
   };
 }
 

@@ -7,7 +7,7 @@ const { FactorAttribution } = require('../../src/services/factors/factorAttribut
 
 const dbPath = path.join(__dirname, '../..', 'data', 'stocks.db');
 const db = new Database(dbPath);
-const factorAttribution = new FactorAttribution(db);
+const factorAttribution = new FactorAttribution();
 
 describe('FactorAttribution', () => {
   afterAll(() => {
@@ -15,9 +15,9 @@ describe('FactorAttribution', () => {
   });
 
   describe('Factor Returns Calculation', () => {
-    test('calculates all 6 factors for a given date', () => {
+    test('calculates all 6 factors for a given date', async () => {
       const date = '2025-12-01';
-      const factors = factorAttribution.calculateDailyFactorReturns(date);
+      const factors = await factorAttribution.calculateDailyFactorReturns(date);
 
       expect(factors).toBeDefined();
       expect(factors).toHaveProperty('mkt_rf');
@@ -29,9 +29,9 @@ describe('FactorAttribution', () => {
       expect(factors).toHaveProperty('rf');
     });
 
-    test('factor returns are within reasonable daily ranges', () => {
+    test('factor returns are within reasonable daily ranges', async () => {
       const date = '2025-12-01';
-      const factors = factorAttribution.calculateDailyFactorReturns(date);
+      const factors = await factorAttribution.calculateDailyFactorReturns(date);
 
       if (!factors) return;
 
@@ -44,9 +44,9 @@ describe('FactorAttribution', () => {
       expect(Math.abs(factors.bab)).toBeLessThan(0.20);
     });
 
-    test('stores factor returns in database', () => {
+    test('stores factor returns in database', async () => {
       const date = '2025-12-02';
-      factorAttribution.calculateDailyFactorReturns(date);
+      await factorAttribution.calculateDailyFactorReturns(date);
 
       const stored = db.prepare(`
         SELECT * FROM daily_factor_returns WHERE date = ?
@@ -58,12 +58,12 @@ describe('FactorAttribution', () => {
       expect(stored.hml).toBeDefined();
     });
 
-    test('handles idempotency (duplicate calculations)', () => {
+    test('handles idempotency (duplicate calculations)', async () => {
       const date = '2025-12-03';
 
       // Calculate twice
-      const first = factorAttribution.calculateDailyFactorReturns(date);
-      const second = factorAttribution.calculateDailyFactorReturns(date);
+      const first = await factorAttribution.calculateDailyFactorReturns(date);
+      const second = await factorAttribution.calculateDailyFactorReturns(date);
 
       // Should return same values
       expect(first.mkt_rf).toBeCloseTo(second.mkt_rf, 6);
@@ -80,9 +80,9 @@ describe('FactorAttribution', () => {
   });
 
   describe('SMB Factor (Small Minus Big)', () => {
-    test('SMB represents size premium', () => {
+    test('SMB represents size premium', async () => {
       const date = '2025-12-01';
-      const factors = factorAttribution.calculateDailyFactorReturns(date);
+      const factors = await factorAttribution.calculateDailyFactorReturns(date);
 
       if (!factors) return;
 
@@ -102,9 +102,9 @@ describe('FactorAttribution', () => {
   });
 
   describe('HML Factor (High Minus Low Book/Market)', () => {
-    test('HML represents value premium', () => {
+    test('HML represents value premium', async () => {
       const date = '2025-12-01';
-      const factors = factorAttribution.calculateDailyFactorReturns(date);
+      const factors = await factorAttribution.calculateDailyFactorReturns(date);
 
       if (!factors) return;
 
@@ -117,9 +117,9 @@ describe('FactorAttribution', () => {
   });
 
   describe('UMD Factor (Up Minus Down Momentum)', () => {
-    test('UMD uses 12-1 month momentum', () => {
+    test('UMD uses 12-1 month momentum', async () => {
       const date = '2025-12-01';
-      const factors = factorAttribution.calculateDailyFactorReturns(date);
+      const factors = await factorAttribution.calculateDailyFactorReturns(date);
 
       if (!factors) return;
 
@@ -137,9 +137,9 @@ describe('FactorAttribution', () => {
   });
 
   describe('QMJ Factor (Quality Minus Junk)', () => {
-    test('QMJ represents quality premium', () => {
+    test('QMJ represents quality premium', async () => {
       const date = '2025-12-01';
-      const factors = factorAttribution.calculateDailyFactorReturns(date);
+      const factors = await factorAttribution.calculateDailyFactorReturns(date);
 
       if (!factors) return;
 
@@ -151,9 +151,9 @@ describe('FactorAttribution', () => {
   });
 
   describe('BAB Factor (Betting Against Beta)', () => {
-    test('BAB represents low-volatility anomaly', () => {
+    test('BAB represents low-volatility anomaly', async () => {
       const date = '2025-12-01';
-      const factors = factorAttribution.calculateDailyFactorReturns(date);
+      const factors = await factorAttribution.calculateDailyFactorReturns(date);
 
       if (!factors) return;
 
@@ -165,10 +165,10 @@ describe('FactorAttribution', () => {
   });
 
   describe('Factor Return Persistence', () => {
-    test('factor returns show time-series variation', () => {
+    test('factor returns show time-series variation', async () => {
       const dates = ['2025-12-01', '2025-12-02', '2025-12-03'];
-      const factorSeries = dates.map(date =>
-        factorAttribution.calculateDailyFactorReturns(date)
+      const factorSeries = await Promise.all(
+        dates.map(date => factorAttribution.calculateDailyFactorReturns(date))
       );
 
       // Factor returns should vary day-to-day
@@ -178,9 +178,9 @@ describe('FactorAttribution', () => {
       expect(uniqueValues.size).toBeGreaterThan(1);
     });
 
-    test('factor returns are not perfectly correlated', () => {
+    test('factor returns are not perfectly correlated', async () => {
       const date = '2025-12-01';
-      const factors = factorAttribution.calculateDailyFactorReturns(date);
+      const factors = await factorAttribution.calculateDailyFactorReturns(date);
 
       if (!factors) return;
 
@@ -219,9 +219,9 @@ describe('FactorAttribution', () => {
   });
 
   describe('Factor Data Quality', () => {
-    test('no missing factor returns for calculated dates', () => {
+    test('no missing factor returns for calculated dates', async () => {
       const date = '2025-12-01';
-      factorAttribution.calculateDailyFactorReturns(date);
+      await factorAttribution.calculateDailyFactorReturns(date);
 
       const factors = db.prepare(`
         SELECT * FROM daily_factor_returns WHERE date = ?
@@ -235,18 +235,18 @@ describe('FactorAttribution', () => {
       expect(factors.bab).not.toBeNull();
     });
 
-    test('risk-free rate is reasonable', () => {
+    test('risk-free rate is reasonable', async () => {
       const date = '2025-12-01';
-      const factors = factorAttribution.calculateDailyFactorReturns(date);
+      const factors = await factorAttribution.calculateDailyFactorReturns(date);
 
       // Daily risk-free rate should be small positive number
       expect(factors.rf).toBeGreaterThan(0);
       expect(factors.rf).toBeLessThan(0.01); // < 1% daily
     });
 
-    test('market excess return = market return - rf', () => {
+    test('market excess return = market return - rf', async () => {
       const date = '2025-12-01';
-      const factors = factorAttribution.calculateDailyFactorReturns(date);
+      const factors = await factorAttribution.calculateDailyFactorReturns(date);
 
       // MKT-RF should be market return minus risk-free rate
       // We can't verify exact values without market data, but structure is correct
@@ -256,11 +256,13 @@ describe('FactorAttribution', () => {
   });
 
   describe('Historical Factor Returns', () => {
-    test('can retrieve factor returns for date range', () => {
+    test('can retrieve factor returns for date range', async () => {
       // Calculate for multiple dates
-      ['2025-12-01', '2025-12-02', '2025-12-03'].forEach(date => {
-        factorAttribution.calculateDailyFactorReturns(date);
-      });
+      await Promise.all(
+        ['2025-12-01', '2025-12-02', '2025-12-03'].map(date =>
+          factorAttribution.calculateDailyFactorReturns(date)
+        )
+      );
 
       const historicalReturns = db.prepare(`
         SELECT * FROM daily_factor_returns
@@ -287,18 +289,18 @@ describe('FactorAttribution', () => {
   });
 
   describe('Error Handling', () => {
-    test('handles insufficient market data', () => {
+    test('handles insufficient market data', async () => {
       // Try to calculate factors for very old date
-      const factors = factorAttribution.calculateDailyFactorReturns('1900-01-01');
+      const factors = await factorAttribution.calculateDailyFactorReturns('1900-01-01');
 
       // Should return zeros or handle gracefully
       expect(factors).toBeDefined();
     });
 
-    test('handles missing stock data', () => {
+    test('handles missing stock data', async () => {
       // System should handle when stocks have no price data
       const date = '2025-12-01';
-      const factors = factorAttribution.calculateDailyFactorReturns(date);
+      const factors = await factorAttribution.calculateDailyFactorReturns(date);
 
       // Should not crash, should return factors
       expect(factors).toBeDefined();
@@ -321,16 +323,16 @@ describe('FactorAttribution', () => {
   });
 
   describe('Factor Seasonality', () => {
-    test('can detect factor patterns over time', () => {
+    test('can detect factor patterns over time', async () => {
       // Calculate for multiple months
       const dates = [];
       for (let i = 1; i <= 5; i++) {
         dates.push(`2025-12-0${i}`);
       }
 
-      dates.forEach(date => {
-        factorAttribution.calculateDailyFactorReturns(date);
-      });
+      await Promise.all(
+        dates.map(date => factorAttribution.calculateDailyFactorReturns(date))
+      );
 
       const avgReturns = db.prepare(`
         SELECT
