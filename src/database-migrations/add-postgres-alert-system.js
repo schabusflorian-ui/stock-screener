@@ -152,6 +152,8 @@ async function migrate(db) {
       UNIQUE(user_id, company_id)
     )
   `);
+  // Ensure user_id exists (table may have been created by an older migration without it)
+  await addColumnIfNotExists('watchlist', 'user_id', 'TEXT', "'default'");
   await db.query(`CREATE INDEX IF NOT EXISTS idx_watchlist_user ON watchlist(user_id)`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_watchlist_company ON watchlist(company_id)`);
   console.log('  ✓ watchlist');
