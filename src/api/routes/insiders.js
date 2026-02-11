@@ -278,8 +278,8 @@ router.get('/company/:symbol', async (req, res) => {
     }
     console.error('Error fetching company insider data:', error);
     if (!res.headersSent) {
-      res.json({
-        company: { symbol, name: symbol },
+      res.status(200).json({
+        company: { symbol, name: symbol || 'Unknown' },
         summaries: { '1m': null, '3m': null, '6m': null, '1y': null },
         insiders: [],
         transactions: []

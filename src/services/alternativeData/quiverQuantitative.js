@@ -198,17 +198,17 @@ class QuiverQuantitativeService {
           politicianScore
         );
 
-        // Store trade
+        // Store trade (Postgres: unique index on COALESCE(asset_description,''), COALESCE(amount_range,''))
+        const conflictClause = isUsingPostgres()
+          ? 'ON CONFLICT (politician_id, transaction_date, COALESCE(asset_description, \'\'), COALESCE(amount_range, \'\')) DO UPDATE SET filing_date = excluded.filing_date, amount_min = excluded.amount_min, amount_max = excluded.amount_max'
+          : 'ON CONFLICT(politician_id, transaction_date, asset_description, amount_range) DO UPDATE SET filing_date = excluded.filing_date, amount_min = excluded.amount_min, amount_max = excluded.amount_max';
         await database.query(`
           INSERT INTO congressional_trades (
             politician_id, company_id, ticker,
             transaction_date, filing_date, transaction_type,
             asset_type, amount_min, amount_max, asset_description, amount_range, source
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-          ON CONFLICT(politician_id, transaction_date, asset_description, amount_range) DO UPDATE SET
-            filing_date = excluded.filing_date,
-            amount_min = excluded.amount_min,
-            amount_max = excluded.amount_max
+          ${conflictClause}
         `, [
           politicianId,
           companyId,
@@ -506,10 +506,10 @@ class QuiverQuantitativeService {
       dateCondition = `ct.transaction_date >= date('now', '${lookbackDays}')`;
     }
 
-    // Note: PostgreSQL doesn't have GROUP_CONCAT, use STRING_AGG instead
+    // Use congressional_politicians (Quiver schema); alias cp.name as politicians
     const aggregateFunction = isUsingPostgres()
-      ? `STRING_AGG(DISTINCT p.full_name, ', ')`
-      : `GROUP_CONCAT(DISTINCT p.full_name)`;
+      ? `STRING_AGG(DISTINCT cp.name, ', ')`
+      : `GROUP_CONCAT(DISTINCT cp.name)`;
 
     const result = await database.query(`
       SELECT
@@ -523,7 +523,7 @@ class QuiverQuantitativeService {
         SUM(COALESCE(ct.amount_max, 0)) as total_amount
       FROM congressional_trades ct
       LEFT JOIN companies c ON ct.company_id = c.id
-      LEFT JOIN politicians p ON ct.politician_id = p.id
+      LEFT JOIN congressional_politicians cp ON ct.politician_id = cp.id
       WHERE ${dateCondition}
       GROUP BY COALESCE(ct.ticker, c.symbol), c.name
       HAVING COUNT(CASE WHEN ct.transaction_type = 'purchase' THEN 1 END) > 0

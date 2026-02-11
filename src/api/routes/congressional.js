@@ -1,24 +1,29 @@
 // src/api/routes/congressional.js
-// API routes for congressional trading data
+// API routes for congressional trading data (async DB; supports Postgres and SQLite)
 
 const express = require('express');
 const router = express.Router();
-const { db, dialect, isPostgres } = require('../../database');
+const { getDatabaseAsync, isUsingPostgres, dialect } = require('../../lib/db');
 
-// Helper to build date filter based on database type
-function dateFilter(column, daysParam) {
-  if (isPostgres) {
-    return `${column} >= CURRENT_DATE - INTERVAL '1 day' * $PARAM`;
-  }
-  return `${column} >= date('now', '-' || ? || ' days')`;
+// Use congressional_politicians (Quiver schema); alias cp.name as politician_name / full_name for compatibility
+
+function dateFilterDays(column, paramIndex) {
+  return isUsingPostgres()
+    ? `${column} >= CURRENT_DATE - ($${paramIndex}::integer || ' days')::interval`
+    : `${column} >= date('now', '-' || $${paramIndex} || ' days')`;
+}
+
+function likeOp(paramIndex) {
+  return isUsingPostgres() ? `cp.name ILIKE $${paramIndex}` : `cp.name LIKE $${paramIndex}`;
 }
 
 /**
  * GET /api/congressional/trades
  * Get all congressional trades with filters
  */
-router.get('/trades', (req, res) => {
+router.get('/trades', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const {
       limit = 100,
       offset = 0,
@@ -31,71 +36,64 @@ router.get('/trades', (req, res) => {
       days = 90
     } = req.query;
 
+    let paramIdx = 1;
     let sql = `
       SELECT
         ct.*,
-        p.full_name as politician_name,
-        p.chamber,
-        p.party,
-        p.state,
+        cp.name as politician_name,
+        cp.chamber,
+        cp.party,
+        cp.state,
         c.symbol,
         c.name as company_name,
         c.market_cap,
         c.sector
       FROM congressional_trades ct
-      JOIN politicians p ON ct.politician_id = p.id
+      JOIN congressional_politicians cp ON ct.politician_id = cp.id
       LEFT JOIN companies c ON ct.company_id = c.id
-      WHERE ct.transaction_date >= date('now', '-' || ? || ' days')
+      WHERE ${dateFilterDays('ct.transaction_date', paramIdx++)}
     `;
-
     const params = [days];
 
-    // Add filters
     if (politician) {
-      sql += ' AND p.full_name LIKE ?';
+      sql += ' AND ' + likeOp(paramIdx++);
       params.push(`%${politician}%`);
     }
-
     if (chamber) {
-      sql += ' AND p.chamber = ?';
+      sql += ' AND cp.chamber = $' + (paramIdx++) + '';
       params.push(chamber);
     }
-
     if (party) {
-      sql += ' AND p.party = ?';
+      sql += ' AND cp.party = $' + (paramIdx++) + '';
       params.push(party);
     }
-
     if (type) {
-      sql += ' AND ct.transaction_type = ?';
+      sql += ' AND ct.transaction_type = $' + (paramIdx++) + '';
       params.push(type);
     }
-
     if (ticker) {
-      sql += ' AND ct.ticker = ?';
+      sql += ' AND ct.ticker = $' + (paramIdx++) + '';
       params.push(ticker.toUpperCase());
     }
-
     if (minAmount) {
-      sql += ' AND ct.amount_min >= ?';
+      sql += ' AND ct.amount_min >= $' + (paramIdx++) + '';
       params.push(parseInt(minAmount));
     }
 
-    sql += ' ORDER BY ct.transaction_date DESC LIMIT ? OFFSET ?';
+    sql += ' ORDER BY ct.transaction_date DESC LIMIT $' + (paramIdx++) + ' OFFSET $' + (paramIdx++) + '';
     params.push(parseInt(limit), parseInt(offset));
 
-    const trades = db.prepare(sql).all(...params);
+    const result = await database.query(sql, params);
+    const trades = result.rows;
 
-    // Get total count
     const countSql = `
       SELECT COUNT(*) as total
       FROM congressional_trades ct
-      JOIN politicians p ON ct.politician_id = p.id
-      WHERE ct.transaction_date >= date('now', '-' || ? || ' days')
+      JOIN congressional_politicians cp ON ct.politician_id = cp.id
+      WHERE ${dateFilterDays('ct.transaction_date', 1)}
     `;
-    const countParams = [days];
-
-    const { total } = db.prepare(countSql).get(...countParams);
+    const countResult = await database.query(countSql, [days]);
+    const total = parseInt(countResult.rows[0]?.total || 0, 10);
 
     res.json({
       trades,
@@ -103,7 +101,6 @@ router.get('/trades', (req, res) => {
       limit: parseInt(limit),
       offset: parseInt(offset)
     });
-
   } catch (error) {
     console.error('Error fetching congressional trades:', error);
     res.status(500).json({ error: 'Failed to fetch congressional trades' });
@@ -114,33 +111,33 @@ router.get('/trades', (req, res) => {
  * GET /api/congressional/politicians
  * Get list of politicians with trade counts
  */
-router.get('/politicians', (req, res) => {
+router.get('/politicians', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { days = 90 } = req.query;
+    const dateCond = dateFilterDays('ct.transaction_date', 1);
+    const cast = isUsingPostgres() ? '::int' : '';
 
     const sql = `
       SELECT
-        p.id,
-        p.full_name,
-        p.chamber,
-        p.party,
-        p.state,
-        COUNT(ct.id) as trade_count,
-        SUM(CASE WHEN ct.transaction_type = 'purchase' THEN 1 ELSE 0 END) as purchase_count,
-        SUM(CASE WHEN ct.transaction_type = 'sale' THEN 1 ELSE 0 END) as sale_count,
+        cp.id,
+        cp.name as full_name,
+        cp.chamber,
+        cp.party,
+        cp.state,
+        COUNT(ct.id)${cast} as trade_count,
+        SUM(CASE WHEN ct.transaction_type = 'purchase' THEN 1 ELSE 0 END)${cast} as purchase_count,
+        SUM(CASE WHEN ct.transaction_type = 'sale' THEN 1 ELSE 0 END)${cast} as sale_count,
         MAX(ct.transaction_date) as latest_trade
-      FROM politicians p
-      LEFT JOIN congressional_trades ct ON p.id = ct.politician_id
-        AND ct.transaction_date >= date('now', '-' || ? || ' days')
-      GROUP BY p.id
+      FROM congressional_politicians cp
+      LEFT JOIN congressional_trades ct ON cp.id = ct.politician_id
+        AND ${dateCond}
+      GROUP BY cp.id
       HAVING COUNT(ct.id) > 0
       ORDER BY COUNT(ct.id) DESC
     `;
-
-    const politicians = db.prepare(sql).all(days);
-
-    res.json({ politicians });
-
+    const result = await database.query(sql, [days]);
+    res.json({ politicians: result.rows });
   } catch (error) {
     console.error('Error fetching politicians:', error);
     res.status(500).json({ error: 'Failed to fetch politicians' });
@@ -151,12 +148,13 @@ router.get('/politicians', (req, res) => {
  * GET /api/congressional/clusters
  * Get purchase clusters (multiple politicians buying same stock)
  */
-router.get('/clusters', (req, res) => {
+router.get('/clusters', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { days = 30, minPoliticians = 2 } = req.query;
-
-    // Use dialect helper for GROUP_CONCAT
-    const politiciansList = dialect.groupConcat('DISTINCT p.full_name');
+    const dateCond = dateFilterDays('ct.transaction_date', 1);
+    const cast = isUsingPostgres() ? '::int' : '';
+    const politiciansAgg = dialect.groupConcat('DISTINCT cp.name', ', ');
 
     const sql = `
       SELECT
@@ -165,26 +163,23 @@ router.get('/clusters', (req, res) => {
         c.symbol,
         c.sector,
         c.market_cap,
-        COUNT(DISTINCT ct.politician_id) as politician_count,
-        COUNT(*) as purchase_count,
+        COUNT(DISTINCT ct.politician_id)${cast} as politician_count,
+        COUNT(*)${cast} as purchase_count,
         SUM(ct.amount_min) as total_amount_min,
         MAX(ct.transaction_date) as latest_purchase,
-        ${politiciansList} as politicians
+        ${politiciansAgg} as politicians
       FROM congressional_trades ct
-      JOIN politicians p ON ct.politician_id = p.id
+      JOIN congressional_politicians cp ON ct.politician_id = cp.id
       LEFT JOIN companies c ON ct.company_id = c.id
       WHERE ct.transaction_type IN ('purchase', 'buy')
-        AND ct.transaction_date >= date('now', '-' || ? || ' days')
+        AND ${dateCond}
         AND ct.ticker IS NOT NULL
       GROUP BY ct.ticker, c.name, c.symbol, c.sector, c.market_cap
-      HAVING COUNT(DISTINCT ct.politician_id) >= ?
+      HAVING COUNT(DISTINCT ct.politician_id) >= $2
       ORDER BY COUNT(DISTINCT ct.politician_id) DESC, COUNT(*) DESC
     `;
-
-    const clusters = db.prepare(sql).all(days, minPoliticians);
-
-    res.json({ clusters });
-
+    const result = await database.query(sql, [days, parseInt(minPoliticians)]);
+    res.json({ clusters: result.rows });
   } catch (error) {
     console.error('Error fetching clusters:', error);
     res.status(500).json({ error: 'Failed to fetch purchase clusters' });
@@ -195,29 +190,28 @@ router.get('/clusters', (req, res) => {
  * GET /api/congressional/company/:ticker
  * Get congressional trades for a specific company
  */
-router.get('/company/:ticker', (req, res) => {
+router.get('/company/:ticker', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
     const { ticker } = req.params;
     const { days = 365 } = req.query;
+    const dateCond = dateFilterDays('ct.transaction_date', 2);
 
     const sql = `
       SELECT
         ct.*,
-        p.full_name as politician_name,
-        p.chamber,
-        p.party,
-        p.state
+        cp.name as politician_name,
+        cp.chamber,
+        cp.party,
+        cp.state
       FROM congressional_trades ct
-      JOIN politicians p ON ct.politician_id = p.id
-      WHERE ct.ticker = ?
-        AND ct.transaction_date >= date('now', '-' || ? || ' days')
+      JOIN congressional_politicians cp ON ct.politician_id = cp.id
+      WHERE ct.ticker = $1
+        AND ${dateCond}
       ORDER BY ct.transaction_date DESC
     `;
-
-    const trades = db.prepare(sql).all(ticker.toUpperCase(), days);
-
-    res.json({ trades });
-
+    const result = await database.query(sql, [ticker.toUpperCase(), days]);
+    res.json({ trades: result.rows });
   } catch (error) {
     console.error('Error fetching company trades:', error);
     res.status(500).json({ error: 'Failed to fetch company trades' });
@@ -228,19 +222,28 @@ router.get('/company/:ticker', (req, res) => {
  * GET /api/congressional/stats
  * Get overall statistics
  */
-router.get('/stats', (req, res) => {
+router.get('/stats', async (req, res) => {
   try {
+    const database = await getDatabaseAsync();
+
+    const [totalTrades, totalPoliticians, totalCompanies, latestTrade, purchaseCount, saleCount] = await Promise.all([
+      database.query('SELECT COUNT(*) as count FROM congressional_trades'),
+      database.query('SELECT COUNT(DISTINCT politician_id) as count FROM congressional_trades'),
+      database.query('SELECT COUNT(DISTINCT company_id) as count FROM congressional_trades WHERE company_id IS NOT NULL'),
+      database.query('SELECT MAX(transaction_date) as date FROM congressional_trades'),
+      database.query("SELECT COUNT(*) as count FROM congressional_trades WHERE transaction_type IN ('purchase', 'buy')"),
+      database.query("SELECT COUNT(*) as count FROM congressional_trades WHERE transaction_type IN ('sale', 'sell')")
+    ]);
+
     const stats = {
-      total_trades: db.prepare('SELECT COUNT(*) as count FROM congressional_trades').get().count,
-      total_politicians: db.prepare('SELECT COUNT(DISTINCT politician_id) as count FROM congressional_trades').get().count,
-      total_companies: db.prepare('SELECT COUNT(DISTINCT company_id) as count FROM congressional_trades WHERE company_id IS NOT NULL').get().count,
-      latest_trade: db.prepare('SELECT MAX(transaction_date) as date FROM congressional_trades').get().date,
-      purchase_count: db.prepare("SELECT COUNT(*) as count FROM congressional_trades WHERE transaction_type IN ('purchase', 'buy')").get().count,
-      sale_count: db.prepare("SELECT COUNT(*) as count FROM congressional_trades WHERE transaction_type IN ('sale', 'sell')").get().count
+      total_trades: parseInt(totalTrades.rows[0]?.count || 0, 10),
+      total_politicians: parseInt(totalPoliticians.rows[0]?.count || 0, 10),
+      total_companies: parseInt(totalCompanies.rows[0]?.count || 0, 10),
+      latest_trade: latestTrade.rows[0]?.date || null,
+      purchase_count: parseInt(purchaseCount.rows[0]?.count || 0, 10),
+      sale_count: parseInt(saleCount.rows[0]?.count || 0, 10)
     };
-
     res.json(stats);
-
   } catch (error) {
     console.error('Error fetching stats:', error);
     res.status(500).json({ error: 'Failed to fetch statistics' });

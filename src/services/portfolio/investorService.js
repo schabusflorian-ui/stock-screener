@@ -426,7 +426,7 @@ async function getInvestorsByStock(companyId) {
     SELECT
       fi.id,
       fi.name as investor_name,
-      fi.fund_name as manager_name,
+      COALESCE(fi.description, fi.name) as manager_name,
       fi.investment_style,
       SUM(ih.shares) as shares,
       SUM(ih.market_value) as market_value,

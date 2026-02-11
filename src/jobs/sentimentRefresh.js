@@ -7,7 +7,7 @@
  * 3. As a scheduled task in your hosting environment
  */
 
-const { getDatabaseAsync } = require('../lib/db');
+const { getDatabaseAsync, isUsingPostgres } = require('../lib/db');
 const RedditFetcher = require('../services/redditFetcher');
 const SentimentSignalGenerator = require('../services/sentimentSignal');
 
@@ -107,15 +107,18 @@ async function refreshWatchlist(options = {}) {
   try {
     // Get companies that need refreshing
     const { database } = await getServices();
+    const dateCondition = isUsingPostgres()
+      ? `sentiment_updated_at < (CURRENT_TIMESTAMP - ($2::integer || ' hours')::interval)`
+      : `sentiment_updated_at < datetime('now', '-' || $2 || ' hours')`;
     const companiesResult = await database.query(`
       SELECT id, symbol FROM companies
-      WHERE sentiment_updated_at < datetime('now', '-${staleHours} hours')
+      WHERE ${dateCondition}
          OR sentiment_updated_at IS NULL
       ORDER BY
         CASE WHEN sentiment_updated_at IS NULL THEN 0 ELSE 1 END,
         sentiment_updated_at ASC
       LIMIT $1
-    `, [maxCompanies]);
+    `, [maxCompanies, staleHours]);
     const companies = companiesResult.rows;
 
     console.log(`Found ${companies.length} companies to refresh (batch size: ${batchSize})`);

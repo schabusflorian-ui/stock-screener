@@ -262,7 +262,7 @@ class InsiderTracker {
       WHERE t.company_id = $1
         AND t.transaction_date >= $2
         AND t.transaction_type IN ('buy', 'sell')
-        AND t.is_derivative = false
+        AND (t.is_derivative = 0 OR t.is_derivative IS NULL)
       ORDER BY t.transaction_date DESC
     `, [companyId, cutoffStr]);
 

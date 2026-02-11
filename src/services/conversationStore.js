@@ -54,7 +54,14 @@ class ConversationStore {
   async getConversation(id) {
     // Check cache first
     const cached = this._cacheGet(id);
-    if (cached) return cached;
+    if (cached) {
+      // Ensure cached conversation has a valid analyst_id (legacy entries may have null)
+      if (cached.analyst_id == null || cached.analyst_id === '' || cached.analyst_id === 'undefined' || cached.analyst_id === 'null') {
+        cached.analyst_id = 'value';
+        this._cacheSet(id, cached);
+      }
+      return cached;
+    }
 
     const database = await getDatabaseAsync();
 
@@ -84,7 +91,7 @@ class ConversationStore {
 
     // Root cause: ensure every conversation has an analyst_id (backfill legacy NULLs)
     let analystId = row.analyst_id;
-    if (analystId == null || analystId === '') {
+    if (analystId == null || analystId === '' || analystId === 'undefined' || analystId === 'null') {
       analystId = 'value';
       await database.query(
         `UPDATE analyst_conversations SET analyst_id = $1 WHERE id = $2`,

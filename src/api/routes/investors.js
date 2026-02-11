@@ -302,12 +302,14 @@ router.get('/by-stock/:symbol', async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching investors by stock:', error);
-    res.json({
-      success: true,
-      symbol: (req.params.symbol || '').toUpperCase(),
-      count: 0,
-      investors: []
-    });
+    if (!res.headersSent) {
+      res.status(200).json({
+        success: true,
+        symbol: (req.params.symbol || '').toUpperCase(),
+        count: 0,
+        investors: []
+      });
+    }
   }
 });
 

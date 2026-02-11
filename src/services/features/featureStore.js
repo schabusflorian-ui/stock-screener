@@ -531,7 +531,7 @@ class FeatureStore {
         SELECT
           SUM(CASE WHEN transaction_type = 'purchase' THEN 1 ELSE 0 END) as buys,
           SUM(CASE WHEN transaction_type = 'sale_full' OR transaction_type = 'sale_partial' THEN 1 ELSE 0 END) as sells
-        FROM congress_trades ct
+        FROM congressional_trades ct
         JOIN companies c ON LOWER(ct.ticker) = LOWER(c.symbol)
         WHERE c.id = ?
           AND ct.transaction_date BETWEEN date(?, '-90 days') AND ?

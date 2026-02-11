@@ -443,10 +443,11 @@ class AnalystService {
       }
     }
 
-    if (!ANALYSTS[analystId]) {
+    const normalized = (analystId === 'undefined' || analystId === 'null' || !analystId) ? 'value' : analystId;
+    if (!ANALYSTS[normalized]) {
       throw new Error(`Unknown analyst: ${analystId}`);
     }
-    return ANALYSTS[analystId];
+    return ANALYSTS[normalized];
   }
 
   /**
@@ -574,12 +575,13 @@ class AnalystService {
     // This must be before any await to prevent client timeouts
     yield { type: 'start', id: responseId };
 
-    const conv = conversationStore.getConversation(conversationId);
+    const conv = await conversationStore.getConversation(conversationId);
     if (!conv) {
       throw new Error(`Conversation not found: ${conversationId}`);
     }
 
-    const analystId = conv.analyst_id;
+    let analystId = conv.analyst_id;
+    if (analystId == null || analystId === '' || analystId === 'undefined' || analystId === 'null') analystId = 'value';
     const analyst = ANALYSTS[analystId];
     if (!analyst) {
       throw new Error(`Invalid analyst: ${analystId}`);
@@ -668,12 +670,13 @@ class AnalystService {
    * Send message and get response.
    */
   async chat(conversationId, message, companyContext = null) {
-    const conv = conversationStore.getConversation(conversationId);
+    const conv = await conversationStore.getConversation(conversationId);
     if (!conv) {
       throw new Error(`Conversation not found: ${conversationId}`);
     }
 
-    const analystId = conv.analyst_id;
+    let analystId = conv.analyst_id;
+    if (analystId == null || analystId === '' || analystId === 'undefined' || analystId === 'null') analystId = 'value';
     const analyst = ANALYSTS[analystId];
     if (!analyst) {
       throw new Error(`Invalid analyst: ${analystId}`);

@@ -11,7 +11,7 @@
  */
 
 const YahooFinance = require('yahoo-finance2').default;
-const { getDatabaseAsync } = require('../lib/db');
+const { getDatabaseAsync, isUsingPostgres } = require('../lib/db');
 
 class AnalystEstimatesFetcher {
   constructor() {
@@ -264,57 +264,97 @@ class AnalystEstimatesFetcher {
     if (!data) return;
 
     const database = await getDatabaseAsync();
+    const params = [
+      companyId,
+      data.fetchedAt,
+      data.priceTargets.current,
+      data.priceTargets.targetHigh,
+      data.priceTargets.targetLow,
+      data.priceTargets.targetMean,
+      data.priceTargets.targetMedian,
+      data.priceTargets.numberOfAnalysts,
+      data.priceTargets.recommendationKey,
+      data.priceTargets.recommendationMean,
+      data.priceTargets.upsidePotential,
+      data.recommendations.strongBuy,
+      data.recommendations.buy,
+      data.recommendations.hold,
+      data.recommendations.sell,
+      data.recommendations.strongSell,
+      data.recommendations.buyPercent,
+      data.recommendations.holdPercent,
+      data.recommendations.sellPercent,
+      data.earningsBeatRate,
+      data.signal.signal,
+      data.signal.strength,
+      data.signal.confidence,
+      data.signal.score,
+      JSON.stringify(data)
+    ];
 
     try {
-      await database.query(`
-        INSERT OR REPLACE INTO analyst_estimates (
-          company_id, fetched_at,
-          current_price, target_high, target_low, target_mean, target_median,
-          number_of_analysts, recommendation_key, recommendation_mean,
-          upside_potential,
-          strong_buy, buy, hold, sell, strong_sell,
-          buy_percent, hold_percent, sell_percent,
-          earnings_beat_rate,
-          signal, signal_strength, signal_confidence, signal_score,
-          raw_data
-        ) VALUES (
-          $1, $2,
-          $3, $4, $5, $6, $7,
-          $8, $9, $10,
-          $11,
-          $12, $13, $14, $15, $16,
-          $17, $18, $19,
-          $20,
-          $21, $22, $23, $24,
-          $25
-        )
-      `, [
-        companyId,
-        data.fetchedAt,
-        data.priceTargets.current,
-        data.priceTargets.targetHigh,
-        data.priceTargets.targetLow,
-        data.priceTargets.targetMean,
-        data.priceTargets.targetMedian,
-        data.priceTargets.numberOfAnalysts,
-        data.priceTargets.recommendationKey,
-        data.priceTargets.recommendationMean,
-        data.priceTargets.upsidePotential,
-        data.recommendations.strongBuy,
-        data.recommendations.buy,
-        data.recommendations.hold,
-        data.recommendations.sell,
-        data.recommendations.strongSell,
-        data.recommendations.buyPercent,
-        data.recommendations.holdPercent,
-        data.recommendations.sellPercent,
-        data.earningsBeatRate,
-        data.signal.signal,
-        data.signal.strength,
-        data.signal.confidence,
-        data.signal.score,
-        JSON.stringify(data)
-      ]);
+      if (isUsingPostgres()) {
+        await database.query(`
+          INSERT INTO analyst_estimates (
+            company_id, fetched_at,
+            current_price, target_high, target_low, target_mean, target_median,
+            number_of_analysts, recommendation_key, recommendation_mean,
+            upside_potential,
+            strong_buy, buy, hold, sell, strong_sell,
+            buy_percent, hold_percent, sell_percent,
+            earnings_beat_rate,
+            signal, signal_strength, signal_confidence, signal_score,
+            raw_data
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+            $12, $13, $14, $15, $16, $17, $18, $19, $20,
+            $21, $22, $23, $24, $25
+          )
+          ON CONFLICT (company_id) DO UPDATE SET
+            fetched_at = EXCLUDED.fetched_at,
+            current_price = EXCLUDED.current_price,
+            target_high = EXCLUDED.target_high,
+            target_low = EXCLUDED.target_low,
+            target_mean = EXCLUDED.target_mean,
+            target_median = EXCLUDED.target_median,
+            number_of_analysts = EXCLUDED.number_of_analysts,
+            recommendation_key = EXCLUDED.recommendation_key,
+            recommendation_mean = EXCLUDED.recommendation_mean,
+            upside_potential = EXCLUDED.upside_potential,
+            strong_buy = EXCLUDED.strong_buy,
+            buy = EXCLUDED.buy,
+            hold = EXCLUDED.hold,
+            sell = EXCLUDED.sell,
+            strong_sell = EXCLUDED.strong_sell,
+            buy_percent = EXCLUDED.buy_percent,
+            hold_percent = EXCLUDED.hold_percent,
+            sell_percent = EXCLUDED.sell_percent,
+            earnings_beat_rate = EXCLUDED.earnings_beat_rate,
+            signal = EXCLUDED.signal,
+            signal_strength = EXCLUDED.signal_strength,
+            signal_confidence = EXCLUDED.signal_confidence,
+            signal_score = EXCLUDED.signal_score,
+            raw_data = EXCLUDED.raw_data
+        `, params);
+      } else {
+        await database.query(`
+          INSERT OR REPLACE INTO analyst_estimates (
+            company_id, fetched_at,
+            current_price, target_high, target_low, target_mean, target_median,
+            number_of_analysts, recommendation_key, recommendation_mean,
+            upside_potential,
+            strong_buy, buy, hold, sell, strong_sell,
+            buy_percent, hold_percent, sell_percent,
+            earnings_beat_rate,
+            signal, signal_strength, signal_confidence, signal_score,
+            raw_data
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+            $12, $13, $14, $15, $16, $17, $18, $19, $20,
+            $21, $22, $23, $24, $25
+          )
+        `, params);
+      }
     } catch (error) {
       console.error(`Error storing analyst data for company ${companyId}:`, error.message);
     }

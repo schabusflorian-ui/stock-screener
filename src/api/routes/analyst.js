@@ -107,9 +107,9 @@ router.get('/conversations', requireAuth, asyncHandler(async (req, res) => {
  */
 router.post('/conversations', requireAuth, requireFeature('ai_research_agents'), asyncHandler(async (req, res) => {
   try {
-    const { analystId, companyId, companySymbol } = req.body;
-
-    if (!analystId) {
+    let { analystId, companyId, companySymbol } = req.body;
+    if (analystId === 'undefined' || analystId === 'null' || !analystId) analystId = 'value';
+    if (typeof analystId !== 'string') {
       return res.status(400).json({
         success: false,
         error: 'analystId is required'
