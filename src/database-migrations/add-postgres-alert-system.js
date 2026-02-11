@@ -83,6 +83,17 @@ async function migrate(db) {
   await db.query(`CREATE INDEX IF NOT EXISTS idx_alert_clusters_company ON alert_clusters(company_id)`);
   console.log('  ✓ alert_clusters');
 
+  // 3b. Ensure alert_clusters has PRIMARY KEY (handles table created by partial run without PK)
+  const pkCheck = await db.query(`
+    SELECT 1 FROM pg_constraint c
+    JOIN pg_class t ON c.conrelid = t.oid
+    WHERE t.relname = 'alert_clusters' AND c.contype = 'p'
+  `);
+  if (pkCheck.rows.length === 0) {
+    await db.query(`ALTER TABLE alert_clusters ADD PRIMARY KEY (id)`);
+    console.log('  ✓ alert_clusters primary key added');
+  }
+
   // 4. Add FK for alerts.cluster_id if not exists (ignore if constraint exists)
   try {
     await db.query(`
@@ -90,6 +101,7 @@ async function migrate(db) {
       ADD CONSTRAINT fk_alerts_cluster
       FOREIGN KEY (cluster_id) REFERENCES alert_clusters(id) ON DELETE SET NULL
     `);
+    console.log('  ✓ fk_alerts_cluster');
   } catch (e) {
     if (!e.message?.includes('already exists')) throw e;
   }
