@@ -9,6 +9,19 @@ const express = require('express');
 const router = express.Router();
 const path = require('path');
 const fs = require('fs');
+const { getDatabaseSync, isUsingPostgres } = require('../../lib/db');
+
+// Validation endpoints are SQLite-only for now.
+router.use((req, res, next) => {
+  if (isUsingPostgres()) {
+    return res.status(503).json({
+      error: 'Validation endpoints are not available in PostgreSQL deployment',
+      code: 'VALIDATION_NOT_AVAILABLE',
+      message: 'These validators use SQLite-specific queries and require migration.'
+    });
+  }
+  next();
+});
 
 // Lazy load dependencies
 let db = null;
@@ -25,8 +38,7 @@ let currentProgress = null;
  */
 function initializeValidator() {
   if (!db) {
-    const database = require('../../database');
-    db = database.getDatabase();
+    db = getDatabaseSync();
   }
 
   if (!validator) {
@@ -42,8 +54,7 @@ function initializeValidator() {
  */
 function initializeSignalValidator() {
   if (!db) {
-    const database = require('../../database');
-    db = database.getDatabase();
+    db = getDatabaseSync();
   }
 
   if (!signalValidator) {
@@ -59,8 +70,7 @@ function initializeSignalValidator() {
  */
 function initializeSignalTracker() {
   if (!db) {
-    const database = require('../../database');
-    db = database.getDatabase();
+    db = getDatabaseSync();
   }
 
   if (!signalPerformanceTracker) {
@@ -76,8 +86,7 @@ function initializeSignalTracker() {
  */
 function initializeMLCombiner() {
   if (!db) {
-    const database = require('../../database');
-    db = database.getDatabase();
+    db = getDatabaseSync();
   }
 
   if (!mlSignalCombiner) {

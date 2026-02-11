@@ -11,7 +11,7 @@ class PositionSizing {
   // ============================================
   // Calculate Position Size
   // ============================================
-  async calculate(method, params) {
+  calculate(method, params) {
     switch (method) {
       case 'fixed_risk':
         return this._fixedRisk(params);
@@ -20,7 +20,8 @@ class PositionSizing {
       case 'equal_weight':
         return this._equalWeight(params);
       case 'volatility_based':
-        return await this._volatilityBased(params);
+        // This one is async, so return the promise
+        return this._volatilityBased(params);
       case 'percent_of_portfolio':
         return this._percentOfPortfolio(params);
       default:

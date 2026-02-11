@@ -3,10 +3,30 @@
 
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
+const { getDatabaseSync, isUsingPostgres } = require('../../lib/db');
 const { getTradingAgent, getRiskManager, getScanner } = require('../../services/agent');
 const { SignalOptimizer } = require('../../services/agent/signalOptimizer');
 const { RecommendationTracker } = require('../../services/agent/recommendationTracker');
+
+// Trading agent endpoints are SQLite-only for now.
+router.use((req, res, next) => {
+  if (isUsingPostgres()) {
+    return res.status(503).json({
+      error: 'Trading agent endpoints are not available in PostgreSQL deployment',
+      code: 'AGENT_NOT_AVAILABLE',
+      message: 'These endpoints use SQLite-specific queries and require migration.'
+    });
+  }
+  next();
+});
+
+let database = null;
+function getDb() {
+  if (!database) {
+    database = getDatabaseSync();
+  }
+  return database;
+}
 
 // Initialize services lazily
 let tradingAgent = null;
@@ -16,12 +36,12 @@ let signalOptimizer = null;
 let recommendationTracker = null;
 
 function ensureServices() {
-  const database = db.getDatabase();
-  if (!tradingAgent) tradingAgent = getTradingAgent(database);
-  if (!riskManager) riskManager = getRiskManager(database);
-  if (!scanner) scanner = getScanner(database);
-  if (!signalOptimizer) signalOptimizer = new SignalOptimizer(database);
-  if (!recommendationTracker) recommendationTracker = new RecommendationTracker(database);
+  const dbInstance = getDb();
+  if (!tradingAgent) tradingAgent = getTradingAgent(dbInstance);
+  if (!riskManager) riskManager = getRiskManager(dbInstance);
+  if (!scanner) scanner = getScanner(dbInstance);
+  if (!signalOptimizer) signalOptimizer = new SignalOptimizer(dbInstance);
+  if (!recommendationTracker) recommendationTracker = new RecommendationTracker(dbInstance);
 }
 
 // ============================================
@@ -41,7 +61,7 @@ router.get('/recommendation/:symbol', async (req, res) => {
     // Get portfolio context if provided
     let portfolioContext = null;
     if (portfolioId) {
-      const database = db.getDatabase();
+      const database = getDb();
       const portfolio = await database.prepare('SELECT * FROM portfolios WHERE id = ?').get(portfolioId);
       const positions = await database.prepare(`
         SELECT pp.*, c.symbol, c.sector
@@ -420,7 +440,7 @@ router.get('/opportunities/sectors', async (req, res) => {
  */
 router.get('/stats', async (req, res) => {
   try {
-    const database = db.getDatabase();
+    const database = getDb();
 
     const recStats = await database.prepare(`
       SELECT
@@ -655,7 +675,7 @@ router.get('/tracker/ic/:signalType', (req, res) => {
  */
 router.get('/tracker/outcomes', async (req, res) => {
   try {
-    const database = db.getDatabase();
+    const database = getDb();
     const { limit = 50, signalType } = req.query;
 
     let query = `
@@ -743,7 +763,7 @@ router.post('/tracker/recalculate', (req, res) => {
  */
 router.get('/tracker/signal-summary', async (req, res) => {
   try {
-    const database = db.getDatabase();
+    const database = getDb();
 
     // Get signal performance from database
     const summary = await database.prepare(`
@@ -897,7 +917,7 @@ router.post('/portfolios/:portfolioId/scan', async (req, res) => {
     const { portfolioId } = req.params;
     const id = parseInt(portfolioId, 10);
     const state = getAgentState(id);
-    const database = db.getDatabase();
+    const database = getDb();
 
     logActivity(id, 'scan', 'Starting manual scan...');
 
@@ -934,7 +954,7 @@ router.get('/portfolios/:portfolioId/activity', async (req, res) => {
     const { limit = 50 } = req.query;
     const id = parseInt(portfolioId, 10);
     const state = getAgentState(id);
-    const database = db.getDatabase();
+    const database = getDb();
 
     const recentExecutions = await database.prepare(`
       SELECT id, symbol, action, status, approved_at, executed_at, rejected_at, target_value
@@ -985,7 +1005,7 @@ router.get('/portfolios/:portfolioId/activity', async (req, res) => {
  */
 router.get('/portfolios/:portfolioId/context', async (req, res) => {
   try {
-    const database = db.getDatabase();
+    const database = getDb();
 
     let regime = 'NEUTRAL', regimeConfidence = 0.5, vix = null, vixLevel = null;
 
@@ -1044,7 +1064,7 @@ router.get('/portfolios/:portfolioId/context', async (req, res) => {
 router.get('/portfolios/:portfolioId/stats/today', async (req, res) => {
   try {
     const { portfolioId } = req.params;
-    const database = db.getDatabase();
+    const database = getDb();
 
     const stats = await database.prepare(`
       SELECT
@@ -1089,7 +1109,7 @@ router.get('/portfolios/:portfolioId/stats/today', async (req, res) => {
 router.get('/portfolios/:portfolioId/settings', async (req, res) => {
   try {
     const { portfolioId } = req.params;
-    const database = db.getDatabase();
+    const database = getDb();
 
     let settings = null;
     try {
@@ -1131,7 +1151,7 @@ router.put('/portfolios/:portfolioId/settings', async (req, res) => {
     const { portfolioId } = req.params;
     const { execution, mode } = req.body;
     const id = parseInt(portfolioId, 10);
-    const database = db.getDatabase();
+    const database = getDb();
 
     if (mode) {
       const state = getAgentState(id);
