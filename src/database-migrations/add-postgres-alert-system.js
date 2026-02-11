@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 // add-postgres-alert-system.js
 // PostgreSQL migration: Full alert system schema (alerts, alert_clusters, user_digest_preferences, watchlist, etc.)
-// Extends the minimal alerts table from 000-postgres-base-schema with columns expected by AlertService
+// Extends the minimal alerts table from 000-postgres-base-schema with columns expected by AlertService.
+//
+// IMPORTANT: Railway (and other envs) may have tables from partial or older runs with different schemas.
+// For any table we touch: use addColumnIfNotExists before creating indexes on that column, and handle
+// PK/FK failures (e.g. alert_clusters duplicate id) so the migration completes and the app can start.
 
 async function migrate(db) {
   console.log('🔔 Adding full alert system schema for PostgreSQL...');
@@ -172,6 +176,8 @@ async function migrate(db) {
       valid_until TIMESTAMP
     )
   `);
+  // Ensure valid_until exists (table may exist from another migration with different schema)
+  await addColumnIfNotExists('market_regime_history', 'valid_until', 'TIMESTAMP');
   await db.query(`CREATE INDEX IF NOT EXISTS idx_regime_valid ON market_regime_history(valid_until)`);
   console.log('  ✓ market_regime_history');
 
