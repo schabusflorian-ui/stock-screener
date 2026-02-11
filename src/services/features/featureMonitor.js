@@ -126,7 +126,7 @@ class FeatureMonitor {
     for (const symbol of symbols) {
       for (const date of dates) {
         totalCount++;
-        const value = this.store.getFeature(symbol, featureName, date);
+        const value = await this.store.getFeature(symbol, featureName, date);
         if (value !== null && value !== undefined && !isNaN(value)) {
           values.push(value);
         } else {
@@ -233,7 +233,7 @@ class FeatureMonitor {
     let missingCount = 0;
 
     for (const symbol of symbols) {
-      const value = this.store.getFeature(symbol, featureName, checkDate);
+      const value = await this.store.getFeature(symbol, featureName, checkDate);
       if (value !== null && value !== undefined && !isNaN(value)) {
         currentValues.push(value);
       } else {
@@ -354,9 +354,9 @@ class FeatureMonitor {
    * @param {string} featureName - Feature to check
    * @param {string[]} symbols - Symbols to check
    * @param {string} date - Date to check
-   * @returns {object} Outlier analysis
+   * @returns {Promise<object>} Outlier analysis
    */
-  checkOutliers(featureName, symbols, date) {
+  async checkOutliers(featureName, symbols, date) {
     const baseline = this.baselineStats.get(featureName);
     if (!baseline) {
       return { error: 'No baseline found' };
@@ -367,7 +367,7 @@ class FeatureMonitor {
     const upperBound = baseline.mean + this.outlierStdThreshold * baseline.std;
 
     for (const symbol of symbols) {
-      const value = this.store.getFeature(symbol, featureName, date);
+      const value = await this.store.getFeature(symbol, featureName, date);
       if (value !== null && (value < lowerBound || value > upperBound)) {
         const zScore = (value - baseline.mean) / baseline.std;
         outliers.push({
@@ -482,7 +482,7 @@ class FeatureMonitor {
    */
   async computeHealthScore(featureName, symbols, date) {
     const driftResult = await this.checkDrift(featureName, symbols, date);
-    const outlierResult = this.checkOutliers(featureName, symbols, date);
+    const outlierResult = await this.checkOutliers(featureName, symbols, date);
     const freshnessResult = this.checkFreshness(featureName);
 
     // Calculate component scores (0-100)

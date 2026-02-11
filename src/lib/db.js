@@ -214,6 +214,9 @@ const TABLE_CONFLICT_COLUMNS = {
 
   // IPO tables
   ipo_watchlist: 'ipo_id',
+
+  // Paper trading
+  paper_snapshots: 'account_id, snapshot_date',
 };
 
 /**

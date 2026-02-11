@@ -114,7 +114,7 @@ class FeatureStoreIntegration {
    * @param {string} signalType - One of: technical, fundamental, valuation, etc.
    * @returns {object} Feature values
    */
-  getFeaturesForSignal(symbol, signalType) {
+  async getFeaturesForSignal(symbol, signalType) {
     const featureNames = this.signalFeatureSets[signalType];
     if (!featureNames) {
       console.warn(`Unknown signal type: ${signalType}`);
@@ -122,42 +122,42 @@ class FeatureStoreIntegration {
     }
 
     const date = this._getEffectiveDate();
-    return this.store.getFeatures(symbol, featureNames, date);
+    return await this.store.getFeatures(symbol, featureNames, date);
   }
 
   /**
    * Get technical features for a symbol
    */
-  getTechnicalFeatures(symbol) {
-    return this.getFeaturesForSignal(symbol, 'technical');
+  async getTechnicalFeatures(symbol) {
+    return await this.getFeaturesForSignal(symbol, 'technical');
   }
 
   /**
    * Get fundamental features for a symbol
    */
-  getFundamentalFeatures(symbol) {
-    return this.getFeaturesForSignal(symbol, 'fundamental');
+  async getFundamentalFeatures(symbol) {
+    return await this.getFeaturesForSignal(symbol, 'fundamental');
   }
 
   /**
    * Get factor features for a symbol
    */
-  getFactorFeatures(symbol) {
-    return this.getFeaturesForSignal(symbol, 'factors');
+  async getFactorFeatures(symbol) {
+    return await this.getFeaturesForSignal(symbol, 'factors');
   }
 
   /**
    * Get sentiment features for a symbol
    */
-  getSentimentFeatures(symbol) {
-    return this.getFeaturesForSignal(symbol, 'sentiment');
+  async getSentimentFeatures(symbol) {
+    return await this.getFeaturesForSignal(symbol, 'sentiment');
   }
 
   /**
    * Get all ML features for a symbol
    */
-  getMLFeatures(symbol) {
-    return this.getFeaturesForSignal(symbol, 'ml');
+  async getMLFeatures(symbol) {
+    return await this.getFeaturesForSignal(symbol, 'ml');
   }
 
   /**
@@ -167,7 +167,7 @@ class FeatureStoreIntegration {
    * @param {string} signalType - Signal type
    * @returns {object} Map of symbol -> features
    */
-  getBatchFeaturesForSignal(symbols, signalType) {
+  async getBatchFeaturesForSignal(symbols, signalType) {
     const featureNames = this.signalFeatureSets[signalType];
     if (!featureNames) {
       console.warn(`Unknown signal type: ${signalType}`);
@@ -175,7 +175,7 @@ class FeatureStoreIntegration {
     }
 
     const date = this._getEffectiveDate();
-    return this.store.getBatchFeatures(symbols, featureNames, date);
+    return await this.store.getBatchFeatures(symbols, featureNames, date);
   }
 
   /**
@@ -246,10 +246,10 @@ class FeatureStoreIntegration {
    * Create feature vector for ML model
    *
    * @param {string} symbol - Stock symbol
-   * @returns {object} { features: number[], featureNames: string[] }
+   * @returns {Promise<object>} { features: number[], featureNames: string[] }
    */
-  createMLFeatureVector(symbol) {
-    const features = this.getMLFeatures(symbol);
+  async createMLFeatureVector(symbol) {
+    const features = await this.getMLFeatures(symbol);
     const mlFeatureNames = this.signalFeatureSets.ml;
 
     const vector = mlFeatureNames.map(name => {
@@ -271,15 +271,15 @@ class FeatureStoreIntegration {
    * Create feature matrix for multiple symbols
    *
    * @param {string[]} symbols - Stock symbols
-   * @returns {object} { matrix: number[][], featureNames: string[], symbols: string[] }
+   * @returns {Promise<object>} { matrix: number[][], featureNames: string[], symbols: string[] }
    */
-  createMLFeatureMatrix(symbols) {
+  async createMLFeatureMatrix(symbols) {
     const matrix = [];
     const validSymbols = [];
     const mlFeatureNames = this.signalFeatureSets.ml;
 
     for (const symbol of symbols) {
-      const { features } = this.createMLFeatureVector(symbol);
+      const { features } = await this.createMLFeatureVector(symbol);
       const validCount = features.filter(v => v !== 0).length;
 
       // Only include if we have enough valid features
@@ -342,8 +342,8 @@ class FeatureStoreIntegration {
   /**
    * Get feature statistics for monitoring
    */
-  getFeatureStats(symbol) {
-    const features = this.getMLFeatures(symbol);
+  async getFeatureStats(symbol) {
+    const features = await this.getMLFeatures(symbol);
     const stats = {};
 
     for (const [name, value] of Object.entries(features)) {

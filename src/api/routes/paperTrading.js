@@ -4,23 +4,22 @@
 const express = require('express');
 const router = express.Router();
 const { PaperTradingEngine } = require('../../services/trading/paperTrading');
-const { OrderAbstractionLayer, OrderType, OrderSide } = require('../../services/trading/orderAbstraction');
+const { OrderAbstractionLayer } = require('../../services/trading/orderAbstraction');
 const { requireAuth } = require('../../middleware/auth');
 const { requireFeature } = require('../../middleware/subscription');
 
 let paperEngine = null;
 const brokerConnections = new Map();
 
-// Initialize paper trading engine
 function getEngine(req) {
   if (!paperEngine) {
-    const db = req.app.locals.db;
+    const db = req.app.get('db');
+    if (!db) throw new Error('Database not initialized');
     paperEngine = new PaperTradingEngine(db);
   }
   return paperEngine;
 }
 
-// Get or create broker connection for an account
 async function getBrokerConnection(db, accountName, initialCapital = 100000) {
   const key = accountName;
 
@@ -29,13 +28,12 @@ async function getBrokerConnection(db, accountName, initialCapital = 100000) {
       accountName,
       initialCapital
     });
-    // Manually set db since we're not using require('../../database')
     broker.adapter.engine = new PaperTradingEngine(db);
     try {
-      const account = broker.adapter.engine.getAccount(accountName);
+      const account = await broker.adapter.engine.getAccount(accountName);
       broker.adapter.accountId = account.id;
     } catch (err) {
-      const account = broker.adapter.engine.createAccount(accountName, initialCapital);
+      const account = await broker.adapter.engine.createAccount(accountName, initialCapital);
       broker.adapter.accountId = account.id;
     }
     broker.adapter.connected = true;
@@ -43,6 +41,11 @@ async function getBrokerConnection(db, accountName, initialCapital = 100000) {
   }
 
   return brokerConnections.get(key);
+}
+
+/** Run query - works with both SQLite (sync) and Postgres (async) db */
+async function query(db, sql, params = []) {
+  return Promise.resolve(db.query(sql, params));
 }
 
 // ==========================================
@@ -55,10 +58,10 @@ async function getBrokerConnection(db, accountName, initialCapital = 100000) {
  */
 router.get('/accounts', async (req, res) => {
   try {
-    // Initialize engine first to ensure tables exist
     getEngine(req);
-    const db = req.app.locals.db;
-    const accounts = db.prepare('SELECT * FROM paper_accounts ORDER BY created_at DESC').all();
+    const db = req.app.get('db');
+    const res_ = await query(db, 'SELECT * FROM paper_accounts ORDER BY created_at DESC');
+    const accounts = res_.rows || [];
     res.json({ success: true, data: accounts });
   } catch (error) {
     console.error('Error fetching paper accounts:', error);
@@ -80,7 +83,7 @@ router.post('/accounts', requireAuth, requireFeature('paper_trading_bots'), asyn
       return res.status(400).json({ success: false, error: 'Account name is required' });
     }
 
-    const account = engine.createAccount(name, initialCapital || 100000);
+    const account = await engine.createAccount(name, initialCapital || 100000);
     res.json({ success: true, data: account });
   } catch (error) {
     console.error('Error creating paper account:', error);
@@ -96,7 +99,7 @@ router.get('/accounts/:id', async (req, res) => {
   try {
     const engine = getEngine(req);
     const accountId = parseInt(req.params.id);
-    const status = engine.getAccountStatus(accountId);
+    const status = await engine.getAccountStatus(accountId);
     res.json({ success: true, data: status });
   } catch (error) {
     console.error('Error fetching paper account:', error);
@@ -110,17 +113,15 @@ router.get('/accounts/:id', async (req, res) => {
  */
 router.delete('/accounts/:id', async (req, res) => {
   try {
-    // Initialize engine first to ensure tables exist
     getEngine(req);
-    const db = req.app.locals.db;
+    const db = req.app.get('db');
     const accountId = parseInt(req.params.id);
 
-    // Delete in order due to foreign keys
-    db.prepare('DELETE FROM paper_snapshots WHERE account_id = ?').run(accountId);
-    db.prepare('DELETE FROM paper_trades WHERE account_id = ?').run(accountId);
-    db.prepare('DELETE FROM paper_orders WHERE account_id = ?').run(accountId);
-    db.prepare('DELETE FROM paper_positions WHERE account_id = ?').run(accountId);
-    db.prepare('DELETE FROM paper_accounts WHERE id = ?').run(accountId);
+    await query(db, 'DELETE FROM paper_snapshots WHERE account_id = ?', [accountId]);
+    await query(db, 'DELETE FROM paper_trades WHERE account_id = ?', [accountId]);
+    await query(db, 'DELETE FROM paper_orders WHERE account_id = ?', [accountId]);
+    await query(db, 'DELETE FROM paper_positions WHERE account_id = ?', [accountId]);
+    await query(db, 'DELETE FROM paper_accounts WHERE id = ?', [accountId]);
 
     res.json({ success: true, message: 'Account deleted' });
   } catch (error) {
@@ -151,7 +152,7 @@ router.post('/accounts/:id/orders', requireAuth, requireFeature('paper_trading_b
       });
     }
 
-    const result = engine.submitOrder(accountId, {
+    const result = await engine.submitOrder(accountId, {
       symbol: symbol.toUpperCase(),
       side: side.toUpperCase(),
       quantity: parseFloat(quantity),
@@ -177,7 +178,7 @@ router.get('/accounts/:id/orders', async (req, res) => {
     const engine = getEngine(req);
     const accountId = parseInt(req.params.id);
     const limit = parseInt(req.query.limit) || 50;
-    const orders = engine.getOrders(accountId, limit);
+    const orders = await engine.getOrders(accountId, limit);
     res.json({ success: true, data: orders });
   } catch (error) {
     console.error('Error fetching orders:', error);
@@ -193,7 +194,7 @@ router.get('/accounts/:id/orders/pending', async (req, res) => {
   try {
     const engine = getEngine(req);
     const accountId = parseInt(req.params.id);
-    const orders = engine.getPendingOrders(accountId);
+    const orders = await engine.getPendingOrders(accountId);
     res.json({ success: true, data: orders });
   } catch (error) {
     console.error('Error fetching pending orders:', error);
@@ -213,7 +214,7 @@ router.get('/accounts/:id/positions', async (req, res) => {
   try {
     const engine = getEngine(req);
     const accountId = parseInt(req.params.id);
-    const positions = engine.getPositions(accountId);
+    const positions = await engine.getPositions(accountId);
     res.json({ success: true, data: positions });
   } catch (error) {
     console.error('Error fetching positions:', error);
@@ -234,7 +235,7 @@ router.get('/accounts/:id/trades', async (req, res) => {
     const engine = getEngine(req);
     const accountId = parseInt(req.params.id);
     const limit = parseInt(req.query.limit) || 50;
-    const trades = engine.getTrades(accountId, limit);
+    const trades = await engine.getTrades(accountId, limit);
     res.json({ success: true, data: trades });
   } catch (error) {
     console.error('Error fetching trades:', error);
@@ -255,7 +256,7 @@ router.get('/accounts/:id/performance', async (req, res) => {
     const engine = getEngine(req);
     const accountId = parseInt(req.params.id);
     const days = parseInt(req.query.days) || 30;
-    const performance = engine.getPerformance(accountId, days);
+    const performance = await engine.getPerformance(accountId, days);
     res.json({ success: true, data: performance });
   } catch (error) {
     console.error('Error fetching performance:', error);
@@ -271,7 +272,7 @@ router.post('/accounts/:id/snapshot', async (req, res) => {
   try {
     const engine = getEngine(req);
     const accountId = parseInt(req.params.id);
-    const snapshot = engine.takeSnapshot(accountId);
+    const snapshot = await engine.takeSnapshot(accountId);
     res.json({ success: true, data: snapshot });
   } catch (error) {
     console.error('Error taking snapshot:', error);
@@ -285,18 +286,18 @@ router.post('/accounts/:id/snapshot', async (req, res) => {
  */
 router.get('/accounts/:id/snapshots', async (req, res) => {
   try {
-    // Initialize engine first to ensure tables exist
     getEngine(req);
-    const db = req.app.locals.db;
+    const db = req.app.get('db');
     const accountId = parseInt(req.params.id);
     const limit = parseInt(req.query.limit) || 90;
 
-    const snapshots = db.prepare(`
+    const res_ = await query(db, `
       SELECT * FROM paper_snapshots
       WHERE account_id = ?
       ORDER BY snapshot_date DESC
       LIMIT ?
-    `).all(accountId, limit);
+    `, [accountId, limit]);
+    const snapshots = res_.rows || [];
 
     res.json({ success: true, data: snapshots });
   } catch (error) {
@@ -327,7 +328,7 @@ router.post('/accounts/:id/buy', requireAuth, requireFeature('paper_trading_bots
       });
     }
 
-    const result = engine.submitOrder(accountId, {
+    const result = await engine.submitOrder(accountId, {
       symbol: symbol.toUpperCase(),
       side: 'BUY',
       quantity: parseFloat(quantity),
@@ -360,7 +361,7 @@ router.post('/accounts/:id/sell', requireAuth, requireFeature('paper_trading_bot
       });
     }
 
-    const result = engine.submitOrder(accountId, {
+    const result = await engine.submitOrder(accountId, {
       symbol: symbol.toUpperCase(),
       side: 'SELL',
       quantity: parseFloat(quantity),
@@ -410,15 +411,16 @@ router.post('/execute-signal', async (req, res) => {
     // Calculate quantity if not provided
     let orderQuantity = quantity;
     if (!orderQuantity && positionValue) {
-      const db = req.app.locals.db;
-      const priceData = db.prepare(`
+      const db = req.app.get('db');
+      const res_ = await query(db, `
         SELECT p.close as price
         FROM daily_prices p
         JOIN companies c ON c.id = p.company_id
         WHERE c.symbol = ?
-        ORDER BY p.price_date DESC
+        ORDER BY p.date DESC
         LIMIT 1
-      `).get(symbol);
+      `, [symbol]);
+      const priceData = (res_.rows && res_.rows[0]) ? res_.rows[0] : null;
 
       if (priceData) {
         orderQuantity = Math.floor(positionValue / priceData.price);
@@ -432,7 +434,7 @@ router.post('/execute-signal', async (req, res) => {
       });
     }
 
-    const result = engine.submitOrder(accountId, {
+    const result = await engine.submitOrder(accountId, {
       symbol: symbol.toUpperCase(),
       side,
       quantity: orderQuantity,
@@ -460,30 +462,30 @@ router.post('/execute-signal', async (req, res) => {
  */
 router.post('/accounts/:id/reset', async (req, res) => {
   try {
-    const db = req.app.locals.db;
+    const db = req.app.get('db');
     const accountId = parseInt(req.params.id);
     const { newCapital } = req.body;
 
-    // Get current account
-    const account = db.prepare('SELECT * FROM paper_accounts WHERE id = ?').get(accountId);
+    const res_ = await query(db, 'SELECT * FROM paper_accounts WHERE id = ?', [accountId]);
+    const account = (res_.rows && res_.rows[0]) ? res_.rows[0] : null;
     if (!account) {
       return res.status(404).json({ success: false, error: 'Account not found' });
     }
 
     const capital = newCapital || account.initial_capital;
 
-    // Clear all data
-    db.prepare('DELETE FROM paper_snapshots WHERE account_id = ?').run(accountId);
-    db.prepare('DELETE FROM paper_trades WHERE account_id = ?').run(accountId);
-    db.prepare('DELETE FROM paper_orders WHERE account_id = ?').run(accountId);
-    db.prepare('DELETE FROM paper_positions WHERE account_id = ?').run(accountId);
+    await query(db, 'DELETE FROM paper_snapshots WHERE account_id = ?', [accountId]);
+    await query(db, 'DELETE FROM paper_trades WHERE account_id = ?', [accountId]);
+    await query(db, 'DELETE FROM paper_orders WHERE account_id = ?', [accountId]);
+    await query(db, 'DELETE FROM paper_positions WHERE account_id = ?', [accountId]);
 
-    // Reset account
-    db.prepare(`
+    const { dialect } = require('../../lib/db');
+    const nowExpr = dialect.now();
+    await query(db, `
       UPDATE paper_accounts
-      SET initial_capital = ?, cash_balance = ?, updated_at = datetime('now')
+      SET initial_capital = ?, cash_balance = ?, updated_at = ${nowExpr}
       WHERE id = ?
-    `).run(capital, capital, accountId);
+    `, [capital, capital, accountId]);
 
     res.json({
       success: true,
@@ -511,7 +513,7 @@ router.post('/accounts/:id/reset', async (req, res) => {
  */
 router.post('/link-portfolio', async (req, res) => {
   try {
-    const db = req.app.locals.db;
+    const db = req.app.get('db');
     const engine = getEngine(req);
     const { portfolioId, agentId, initialCapital } = req.body;
 
@@ -519,37 +521,36 @@ router.post('/link-portfolio', async (req, res) => {
       return res.status(400).json({ success: false, error: 'portfolioId is required' });
     }
 
-    // Get portfolio info
-    const portfolio = db.prepare('SELECT * FROM portfolios WHERE id = ?').get(portfolioId);
+    const portRes = await query(db, 'SELECT * FROM portfolios WHERE id = ?', [portfolioId]);
+    const portfolio = (portRes.rows && portRes.rows[0]) ? portRes.rows[0] : null;
     if (!portfolio) {
       return res.status(404).json({ success: false, error: 'Portfolio not found' });
     }
 
-    // Create paper account with portfolio name
     const accountName = `portfolio_${portfolioId}`;
     const capital = initialCapital || portfolio.initial_capital || 100000;
 
     let account;
     try {
-      account = engine.getAccount(accountName);
+      account = await engine.getAccount(accountName);
     } catch (err) {
-      account = engine.createAccount(accountName, capital);
+      account = await engine.createAccount(accountName, capital);
     }
 
-    // Update portfolio to link to paper account
-    db.prepare(`
+    const { dialect } = require('../../lib/db');
+    const nowExpr = dialect.now();
+    await query(db, `
       UPDATE portfolios
-      SET paper_account_id = ?, trading_mode = 'paper', updated_at = datetime('now')
+      SET paper_account_id = ?, trading_mode = 'paper', updated_at = ${nowExpr}
       WHERE id = ?
-    `).run(account.id, portfolioId);
+    `, [account.id, portfolioId]);
 
-    // If agent specified, update agent_portfolios
     if (agentId) {
-      db.prepare(`
+      await query(db, `
         UPDATE agent_portfolios
         SET mode = 'paper'
         WHERE agent_id = ? AND portfolio_id = ?
-      `).run(agentId, portfolioId);
+      `, [agentId, portfolioId]);
     }
 
     res.json({

@@ -4,9 +4,9 @@
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const crypto = require('crypto');
-const { getDatabase, getDatabaseAsync, isUsingPostgres } = require('../lib/db');
+const { getDatabaseAsync, getDatabaseSync, isUsingPostgres } = require('../lib/db');
 
-function configurePassport(db) {
+function configurePassport() {
   // Serialize user into session
   passport.serializeUser((user, done) => {
     // For dev-admin, store the whole user object (no database lookup needed)
@@ -36,7 +36,8 @@ function configurePassport(db) {
       }
 
       // SQLite mode - use synchronous query
-      const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+      const sqliteDb = getDatabaseSync();
+      const user = sqliteDb.prepare('SELECT * FROM users WHERE id = ?').get(userId);
       done(null, user || null);
     } catch (error) {
       console.error('[Passport] deserializeUser error:', error);
@@ -102,12 +103,13 @@ function configurePassport(db) {
         }
 
         // SQLite mode - use synchronous queries
+        const sqliteDb = getDatabaseSync();
         // Check if user already exists
-        let user = db.prepare('SELECT * FROM users WHERE google_id = ?').get(profile.id);
+        let user = sqliteDb.prepare('SELECT * FROM users WHERE google_id = ?').get(profile.id);
 
         if (user) {
           // Update last login and profile info
-          db.prepare(`
+          sqliteDb.prepare(`
             UPDATE users
             SET last_login_at = CURRENT_TIMESTAMP,
                 name = ?,
@@ -117,11 +119,11 @@ function configurePassport(db) {
           `).run(profile.displayName, profile.photos?.[0]?.value, user.id);
 
           // Refresh user data
-          user = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
+          user = sqliteDb.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
         } else {
           // Create new user
           const userId = crypto.randomUUID();
-          db.prepare(`
+          sqliteDb.prepare(`
             INSERT INTO users (id, google_id, email, name, picture, last_login_at)
             VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
           `).run(
@@ -132,7 +134,7 @@ function configurePassport(db) {
             profile.photos?.[0]?.value
           );
 
-          user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+          user = sqliteDb.prepare('SELECT * FROM users WHERE id = ?').get(userId);
 
           console.log(`[OAuth] New user created: ${user.email}`);
         }

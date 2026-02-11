@@ -1,6 +1,9 @@
 // src/database-migrations/023-agent-universe-and-subreddit-region-postgres.js
 // - agent_universe: table used by agentScanner for universe_size (fixes "relation agent_universe does not exist")
 // - tracked_subreddits.region: column used by redditFetcher (fixes "column region does not exist")
+//
+// Root cause fix: Ensure trading_agents has PRIMARY KEY on id before creating agent_universe FK.
+// Some deployments may have trading_agents created without PK (e.g. from older schema or different source).
 
 async function migrate(db) {
   console.log('🐘 Creating agent_universe and adding tracked_subreddits.region (Postgres)...');
@@ -17,7 +20,29 @@ async function migrate(db) {
     console.log('  - tracked_subreddits.region (already exists)');
   }
 
-  // 2. agent_universe - try with FK, fallback without if trading_agents has no matching constraint
+  // 2. Ensure trading_agents has PRIMARY KEY on id (root cause fix)
+  const pkCheck = await db.query(`
+    SELECT 1
+    FROM information_schema.table_constraints
+    WHERE table_schema = 'public'
+      AND table_name = 'trading_agents'
+      AND constraint_type = 'PRIMARY KEY'
+  `);
+  if (pkCheck.rows.length === 0) {
+    console.log('  - trading_agents missing PRIMARY KEY, adding...');
+    try {
+      await db.query(`
+        ALTER TABLE trading_agents
+        ADD CONSTRAINT trading_agents_pkey PRIMARY KEY (id)
+      `);
+      console.log('  ✓ trading_agents PRIMARY KEY added');
+    } catch (e) {
+      console.log('  ⚠ Could not add PK (possible duplicates/null in id):', e.message);
+      console.log('  - Will create agent_universe without FK to trading_agents');
+    }
+  }
+
+  // 3. agent_universe - try with FK, fallback without if PK fix failed or constraint still missing
   const withFk = `
     CREATE TABLE IF NOT EXISTS agent_universe (
       id SERIAL PRIMARY KEY,
@@ -42,7 +67,7 @@ async function migrate(db) {
     await db.query(withFk);
   } catch (e) {
     if (e.message && e.message.includes('no unique constraint matching given keys')) {
-      console.log('  - trading_agents lacks FK target, creating agent_universe without FK');
+      console.log('  - Creating agent_universe without FK (trading_agents.id not unique)');
       await db.query(withoutFk);
     } else {
       throw e;

@@ -49,6 +49,7 @@ const POSTGRES_MIGRATIONS = [
   '020-add-trading-signals-tables-postgres.js',
   '022-add-investor-famous-columns-postgres.js',
   '023-agent-universe-and-subreddit-region-postgres.js',
+  '024-add-paper-trading-postgres.js',
   '018-add-congressional-postgres.js',
   '019-add-tracked-subreddits-region-postgres.js',
   'add-postgres-alert-system.js',

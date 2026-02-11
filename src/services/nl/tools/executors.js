@@ -5,25 +5,37 @@
  * and return it in a format Claude can use to answer questions.
  */
 
-const db = require('../../../database');
+const { getDatabaseAsync } = require('../../../lib/db');
 
 class ToolExecutor {
   constructor() {
-    this.db = db.getDatabase();
     // Cache of valid symbols for validation
     this._symbolCache = null;
     this._symbolCacheTime = 0;
   }
 
+  async getDb() {
+    return getDatabaseAsync();
+  }
+
+  async _query(sql, params = []) {
+    const database = await this.getDb();
+    const result = await database.query(sql, params);
+    return Array.isArray(result.rows) ? result.rows : [];
+  }
+
+  async _queryOne(sql, params = []) {
+    const rows = await this._query(sql, params);
+    return rows[0] || null;
+  }
+
   /**
    * Get cached list of valid symbols (refreshes every 5 minutes)
    */
-  getValidSymbols() {
+  async getValidSymbols() {
     const now = Date.now();
     if (!this._symbolCache || (now - this._symbolCacheTime) > 300000) {
-      const symbols = this.db.prepare(`
-        SELECT symbol FROM companies WHERE is_active = 1
-      `).all();
+      const symbols = await this._query('SELECT symbol FROM companies WHERE is_active = 1');
       this._symbolCache = new Set(symbols.map(s => s.symbol.toUpperCase()));
       this._symbolCacheTime = now;
       console.log(`[ToolExecutor] Symbol cache refreshed: ${this._symbolCache.size} valid symbols`);
@@ -35,7 +47,7 @@ class ToolExecutor {
    * Validate a stock symbol exists in our database
    * Returns { valid: boolean, suggestion?: string, error?: string }
    */
-  validateSymbol(symbol) {
+  async validateSymbol(symbol) {
     if (!symbol || typeof symbol !== 'string') {
       return { valid: false, error: 'Symbol is required' };
     }
@@ -50,7 +62,7 @@ class ToolExecutor {
       };
     }
 
-    const validSymbols = this.getValidSymbols();
+    const validSymbols = await this.getValidSymbols();
 
     if (validSymbols.has(normalized)) {
       return { valid: true };
@@ -157,7 +169,7 @@ class ToolExecutor {
   // ============================================
   async lookupCompanyMetrics({ symbol, metrics }) {
     // Validate symbol before querying database
-    const validation = this.validateSymbol(symbol);
+    const validation = await this.validateSymbol(symbol);
     if (!validation.valid) {
       return {
         error: validation.error,
@@ -169,7 +181,7 @@ class ToolExecutor {
     const normalizedSymbol = symbol.toUpperCase();
 
     // Get company info and latest metrics
-    const result = this.db.prepare(`
+    const result = await this._queryOne(`
       SELECT
         c.id, c.symbol, c.name, c.sector, c.industry, c.market_cap, c.description,
         m.pe_ratio, m.pb_ratio, m.ps_ratio, m.ev_ebitda, m.peg_ratio,
@@ -186,19 +198,19 @@ class ToolExecutor {
       WHERE c.symbol = ? AND c.is_active = 1
       ORDER BY m.fiscal_period DESC
       LIMIT 1
-    `).get(normalizedSymbol);
+    `, [normalizedSymbol]);
 
     if (!result) {
       return { error: `No data found for symbol ${normalizedSymbol}` };
     }
 
     // Get analyst estimates if available
-    const analystData = this.db.prepare(`
+    const analystData = await this._queryOne(`
       SELECT target_mean, target_high, target_low, recommendation_key,
              upside_potential, strong_buy, buy, hold, sell, strong_sell
       FROM analyst_estimates
       WHERE company_id = ?
-    `).get(result.id);
+    `, [result.id]);
 
     // Filter to specific metrics if requested
     let metricsData = { ...result };
@@ -323,7 +335,7 @@ class ToolExecutor {
 
     params.push(safeLimit);
 
-    const results = this.db.prepare(sql).all(...params);
+    const results = await this._query(sql, params);
 
     return {
       count: results.length,
@@ -338,7 +350,7 @@ class ToolExecutor {
   // ============================================
   async getPriceHistory({ symbol, days = 90, include_technicals = false }) {
     // Validate symbol before querying database
-    const validation = this.validateSymbol(symbol);
+    const validation = await this.validateSymbol(symbol);
     if (!validation.valid) {
       return {
         error: validation.error,
@@ -350,18 +362,18 @@ class ToolExecutor {
     const normalizedSymbol = symbol.toUpperCase();
     const safeDays = Math.min(Math.max(1, days), 365);
 
-    const company = this.db.prepare('SELECT id, name FROM companies WHERE symbol = ?').get(normalizedSymbol);
+    const company = await this._queryOne('SELECT id, name FROM companies WHERE symbol = ?', [normalizedSymbol]);
     if (!company) {
       return { error: `Company ${normalizedSymbol} not found` };
     }
 
-    const prices = this.db.prepare(`
+    const prices = await this._query(`
       SELECT date, open, high, low, close, volume
       FROM daily_prices
       WHERE company_id = ?
       ORDER BY date DESC
       LIMIT ?
-    `).all(company.id, safeDays);
+    `, [company.id, safeDays]);
 
     if (prices.length === 0) {
       return { error: `No price data found for ${normalizedSymbol}` };
@@ -456,18 +468,18 @@ class ToolExecutor {
     const normalizedSymbol = symbol.toUpperCase();
 
     // Get company and financial data
-    const company = this.db.prepare(`
+    const company = await this._queryOne(`
       SELECT c.id, c.symbol, c.name, c.market_cap,
         (SELECT close FROM daily_prices WHERE company_id = c.id ORDER BY date DESC LIMIT 1) as current_price
       FROM companies c WHERE c.symbol = ?
-    `).get(normalizedSymbol);
+    `, [normalizedSymbol]);
 
     if (!company) {
       return { error: `Company ${normalizedSymbol} not found` };
     }
 
     // Get latest financial data
-    const financials = this.db.prepare(`
+    const financials = await this._queryOne(`
       SELECT
         fd.total_revenue, fd.operating_income, fd.net_income,
         fd.total_assets, fd.total_liabilities, fd.shareholder_equity,
@@ -479,7 +491,7 @@ class ToolExecutor {
       WHERE c.symbol = ? AND fd.period_type = 'annual'
       ORDER BY fd.fiscal_date_ending DESC
       LIMIT 1
-    `).get(normalizedSymbol);
+    `, [normalizedSymbol]);
 
     if (!financials) {
       return { error: `No financial data found for ${normalizedSymbol}` };
@@ -492,11 +504,11 @@ class ToolExecutor {
     } catch (e) { /* ignore */ }
 
     // Get metrics for additional data
-    const metrics = this.db.prepare(`
+    const metrics = await this._queryOne(`
       SELECT * FROM calculated_metrics
       WHERE company_id = ?
       ORDER BY fiscal_period DESC LIMIT 1
-    `).get(company.id);
+    `, [company.id]);
 
     switch (metric.toLowerCase()) {
       case 'nopat': {
@@ -513,13 +525,13 @@ class ToolExecutor {
         const nopat = operatingIncome * (1 - taxRate);
 
         // Get historical data for chart
-        const historicalData = this.db.prepare(`
+        const historicalData = await this._query(`
           SELECT fiscal_year, fiscal_date_ending, operating_income, data
           FROM financial_data
           WHERE company_id = ? AND period_type = 'annual' AND operating_income IS NOT NULL
           ORDER BY fiscal_date_ending ASC
           LIMIT 5
-        `).all(company.id);
+        `, [company.id]);
 
         const result = {
           symbol: normalizedSymbol,
@@ -714,7 +726,7 @@ class ToolExecutor {
   async getSentiment({ symbol, sources, include_details = false }) {
     const normalizedSymbol = symbol.toUpperCase();
 
-    const company = this.db.prepare('SELECT id, name FROM companies WHERE symbol = ?').get(normalizedSymbol);
+    const company = await this._queryOne('SELECT id, name FROM companies WHERE symbol = ?', [normalizedSymbol]);
     if (!company) {
       return { error: `Company ${normalizedSymbol} not found` };
     }
@@ -726,12 +738,12 @@ class ToolExecutor {
     };
 
     // Get combined sentiment summary
-    const combined = this.db.prepare(`
+    const combined = await this._queryOne(`
       SELECT * FROM combined_sentiment
       WHERE company_id = ?
       ORDER BY calculated_at DESC
       LIMIT 1
-    `).get(company.id);
+    `, [company.id]);
 
     if (combined) {
       response.overall = {
@@ -771,12 +783,12 @@ class ToolExecutor {
 
     // Get analyst estimates
     if (!sources || sources.includes('analyst') || sources.includes('combined')) {
-      const analyst = this.db.prepare(`
+      const analyst = await this._queryOne(`
         SELECT recommendation_key, recommendation_mean, upside_potential,
                strong_buy, buy, hold, sell, strong_sell, signal, signal_strength
         FROM analyst_estimates
         WHERE company_id = ?
-      `).get(company.id);
+      `, [company.id]);
 
       if (analyst) {
         response.sources.analyst = {
@@ -798,13 +810,13 @@ class ToolExecutor {
     // Include details if requested
     if (include_details) {
       // Recent news
-      const news = this.db.prepare(`
+      const news = await this._query(`
         SELECT title, source, sentiment_label, published_at
         FROM news_articles
         WHERE company_id = ?
         ORDER BY published_at DESC
         LIMIT 5
-      `).all(company.id);
+      `, [company.id]);
 
       if (news.length > 0) {
         response.recent_news = news;
@@ -894,12 +906,12 @@ class ToolExecutor {
     const investorName = investorAliases[investor.toLowerCase()] || investor;
 
     // Find investor in database
-    const investorData = this.db.prepare(`
+    const investorData = await this._queryOne(`
       SELECT id, name, fund_name, cik, latest_filing_date, latest_portfolio_value as total_value
       FROM famous_investors
       WHERE (name LIKE ? OR fund_name LIKE ?) AND is_active = 1
       LIMIT 1
-    `).get(`%${investorName}%`, `%${investorName}%`);
+    `, [`%${investorName}%`, `%${investorName}%`]);
 
     if (!investorData) {
       return {
@@ -918,7 +930,7 @@ class ToolExecutor {
     // If specific symbol requested, check if investor holds it
     if (symbol) {
       const normalizedSymbol = symbol.toUpperCase();
-      const holding = this.db.prepare(`
+      const holding = await this._queryOne(`
         SELECT
           ih.shares, ih.market_value, ih.portfolio_weight, ih.change_type,
           ih.shares_change, ih.shares_change_pct,
@@ -926,7 +938,7 @@ class ToolExecutor {
         FROM investor_holdings ih
         JOIN companies c ON ih.company_id = c.id
         WHERE ih.investor_id = ? AND c.symbol = ? AND ih.filing_date = ?
-      `).get(investorData.id, normalizedSymbol, investorData.latest_filing_date);
+      `, [investorData.id, normalizedSymbol, investorData.latest_filing_date]);
 
       if (holding) {
         response.holds_symbol = true;
@@ -949,7 +961,7 @@ class ToolExecutor {
     }
 
     // Get top holdings
-    const holdings = this.db.prepare(`
+    const holdings = await this._query(`
       SELECT
         ih.shares, ih.market_value, ih.portfolio_weight, ih.change_type,
         ih.shares_change, ih.prev_shares,
@@ -959,7 +971,7 @@ class ToolExecutor {
       WHERE ih.investor_id = ? AND ih.filing_date = ?
       ORDER BY ih.portfolio_weight DESC
       LIMIT 20
-    `).all(investorData.id, investorData.latest_filing_date);
+    `, [investorData.id, investorData.latest_filing_date]);
 
     response.top_holdings = holdings.map(h => ({
       symbol: h.symbol,
@@ -999,7 +1011,7 @@ class ToolExecutor {
   async getFinancialStatements({ symbol, statement_type = 'all', periods = 4, period_type = 'annual' }) {
     const normalizedSymbol = symbol.toUpperCase();
 
-    const company = this.db.prepare('SELECT id, name FROM companies WHERE symbol = ?').get(normalizedSymbol);
+    const company = await this._queryOne('SELECT id, name FROM companies WHERE symbol = ?', [normalizedSymbol]);
     if (!company) {
       return { error: `Company ${normalizedSymbol} not found` };
     }
@@ -1015,13 +1027,13 @@ class ToolExecutor {
       : [statement_type];
 
     for (const stmtType of statementTypes) {
-      const data = this.db.prepare(`
+      const data = await this._query(`
         SELECT fiscal_date_ending, fiscal_year, data
         FROM financial_data
         WHERE company_id = ? AND statement_type = ? AND period_type = ?
         ORDER BY fiscal_date_ending DESC
         LIMIT ?
-      `).all(company.id, stmtType, period_type, periods);
+      `, [company.id, stmtType, period_type, periods]);
 
       if (data.length > 0) {
         response[stmtType] = data.map(d => {
@@ -1139,7 +1151,7 @@ class ToolExecutor {
 
     // Try to get from economic_indicators table (FRED data)
     try {
-      const econData = this.db.prepare(`
+      const econData = await this._query(`
         SELECT series_id, value, observation_date, series_name, category
         FROM economic_indicators
         WHERE series_id IN (
@@ -1147,7 +1159,7 @@ class ToolExecutor {
           'UNRATE', 'GDP', 'GDPC1', 'VIXCLS', 'BAMLH0A0HYM2', 'STLFSI4', 'RECPROUSM156N'
         )
         ORDER BY observation_date DESC
-      `).all();
+      `);
 
       // Get latest value for each series
       const seen = new Set();
@@ -1173,11 +1185,11 @@ class ToolExecutor {
 
     // If we didn't get indicators from economic_indicators, try macro_regimes
     if (Object.keys(response.indicators).length === 0) {
-      const latestRegime = this.db.prepare(`
+      const latestRegime = await this._queryOne(`
         SELECT * FROM macro_regimes
         ORDER BY regime_date DESC
         LIMIT 1
-      `).get();
+      `);
 
       if (latestRegime) {
         response.indicators = {
@@ -1202,11 +1214,11 @@ class ToolExecutor {
 
     // Add regime classification if requested
     if (include_regime) {
-      const regimeData = this.db.prepare(`
+      const regimeData = await this._queryOne(`
         SELECT * FROM macro_regimes
         ORDER BY calculation_date DESC
         LIMIT 1
-      `).get();
+      `);
 
       if (regimeData) {
         response.regime = {
@@ -1219,13 +1231,13 @@ class ToolExecutor {
     }
 
     // Get market sentiment (Fear & Greed)
-    const marketSentiment = this.db.prepare(`
+    const marketSentiment = await this._queryOne(`
       SELECT indicator_value, indicator_label, fetched_at
       FROM market_sentiment
       WHERE indicator_type = 'cnn_fear_greed'
       ORDER BY fetched_at DESC
       LIMIT 1
-    `).get();
+    `);
 
     if (marketSentiment) {
       response.market_sentiment = {
@@ -1258,7 +1270,7 @@ class ToolExecutor {
     const companies = [];
 
     for (const symbol of normalizedSymbols) {
-      const data = this.db.prepare(`
+      const data = await this._queryOne(`
         SELECT
           c.symbol, c.name, c.sector, c.industry, c.market_cap,
           m.*,
@@ -1268,7 +1280,7 @@ class ToolExecutor {
         WHERE c.symbol = ?
         ORDER BY m.fiscal_period DESC
         LIMIT 1
-      `).get(symbol);
+      `, [symbol]);
 
       if (data) {
         const companyData = {
@@ -1391,16 +1403,16 @@ class ToolExecutor {
     const data = [];
 
     for (const symbol of symbols) {
-      const company = this.db.prepare('SELECT id FROM companies WHERE symbol = ?').get(symbol);
+      const company = await this._queryOne('SELECT id FROM companies WHERE symbol = ?', [symbol]);
       if (!company) continue;
 
-      const prices = this.db.prepare(`
+      const prices = await this._query(`
         SELECT date, close
         FROM daily_prices
         WHERE company_id = ?
         ORDER BY date DESC
         LIMIT 90
-      `).all(company.id);
+      `, [company.id]);
 
       if (prices.length < 20) continue;
 
@@ -1494,17 +1506,17 @@ class ToolExecutor {
 
     for (let i = 0; i < symbols.length; i++) {
       const symbol = symbols[i];
-      const company = this.db.prepare('SELECT id FROM companies WHERE symbol = ?').get(symbol);
+      const company = await this._queryOne('SELECT id FROM companies WHERE symbol = ?', [symbol]);
 
       if (!company) continue;
 
-      const prices = this.db.prepare(`
+      const prices = await this._query(`
         SELECT date, close
         FROM daily_prices
         WHERE company_id = ?
         ORDER BY date DESC
         LIMIT ?
-      `).all(company.id, days);
+      `, [company.id, days]);
 
       if (prices.length > 0) {
         // Reverse to chronological order
@@ -1556,11 +1568,11 @@ class ToolExecutor {
   async getValuationModels({ symbol, models }) {
     const normalizedSymbol = symbol.toUpperCase();
 
-    const company = this.db.prepare(`
+    const company = await this._queryOne(`
       SELECT c.id, c.symbol, c.name, c.market_cap,
         (SELECT close FROM daily_prices WHERE company_id = c.id ORDER BY date DESC LIMIT 1) as current_price
       FROM companies c WHERE c.symbol = ?
-    `).get(normalizedSymbol);
+    `, [normalizedSymbol]);
 
     if (!company) {
       return { error: `Company ${normalizedSymbol} not found` };
@@ -1579,12 +1591,12 @@ class ToolExecutor {
 
     // Get DCF valuation if stored
     if (modelsToGet.includes('dcf')) {
-      const dcf = this.db.prepare(`
+      const dcf = await this._queryOne(`
         SELECT * FROM dcf_valuations
         WHERE company_id = ?
         ORDER BY calculated_at DESC
         LIMIT 1
-      `).get(company.id);
+      `, [company.id]);
 
       if (dcf) {
         response.valuations.dcf = {
@@ -1603,12 +1615,12 @@ class ToolExecutor {
 
     // Get analyst targets
     if (modelsToGet.includes('analyst_target')) {
-      const analyst = this.db.prepare(`
+      const analyst = await this._queryOne(`
         SELECT target_mean, target_high, target_low, upside_potential,
                recommendation_key, number_of_analysts
         FROM analyst_estimates
         WHERE company_id = ?
-      `).get(company.id);
+      `, [company.id]);
 
       if (analyst) {
         response.valuations.analyst_target = {
@@ -1763,18 +1775,18 @@ class ToolExecutor {
     const searchName = indexAliases[index_name.toLowerCase()] || index_name;
 
     // Find the index
-    const indexInfo = this.db.prepare(`
+    const indexInfo = await this._queryOne(`
       SELECT id, name, symbol, short_name, description, index_type
       FROM market_indices
       WHERE name LIKE ? OR symbol LIKE ? OR short_name LIKE ?
       LIMIT 1
-    `).get(`%${searchName}%`, `%${searchName}%`, `%${searchName}%`);
+    `, [`%${searchName}%`, `%${searchName}%`, `%${searchName}%`]);
 
     if (!indexInfo) {
       // Return list of available indices
-      const available = this.db.prepare(`
+      const available = await this._query(`
         SELECT name, symbol FROM market_indices ORDER BY name
-      `).all();
+      `);
 
       return {
         error: `Index '${index_name}' not found`,
@@ -1783,13 +1795,13 @@ class ToolExecutor {
     }
 
     // Get price history
-    const prices = this.db.prepare(`
+    const prices = await this._query(`
       SELECT date, open, high, low, close, volume
       FROM market_index_prices
       WHERE index_id = ?
       ORDER BY date DESC
       LIMIT ?
-    `).all(indexInfo.id, safeDays);
+    `, [indexInfo.id, safeDays]);
 
     if (prices.length === 0) {
       return {
@@ -1852,11 +1864,11 @@ class ToolExecutor {
   // ============================================
   async getMarketSentiment({ include_history = false }) {
     // Get latest sentiment indicators
-    const latestSentiment = this.db.prepare(`
+    const latestSentiment = await this._query(`
       SELECT indicator_type, indicator_label, indicator_value, fetched_at
       FROM market_sentiment
       WHERE fetched_at = (SELECT MAX(fetched_at) FROM market_sentiment)
-    `).all();
+    `);
 
     if (latestSentiment.length === 0) {
       return { error: 'No market sentiment data available' };
@@ -1903,13 +1915,13 @@ class ToolExecutor {
 
     // Include historical data if requested
     if (include_history) {
-      const history = this.db.prepare(`
+      const history = await this._query(`
         SELECT indicator_type, indicator_value, fetched_at
         FROM market_sentiment
         WHERE indicator_type = 'cnn_fear_greed'
         ORDER BY fetched_at DESC
         LIMIT 30
-      `).all();
+      `);
 
       if (history.length > 0) {
         response.fear_greed_history = history.reverse().map(h => ({
@@ -1947,12 +1959,12 @@ class ToolExecutor {
   async getPortfolio({ portfolio_name, include_performance = true }) {
     // If no name specified, list all portfolios
     if (!portfolio_name) {
-      const portfolios = this.db.prepare(`
+      const portfolios = await this._query(`
         SELECT id, name, portfolio_type, current_value, current_cash, created_at
         FROM portfolios
         WHERE is_archived = 0
         ORDER BY current_value DESC
-      `).all();
+      `);
 
       return {
         portfolios: portfolios.map(p => ({
@@ -1969,18 +1981,18 @@ class ToolExecutor {
     }
 
     // Find specific portfolio
-    const portfolio = this.db.prepare(`
+    const portfolio = await this._queryOne(`
       SELECT p.*, mi.name as benchmark_name
       FROM portfolios p
       LEFT JOIN market_indices mi ON p.benchmark_index_id = mi.id
       WHERE p.name LIKE ? AND p.is_archived = 0
       LIMIT 1
-    `).get(`%${portfolio_name}%`);
+    `, [`%${portfolio_name}%`]);
 
     if (!portfolio) {
-      const available = this.db.prepare(`
+      const available = await this._query(`
         SELECT name FROM portfolios WHERE is_archived = 0
-      `).all();
+      `);
 
       return {
         error: `Portfolio '${portfolio_name}' not found`,
@@ -1989,7 +2001,7 @@ class ToolExecutor {
     }
 
     // Get positions
-    const positions = this.db.prepare(`
+    const positions = await this._query(`
       SELECT
         pp.*,
         c.symbol, c.name as company_name, c.sector,
@@ -1998,7 +2010,7 @@ class ToolExecutor {
       JOIN companies c ON pp.company_id = c.id
       WHERE pp.portfolio_id = ?
       ORDER BY pp.current_value DESC
-    `).all(portfolio.id);
+    `, [portfolio.id]);
 
     const totalInvested = positions.reduce((sum, p) => sum + (p.current_value || 0), 0);
     const totalValue = totalInvested + portfolio.current_cash;
@@ -2090,7 +2102,7 @@ class ToolExecutor {
       }
     }
 
-    const trades = this.db.prepare(`
+    const trades = await this._query(`
       SELECT
         ct.transaction_date,
         ct.transaction_type,
@@ -2108,7 +2120,7 @@ class ToolExecutor {
       WHERE ${whereClause}
       ORDER BY ct.transaction_date DESC
       LIMIT 50
-    `).all(...params);
+    `, params);
 
     if (trades.length === 0) {
       return {
@@ -2192,7 +2204,7 @@ class ToolExecutor {
     const normalizedSymbol = symbol.toUpperCase();
     const safeDays = Math.min(Math.max(1, days), 365);
 
-    const company = this.db.prepare('SELECT id, name FROM companies WHERE symbol = ?').get(normalizedSymbol);
+    const company = await this._queryOne('SELECT id, name FROM companies WHERE symbol = ?', [normalizedSymbol]);
     if (!company) {
       return { error: `Company ${normalizedSymbol} not found` };
     }
@@ -2210,7 +2222,7 @@ class ToolExecutor {
     }
 
     // Get insider transactions - join with insiders table for name/title
-    const transactions = this.db.prepare(`
+    const transactions = await this._query(`
       SELECT
         i.name as insider_name,
         i.title as insider_title,
@@ -2225,16 +2237,16 @@ class ToolExecutor {
       WHERE it.company_id = ? AND it.transaction_date >= ?${typeFilter}
       ORDER BY it.transaction_date DESC
       LIMIT 30
-    `).all(company.id, cutoffStr);
+    `, [company.id, cutoffStr]);
 
     // Get summary if available
-    const summary = this.db.prepare(`
+    const summary = await this._queryOne(`
       SELECT *
       FROM insider_activity_summary
       WHERE company_id = ?
       ORDER BY updated_at DESC
       LIMIT 1
-    `).get(company.id);
+    `, [company.id]);
 
     // Calculate aggregates
     let totalBuyValue = 0;
@@ -2331,28 +2343,28 @@ class ToolExecutor {
   async getTechnicalSignals({ symbol, indicators }) {
     const normalizedSymbol = symbol.toUpperCase();
 
-    const company = this.db.prepare('SELECT id, name FROM companies WHERE symbol = ?').get(normalizedSymbol);
+    const company = await this._queryOne('SELECT id, name FROM companies WHERE symbol = ?', [normalizedSymbol]);
     if (!company) {
       return { error: `Company ${normalizedSymbol} not found` };
     }
 
     // Get technical signals from database
-    const signals = this.db.prepare(`
+    const signals = await this._queryOne(`
       SELECT *
       FROM technical_signals
       WHERE company_id = ?
       ORDER BY calculated_at DESC
       LIMIT 1
-    `).get(company.id);
+    `, [company.id]);
 
     // Get recent prices for additional calculations
-    const prices = this.db.prepare(`
+    const prices = await this._query(`
       SELECT date, open, high, low, close, volume
       FROM daily_prices
       WHERE company_id = ?
       ORDER BY date DESC
       LIMIT 60
-    `).all(company.id);
+    `, [company.id]);
 
     if (!signals && prices.length < 14) {
       return { error: `Insufficient data for technical analysis of ${normalizedSymbol}` };
@@ -2533,19 +2545,19 @@ class ToolExecutor {
     // If specific symbol requested
     if (symbol) {
       const normalizedSymbol = symbol.toUpperCase();
-      const company = this.db.prepare('SELECT id, name FROM companies WHERE symbol = ?').get(normalizedSymbol);
+      const company = await this._queryOne('SELECT id, name FROM companies WHERE symbol = ?', [normalizedSymbol]);
 
       if (!company) {
         return { error: `Company ${normalizedSymbol} not found` };
       }
 
       // Get earnings data - note: schema has next_earnings_date and history_json
-      const earnings = this.db.prepare(`
+      const earnings = await this._queryOne(`
         SELECT ec.*, c.symbol, c.name
         FROM earnings_calendar ec
         JOIN companies c ON ec.company_id = c.id
         WHERE ec.company_id = ?
-      `).get(company.id);
+      `, [company.id]);
 
       if (!earnings) {
         return {
@@ -2603,7 +2615,7 @@ class ToolExecutor {
     };
 
     if (direction === 'upcoming' || direction === 'both') {
-      const upcoming = this.db.prepare(`
+      const upcoming = await this._query(`
         SELECT
           ec.next_earnings_date,
           ec.is_estimate,
@@ -2617,7 +2629,7 @@ class ToolExecutor {
           AND ec.next_earnings_date <= ?
         ORDER BY ec.next_earnings_date ASC
         LIMIT 30
-      `).all(today, futureCutoffStr);
+      `, [today, futureCutoffStr]);
 
       response.upcoming = upcoming.map(e => ({
         date: e.next_earnings_date,
@@ -2633,7 +2645,7 @@ class ToolExecutor {
     if (direction === 'recent' || direction === 'both') {
       // For recent, we need to look at history from all companies
       // This requires parsing history_json, which is expensive. Limit the query.
-      const allEarnings = this.db.prepare(`
+      const allEarnings = await this._query(`
         SELECT
           ec.history_json,
           ec.beat_rate,
@@ -2642,7 +2654,7 @@ class ToolExecutor {
         JOIN companies c ON ec.company_id = c.id
         WHERE ec.history_json IS NOT NULL
         LIMIT 100
-      `).all();
+      `);
 
       const recentResults = [];
       for (const e of allEarnings) {
@@ -2679,20 +2691,20 @@ class ToolExecutor {
     // If specific symbol requested
     if (symbol) {
       const normalizedSymbol = symbol.toUpperCase();
-      const company = this.db.prepare('SELECT id, name FROM companies WHERE symbol = ?').get(normalizedSymbol);
+      const company = await this._queryOne('SELECT id, name FROM companies WHERE symbol = ?', [normalizedSymbol]);
 
       if (!company) {
         return { error: `Company ${normalizedSymbol} not found` };
       }
 
       // Schema: short_interest, short_pct_float, short_pct_outstanding, days_to_cover
-      const shortData = this.db.prepare(`
+      const shortData = await this._queryOne(`
         SELECT *
         FROM short_interest
         WHERE company_id = ?
         ORDER BY settlement_date DESC
         LIMIT 1
-      `).get(company.id);
+      `, [company.id]);
 
       if (!shortData) {
         return {
@@ -2749,13 +2761,13 @@ class ToolExecutor {
 
       // Include history if requested
       if (include_history) {
-        const history = this.db.prepare(`
+        const history = await this._query(`
           SELECT settlement_date, short_interest, short_pct_float, days_to_cover
           FROM short_interest
           WHERE company_id = ?
           ORDER BY settlement_date DESC
           LIMIT 12
-        `).all(company.id);
+        `, [company.id]);
 
         response.history = history.reverse().map(h => ({
           date: h.settlement_date,
@@ -2782,17 +2794,17 @@ class ToolExecutor {
     }
 
     // No symbol - return most heavily shorted stocks
-    const heavilyShorted = this.db.prepare(`
+    const heavilyShorted = await this._query(`
       SELECT
         si.*,
-        c.name, c.sector
+        c.symbol, c.name, c.sector
       FROM short_interest si
       JOIN companies c ON si.company_id = c.id
       WHERE si.settlement_date = (SELECT MAX(settlement_date) FROM short_interest)
         AND si.short_pct_float IS NOT NULL
       ORDER BY si.short_pct_float DESC
       LIMIT 20
-    `).all();
+    `);
 
     if (heavilyShorted.length === 0) {
       return { message: 'No short interest data available' };
@@ -2880,15 +2892,15 @@ class ToolExecutor {
 
     // If portfolio_name is provided, calculate portfolio-level metrics
     if (portfolio_name) {
-      const portfolio = this.db.prepare(`
+      const portfolio = await this._queryOne(`
         SELECT p.id, p.name, p.current_value, p.current_cash
         FROM portfolios p
         WHERE p.name LIKE ? AND p.is_archived = 0
         LIMIT 1
-      `).get(`%${portfolio_name}%`);
+      `, [`%${portfolio_name}%`]);
 
       if (!portfolio) {
-        const available = this.db.prepare('SELECT name FROM portfolios WHERE is_archived = 0').all();
+        const available = await this._query('SELECT name FROM portfolios WHERE is_archived = 0');
         return {
           error: `Portfolio '${portfolio_name}' not found`,
           available_portfolios: available.map(p => p.name)
@@ -2896,13 +2908,13 @@ class ToolExecutor {
       }
 
       // Get portfolio snapshots for performance calculation
-      const snapshots = this.db.prepare(`
+      const snapshots = await this._query(`
         SELECT snapshot_date, total_value
         FROM portfolio_snapshots
         WHERE portfolio_id = ?
         ORDER BY snapshot_date DESC
         LIMIT ?
-      `).all(portfolio.id, days);
+      `, [portfolio.id, days]);
 
       if (snapshots.length < 10) {
         return {
@@ -2944,14 +2956,14 @@ class ToolExecutor {
       const drawdownInfo = calculateMaxDrawdown(prices);
 
       // Get benchmark comparison (S&P 500)
-      const spyPrices = this.db.prepare(`
+      const spyPrices = await this._query(`
         SELECT close
         FROM daily_prices dp
         JOIN companies c ON dp.company_id = c.id
         WHERE c.symbol = 'SPY'
         ORDER BY dp.date DESC
         LIMIT ?
-      `).all(days);
+      `, [days]);
 
       let benchmarkMetrics = null;
       let alpha = null;
@@ -3029,7 +3041,7 @@ class ToolExecutor {
 
     // If symbol is provided, calculate single-stock metrics
     if (symbol) {
-      const validation = this.validateSymbol(symbol);
+      const validation = await this.validateSymbol(symbol);
       if (!validation.valid) {
         return {
           error: validation.error,
@@ -3039,19 +3051,19 @@ class ToolExecutor {
       }
 
       const normalizedSymbol = symbol.toUpperCase();
-      const company = this.db.prepare('SELECT id, name, sector FROM companies WHERE symbol = ?').get(normalizedSymbol);
+      const company = await this._queryOne('SELECT id, name, sector FROM companies WHERE symbol = ?', [normalizedSymbol]);
 
       if (!company) {
         return { error: `Company ${normalizedSymbol} not found` };
       }
 
-      const prices = this.db.prepare(`
+      const prices = await this._query(`
         SELECT date, close
         FROM daily_prices
         WHERE company_id = ?
         ORDER BY date DESC
         LIMIT ?
-      `).all(company.id, days);
+      `, [company.id, days]);
 
       if (prices.length < 20) {
         return {

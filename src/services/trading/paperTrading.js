@@ -1,5 +1,8 @@
 // src/services/trading/paperTrading.js
 // Paper Trading Engine - Simulated order execution and portfolio tracking
+// Supports both SQLite and PostgreSQL via db abstraction layer
+
+const { isUsingPostgres } = require('../../lib/db');
 
 /**
  * PaperTradingEngine - Simulates order execution and tracks paper P&L
@@ -13,7 +16,7 @@
 
 class PaperTradingEngine {
   /**
-   * @param {Database} db better-sqlite3 database instance
+   * @param {Object} db Database instance (SQLite or PostgreSQL via lib/db)
    * @param {Object} config Configuration options
    */
   constructor(db, config = {}) {
@@ -47,15 +50,16 @@ class PaperTradingEngine {
     this.activeOrders = new Map();
     this.orderIdCounter = 1;
 
-    // Initialize database tables
-    this._initTables();
-    this._initStatements();
+    // Initialize database tables (SQLite only - Postgres uses migration 024)
+    if (!isUsingPostgres()) {
+      this._initTablesSync();
+    }
 
     console.log('📄 Paper Trading Engine initialized');
   }
 
-  _initTables() {
-    // Paper trading accounts
+  _initTablesSync() {
+    if (typeof this.db.exec !== 'function') return;
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS paper_accounts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,8 +70,6 @@ class PaperTradingEngine {
         updated_at TEXT DEFAULT (datetime('now'))
       )
     `);
-
-    // Paper positions
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS paper_positions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,8 +84,6 @@ class PaperTradingEngine {
         UNIQUE(account_id, symbol)
       )
     `);
-
-    // Paper orders
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS paper_orders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,8 +107,6 @@ class PaperTradingEngine {
         FOREIGN KEY (account_id) REFERENCES paper_accounts(id)
       )
     `);
-
-    // Paper trades (filled orders)
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS paper_trades (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -125,8 +123,6 @@ class PaperTradingEngine {
         FOREIGN KEY (account_id) REFERENCES paper_accounts(id)
       )
     `);
-
-    // Daily snapshots for performance tracking
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS paper_snapshots (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -143,112 +139,22 @@ class PaperTradingEngine {
     `);
   }
 
-  _initStatements() {
-    // Account operations
-    this.stmtCreateAccount = this.db.prepare(`
-      INSERT INTO paper_accounts (name, initial_capital, cash_balance)
-      VALUES (?, ?, ?)
-    `);
+  /** Run query - works with both sync SQLite and async Postgres */
+  async _query(sql, params = []) {
+    return Promise.resolve(this.db.query(sql, params));
+  }
 
-    this.stmtGetAccount = this.db.prepare(`
-      SELECT * FROM paper_accounts WHERE id = ?
-    `);
+  /** Run query and return first row */
+  async _queryOne(sql, params = []) {
+    const res = await this._query(sql, params);
+    const rows = res.rows || [];
+    return rows[0] || null;
+  }
 
-    this.stmtGetAccountByName = this.db.prepare(`
-      SELECT * FROM paper_accounts WHERE name = ?
-    `);
-
-    this.stmtUpdateCash = this.db.prepare(`
-      UPDATE paper_accounts SET cash_balance = ?, updated_at = datetime('now')
-      WHERE id = ?
-    `);
-
-    // Position operations
-    this.stmtGetPositions = this.db.prepare(`
-      SELECT * FROM paper_positions WHERE account_id = ?
-    `);
-
-    this.stmtGetPosition = this.db.prepare(`
-      SELECT * FROM paper_positions WHERE account_id = ? AND symbol = ?
-    `);
-
-    this.stmtUpsertPosition = this.db.prepare(`
-      INSERT INTO paper_positions (account_id, symbol, quantity, avg_cost, current_price)
-      VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(account_id, symbol) DO UPDATE SET
-        quantity = excluded.quantity,
-        avg_cost = excluded.avg_cost,
-        current_price = excluded.current_price,
-        updated_at = datetime('now')
-    `);
-
-    this.stmtDeletePosition = this.db.prepare(`
-      DELETE FROM paper_positions WHERE account_id = ? AND symbol = ?
-    `);
-
-    // Order operations
-    this.stmtInsertOrder = this.db.prepare(`
-      INSERT INTO paper_orders (
-        account_id, order_id, symbol, side, order_type,
-        quantity, limit_price, stop_price, status, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    this.stmtUpdateOrderFill = this.db.prepare(`
-      UPDATE paper_orders SET
-        filled_quantity = ?,
-        avg_fill_price = ?,
-        commission = ?,
-        slippage = ?,
-        status = ?,
-        filled_at = datetime('now')
-      WHERE order_id = ?
-    `);
-
-    this.stmtGetOrders = this.db.prepare(`
-      SELECT * FROM paper_orders WHERE account_id = ?
-      ORDER BY created_at DESC LIMIT ?
-    `);
-
-    this.stmtGetPendingOrders = this.db.prepare(`
-      SELECT * FROM paper_orders WHERE account_id = ? AND status = 'pending'
-    `);
-
-    // Trade operations
-    this.stmtInsertTrade = this.db.prepare(`
-      INSERT INTO paper_trades (
-        account_id, order_id, symbol, side, quantity,
-        price, commission, slippage, realized_pnl
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    this.stmtGetTrades = this.db.prepare(`
-      SELECT * FROM paper_trades WHERE account_id = ?
-      ORDER BY executed_at DESC LIMIT ?
-    `);
-
-    // Snapshot operations
-    this.stmtInsertSnapshot = this.db.prepare(`
-      INSERT OR REPLACE INTO paper_snapshots (
-        account_id, snapshot_date, portfolio_value, cash_balance,
-        positions_value, daily_pnl, cumulative_pnl
-      ) VALUES (?, date('now'), ?, ?, ?, ?, ?)
-    `);
-
-    this.stmtGetSnapshots = this.db.prepare(`
-      SELECT * FROM paper_snapshots WHERE account_id = ?
-      ORDER BY snapshot_date DESC LIMIT ?
-    `);
-
-    // Get current price
-    this.stmtGetPrice = this.db.prepare(`
-      SELECT p.close as price, p.date as price_date
-      FROM daily_prices p
-      JOIN companies c ON c.id = p.company_id
-      WHERE c.symbol = ?
-      ORDER BY p.date DESC
-      LIMIT 1
-    `);
+  /** Run query and return all rows */
+  async _queryAll(sql, params = []) {
+    const res = await this._query(sql, params);
+    return res.rows || [];
   }
 
   // ==========================================
@@ -259,23 +165,41 @@ class PaperTradingEngine {
    * Create a new paper trading account
    * @param {string} name Account name
    * @param {number} initialCapital Starting capital
-   * @returns {Object} Account details
+   * @returns {Promise<Object>} Account details
    */
-  createAccount(name, initialCapital = null) {
+  async createAccount(name, initialCapital = null) {
     const capital = initialCapital || this.config.initialCapital;
 
     try {
-      const result = this.stmtCreateAccount.run(name, capital, capital);
-
+      if (isUsingPostgres()) {
+        const res = await this._query(
+          'INSERT INTO paper_accounts (name, initial_capital, cash_balance) VALUES (?, ?, ?) RETURNING id',
+          [name, capital, capital]
+        );
+        const id = (res.rows && res.rows[0]) ? res.rows[0].id : null;
+        if (!id) throw new Error('Failed to create account');
+        return {
+          id,
+          name,
+          initialCapital: capital,
+          cashBalance: capital,
+          createdAt: new Date().toISOString()
+        };
+      }
+      const res = await this._query(
+        'INSERT INTO paper_accounts (name, initial_capital, cash_balance) VALUES (?, ?, ?)',
+        [name, capital, capital]
+      );
+      const id = res.lastInsertRowid;
       return {
-        id: result.lastInsertRowid,
+        id,
         name,
         initialCapital: capital,
         cashBalance: capital,
         createdAt: new Date().toISOString()
       };
     } catch (err) {
-      if (err.message.includes('UNIQUE')) {
+      if (err.message && (err.message.includes('UNIQUE') || err.message.includes('duplicate'))) {
         throw new Error(`Account '${name}' already exists`);
       }
       throw err;
@@ -285,10 +209,10 @@ class PaperTradingEngine {
   /**
    * Get account by ID or name
    */
-  getAccount(idOrName) {
+  async getAccount(idOrName) {
     const account = typeof idOrName === 'number'
-      ? this.stmtGetAccount.get(idOrName)
-      : this.stmtGetAccountByName.get(idOrName);
+      ? await this._queryOne('SELECT * FROM paper_accounts WHERE id = ?', [idOrName])
+      : await this._queryOne('SELECT * FROM paper_accounts WHERE name = ?', [idOrName]);
 
     if (!account) {
       throw new Error(`Account not found: ${idOrName}`);
@@ -300,16 +224,25 @@ class PaperTradingEngine {
   /**
    * Get full account status including positions and value
    */
-  getAccountStatus(accountId) {
-    const account = this.getAccount(accountId);
-    const positions = this.stmtGetPositions.all(accountId);
+  async getAccountStatus(accountId) {
+    const account = await this.getAccount(accountId);
+    const positions = await this._queryAll('SELECT * FROM paper_positions WHERE account_id = ?', [accountId]);
 
     // Update position prices and calculate value
     let positionsValue = 0;
     let unrealizedPnl = 0;
 
-    const updatedPositions = positions.map(pos => {
-      const priceData = this.stmtGetPrice.get(pos.symbol);
+    const updatedPositions = [];
+    for (const pos of positions) {
+      const priceData = await this._queryOne(
+        `SELECT p.close as price, p.date as price_date
+         FROM daily_prices p
+         JOIN companies c ON c.id = p.company_id
+         WHERE c.symbol = ?
+         ORDER BY p.date DESC
+         LIMIT 1`,
+        [pos.symbol]
+      );
       const currentPrice = priceData?.price || pos.current_price || pos.avg_cost;
       const marketValue = pos.quantity * currentPrice;
       const costBasis = pos.quantity * pos.avg_cost;
@@ -318,15 +251,15 @@ class PaperTradingEngine {
       positionsValue += marketValue;
       unrealizedPnl += posUnrealizedPnl;
 
-      return {
+      updatedPositions.push({
         ...pos,
         currentPrice,
         marketValue,
         costBasis,
         unrealizedPnl: posUnrealizedPnl,
         unrealizedPnlPercent: costBasis > 0 ? (posUnrealizedPnl / costBasis * 100) : 0
-      };
-    });
+      });
+    }
 
     const portfolioValue = account.cash_balance + positionsValue;
     const totalReturn = portfolioValue - account.initial_capital;
@@ -361,19 +294,27 @@ class PaperTradingEngine {
    * Submit a new order
    * @param {number} accountId Account ID
    * @param {Object} order Order details
-   * @returns {Object} Order confirmation
+   * @returns {Promise<Object>} Order confirmation
    */
-  submitOrder(accountId, order) {
-    const account = this.getAccount(accountId);
+  async submitOrder(accountId, order) {
+    const account = await this.getAccount(accountId);
 
     // Validate order
-    this._validateOrder(account, order);
+    await this._validateOrder(account, order);
 
     // Generate order ID
     const orderId = `PAPER-${Date.now()}-${this.orderIdCounter++}`;
 
     // Get current market price
-    const priceData = this.stmtGetPrice.get(order.symbol);
+    const priceData = await this._queryOne(
+      `SELECT p.close as price, p.date as price_date
+       FROM daily_prices p
+       JOIN companies c ON c.id = p.company_id
+       WHERE c.symbol = ?
+       ORDER BY p.date DESC
+       LIMIT 1`,
+      [order.symbol]
+    );
     if (!priceData) {
       throw new Error(`No price data available for ${order.symbol}`);
     }
@@ -400,17 +341,23 @@ class PaperTradingEngine {
     }
 
     // Insert order
-    this.stmtInsertOrder.run(
-      accountId,
-      orderId,
-      order.symbol,
-      order.side,
-      order.orderType || 'MARKET',
-      order.quantity,
-      order.limitPrice || null,
-      order.stopPrice || null,
-      canFill ? 'pending' : 'open',
-      order.notes || null
+    await this._query(
+      `INSERT INTO paper_orders (
+        account_id, order_id, symbol, side, order_type,
+        quantity, limit_price, stop_price, status, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        accountId,
+        orderId,
+        order.symbol,
+        order.side,
+        order.orderType || 'MARKET',
+        order.quantity,
+        order.limitPrice || null,
+        order.stopPrice || null,
+        canFill ? 'pending' : 'open',
+        order.notes || null
+      ]
     );
 
     // If can fill immediately, execute
@@ -434,8 +381,8 @@ class PaperTradingEngine {
   /**
    * Execute an order (internal)
    */
-  _executeOrder(accountId, orderId, order, basePrice) {
-    const account = this.getAccount(accountId);
+  async _executeOrder(accountId, orderId, order, basePrice) {
+    const account = await this.getAccount(accountId);
 
     // Calculate slippage
     const slippage = this._calculateSlippage(order, basePrice);
@@ -458,23 +405,39 @@ class PaperTradingEngine {
     }
 
     // Update position
-    const existingPosition = this.stmtGetPosition.get(accountId, order.symbol);
+    const existingPosition = await this._queryOne(
+      'SELECT * FROM paper_positions WHERE account_id = ? AND symbol = ?',
+      [accountId, order.symbol]
+    );
     let realizedPnl = 0;
 
     if (order.side === 'BUY') {
+      const nowExpr = isUsingPostgres() ? 'NOW()' : "datetime('now')";
       if (existingPosition) {
-        // Add to existing position
         const newQuantity = existingPosition.quantity + order.quantity;
         const newCost = (existingPosition.quantity * existingPosition.avg_cost +
                         order.quantity * fillPrice) / newQuantity;
-        this.stmtUpsertPosition.run(accountId, order.symbol, newQuantity, newCost, fillPrice);
+        await this._query(
+          `INSERT INTO paper_positions (account_id, symbol, quantity, avg_cost, current_price)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(account_id, symbol) DO UPDATE SET
+             quantity = excluded.quantity,
+             avg_cost = excluded.avg_cost,
+             current_price = excluded.current_price,
+             updated_at = ${nowExpr}`,
+          [accountId, order.symbol, newQuantity, newCost, fillPrice]
+        );
       } else {
-        // New position
-        this.stmtUpsertPosition.run(accountId, order.symbol, order.quantity, fillPrice, fillPrice);
+        await this._query(
+          'INSERT INTO paper_positions (account_id, symbol, quantity, avg_cost, current_price) VALUES (?, ?, ?, ?, ?)',
+          [accountId, order.symbol, order.quantity, fillPrice, fillPrice]
+        );
       }
 
-      // Deduct from cash
-      this.stmtUpdateCash.run(account.cash_balance - totalCost, accountId);
+      await this._query(
+        `UPDATE paper_accounts SET cash_balance = ?, updated_at = ${nowExpr} WHERE id = ?`,
+        [account.cash_balance - totalCost, accountId]
+      );
     } else {
       // SELL
       if (!existingPosition || existingPosition.quantity < order.quantity) {
@@ -482,42 +445,60 @@ class PaperTradingEngine {
                        `Current position: ${existingPosition?.quantity || 0}`);
       }
 
-      // Calculate realized P&L
       realizedPnl = (fillPrice - existingPosition.avg_cost) * order.quantity - commission;
 
       const newQuantity = existingPosition.quantity - order.quantity;
+      const nowExpr = isUsingPostgres() ? 'NOW()' : "datetime('now')";
       if (newQuantity > 0) {
-        this.stmtUpsertPosition.run(accountId, order.symbol, newQuantity,
-                                    existingPosition.avg_cost, fillPrice);
+        await this._query(
+          `INSERT INTO paper_positions (account_id, symbol, quantity, avg_cost, current_price)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(account_id, symbol) DO UPDATE SET
+             quantity = excluded.quantity,
+             avg_cost = excluded.avg_cost,
+             current_price = excluded.current_price,
+             updated_at = ${nowExpr}`,
+          [accountId, order.symbol, newQuantity, existingPosition.avg_cost, fillPrice]
+        );
       } else {
-        this.stmtDeletePosition.run(accountId, order.symbol);
+        await this._query('DELETE FROM paper_positions WHERE account_id = ? AND symbol = ?', [accountId, order.symbol]);
       }
 
-      // Add to cash
-      this.stmtUpdateCash.run(account.cash_balance + (totalValue - commission), accountId);
+      await this._query(
+        `UPDATE paper_accounts SET cash_balance = ?, updated_at = ${nowExpr} WHERE id = ?`,
+        [account.cash_balance + (totalValue - commission), accountId]
+      );
     }
 
-    // Update order status
-    this.stmtUpdateOrderFill.run(
-      order.quantity,
-      fillPrice,
-      commission,
-      slippage * basePrice * order.quantity,
-      'filled',
-      orderId
+    const nowExpr = isUsingPostgres() ? 'NOW()' : "datetime('now')";
+    await this._query(
+      `UPDATE paper_orders SET
+        filled_quantity = ?,
+        avg_fill_price = ?,
+        commission = ?,
+        slippage = ?,
+        status = ?,
+        filled_at = ${nowExpr}
+      WHERE order_id = ?`,
+      [order.quantity, fillPrice, commission, slippage * basePrice * order.quantity, 'filled', orderId]
     );
 
-    // Record trade
-    this.stmtInsertTrade.run(
-      accountId,
-      orderId,
-      order.symbol,
-      order.side,
-      order.quantity,
-      fillPrice,
-      commission,
-      slippage * basePrice * order.quantity,
-      realizedPnl || null
+    await this._query(
+      `INSERT INTO paper_trades (
+        account_id, order_id, symbol, side, quantity,
+        price, commission, slippage, realized_pnl
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        accountId,
+        orderId,
+        order.symbol,
+        order.side,
+        order.quantity,
+        fillPrice,
+        commission,
+        slippage * basePrice * order.quantity,
+        realizedPnl || null
+      ]
     );
 
     return {
@@ -538,7 +519,7 @@ class PaperTradingEngine {
   /**
    * Validate order before submission
    */
-  _validateOrder(account, order) {
+  async _validateOrder(account, order) {
     if (!order.symbol) throw new Error('Symbol is required');
     if (!order.side || !['BUY', 'SELL'].includes(order.side)) {
       throw new Error('Side must be BUY or SELL');
@@ -559,11 +540,18 @@ class PaperTradingEngine {
       throw new Error('Stop price required for STOP orders');
     }
 
-    // Check position size limit
-    const priceData = this.stmtGetPrice.get(order.symbol);
+    const priceData = await this._queryOne(
+      `SELECT p.close as price
+       FROM daily_prices p
+       JOIN companies c ON c.id = p.company_id
+       WHERE c.symbol = ?
+       ORDER BY p.date DESC
+       LIMIT 1`,
+      [order.symbol]
+    );
     if (priceData) {
       const orderValue = order.quantity * priceData.price;
-      const status = this.getAccountStatus(account.id);
+      const status = await this.getAccountStatus(account.id);
       const portfolioValue = status.summary.portfolioValue;
 
       if (orderValue > portfolioValue * this.config.maxPositionSize) {
@@ -572,39 +560,19 @@ class PaperTradingEngine {
     }
   }
 
-  /**
-   * Calculate slippage based on model
-   */
   _calculateSlippage(order, price) {
-    if (this.config.slippageModel === 'none') {
-      return 0;
-    }
-
-    if (this.config.slippageModel === 'fixed') {
-      return this.config.fixedSlippageBps / 10000;
-    }
-
-    // Realistic model: slippage increases with order size
-    // Base: 5 bps + size component
-    const baseSlippage = 0.0005; // 5 bps
+    if (this.config.slippageModel === 'none') return 0;
+    if (this.config.slippageModel === 'fixed') return this.config.fixedSlippageBps / 10000;
+    const baseSlippage = 0.0005;
     const orderValue = order.quantity * price;
-
-    // Size impact (increases for larger orders)
     const sizeImpact = Math.log10(1 + orderValue / 100000) * 0.001;
-
-    // Random component (market noise)
     const noise = (Math.random() - 0.5) * 0.001;
-
     return Math.max(0, baseSlippage + sizeImpact + noise);
   }
 
-  /**
-   * Calculate commission
-   */
   _calculateCommission(quantity, price) {
     const perShareCost = this.config.commissionPerShare * quantity;
     const percentCost = this.config.commissionPercent * quantity * price;
-
     return Math.max(this.config.minCommission, perShareCost + percentCost);
   }
 
@@ -612,48 +580,37 @@ class PaperTradingEngine {
   // QUERY METHODS
   // ==========================================
 
-  /**
-   * Get order history
-   */
-  getOrders(accountId, limit = 50) {
-    return this.stmtGetOrders.all(accountId, limit);
+  async getOrders(accountId, limit = 50) {
+    return this._queryAll(
+      'SELECT * FROM paper_orders WHERE account_id = ? ORDER BY created_at DESC LIMIT ?',
+      [accountId, limit]
+    );
   }
 
-  /**
-   * Get trade history
-   */
-  getTrades(accountId, limit = 50) {
-    return this.stmtGetTrades.all(accountId, limit);
+  async getTrades(accountId, limit = 50) {
+    return this._queryAll(
+      'SELECT * FROM paper_trades WHERE account_id = ? ORDER BY executed_at DESC LIMIT ?',
+      [accountId, limit]
+    );
   }
 
-  /**
-   * Get pending orders
-   */
-  getPendingOrders(accountId) {
-    return this.stmtGetPendingOrders.all(accountId);
+  async getPendingOrders(accountId) {
+    return this._queryAll(
+      "SELECT * FROM paper_orders WHERE account_id = ? AND status = 'pending'",
+      [accountId]
+    );
   }
 
-  /**
-   * Cancel an order
-   * @param {string} accountId - Account ID
-   * @param {string} orderId - Order ID to cancel
-   * @returns {Object} Cancel result
-   */
-  cancelOrder(accountId, orderId) {
-    // Get the order
-    const order = this.db.prepare(`
-      SELECT * FROM paper_orders
-      WHERE account_id = ? AND order_id = ?
-    `).get(accountId, orderId);
+  async cancelOrder(accountId, orderId) {
+    const order = await this._queryOne(
+      'SELECT * FROM paper_orders WHERE account_id = ? AND order_id = ?',
+      [accountId, orderId]
+    );
 
     if (!order) {
-      return {
-        success: false,
-        message: `Order ${orderId} not found`
-      };
+      return { success: false, message: `Order ${orderId} not found` };
     }
 
-    // Check if order can be cancelled (must be 'open' or 'pending')
     if (order.status !== 'open' && order.status !== 'pending') {
       return {
         success: false,
@@ -662,12 +619,11 @@ class PaperTradingEngine {
       };
     }
 
-    // Update order status to 'cancelled'
-    this.db.prepare(`
-      UPDATE paper_orders
-      SET status = 'cancelled', updated_at = datetime('now')
-      WHERE order_id = ?
-    `).run(orderId);
+    const nowExpr = isUsingPostgres() ? 'NOW()' : "datetime('now')";
+    await this._query(
+      `UPDATE paper_orders SET status = 'cancelled', updated_at = ${nowExpr} WHERE order_id = ?`,
+      [orderId]
+    );
 
     return {
       success: true,
@@ -683,11 +639,8 @@ class PaperTradingEngine {
     };
   }
 
-  /**
-   * Get positions
-   */
-  getPositions(accountId) {
-    const status = this.getAccountStatus(accountId);
+  async getPositions(accountId) {
+    const status = await this.getAccountStatus(accountId);
     return status.positions;
   }
 
@@ -695,15 +648,14 @@ class PaperTradingEngine {
   // PERFORMANCE TRACKING
   // ==========================================
 
-  /**
-   * Take a daily snapshot of account value
-   */
-  takeSnapshot(accountId) {
-    const status = this.getAccountStatus(accountId);
+  async takeSnapshot(accountId) {
+    const status = await this.getAccountStatus(accountId);
     const account = status.account;
 
-    // Get previous snapshot
-    const previousSnapshots = this.stmtGetSnapshots.all(accountId, 1);
+    const previousSnapshots = await this._queryAll(
+      'SELECT * FROM paper_snapshots WHERE account_id = ? ORDER BY snapshot_date DESC LIMIT ?',
+      [accountId, 1]
+    );
     const previousValue = previousSnapshots.length > 0
       ? previousSnapshots[0].portfolio_value
       : account.initialCapital;
@@ -711,13 +663,26 @@ class PaperTradingEngine {
     const dailyPnl = status.summary.portfolioValue - previousValue;
     const cumulativePnl = status.summary.totalReturn;
 
-    this.stmtInsertSnapshot.run(
-      accountId,
-      status.summary.portfolioValue,
-      status.summary.cashBalance,
-      status.summary.positionsValue,
-      dailyPnl,
-      cumulativePnl
+    const dateExpr = isUsingPostgres() ? 'CURRENT_DATE' : "date('now')";
+    await this._query(
+      `INSERT INTO paper_snapshots (
+        account_id, snapshot_date, portfolio_value, cash_balance,
+        positions_value, daily_pnl, cumulative_pnl
+      ) VALUES (?, ${dateExpr}, ?, ?, ?, ?, ?)
+      ON CONFLICT(account_id, snapshot_date) DO UPDATE SET
+        portfolio_value = excluded.portfolio_value,
+        cash_balance = excluded.cash_balance,
+        positions_value = excluded.positions_value,
+        daily_pnl = excluded.daily_pnl,
+        cumulative_pnl = excluded.cumulative_pnl`,
+      [
+        accountId,
+        status.summary.portfolioValue,
+        status.summary.cashBalance,
+        status.summary.positionsValue,
+        dailyPnl,
+        cumulativePnl
+      ]
     );
 
     return {
@@ -728,21 +693,17 @@ class PaperTradingEngine {
     };
   }
 
-  /**
-   * Get performance metrics
-   */
-  getPerformance(accountId, days = 30) {
-    const snapshots = this.stmtGetSnapshots.all(accountId, days);
-    const account = this.getAccount(accountId);
+  async getPerformance(accountId, days = 30) {
+    const snapshots = await this._queryAll(
+      'SELECT * FROM paper_snapshots WHERE account_id = ? ORDER BY snapshot_date DESC LIMIT ?',
+      [accountId, days]
+    );
+    const account = await this.getAccount(accountId);
 
     if (snapshots.length === 0) {
-      return {
-        message: 'No snapshots available',
-        snapshots: []
-      };
+      return { message: 'No snapshots available', snapshots: [] };
     }
 
-    // Calculate metrics
     const returns = [];
     for (let i = 0; i < snapshots.length - 1; i++) {
       const dailyReturn = (snapshots[i].portfolio_value - snapshots[i + 1].portfolio_value) /
@@ -750,16 +711,13 @@ class PaperTradingEngine {
       returns.push(dailyReturn);
     }
 
-    const avgReturn = returns.length > 0
-      ? returns.reduce((a, b) => a + b, 0) / returns.length
-      : 0;
+    const avgReturn = returns.length > 0 ? returns.reduce((a, b) => a + b, 0) / returns.length : 0;
     const variance = returns.length > 0
       ? returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / returns.length
       : 0;
     const stdDev = Math.sqrt(variance);
     const sharpe = stdDev > 0 ? (avgReturn * 252) / (stdDev * Math.sqrt(252)) : 0;
 
-    // Max drawdown
     let maxValue = account.initial_capital;
     let maxDrawdown = 0;
     for (const snapshot of [...snapshots].reverse()) {
@@ -781,7 +739,7 @@ class PaperTradingEngine {
       volatility: (stdDev * Math.sqrt(252) * 100).toFixed(2) + '%',
       sharpeRatio: sharpe.toFixed(2),
       maxDrawdown: (maxDrawdown * 100).toFixed(2) + '%',
-      winRate: this._calculateWinRate(accountId),
+      winRate: await this._calculateWinRate(accountId),
       snapshots: snapshots.slice(0, 10).map(s => ({
         date: s.snapshot_date,
         value: s.portfolio_value,
@@ -790,11 +748,11 @@ class PaperTradingEngine {
     };
   }
 
-  /**
-   * Calculate win rate from trades
-   */
-  _calculateWinRate(accountId) {
-    const trades = this.stmtGetTrades.all(accountId, 1000);
+  async _calculateWinRate(accountId) {
+    const trades = await this._queryAll(
+      'SELECT * FROM paper_trades WHERE account_id = ? ORDER BY executed_at DESC LIMIT ?',
+      [accountId, 1000]
+    );
     const sellTrades = trades.filter(t => t.side === 'SELL' && t.realized_pnl !== null);
 
     if (sellTrades.length === 0) return 'N/A';

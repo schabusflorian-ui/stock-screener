@@ -18,7 +18,7 @@ const morgan = require('morgan');
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const SQLiteStore = require('better-sqlite3-session-store')(session);
-const db = require('../database');
+const database = require('../database');
 const { configurePassport } = require('../auth/passport');
 const { conditionalCsrf, csrfErrorHandler, csrfProtection } = require('../middleware/csrf');
 
@@ -105,7 +105,7 @@ function createSessionStore() {
 
   logger.warn('[Session Store] Using SQLite (dev mode only)');
   return new SQLiteStore({
-    client: db.getDatabase(),
+    client: database.getDatabase(),
     expired: {
       clear: true,
       intervalMs: 900000 // Clear expired sessions every 15 min
@@ -151,7 +151,7 @@ app.get('/api/health', (req, res) => {
 // Configure Passport (only if Google OAuth is configured)
 let passport = null;
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-  passport = configurePassport(db.getDatabase());
+  passport = configurePassport();
 }
 
 // Middleware
@@ -551,10 +551,10 @@ app.get('/api/health/detailed', async (req, res) => {
 
   // Check database
   let dbStatus = 'unknown';
-  let dbType = db.getDatabaseType ? db.getDatabaseType() : 'unknown';
+  let dbType = database.getDatabaseType ? database.getDatabaseType() : 'unknown';
   try {
-    const database = db.getDatabase();
-    database.prepare('SELECT 1').get();
+    const dbConn = database.getDatabase();
+    dbConn.prepare('SELECT 1').get();
     dbStatus = 'connected';
   } catch (e) {
     dbStatus = 'error';
@@ -693,10 +693,10 @@ server.listen(PORT, HOST, async () => {
       logger.info('Update Scheduler: Skipped in PostgreSQL mode (SQLite-only feature)');
     } else if (autoStartScheduler) {
       const { getUpdateOrchestrator } = require('../services/updates/updateOrchestrator');
-      const orchestrator = getUpdateOrchestrator(db.getDatabase());
+      const orchestrator = getUpdateOrchestrator(database.getDatabase());
 
       // Check if update_jobs table exists (migration has run)
-      const tableExists = db.getDatabase().prepare(`
+      const tableExists = database.getDatabase().prepare(`
         SELECT name FROM sqlite_master
         WHERE type='table' AND name='update_jobs'
       `).get();
@@ -746,7 +746,7 @@ async function gracefulShutdown(signal) {
     // Stop update orchestrator if running
     try {
       const { getUpdateOrchestrator } = require('../services/updates/updateOrchestrator');
-      const orchestrator = getUpdateOrchestrator(db.getDatabase());
+      const orchestrator = getUpdateOrchestrator(database.getDatabase());
       if (orchestrator.isRunning) {
         orchestrator.stop();
         logger.info('Update Scheduler stopped');
@@ -757,8 +757,8 @@ async function gracefulShutdown(signal) {
 
     // Close database connection
     try {
-      const database = db.getDatabase();
-      database.close();
+      const dbConn = database.getDatabase();
+      dbConn.close();
       logger.info('Database connection closed');
     } catch (e) {
       logger.error('Error closing database:', e);

@@ -207,7 +207,7 @@ class TradingSimulationRunner {
           const price = signal.price_at_signal || 100;
 
           // Execute via paper trading
-          paperEngine.submitOrder(paperAccountId, {
+          await paperEngine.submitOrder(paperAccountId, {
             symbol: signal.symbol,
             side,
             orderType: 'MARKET',
@@ -359,7 +359,7 @@ class TradingSimulationRunner {
 
     for (const accountId of accountIds) {
       try {
-        paperEngine.takeSnapshot(accountId);
+        await paperEngine.takeSnapshot(accountId);
         this.metricsCollector?.recordPerformance('snapshot', 0, true);
       } catch (error) {
         // Non-critical

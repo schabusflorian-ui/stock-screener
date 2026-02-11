@@ -963,16 +963,16 @@ async function createPortfolioForAgent(agentId, portfolioConfig) {
     if (mode === 'paper') {
       try {
         const { PaperTradingEngine } = require('../trading/paperTrading');
-        const paperEngine = new PaperTradingEngine();
+        const paperEngine = new PaperTradingEngine(database);
         const accountName = `portfolio_${portfolioId}`;
 
         // Check if account already exists
         let account;
         try {
-          account = paperEngine.getAccount(accountName);
+          account = await paperEngine.getAccount(accountName);
         } catch (err) {
           // Create new paper trading account
-          account = paperEngine.createAccount(accountName, initial_capital);
+          account = await paperEngine.createAccount(accountName, initial_capital);
         }
 
         // Paper account linked via agent_portfolios table (mode column)
@@ -1875,26 +1875,21 @@ async function executeApproved(signalId) {
   try {
     // Check if paper trading or live
     if (portfolio.mode === 'paper') {
-      // Paper trading execution
       const { PaperTradingEngine } = require('../trading/paperTrading');
-      const paperEngine = new PaperTradingEngine();
+      const paperEngine = new PaperTradingEngine(database);
 
-      // Get or create paper account for this portfolio
       const accountName = `portfolio_${portfolio.portfolio_id}`;
       let account;
       try {
-        account = paperEngine.getAccount(accountName);
+        account = await paperEngine.getAccount(accountName);
       } catch (e) {
-        // Create account if it doesn't exist
-        account = paperEngine.createAccount(accountName, portfolio.initial_capital || 100000);
+        account = await paperEngine.createAccount(accountName, portfolio.initial_capital || 100000);
       }
 
-      // Determine order side
       const side = signal.action.includes('buy') ? 'BUY' : 'SELL';
       const shares = signal.suggested_shares || Math.floor((portfolio.initial_capital * 0.05) / (signal.price_at_signal || 100));
 
-      // Submit order using the paper trading engine
-      const tradeResult = paperEngine.submitOrder(account.id, {
+      const tradeResult = await paperEngine.submitOrder(account.id, {
         symbol: signal.symbol,
         side: side,
         orderType: 'MARKET',

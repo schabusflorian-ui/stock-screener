@@ -1,7 +1,7 @@
 // src/services/features/featureStore.js
 // Point-in-Time Feature Store - Centralized feature retrieval with caching
 
-const { db } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { getRegistry, FEATURE_TYPES, FREQUENCIES } = require('./featureRegistry');
 
 /**
@@ -25,68 +25,21 @@ class FeatureStore {
     this.cacheMaxSize = options.cacheMaxSize || 10000;
     this.cacheTTLMs = options.cacheTTLMs || 5 * 60 * 1000; // 5 minutes
     this.enableLogging = options.enableLogging || false;
-
-    // Pre-built SQL for common feature queries
-    this._prepareStatements();
   }
 
-  /**
-   * Prepare commonly used SQL statements
-   */
-  _prepareStatements() {
-    // Get company ID from symbol
-    this._getCompanyId = db.prepare(`
-      SELECT id FROM companies WHERE symbol = ?
-    `);
+  async _getDb() {
+    return getDatabaseAsync();
+  }
 
-    // Price features with point-in-time
-    this._getPriceFeatures = db.prepare(`
-      SELECT
-        company_id,
-        date,
-        open,
-        high,
-        low,
-        close,
-        COALESCE(adjusted_close, close) as adjusted_close,
-        volume
-      FROM daily_prices
-      WHERE company_id = ? AND date <= ?
-      ORDER BY date DESC
-      LIMIT ?
-    `);
+  async _query(sql, params = []) {
+    const db = await this._getDb();
+    const result = await db.query(sql, params);
+    return Array.isArray(result.rows) ? result.rows : [];
+  }
 
-    // Fundamental features (quarterly, forward-filled)
-    this._getFundamentalFeatures = db.prepare(`
-      SELECT
-        cm.*,
-        cm.fiscal_period as data_date
-      FROM calculated_metrics cm
-      WHERE cm.company_id = ?
-        AND cm.fiscal_period <= ?
-      ORDER BY cm.fiscal_period DESC
-      LIMIT 1
-    `);
-
-    // Factor scores with point-in-time
-    this._getFactorFeatures = db.prepare(`
-      SELECT *
-      FROM stock_factor_scores
-      WHERE company_id = ?
-        AND score_date <= ?
-      ORDER BY score_date DESC
-      LIMIT 1
-    `);
-
-    // Sentiment with point-in-time
-    this._getSentimentFeatures = db.prepare(`
-      SELECT *
-      FROM sentiment_summary
-      WHERE company_id = ?
-        AND date(calculated_at) <= ?
-      ORDER BY calculated_at DESC
-      LIMIT 1
-    `);
+  async _queryOne(sql, params = []) {
+    const rows = await this._query(sql, params);
+    return rows[0] || null;
   }
 
   /**
@@ -96,9 +49,9 @@ class FeatureStore {
    * @param {string} featureName - Feature name from registry
    * @param {string} asOfDate - Point-in-time date (YYYY-MM-DD)
    * @param {object} options - Additional options
-   * @returns {number|null} Feature value
+   * @returns {Promise<number|null>} Feature value
    */
-  getFeature(symbol, featureName, asOfDate, options = {}) {
+  async getFeature(symbol, featureName, asOfDate, options = {}) {
     const { logAccess = false, context = 'live' } = options;
 
     // Check cache
@@ -116,7 +69,7 @@ class FeatureStore {
     }
 
     // Get company ID
-    const company = this._getCompanyId.get(symbol);
+    const company = await this._queryOne('SELECT id FROM companies WHERE symbol = ?', [symbol]);
     if (!company) {
       return null;
     }
@@ -127,27 +80,27 @@ class FeatureStore {
     switch (feature.type) {
       case FEATURE_TYPES.PRICE:
       case FEATURE_TYPES.DERIVED:
-        value = this._getPriceFeature(company.id, featureName, asOfDate, feature);
+        value = await this._getPriceFeature(company.id, featureName, asOfDate, feature);
         break;
 
       case FEATURE_TYPES.TECHNICAL:
-        value = this._getTechnicalFeature(company.id, featureName, asOfDate, feature);
+        value = await this._getTechnicalFeature(company.id, featureName, asOfDate, feature);
         break;
 
       case FEATURE_TYPES.FUNDAMENTAL:
-        value = this._getFundamentalFeature(company.id, featureName, asOfDate, feature);
+        value = await this._getFundamentalFeature(company.id, featureName, asOfDate, feature);
         break;
 
       case FEATURE_TYPES.FACTOR:
-        value = this._getFactorFeature(company.id, featureName, asOfDate, feature);
+        value = await this._getFactorFeature(company.id, featureName, asOfDate, feature);
         break;
 
       case FEATURE_TYPES.SENTIMENT:
-        value = this._getSentimentFeature(company.id, featureName, asOfDate, feature);
+        value = await this._getSentimentFeature(company.id, featureName, asOfDate, feature);
         break;
 
       case FEATURE_TYPES.ALTERNATIVE:
-        value = this._getAlternativeFeature(company.id, featureName, asOfDate, feature);
+        value = await this._getAlternativeFeature(company.id, featureName, asOfDate, feature);
         break;
 
       default:
@@ -172,13 +125,13 @@ class FeatureStore {
    * @param {string[]} featureNames - Array of feature names
    * @param {string} asOfDate - Point-in-time date
    * @param {object} options - Additional options
-   * @returns {object} Map of feature name -> value
+   * @returns {Promise<object>} Map of feature name -> value
    */
-  getFeatures(symbol, featureNames, asOfDate, options = {}) {
+  async getFeatures(symbol, featureNames, asOfDate, options = {}) {
     const result = {};
 
     for (const featureName of featureNames) {
-      result[featureName] = this.getFeature(symbol, featureName, asOfDate, options);
+      result[featureName] = await this.getFeature(symbol, featureName, asOfDate, options);
     }
 
     return result;
@@ -191,13 +144,13 @@ class FeatureStore {
    * @param {string[]} featureNames - Array of feature names
    * @param {string} asOfDate - Point-in-time date
    * @param {object} options - Additional options
-   * @returns {object} Map of symbol -> { feature -> value }
+   * @returns {Promise<object>} Map of symbol -> { feature -> value }
    */
-  getBatchFeatures(symbols, featureNames, asOfDate, options = {}) {
+  async getBatchFeatures(symbols, featureNames, asOfDate, options = {}) {
     const result = {};
 
     for (const symbol of symbols) {
-      result[symbol] = this.getFeatures(symbol, featureNames, asOfDate, options);
+      result[symbol] = await this.getFeatures(symbol, featureNames, asOfDate, options);
     }
 
     return result;
@@ -210,30 +163,30 @@ class FeatureStore {
    * @param {string} featureName - Feature name
    * @param {string} startDate - Start date
    * @param {string} endDate - End date
-   * @returns {Array} Array of { date, value }
+   * @returns {Promise<Array>} Array of { date, value }
    */
-  getFeatureTimeSeries(symbol, featureName, startDate, endDate) {
+  async getFeatureTimeSeries(symbol, featureName, startDate, endDate) {
     const feature = this.registry.get(featureName);
     if (!feature) {
       return [];
     }
 
-    const company = this._getCompanyId.get(symbol);
+    const company = await this._queryOne('SELECT id FROM companies WHERE symbol = ?', [symbol]);
     if (!company) {
       return [];
     }
 
     // Get dates in range
-    const dates = db.prepare(`
+    const dates = await this._query(`
       SELECT DISTINCT date
       FROM daily_prices
       WHERE company_id = ? AND date >= ? AND date <= ?
       ORDER BY date
-    `).all(company.id, startDate, endDate);
+    `, [company.id, startDate, endDate]);
 
     const result = [];
     for (const { date } of dates) {
-      const value = this.getFeature(symbol, featureName, date);
+      const value = await this.getFeature(symbol, featureName, date);
       result.push({ date, value });
     }
 
@@ -249,9 +202,9 @@ class FeatureStore {
    * @param {string} startDate - Start date
    * @param {string} endDate - End date
    * @param {object} options - Additional options
-   * @returns {object} { features: [], target: [], dates: [], symbols: [] }
+   * @returns {Promise<object>} { features: [], target: [], dates: [], symbols: [] }
    */
-  getMLMatrix(symbols, featureNames, startDate, endDate, options = {}) {
+  async getMLMatrix(symbols, featureNames, startDate, endDate, options = {}) {
     const {
       targetName = 'return_5d',
       targetShift = 5,  // Forward shift for target
@@ -264,14 +217,15 @@ class FeatureStore {
     const symbolsOut = [];
 
     // Get all trading dates
-    const tradingDates = db.prepare(`
+    const tradingDatesRows = await this._query(`
       SELECT DISTINCT date FROM daily_prices
       WHERE date >= ? AND date <= ?
       ORDER BY date
-    `).all(startDate, endDate).map(r => r.date);
+    `, [startDate, endDate]);
+    const tradingDates = tradingDatesRows.map(r => r.date);
 
     for (const symbol of symbols) {
-      const company = this._getCompanyId.get(symbol);
+      const company = await this._queryOne('SELECT id FROM companies WHERE symbol = ?', [symbol]);
       if (!company) continue;
 
       for (let i = 0; i < tradingDates.length - targetShift; i++) {
@@ -283,7 +237,7 @@ class FeatureStore {
         let hasNa = false;
 
         for (const featureName of featureNames) {
-          const value = this.getFeature(symbol, featureName, date);
+          const value = await this.getFeature(symbol, featureName, date);
           if (value === null || value === undefined || isNaN(value)) {
             hasNa = true;
             if (dropNa) break;
@@ -294,7 +248,7 @@ class FeatureStore {
         if (dropNa && hasNa) continue;
 
         // Get forward return as target
-        const targetValue = this._getForwardReturn(company.id, date, targetShift);
+        const targetValue = await this._getForwardReturn(company.id, date, targetShift);
         if (targetValue === null && dropNa) continue;
 
         features.push(featureRow);
@@ -316,15 +270,31 @@ class FeatureStore {
   /**
    * Get price feature value
    */
-  _getPriceFeature(companyId, featureName, asOfDate, feature) {
+  async _getPriceFeature(companyId, featureName, asOfDate, feature) {
+    const priceSql = `
+      SELECT
+        company_id,
+        date,
+        open,
+        high,
+        low,
+        close,
+        COALESCE(adjusted_close, close) as adjusted_close,
+        volume
+      FROM daily_prices
+      WHERE company_id = ? AND date <= ?
+      ORDER BY date DESC
+      LIMIT ?
+    `;
+
     // For simple price columns
     if (feature.sourceColumn) {
-      const row = this._getPriceFeatures.get(companyId, asOfDate, 1);
+      const row = await this._queryOne(priceSql, [companyId, asOfDate, 1]);
       return row ? row[feature.sourceColumn] : null;
     }
 
     // For derived features, we need multiple rows
-    const rows = this._getPriceFeatures.all(companyId, asOfDate, 252); // 1 year of data
+    const rows = await this._query(priceSql, [companyId, asOfDate, 252]); // 1 year of data
     if (!rows || rows.length === 0) return null;
 
     switch (featureName) {
@@ -362,9 +332,16 @@ class FeatureStore {
   /**
    * Get technical feature value
    */
-  _getTechnicalFeature(companyId, featureName, asOfDate, feature) {
-    // Get price history for calculation
-    const rows = this._getPriceFeatures.all(companyId, asOfDate, 252);
+  async _getTechnicalFeature(companyId, featureName, asOfDate, feature) {
+    const priceSql = `
+      SELECT company_id, date, open, high, low, close,
+             COALESCE(adjusted_close, close) as adjusted_close, volume
+      FROM daily_prices
+      WHERE company_id = ? AND date <= ?
+      ORDER BY date DESC
+      LIMIT ?
+    `;
+    const rows = await this._query(priceSql, [companyId, asOfDate, 252]);
     if (!rows || rows.length === 0) return null;
 
     const closes = rows.map(r => r.close).reverse(); // Oldest first
@@ -410,8 +387,14 @@ class FeatureStore {
   /**
    * Get fundamental feature value
    */
-  _getFundamentalFeature(companyId, featureName, asOfDate, feature) {
-    const row = this._getFundamentalFeatures.get(companyId, asOfDate);
+  async _getFundamentalFeature(companyId, featureName, asOfDate, feature) {
+    const row = await this._queryOne(`
+      SELECT cm.*, cm.fiscal_period as data_date
+      FROM calculated_metrics cm
+      WHERE cm.company_id = ? AND cm.fiscal_period <= ?
+      ORDER BY cm.fiscal_period DESC
+      LIMIT 1
+    `, [companyId, asOfDate]);
     if (!row) return null;
 
     // Map feature names to column names
@@ -437,8 +420,14 @@ class FeatureStore {
   /**
    * Get factor feature value
    */
-  _getFactorFeature(companyId, featureName, asOfDate, feature) {
-    const row = this._getFactorFeatures.get(companyId, asOfDate);
+  async _getFactorFeature(companyId, featureName, asOfDate, feature) {
+    const row = await this._queryOne(`
+      SELECT *
+      FROM stock_factor_scores
+      WHERE company_id = ? AND score_date <= ?
+      ORDER BY score_date DESC
+      LIMIT 1
+    `, [companyId, asOfDate]);
     if (!row) return null;
 
     const columnMap = {
@@ -458,8 +447,14 @@ class FeatureStore {
   /**
    * Get sentiment feature value
    */
-  _getSentimentFeature(companyId, featureName, asOfDate, feature) {
-    const row = this._getSentimentFeatures.get(companyId, asOfDate);
+  async _getSentimentFeature(companyId, featureName, asOfDate, feature) {
+    const row = await this._queryOne(`
+      SELECT *
+      FROM sentiment_summary
+      WHERE company_id = ? AND date(calculated_at) <= ?
+      ORDER BY calculated_at DESC
+      LIMIT 1
+    `, [companyId, asOfDate]);
     if (!row) return null;
 
     const columnMap = {
@@ -475,21 +470,16 @@ class FeatureStore {
   /**
    * Get alternative data feature value
    */
-  _getAlternativeFeature(companyId, featureName, asOfDate, feature) {
-    // These are computed on-the-fly from various sources
+  async _getAlternativeFeature(companyId, featureName, asOfDate, feature) {
     switch (featureName) {
       case 'insider_signal':
-        return this._getInsiderSignal(companyId, asOfDate);
-
+        return await this._getInsiderSignal(companyId, asOfDate);
       case 'congressional_signal':
-        return this._getCongressionalSignal(companyId, asOfDate);
-
+        return await this._getCongressionalSignal(companyId, asOfDate);
       case 'institutional_ownership':
-        return this._getInstitutionalOwnership(companyId, asOfDate);
-
+        return await this._getInstitutionalOwnership(companyId, asOfDate);
       case 'analyst_rating':
-        return this._getAnalystRating(companyId, asOfDate);
-
+        return await this._getAnalystRating(companyId, asOfDate);
       default:
         return null;
     }
@@ -498,16 +488,16 @@ class FeatureStore {
   /**
    * Get insider trading signal
    */
-  _getInsiderSignal(companyId, asOfDate) {
+  async _getInsiderSignal(companyId, asOfDate) {
     try {
-      const result = db.prepare(`
+      const result = await this._queryOne(`
         SELECT
           SUM(CASE WHEN transaction_type = 'P' THEN value ELSE 0 END) as buys,
           SUM(CASE WHEN transaction_type = 'S' THEN value ELSE 0 END) as sells
         FROM insider_trades
         WHERE company_id = ?
           AND transaction_date BETWEEN date(?, '-90 days') AND ?
-      `).get(companyId, asOfDate, asOfDate);
+      `, [companyId, asOfDate, asOfDate]);
 
       if (!result || (!result.buys && !result.sells)) return 0;
 
@@ -525,9 +515,9 @@ class FeatureStore {
   /**
    * Get congressional trading signal
    */
-  _getCongressionalSignal(companyId, asOfDate) {
+  async _getCongressionalSignal(companyId, asOfDate) {
     try {
-      const result = db.prepare(`
+      const result = await this._queryOne(`
         SELECT
           SUM(CASE WHEN transaction_type = 'purchase' THEN 1 ELSE 0 END) as buys,
           SUM(CASE WHEN transaction_type = 'sale_full' OR transaction_type = 'sale_partial' THEN 1 ELSE 0 END) as sells
@@ -535,7 +525,7 @@ class FeatureStore {
         JOIN companies c ON LOWER(ct.ticker) = LOWER(c.symbol)
         WHERE c.id = ?
           AND ct.transaction_date BETWEEN date(?, '-90 days') AND ?
-      `).get(companyId, asOfDate, asOfDate);
+      `, [companyId, asOfDate, asOfDate]);
 
       if (!result || (!result.buys && !result.sells)) return 0;
 
@@ -552,9 +542,9 @@ class FeatureStore {
   /**
    * Get institutional ownership percentage
    */
-  _getInstitutionalOwnership(companyId, asOfDate) {
+  async _getInstitutionalOwnership(companyId, asOfDate) {
     try {
-      const result = db.prepare(`
+      const result = await this._queryOne(`
         SELECT institutional_ownership
         FROM institutional_holdings ih
         JOIN companies c ON ih.company_id = c.id
@@ -562,7 +552,7 @@ class FeatureStore {
           AND ih.report_date <= ?
         ORDER BY ih.report_date DESC
         LIMIT 1
-      `).get(companyId, asOfDate);
+      `, [companyId, asOfDate]);
 
       return result?.institutional_ownership ?? null;
     } catch (e) {
@@ -574,16 +564,16 @@ class FeatureStore {
   /**
    * Get analyst rating
    */
-  _getAnalystRating(companyId, asOfDate) {
+  async _getAnalystRating(companyId, asOfDate) {
     try {
-      const result = db.prepare(`
+      const result = await this._queryOne(`
         SELECT AVG(rating) as avg_rating
         FROM analyst_estimates
         WHERE company_id = ?
           AND date <= ?
         ORDER BY date DESC
         LIMIT 1
-      `).get(companyId, asOfDate);
+      `, [companyId, asOfDate]);
 
       return result?.avg_rating ?? null;
     } catch (e) {
@@ -595,22 +585,22 @@ class FeatureStore {
   /**
    * Get forward return for target
    */
-  _getForwardReturn(companyId, date, forwardDays) {
-    const future = db.prepare(`
+  async _getForwardReturn(companyId, date, forwardDays) {
+    const future = await this._queryOne(`
       SELECT adjusted_close
       FROM daily_prices
       WHERE company_id = ? AND date > ?
       ORDER BY date
       LIMIT 1 OFFSET ?
-    `).get(companyId, date, forwardDays - 1);
+    `, [companyId, date, forwardDays - 1]);
 
-    const current = db.prepare(`
+    const current = await this._queryOne(`
       SELECT adjusted_close
       FROM daily_prices
       WHERE company_id = ? AND date <= ?
       ORDER BY date DESC
       LIMIT 1
-    `).get(companyId, date);
+    `, [companyId, date]);
 
     if (!future || !current || !future.adjusted_close || !current.adjusted_close) {
       return null;
@@ -770,7 +760,7 @@ class FeatureStore {
     for (const date of dates) {
       for (const symbol of symbols) {
         for (const featureName of featureNames) {
-          this.getFeature(symbol, featureName, date);
+          await this.getFeature(symbol, featureName, date);
           count++;
         }
       }
