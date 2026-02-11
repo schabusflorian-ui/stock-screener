@@ -1942,8 +1942,14 @@ router.get('/movers', async (req, res) => {
  */
 router.get('/:symbol/analyst', async (req, res) => {
   try {
-    if (!analystEstimatesFetcher) {
-      return res.status(503).json({ error: 'Analyst estimates service unavailable' });
+    // Initialize services if needed
+    const services = await getSentimentServices();
+    
+    if (!services.analystEstimatesFetcher) {
+      return res.status(503).json({ 
+        error: 'Analyst estimates service unavailable',
+        details: 'Service failed to initialize'
+      });
     }
 
     const { symbol } = req.params;
@@ -1964,10 +1970,10 @@ router.get('/:symbol/analyst', async (req, res) => {
 
     if (refresh === 'true') {
       // Force fresh fetch
-      data = await analystEstimatesFetcher.fetchAndStore(symbol.toUpperCase(), company.id);
+      data = await services.analystEstimatesFetcher.fetchAndStore(symbol.toUpperCase(), company.id);
     } else {
       // Get cached or fetch if stale (60 minutes)
-      data = await analystEstimatesFetcher.getAnalystData(symbol.toUpperCase(), company.id, 60);
+      data = await services.analystEstimatesFetcher.getAnalystData(symbol.toUpperCase(), company.id, 60);
     }
 
     if (!data) {
