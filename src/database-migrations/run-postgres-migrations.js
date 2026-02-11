@@ -19,6 +19,7 @@ const POSTGRES_MIGRATIONS = [
   '000-postgres-base-schema.js',
   '001-add-all-missing-tables.js',
   '002-add-historical-intelligence-tables.js',
+  '003-add-quant-lab-factor-tables.js',
   'add-postgres-alert-system.js',
   'add-dividend-metrics.js',
   'add-price-metrics.js',

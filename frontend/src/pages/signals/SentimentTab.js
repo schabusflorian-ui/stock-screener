@@ -42,16 +42,23 @@ function SentimentTab() {
   const [lastRefreshed, setLastRefreshed] = useState(null);
   const [divergences, setDivergences] = useState([]);
 
-  // Stats derived from trending data
-  const stats = useMemo(() => ({
-    totalMentions: trending.reduce((sum, t) => sum + (t.mentionCount || 0), 0),
-    totalPosts: trending.reduce((sum, t) => sum + (t.uniquePosts || 0), 0),
-    avgSentiment: trending.length > 0
-      ? trending.reduce((sum, t) => sum + (t.avgSentiment || 0), 0) / trending.length
-      : 0,
-    bullishCount: trending.filter(t => (t.avgSentiment || 0) > 0.05).length,
-    bearishCount: trending.filter(t => (t.avgSentiment || 0) < -0.05).length
-  }), [trending]);
+  // Stats derived from trending data (coerce to number; API may return strings from Postgres)
+  const stats = useMemo(() => {
+    const toNum = (v) => (v != null && v !== '' ? Number(v) : 0);
+    const totalMentions = trending.reduce((sum, t) => sum + toNum(t.mentionCount), 0);
+    const totalPosts = trending.reduce((sum, t) => sum + toNum(t.uniquePosts), 0);
+    const avgSentiment =
+      trending.length > 0
+        ? trending.reduce((sum, t) => sum + toNum(t.avgSentiment), 0) / trending.length
+        : 0;
+    return {
+      totalMentions,
+      totalPosts,
+      avgSentiment,
+      bullishCount: trending.filter((t) => toNum(t.avgSentiment) > 0.05).length,
+      bearishCount: trending.filter((t) => toNum(t.avgSentiment) < -0.05).length
+    };
+  }, [trending]);
 
   // Load trending data
   const loadTrending = useCallback(async (forceRefresh = false) => {

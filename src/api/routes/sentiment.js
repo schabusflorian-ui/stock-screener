@@ -210,7 +210,12 @@ router.get('/trending', async (req, res) => {
     const { period = '24h', limit = 20, refresh = 'false', region = 'US' } = req.query;
 
     if (refresh === 'true') {
-      await services.redditFetcher.scanTrendingTickers({ region });
+      try {
+        await services.redditFetcher.scanTrendingTickers({ region });
+      } catch (refreshErr) {
+        console.warn('Trending refresh failed, returning cached:', refreshErr?.message);
+        // Continue to return cached data from DB instead of 500
+      }
     }
 
     // Use region-specific period key for EU
@@ -246,7 +251,8 @@ router.get('/trending', async (req, res) => {
     res.json({ trending: transformed });
   } catch (error) {
     console.error('Trending API error:', error);
-    res.status(500).json({ error: error.message });
+    // Return empty so Sentiment tab doesn't show 500 (e.g. trending_tickers missing)
+    res.json({ trending: [] });
   }
 });
 

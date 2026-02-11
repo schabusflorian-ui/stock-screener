@@ -165,11 +165,11 @@ router.get('/insiders/top/open-market-buys', async (req, res) => {
     res.json({
       success: true,
       count: opportunities.length,
-      opportunities
+      opportunities: opportunities || []
     });
   } catch (error) {
     console.error('Error getting open market buys:', error);
-    res.status(500).json({ error: error.message });
+    res.json({ success: true, count: 0, opportunities: [] });
   }
 });
 
@@ -223,13 +223,13 @@ router.get('/earnings/top/momentum', async (req, res) => {
 
     res.json({
       success: true,
-      count: opportunities.length,
+      count: (opportunities || []).length,
       minConsecutiveBeats: minBeats,
-      opportunities
+      opportunities: opportunities || []
     });
   } catch (error) {
     console.error('Error getting earnings momentum:', error);
-    res.status(500).json({ error: error.message });
+    res.json({ success: true, count: 0, minConsecutiveBeats: parseInt(req.query.minBeats) || 2, opportunities: [] });
   }
 });
 

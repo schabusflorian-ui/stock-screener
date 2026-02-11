@@ -7,6 +7,7 @@ const { getFactorAnalysisService } = require('../../services/factors');
 const { requireAuth } = require('../../middleware/auth');
 const { requireFeature } = require('../../middleware/subscription');
 const { MemoryCache } = require('../../lib/cache');
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 
 // Cache for factor-related data
 const factorCache = new MemoryCache({
@@ -29,9 +30,8 @@ let factorRepository, customFactorCalculator, icAnalysis;
 function getFactorRepository() {
   if (!factorRepository) {
     try {
-      const db = require('../../database').db;
       FactorRepository = require('../../services/factors/factorRepository');
-      factorRepository = new FactorRepository(db);
+      factorRepository = new FactorRepository();
     } catch (err) {
       console.warn('Factor repository not available:', err.message);
       return null;
@@ -43,9 +43,8 @@ function getFactorRepository() {
 function getCustomFactorCalculator() {
   if (!customFactorCalculator) {
     try {
-      const db = require('../../database').db;
       CustomFactorCalculator = require('../../services/factors/customFactorCalculator');
-      customFactorCalculator = new CustomFactorCalculator(db);
+      customFactorCalculator = new CustomFactorCalculator();
     } catch (err) {
       console.warn('Custom factor calculator not available:', err.message);
       return null;
@@ -1287,15 +1286,14 @@ router.post('/ic-analysis', requireAuth, async (req, res) => {
       return sendValidationError(res, 'Factor calculation returned no values. Check if universe has valid data.');
     }
 
-    // Get price data for IC calculation
-    const db = require('../../database').db;
-
     // Get company IDs for the factor values
     const companyIds = factorResult.values.map(v => v.company_id).filter(Boolean);
     if (companyIds.length === 0) {
       return sendValidationError(res, 'No valid company IDs found in factor results');
     }
-    const placeholders = companyIds.map(() => '?').join(',');
+
+    const database = await getDatabaseAsync();
+    const usePostgres = isUsingPostgres();
 
     // Get forward returns for each horizon
     const icByHorizon = {};
@@ -1303,21 +1301,46 @@ router.post('/ic-analysis', requireAuth, async (req, res) => {
     let icIR = 0;
 
     for (const horizon of sortedHorizons) {
-      // Get returns for this horizon - join prices with factor values
-      const returnData = await db.prepare(`
-        SELECT c.id as company_id, c.symbol,
-               (p2.adjusted_close - p1.adjusted_close) / p1.adjusted_close * 100 as forward_return
-        FROM companies c
-        JOIN daily_prices p1 ON c.id = p1.company_id
-        JOIN daily_prices p2 ON c.id = p2.company_id
-        WHERE c.id IN (${placeholders})
-          AND p1.date = (SELECT MAX(date) FROM daily_prices WHERE company_id = c.id AND date <= ?)
-          AND p2.date = (
-            SELECT MIN(date) FROM daily_prices
-            WHERE company_id = c.id
-              AND date > date((SELECT MAX(date) FROM daily_prices WHERE company_id = c.id AND date <= ?), '+' || ? || ' days')
-          )
-      `).all(...companyIds, asOfDate, asOfDate, horizon);
+      let returnResult;
+      if (usePostgres) {
+        returnResult = await database.query(`
+          SELECT c.id as company_id, c.symbol,
+                 (p2.adjusted_close - p1.adjusted_close) / p1.adjusted_close * 100 as forward_return
+          FROM companies c
+          JOIN daily_prices p1 ON c.id = p1.company_id
+          JOIN daily_prices p2 ON c.id = p2.company_id
+          WHERE c.id = ANY($1)
+            AND p1.date = (SELECT MAX(date) FROM daily_prices WHERE company_id = c.id AND date <= $2)
+            AND p2.date = (
+              SELECT MIN(date) FROM daily_prices
+              WHERE company_id = c.id
+                AND date > (SELECT MAX(date) FROM daily_prices WHERE company_id = c.id AND date <= $2) + ($3 * INTERVAL '1 day')
+            )
+            AND p1.adjusted_close > 0
+            AND p2.adjusted_close > 0
+        `, [companyIds, asOfDate, horizon]);
+      } else {
+        const placeholders = companyIds.map((_, i) => `$${i + 1}`).join(',');
+        const pAsOf = companyIds.length + 1;
+        const pHorizon = companyIds.length + 2;
+        returnResult = await database.query(`
+          SELECT c.id as company_id, c.symbol,
+                 (p2.adjusted_close - p1.adjusted_close) / p1.adjusted_close * 100 as forward_return
+          FROM companies c
+          JOIN daily_prices p1 ON c.id = p1.company_id
+          JOIN daily_prices p2 ON c.id = p2.company_id
+          WHERE c.id IN (${placeholders})
+            AND p1.date = (SELECT MAX(date) FROM daily_prices WHERE company_id = c.id AND date <= $${pAsOf})
+            AND p2.date = (
+              SELECT MIN(date) FROM daily_prices
+              WHERE company_id = c.id
+                AND date > date((SELECT MAX(date) FROM daily_prices WHERE company_id = c.id AND date <= $${pAsOf}), '+' || $${pHorizon} || ' days')
+            )
+            AND p1.adjusted_close > 0
+            AND p2.adjusted_close > 0
+        `, [...companyIds, asOfDate, horizon]);
+      }
+      const returnData = returnResult.rows;
 
       // Calculate Spearman correlation if we have enough data
       if (returnData.length > 10) {
@@ -1454,13 +1477,14 @@ router.post('/correlation', requireAuth, async (req, res) => {
       return sendValidationError(res, 'No factor values could be calculated');
     }
 
-    // Get standard factor scores for the same stocks
-    const db = require('../../database').db;
-    const standardScores = await db.prepare(`
+    const scoreDate = asOfDate || new Date().toISOString().split('T')[0];
+    const database = await getDatabaseAsync();
+    const standardScoresResult = await database.query(`
       SELECT symbol, value_score, quality_score, momentum_score, growth_score, size_score, volatility_score
       FROM stock_factor_scores
-      WHERE score_date = (SELECT MAX(score_date) FROM stock_factor_scores WHERE score_date <= ?)
-    `).all(asOfDate || new Date().toISOString().split('T')[0]);
+      WHERE score_date = (SELECT MAX(score_date) FROM stock_factor_scores WHERE score_date <= $1)
+    `, [scoreDate]);
+    const standardScores = standardScoresResult.rows;
 
     // Create lookup
     const standardLookup = {};
@@ -2246,10 +2270,10 @@ router.post('/walk-forward', requireAuth, async (req, res) => {
       horizon: config.horizon || 21
     };
 
-    // Run walk-forward analysis
+    const database = await getDatabaseAsync();
     const FactorWalkForwardAdapter = require('../../services/factors/factorWalkForwardAdapter');
     const icAnalysis = require('../../services/backtesting/icAnalysis');
-    const adapter = new FactorWalkForwardAdapter(require('../../database').db, calc, icAnalysis);
+    const adapter = new FactorWalkForwardAdapter(database, calc, icAnalysis);
 
     const results = await adapter.runWalkForward(factorId, formula.trim(), wfConfig);
 
@@ -2353,9 +2377,9 @@ router.post('/backtest', requireAuth, async (req, res) => {
       transactionCost: config.transactionCost || 0.001
     };
 
-    // Run backtest
+    const database = await getDatabaseAsync();
     const FactorBacktestAdapter = require('../../services/factors/factorBacktestAdapter');
-    const adapter = new FactorBacktestAdapter(require('../../database').db, calc);
+    const adapter = new FactorBacktestAdapter(database, calc);
     const results = await adapter.runFactorBacktest(factorId, formula.trim(), backtestConfig);
 
     res.json({
@@ -2376,25 +2400,24 @@ router.post('/backtest', requireAuth, async (req, res) => {
 // GET /api/factors/:id/backfill-status - Get backfill status for a factor
 router.get('/:id/backfill-status', async (req, res) => {
   try {
-    const db = require('../../database').db;
-    const factorId = parseInt(req.params.id);
-
-    if (isNaN(factorId)) {
+    const factorId = req.params.id;
+    if (!factorId) {
       return sendValidationError(res, 'Invalid factor ID');
     }
 
-    // Query backfill status from factor_values_cache
-    const status = await db.prepare(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         COUNT(DISTINCT company_id) as coverage_companies,
         COUNT(*) as total_values,
         MIN(date) as min_date,
         MAX(date) as max_date
       FROM factor_values_cache
-      WHERE factor_id = ?
-    `).get(factorId);
+      WHERE factor_id = $1
+    `, [factorId]);
 
-    if (!status || status.total_values === 0) {
+    const status = result.rows[0];
+    if (!status || Number(status.total_values) === 0) {
       return sendNotFoundError(res, 'No backfill data found for this factor');
     }
 
@@ -2499,12 +2522,12 @@ router.post('/:id/clear-cache', requireAuth, async (req, res) => {
       return sendServiceUnavailable(res, 'Factor repository not available');
     }
 
-    const db = require('../../database').db;
-    const result = await db.prepare('DELETE FROM factor_values_cache WHERE factor_id = ?').run(id);
+    const database = await getDatabaseAsync();
+    const result = await database.query('DELETE FROM factor_values_cache WHERE factor_id = $1', [id]);
 
     return sendSuccess(res, {
       factorId: id,
-      rowsDeleted: result.changes,
+      rowsDeleted: result.rowCount ?? 0,
       clearedAt: new Date().toISOString()
     });
   } catch (error) {
@@ -2516,14 +2539,26 @@ router.post('/:id/clear-cache', requireAuth, async (req, res) => {
  * Get last trading day of month from actual data
  * Falls back to last weekday if no data available
  */
-async function getLastTradingDay(year, month, db) {
+async function getLastTradingDay(year, month) {
+  const database = await getDatabaseAsync();
+  const monthStr = `${year}-${String(month).padStart(2, '0')}`;
   try {
-    // Try to get actual last trading day from factor scores
-    const lastDay = await db.prepare(`
-      SELECT MAX(score_date) as last_date
-      FROM stock_factor_scores
-      WHERE strftime('%Y-%m', score_date) = ?
-    `).get(`${year}-${String(month).padStart(2, '0')}`);
+    let lastDay;
+    if (isUsingPostgres()) {
+      const result = await database.query(`
+        SELECT MAX(score_date) as last_date
+        FROM stock_factor_scores
+        WHERE TO_CHAR(score_date, 'YYYY-MM') = $1
+      `, [monthStr]);
+      lastDay = result.rows[0];
+    } else {
+      const result = await database.query(`
+        SELECT MAX(score_date) as last_date
+        FROM stock_factor_scores
+        WHERE strftime('%Y-%m', score_date) = $1
+      `, [monthStr]);
+      lastDay = result.rows[0];
+    }
 
     if (lastDay?.last_date) {
       return lastDay.last_date;
@@ -2553,7 +2588,6 @@ async function generateDateList(startDate, endDate, frequency) {
   const dates = [];
   const start = new Date(startDate);
   const end = new Date(endDate);
-  const db = require('../../database').db;
 
   let current = new Date(start);
 
@@ -2590,7 +2624,7 @@ async function generateDateList(startDate, endDate, frequency) {
       // Use last trading day of month
       const year = current.getFullYear();
       const month = current.getMonth() + 1;
-      const lastTradingDay = await getLastTradingDay(year, month, db);
+      const lastTradingDay = await getLastTradingDay(year, month);
       dates.push(lastTradingDay);
       current.setMonth(current.getMonth() + 1);
 
@@ -2599,7 +2633,7 @@ async function generateDateList(startDate, endDate, frequency) {
       const year = current.getFullYear();
       const month = current.getMonth() + 1;
       const quarterEndMonth = Math.ceil(month / 3) * 3; // 3, 6, 9, 12
-      const lastTradingDay = await getLastTradingDay(year, quarterEndMonth, db);
+      const lastTradingDay = await getLastTradingDay(year, quarterEndMonth);
       dates.push(lastTradingDay);
 
       // Move to next quarter

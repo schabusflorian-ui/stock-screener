@@ -1,6 +1,8 @@
 // src/services/factors/factorWalkForwardAdapter.js
 // Walk-Forward Validation for Custom Factors using IC Analysis
 
+const { isUsingPostgres } = require('../../lib/db');
+
 /**
  * FactorWalkForwardAdapter
  *
@@ -21,6 +23,7 @@ class FactorWalkForwardAdapter {
     this.db = db;
     this.calculator = customFactorCalculator;
     this.icAnalysis = icAnalysis;
+    this.usePostgres = isUsingPostgres();
   }
 
   /**
@@ -197,30 +200,56 @@ class FactorWalkForwardAdapter {
       return [];
     }
 
-    // Build placeholders for SQL IN clause
     const placeholders = companyIds.map((_, i) => `$${i + 1}`).join(',');
+    const n = companyIds.length;
+    const pAsOf = n + 1;
+    const pHorizon = n + 2;
 
-    const query = `
-      SELECT
-        c.id as company_id,
-        (p2.adjusted_close - p1.adjusted_close) / p1.adjusted_close * 100 as forward_return
-      FROM companies c
-      JOIN daily_prices p1 ON c.id = p1.company_id
-      JOIN daily_prices p2 ON c.id = p2.company_id
-      WHERE c.id IN (${placeholders})
-        AND p1.date = (SELECT MAX(date) FROM daily_prices WHERE company_id = c.id AND date <= $${companyIds.length + 1})
-        AND p2.date = (
-          SELECT MIN(date) FROM daily_prices
-          WHERE company_id = c.id
-            AND date > (SELECT MAX(date) FROM daily_prices WHERE company_id = c.id AND date <= $${companyIds.length + 2})
-              + INTERVAL '1 day' * $${companyIds.length + 3}
-        )
-        AND p1.adjusted_close > 0
-        AND p2.adjusted_close > 0
-    `;
+    let query;
+    let params;
+    if (this.usePostgres) {
+      query = `
+        SELECT
+          c.id as company_id,
+          (p2.adjusted_close - p1.adjusted_close) / p1.adjusted_close * 100 as forward_return
+        FROM companies c
+        JOIN daily_prices p1 ON c.id = p1.company_id
+        JOIN daily_prices p2 ON c.id = p2.company_id
+        WHERE c.id IN (${placeholders})
+          AND p1.date = (SELECT MAX(date) FROM daily_prices WHERE company_id = c.id AND date <= $${pAsOf})
+          AND p2.date = (
+            SELECT MIN(date) FROM daily_prices
+            WHERE company_id = c.id
+              AND date > (SELECT MAX(date) FROM daily_prices WHERE company_id = c.id AND date <= $${pAsOf})
+                + INTERVAL '1 day' * $${pHorizon}
+          )
+          AND p1.adjusted_close > 0
+          AND p2.adjusted_close > 0
+      `;
+      params = [...companyIds, asOfDate, horizon];
+    } else {
+      query = `
+        SELECT
+          c.id as company_id,
+          (p2.adjusted_close - p1.adjusted_close) / p1.adjusted_close * 100 as forward_return
+        FROM companies c
+        JOIN daily_prices p1 ON c.id = p1.company_id
+        JOIN daily_prices p2 ON c.id = p2.company_id
+        WHERE c.id IN (${placeholders})
+          AND p1.date = (SELECT MAX(date) FROM daily_prices WHERE company_id = c.id AND date <= $${pAsOf})
+          AND p2.date = (
+            SELECT MIN(date) FROM daily_prices
+            WHERE company_id = c.id
+              AND date > date((SELECT MAX(date) FROM daily_prices WHERE company_id = c.id AND date <= $${pAsOf}), '+' || $${pHorizon} || ' days')
+          )
+          AND p1.adjusted_close > 0
+          AND p2.adjusted_close > 0
+      `;
+      params = [...companyIds, asOfDate, horizon];
+    }
 
     try {
-      const result = await this.db.query(query, [...companyIds, asOfDate, asOfDate, horizon]);
+      const result = await this.db.query(query, params);
       return result.rows;
     } catch (err) {
       console.error('Error getting forward returns:', err.message);
@@ -256,13 +285,24 @@ class FactorWalkForwardAdapter {
    * Get month-end trading dates in a range
    */
   async getMonthEndDates(startDate, endDate) {
-    const query = `
-      SELECT DISTINCT ON (TO_CHAR(date, 'YYYY-MM')) date
-      FROM daily_prices
-      WHERE date >= $1 AND date <= $2
-        AND EXTRACT(DAY FROM date) >= 25  -- Last week of month
-      ORDER BY TO_CHAR(date, 'YYYY-MM'), date DESC
-    `;
+    let query;
+    if (this.usePostgres) {
+      query = `
+        SELECT DISTINCT ON (TO_CHAR(date, 'YYYY-MM')) date
+        FROM daily_prices
+        WHERE date >= $1 AND date <= $2
+          AND EXTRACT(DAY FROM date) >= 25
+        ORDER BY TO_CHAR(date, 'YYYY-MM'), date DESC
+      `;
+    } else {
+      query = `
+        SELECT MAX(date) as date
+        FROM daily_prices
+        WHERE date >= $1 AND date <= $2
+        GROUP BY strftime('%Y-%m', date)
+        ORDER BY date ASC
+      `;
+    }
 
     try {
       const result = await this.db.query(query, [startDate, endDate]);

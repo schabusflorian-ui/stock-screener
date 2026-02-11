@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import { Loader, AlertTriangle, Check, Info, TrendingUp, TrendingDown, FileText } from '../../icons';
-import { factorsAPI } from '../../../services/api';
+import api, { factorsAPI } from '../../../services/api';
 
 // Default available metrics (fallback when API returns empty)
 const DEFAULT_METRICS = {
@@ -203,15 +203,10 @@ export default function FactorFormulaBuilder({ onFactorCreated, onRunFullAnalysi
 
     const timer = setTimeout(async () => {
       try {
-        const response = await fetch('/api/factors/validate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ formula })
-        });
-        const data = await response.json();
-        setValidation(data.data);
+        const response = await api.post('/factors/validate', { formula });
+        setValidation(response.data?.data);
       } catch (err) {
-        setValidation({ valid: false, error: err.message });
+        setValidation({ valid: false, error: err?.message || 'Validation failed' });
       }
     }, 500);
 
@@ -227,23 +222,18 @@ export default function FactorFormulaBuilder({ onFactorCreated, onRunFullAnalysi
     setPreview(null);
 
     try {
-      const response = await fetch('/api/factors/preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          formula,
-          sampleSize: 30
-        })
+      const response = await api.post('/factors/preview', {
+        formula,
+        sampleSize: 30
       });
-      const data = await response.json();
 
-      if (!data.success) {
-        throw new Error(data.error || 'Preview failed');
+      if (!response.data?.success) {
+        throw new Error(response.data?.error || 'Preview failed');
       }
 
-      setPreview(data.data);
+      setPreview(response.data.data);
     } catch (err) {
-      setError(err.message);
+      setError(err?.message);
     } finally {
       setLoading(false);
     }
@@ -257,24 +247,19 @@ export default function FactorFormulaBuilder({ onFactorCreated, onRunFullAnalysi
     setError(null);
 
     try {
-      const response = await fetch('/api/factors/define', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          formula,
-          description,
-          higherIsBetter,
-          transformations
-        })
+      const response = await api.post('/factors/define', {
+        name,
+        formula,
+        description,
+        higherIsBetter,
+        transformations
       });
-      const data = await response.json();
 
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to save factor');
+      if (!response.data?.success) {
+        throw new Error(response.data?.error || 'Failed to save factor');
       }
 
-      onFactorCreated?.(data.data);
+      onFactorCreated?.(response.data.data);
 
       // Reset form
       setName('');

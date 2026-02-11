@@ -529,14 +529,53 @@ function _getFactorInterpretation(factor, performance) {
 }
 
 /**
+ * POST /api/historical/backfill-decision-company-ids
+ * Set company_id on investment_decisions where symbol matches companies.symbol and company_id is null.
+ */
+router.post('/backfill-decision-company-ids', async (req, res) => {
+  try {
+    const database = await getDatabaseAsync();
+    const r = await database.query(`
+      UPDATE investment_decisions d
+      SET company_id = c.id, updated_at = NOW()
+      FROM companies c
+      WHERE d.symbol = c.symbol AND d.company_id IS NULL
+    `);
+    const updated = r.rowCount ?? 0;
+    res.json({ success: true, updated });
+  } catch (err) {
+    console.error('Error backfilling decision company_id:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * POST /api/historical/calculate-outcomes
- * Calculate outcomes for decisions that have enough history
+ * Calculate outcomes for decisions that have enough history (populates return_1y, alpha_1y, etc.).
+ * Supports both SQLite and Postgres (OutcomeCalculator uses getDatabaseAsync and db.query when on Postgres).
+ * Optionally runs backfill of company_id from symbol first.
  */
 router.post('/calculate-outcomes', async (req, res) => {
   try {
-    const { limit = 1000, minDaysOld = 365 } = req.body;
+    const { limit = 1000, minDaysOld = 365, backfillCompanyIds = true } = req.body;
     const { getHistoricalIntelligence } = require('../../services/historical');
     const his = getHistoricalIntelligence();
+
+    let backfillResult = { updated: 0 };
+    if (backfillCompanyIds) {
+      try {
+        const database = await getDatabaseAsync();
+        const r = await database.query(`
+          UPDATE investment_decisions d
+          SET company_id = c.id, updated_at = NOW()
+          FROM companies c
+          WHERE d.symbol = c.symbol AND d.company_id IS NULL
+        `);
+        backfillResult.updated = r.rowCount ?? 0;
+      } catch (e) {
+        console.warn('Backfill company_id (non-fatal):', e.message);
+      }
+    }
 
     const result = await his.calculateAllOutcomes({
       limit: parseInt(limit),
@@ -546,6 +585,7 @@ router.post('/calculate-outcomes', async (req, res) => {
 
     res.json({
       success: true,
+      backfillCompanyIds: backfillResult.updated,
       ...result
     });
   } catch (err) {

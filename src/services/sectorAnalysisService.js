@@ -484,7 +484,8 @@ class SectorAnalysisService {
   }
 
   /**
-   * Compare margins across industries
+   * Compare margins and profitability across industries (used by Industries table).
+   * Includes ROIC, P/E, and other ratio metrics so the Industries tab can show them.
    */
   async getIndustryMarginComparison(periodType = 'annual') {
     const database = await getDatabaseAsync();
@@ -511,6 +512,15 @@ class SectorAnalysisService {
         industry,
         COUNT(DISTINCT symbol) as company_count,
 
+        -- Profitability (bounded to exclude outliers)
+        ROUND(AVG(CASE WHEN roic BETWEEN -50 AND 200 THEN roic END)::numeric, 2) as avg_roic,
+        ROUND(AVG(CASE WHEN roe BETWEEN -50 AND 200 THEN roe END)::numeric, 2) as avg_roe,
+
+        -- Valuation
+        ROUND(AVG(CASE WHEN pe_ratio BETWEEN 0 AND 500 THEN pe_ratio END)::numeric, 2) as avg_pe_ratio,
+        ROUND(AVG(CASE WHEN pb_ratio BETWEEN 0 AND 50 THEN pb_ratio END)::numeric, 2) as avg_pb_ratio,
+        ROUND(AVG(CASE WHEN debt_to_equity BETWEEN 0 AND 10 THEN debt_to_equity END)::numeric, 2) as avg_debt_to_equity,
+
         -- Margin metrics (bounded to exclude extreme outliers)
         ROUND(AVG(CASE WHEN gross_margin BETWEEN -100 AND 100 THEN gross_margin END)::numeric, 2) as avg_gross_margin,
         ROUND(MIN(CASE WHEN gross_margin BETWEEN -100 AND 100 THEN gross_margin END)::numeric, 2) as min_gross_margin,
@@ -524,7 +534,10 @@ class SectorAnalysisService {
         ROUND(MIN(CASE WHEN net_margin BETWEEN -100 AND 100 THEN net_margin END)::numeric, 2) as min_net_margin,
         ROUND(MAX(CASE WHEN net_margin BETWEEN -100 AND 100 THEN net_margin END)::numeric, 2) as max_net_margin,
 
-        ROUND(AVG(CASE WHEN fcf_margin BETWEEN -100 AND 100 THEN fcf_margin END)::numeric, 2) as avg_fcf_margin
+        ROUND(AVG(CASE WHEN fcf_margin BETWEEN -100 AND 100 THEN fcf_margin END)::numeric, 2) as avg_fcf_margin,
+
+        -- Growth (for optional columns)
+        ROUND(AVG(CASE WHEN revenue_growth_yoy BETWEEN -100 AND 500 THEN revenue_growth_yoy END)::numeric, 2) as avg_revenue_growth
 
       FROM latest_metrics
       GROUP BY sector, industry

@@ -349,26 +349,28 @@ class SignalEnhancements {
   async getTopOpenMarketBuys(limit = 30) {
     const database = await getDatabaseAsync();
 
+    // Postgres: insider name/title come from insiders table via insider_id
     const result = await database.query(`
       SELECT
         c.symbol,
         c.name as company_name,
-        it.insider_name,
-        it.insider_title,
+        i.name as insider_name,
+        i.title as insider_title,
         it.total_value,
         it.shares_transacted,
         it.price_per_share,
         it.transaction_date
       FROM insider_transactions it
       JOIN companies c ON it.company_id = c.id
+      LEFT JOIN insiders i ON it.insider_id = i.id
       WHERE it.transaction_code = 'P'
         AND it.acquisition_disposition = 'A'
         AND it.transaction_date >= CURRENT_DATE - INTERVAL '90 days'
-      ORDER BY it.total_value DESC
+      ORDER BY it.total_value DESC NULLS LAST
       LIMIT $1
     `, [limit]);
 
-    return result.rows;
+    return result.rows || [];
   }
 
   // ========================================
@@ -382,15 +384,21 @@ class SignalEnhancements {
   async getEarningsMomentumSignal(companyId) {
     const database = await getDatabaseAsync();
 
-    const result = await database.query(`
-      SELECT
-        consecutive_beats,
-        beat_rate,
-        avg_surprise,
-        history_json
-      FROM earnings_momentum
-      WHERE company_id = $1
-    `, [companyId]);
+    let result;
+    try {
+      result = await database.query(`
+        SELECT
+          consecutive_beats,
+          beat_rate,
+          avg_surprise,
+          history_json
+        FROM earnings_momentum
+        WHERE company_id = $1
+      `, [companyId]);
+    } catch (e) {
+      // Table may not exist on Postgres
+      return { score: 0, confidence: 0, details: { noData: true } };
+    }
 
     const earnings = result.rows[0];
 
@@ -483,22 +491,26 @@ class SignalEnhancements {
   async getEarningsMomentumOpportunities(minBeats = 3, limit = 30) {
     const database = await getDatabaseAsync();
 
-    const result = await database.query(`
-      SELECT
-        c.symbol,
-        c.name as company_name,
-        em.consecutive_beats,
-        em.beat_rate,
-        em.avg_surprise,
-        em.last_earnings_date
-      FROM earnings_momentum em
-      JOIN companies c ON em.company_id = c.id
-      WHERE em.consecutive_beats >= $1
-      ORDER BY em.consecutive_beats DESC, em.avg_surprise DESC
-      LIMIT $2
-    `, [minBeats, limit]);
-
-    return result.rows;
+    try {
+      const result = await database.query(`
+        SELECT
+          c.symbol,
+          c.name as company_name,
+          em.consecutive_beats,
+          em.beat_rate,
+          em.avg_surprise,
+          em.last_earnings_date
+        FROM earnings_momentum em
+        JOIN companies c ON em.company_id = c.id
+        WHERE em.consecutive_beats >= $1
+        ORDER BY em.consecutive_beats DESC, em.avg_surprise DESC NULLS LAST
+        LIMIT $2
+      `, [minBeats, limit]);
+      return result.rows || [];
+    } catch (e) {
+      // Table may not exist on Postgres
+      return [];
+    }
   }
 
   // ========================================

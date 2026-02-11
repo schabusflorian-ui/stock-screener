@@ -1,5 +1,8 @@
 // src/services/historical/outcomeCalculator.js
 // Calculates investment outcomes for historical decisions
+// Supports both SQLite (this.db passed in) and Postgres (getDatabaseAsync when this.db not set)
+
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 
 /**
  * OutcomeCalculator
@@ -16,21 +19,44 @@ class OutcomeCalculator {
     this.db = db;
   }
 
+  async _getDb() {
+    return this.db || await getDatabaseAsync();
+  }
+
+  async _pg() {
+    const db = await this._getDb();
+    return db && db.type === 'postgres';
+  }
+
   /**
    * Calculate outcomes for a single decision
    */
   async calculateOutcome(decisionId) {
-    const decision = this.db.prepare(`
-      SELECT * FROM investment_decisions WHERE id = ?
-    `).get(decisionId);
+    const db = await this._getDb();
+    if (!db) throw new Error('Database not available');
+
+    let decision;
+    if (await this._pg()) {
+      const r = await db.query('SELECT * FROM investment_decisions WHERE id = $1', [decisionId]);
+      decision = r.rows[0];
+    } else {
+      decision = db.prepare('SELECT * FROM investment_decisions WHERE id = ?').get(decisionId);
+    }
 
     if (!decision) {
       throw new Error(`Decision not found: ${decisionId}`);
     }
 
-    if (!decision.company_id) {
-      // Can't calculate outcomes without company mapping
-      return { decisionId, calculated: false, reason: 'No company mapping' };
+    let companyId = decision.company_id;
+    if (!companyId && decision.symbol) {
+      companyId = await this._resolveCompanyIdFromSymbol(db, await this._pg(), decision.symbol);
+      if (companyId) {
+        await this._setDecisionCompanyId(db, await this._pg(), decisionId, companyId);
+        decision.company_id = companyId;
+      }
+    }
+    if (!companyId) {
+      return { decisionId, calculated: false, reason: 'No company mapping (symbol not in companies)' };
     }
 
     const decisionDate = decision.decision_date;
@@ -124,7 +150,7 @@ class OutcomeCalculator {
     }
 
     // Update the decision
-    this._updateOutcomes(decisionId, outcomes);
+    await this._updateOutcomes(decisionId, outcomes);
 
     return { decisionId, calculated: true, outcomes };
   }
@@ -135,17 +161,30 @@ class OutcomeCalculator {
   async calculateAllOutcomes(options = {}) {
     const { limit = 1000, minDaysOld = 365, verbose = false } = options;
 
+    const db = await this._getDb();
+    if (!db) throw new Error('Database not available');
+
     const cutoffDate = this._addDays(new Date().toISOString().split('T')[0], -minDaysOld);
 
-    const decisions = this.db.prepare(`
-      SELECT id, company_id, decision_date, symbol
-      FROM investment_decisions
-      WHERE company_id IS NOT NULL
-        AND decision_date <= ?
-        AND (outcome_calculated_at IS NULL OR return_1y IS NULL)
-      ORDER BY decision_date ASC
-      LIMIT ?
-    `).all(cutoffDate, limit);
+    let decisions;
+    if (await this._pg()) {
+      const r = await db.query(`
+        SELECT id, company_id, decision_date, symbol
+        FROM investment_decisions
+        WHERE (company_id IS NOT NULL OR symbol IS NOT NULL) AND decision_date <= $1
+          AND (outcome_calculated_at IS NULL OR return_1y IS NULL)
+        ORDER BY decision_date ASC LIMIT $2
+      `, [cutoffDate, limit]);
+      decisions = r.rows;
+    } else {
+      decisions = db.prepare(`
+        SELECT id, company_id, decision_date, symbol
+        FROM investment_decisions
+        WHERE (company_id IS NOT NULL OR symbol IS NOT NULL) AND decision_date <= ?
+          AND (outcome_calculated_at IS NULL OR return_1y IS NULL)
+        ORDER BY decision_date ASC LIMIT ?
+      `).all(cutoffDate, limit);
+    }
 
     if (verbose) {
       console.log(`📊 Calculating outcomes for ${decisions.length} decisions...`);
@@ -183,27 +222,38 @@ class OutcomeCalculator {
   async refreshOutcomes(options = {}) {
     const { daysOld = 30, limit = 500, verbose = false } = options;
 
+    const db = await this._getDb();
+    if (!db) throw new Error('Database not available');
+
     const cutoffDate = this._addDays(new Date().toISOString().split('T')[0], -daysOld);
 
-    // Find decisions where we might have new interval data
-    const decisions = this.db.prepare(`
-      SELECT id, decision_date
-      FROM investment_decisions
-      WHERE company_id IS NOT NULL
-        AND outcome_calculated_at < ?
-        AND (
-          -- Missing 1Y outcome but now old enough
-          (return_1y IS NULL AND decision_date <= date('now', '-365 days'))
-          OR
-          -- Missing 2Y outcome but now old enough
-          (return_2y IS NULL AND decision_date <= date('now', '-730 days'))
-          OR
-          -- Missing 3Y outcome but now old enough
-          (return_3y IS NULL AND decision_date <= date('now', '-1095 days'))
-        )
-      ORDER BY decision_date ASC
-      LIMIT ?
-    `).all(cutoffDate, limit);
+    let decisions;
+    if (await this._pg()) {
+      const r = await db.query(`
+        SELECT id, decision_date
+        FROM investment_decisions
+        WHERE company_id IS NOT NULL AND outcome_calculated_at < $1
+          AND (
+            (return_1y IS NULL AND decision_date <= (CURRENT_DATE - INTERVAL '365 days')::date)
+            OR (return_2y IS NULL AND decision_date <= (CURRENT_DATE - INTERVAL '730 days')::date)
+            OR (return_3y IS NULL AND decision_date <= (CURRENT_DATE - INTERVAL '1095 days')::date)
+          )
+        ORDER BY decision_date ASC LIMIT $2
+      `, [cutoffDate, limit]);
+      decisions = r.rows;
+    } else {
+      decisions = db.prepare(`
+        SELECT id, decision_date
+        FROM investment_decisions
+        WHERE company_id IS NOT NULL AND outcome_calculated_at < ?
+          AND (
+            (return_1y IS NULL AND decision_date <= date('now', '-365 days'))
+            OR (return_2y IS NULL AND decision_date <= date('now', '-730 days'))
+            OR (return_3y IS NULL AND decision_date <= date('now', '-1095 days'))
+          )
+        ORDER BY decision_date ASC LIMIT ?
+      `).all(cutoffDate, limit);
+    }
 
     if (verbose) {
       console.log(`📊 Refreshing outcomes for ${decisions.length} decisions...`);
@@ -449,15 +499,47 @@ class OutcomeCalculator {
   /**
    * Get stock price at a specific date
    */
-  async _getPrice(companyId, date) {
-    const result = this.db.prepare(`
-      SELECT close
-      FROM daily_prices
-      WHERE company_id = ? AND date <= ?
-      ORDER BY date DESC
-      LIMIT 1
-    `).get(companyId, date);
+  /**
+   * Resolve company_id from symbol (companies table). Used when decision has symbol but no company_id.
+   */
+  async _resolveCompanyIdFromSymbol(db, isPg, symbol) {
+    if (!symbol || !db) return null;
+    if (isPg) {
+      const r = await db.query('SELECT id FROM companies WHERE symbol = $1 LIMIT 1', [symbol]);
+      return r.rows[0]?.id ?? null;
+    }
+    const row = db.prepare('SELECT id FROM companies WHERE symbol = ? LIMIT 1').get(symbol);
+    return row?.id ?? null;
+  }
 
+  /**
+   * Persist company_id on investment_decisions when we resolved it from symbol.
+   */
+  async _setDecisionCompanyId(db, isPg, decisionId, companyId) {
+    if (!db || !decisionId || !companyId) return;
+    if (isPg) {
+      await db.query('UPDATE investment_decisions SET company_id = $1, updated_at = NOW() WHERE id = $2', [companyId, decisionId]);
+    } else {
+      db.prepare('UPDATE investment_decisions SET company_id = ?, updated_at = datetime(\'now\') WHERE id = ?').run(companyId, decisionId);
+    }
+  }
+
+  async _getPrice(companyId, date) {
+    const db = await this._getDb();
+    if (!db) return null;
+    if (await this._pg()) {
+      const r = await db.query(`
+        SELECT close FROM daily_prices
+        WHERE company_id = $1 AND date <= $2
+        ORDER BY date DESC LIMIT 1
+      `, [companyId, date]);
+      return r.rows[0]?.close ?? null;
+    }
+    const result = db.prepare(`
+      SELECT close FROM daily_prices
+      WHERE company_id = ? AND date <= ?
+      ORDER BY date DESC LIMIT 1
+    `).get(companyId, date);
     return result?.close || null;
   }
 
@@ -475,26 +557,33 @@ class OutcomeCalculator {
    * Calculate max drawdown and max gain within a period
    */
   async _calculateMaxDrawdownGain(companyId, entryPrice, startDate, endDate) {
-    const prices = this.db.prepare(`
-      SELECT date, close
-      FROM daily_prices
-      WHERE company_id = ? AND date BETWEEN ? AND ?
-      ORDER BY date
-    `).all(companyId, startDate, endDate);
-
-    if (prices.length === 0) {
-      return { maxDrawdown: null, maxGain: null };
+    const db = await this._getDb();
+    if (!db) return { maxDrawdown: null, maxGain: null };
+    let prices;
+    if (await this._pg()) {
+      const r = await db.query(`
+        SELECT date, close FROM daily_prices
+        WHERE company_id = $1 AND date BETWEEN $2 AND $3
+        ORDER BY date
+      `, [companyId, startDate, endDate]);
+      prices = r.rows;
+    } else {
+      prices = db.prepare(`
+        SELECT date, close FROM daily_prices
+        WHERE company_id = ? AND date BETWEEN ? AND ?
+        ORDER BY date
+      `).all(companyId, startDate, endDate);
     }
+
+    if (!prices.length) return { maxDrawdown: null, maxGain: null };
 
     let maxGain = 0;
     let maxDrawdown = 0;
-
     for (const price of prices) {
       const returnPct = ((price.close - entryPrice) / entryPrice) * 100;
       if (returnPct > maxGain) maxGain = returnPct;
       if (returnPct < maxDrawdown) maxDrawdown = returnPct;
     }
-
     return { maxDrawdown, maxGain };
   }
 
@@ -502,37 +591,46 @@ class OutcomeCalculator {
    * Get S&P 500 return between two dates
    */
   async _getSP500Return(startDate, endDate) {
-    // Try SPY first
-    const spy = this.db.prepare(`
-      SELECT id FROM companies WHERE symbol = 'SPY'
-    `).get();
+    const db = await this._getDb();
+    if (!db) return null;
 
+    if (await this._pg()) {
+      const spyRes = await db.query("SELECT id FROM companies WHERE symbol = 'SPY' LIMIT 1");
+      const spy = spyRes.rows[0];
+      if (spy) {
+        const startPrice = await this._getPrice(spy.id, startDate);
+        const endPrice = await this._getPrice(spy.id, endDate);
+        if (startPrice != null && endPrice != null) return ((endPrice - startPrice) / startPrice) * 100;
+      }
+      try {
+        const s = await db.query(`
+          SELECT close FROM index_prices WHERE symbol = 'SPY' AND date <= $1 ORDER BY date DESC LIMIT 1
+        `, [startDate]);
+        const e = await db.query(`
+          SELECT close FROM index_prices WHERE symbol = 'SPY' AND date <= $1 ORDER BY date DESC LIMIT 1
+        `, [endDate]);
+        const startClose = s.rows[0]?.close;
+        const endClose = e.rows[0]?.close;
+        if (startClose != null && endClose != null) return ((endClose - startClose) / startClose) * 100;
+      } catch (_) { /* index_prices may not exist */ }
+      return null;
+    }
+
+    const spy = db.prepare("SELECT id FROM companies WHERE symbol = 'SPY'").get();
     if (spy) {
       const startPrice = await this._getPrice(spy.id, startDate);
       const endPrice = await this._getPrice(spy.id, endDate);
-
-      if (startPrice && endPrice) {
-        return ((endPrice - startPrice) / startPrice) * 100;
-      }
+      if (startPrice != null && endPrice != null) return ((endPrice - startPrice) / startPrice) * 100;
     }
-
-    // Try index_prices table
-    const startPrice = this.db.prepare(`
-      SELECT close FROM index_prices
-      WHERE symbol = 'SPY' AND date <= ?
-      ORDER BY date DESC LIMIT 1
-    `).get(startDate);
-
-    const endPrice = this.db.prepare(`
-      SELECT close FROM index_prices
-      WHERE symbol = 'SPY' AND date <= ?
-      ORDER BY date DESC LIMIT 1
-    `).get(endDate);
-
-    if (startPrice?.close && endPrice?.close) {
-      return ((endPrice.close - startPrice.close) / startPrice.close) * 100;
-    }
-
+    try {
+      const startPrice = db.prepare(`
+        SELECT close FROM index_prices WHERE symbol = 'SPY' AND date <= ? ORDER BY date DESC LIMIT 1
+      `).get(startDate);
+      const endPrice = db.prepare(`
+        SELECT close FROM index_prices WHERE symbol = 'SPY' AND date <= ? ORDER BY date DESC LIMIT 1
+      `).get(endDate);
+      if (startPrice?.close != null && endPrice?.close != null) return ((endPrice.close - startPrice.close) / startPrice.close) * 100;
+    } catch (_) { /* index_prices may not exist */ }
     return null;
   }
 
@@ -540,31 +638,41 @@ class OutcomeCalculator {
    * Check if position was exited
    */
   async _checkExit(decision) {
-    // Look for a sold_out decision for the same stock by same investor after this decision
-    const exitDecision = this.db.prepare(`
-      SELECT decision_date, stock_price
-      FROM investment_decisions
-      WHERE investor_id = ?
-        AND (cusip = ? OR symbol = ?)
-        AND decision_type = 'sold_out'
-        AND decision_date > ?
-      ORDER BY decision_date ASC
-      LIMIT 1
-    `).get(decision.investor_id, decision.cusip, decision.symbol, decision.decision_date);
+    const db = await this._getDb();
+    if (!db) return { exited: false };
 
-    if (!exitDecision) {
-      // Check if still held in latest filing
-      const latestHolding = this.db.prepare(`
-        SELECT filing_date
-        FROM investor_holdings
-        WHERE investor_id = ?
-          AND (cusip = ? OR company_id = ?)
-        ORDER BY filing_date DESC
-        LIMIT 1
-      `).get(decision.investor_id, decision.cusip, decision.company_id);
-
-      if (latestHolding) {
-        return { exited: false };
+    let exitDecision;
+    if (await this._pg()) {
+      const r = await db.query(`
+        SELECT decision_date, stock_price
+        FROM investment_decisions
+        WHERE investor_id = $1 AND (cusip = $2 OR symbol = $3) AND decision_type = 'sold_out' AND decision_date > $4
+        ORDER BY decision_date ASC LIMIT 1
+      `, [decision.investor_id, decision.cusip || null, decision.symbol, decision.decision_date]);
+      exitDecision = r.rows[0];
+      if (!exitDecision) {
+        try {
+          const h = await db.query(`
+            SELECT filing_date FROM investor_holdings
+            WHERE investor_id = $1 AND (cusip = $2 OR company_id = $3)
+            ORDER BY filing_date DESC LIMIT 1
+          `, [decision.investor_id, decision.cusip || null, decision.company_id]);
+          if (h.rows[0]) return { exited: false };
+        } catch (_) { /* investor_holdings may not exist */ }
+      }
+    } else {
+      exitDecision = db.prepare(`
+        SELECT decision_date, stock_price FROM investment_decisions
+        WHERE investor_id = ? AND (cusip = ? OR symbol = ?) AND decision_type = 'sold_out' AND decision_date > ?
+        ORDER BY decision_date ASC LIMIT 1
+      `).get(decision.investor_id, decision.cusip, decision.symbol, decision.decision_date);
+      if (!exitDecision) {
+        const latestHolding = db.prepare(`
+          SELECT filing_date FROM investor_holdings
+          WHERE investor_id = ? AND (cusip = ? OR company_id = ?)
+          ORDER BY filing_date DESC LIMIT 1
+        `).get(decision.investor_id, decision.cusip, decision.company_id);
+        if (latestHolding) return { exited: false };
       }
     }
 
@@ -612,22 +720,37 @@ class OutcomeCalculator {
   /**
    * Update decision with calculated outcomes
    */
-  _updateOutcomes(decisionId, outcomes) {
-    const fields = [];
-    const values = { id: decisionId };
+  async _updateOutcomes(decisionId, outcomes) {
+    const db = await this._getDb();
+    if (!db) return;
 
-    for (const [key, value] of Object.entries(outcomes)) {
-      if (value !== undefined) {
-        fields.push(`${key} = @${key}`);
-        values[key] = value;
+    const entries = Object.entries(outcomes).filter(([, v]) => v !== undefined);
+    if (entries.length === 0) return;
+
+    if (await this._pg()) {
+      const setParts = [];
+      const params = [];
+      let i = 1;
+      for (const [key, value] of entries) {
+        setParts.push(`${key} = $${i++}`);
+        params.push(value);
       }
+      setParts.push("outcome_calculated_at = NOW()", "updated_at = NOW()");
+      params.push(decisionId);
+      const sql = `UPDATE investment_decisions SET ${setParts.join(', ')} WHERE id = $${i}`;
+      await db.query(sql, params);
+      return;
     }
 
-    fields.push('outcome_calculated_at = datetime(\'now\')');
-    fields.push('updated_at = datetime(\'now\')');
-
+    const fields = [];
+    const values = { id: decisionId };
+    for (const [key, value] of entries) {
+      fields.push(`${key} = @${key}`);
+      values[key] = value;
+    }
+    fields.push('outcome_calculated_at = datetime(\'now\')', 'updated_at = datetime(\'now\')');
     const sql = `UPDATE investment_decisions SET ${fields.join(', ')} WHERE id = @id`;
-    this.db.prepare(sql).run(values);
+    db.prepare(sql).run(values);
   }
 
   /**

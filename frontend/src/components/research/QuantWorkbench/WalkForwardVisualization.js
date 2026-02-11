@@ -77,8 +77,10 @@ export default function WalkForwardVisualization({
 
     } catch (err) {
       console.error('Walk-forward API error:', err.message);
-      setApiError(err.message);
-      setError(err.message);
+      const isDemoMode = err?.originalError?.response?.data?.code === 'QUANT_LAB_POSTGRES_UNSUPPORTED';
+      const msg = isDemoMode ? 'Demo mode: Showing sample data.' : err.message;
+      setApiError(msg);
+      setError(msg);
 
       // Generate mock results for demo with clear indication
       const mockResults = generateMockWalkForwardResults(config);

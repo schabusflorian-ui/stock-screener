@@ -95,7 +95,8 @@ export default function ICDashboard({ factor, preloadedResults, triggerAnalysis 
 
     } catch (err) {
       console.error('IC Analysis error:', err);
-      setError(err.message || 'Failed to run IC analysis');
+      const isDemoMode = err?.originalError?.response?.data?.code === 'QUANT_LAB_POSTGRES_UNSUPPORTED';
+      setError(isDemoMode ? 'Demo mode: Quant Lab analysis is not available on this deployment. Showing sample data.' : (err.message || 'Failed to run IC analysis'));
     } finally {
       setLoading(false);
     }

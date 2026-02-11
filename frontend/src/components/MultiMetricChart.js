@@ -41,14 +41,16 @@ const isLargeScaleMetric = (metricKey, format) => {
 
 // Format large numbers with units for Y-axis
 const formatAxisValue = (value, format, isLargeScale) => {
-  if (value === null || value === undefined || isNaN(value)) return '-';
+  if (value === null || value === undefined) return '-';
+  const num = Number(value);
+  if (Number.isNaN(num)) return '-';
 
-  if (format === 'percent') return `${value.toFixed(1)}%`;
-  if (format === 'ratio') return value.toFixed(2) + 'x';
+  if (format === 'percent') return `${num.toFixed(1)}%`;
+  if (format === 'ratio') return num.toFixed(2) + 'x';
 
   if (format === 'currency' || format === 'currency_large') {
-    const absVal = Math.abs(value);
-    const sign = value < 0 ? '-' : '';
+    const absVal = Math.abs(num);
+    const sign = num < 0 ? '-' : '';
     if (absVal >= 1e12) return `${sign}$${(absVal / 1e12).toFixed(1)}T`;
     if (absVal >= 1e9) return `${sign}$${(absVal / 1e9).toFixed(0)}B`;
     if (absVal >= 1e6) return `${sign}$${(absVal / 1e6).toFixed(0)}M`;
@@ -57,29 +59,31 @@ const formatAxisValue = (value, format, isLargeScale) => {
   }
 
   if (format === 'currency_price') {
-    return `$${value.toFixed(0)}`;
+    return `$${num.toFixed(0)}`;
   }
 
-  return value.toFixed(1);
+  return num.toFixed(1);
 };
 
 // Format for legend display (more precision)
 const formatLegendValue = (value, metricKey) => {
-  if (value === null || value === undefined || isNaN(value)) return '-';
+  if (value === null || value === undefined) return '-';
+  const num = Number(value);
+  if (Number.isNaN(num)) return '-';
 
   // Use the unified config formatter
   if (metricKey && METRICS[metricKey]) {
-    return formatFromConfig(value, metricKey);
+    return formatFromConfig(num, metricKey);
   }
 
   // Fallback
-  const absVal = Math.abs(value);
-  const sign = value < 0 ? '-' : '';
+  const absVal = Math.abs(num);
+  const sign = num < 0 ? '-' : '';
   if (absVal >= 1e12) return `${sign}$${(absVal / 1e12).toFixed(1)}T`;
   if (absVal >= 1e9) return `${sign}$${(absVal / 1e9).toFixed(1)}B`;
   if (absVal >= 1e6) return `${sign}$${(absVal / 1e6).toFixed(1)}M`;
   if (absVal >= 1e3) return `${sign}$${(absVal / 1e3).toFixed(1)}K`;
-  return value.toFixed(2);
+  return num.toFixed(2);
 };
 
 function MultiMetricChart({
@@ -363,10 +367,12 @@ function MultiMetricChart({
 
       // Price formatter based on mode
       const priceFormatter = (v) => {
+        const n = Number(v);
+        if (Number.isNaN(n)) return '-';
         if (chartMode === 'normalized') {
-          return `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
+          return `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`;
         }
-        return formatAxisValue(v, format, isLarge);
+        return formatAxisValue(n, format, isLarge);
       };
 
       // Determine which price scale to use
@@ -512,9 +518,9 @@ function MultiMetricChart({
                 {actualValue !== undefined && actualValue !== null && (
                   <>
                     <span className="legend-val">{formatLegendValue(actualValue, metric.key)}</span>
-                    {percentChange !== null && (
-                      <span className={`legend-pct ${percentChange >= 0 ? 'up' : 'down'}`}>
-                        {percentChange >= 0 ? '+' : ''}{percentChange.toFixed(0)}%
+                    {percentChange !== null && !Number.isNaN(Number(percentChange)) && (
+                      <span className={`legend-pct ${Number(percentChange) >= 0 ? 'up' : 'down'}`}>
+                        {Number(percentChange) >= 0 ? '+' : ''}{Number(percentChange).toFixed(0)}%
                       </span>
                     )}
                   </>

@@ -163,24 +163,44 @@ export default function HistoricalAnalyticsPage() {
   const [factorTimeseries, setFactorTimeseries] = useState(null);
   const [styleData, setStyleData] = useState(null);
   const [classifying, setClassifying] = useState(false);
+  const [calculatingOutcomes, setCalculatingOutcomes] = useState(false);
+  const [outcomeMessage, setOutcomeMessage] = useState(null);
 
   // Fetch overview stats
-  useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        setLoading(true);
-        const response = await historicalAPI.getStats();
-        setStats(response.data);
-        setError(null);
-      } catch (err) {
-        setError('Failed to load statistics');
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchStats();
+  const fetchStats = useCallback(async () => {
+    try {
+      setLoading(true);
+      const response = await historicalAPI.getStats();
+      setStats(response.data);
+      setError(null);
+    } catch (err) {
+      setError('Failed to load statistics');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
+
+  const handleCalculateOutcomes = useCallback(async () => {
+    setOutcomeMessage(null);
+    setCalculatingOutcomes(true);
+    try {
+      const res = await historicalAPI.calculateOutcomes(2000, 365);
+      const { calculated = 0, errors = 0 } = res.data || {};
+      setOutcomeMessage(calculated > 0 ? `Calculated ${calculated} outcomes.` : (errors > 0 ? 'No new outcomes calculated (may need price data).' : 'No decisions eligible yet (need 1Y of history).'));
+      await fetchStats();
+    } catch (err) {
+      const data = err?.response?.data;
+      const msg = data?.error || err?.message || '';
+      setOutcomeMessage(data?.code === 'OUTCOMES_NOT_SUPPORTED' || msg.includes('prepare') || msg.includes('relation') ? (data?.error || 'Outcome calculation is not available on this environment. Use a local script with SQLite or add Postgres support to OutcomeCalculator.') : `Failed: ${msg}`);
+    } finally {
+      setCalculatingOutcomes(false);
+    }
+  }, [fetchStats]);
 
   // Fetch factor data when factors tab is active
   useEffect(() => {
@@ -366,11 +386,29 @@ export default function HistoricalAnalyticsPage() {
           </div>
           <div className="stat-card highlight">
             <span className={`stat-value ${overview?.avg_return_1y >= 0 ? 'positive' : 'negative'}`}>
-              {formatPercent(overview?.avg_return_1y * 100)}
+              {formatPercent(overview?.avg_return_1y != null ? overview.avg_return_1y * 100 : null)}
             </span>
             <span className="stat-label">Avg 1Y Return</span>
           </div>
         </div>
+
+        {/* CTA when no outcomes: run outcome calculation so Factor Analysis has data */}
+        {overview?.decisions_with_returns === 0 && overview?.total_decisions > 0 && (
+          <div className="analytics-section outcome-cta" style={{ background: 'var(--surface-alt, #f1f5f9)', padding: '1rem 1.25rem', borderRadius: 8, marginBottom: '1.5rem' }}>
+            <p style={{ margin: '0 0 0.75rem 0', fontWeight: 500 }}>
+              No outcomes yet — Factor Analysis and return stats need calculated 1Y returns.
+            </p>
+            <button
+              type="button"
+              className="table-control-btn"
+              onClick={handleCalculateOutcomes}
+              disabled={calculatingOutcomes}
+            >
+              {calculatingOutcomes ? 'Calculating…' : 'Calculate outcomes (1Y returns)'}
+            </button>
+            {outcomeMessage && <p style={{ margin: '0.75rem 0 0', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{outcomeMessage}</p>}
+          </div>
+        )}
 
         {/* Decision Type Breakdown */}
         <div className="analytics-section">
@@ -584,7 +622,12 @@ export default function HistoricalAnalyticsPage() {
             )}
           </>
         ) : (
-          <div className="no-data">No factor data available. Run factor enrichment first.</div>
+          <div className="no-data">
+            No factor data available. Factor performance needs decisions with 1Y returns (outcomes).
+            {stats?.overview?.decisions_with_returns === 0 && stats?.overview?.total_decisions > 0 && (
+              <p style={{ marginTop: 8 }}>Go to <strong>Overview</strong> and run &quot;Calculate outcomes&quot; to populate returns, then Factor Analysis will show data.</p>
+            )}
+          </div>
         )}
       </div>
     );

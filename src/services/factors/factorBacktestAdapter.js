@@ -92,7 +92,7 @@ class FactorBacktestAdapter {
 
         try {
           // Calculate factor values at this date
-          const factorResult = this.calculator.calculateFactorValues(
+          const factorResult = await this.calculator.calculateFactorValues(
             factorId,
             formula,
             { asOfDate: date, storeResults: false }

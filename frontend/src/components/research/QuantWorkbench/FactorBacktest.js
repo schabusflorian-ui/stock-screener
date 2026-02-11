@@ -259,7 +259,8 @@ export default function FactorBacktest({ factor, triggerAnalysis = 0 }) {
     } catch (err) {
       clearInterval(progressTimer);
       console.error('Backtest API error:', err.message);
-      setApiError(err.message);
+      const isDemoMode = err?.originalError?.response?.data?.code === 'QUANT_LAB_POSTGRES_UNSUPPORTED';
+      setApiError(isDemoMode ? 'Demo mode: Showing sample data.' : err.message);
 
       // Fallback to mock data with clear indication
       const mockResults = generateMockBacktestResults(config);
