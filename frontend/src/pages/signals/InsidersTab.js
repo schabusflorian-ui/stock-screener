@@ -199,6 +199,9 @@ function InsidersTab() {
   }, [topBuying, overviewSort]);
 
   const sortedRecentTransactions = useMemo(() => {
+    if (!Array.isArray(recentTransactions)) {
+      return [];
+    }
     return [...recentTransactions].sort((a, b) => {
       if (recentSort.key === 'transaction_date') {
         const aVal = a[recentSort.key] || '';
@@ -212,6 +215,9 @@ function InsidersTab() {
   }, [recentTransactions, recentSort]);
 
   const sortedClusterBuying = useMemo(() => {
+    if (!Array.isArray(clusterBuying)) {
+      return [];
+    }
     return [...clusterBuying].sort((a, b) => {
       const aVal = a[clusterSort.key] ?? -Infinity;
       const bVal = b[clusterSort.key] ?? -Infinity;
@@ -220,6 +226,9 @@ function InsidersTab() {
   }, [clusterBuying, clusterSort]);
 
   const sortedCongressionalTrades = useMemo(() => {
+    if (!Array.isArray(congressionalTrades)) {
+      return [];
+    }
     return [...congressionalTrades].sort((a, b) => {
       const aVal = a[congressSort.key] ?? -Infinity;
       const bVal = b[congressSort.key] ?? -Infinity;
