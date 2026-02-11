@@ -9,16 +9,26 @@ const { getDatabaseAsync } = require('../../database');
 function isInsiderTableMissingError(err) {
   const msg = (err.message || '').toLowerCase();
   const code = err.code || '';
-  return (
+  
+  // Check for table name mentions
+  const mentionsInsiderTable = 
     msg.includes('insider_transactions') ||
     msg.includes('insider_activity_summary') ||
-    msg.includes('insiders')
-  ) && (
+    msg.includes('insiders');
+  
+  // Check for various "does not exist" errors
+  const isNotExistError =
     msg.includes('does not exist') ||
     msg.includes('no such table') ||
+    msg.includes('relation') && msg.includes('does not exist') ||
     code === '42P01' || // PostgreSQL: undefined_table
-    code === 'SQLITE_ERROR'
-  );
+    code === '42703' || // PostgreSQL: undefined_column
+    code === 'SQLITE_ERROR';
+  
+  // Also check for generic "relation" errors from PostgreSQL
+  const isRelationError = code === '42P01' || (msg.includes('relation') && msg.includes('does not exist'));
+  
+  return (mentionsInsiderTable && isNotExistError) || isRelationError;
 }
 const InsiderTracker = require('../../services/insiderTracker');
 
@@ -64,7 +74,17 @@ router.get('/top-buying', async (req, res) => {
       companies: results
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    if (isInsiderTableMissingError(error)) {
+      return res.json({
+        period: req.query.period || '3m',
+        count: 0,
+        companies: []
+      });
+    }
+    console.error('Error fetching top buying companies:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message });
+    }
   }
 });
 
@@ -113,7 +133,13 @@ router.get('/recent', async (req, res) => {
       transactions
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    if (isInsiderTableMissingError(error)) {
+      return res.json({ count: 0, filter: type || 'all', transactions: [] });
+    }
+    console.error('Error fetching recent insider transactions:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message });
+    }
   }
 });
 
@@ -169,7 +195,19 @@ router.get('/signals', async (req, res) => {
       signals: signal === 'all' ? grouped : signals
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    if (isInsiderTableMissingError(error)) {
+      return res.json({
+        period: req.query.period || '3m',
+        filter: req.query.signal || 'all',
+        total: 0,
+        summary: { bullish: 0, bearish: 0, neutral: 0 },
+        signals: req.query.signal === 'all' ? { bullish: [], bearish: [], neutral: [] } : []
+      });
+    }
+    console.error('Error fetching insider signals:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message });
+    }
   }
 });
 
@@ -235,7 +273,19 @@ router.get('/company/:symbol', async (req, res) => {
       transactions: activity
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    if (isInsiderTableMissingError(error)) {
+      const { symbol } = req.params;
+      return res.json({
+        company: { symbol, name: symbol },
+        summaries: { '1m': null, '3m': null, '6m': null, '1y': null },
+        insiders: [],
+        transactions: []
+      });
+    }
+    console.error('Error fetching company insider data:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message });
+    }
   }
 });
 
@@ -311,7 +361,13 @@ router.get('/company/:symbol/chart', async (req, res) => {
       transactions
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    if (isInsiderTableMissingError(error)) {
+      return res.json({ monthly: [], transactions: [] });
+    }
+    console.error('Error fetching company chart data:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message });
+    }
   }
 });
 
@@ -381,7 +437,13 @@ router.get('/insider/:cik', async (req, res) => {
       transactions
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    if (isInsiderTableMissingError(error)) {
+      return res.status(404).json({ error: 'Insider not found' });
+    }
+    console.error('Error fetching insider data:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message });
+    }
   }
 });
 
@@ -438,7 +500,21 @@ router.get('/cluster-buying', async (req, res) => {
       }))
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    if (isInsiderTableMissingError(error)) {
+      return res.json({
+        criteria: {
+          minInsiders: parseInt(req.query.minInsiders || 2),
+          days: parseInt(req.query.days || 30),
+          startDate: new Date(Date.now() - parseInt(req.query.days || 30) * 86400000).toISOString().split('T')[0]
+        },
+        count: 0,
+        clusters: []
+      });
+    }
+    console.error('Error fetching cluster buying data:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message });
+    }
   }
 });
 
@@ -514,7 +590,20 @@ router.get('/update-status', async (req, res) => {
       signalDistribution: Object.fromEntries(signals.map(s => [s.insider_signal, s.count]))
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    if (isInsiderTableMissingError(error)) {
+      return res.json({
+        lastImport: null,
+        latestTransaction: null,
+        companiesWithData: 0,
+        totalInsiders: 0,
+        totalTransactions: 0,
+        signalDistribution: {}
+      });
+    }
+    console.error('Error fetching update status:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message });
+    }
   }
 });
 
@@ -593,11 +682,22 @@ router.get('/stats', async (req, res) => {
       signalDistribution
     });
   } catch (error) {
+    // Log full error details for debugging
+    console.error('Error fetching insider stats:', {
+      message: error.message,
+      code: error.code,
+      detail: error.detail,
+      stack: error.stack?.split('\n').slice(0, 3).join('\n')
+    });
+    
     if (isInsiderTableMissingError(error)) {
+      console.log('Insider tables missing - returning empty response');
       return res.json(emptyResponse());
     }
-    console.error('Error fetching insider stats:', error);
-    res.status(500).json({ error: error.message });
+    
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message });
+    }
   }
 });
 
