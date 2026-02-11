@@ -12,28 +12,28 @@ async function up(db) {
   console.log('🔄 Running migration: 024-fix-user-factors-boolean-columns');
 
   try {
-    // Change is_valid from BIGINT to BOOLEAN
+    // Drop default first so PG can cast column type (default for column cannot be cast automatically)
+    await db.query(`ALTER TABLE user_factors ALTER COLUMN is_valid DROP DEFAULT`);
     await db.query(`
       ALTER TABLE user_factors 
       ALTER COLUMN is_valid TYPE BOOLEAN 
       USING CASE WHEN is_valid = 0 THEN FALSE ELSE TRUE END
     `);
+    await db.query(`ALTER TABLE user_factors ALTER COLUMN is_valid SET DEFAULT TRUE`);
     console.log('✓ Fixed user_factors.is_valid column type');
 
-    // Also fix is_active if it exists and has wrong type
     const checkActiveCol = await db.query(`
-      SELECT data_type 
-      FROM information_schema.columns 
-      WHERE table_name = 'user_factors' 
-      AND column_name = 'is_active'
+      SELECT data_type FROM information_schema.columns 
+      WHERE table_name = 'user_factors' AND column_name = 'is_active'
     `);
-    
     if (checkActiveCol.rows.length > 0 && checkActiveCol.rows[0].data_type !== 'boolean') {
+      await db.query(`ALTER TABLE user_factors ALTER COLUMN is_active DROP DEFAULT`);
       await db.query(`
         ALTER TABLE user_factors 
         ALTER COLUMN is_active TYPE BOOLEAN 
         USING CASE WHEN is_active = 0 THEN FALSE ELSE TRUE END
       `);
+      await db.query(`ALTER TABLE user_factors ALTER COLUMN is_active SET DEFAULT TRUE`);
       console.log('✓ Fixed user_factors.is_active column type');
     }
 
