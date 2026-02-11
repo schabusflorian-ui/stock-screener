@@ -1,7 +1,7 @@
 // src/services/portfolio/positionSizing.js
 // Position Sizing Calculator (Agent 2)
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 const TRADING_DAYS_PER_YEAR = 252;
 

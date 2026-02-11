@@ -312,7 +312,7 @@ function sanitizeQuery(query) {
  * @param {Object} db - Database connection for existence check
  * @returns {Object} - { valid: boolean, error?: string }
  */
-function validateSymbol(symbol, db = null) {
+async function validateSymbol(symbol, db = null) {
   if (!symbol || typeof symbol !== 'string') {
     return { valid: false, error: 'Symbol is required' };
   }
@@ -331,7 +331,8 @@ function validateSymbol(symbol, db = null) {
   // Database existence check if provided
   if (db) {
     try {
-      const company = db.prepare('SELECT id FROM companies WHERE symbol = ?').get(cleanSymbol);
+      const result = await db.query('SELECT id FROM companies WHERE symbol = $1', [cleanSymbol]);
+      const company = result.rows?.[0];
       if (!company) {
         return {
           valid: false,
@@ -397,7 +398,7 @@ function validateMetric(metric) {
  * @param {Object} db - Database connection
  * @returns {Object} - { symbols: string[], invalid: string[] }
  */
-function extractAndValidateSymbols(query, db = null) {
+async function extractAndValidateSymbols(query, db = null) {
   // Match uppercase words that look like tickers (1-5 chars)
   const potentialSymbols = query.match(/\b[A-Z]{1,5}\b/g) || [];
 
@@ -418,7 +419,7 @@ function extractAndValidateSymbols(query, db = null) {
     if (excludeWords.has(symbol)) continue;
     if (symbol.length < 2) continue;
 
-    const result = validateSymbol(symbol, db);
+    const result = await validateSymbol(symbol, db);
     if (result.valid) {
       validSymbols.push(result.symbol);
     } else if (result.code === 'SYMBOL_NOT_FOUND') {
@@ -508,7 +509,7 @@ function checkForInvalidMetrics(query) {
  * @param {Object} db - Database connection
  * @returns {Object} - { valid: boolean, invalidSymbols: string[], error?: string }
  */
-function checkForInvalidSymbols(query, db = null) {
+async function checkForInvalidSymbols(query, db = null) {
   // More restrictive patterns - only match when clearly a ticker lookup
   const lookupPatterns = [
     // Possessive form: "AAPL's price", "MSFT's PE ratio"
@@ -558,7 +559,8 @@ function checkForInvalidSymbols(query, db = null) {
   const invalidSymbols = [];
   for (const symbol of potentialSymbols) {
     try {
-      const company = db.prepare('SELECT id FROM companies WHERE symbol = ?').get(symbol);
+      const result = await db.query('SELECT id FROM companies WHERE symbol = $1', [symbol]);
+      const company = result.rows?.[0];
       if (!company) {
         invalidSymbols.push(symbol);
       }

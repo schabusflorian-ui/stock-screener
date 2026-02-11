@@ -10,7 +10,7 @@
  * - Multi-jurisdiction support
  */
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { getTaxRegime, calculateTax, checkWashSale, isLongTermHolding } = require('../costs/taxRegimes');
 const { AustrianTaxTracker } = require('../costs/austrianTaxTracker');
 const { TaxTracker } = require('../costs/taxTracker');

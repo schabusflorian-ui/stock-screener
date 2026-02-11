@@ -2,7 +2,7 @@
 // Performance Attribution - Brinson-Fachler and Factor-based attribution
 // Explains WHERE portfolio returns came from
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * Performance Attribution Calculator

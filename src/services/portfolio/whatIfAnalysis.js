@@ -1,7 +1,7 @@
 // src/services/portfolio/whatIfAnalysis.js
 // What-If Analysis - Simulate portfolio changes without executing (Agent 2)
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 const TRADING_DAYS_PER_YEAR = 252;
 const RISK_FREE_RATE = 0.05;

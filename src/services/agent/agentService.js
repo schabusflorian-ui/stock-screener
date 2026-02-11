@@ -2,7 +2,7 @@
 // Service for managing Trading Agents as first-class entities
 // Pattern follows investorService.js for consistency
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { agent: logger } = require('../../utils/logger');
 
 /**

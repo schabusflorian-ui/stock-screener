@@ -1,9 +1,30 @@
 // src/database-migrations/023-agent-universe-and-subreddit-region-postgres.js
 // - agent_universe: table used by agentScanner for universe_size (fixes "relation agent_universe does not exist")
 // - tracked_subreddits.region: column used by redditFetcher (fixes "column region does not exist")
+// - Root cause: ensure trading_agents has PRIMARY KEY (id) so agent_universe can reference it.
 
 async function migrate(db) {
   console.log('🐘 Creating agent_universe and adding tracked_subreddits.region (Postgres)...');
+
+  // Root cause: trading_agents must have a unique constraint on id for FK references.
+  // Some deployments have trading_agents without PK (e.g. created by older or alternate migrations).
+  const tableExists = await db.query(`
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'trading_agents'
+    LIMIT 1
+  `);
+  if (tableExists.rows && tableExists.rows.length > 0) {
+    const pkCheck = await db.query(`
+      SELECT 1 FROM information_schema.table_constraints
+      WHERE table_schema = 'public' AND table_name = 'trading_agents' AND constraint_type = 'PRIMARY KEY'
+      LIMIT 1
+    `);
+    if (!pkCheck.rows || pkCheck.rows.length === 0) {
+      console.log('  Fixing trading_agents: adding PRIMARY KEY (id)...');
+      await db.query('ALTER TABLE trading_agents ADD PRIMARY KEY (id)');
+      console.log('  ✓ trading_agents primary key added');
+    }
+  }
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS agent_universe (

@@ -2,7 +2,7 @@
 // Factor Attribution System - Asness/AQR-inspired factor decomposition
 // Decomposes portfolio returns into factor contributions to identify true alpha
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * FactorAttribution - Fama-French style factor decomposition

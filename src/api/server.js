@@ -18,7 +18,7 @@ const morgan = require('morgan');
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const SQLiteStore = require('better-sqlite3-session-store')(session);
-const db = require('../database');
+const { getDatabaseSync } = require('../lib/db');
 const { configurePassport } = require('../auth/passport');
 const { conditionalCsrf, csrfErrorHandler, csrfProtection } = require('../middleware/csrf');
 
@@ -105,7 +105,7 @@ function createSessionStore() {
 
   logger.warn('[Session Store] Using SQLite (dev mode only)');
   return new SQLiteStore({
-    client: db.getDatabase(),
+    client: getDatabaseSync(),
     expired: {
       clear: true,
       intervalMs: 900000 // Clear expired sessions every 15 min

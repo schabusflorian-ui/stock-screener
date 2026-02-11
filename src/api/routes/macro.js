@@ -7,15 +7,14 @@
 const express = require('express');
 const router = express.Router();
 const { FREDService } = require('../../services/dataProviders');
-const db = require('../../database');
-const { isUsingPostgres } = require('../../lib/db');
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 
 // Initialize service
 let fredService = null;
 
 function getService() {
   if (!fredService) {
-    fredService = new FREDService(db);
+    fredService = new FREDService();
   }
   return fredService;
 }
@@ -69,7 +68,7 @@ function isMissingRelation(err) {
  */
 router.get('/yield-curve', async (req, res) => {
   try {
-    const dbConn = await db.getDatabaseAsync();
+    const dbConn = await getDatabaseAsync();
     const result = await dbConn.query(`
       SELECT * FROM yield_curve
       ORDER BY curve_date DESC
@@ -374,7 +373,7 @@ function applyRollingAverage(series, window = 4) {
 router.get('/market-indicators/history', async (req, res) => {
   try {
     const startQuarter = req.query.startQuarter || '2015-Q1';
-    const database = await require('../../database').getDatabaseAsync();
+    const database = await getDatabaseAsync();
 
     // Read pre-calculated data from table (instant!)
     const queryResult = await database.query(`
@@ -392,7 +391,7 @@ router.get('/market-indicators/history', async (req, res) => {
         yield_spread_2s10s,
         data_quality
       FROM market_indicator_history
-      WHERE quarter >= ?
+      WHERE quarter >= $1
       ORDER BY quarter ASC
     `, [startQuarter]);
     const data = queryResult.rows;
@@ -619,7 +618,7 @@ router.get('/key-metrics', async (req, res) => {
 router.get('/buffett-comparison', async (req, res) => {
   try {
     const startQuarter = req.query.startQuarter || '2015-Q1';
-    const database = await require('../../database').getDatabaseAsync();
+    const database = await getDatabaseAsync();
 
     // Read pre-calculated data from table (instant!)
     const result = await database.query(`
@@ -632,7 +631,7 @@ router.get('/buffett-comparison', async (req, res) => {
         buffett_stock_count,
         sp500_market_cap
       FROM market_indicator_history
-      WHERE quarter >= ?
+      WHERE quarter >= $1
         AND buffett_indicator IS NOT NULL
       ORDER BY quarter ASC
     `, [startQuarter]);
@@ -716,7 +715,6 @@ router.get('/buffett-comparison', async (req, res) => {
  */
 router.get('/refresh-current-quarter', async (req, res) => {
   try {
-    const { getDatabaseAsync } = require('../../database');
     const database = await getDatabaseAsync();
     const { HistoricalMarketIndicatorsService } = require('../../services/historicalMarketIndicators');
     const service = new HistoricalMarketIndicatorsService(database);
