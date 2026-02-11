@@ -1,7 +1,7 @@
 // src/services/features/featureRegistry.js
 // Central Feature Registry - Catalog of all features with metadata and versioning
 
-const { db } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * Feature Types
@@ -44,15 +44,15 @@ class FeatureRegistry {
   constructor() {
     this.features = new Map();
     this.versions = new Map();
-    this._ensureTablesExist();
-    this._registerBuiltInFeatures();
+    this._initPromise = this._initialize();
   }
 
   /**
    * Create database tables for feature metadata
    */
-  _ensureTablesExist() {
-    db.exec(`
+  async _ensureTablesExist() {
+    const database = await getDatabaseAsync();
+    await database.exec(`
       -- Feature definitions
       CREATE TABLE IF NOT EXISTS feature_definitions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,30 +122,35 @@ class FeatureRegistry {
   /**
    * Register all built-in features
    */
-  _registerBuiltInFeatures() {
+  async _registerBuiltInFeatures() {
     // Price features
-    this._registerPriceFeatures();
+    await this._registerPriceFeatures();
 
     // Technical features
-    this._registerTechnicalFeatures();
+    await this._registerTechnicalFeatures();
 
     // Fundamental features
-    this._registerFundamentalFeatures();
+    await this._registerFundamentalFeatures();
 
     // Factor features
-    this._registerFactorFeatures();
+    await this._registerFactorFeatures();
 
     // Sentiment features
-    this._registerSentimentFeatures();
+    await this._registerSentimentFeatures();
 
     // Alternative data features
-    this._registerAlternativeFeatures();
+    await this._registerAlternativeFeatures();
+  }
+
+  async _initialize() {
+    await this._ensureTablesExist();
+    await this._registerBuiltInFeatures();
   }
 
   /**
    * Register price-based features
    */
-  _registerPriceFeatures() {
+  async _registerPriceFeatures() {
     const priceFeatures = [
       {
         name: 'close',
@@ -227,13 +232,15 @@ class FeatureRegistry {
       }
     ];
 
-    priceFeatures.forEach(f => this.register(f));
+    for (const feature of priceFeatures) {
+      await this.register(feature);
+    }
   }
 
   /**
    * Register technical indicator features
    */
-  _registerTechnicalFeatures() {
+  async _registerTechnicalFeatures() {
     const technicalFeatures = [
       {
         name: 'rsi_14',
@@ -330,13 +337,15 @@ class FeatureRegistry {
       }
     ];
 
-    technicalFeatures.forEach(f => this.register(f));
+    for (const feature of technicalFeatures) {
+      await this.register(feature);
+    }
   }
 
   /**
    * Register fundamental features
    */
-  _registerFundamentalFeatures() {
+  async _registerFundamentalFeatures() {
     const fundamentalFeatures = [
       {
         name: 'pe_ratio',
@@ -460,13 +469,15 @@ class FeatureRegistry {
       }
     ];
 
-    fundamentalFeatures.forEach(f => this.register(f));
+    for (const feature of fundamentalFeatures) {
+      await this.register(feature);
+    }
   }
 
   /**
    * Register factor features
    */
-  _registerFactorFeatures() {
+  async _registerFactorFeatures() {
     const factorFeatures = [
       {
         name: 'factor_value',
@@ -554,13 +565,15 @@ class FeatureRegistry {
       }
     ];
 
-    factorFeatures.forEach(f => this.register(f));
+    for (const feature of factorFeatures) {
+      await this.register(feature);
+    }
   }
 
   /**
    * Register sentiment features
    */
-  _registerSentimentFeatures() {
+  async _registerSentimentFeatures() {
     const sentimentFeatures = [
       {
         name: 'sentiment_composite',
@@ -600,13 +613,15 @@ class FeatureRegistry {
       }
     ];
 
-    sentimentFeatures.forEach(f => this.register(f));
+    for (const feature of sentimentFeatures) {
+      await this.register(feature);
+    }
   }
 
   /**
    * Register alternative data features
    */
-  _registerAlternativeFeatures() {
+  async _registerAlternativeFeatures() {
     const alternativeFeatures = [
       {
         name: 'insider_signal',
@@ -653,13 +668,15 @@ class FeatureRegistry {
       }
     ];
 
-    alternativeFeatures.forEach(f => this.register(f));
+    for (const feature of alternativeFeatures) {
+      await this.register(feature);
+    }
   }
 
   /**
    * Register a new feature
    */
-  register(definition) {
+  async register(definition) {
     const {
       name,
       displayName,
@@ -704,7 +721,8 @@ class FeatureRegistry {
 
     // Store in database (upsert)
     try {
-      db.prepare(`
+      const database = await getDatabaseAsync();
+      await database.prepare(`
         INSERT INTO feature_definitions (
           name, display_name, description, feature_type, frequency,
           source_table, source_column, computation_sql, computation_js,
@@ -732,15 +750,17 @@ class FeatureRegistry {
   /**
    * Get feature definition
    */
-  get(name) {
+  async get(name) {
+    await this._initPromise;
     return this.features.get(name) || this._loadFromDb(name);
   }
 
   /**
    * Load feature from database
    */
-  _loadFromDb(name) {
-    const row = db.prepare(`
+  async _loadFromDb(name) {
+    const database = await getDatabaseAsync();
+    const row = await database.prepare(`
       SELECT * FROM feature_definitions WHERE name = ?
     `).get(name);
 
@@ -774,7 +794,8 @@ class FeatureRegistry {
   /**
    * Get all features by type
    */
-  getByType(type) {
+  async getByType(type) {
+    await this._initPromise;
     const result = [];
     for (const [name, feature] of this.features) {
       if (feature.type === type) {
@@ -787,14 +808,15 @@ class FeatureRegistry {
   /**
    * Get all registered features
    */
-  getAll() {
+  async getAll() {
+    await this._initPromise;
     return Array.from(this.features.values());
   }
 
   /**
    * Get features required for ML training
    */
-  getMLFeatures() {
+  async getMLFeatures() {
     const mlFeatures = [
       // Price-based
       'return_1d', 'return_5d', 'return_21d', 'volatility_20d',
@@ -810,14 +832,15 @@ class FeatureRegistry {
       'insider_signal', 'institutional_ownership'
     ];
 
-    return mlFeatures.map(name => this.get(name)).filter(Boolean);
+    const resolved = await Promise.all(mlFeatures.map(name => this.get(name)));
+    return resolved.filter(Boolean);
   }
 
   /**
    * Update feature version
    */
-  updateVersion(name, changes, changeDescription) {
-    const feature = this.get(name);
+  async updateVersion(name, changes, changeDescription) {
+    const feature = await this.get(name);
     if (!feature) {
       throw new Error(`Feature ${name} not found`);
     }
@@ -828,7 +851,8 @@ class FeatureRegistry {
     Object.assign(feature, changes, { version: newVersion });
 
     // Store old version
-    db.prepare(`
+    const database = await getDatabaseAsync();
+    await database.prepare(`
       INSERT INTO feature_versions (feature_name, version, computation_sql, computation_js, change_description)
       VALUES (?, ?, ?, ?, ?)
     `).run(
@@ -840,7 +864,7 @@ class FeatureRegistry {
     );
 
     // Update current
-    db.prepare(`
+    await database.prepare(`
       UPDATE feature_definitions
       SET computation_sql = ?, computation_js = ?, version = ?, updated_at = datetime('now')
       WHERE name = ?
@@ -857,8 +881,9 @@ class FeatureRegistry {
   /**
    * Deprecate a feature
    */
-  deprecate(name, reason) {
-    db.prepare(`
+  async deprecate(name, reason) {
+    const database = await getDatabaseAsync();
+    await database.prepare(`
       UPDATE feature_definitions
       SET deprecated = 1, deprecated_reason = ?, updated_at = datetime('now')
       WHERE name = ?
@@ -874,9 +899,10 @@ class FeatureRegistry {
   /**
    * Log feature access for lineage tracking
    */
-  logAccess(featureName, entityId, asOfDate, context = 'live') {
+  async logAccess(featureName, entityId, asOfDate, context = 'live') {
     try {
-      db.prepare(`
+      const database = await getDatabaseAsync();
+      await database.prepare(`
         INSERT INTO feature_access_log (feature_name, entity_id, as_of_date, access_context)
         VALUES (?, ?, ?, ?)
       `).run(featureName, entityId, asOfDate, context);
@@ -889,7 +915,8 @@ class FeatureRegistry {
   /**
    * Get feature lineage (what uses this feature)
    */
-  getLineage(featureName) {
+  async getLineage(featureName) {
+    await this._initPromise;
     // Downstream - features that depend on this one
     const downstream = [];
     for (const [name, feature] of this.features) {
@@ -899,7 +926,7 @@ class FeatureRegistry {
     }
 
     // Upstream - features this one depends on
-    const feature = this.get(featureName);
+    const feature = await this.get(featureName);
     const upstream = feature?.dependsOn || [];
 
     return { upstream, downstream };
@@ -908,9 +935,9 @@ class FeatureRegistry {
   /**
    * Export feature definitions to JSON
    */
-  export() {
+  async export() {
     return {
-      features: this.getAll(),
+      features: await this.getAll(),
       exportedAt: new Date().toISOString(),
       version: '1.0'
     };

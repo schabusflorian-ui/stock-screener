@@ -162,7 +162,7 @@ class EnhancedQuantSystem {
     if (!company) return { error: 'Company not found' };
 
     // Moat score
-    const moatScore = this.moatScorer.calculateMoatScore(company.id);
+    const moatScore = await this.moatScorer.calculateMoatScore(company.id);
 
     // Get sector multiplier from economic regime
     const regime = this.economicRegime.classifyRegime();
@@ -170,7 +170,7 @@ class EnhancedQuantSystem {
     const sectorMultiplier = sectorMultipliers.sectorMultipliers[company.sector] || 1.0;
 
     // Moat-adjusted valuation
-    const moatValuation = this.moatScorer.getMoatAdjustedValuation(company.id, 20); // Base P/E of 20
+    const moatValuation = await this.moatScorer.getMoatAdjustedValuation(company.id, 20); // Base P/E of 20
 
     return {
       symbol: company.symbol,

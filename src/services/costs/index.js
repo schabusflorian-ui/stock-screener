@@ -43,7 +43,6 @@ const {
 
 // API cost tracking (Phase 3.1)
 const ApiCostTracker = require('./apiCostTracker');
-const db = require('../../database');
 
 // Singleton instance for API cost tracking
 let apiCostTrackerInstance = null;
@@ -54,8 +53,7 @@ let apiCostTrackerInstance = null;
  */
 function getCostTracker() {
   if (!apiCostTrackerInstance) {
-    const database = db.getDatabase();
-    apiCostTrackerInstance = new ApiCostTracker(database);
+    apiCostTrackerInstance = new ApiCostTracker();
   }
   return apiCostTrackerInstance;
 }

@@ -1,7 +1,7 @@
 // src/services/identifiers/integration.test.js
 // Integration test for the full XBRL → LEI → symbol → price resolution flow
 
-const { db } = require('../../database');
+const { getDatabaseSync } = require('../../lib/db');
 const identifiers = require('./index');
 const { DataRouter } = require('../dataRouter');
 
@@ -10,6 +10,7 @@ const { DataRouter } = require('../dataRouter');
  * Run with: node src/services/identifiers/integration.test.js
  */
 async function runIntegrationTests() {
+  const db = getDatabaseSync();
   console.log('='.repeat(60));
   console.log('IDENTIFIER SERVICES INTEGRATION TEST');
   console.log('='.repeat(60));

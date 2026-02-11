@@ -120,7 +120,7 @@ class HistoricalAgentBacktester {
       await this._updatePortfolioValues(portfolio);
 
       // Step 2: Generate signals for universe
-      const daySignals = this._generateSignals(universe, portfolio);
+      const daySignals = await this._generateSignals(universe, portfolio);
       signals.push(...daySignals.map(s => ({ ...s, date: currentDate })));
 
       // Step 3: Execute trading decisions
@@ -341,7 +341,7 @@ class HistoricalAgentBacktester {
   /**
    * Generate signals for all stocks in universe
    */
-  _generateSignals(universe, portfolio) {
+  async _generateSignals(universe, portfolio) {
     const { minConfidence, minScore } = this.config;
     const signals = [];
 

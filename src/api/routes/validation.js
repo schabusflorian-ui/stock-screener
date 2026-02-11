@@ -9,7 +9,7 @@ const express = require('express');
 const router = express.Router();
 const path = require('path');
 const fs = require('fs');
-const { getDatabaseSync, isUsingPostgres } = require('../../lib/db');
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 
 // Validation endpoints are SQLite-only for now.
 router.use((req, res, next) => {
@@ -26,6 +26,12 @@ router.use((req, res, next) => {
 // Lazy load dependencies
 let db = null;
 let validator = null;
+
+/** Ensure shared async db connection (used by all validation components) */
+async function ensureDb() {
+  if (!db) db = await getDatabaseAsync();
+  return db;
+}
 let signalValidator = null;
 let signalPerformanceTracker = null;
 let mlSignalCombiner = null;
@@ -36,10 +42,8 @@ let currentProgress = null;
 /**
  * Initialize the validator with database connection
  */
-function initializeValidator() {
-  if (!db) {
-    db = getDatabaseSync();
-  }
+async function initializeValidator() {
+  await ensureDb();
 
   if (!validator) {
     const MetricsValidator = require('../../validation/metricsValidator');
@@ -52,10 +56,8 @@ function initializeValidator() {
 /**
  * Initialize Signal Validator (uses aggregated_signals + daily_prices)
  */
-function initializeSignalValidator() {
-  if (!db) {
-    db = getDatabaseSync();
-  }
+async function initializeSignalValidator() {
+  await ensureDb();
 
   if (!signalValidator) {
     const { SignalValidator } = require('../../services/validation/signalValidator');
@@ -68,10 +70,8 @@ function initializeSignalValidator() {
 /**
  * Initialize Signal Performance Tracker (legacy - uses recommendation_outcomes)
  */
-function initializeSignalTracker() {
-  if (!db) {
-    db = getDatabaseSync();
-  }
+async function initializeSignalTracker() {
+  await ensureDb();
 
   if (!signalPerformanceTracker) {
     const { SignalPerformanceTracker } = require('../../services/agent/signalPerformanceTracker');
@@ -84,15 +84,13 @@ function initializeSignalTracker() {
 /**
  * Initialize ML Signal Combiner
  */
-function initializeMLCombiner() {
-  if (!db) {
-    db = getDatabaseSync();
-  }
+async function initializeMLCombiner() {
+  await ensureDb();
 
   if (!mlSignalCombiner) {
     const { MLSignalCombiner } = require('../../services/ml/signalCombiner');
     mlSignalCombiner = new MLSignalCombiner(db);
-    mlSignalCombiner.loadModels();
+    await mlSignalCombiner.loadModels();
   }
 
   return mlSignalCombiner;
@@ -121,7 +119,7 @@ router.get('/status', (req, res) => {
  */
 router.post('/run', async (req, res) => {
   try {
-    const val = initializeValidator();
+    const val = await initializeValidator();
 
     if (validationInProgress) {
       return res.status(409).json({
@@ -331,9 +329,9 @@ router.get('/results/company/:symbol', (req, res) => {
  * GET /api/validation/recommendations
  * Get recommendations based on last validation
  */
-router.get('/recommendations', (req, res) => {
+router.get('/recommendations', async (req, res) => {
   try {
-    const val = initializeValidator();
+    const val = await initializeValidator();
 
     if (!lastResults) {
       return res.status(404).json({ error: 'No validation results available' });
@@ -447,12 +445,12 @@ router.delete('/cancel', (req, res) => {
  * Get comprehensive signal health report
  * Uses aggregated_signals + daily_prices (no AI agent required)
  */
-router.get('/signals/health', (req, res) => {
+router.get('/signals/health', async (req, res) => {
   try {
-    const validator = initializeSignalValidator();
+    const validator = await initializeSignalValidator();
     const { lookback = 180 } = req.query;
 
-    const report = validator.getSignalHealthReport(parseInt(lookback));
+    const report = await validator.getSignalHealthReport(parseInt(lookback));
 
     res.json({
       success: true,
@@ -468,12 +466,12 @@ router.get('/signals/health', (req, res) => {
  * GET /api/validation/signals/ic-decay
  * Get IC decay analysis for all signals
  */
-router.get('/signals/ic-decay', (req, res) => {
+router.get('/signals/ic-decay', async (req, res) => {
   try {
-    const validator = initializeSignalValidator();
+    const validator = await initializeSignalValidator();
     const { lookback = 180 } = req.query;
 
-    const decay = validator.getICDecay(parseInt(lookback));
+    const decay = await validator.getICDecay(parseInt(lookback));
 
     // Transform nested structure to flat format expected by frontend
     // Backend returns: { technical: { '1d': { ic: 0.05 }, '5d': { ic: 0.03 } } }
@@ -508,12 +506,12 @@ router.get('/signals/ic-decay', (req, res) => {
  * GET /api/validation/signals/hit-rates
  * Get hit rates by holding period
  */
-router.get('/signals/hit-rates', (req, res) => {
+router.get('/signals/hit-rates', async (req, res) => {
   try {
-    const validator = initializeSignalValidator();
+    const validator = await initializeSignalValidator();
     const { lookback = 180 } = req.query;
 
-    const hitRates = validator.getHitRatesByPeriod(parseInt(lookback));
+    const hitRates = await validator.getHitRatesByPeriod(parseInt(lookback));
 
     // Transform nested structure to flat format expected by frontend
     // Backend returns: { technical: { '1d': { hitRate: 0.52 }, '5d': { hitRate: 0.54 } } }
@@ -550,12 +548,12 @@ router.get('/signals/hit-rates', (req, res) => {
  * GET /api/validation/signals/regime-stability
  * Get signal performance stability across regimes
  */
-router.get('/signals/regime-stability', (req, res) => {
+router.get('/signals/regime-stability', async (req, res) => {
   try {
-    const validator = initializeSignalValidator();
+    const validator = await initializeSignalValidator();
     const { lookback = 365 } = req.query;
 
-    const stability = validator.getRegimeStability(parseInt(lookback));
+    const stability = await validator.getRegimeStability(parseInt(lookback));
 
     res.json({
       success: true,
@@ -572,13 +570,13 @@ router.get('/signals/regime-stability', (req, res) => {
  * GET /api/validation/signals/rolling-ic/:signalType
  * Get rolling IC trend for a specific signal
  */
-router.get('/signals/rolling-ic/:signalType', (req, res) => {
+router.get('/signals/rolling-ic/:signalType', async (req, res) => {
   try {
-    const validator = initializeSignalValidator();
+    const validator = await initializeSignalValidator();
     const { signalType } = req.params;
     const { window = 60, step = 7, lookback = 365 } = req.query;
 
-    const trend = validator.getRollingICTrend(
+    const trend = await validator.getRollingICTrend(
       signalType,
       parseInt(window),
       parseInt(step),
@@ -599,10 +597,10 @@ router.get('/signals/rolling-ic/:signalType', (req, res) => {
  * POST /api/validation/signals/recalculate
  * Trigger recalculation of all signal performance metrics
  */
-router.post('/signals/recalculate', (req, res) => {
+router.post('/signals/recalculate', async (req, res) => {
   try {
-    const validator = initializeSignalValidator();
-    const results = validator.recalculateAll();
+    const validator = await initializeSignalValidator();
+    const results = await validator.recalculateAll();
 
     res.json({
       success: true,
@@ -619,12 +617,12 @@ router.post('/signals/recalculate', (req, res) => {
  * GET /api/validation/signals/history
  * Get historical signal performance trends
  */
-router.get('/signals/history', (req, res) => {
+router.get('/signals/history', async (req, res) => {
   try {
-    const tracker = initializeSignalTracker();
+    const tracker = await initializeSignalTracker();
     const { days = 90 } = req.query;
 
-    const history = tracker.getHistoricalTrends(parseInt(days));
+    const history = await tracker.getHistoricalTrends(parseInt(days));
 
     res.json({
       success: true,
@@ -644,10 +642,10 @@ router.get('/signals/history', (req, res) => {
  * GET /api/validation/ml/status
  * Get ML signal combiner status and training info
  */
-router.get('/ml/status', (req, res) => {
+router.get('/ml/status', async (req, res) => {
   try {
-    const combiner = initializeMLCombiner();
-    const status = combiner.getStatus();
+    const combiner = await initializeMLCombiner();
+    const status = await combiner.getStatus();
 
     res.json({
       success: true,
@@ -667,9 +665,9 @@ router.get('/ml/status', (req, res) => {
  * - lookbackDays: Number of days of historical data (default: 730)
  * - customFactorIds: Array of custom factor IDs to include as features (optional)
  */
-router.post('/ml/train', (req, res) => {
+router.post('/ml/train', async (req, res) => {
   try {
-    const combiner = initializeMLCombiner();
+    const combiner = await initializeMLCombiner();
     if (!combiner) {
       return res.status(500).json({
         success: false,
@@ -699,7 +697,7 @@ router.post('/ml/train', (req, res) => {
       console.log(`Training ML model with ${validFactorIds.length} custom factors: ${validFactorIds.join(', ')}`);
     }
 
-    const results = combiner.train({
+    const results = await combiner.train({
       lookbackDays,
       customFactorIds: validFactorIds
     });
@@ -738,9 +736,9 @@ router.post('/ml/train', (req, res) => {
  * POST /api/validation/ml/combine
  * Combine signals using ML model
  */
-router.post('/ml/combine', (req, res) => {
+router.post('/ml/combine', async (req, res) => {
   try {
-    const combiner = initializeMLCombiner();
+    const combiner = await initializeMLCombiner();
     const { signals, context = {}, horizon = 21 } = req.body;
 
     if (!signals) {
@@ -763,12 +761,12 @@ router.post('/ml/combine', (req, res) => {
  * GET /api/validation/ml/importance
  * Get feature importance from trained models
  */
-router.get('/ml/importance', (req, res) => {
+router.get('/ml/importance', async (req, res) => {
   try {
-    const combiner = initializeMLCombiner();
+    const combiner = await initializeMLCombiner();
     const { horizon = 21 } = req.query;
 
-    const status = combiner.getStatus();
+    const status = await combiner.getStatus();
 
     if (!status.modelsLoaded) {
       return res.status(404).json({
@@ -829,13 +827,13 @@ router.get('/ml/importance', (req, res) => {
  * GET /api/validation/ml/available-factors
  * Get list of custom factors available for ML training
  */
-router.get('/ml/available-factors', (req, res) => {
+router.get('/ml/available-factors', async (req, res) => {
   try {
     const { TrainingDataAssembler } = require('../../services/ml/trainingDataAssembler');
-    const { getDatabaseSync } = require('../../lib/db');
 
-    const assembler = new TrainingDataAssembler(getDatabaseSync());
-    const factors = assembler.getAvailableCustomFactors();
+    const database = await ensureDb();
+    const assembler = new TrainingDataAssembler(database);
+    const factors = await assembler.getAvailableCustomFactors();
 
     res.json({
       success: true,

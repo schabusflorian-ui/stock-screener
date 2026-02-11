@@ -195,7 +195,7 @@ class EnhancedAgentBacktester extends HistoricalAgentBacktester {
   /**
    * Override signal generation to include enhancements
    */
-  _generateSignals(universe, portfolio) {
+  async _generateSignals(universe, portfolio) {
     const { minConfidence, minScore } = this.config;
     const signals = [];
 
@@ -205,7 +205,7 @@ class EnhancedAgentBacktester extends HistoricalAgentBacktester {
 
     for (const stock of universe) {
       try {
-        const signal = this._generateEnhancedSignalForStock(stock, portfolio, regime, marketAssessment);
+        const signal = await this._generateEnhancedSignalForStock(stock, portfolio, regime, marketAssessment);
         if (signal && signal.confidence >= minConfidence && Math.abs(signal.score) >= minScore) {
           signals.push(signal);
         }
@@ -223,7 +223,7 @@ class EnhancedAgentBacktester extends HistoricalAgentBacktester {
   /**
    * Enhanced signal generation with all council improvements
    */
-  _generateEnhancedSignalForStock(stock, portfolio, regime, marketAssessment) {
+  async _generateEnhancedSignalForStock(stock, portfolio, regime, marketAssessment) {
     // Get base signal
     const baseSignal = this._generateSignalForStock(stock, portfolio);
     if (!baseSignal) return null;
@@ -247,7 +247,7 @@ class EnhancedAgentBacktester extends HistoricalAgentBacktester {
     // 2. Moat Scoring (Buffett)
     if (this.config.useMoatScoring) {
       try {
-        const moatScore = this.quantSystem.moatScorer.calculateMoatScore(stock.id);
+        const moatScore = await this.quantSystem.moatScorer.calculateMoatScore(stock.id);
         if (!moatScore.error) {
           // Favor wide moat companies
           if (moatScore.moatStrength === 'wide') {

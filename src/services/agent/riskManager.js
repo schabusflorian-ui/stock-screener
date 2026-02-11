@@ -2,7 +2,7 @@
 // Risk Manager - Validates trades against risk limits before execution
 // Enhanced with stress test integration from HF-style backtesting framework
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { VaRCalculator } = require('../portfolio/varCalculator');
 
 // Lazy load stress test module

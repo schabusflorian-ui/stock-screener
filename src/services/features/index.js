@@ -32,7 +32,7 @@ const { FeatureStoreIntegration, createFeatureStoreIntegration } = require('./fe
  *
  * // Get features for ML
  * const store = getStore();
- * const features = store.getFeatures('AAPL', ['rsi_14', 'pe_ratio'], '2024-01-15');
+ * const features = await store.getFeatures('AAPL', ['rsi_14', 'pe_ratio'], '2024-01-15');
  *
  * // Check feature health
  * const monitor = getMonitor();

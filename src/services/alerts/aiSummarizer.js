@@ -2,7 +2,7 @@
 // AI-powered alert summarization for "What Matters Today" feature
 
 const Anthropic = require('@anthropic-ai/sdk');
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 const MODEL = 'claude-sonnet-4-20250514';
 const MAX_TOKENS = 500;

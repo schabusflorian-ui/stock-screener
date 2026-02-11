@@ -21,14 +21,15 @@
 
 const express = require('express');
 const router = express.Router();
-const { db } = require('../../database');
+const { getDatabaseSync } = require('../../lib/db');
 const identifiers = require('../../services/identifiers');
 
-// Initialize services
+// Initialize services (SQLite only - identifiers use sync db access)
 let services = null;
 
 function getServices() {
   if (!services) {
+    const db = getDatabaseSync();
     services = identifiers.createServices(db, {
       openFigiKey: process.env.OPENFIGI_API_KEY,
       cacheTtlDays: 7,

@@ -4,7 +4,12 @@
 const express = require('express');
 const router = express.Router();
 const backtesting = require('../../services/backtesting');
-const { db } = require('../../database');
+const { getDatabaseSync } = require('../../lib/db');
+
+// SQLite-only: backtesting uses sync db (WeightOptimizer, FactorBacktestEngine, etc.)
+function getDb() {
+  return getDatabaseSync();
+}
 
 // Authentication and subscription middleware
 const { requireAuth } = require('../../middleware/auth');
@@ -778,7 +783,7 @@ router.post('/weight-optimization/run', async (req, res) => {
       });
     }
 
-    const optimizer = new WeightOptimizer(db);
+    const optimizer = new WeightOptimizer(getDb());
     const results = await optimizer.runOptimization({
       runName,
       startDate,
@@ -808,7 +813,7 @@ router.post('/weight-optimization/run', async (req, res) => {
 router.get('/weight-optimization/results/:runId', (req, res) => {
   try {
     const runId = parseInt(req.params.runId);
-    const optimizer = new WeightOptimizer(db);
+    const optimizer = new WeightOptimizer(getDb());
     const results = optimizer.getOptimizationResults(runId);
 
     if (!results) {
@@ -834,7 +839,7 @@ router.get('/weight-optimization/results/:runId', (req, res) => {
  */
 router.get('/weight-optimization/runs', (req, res) => {
   try {
-    const runs = db.prepare(`
+    const runs = getDb().prepare(`
       SELECT id, run_name, run_type, start_date, end_date,
              optimization_target, total_combinations_tested,
              best_alpha, best_sharpe, improvement_pct,
@@ -861,11 +866,11 @@ router.get('/weight-optimization/runs', (req, res) => {
 router.get('/weight-optimization/best-weights', (req, res) => {
   try {
     const { regime } = req.query;
-    const optimizer = new WeightOptimizer(db);
+    const optimizer = new WeightOptimizer(getDb());
 
     if (regime) {
       // Get regime-specific weights
-      const regimeWeights = db.prepare(`
+      const regimeWeights = getDb().prepare(`
         SELECT * FROM regime_optimal_weights
         WHERE regime = ? AND is_active = 1
         ORDER BY valid_from DESC
@@ -893,7 +898,7 @@ router.get('/weight-optimization/best-weights', (req, res) => {
     }
 
     // Get overall best weights from most recent completed run
-    const bestRun = db.prepare(`
+    const bestRun = getDb().prepare(`
       SELECT best_weights, best_alpha, best_sharpe
       FROM weight_optimization_runs
       WHERE status = 'completed' AND best_weights IS NOT NULL
@@ -945,7 +950,7 @@ router.post('/signal-predictive-power/analyze', async (req, res) => {
       });
     }
 
-    const analyzer = new SignalPredictivePowerAnalyzer(db);
+    const analyzer = new SignalPredictivePowerAnalyzer(getDb());
     const results = await analyzer.analyzeAllSignals(startDate, endDate);
 
     res.json({
@@ -966,7 +971,7 @@ router.get('/signal-predictive-power/ranking', (req, res) => {
   try {
     const { regime = 'ALL', horizon = 21 } = req.query;
 
-    const rankings = db.prepare(`
+    const rankings = getDb().prepare(`
       SELECT signal_type, ic, ic_ir, hit_rate, composite_score,
              decay_half_life, sample_size, calculated_at
       FROM signal_predictive_power
@@ -1006,7 +1011,7 @@ router.post('/ablation-study', async (req, res) => {
       });
     }
 
-    const optimizer = new WeightOptimizer(db);
+    const optimizer = new WeightOptimizer(getDb());
     const results = await optimizer.runOptimization({
       runName: `Ablation_${new Date().toISOString().split('T')[0]}`,
       startDate,
@@ -1037,7 +1042,7 @@ router.post('/ablation-study', async (req, res) => {
  */
 router.get('/weight-optimization/regime-weights', (req, res) => {
   try {
-    const optimizer = new WeightOptimizer(db);
+    const optimizer = new WeightOptimizer(getDb());
     const regimeWeights = optimizer.getActiveRegimeWeights();
 
     const formatted = {};
@@ -1098,7 +1103,7 @@ router.post('/factor-combination', async (req, res) => {
       });
     }
 
-    const engine = new FactorBacktestEngine(db);
+    const engine = new FactorBacktestEngine(getDb());
     const result = await engine.runFactorBacktest(factorWeights, {
       startDate,
       endDate,
@@ -1138,7 +1143,7 @@ router.post('/screen-backtest', async (req, res) => {
       });
     }
 
-    const engine = new ScreeningBacktestEngine(db);
+    const engine = new ScreeningBacktestEngine(getDb());
     const result = await engine.runScreeningBacktest(criteria, {
       startDate,
       endDate,
@@ -1178,7 +1183,7 @@ router.post('/preset-screen-backtest', async (req, res) => {
       });
     }
 
-    const engine = new ScreeningBacktestEngine(db);
+    const engine = new ScreeningBacktestEngine(getDb());
     const result = await engine.runPresetBacktest(preset, {
       startDate,
       endDate,
@@ -1229,7 +1234,7 @@ router.post('/factor-signals', async (req, res) => {
       });
     }
 
-    const generator = new FactorSignalGenerator(db);
+    const generator = new FactorSignalGenerator(getDb());
     const result = await generator.generateSignals(factorWeights, {
       topN,
       minMarketCap,
@@ -1260,7 +1265,7 @@ router.get('/factor-signal/:symbol', async (req, res) => {
       volatility: parseFloat(req.query.volatility) || 0.1
     };
 
-    const generator = new FactorSignalGenerator(db);
+    const generator = new FactorSignalGenerator(getDb());
     const result = await generator.getStockSignal(symbol, factorWeights);
 
     res.json({ success: true, data: result });

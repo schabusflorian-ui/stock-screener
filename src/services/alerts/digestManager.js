@@ -1,7 +1,7 @@
 // src/services/alerts/digestManager.js
 // Manages configurable digest modes for intelligent alert delivery
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * Digest Modes:

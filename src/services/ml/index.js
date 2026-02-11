@@ -10,15 +10,15 @@ let _regimeHMM = null;
 
 /**
  * Initialize ML services with database connection
- * @param {Database} db - better-sqlite3 database instance
+ * @param {Database} db - lib/db wrapper or better-sqlite3 instance
  * @param {Object} config - Configuration options
  */
-function initializeMLServices(db, config = {}) {
+async function initializeMLServices(db, config = {}) {
   _signalCombiner = new MLSignalCombiner(db, config.signalCombinerConfig);
   _regimeHMM = new RegimeHMMService(db, config.regimeHMMConfig);
 
-  // Try to load pre-trained models
-  _signalCombiner.loadModels();
+  // Try to load pre-trained models (fire-and-forget - models load in background)
+  _signalCombiner.loadModels().catch(e => console.warn('ML model load:', e.message));
   _regimeHMM.loadModel();
 
   console.log('🤖 ML Services initialized');
@@ -35,7 +35,7 @@ function initializeMLServices(db, config = {}) {
 function getSignalCombiner(db, config = {}) {
   if (!_signalCombiner) {
     _signalCombiner = new MLSignalCombiner(db, config);
-    _signalCombiner.loadModels();
+    _signalCombiner.loadModels().catch(e => console.warn('ML model load:', e.message));
   }
   return _signalCombiner;
 }

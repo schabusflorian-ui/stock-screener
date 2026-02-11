@@ -4,6 +4,7 @@
 const FactorCalculator = require('./factorCalculator');
 const FactorAnalyzer = require('./factorAnalyzer');
 const { FactorExposureAnalyzer } = require('./factorExposure');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * Factor Analysis Service
@@ -16,10 +17,13 @@ const { FactorExposureAnalyzer } = require('./factorExposure');
  * 5. Decision factor context enrichment
  */
 class FactorAnalysisService {
-  constructor(db) {
-    this.db = db;
-    this.calculator = new FactorCalculator(db);
-    this.analyzer = new FactorAnalyzer(db);
+  constructor() {
+    this.calculator = new FactorCalculator();
+    this.analyzer = new FactorAnalyzer();
+  }
+
+  async _getDatabase() {
+    return getDatabaseAsync();
   }
 
   // ============================================
@@ -119,7 +123,8 @@ class FactorAnalysisService {
    * Get all factor definitions
    */
   async getFactorDefinitions() {
-    const result = await this.db.query(`
+    const database = await this._getDatabase();
+    const result = await database.query(`
       SELECT * FROM factor_definitions
       WHERE is_active = true
       ORDER BY factor_category, factor_name
@@ -131,7 +136,8 @@ class FactorAnalysisService {
    * Get factor definition by code
    */
   async getFactorDefinition(factorCode) {
-    const result = await this.db.query(`
+    const database = await this._getDatabase();
+    const result = await database.query(`
       SELECT * FROM factor_definitions WHERE factor_code = $1
     `, [factorCode]);
     return result.rows[0];
@@ -145,7 +151,8 @@ class FactorAnalysisService {
    * Get factor performance by decision outcome
    */
   async getFactorDecisionPerformance() {
-    const result = await this.db.query(`
+    const database = await this._getDatabase();
+    const result = await database.query(`
       SELECT * FROM v_factor_decision_performance
     `);
     return result.rows;
@@ -156,6 +163,7 @@ class FactorAnalysisService {
    */
   async analyzeFactorSuccess(options = {}) {
     const { minDecisions = 100, factor = null } = options;
+    const database = await this._getDatabase();
 
     let query = `
       SELECT
@@ -188,7 +196,7 @@ class FactorAnalysisService {
     `;
     params.push(minDecisions);
 
-    const result = await this.db.query(query, params);
+    const result = await database.query(query, params);
     return result.rows;
   }
 
@@ -197,8 +205,8 @@ class FactorAnalysisService {
    */
   async getInvestorFactorHistory(investorId, options = {}) {
     const { limit = 20 } = options;
-
-    const result = await this.db.query(`
+    const database = await this._getDatabase();
+    const result = await database.query(`
       SELECT * FROM portfolio_factor_exposures
       WHERE investor_id = $1
       ORDER BY snapshot_date DESC
@@ -215,7 +223,8 @@ class FactorAnalysisService {
    * Get current factor regime
    */
   async getCurrentFactorRegime() {
-    const result = await this.db.query(`
+    const database = await this._getDatabase();
+    const result = await database.query(`
       SELECT * FROM factor_regimes
       WHERE regime_end IS NULL
         OR regime_end = (SELECT MAX(regime_end) FROM factor_regimes)
@@ -230,8 +239,8 @@ class FactorAnalysisService {
    */
   async getFactorRegimeHistory(options = {}) {
     const { limit = 20 } = options;
-
-    const result = await this.db.query(`
+    const database = await this._getDatabase();
+    const result = await database.query(`
       SELECT * FROM factor_regimes
       ORDER BY regime_start DESC
       LIMIT $1
@@ -249,9 +258,10 @@ class FactorAnalysisService {
    */
   async getFamaFrenchExposures(investorId, options = {}) {
     const { startDate, endDate } = options;
+    const database = await this._getDatabase();
 
     // Get portfolio holdings and calculate returns
-    const holdingsResult = await this.db.query(`
+    const holdingsResult = await database.query(`
       SELECT
         ih.company_id,
         c.symbol,
@@ -273,12 +283,12 @@ class FactorAnalysisService {
     // Get factor returns from daily_factor_returns table
     let factorReturnsResult;
     if (startDate && endDate) {
-      factorReturnsResult = await this.db.query(
+      factorReturnsResult = await database.query(
         'SELECT * FROM daily_factor_returns WHERE date >= $1 AND date <= $2 ORDER BY date',
         [startDate, endDate]
       );
     } else {
-      factorReturnsResult = await this.db.query(
+      factorReturnsResult = await database.query(
         'SELECT * FROM daily_factor_returns ORDER BY date DESC LIMIT 252'
       );
     }
@@ -338,13 +348,14 @@ class FactorAnalysisService {
    * Calculate portfolio-weighted factor scores
    */
   async _calculatePortfolioFactorScores(holdings) {
+    const database = await this._getDatabase();
     let totalWeight = 0;
     const weightedScores = {
       value: 0, quality: 0, momentum: 0, growth: 0, size: 0, volatility: 0, beta: 0, liquidity: 0
     };
 
     for (const holding of holdings) {
-      const result = await this.db.query(`
+      const result = await database.query(`
         SELECT * FROM stock_factor_scores
         WHERE company_id = $1
         ORDER BY score_date DESC
@@ -448,6 +459,7 @@ class FactorAnalysisService {
    */
   async getFactorReturns(options = {}) {
     const { startDate, endDate, cumulative = true } = options;
+    const database = await this._getDatabase();
 
     let query = 'SELECT * FROM daily_factor_returns';
     const params = [];
@@ -467,7 +479,7 @@ class FactorAnalysisService {
 
     query += ' ORDER BY date ASC';
 
-    const result = await this.db.query(query, params);
+    const result = await database.query(query, params);
     const returns = result.rows;
 
     if (!cumulative) {
@@ -505,7 +517,8 @@ class FactorAnalysisService {
    * Get overall factor analysis statistics
    */
   async getStats() {
-    const stockScoresResult = await this.db.query(`
+    const database = await this._getDatabase();
+    const stockScoresResult = await database.query(`
       SELECT
         COUNT(*) as total_scores,
         COUNT(DISTINCT company_id) as stocks_scored,
@@ -515,7 +528,7 @@ class FactorAnalysisService {
     `);
     const stockScores = stockScoresResult.rows[0];
 
-    const portfolioExposuresResult = await this.db.query(`
+    const portfolioExposuresResult = await database.query(`
       SELECT
         COUNT(*) as total_exposures,
         COUNT(DISTINCT investor_id) as investors_analyzed,
@@ -525,7 +538,7 @@ class FactorAnalysisService {
     `);
     const portfolioExposures = portfolioExposuresResult.rows[0];
 
-    const decisionContextsResult = await this.db.query(`
+    const decisionContextsResult = await database.query(`
       SELECT
         COUNT(*) as total_contexts,
         SUM(CASE WHEN is_value_play THEN 1 ELSE 0 END) as value_plays,
@@ -537,7 +550,7 @@ class FactorAnalysisService {
     `);
     const decisionContexts = decisionContextsResult.rows[0];
 
-    const factorDefinitionsResult = await this.db.query(`
+    const factorDefinitionsResult = await database.query(`
       SELECT COUNT(*) as count FROM factor_definitions WHERE is_active = true
     `);
     const factorDefinitions = factorDefinitionsResult.rows[0];
@@ -556,10 +569,7 @@ let instance = null;
 
 function getFactorAnalysisService() {
   if (!instance) {
-    const { db } = require('../../database');
-    // In PostgreSQL mode, db is a proxy that returns stubs
-    // The service handles both sync (SQLite) and async (PostgreSQL) operations
-    instance = new FactorAnalysisService(db);
+    instance = new FactorAnalysisService();
   }
   return instance;
 }

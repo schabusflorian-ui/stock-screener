@@ -1,7 +1,7 @@
 // src/services/alerts/actionabilityScorer.js
 // Scores alerts by actionability - "What can the user DO about this?"
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { getActionabilityBase } = require('./alertDefinitions');
 
 /**

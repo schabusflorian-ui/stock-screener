@@ -18,7 +18,7 @@ const morgan = require('morgan');
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const SQLiteStore = require('better-sqlite3-session-store')(session);
-const { getDatabaseSync } = require('../lib/db');
+const { getDatabaseSync, getDatabaseAsync, isUsingPostgres } = require('../lib/db');
 const { configurePassport } = require('../auth/passport');
 const { conditionalCsrf, csrfErrorHandler, csrfProtection } = require('../middleware/csrf');
 
@@ -151,7 +151,7 @@ app.get('/api/health', (req, res) => {
 // Configure Passport (only if Google OAuth is configured)
 let passport = null;
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-  passport = configurePassport(db.getDatabase());
+  passport = configurePassport(isUsingPostgres() ? null : getDatabaseSync());
 }
 
 // Middleware
@@ -337,7 +337,6 @@ if (passport) {
 
 // Bridge: attach real DB to app for routes that use req.app.get('db')
 // Required because app.set('db') was removed - routes get undefined otherwise
-const { getDatabaseAsync } = require('../lib/db');
 app.use(async (req, res, next) => {
   try {
     const database = await getDatabaseAsync();
@@ -551,10 +550,10 @@ app.get('/api/health/detailed', async (req, res) => {
 
   // Check database
   let dbStatus = 'unknown';
-  let dbType = db.getDatabaseType ? db.getDatabaseType() : 'unknown';
+  const dbType = isUsingPostgres() ? 'postgres' : 'sqlite';
   try {
-    const database = db.getDatabase();
-    database.prepare('SELECT 1').get();
+    const dbClient = await getDatabaseAsync();
+    await dbClient.query('SELECT 1');
     dbStatus = 'connected';
   } catch (e) {
     dbStatus = 'error';
@@ -685,7 +684,6 @@ server.listen(PORT, HOST, async () => {
 
   // Initialize Update Orchestrator if enabled
   try {
-    const { isUsingPostgres } = require('../lib/db');
     const autoStartScheduler = process.env.AUTO_START_SCHEDULER !== 'false';
 
     // UpdateOrchestrator uses SQLite-specific prepared statements and is not yet compatible with PostgreSQL
@@ -693,10 +691,11 @@ server.listen(PORT, HOST, async () => {
       logger.info('Update Scheduler: Skipped in PostgreSQL mode (SQLite-only feature)');
     } else if (autoStartScheduler) {
       const { getUpdateOrchestrator } = require('../services/updates/updateOrchestrator');
-      const orchestrator = getUpdateOrchestrator(db.getDatabase());
+      const sqliteDb = getDatabaseSync();
+      const orchestrator = getUpdateOrchestrator(sqliteDb);
 
       // Check if update_jobs table exists (migration has run)
-      const tableExists = db.getDatabase().prepare(`
+      const tableExists = sqliteDb.prepare(`
         SELECT name FROM sqlite_master
         WHERE type='table' AND name='update_jobs'
       `).get();
@@ -746,7 +745,8 @@ async function gracefulShutdown(signal) {
     // Stop update orchestrator if running
     try {
       const { getUpdateOrchestrator } = require('../services/updates/updateOrchestrator');
-      const orchestrator = getUpdateOrchestrator(db.getDatabase());
+      const sqliteDb = getDatabaseSync();
+      const orchestrator = getUpdateOrchestrator(sqliteDb);
       if (orchestrator.isRunning) {
         orchestrator.stop();
         logger.info('Update Scheduler stopped');
@@ -757,8 +757,10 @@ async function gracefulShutdown(signal) {
 
     // Close database connection
     try {
-      const database = db.getDatabase();
-      database.close();
+      const dbClient = await getDatabaseAsync();
+      if (dbClient && typeof dbClient.close === 'function') {
+        await dbClient.close();
+      }
       logger.info('Database connection closed');
     } catch (e) {
       logger.error('Error closing database:', e);

@@ -4,8 +4,8 @@
 const { getDatabase } = require('../../lib/db');
 
 class SignalPerformanceTracker {
-  constructor() {
-    this.db = null;
+  constructor(db = null) {
+    this.db = db;
 
     // All 9 signal types
     this.SIGNAL_TYPES = [
@@ -21,7 +21,10 @@ class SignalPerformanceTracker {
   }
 
   async init() {
-    this.db = await getDatabase();
+    if (!this.db) {
+      this.db = await getDatabase();
+    }
+    return this;
   }
 
   getDatabaseAsync() {
@@ -42,7 +45,7 @@ class SignalPerformanceTracker {
   async getICDecay(lookbackDays = 180) {
     const db = this.getDatabaseAsync();
 
-    const recommendations = await db.query(`
+    const res = await db.query(`
       SELECT
         ro.id,
         ro.symbol,
@@ -64,6 +67,7 @@ class SignalPerformanceTracker {
         AND ro.recommended_at >= NOW() - INTERVAL '${lookbackDays} days'
       ORDER BY ro.recommended_at DESC
     `);
+    const recommendations = res?.rows ?? [];
 
     if (recommendations.length < 20) {
       return { error: 'Insufficient data', sampleSize: recommendations.length };
@@ -220,7 +224,7 @@ class SignalPerformanceTracker {
   async getHitRatesByPeriod(lookbackDays = 180) {
     const db = this.getDatabaseAsync();
 
-    const recommendations = await db.query(`
+    const res = await db.query(`
       SELECT
         ro.id,
         ro.symbol,
@@ -242,6 +246,7 @@ class SignalPerformanceTracker {
         AND ro.recommended_at >= NOW() - INTERVAL '${lookbackDays} days'
       ORDER BY ro.recommended_at DESC
     `);
+    const recommendations = res?.rows ?? [];
 
     if (recommendations.length < 20) {
       return { error: 'Insufficient data', sampleSize: recommendations.length };
@@ -317,7 +322,7 @@ class SignalPerformanceTracker {
   async getRegimeStability(lookbackDays = 365) {
     const db = this.getDatabaseAsync();
 
-    const recommendations = await db.query(`
+    const res = await db.query(`
       SELECT
         ro.id,
         ro.symbol,
@@ -339,6 +344,7 @@ class SignalPerformanceTracker {
         AND ro.recommended_at >= NOW() - INTERVAL '${lookbackDays} days'
       ORDER BY ro.recommended_at DESC
     `);
+    const recommendations = res?.rows ?? [];
 
     if (recommendations.length < 30) {
       return { error: 'Insufficient data', sampleSize: recommendations.length };
@@ -452,7 +458,7 @@ class SignalPerformanceTracker {
   async getRollingICTrend(signalType, windowDays = 60, stepDays = 7, lookbackDays = 365) {
     const db = this.getDatabaseAsync();
 
-    const history = await db.query(`
+    const res = await db.query(`
       SELECT
         DATE(recommended_at) as date,
         signal_breakdown,
@@ -464,6 +470,7 @@ class SignalPerformanceTracker {
         AND recommended_at >= NOW() - INTERVAL '${lookbackDays} days'
       ORDER BY recommended_at ASC
     `);
+    const history = res?.rows ?? [];
 
     if (history.length < windowDays) {
       return { error: 'Insufficient data', sampleSize: history.length };
@@ -768,7 +775,7 @@ class SignalPerformanceTracker {
     const db = this.getDatabaseAsync();
 
     try {
-      const rows = await db.query(`
+      const res = await db.query(`
         SELECT
           DATE(calculated_at) as date,
           overall_health_score,
@@ -779,6 +786,7 @@ class SignalPerformanceTracker {
         WHERE calculated_at >= NOW() - INTERVAL '${days} days'
         ORDER BY calculated_at ASC
       `);
+      const rows = res?.rows ?? [];
 
       return rows.map(r => ({
         date: r.date,

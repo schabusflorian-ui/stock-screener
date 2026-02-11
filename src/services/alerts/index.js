@@ -1,7 +1,7 @@
 // src/services/alerts/index.js
 // Main Alert Service - coordinates detection, processing, and storage
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const ValuationDetector = require('./detectors/valuationDetector');
 const FundamentalDetector = require('./detectors/fundamentalDetector');
 const PriceDetector = require('./detectors/priceDetector');

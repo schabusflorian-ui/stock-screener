@@ -1,6 +1,8 @@
 // src/services/ml/trainingDataAssembler.js
 // Assembles ML training data from existing factor scores and price data
 
+const { isUsingPostgres } = require('../../lib/db');
+
 /**
  * TrainingDataAssembler - Joins existing factor scores with forward returns
  *
@@ -35,9 +37,9 @@ class TrainingDataAssembler {
    * Get available custom factors that can be used in ML training
    * @returns {Array} List of custom factors with metadata
    */
-  getAvailableCustomFactors() {
+  async getAvailableCustomFactors() {
     try {
-      const factors = this.db.prepare(`
+      const result = await this.db.query(`
         SELECT
           uf.id,
           uf.name,
@@ -54,9 +56,8 @@ class TrainingDataAssembler {
         GROUP BY uf.id
         HAVING total_values > 0
         ORDER BY uf.created_at DESC
-      `).all();
-
-      return factors;
+      `);
+      return result.rows || [];
     } catch (err) {
       console.warn('Could not fetch custom factors:', err.message);
       return [];
@@ -68,20 +69,14 @@ class TrainingDataAssembler {
    * @param {number} factorId Factor ID
    * @returns {Object} Factor metadata
    */
-  getCustomFactorMetadata(factorId) {
+  async getCustomFactorMetadata(factorId) {
     try {
-      return this.db.prepare(`
-        SELECT
-          id,
-          name,
-          formula,
-          category,
-          ic_mean,
-          wfe,
-          higher_is_better
-        FROM user_factors
-        WHERE id = ?
-      `).get(factorId);
+      const result = await this.db.query(
+        `SELECT id, name, formula, category, ic_mean, wfe, higher_is_better
+         FROM user_factors WHERE id = $1`,
+        [factorId]
+      );
+      return result.rows?.[0] || null;
     } catch (err) {
       console.warn(`Could not fetch factor ${factorId}:`, err.message);
       return null;
@@ -92,8 +87,8 @@ class TrainingDataAssembler {
    * Get training data status
    * @returns {Object} Status of available training data
    */
-  getStatus() {
-    const factorStats = this.db.prepare(`
+  async getStatus() {
+    const factorResult = await this.db.query(`
       SELECT
         COUNT(*) as total_records,
         COUNT(DISTINCT company_id) as unique_companies,
@@ -101,25 +96,30 @@ class TrainingDataAssembler {
         MAX(score_date) as max_date
       FROM stock_factor_scores
       WHERE value_score IS NOT NULL
-    `).get();
+    `);
+    const factorStats = factorResult.rows?.[0] || {};
 
-    const priceStats = this.db.prepare(`
+    const priceResult = await this.db.query(`
       SELECT
         COUNT(*) as total_records,
         COUNT(DISTINCT company_id) as unique_companies,
         MIN(date) as min_date,
         MAX(date) as max_date
       FROM daily_prices
-    `).get();
+    `);
+    const priceStats = priceResult.rows?.[0] || {};
 
-    // Check how many factor records have price data for forward returns
-    const joinableCount = this.db.prepare(`
+    const dateExpr = isUsingPostgres()
+      ? "f.score_date + INTERVAL '21 days'"
+      : "date(f.score_date, '+21 days')";
+    const joinResult = await this.db.query(`
       SELECT COUNT(*) as cnt
       FROM stock_factor_scores f
       JOIN daily_prices p1 ON p1.company_id = f.company_id AND p1.date = f.score_date
-      JOIN daily_prices p2 ON p2.company_id = f.company_id AND p2.date = date(f.score_date, '+21 days')
+      JOIN daily_prices p2 ON p2.company_id = f.company_id AND p2.date = ${dateExpr}
       WHERE f.value_score IS NOT NULL
-    `).get().cnt;
+    `);
+    const joinableCount = joinResult.rows?.[0]?.cnt ?? 0;
 
     return {
       factorRecords: factorStats.total_records,
@@ -138,7 +138,7 @@ class TrainingDataAssembler {
    * @param {Object} options Configuration options
    * @returns {Array} Training data rows with features and targets
    */
-  assembleTrainingData(options = {}) {
+  async assembleTrainingData(options = {}) {
     const {
       startDate = '2021-04-01',  // After factor data starts
       endDate = null,             // Leave room for forward returns
@@ -157,7 +157,9 @@ class TrainingDataAssembler {
       console.log(`   Including ${customFactorIds.length} custom factors: ${customFactorIds.join(', ')}`);
     }
 
-    // Build the query dynamically based on horizons
+    const dateColExpr = (h) => isUsingPostgres()
+      ? `f.score_date + (${h} || ' days')::interval`
+      : `date(f.score_date, '+${h} days')`;
     const returnColumns = horizons.map(h => `
       (SELECT p2.adjusted_close / p1.adjusted_close - 1
        FROM daily_prices p1
@@ -165,7 +167,7 @@ class TrainingDataAssembler {
          AND p2.date = (
            SELECT MIN(d.date) FROM daily_prices d
            WHERE d.company_id = p1.company_id
-             AND d.date >= date(f.score_date, '+${h} days')
+             AND d.date >= ${dateColExpr(h)}
          )
        WHERE p1.company_id = f.company_id
          AND p1.date = f.score_date
@@ -206,15 +208,16 @@ class TrainingDataAssembler {
       FROM stock_factor_scores f
       JOIN companies c ON c.id = f.company_id
       ${customFactorJoins}
-      WHERE f.score_date >= ?
-        AND f.score_date <= ?
+      WHERE f.score_date >= $1
+        AND f.score_date <= $2
         AND f.value_score IS NOT NULL
         ${sampleRate < 1.0 ? `AND ABS(RANDOM() % 1000) < ${Math.floor(sampleRate * 1000)}` : ''}
       ORDER BY f.score_date, f.symbol
-      LIMIT ?
+      LIMIT $3
     `;
 
-    const rows = this.db.prepare(query).all(startDate, effectiveEndDate, maxRecords);
+    const result = await this.db.query(query, [startDate, effectiveEndDate, maxRecords]);
+    const rows = result.rows || [];
 
     // Filter to rows with valid 21d returns (or primary horizon)
     const primaryHorizon = horizons.includes(21) ? 21 : horizons[0];
@@ -230,7 +233,7 @@ class TrainingDataAssembler {
    * @param {Object} options Configuration options
    * @returns {Object} { features, targets, featureNames, metadata }
    */
-  getTrainingMatrices(options = {}) {
+  async getTrainingMatrices(options = {}) {
     const {
       targetHorizon = 21,
       normalizeFeatures = true,
@@ -238,7 +241,7 @@ class TrainingDataAssembler {
       ...assembleOptions
     } = options;
 
-    const data = this.assembleTrainingData({
+    const data = await this.assembleTrainingData({
       horizons: [5, targetHorizon, 63],
       customFactorIds,
       ...assembleOptions
@@ -249,14 +252,16 @@ class TrainingDataAssembler {
     }
 
     // Get custom factor metadata for feature names
-    const customFactorMetadata = customFactorIds.map(id => {
-      const meta = this.getCustomFactorMetadata(id);
-      return {
-        id,
-        name: meta ? meta.name : `custom_factor_${id}`,
-        columnKey: `custom_factor_${id}`
-      };
-    });
+    const customFactorMetadata = await Promise.all(
+      customFactorIds.map(async (id) => {
+        const meta = await this.getCustomFactorMetadata(id);
+        return {
+          id,
+          name: meta ? meta.name : `custom_factor_${id}`,
+          columnKey: `custom_factor_${id}`
+        };
+      })
+    );
 
     // Define feature names
     const featureNames = [
@@ -328,8 +333,8 @@ class TrainingDataAssembler {
    * @param {Object} options Configuration options
    * @returns {Object} Data split by inferred regime
    */
-  getDataByRegime(options = {}) {
-    const { features, targets, featureNames, rawData, metadata } = this.getTrainingMatrices(options);
+  async getDataByRegime(options = {}) {
+    const { features, targets, featureNames, rawData, metadata } = await this.getTrainingMatrices(options);
 
     const regimes = {};
     rawData.forEach((row, idx) => {

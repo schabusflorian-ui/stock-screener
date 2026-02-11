@@ -1,7 +1,7 @@
 // src/services/alerts/regimeThresholds.js
 // Regime-aware threshold adjustments for smart alert filtering
 
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * Market Regimes:

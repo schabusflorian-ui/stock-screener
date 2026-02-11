@@ -2,6 +2,7 @@
 // XGBoost-style Signal Combiner using Gradient Boosting
 
 const { TrainingDataAssembler } = require('./trainingDataAssembler');
+const { isUsingPostgres } = require('../../lib/db');
 
 /**
  * MLSignalCombiner - Combines trading signals using gradient boosting
@@ -410,75 +411,26 @@ class MLSignalCombiner {
     this.lastTrainDate = null;
     this.trainingStats = null;
 
-    // Prepared statements
-    this._initStatements();
+    // Ensure table exists (SQLite only - Postgres uses migrations)
+    if (!isUsingPostgres() && typeof this.db.exec === 'function') {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS ml_models (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          model_name TEXT NOT NULL,
+          model_type TEXT NOT NULL,
+          horizon_days INTEGER,
+          model_data TEXT,
+          feature_importances TEXT,
+          training_samples INTEGER,
+          validation_metrics TEXT,
+          created_at TEXT,
+          updated_at TEXT,
+          UNIQUE(model_name, model_type)
+        )
+      `);
+    }
 
     console.log('🤖 MLSignalCombiner initialized');
-  }
-
-  _initStatements() {
-    // Get historical recommendations with outcomes
-    // Note: recommendation_outcomes table uses recommended_at and return_* columns
-    this.stmtGetTrainingData = this.db.prepare(`
-      SELECT
-        ro.company_id,
-        ro.recommended_at as recommendation_date,
-        json_extract(ro.signal_breakdown, '$.technical') as signal_technical,
-        json_extract(ro.signal_breakdown, '$.sentiment') as signal_sentiment,
-        json_extract(ro.signal_breakdown, '$.insider') as signal_insider,
-        json_extract(ro.signal_breakdown, '$.fundamental') as signal_fundamental,
-        json_extract(ro.signal_breakdown, '$.alternative') as signal_alternative_data,
-        json_extract(ro.signal_breakdown, '$.valuation') as signal_valuation,
-        json_extract(ro.signal_breakdown, '$.thirteenF') as signal_thirteen_f,
-        json_extract(ro.signal_breakdown, '$.earnings') as signal_earnings_momentum,
-        json_extract(ro.signal_breakdown, '$.valueQuality') as signal_value_quality,
-        ro.regime,
-        c.sector,
-        c.market_cap,
-        ro.return_1d as forward_return_1d,
-        ro.return_5d as forward_return_5d,
-        ro.return_21d as forward_return_21d,
-        ro.return_63d as forward_return_63d,
-        ro.return_63d as forward_return_126d
-      FROM recommendation_outcomes ro
-      JOIN companies c ON c.id = ro.company_id
-      WHERE ro.recommended_at >= date('now', '-' || ? || ' days')
-        AND ro.return_21d IS NOT NULL
-      ORDER BY ro.recommended_at DESC
-    `);
-
-    // Store model to database
-    this.stmtSaveModel = this.db.prepare(`
-      INSERT OR REPLACE INTO ml_models (
-        model_name, model_type, horizon_days, model_data,
-        feature_importances, training_samples, validation_metrics,
-        created_at, updated_at
-      ) VALUES (?, 'signal_combiner', ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-    `);
-
-    // Load model from database
-    this.stmtLoadModel = this.db.prepare(`
-      SELECT model_data, feature_importances, training_samples, validation_metrics
-      FROM ml_models
-      WHERE model_name = ? AND model_type = 'signal_combiner'
-    `);
-
-    // Ensure table exists
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS ml_models (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        model_name TEXT NOT NULL,
-        model_type TEXT NOT NULL,
-        horizon_days INTEGER,
-        model_data TEXT,
-        feature_importances TEXT,
-        training_samples INTEGER,
-        validation_metrics TEXT,
-        created_at TEXT,
-        updated_at TEXT,
-        UNIQUE(model_name, model_type)
-      )
-    `);
   }
 
   /**
@@ -486,7 +438,7 @@ class MLSignalCombiner {
    * @param {Object} options Training options
    * @returns {Object} Training results
    */
-  train(options = {}) {
+  async train(options = {}) {
     const lookbackDays = options.lookbackDays || this.config.lookbackDays;
     const customFactorIds = options.customFactorIds || [];
 
@@ -494,7 +446,7 @@ class MLSignalCombiner {
     const assembler = new TrainingDataAssembler(this.db);
 
     // Check data availability
-    const status = assembler.getStatus();
+    const status = await assembler.getStatus();
     console.log(`📊 Factor data available: ${status.factorRecords} records, ${status.factorCompanies} companies`);
     console.log(`📊 Factor data range: ${status.factorDateRange?.min} to ${status.factorDateRange?.max}`);
 
@@ -508,7 +460,7 @@ class MLSignalCombiner {
 
     // If custom factors provided, validate they exist
     if (customFactorIds.length > 0) {
-      const availableFactors = assembler.getAvailableCustomFactors();
+      const availableFactors = await assembler.getAvailableCustomFactors();
       const availableIds = new Set(availableFactors.map(f => f.id));
       const invalidIds = customFactorIds.filter(id => !availableIds.has(id));
 
@@ -538,7 +490,7 @@ class MLSignalCombiner {
     console.log(`📊 Training date range: ${startDate} to ${endDate}`);
 
     // Get training matrices from existing factor data
-    const trainingData = assembler.getTrainingMatrices({
+    const trainingData = await assembler.getTrainingMatrices({
       startDate,
       endDate,
       targetHorizon: 21, // Primary horizon
@@ -572,7 +524,7 @@ class MLSignalCombiner {
       const horizonEndDate = this._getDateDaysAgo(horizon + 30);
 
       // Get data for this specific horizon
-      const horizonData = assembler.getTrainingMatrices({
+      const horizonData = await assembler.getTrainingMatrices({
         startDate,
         endDate: horizonEndDate,
         targetHorizon: horizon,
@@ -628,14 +580,31 @@ class MLSignalCombiner {
 
       // Save to database
       const modelName = `signal_combiner_${horizon}d`;
-      this.stmtSaveModel.run(
+      const saveParams = [
         modelName,
         horizon,
         JSON.stringify(model.toJSON()),
         JSON.stringify(featureImportanceMap),
         XTrain.length,
         JSON.stringify(metrics)
-      );
+      ];
+      const saveSql = isUsingPostgres()
+        ? `INSERT INTO ml_models (
+             model_name, model_type, horizon_days, model_data,
+             feature_importances, training_samples, validation_metrics,
+             created_at, updated_at
+           ) VALUES ($1, 'signal_combiner', $2, $3, $4, $5, $6, NOW(), NOW())
+           ON CONFLICT (model_name, model_type) DO UPDATE SET
+             horizon_days = EXCLUDED.horizon_days, model_data = EXCLUDED.model_data,
+             feature_importances = EXCLUDED.feature_importances,
+             training_samples = EXCLUDED.training_samples,
+             validation_metrics = EXCLUDED.validation_metrics, updated_at = NOW()`
+        : `INSERT OR REPLACE INTO ml_models (
+             model_name, model_type, horizon_days, model_data,
+             feature_importances, training_samples, validation_metrics,
+             created_at, updated_at
+           ) VALUES ($1, 'signal_combiner', $2, $3, $4, $5, $6, datetime('now'), datetime('now'))`;
+      await this.db.query(saveSql, saveParams);
 
       results[horizon] = {
         trainingSamples: XTrain.length,
@@ -686,10 +655,16 @@ class MLSignalCombiner {
   /**
    * Load trained models from database
    */
-  loadModels() {
+  async loadModels() {
     for (const horizon of this.config.targetHorizons) {
       const modelName = `signal_combiner_${horizon}d`;
-      const row = this.stmtLoadModel.get(modelName);
+      const result = await this.db.query(
+        `SELECT model_data, feature_importances, training_samples, validation_metrics
+         FROM ml_models
+         WHERE model_name = $1 AND model_type = 'signal_combiner'`,
+        [modelName]
+      );
+      const row = result.rows?.[0];
 
       if (row && row.model_data) {
         try {
@@ -993,22 +968,23 @@ class MLSignalCombiner {
   /**
    * Get model status and training info
    */
-  getStatus() {
+  async getStatus() {
     // Get factor data status
     const assembler = new TrainingDataAssembler(this.db);
-    const factorStatus = assembler.getStatus();
+    const factorStatus = await assembler.getStatus();
 
     // Get saved model info from database
     let savedModels = [];
     try {
-      savedModels = this.db.prepare(`
+      const result = await this.db.query(`
         SELECT model_name, horizon_days, training_samples, updated_at,
                json_extract(validation_metrics, '$.r2') as r2,
                json_extract(validation_metrics, '$.informationCoefficient') as ic
         FROM ml_models
         WHERE model_type = 'signal_combiner'
         ORDER BY horizon_days
-      `).all();
+      `);
+      savedModels = result.rows || [];
     } catch (e) {
       // Table may not exist yet
     }
