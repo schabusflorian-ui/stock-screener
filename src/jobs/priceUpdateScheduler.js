@@ -13,7 +13,7 @@
 const cron = require('node-cron');
 const { spawn } = require('child_process');
 const path = require('path');
-const db = require('../database');
+const { getDatabaseAsync, isUsingPostgres } = require('../lib/db');
 
 class PriceUpdateScheduler {
   constructor() {
@@ -102,25 +102,34 @@ class PriceUpdateScheduler {
   /**
    * Get current status
    */
-  getStatus() {
-    const database = db.getDatabase();
+  async getStatus() {
+    const database = await getDatabaseAsync();
+    const isPostgres = isUsingPostgres();
+    const freshCutoff1d = isPostgres
+      ? `CURRENT_DATE - INTERVAL '1 day'`
+      : `date('now', '-1 day')`;
+    const freshCutoff3d = isPostgres
+      ? `CURRENT_DATE - INTERVAL '3 days'`
+      : `date('now', '-3 days')`;
 
     // Get update stats
-    const stats = database.prepare(`
+    const statsResult = await database.query(`
       SELECT
         COUNT(*) as total,
-        SUM(CASE WHEN last_price_update >= date('now', '-1 day') THEN 1 ELSE 0 END) as fresh_1d,
-        SUM(CASE WHEN last_price_update >= date('now', '-3 days') THEN 1 ELSE 0 END) as fresh_3d
+        SUM(CASE WHEN last_price_update >= ${freshCutoff1d} THEN 1 ELSE 0 END) as fresh_1d,
+        SUM(CASE WHEN last_price_update >= ${freshCutoff3d} THEN 1 ELSE 0 END) as fresh_3d
       FROM companies
       WHERE symbol IS NOT NULL AND symbol NOT LIKE 'CIK_%'
-    `).get();
+    `);
+    const stats = statsResult.rows[0];
 
     // Get last log entry
-    const lastLog = database.prepare(`
+    const lastLogResult = await database.query(`
       SELECT * FROM price_update_log
       ORDER BY created_at DESC
       LIMIT 1
-    `).get();
+    `);
+    const lastLog = lastLogResult.rows[0];
 
     return {
       scheduler: {
@@ -240,21 +249,25 @@ if (require.main === module) {
       });
   } else if (args.includes('--status') || args.includes('-s')) {
     // Show status
-    const status = scheduler.getStatus();
-    console.log('\n' + '='.repeat(50));
-    console.log('  Price Update Status');
-    console.log('='.repeat(50));
-    console.log('\nDatabase:');
-    console.log(`  Total companies: ${status.database.totalCompanies}`);
-    console.log(`  Fresh (1 day):   ${status.database.freshWithin1Day} (${status.database.freshness})`);
-    console.log(`  Fresh (3 days):  ${status.database.freshWithin3Days}`);
-    if (status.lastDatabaseLog) {
-      console.log('\nLast update log:');
-      console.log(`  Time:     ${status.lastDatabaseLog.created_at}`);
-      console.log(`  Updated:  ${status.lastDatabaseLog.companies_updated}`);
-      console.log(`  Errors:   ${status.lastDatabaseLog.errors}`);
-    }
-    console.log('');
+    scheduler.getStatus().then(status => {
+      console.log('\n' + '='.repeat(50));
+      console.log('  Price Update Status');
+      console.log('='.repeat(50));
+      console.log('\nDatabase:');
+      console.log(`  Total companies: ${status.database.totalCompanies}`);
+      console.log(`  Fresh (1 day):   ${status.database.freshWithin1Day} (${status.database.freshness})`);
+      console.log(`  Fresh (3 days):  ${status.database.freshWithin3Days}`);
+      if (status.lastDatabaseLog) {
+        console.log('\nLast update log:');
+        console.log(`  Time:     ${status.lastDatabaseLog.created_at}`);
+        console.log(`  Updated:  ${status.lastDatabaseLog.companies_updated}`);
+        console.log(`  Errors:   ${status.lastDatabaseLog.errors}`);
+      }
+      console.log('');
+    }).catch(err => {
+      console.error('Status check failed:', err.message);
+      process.exit(1);
+    });
   } else if (args.includes('--dry-run') || args.includes('-d')) {
     // Dry run
     scheduler.runUpdate('dry-run')

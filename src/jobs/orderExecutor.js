@@ -11,7 +11,7 @@
  */
 
 const cron = require('node-cron');
-const db = require('../database');
+const { getDatabaseAsync, isUsingPostgres } = require('../lib/db');
 const { getPortfolioService } = require('../services/portfolio');
 
 class OrderExecutor {
@@ -24,120 +24,123 @@ class OrderExecutor {
   /**
    * Check and execute all pending orders
    */
-  checkOrders() {
-    return new Promise((resolve, reject) => {
-      if (this.isRunning) {
-        reject(new Error('Order check already in progress'));
-        return;
+  async checkOrders() {
+    if (this.isRunning) {
+      throw new Error('Order check already in progress');
+    }
+
+    this.isRunning = true;
+    const startTime = Date.now();
+
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`[${new Date().toISOString()}] Checking and executing orders...`);
+    console.log('='.repeat(60));
+
+    try {
+      const portfolioService = getPortfolioService();
+
+      // Update trailing stops first (track new highs)
+      console.log('\nUpdating trailing stops...');
+      const trailingResult = await portfolioService.orderEngine.updateTrailingStops();
+      console.log(`  Trailing orders checked: ${trailingResult.trailingOrdersChecked}`);
+      console.log(`  Trailing stops updated: ${trailingResult.updated}`);
+
+      // Check and execute orders
+      console.log('\nChecking order triggers...');
+      const result = await portfolioService.checkAndExecuteOrders();
+
+      const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+
+      console.log('\nResults:');
+      console.log(`  Orders checked: ${result.checked}`);
+      console.log(`  Orders triggered: ${result.triggered}`);
+
+      if (result.triggeredOrders.length > 0) {
+        console.log('\nTriggered orders:');
+        for (const order of result.triggeredOrders) {
+          console.log(`  - ${order.symbol}: ${order.orderType} at $${order.triggeredPrice.toFixed(2)}`);
+          if (order.result.realizedPnl !== undefined) {
+            const pnlSign = order.result.realizedPnl >= 0 ? '+' : '';
+            console.log(`    Realized P&L: ${pnlSign}$${order.result.realizedPnl.toFixed(2)}`);
+          }
+        }
       }
 
-      this.isRunning = true;
-      const startTime = Date.now();
+      if (result.errors.length > 0) {
+        console.log('\nErrors:');
+        for (const error of result.errors) {
+          console.log(`  - ${error.symbol} (Order #${error.orderId}): ${error.error}`);
+        }
+      }
+
+      this.lastRun = new Date();
+      this.lastResult = {
+        success: true,
+        duration: `${duration} seconds`,
+        timestamp: this.lastRun.toISOString(),
+        ...result
+      };
 
       console.log(`\n${'='.repeat(60)}`);
-      console.log(`[${new Date().toISOString()}] Checking and executing orders...`);
-      console.log('='.repeat(60));
+      console.log(`[${this.lastRun.toISOString()}] Order check completed`);
+      console.log(`  Duration: ${duration} seconds`);
+      console.log('='.repeat(60) + '\n');
 
-      try {
-        const database = db.getDatabase();
-        const portfolioService = getPortfolioService(database);
+      return this.lastResult;
+    } catch (error) {
+      this.lastRun = new Date();
+      this.lastResult = {
+        success: false,
+        error: error.message,
+        timestamp: this.lastRun.toISOString()
+      };
 
-        // Update trailing stops first (track new highs)
-        console.log('\nUpdating trailing stops...');
-        const trailingResult = portfolioService.orderEngine.updateTrailingStops();
-        console.log(`  Trailing orders checked: ${trailingResult.trailingOrdersChecked}`);
-        console.log(`  Trailing stops updated: ${trailingResult.updated}`);
-
-        // Check and execute orders
-        console.log('\nChecking order triggers...');
-        const result = portfolioService.checkAndExecuteOrders();
-
-        const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-
-        console.log('\nResults:');
-        console.log(`  Orders checked: ${result.checked}`);
-        console.log(`  Orders triggered: ${result.triggered}`);
-
-        if (result.triggeredOrders.length > 0) {
-          console.log('\nTriggered orders:');
-          for (const order of result.triggeredOrders) {
-            console.log(`  - ${order.symbol}: ${order.orderType} at $${order.triggeredPrice.toFixed(2)}`);
-            if (order.result.realizedPnl !== undefined) {
-              const pnlSign = order.result.realizedPnl >= 0 ? '+' : '';
-              console.log(`    Realized P&L: ${pnlSign}$${order.result.realizedPnl.toFixed(2)}`);
-            }
-          }
-        }
-
-        if (result.errors.length > 0) {
-          console.log('\nErrors:');
-          for (const error of result.errors) {
-            console.log(`  - ${error.symbol} (Order #${error.orderId}): ${error.error}`);
-          }
-        }
-
-        this.isRunning = false;
-        this.lastRun = new Date();
-        this.lastResult = {
-          success: true,
-          duration: `${duration} seconds`,
-          timestamp: this.lastRun.toISOString(),
-          ...result
-        };
-
-        console.log(`\n${'='.repeat(60)}`);
-        console.log(`[${this.lastRun.toISOString()}] Order check completed`);
-        console.log(`  Duration: ${duration} seconds`);
-        console.log('='.repeat(60) + '\n');
-
-        resolve(this.lastResult);
-      } catch (error) {
-        this.isRunning = false;
-        this.lastRun = new Date();
-        this.lastResult = {
-          success: false,
-          error: error.message,
-          timestamp: this.lastRun.toISOString()
-        };
-
-        console.error(`\nError during order check: ${error.message}`);
-        reject(error);
-      }
-    });
+      console.error(`\nError during order check: ${error.message}`);
+      throw error;
+    } finally {
+      this.isRunning = false;
+    }
   }
 
   /**
    * Get current status
    */
-  getStatus() {
-    const database = db.getDatabase();
+  async getStatus() {
+    const database = await getDatabaseAsync();
+    const isPostgres = isUsingPostgres();
+    const recentCutoff = isPostgres
+      ? `CURRENT_TIMESTAMP - INTERVAL '24 hours'`
+      : `datetime('now', '-24 hours')`;
 
     // Get active orders count by type
-    const orderStats = database.prepare(`
+    const orderStatsResult = await database.query(`
       SELECT
         order_type,
         COUNT(*) as count
       FROM portfolio_orders
       WHERE status = 'active'
       GROUP BY order_type
-    `).all();
+    `);
+    const orderStats = orderStatsResult.rows;
 
     // Get recently triggered orders
-    const recentlyTriggered = database.prepare(`
+    const recentlyTriggeredResult = await database.query(`
       SELECT po.*, c.symbol, p.name as portfolio_name
       FROM portfolio_orders po
       JOIN companies c ON po.company_id = c.id
       JOIN portfolios p ON po.portfolio_id = p.id
       WHERE po.status = 'triggered'
-        AND po.triggered_at >= datetime('now', '-24 hours')
+        AND po.triggered_at >= ${recentCutoff}
       ORDER BY po.triggered_at DESC
       LIMIT 10
-    `).all();
+    `);
+    const recentlyTriggered = recentlyTriggeredResult.rows;
 
     // Get total portfolio count
-    const portfolioCount = database.prepare(`
+    const portfolioCountResult = await database.query(`
       SELECT COUNT(*) as count FROM portfolios WHERE is_archived = 0
-    `).get();
+    `);
+    const portfolioCount = portfolioCountResult.rows[0];
 
     return {
       scheduler: {
@@ -220,17 +223,20 @@ class OrderExecutor {
     console.log('\nScheduler running. Press Ctrl+C to stop.\n');
 
     // Display status on startup
-    const status = this.getStatus();
-    console.log('Current status:');
-    console.log(`  Active portfolios: ${status.portfolios}`);
-    console.log(`  Active orders: ${status.orders.totalActive}`);
-    if (Object.keys(status.orders.activeByType).length > 0) {
-      console.log('  By type:');
-      for (const [type, count] of Object.entries(status.orders.activeByType)) {
-        console.log(`    - ${type}: ${count}`);
+    this.getStatus().then(status => {
+      console.log('Current status:');
+      console.log(`  Active portfolios: ${status.portfolios}`);
+      console.log(`  Active orders: ${status.orders.totalActive}`);
+      if (Object.keys(status.orders.activeByType).length > 0) {
+        console.log('  By type:');
+        for (const [type, count] of Object.entries(status.orders.activeByType)) {
+          console.log(`    - ${type}: ${count}`);
+        }
       }
-    }
-    console.log('');
+      console.log('');
+    }).catch(err => {
+      console.error('Status load failed:', err.message);
+    });
 
     // Keep process alive
     process.on('SIGINT', () => {
@@ -256,33 +262,37 @@ if (require.main === module) {
       });
   } else if (args.includes('--status') || args.includes('-s')) {
     // Show status
-    const status = executor.getStatus();
-    console.log('\n' + '='.repeat(50));
-    console.log('  Order Executor Status');
-    console.log('='.repeat(50));
-    console.log('\nPortfolios: ' + status.portfolios);
-    console.log('\nActive Orders:');
-    console.log(`  Total: ${status.orders.totalActive}`);
-    if (Object.keys(status.orders.activeByType).length > 0) {
-      for (const [type, count] of Object.entries(status.orders.activeByType)) {
-        console.log(`  - ${type}: ${count}`);
+    executor.getStatus().then(status => {
+      console.log('\n' + '='.repeat(50));
+      console.log('  Order Executor Status');
+      console.log('='.repeat(50));
+      console.log('\nPortfolios: ' + status.portfolios);
+      console.log('\nActive Orders:');
+      console.log(`  Total: ${status.orders.totalActive}`);
+      if (Object.keys(status.orders.activeByType).length > 0) {
+        for (const [type, count] of Object.entries(status.orders.activeByType)) {
+          console.log(`  - ${type}: ${count}`);
+        }
       }
-    }
-    if (status.recentlyTriggered.length > 0) {
-      console.log('\nRecently Triggered (24h):');
-      for (const order of status.recentlyTriggered) {
-        console.log(`  - ${order.symbol} (${order.portfolio}): ${order.type} at $${order.triggeredPrice}`);
-        console.log(`    Triggered: ${order.triggeredAt}`);
+      if (status.recentlyTriggered.length > 0) {
+        console.log('\nRecently Triggered (24h):');
+        for (const order of status.recentlyTriggered) {
+          console.log(`  - ${order.symbol} (${order.portfolio}): ${order.type} at $${order.triggeredPrice}`);
+          console.log(`    Triggered: ${order.triggeredAt}`);
+        }
       }
-    }
-    if (status.scheduler.lastRun) {
-      console.log('\nLast Run:');
-      console.log(`  Time: ${status.scheduler.lastRun}`);
-      console.log(`  Duration: ${status.scheduler.lastResult?.duration || 'N/A'}`);
-      console.log(`  Checked: ${status.scheduler.lastResult?.checked || 0}`);
-      console.log(`  Triggered: ${status.scheduler.lastResult?.triggered || 0}`);
-    }
-    console.log('');
+      if (status.scheduler.lastRun) {
+        console.log('\nLast Run:');
+        console.log(`  Time: ${status.scheduler.lastRun}`);
+        console.log(`  Duration: ${status.scheduler.lastResult?.duration || 'N/A'}`);
+        console.log(`  Checked: ${status.scheduler.lastResult?.checked || 0}`);
+        console.log(`  Triggered: ${status.scheduler.lastResult?.triggered || 0}`);
+      }
+      console.log('');
+    }).catch(err => {
+      console.error('Status check failed:', err.message);
+      process.exit(1);
+    });
   } else if (args.includes('--help') || args.includes('-h')) {
     console.log(`
 Order Executor Scheduler

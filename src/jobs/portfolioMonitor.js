@@ -11,7 +11,7 @@
  */
 
 const cron = require('node-cron');
-const db = require('../database');
+const { getDatabaseAsync, isUsingPostgres } = require('../lib/db');
 const { getPortfolioService } = require('../services/portfolio');
 
 class PortfolioMonitor {
@@ -24,122 +24,129 @@ class PortfolioMonitor {
   /**
    * Check all portfolio alerts
    */
-  checkAlerts() {
-    return new Promise((resolve, reject) => {
-      if (this.isRunning) {
-        reject(new Error('Alert check already in progress'));
-        return;
-      }
+  async checkAlerts() {
+    if (this.isRunning) {
+      throw new Error('Alert check already in progress');
+    }
 
-      this.isRunning = true;
-      const startTime = Date.now();
+    this.isRunning = true;
+    const startTime = Date.now();
 
-      console.log(`\n${'='.repeat(60)}`);
-      console.log(`[${new Date().toISOString()}] Checking portfolio alerts...`);
-      console.log('='.repeat(60));
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`[${new Date().toISOString()}] Checking portfolio alerts...`);
+    console.log('='.repeat(60));
 
-      try {
-        const database = db.getDatabase();
-        const portfolioService = getPortfolioService(database);
+    try {
+      const portfolioService = getPortfolioService();
 
-        // Check all portfolio alerts
-        console.log('\nChecking all portfolios for alert conditions...');
-        const result = portfolioService.checkAllPortfolioAlerts();
+      // Check all portfolio alerts
+      console.log('\nChecking all portfolios for alert conditions...');
+      const result = await portfolioService.checkAllPortfolioAlerts();
 
-        const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+      const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 
-        console.log('\nResults:');
-        console.log(`  Portfolios checked: ${result.checked}`);
-        console.log(`  Successful: ${result.successful}`);
-        console.log(`  Total alerts triggered: ${result.totalAlerts}`);
+      console.log('\nResults:');
+      console.log(`  Portfolios checked: ${result.checked}`);
+      console.log(`  Successful: ${result.successful}`);
+      console.log(`  Total alerts triggered: ${result.totalAlerts}`);
 
-        if (result.totalAlerts > 0) {
-          console.log('\nTriggered alerts by portfolio:');
-          for (const portfolio of result.results) {
-            if (portfolio.alertsTriggered > 0) {
-              console.log(`\n  ${portfolio.name} (ID: ${portfolio.portfolioId}):`);
-              for (const alert of portfolio.alerts) {
-                console.log(`    [${alert.severity.toUpperCase()}] ${alert.message}`);
-              }
+      if (result.totalAlerts > 0) {
+        console.log('\nTriggered alerts by portfolio:');
+        for (const portfolio of result.results) {
+          if (portfolio.alertsTriggered > 0) {
+            console.log(`\n  ${portfolio.name} (ID: ${portfolio.portfolioId}):`);
+            for (const alert of portfolio.alerts) {
+              console.log(`    [${alert.severity.toUpperCase()}] ${alert.message}`);
             }
           }
         }
-
-        // Report any errors
-        const errors = result.results.filter(r => !r.success);
-        if (errors.length > 0) {
-          console.log('\nErrors:');
-          for (const err of errors) {
-            console.log(`  - ${err.name} (ID: ${err.portfolioId}): ${err.error}`);
-          }
-        }
-
-        this.isRunning = false;
-        this.lastRun = new Date();
-        this.lastResult = {
-          success: true,
-          duration: `${duration} seconds`,
-          timestamp: this.lastRun.toISOString(),
-          ...result
-        };
-
-        console.log(`\n${'='.repeat(60)}`);
-        console.log(`[${this.lastRun.toISOString()}] Alert check completed`);
-        console.log(`  Duration: ${duration} seconds`);
-        console.log('='.repeat(60) + '\n');
-
-        resolve(this.lastResult);
-      } catch (error) {
-        this.isRunning = false;
-        this.lastRun = new Date();
-        this.lastResult = {
-          success: false,
-          error: error.message,
-          timestamp: this.lastRun.toISOString()
-        };
-
-        console.error(`\nError during alert check: ${error.message}`);
-        reject(error);
       }
-    });
+
+      // Report any errors
+      const errors = result.results.filter(r => !r.success);
+      if (errors.length > 0) {
+        console.log('\nErrors:');
+        for (const err of errors) {
+          console.log(`  - ${err.name} (ID: ${err.portfolioId}): ${err.error}`);
+        }
+      }
+
+      this.lastRun = new Date();
+      this.lastResult = {
+        success: true,
+        duration: `${duration} seconds`,
+        timestamp: this.lastRun.toISOString(),
+        ...result
+      };
+
+      console.log(`\n${'='.repeat(60)}`);
+      console.log(`[${this.lastRun.toISOString()}] Alert check completed`);
+      console.log(`  Duration: ${duration} seconds`);
+      console.log('='.repeat(60) + '\n');
+
+      return this.lastResult;
+    } catch (error) {
+      this.lastRun = new Date();
+      this.lastResult = {
+        success: false,
+        error: error.message,
+        timestamp: this.lastRun.toISOString()
+      };
+
+      console.error(`\nError during alert check: ${error.message}`);
+      throw error;
+    } finally {
+      this.isRunning = false;
+    }
   }
 
   /**
    * Get current status
    */
-  getStatus() {
-    const database = db.getDatabase();
+  async getStatus() {
+    const database = await getDatabaseAsync();
+    const isPostgres = isUsingPostgres();
+    const last7Days = isPostgres
+      ? `CURRENT_TIMESTAMP - INTERVAL '7 days'`
+      : `datetime('now', '-7 days')`;
+    const last24Hours = isPostgres
+      ? `CURRENT_TIMESTAMP - INTERVAL '24 hours'`
+      : `datetime('now', '-24 hours')`;
 
     // Get portfolio count
-    const portfolioCount = database.prepare(`
+    const portfolioCountResult = await database.query(`
       SELECT COUNT(*) as count FROM portfolios WHERE is_archived = 0
-    `).get();
+    `);
+    const portfolioCount = portfolioCountResult.rows[0];
 
     // Get alert counts by type
-    const alertCounts = database.prepare(`
+    const alertCountsResult = await database.query(`
       SELECT
         alert_type,
         COUNT(*) as count,
         SUM(CASE WHEN is_read = 0 THEN 1 ELSE 0 END) as unread
       FROM portfolio_alerts
-      WHERE created_at >= datetime('now', '-7 days')
+      WHERE created_at >= ${last7Days}
       GROUP BY alert_type
-    `).all();
+    `);
+    const alertCounts = alertCountsResult.rows;
 
     // Get total unread
-    const totalUnread = database.prepare(`
+    const totalUnreadResult = await database.query(`
       SELECT COUNT(*) as count FROM portfolio_alerts WHERE is_read = 0
-    `).get();
+    `);
+    const totalUnread = totalUnreadResult.rows[0];
 
     // Get recent alerts
-    const recentAlerts = database.prepare(`
+    const recentAlertsResult = await database.query(`
       SELECT pa.*, p.name as portfolio_name
       FROM portfolio_alerts pa
       JOIN portfolios p ON pa.portfolio_id = p.id
-      WHERE pa.created_at >= datetime('now', '-24 hours')
+      WHERE pa.created_at >= ${last24Hours}
       ORDER BY pa.created_at DESC
       LIMIT 10
-    `).all();
+    `);
+    const recentAlerts = recentAlertsResult.rows;
 
     return {
       scheduler: {
@@ -223,17 +230,20 @@ class PortfolioMonitor {
     console.log('\nScheduler running. Press Ctrl+C to stop.\n');
 
     // Display status on startup
-    const status = this.getStatus();
-    console.log('Current status:');
-    console.log(`  Active portfolios: ${status.portfolios}`);
-    console.log(`  Unread alerts: ${status.alerts.totalUnread}`);
-    if (Object.keys(status.alerts.last7DaysByType).length > 0) {
-      console.log('  Alerts (last 7 days) by type:');
-      for (const [type, data] of Object.entries(status.alerts.last7DaysByType)) {
-        console.log(`    - ${type}: ${data.total} (${data.unread} unread)`);
+    this.getStatus().then(status => {
+      console.log('Current status:');
+      console.log(`  Active portfolios: ${status.portfolios}`);
+      console.log(`  Unread alerts: ${status.alerts.totalUnread}`);
+      if (Object.keys(status.alerts.last7DaysByType).length > 0) {
+        console.log('  Alerts (last 7 days) by type:');
+        for (const [type, data] of Object.entries(status.alerts.last7DaysByType)) {
+          console.log(`    - ${type}: ${data.total} (${data.unread} unread)`);
+        }
       }
-    }
-    console.log('');
+      console.log('');
+    }).catch(err => {
+      console.error('Status load failed:', err.message);
+    });
 
     // Keep process alive
     process.on('SIGINT', () => {
@@ -259,35 +269,39 @@ if (require.main === module) {
       });
   } else if (args.includes('--status') || args.includes('-s')) {
     // Show status
-    const status = monitor.getStatus();
-    console.log('\n' + '='.repeat(50));
-    console.log('  Portfolio Monitor Status');
-    console.log('='.repeat(50));
-    console.log('\nPortfolios: ' + status.portfolios);
-    console.log('\nAlerts:');
-    console.log(`  Total Unread: ${status.alerts.totalUnread}`);
-    if (Object.keys(status.alerts.last7DaysByType).length > 0) {
-      console.log('  Last 7 Days by Type:');
-      for (const [type, data] of Object.entries(status.alerts.last7DaysByType)) {
-        console.log(`    - ${type}: ${data.total} total, ${data.unread} unread`);
+    monitor.getStatus().then(status => {
+      console.log('\n' + '='.repeat(50));
+      console.log('  Portfolio Monitor Status');
+      console.log('='.repeat(50));
+      console.log('\nPortfolios: ' + status.portfolios);
+      console.log('\nAlerts:');
+      console.log(`  Total Unread: ${status.alerts.totalUnread}`);
+      if (Object.keys(status.alerts.last7DaysByType).length > 0) {
+        console.log('  Last 7 Days by Type:');
+        for (const [type, data] of Object.entries(status.alerts.last7DaysByType)) {
+          console.log(`    - ${type}: ${data.total} total, ${data.unread} unread`);
+        }
       }
-    }
-    if (status.recentAlerts.length > 0) {
-      console.log('\nRecent Alerts (24h):');
-      for (const alert of status.recentAlerts) {
-        const readIndicator = alert.isRead ? '✓' : '•';
-        console.log(`  ${readIndicator} [${alert.severity.toUpperCase()}] ${alert.portfolio}: ${alert.message}`);
-        console.log(`    Type: ${alert.type}, Time: ${alert.createdAt}`);
+      if (status.recentAlerts.length > 0) {
+        console.log('\nRecent Alerts (24h):');
+        for (const alert of status.recentAlerts) {
+          const readIndicator = alert.isRead ? '✓' : '•';
+          console.log(`  ${readIndicator} [${alert.severity.toUpperCase()}] ${alert.portfolio}: ${alert.message}`);
+          console.log(`    Type: ${alert.type}, Time: ${alert.createdAt}`);
+        }
       }
-    }
-    if (status.scheduler.lastRun) {
-      console.log('\nLast Run:');
-      console.log(`  Time: ${status.scheduler.lastRun}`);
-      console.log(`  Duration: ${status.scheduler.lastResult?.duration || 'N/A'}`);
-      console.log(`  Checked: ${status.scheduler.lastResult?.checked || 0}`);
-      console.log(`  Alerts Triggered: ${status.scheduler.lastResult?.alertsTriggered || 0}`);
-    }
-    console.log('');
+      if (status.scheduler.lastRun) {
+        console.log('\nLast Run:');
+        console.log(`  Time: ${status.scheduler.lastRun}`);
+        console.log(`  Duration: ${status.scheduler.lastResult?.duration || 'N/A'}`);
+        console.log(`  Checked: ${status.scheduler.lastResult?.checked || 0}`);
+        console.log(`  Alerts Triggered: ${status.scheduler.lastResult?.alertsTriggered || 0}`);
+      }
+      console.log('');
+    }).catch(err => {
+      console.error('Status check failed:', err.message);
+      process.exit(1);
+    });
   } else if (args.includes('--help') || args.includes('-h')) {
     console.log(`
 Portfolio Monitor Scheduler

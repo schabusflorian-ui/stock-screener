@@ -3,7 +3,7 @@
 // Enhanced with HF-style backtesting integration (IC Analysis, Alpha Validation, Capacity)
 
 const cron = require('node-cron');
-const db = require('../database');
+const { getDatabaseAsync, isUsingPostgres } = require('../lib/db');
 const { RecommendationTracker } = require('../services/agent/recommendationTracker');
 
 // Import new backtesting modules for enhanced feedback loop
@@ -37,6 +37,14 @@ class OutcomeUpdater {
     this.lastResult = null;
     this.tracker = null;
     this.backtestingEnabled = loadBacktestingModules();
+    this.databasePromise = null;
+  }
+
+  async getDatabase() {
+    if (!this.databasePromise) {
+      this.databasePromise = getDatabaseAsync();
+    }
+    return this.databasePromise;
   }
 
   /**
@@ -44,7 +52,7 @@ class OutcomeUpdater {
    */
   getTracker() {
     if (!this.tracker) {
-      this.tracker = new RecommendationTracker(db.getDatabase());
+      this.tracker = new RecommendationTracker();
     }
     return this.tracker;
   }
@@ -92,18 +100,18 @@ class OutcomeUpdater {
       console.log('📊 Updating recommendation outcomes...');
 
       // Update all pending outcomes
-      const outcomeResult = tracker.updateAllOutcomes();
+      const outcomeResult = await tracker.updateAllOutcomes();
       results.outcomesUpdated = outcomeResult.updated;
       results.errors = outcomeResult.errors;
       console.log(`  Updated ${outcomeResult.updated} outcomes (${outcomeResult.errors} errors)`);
 
       // Recalculate signal performance metrics
       console.log('📈 Recalculating signal performance...');
-      tracker.recalculateSignalPerformance();
+      await tracker.recalculateSignalPerformance();
 
       // Update optimized weights (original method)
       console.log('⚖️ Updating optimized signal weights...');
-      this.updateOptimizedWeights();
+      await this.updateOptimizedWeights();
 
       // NEW: Enhanced backtesting-based analysis (if available)
       if (this.backtestingEnabled) {
@@ -207,15 +215,16 @@ class OutcomeUpdater {
 
     console.log('  📊 Running alpha validation...');
 
-    const database = db.getDatabase();
+    const database = await this.getDatabase();
 
     // Find portfolios with at least 60 days of snapshots
-    const portfolios = database.prepare(`
+    const portfoliosResult = await database.query(`
       SELECT portfolio_id, COUNT(*) as days
       FROM portfolio_snapshots
       GROUP BY portfolio_id
       HAVING days >= 60
-    `).all();
+    `);
+    const portfolios = portfoliosResult.rows;
 
     const results = {};
     let validated = 0;
@@ -260,12 +269,13 @@ class OutcomeUpdater {
 
     console.log('  💧 Updating capacity constraints...');
 
-    const database = db.getDatabase();
+    const database = await this.getDatabase();
 
     // Get portfolios with positions
-    const portfolios = database.prepare(`
+    const portfoliosResult = await database.query(`
       SELECT DISTINCT portfolio_id FROM portfolio_positions
-    `).all();
+    `);
+    const portfolios = portfoliosResult.rows;
 
     const results = {};
 
@@ -282,7 +292,7 @@ class OutcomeUpdater {
         };
 
         // Store capacity constraints for use by TradingAgent/RiskManager
-        this._storeCapacityConstraints(p.portfolio_id, capacity);
+        await this._storeCapacityConstraints(p.portfolio_id, capacity);
 
         console.log(`    Portfolio ${p.portfolio_id}: Capacity ${(capacity.scalabilityRatio || 1).toFixed(1)}x, Liquidity ${capacity.liquidityMetrics?.overallScore || 'N/A'}/100`);
       } catch (error) {

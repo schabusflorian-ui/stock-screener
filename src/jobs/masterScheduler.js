@@ -41,6 +41,10 @@ class DistributedLockManager {
   }
 
   _initRedis() {
+    if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID) {
+      return;
+    }
+
     const redisUrl = process.env.REDIS_URL;
     if (!redisUrl) {
       console.log('[Lock Manager] No REDIS_URL, using local locking');

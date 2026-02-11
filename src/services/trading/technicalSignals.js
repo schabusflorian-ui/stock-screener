@@ -269,7 +269,7 @@ class TechnicalSignals {
             sma_20, sma_50, sma_200, trend_score, atr_14, volume_trend, volume_score,
             current_price, interpretation
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
-          ON CONFLICT (company_id, DATE(calculated_at)) DO UPDATE SET
+          ON CONFLICT (company_id, calculated_at) DO UPDATE SET
             score = EXCLUDED.score, confidence = EXCLUDED.confidence, signal = EXCLUDED.signal,
             signal_strength = EXCLUDED.signal_strength, rsi_14 = EXCLUDED.rsi_14, rsi_score = EXCLUDED.rsi_score,
             macd_line = EXCLUDED.macd_line, macd_signal = EXCLUDED.macd_signal, macd_histogram = EXCLUDED.macd_histogram,

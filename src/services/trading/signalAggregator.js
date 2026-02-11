@@ -296,35 +296,7 @@ class SignalAggregator {
       const company = companyResult.rows[0];
       if (!company) return;
 
-      const upsertSql = isUsingPostgres()
-        ? `INSERT INTO aggregated_signals (
-            company_id, symbol, calculated_at, market_regime, regime_confidence,
-            technical_score, technical_confidence, technical_signal,
-            sentiment_score, sentiment_confidence, sentiment_signal,
-            insider_score, insider_confidence, insider_signal,
-            analyst_score, analyst_confidence, analyst_signal,
-            avg_score, weighted_score, bullish_count, bearish_count, highest_confidence,
-            overall_signal, overall_strength, overall_confidence, context
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
-          ON CONFLICT (company_id, DATE(calculated_at)) DO UPDATE SET
-            market_regime = EXCLUDED.market_regime, regime_confidence = EXCLUDED.regime_confidence,
-            technical_score = EXCLUDED.technical_score, technical_confidence = EXCLUDED.technical_confidence, technical_signal = EXCLUDED.technical_signal,
-            sentiment_score = EXCLUDED.sentiment_score, sentiment_confidence = EXCLUDED.sentiment_confidence, sentiment_signal = EXCLUDED.sentiment_signal,
-            insider_score = EXCLUDED.insider_score, insider_confidence = EXCLUDED.insider_confidence, insider_signal = EXCLUDED.insider_signal,
-            analyst_score = EXCLUDED.analyst_score, analyst_confidence = EXCLUDED.analyst_confidence, analyst_signal = EXCLUDED.analyst_signal,
-            avg_score = EXCLUDED.avg_score, weighted_score = EXCLUDED.weighted_score, bullish_count = EXCLUDED.bullish_count, bearish_count = EXCLUDED.bearish_count, highest_confidence = EXCLUDED.highest_confidence,
-            overall_signal = EXCLUDED.overall_signal, overall_strength = EXCLUDED.overall_strength, overall_confidence = EXCLUDED.overall_confidence, context = EXCLUDED.context`
-        : `INSERT OR REPLACE INTO aggregated_signals (
-            company_id, symbol, calculated_at, market_regime, regime_confidence,
-            technical_score, technical_confidence, technical_signal,
-            sentiment_score, sentiment_confidence, sentiment_signal,
-            insider_score, insider_confidence, insider_signal,
-            analyst_score, analyst_confidence, analyst_signal,
-            avg_score, weighted_score, bullish_count, bearish_count, highest_confidence,
-            overall_signal, overall_strength, overall_confidence, context
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)`;
-
-      await db.query(upsertSql, [
+      const values = [
         company.id, symbol, result.timestamp, result.regime?.regime, result.regime?.confidence,
         result.signals.technical.score, result.signals.technical.confidence, result.signals.technical.signal,
         result.signals.sentiment.score, result.signals.sentiment.confidence, result.signals.sentiment.signal,
@@ -332,7 +304,49 @@ class SignalAggregator {
         result.signals.analyst.score, result.signals.analyst.confidence, result.signals.analyst.signal,
         result.summary.avgScore, result.summary.weightedScore, result.summary.bullishCount, result.summary.bearishCount, result.summary.highestConfidence,
         result.overall.signal, result.overall.strength, result.overall.confidence, JSON.stringify(result.context)
-      ]);
+      ];
+
+      const insertSql = `INSERT INTO aggregated_signals (
+        company_id, symbol, calculated_at, market_regime, regime_confidence,
+        technical_score, technical_confidence, technical_signal,
+        sentiment_score, sentiment_confidence, sentiment_signal,
+        insider_score, insider_confidence, insider_signal,
+        analyst_score, analyst_confidence, analyst_signal,
+        avg_score, weighted_score, bullish_count, bearish_count, highest_confidence,
+        overall_signal, overall_strength, overall_confidence, context
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)`;
+
+      if (isUsingPostgres()) {
+        const upsertSql = `${insertSql}
+          ON CONFLICT (company_id, calculated_at) DO UPDATE SET
+            market_regime = EXCLUDED.market_regime, regime_confidence = EXCLUDED.regime_confidence,
+            technical_score = EXCLUDED.technical_score, technical_confidence = EXCLUDED.technical_confidence, technical_signal = EXCLUDED.technical_signal,
+            sentiment_score = EXCLUDED.sentiment_score, sentiment_confidence = EXCLUDED.sentiment_confidence, sentiment_signal = EXCLUDED.sentiment_signal,
+            insider_score = EXCLUDED.insider_score, insider_confidence = EXCLUDED.insider_confidence, insider_signal = EXCLUDED.insider_signal,
+            analyst_score = EXCLUDED.analyst_score, analyst_confidence = EXCLUDED.analyst_confidence, analyst_signal = EXCLUDED.analyst_signal,
+            avg_score = EXCLUDED.avg_score, weighted_score = EXCLUDED.weighted_score, bullish_count = EXCLUDED.bullish_count, bearish_count = EXCLUDED.bearish_count, highest_confidence = EXCLUDED.highest_confidence,
+            overall_signal = EXCLUDED.overall_signal, overall_strength = EXCLUDED.overall_strength, overall_confidence = EXCLUDED.overall_confidence, context = EXCLUDED.context`;
+        try {
+          await db.query(upsertSql, values);
+        } catch (e) {
+          if (e.code === '42P10' || e.message?.includes('ON CONFLICT')) {
+            await db.query(insertSql, values).catch(() => {});
+          } else throw e;
+        }
+      } else {
+        await db.query(
+          `INSERT OR REPLACE INTO aggregated_signals (
+            company_id, symbol, calculated_at, market_regime, regime_confidence,
+            technical_score, technical_confidence, technical_signal,
+            sentiment_score, sentiment_confidence, sentiment_signal,
+            insider_score, insider_confidence, insider_signal,
+            analyst_score, analyst_confidence, analyst_signal,
+            avg_score, weighted_score, bullish_count, bearish_count, highest_confidence,
+            overall_signal, overall_strength, overall_confidence, context
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)`,
+          values
+        );
+      }
     } catch (error) {
       console.error(`Error storing aggregated signal for ${symbol}:`, error.message);
     }

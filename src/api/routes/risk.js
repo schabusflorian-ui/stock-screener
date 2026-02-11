@@ -7,40 +7,18 @@
 
 const express = require('express');
 const router = express.Router();
-const { getDatabaseSync, isUsingPostgres } = require('../../lib/db');
+const { getDatabaseAsync } = require('../../lib/db');
 const {
   MarginOfSafetyCalculator,
   BuffettTalebRiskManager
 } = require('../../services/riskManagement');
 
-// Risk endpoints are SQLite-only for now.
-router.use((req, res, next) => {
-  if (isUsingPostgres()) {
-    return res.status(503).json({
-      error: 'Risk endpoints are not available in PostgreSQL deployment',
-      code: 'RISK_NOT_AVAILABLE',
-      message: 'These endpoints use SQLite-specific queries and require migration.'
-    });
-  }
-  next();
-});
-
-let database = null;
-function getDb() {
-  if (!database) {
-    database = getDatabaseSync();
-  }
-  return database;
-}
-
-// Initialize services
 let mosCalculator, riskManager;
 
 function initServices() {
   if (!mosCalculator) {
-    const dbConn = getDb();
-    mosCalculator = new MarginOfSafetyCalculator(dbConn);
-    riskManager = new BuffettTalebRiskManager(dbConn);
+    mosCalculator = new MarginOfSafetyCalculator();
+    riskManager = new BuffettTalebRiskManager();
   }
 }
 
@@ -79,8 +57,9 @@ router.get('/margin-of-safety/symbol/:symbol', async (req, res) => {
     const { symbol } = req.params;
     const { recalc = false } = req.query;
 
-    const dbConn = getDb();
-    const company = await dbConn.prepare('SELECT id FROM companies WHERE symbol = ?').get(symbol.toUpperCase());
+    const db = await getDatabaseAsync();
+    const companyResult = await db.query('SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)', [symbol]);
+    const company = companyResult.rows[0];
 
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
@@ -204,8 +183,9 @@ router.post('/assess/:portfolioId', async (req, res) => {
     // If symbol provided instead of companyId, look it up
     let targetCompanyId = companyId;
     if (!targetCompanyId && symbol) {
-      const dbConn = getDb();
-      const company = await dbConn.prepare('SELECT id FROM companies WHERE symbol = ?').get(symbol.toUpperCase());
+      const db = await getDatabaseAsync();
+      const companyResult = await db.query('SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)', [symbol]);
+      const company = companyResult.rows[0];
       if (!company) {
         return res.status(404).json({ error: 'Company not found' });
       }
@@ -302,17 +282,15 @@ router.get('/drawdown/:portfolioId/history', async (req, res) => {
     const { portfolioId } = req.params;
     const { limit = 10 } = req.query;
 
-    const dbConn = db.getDatabase();
-    const history = await dbConn.prepare(`
-      SELECT * FROM drawdown_history
-      WHERE portfolio_id = ?
-      ORDER BY start_date DESC
-      LIMIT ?
-    `).all(parseInt(portfolioId), parseInt(limit));
+    const db = await getDatabaseAsync();
+    const result = await db.query(
+      `SELECT * FROM drawdown_history WHERE portfolio_id = $1 ORDER BY start_date DESC LIMIT $2`,
+      [parseInt(portfolioId), parseInt(limit)]
+    );
 
     res.json({
-      count: history.length,
-      history
+      count: result.rows.length,
+      history: result.rows
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -403,15 +381,11 @@ router.post('/events/:eventId/resolve', async (req, res) => {
     const { eventId } = req.params;
     const { action, resolvedBy } = req.body;
 
-    const dbConn = db.getDatabase();
-    await dbConn.prepare(`
-      UPDATE risk_events SET
-        resolved = 1,
-        resolution_action = ?,
-        resolved_at = CURRENT_TIMESTAMP,
-        resolved_by = ?
-      WHERE id = ?
-    `).run(action, resolvedBy, parseInt(eventId));
+    const db = await getDatabaseAsync();
+    await db.query(
+      `UPDATE risk_events SET resolved = 1, resolution_action = $1, resolved_at = CURRENT_TIMESTAMP, resolved_by = $2 WHERE id = $3`,
+      [action, resolvedBy, parseInt(eventId)]
+    );
 
     res.json({ message: 'Risk event resolved', eventId: parseInt(eventId) });
   } catch (error) {

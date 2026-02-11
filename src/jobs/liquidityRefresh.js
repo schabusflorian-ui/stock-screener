@@ -38,7 +38,7 @@ class LiquidityRefresh {
         : `dp.date >= date('now', '-60 days')`;
 
       const companiesResult = await db.query(`
-        SELECT DISTINCT c.id, c.symbol, c.market_cap
+        SELECT c.id, c.symbol, c.market_cap
         FROM companies c
         JOIN daily_prices dp ON c.id = dp.company_id
         WHERE ${dateFilter}
@@ -53,7 +53,6 @@ class LiquidityRefresh {
         try {
           const metrics = await this._calculateLiquidity(db, company);
           if (metrics) {
-            const conflictCol = isUsingPostgres() ? 'company_id' : 'company_id';
             const upsertSql = isUsingPostgres()
               ? `INSERT INTO liquidity_metrics (
                   company_id, avg_volume_30d, avg_value_30d, volume_volatility,
