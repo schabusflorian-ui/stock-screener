@@ -121,14 +121,15 @@ function responseCacheMiddleware(options = {}) {
       return res.json(cached);
     }
 
-    // Wrap res.json to cache the response
+    // Miss: set header now so it's present even if handler never calls res.json
+    res.setHeader('X-Cache', 'MISS');
+    res.setHeader('X-Cache-Backend', 'memory');
+
+    // Wrap res.json to cache the response when handler runs
     const originalJson = res.json.bind(res);
     res.json = function(data) {
-      // Only cache successful responses
       if (res.statusCode >= 200 && res.statusCode < 300) {
         responseCache.set(cacheKey, data, ttl);
-        res.setHeader('X-Cache', 'MISS');
-        res.setHeader('X-Cache-Backend', 'memory');
       }
       return originalJson(data);
     };
@@ -164,17 +165,15 @@ function redisCacheMiddleware(options = {}) {
       logger.warn('Redis cache get error, proceeding without cache', { error: err.message });
     }
 
-    // Wrap res.json to cache the response
+    res.setHeader('X-Cache', 'MISS');
+    res.setHeader('X-Cache-Backend', unifiedCache.getBackend());
+
     const originalJson = res.json.bind(res);
     res.json = function(data) {
-      // Only cache successful responses
       if (res.statusCode >= 200 && res.statusCode < 300) {
-        // Cache asynchronously, don't block response
         unifiedCache.set(cacheKey, data, ttl).catch(err => {
           logger.warn('Redis cache set error', { error: err.message });
         });
-        res.setHeader('X-Cache', 'MISS');
-        res.setHeader('X-Cache-Backend', unifiedCache.getBackend());
       }
       return originalJson(data);
     };

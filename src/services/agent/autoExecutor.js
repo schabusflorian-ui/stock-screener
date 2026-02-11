@@ -27,11 +27,11 @@ class AutoExecutor {
       return getDatabaseAsync();
     }
 
-    if (this.db.query) {
+    if (typeof this.db.query === 'function') {
       return this.db;
     }
 
-    if (!this.dbAdapter && this.db.prepare) {
+    if (!this.dbAdapter && typeof this.db.prepare === 'function') {
       this.dbAdapter = {
         type: 'sqlite',
         query: (sql, params = []) => {
@@ -68,7 +68,11 @@ class AutoExecutor {
       };
     }
 
-    return this.dbAdapter || this.db;
+    const out = this.dbAdapter || this.db;
+    if (out && typeof out.query === 'function') {
+      return out;
+    }
+    return getDatabaseAsync();
   }
 
   /**
