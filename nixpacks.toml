@@ -4,8 +4,10 @@
 # Updated: 2026-02-10 to add Python for AI analyst service (analystBridge.js spawns python3)
 
 [variables]
-# No environment variables needed at build time
-# All sensitive vars are runtime-only
+# Speed up and stabilize frontend build (avoids timeout/OOM on Railway)
+GENERATE_SOURCEMAP = "false"
+NODE_OPTIONS = "--max-old-space-size=4096"
+# No other env needed at build time; sensitive vars are runtime-only
 
 [phases.setup]
 aptPkgs = ["curl", "python3", "python3-pip"]
