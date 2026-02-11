@@ -1,5 +1,5 @@
 # .dockerignore
-# Files and directories to exclude from Docker build context
+# Files and directories to exclude from Docker build context (smaller = faster export/push)
 
 # Git
 .git
@@ -66,3 +66,13 @@ build/
 Dockerfile*
 docker-compose*.yml
 .dockerignore
+
+# Dev-only scripts and data (not needed for production build/run)
+examples/
+convert_*.py
+fix_*.py
+run_synthetic_tests.py
+validation-*.txt
+optimization-*.txt
+*.db
+!package-lock.json
