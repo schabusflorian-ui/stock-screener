@@ -1406,7 +1406,7 @@ router.get('/:symbol/history', async (req, res) => {
     let history;
 
     if (source === 'combined' && services.sentimentAggregator) {
-      history = services.sentimentAggregator.getSentimentHistory(company.id, parseInt(days));
+      history = await services.sentimentAggregator.getSentimentHistory(company.id, parseInt(days));
     } else {
       // Try to get from history table first
       history = services.signalGenerator.getHistory(company.id, parseInt(days));
@@ -1921,13 +1921,14 @@ router.get('/analyst-activity', async (req, res) => {
  */
 router.get('/movers', async (req, res) => {
   try {
-    if (!sentimentAggregator) {
+    const services = await getSentimentServices();
+    if (!services.sentimentAggregator) {
       return res.status(503).json({ error: 'Sentiment aggregator unavailable' });
     }
 
     const { limit = 10 } = req.query;
 
-    const movers = sentimentAggregator.getTopMovers(parseInt(limit));
+    const movers = await services.sentimentAggregator.getTopMovers(parseInt(limit));
 
     res.json({ movers });
   } catch (error) {

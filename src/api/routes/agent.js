@@ -3,27 +3,15 @@
 
 const express = require('express');
 const router = express.Router();
-const { getDatabaseSync, isUsingPostgres } = require('../../lib/db');
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 const { getTradingAgent, getRiskManager, getScanner } = require('../../services/agent');
 const { SignalOptimizer } = require('../../services/agent/signalOptimizer');
 const { RecommendationTracker } = require('../../services/agent/recommendationTracker');
 
-// Trading agent endpoints are SQLite-only for now.
-router.use((req, res, next) => {
-  if (isUsingPostgres()) {
-    return res.status(503).json({
-      error: 'Trading agent endpoints are not available in PostgreSQL deployment',
-      code: 'AGENT_NOT_AVAILABLE',
-      message: 'These endpoints use SQLite-specific queries and require migration.'
-    });
-  }
-  next();
-});
-
 let database = null;
-function getDb() {
+async function getDb() {
   if (!database) {
-    database = getDatabaseSync();
+    database = await getDatabaseAsync();
   }
   return database;
 }
@@ -35,8 +23,8 @@ let scanner = null;
 let signalOptimizer = null;
 let recommendationTracker = null;
 
-function ensureServices() {
-  const dbInstance = getDb();
+async function ensureServices() {
+  const dbInstance = await getDb();
   if (!tradingAgent) tradingAgent = getTradingAgent(dbInstance);
   if (!riskManager) riskManager = getRiskManager(dbInstance);
   if (!scanner) scanner = getScanner(dbInstance);
@@ -54,21 +42,24 @@ function ensureServices() {
  */
 router.get('/recommendation/:symbol', async (req, res) => {
   try {
-    ensureServices();
+    await ensureServices();
     const { symbol } = req.params;
     const portfolioId = req.query.portfolioId ? parseInt(req.query.portfolioId) : null;
 
     // Get portfolio context if provided
     let portfolioContext = null;
     if (portfolioId) {
-      const database = getDb();
-      const portfolio = await database.prepare('SELECT * FROM portfolios WHERE id = ?').get(portfolioId);
-      const positions = await database.prepare(`
-        SELECT pp.*, c.symbol, c.sector
+      const database = await getDb();
+      const portfolioResult = await database.query('SELECT * FROM portfolios WHERE id = $1', [portfolioId]);
+      const portfolio = portfolioResult.rows[0];
+      const positionsResult = await database.query(
+        `SELECT pp.*, c.symbol, c.sector
         FROM portfolio_positions pp
         JOIN companies c ON pp.company_id = c.id
-        WHERE pp.portfolio_id = ?
-      `).all(portfolioId);
+        WHERE pp.portfolio_id = $1`,
+        [portfolioId]
+      );
+      const positions = positionsResult.rows;
 
       if (portfolio) {
         const totalValue = positions.reduce((sum, p) => sum + (p.current_value || 0), 0);
@@ -102,7 +93,7 @@ router.get('/recommendation/:symbol', async (req, res) => {
  */
 router.post('/recommendation', async (req, res) => {
   try {
-    ensureServices();
+    await ensureServices();
     const { symbol, portfolioId, portfolioContext, regime } = req.body;
 
     if (!symbol) {
@@ -145,7 +136,7 @@ router.post('/recommendation', async (req, res) => {
  */
 router.post('/batch', async (req, res) => {
   try {
-    ensureServices();
+    await ensureServices();
     const { symbols, portfolioId, portfolioContext, regime } = req.body;
 
     if (!symbols || !Array.isArray(symbols)) {
@@ -178,9 +169,9 @@ router.post('/batch', async (req, res) => {
  * GET /api/agent/history/:symbol
  * Get recommendation history for a symbol
  */
-router.get('/history/:symbol', (req, res) => {
+router.get('/history/:symbol', async (req, res) => {
   try {
-    ensureServices();
+    await ensureServices();
     const { symbol } = req.params;
     const days = parseInt(req.query.days) || 30;
 
@@ -206,9 +197,9 @@ router.get('/history/:symbol', (req, res) => {
  * GET /api/agent/latest/:symbol
  * Get latest recommendation for a symbol
  */
-router.get('/latest/:symbol', (req, res) => {
+router.get('/latest/:symbol', async (req, res) => {
   try {
-    ensureServices();
+    await ensureServices();
     const { symbol } = req.params;
 
     const recommendation = tradingAgent.getLatestRecommendation(symbol);
@@ -243,7 +234,7 @@ router.get('/latest/:symbol', (req, res) => {
  */
 router.post('/risk-check', async (req, res) => {
   try {
-    ensureServices();
+    await ensureServices();
     const { recommendation, portfolioId, regime } = req.body;
 
     if (!recommendation || !portfolioId) {
@@ -276,9 +267,9 @@ router.post('/risk-check', async (req, res) => {
  * GET /api/agent/risk-history/:portfolioId
  * Get risk check history for a portfolio
  */
-router.get('/risk-history/:portfolioId', (req, res) => {
+router.get('/risk-history/:portfolioId', async (req, res) => {
   try {
-    ensureServices();
+    await ensureServices();
     const { portfolioId } = req.params;
     const limit = parseInt(req.query.limit) || 50;
 
@@ -303,9 +294,9 @@ router.get('/risk-history/:portfolioId', (req, res) => {
  * GET /api/agent/risk-limits
  * Get current risk limits
  */
-router.get('/risk-limits', (req, res) => {
+router.get('/risk-limits', async (req, res) => {
   try {
-    ensureServices();
+    await ensureServices();
     const limits = riskManager.getLimits();
 
     res.json({
@@ -325,9 +316,9 @@ router.get('/risk-limits', (req, res) => {
  * PUT /api/agent/risk-limits
  * Update risk limits
  */
-router.put('/risk-limits', (req, res) => {
+router.put('/risk-limits', async (req, res) => {
   try {
-    ensureServices();
+    await ensureServices();
     const newLimits = req.body;
 
     riskManager.updateLimits(newLimits);
@@ -357,7 +348,7 @@ router.put('/risk-limits', (req, res) => {
  */
 router.get('/opportunities', async (req, res) => {
   try {
-    ensureServices();
+    await ensureServices();
     const limit = parseInt(req.query.limit) || 20;
     const types = req.query.types ? req.query.types.split(',') : undefined;
 
@@ -382,7 +373,7 @@ router.get('/opportunities', async (req, res) => {
  */
 router.post('/opportunities/symbols', async (req, res) => {
   try {
-    ensureServices();
+    await ensureServices();
     const { symbols } = req.body;
 
     if (!symbols || !Array.isArray(symbols)) {
@@ -414,7 +405,7 @@ router.post('/opportunities/symbols', async (req, res) => {
  */
 router.get('/opportunities/sectors', async (req, res) => {
   try {
-    ensureServices();
+    await ensureServices();
     const sectors = await scanner.getSectorBreakdown();
 
     res.json({
@@ -440,9 +431,12 @@ router.get('/opportunities/sectors', async (req, res) => {
  */
 router.get('/stats', async (req, res) => {
   try {
-    const database = getDb();
+    const database = await getDb();
+    const dateCondition = isUsingPostgres()
+      ? "date >= CURRENT_DATE - INTERVAL '30 days'"
+      : "date >= date('now', '-30 days')";
 
-    const recStats = await database.prepare(`
+    const recStatsResult = await database.query(`
       SELECT
         COUNT(*) as total_recommendations,
         SUM(CASE WHEN action = 'strong_buy' THEN 1 ELSE 0 END) as strong_buys,
@@ -453,16 +447,18 @@ router.get('/stats', async (req, res) => {
         AVG(confidence) as avg_confidence,
         AVG(ABS(score)) as avg_score
       FROM agent_recommendations
-      WHERE date >= date('now', '-30 days')
-    `).get();
+      WHERE ${dateCondition}
+    `);
+    const recStats = recStatsResult.rows[0] || {};
 
-    const recentRecs = await database.prepare(`
+    const recentRecsResult = await database.query(`
       SELECT ar.*, c.symbol, c.name
       FROM agent_recommendations ar
       JOIN companies c ON ar.company_id = c.id
       ORDER BY ar.created_at DESC
       LIMIT 10
-    `).all();
+    `);
+    const recentRecs = recentRecsResult.rows;
 
     res.json({
       success: true,
@@ -489,9 +485,9 @@ router.get('/stats', async (req, res) => {
  * GET /api/agent/signal-weights
  * Get current optimized signal weights (default or all regimes)
  */
-router.get('/signal-weights', (req, res) => {
+router.get('/signal-weights', async (req, res) => {
   try {
-    ensureServices();
+    await ensureServices();
     const { regime = 'ALL' } = req.query;
 
     const weights = signalOptimizer.getWeightsForRegime(regime);
@@ -516,9 +512,9 @@ router.get('/signal-weights', (req, res) => {
  * GET /api/agent/signal-weights/:regime
  * Get optimized signal weights for a specific regime
  */
-router.get('/signal-weights/:regime', (req, res) => {
+router.get('/signal-weights/:regime', async (req, res) => {
   try {
-    ensureServices();
+    await ensureServices();
     const { regime } = req.params;
 
     const storedWeights = signalOptimizer.getStoredWeights(regime);
@@ -543,9 +539,9 @@ router.get('/signal-weights/:regime', (req, res) => {
  * GET /api/agent/signal-weights-all
  * Get all stored weights for all regimes
  */
-router.get('/signal-weights-all', (req, res) => {
+router.get('/signal-weights-all', async (req, res) => {
   try {
-    ensureServices();
+    await ensureServices();
 
     const allWeights = signalOptimizer.getAllStoredWeights();
     const baseWeights = signalOptimizer.baseWeights;
@@ -568,9 +564,9 @@ router.get('/signal-weights-all', (req, res) => {
  * POST /api/agent/signal-weights/recalculate
  * Trigger recalculation of signal weights for all regimes
  */
-router.post('/signal-weights/recalculate', (req, res) => {
+router.post('/signal-weights/recalculate', async (req, res) => {
   try {
-    ensureServices();
+    await ensureServices();
 
     const results = signalOptimizer.recalculateAllWeights();
 
@@ -592,9 +588,9 @@ router.post('/signal-weights/recalculate', (req, res) => {
  * GET /api/agent/signal-contribution
  * Get signal contribution analysis
  */
-router.get('/signal-contribution', (req, res) => {
+router.get('/signal-contribution', async (req, res) => {
   try {
-    ensureServices();
+    await ensureServices();
     const { lookbackDays = 90 } = req.query;
 
     const analysis = signalOptimizer.getSignalContributionAnalysis(parseInt(lookbackDays));
@@ -620,9 +616,9 @@ router.get('/signal-contribution', (req, res) => {
  * GET /api/agent/tracker/performance
  * Get signal performance metrics
  */
-router.get('/tracker/performance', (req, res) => {
+router.get('/tracker/performance', async (req, res) => {
   try {
-    ensureServices();
+    await ensureServices();
     const { lookbackDays = 90 } = req.query;
 
     const { weights, ics } = recommendationTracker.getOptimalWeights(parseInt(lookbackDays));
@@ -646,9 +642,9 @@ router.get('/tracker/performance', (req, res) => {
  * GET /api/agent/tracker/ic/:signalType
  * Get Information Coefficient for a specific signal type
  */
-router.get('/tracker/ic/:signalType', (req, res) => {
+router.get('/tracker/ic/:signalType', async (req, res) => {
   try {
-    ensureServices();
+    await ensureServices();
     const { signalType } = req.params;
     const { lookbackDays = 90 } = req.query;
 
@@ -675,26 +671,23 @@ router.get('/tracker/ic/:signalType', (req, res) => {
  */
 router.get('/tracker/outcomes', async (req, res) => {
   try {
-    const database = getDb();
+    const database = await getDb();
     const { limit = 50, signalType } = req.query;
 
-    let query = `
+    const params = signalType ? [signalType, parseInt(limit)] : [parseInt(limit)];
+    const limitPlaceholder = signalType ? '$2' : '$1';
+    const query = `
       SELECT ro.*, ar.action, ar.score, ar.confidence, c.symbol, c.name
       FROM recommendation_outcomes ro
       JOIN agent_recommendations ar ON ro.recommendation_id = ar.id
       JOIN companies c ON ar.company_id = c.id
       WHERE ro.actual_return IS NOT NULL
+      ${signalType ? 'AND ro.signal_type = $1' : ''}
+      ORDER BY ro.updated_at DESC LIMIT ${limitPlaceholder}
     `;
 
-    if (signalType) {
-      query += ' AND ro.signal_type = ?';
-    }
-
-    query += ' ORDER BY ro.updated_at DESC LIMIT ?';
-
-    const outcomes = signalType
-      ? await database.prepare(query).all(signalType, parseInt(limit))
-      : await database.prepare(query).all(parseInt(limit));
+    const result = await database.query(query.trim(), params);
+    const outcomes = result.rows;
 
     res.json({
       success: true,
@@ -714,9 +707,9 @@ router.get('/tracker/outcomes', async (req, res) => {
  * POST /api/agent/tracker/update-outcomes
  * Manually trigger outcome updates
  */
-router.post('/tracker/update-outcomes', (req, res) => {
+router.post('/tracker/update-outcomes', async (req, res) => {
   try {
-    ensureServices();
+    await ensureServices();
 
     const result = recommendationTracker.updateAllOutcomes();
 
@@ -738,9 +731,9 @@ router.post('/tracker/update-outcomes', (req, res) => {
  * POST /api/agent/tracker/recalculate
  * Recalculate signal performance metrics
  */
-router.post('/tracker/recalculate', (req, res) => {
+router.post('/tracker/recalculate', async (req, res) => {
   try {
-    ensureServices();
+    await ensureServices();
 
     recommendationTracker.recalculateSignalPerformance();
 
@@ -763,10 +756,9 @@ router.post('/tracker/recalculate', (req, res) => {
  */
 router.get('/tracker/signal-summary', async (req, res) => {
   try {
-    const database = getDb();
+    const database = await getDb();
 
-    // Get signal performance from database
-    const summary = await database.prepare(`
+    const result = await database.query(`
       SELECT
         signal_type,
         COUNT(*) as total_signals,
@@ -779,7 +771,8 @@ router.get('/tracker/signal-summary', async (req, res) => {
       WHERE actual_return IS NOT NULL
       GROUP BY signal_type
       ORDER BY avg_return DESC
-    `).all();
+    `);
+    const summary = result.rows;
 
     // Add hit rate calculation
     const enriched = summary.map(s => ({
@@ -843,7 +836,7 @@ function logActivity(portfolioId, type, message, details = null) {
  * GET /api/agent/portfolios/:portfolioId/status
  * Get agent status
  */
-router.get('/portfolios/:portfolioId/status', (req, res) => {
+router.get('/portfolios/:portfolioId/status', async (req, res) => {
   try {
     const { portfolioId } = req.params;
     const state = getAgentState(parseInt(portfolioId, 10));
@@ -863,7 +856,7 @@ router.get('/portfolios/:portfolioId/status', (req, res) => {
  * POST /api/agent/portfolios/:portfolioId/start
  * Start the agent
  */
-router.post('/portfolios/:portfolioId/start', (req, res) => {
+router.post('/portfolios/:portfolioId/start', async (req, res) => {
   try {
     const { portfolioId } = req.params;
     const id = parseInt(portfolioId, 10);
@@ -889,7 +882,7 @@ router.post('/portfolios/:portfolioId/start', (req, res) => {
  * POST /api/agent/portfolios/:portfolioId/pause
  * Pause the agent
  */
-router.post('/portfolios/:portfolioId/pause', (req, res) => {
+router.post('/portfolios/:portfolioId/pause', async (req, res) => {
   try {
     const { portfolioId } = req.params;
     const id = parseInt(portfolioId, 10);
@@ -917,14 +910,16 @@ router.post('/portfolios/:portfolioId/scan', async (req, res) => {
     const { portfolioId } = req.params;
     const id = parseInt(portfolioId, 10);
     const state = getAgentState(id);
-    const database = getDb();
 
     logActivity(id, 'scan', 'Starting manual scan...');
 
-    const positions = await database.prepare(`
-      SELECT DISTINCT symbol FROM portfolio_positions
-      WHERE portfolio_id = ? AND quantity > 0
-    `).all(id);
+    const database = await getDb();
+    const positionsResult = await database.query(
+      `SELECT DISTINCT symbol FROM portfolio_positions
+       WHERE portfolio_id = $1 AND quantity > 0`,
+      [id]
+    );
+    const positions = positionsResult.rows;
 
     const scannedCount = positions.length || 0;
     state.lastScan = new Date().toISOString();
@@ -954,15 +949,17 @@ router.get('/portfolios/:portfolioId/activity', async (req, res) => {
     const { limit = 50 } = req.query;
     const id = parseInt(portfolioId, 10);
     const state = getAgentState(id);
-    const database = getDb();
+    const database = await getDb();
 
-    const recentExecutions = await database.prepare(`
-      SELECT id, symbol, action, status, approved_at, executed_at, rejected_at, target_value
-      FROM pending_executions
-      WHERE portfolio_id = ?
-      ORDER BY created_at DESC
-      LIMIT ?
-    `).all(id, parseInt(limit, 10));
+    const execResult = await database.query(
+      `SELECT id, symbol, action, status, approved_at, executed_at, rejected_at, target_value
+       FROM pending_executions
+       WHERE portfolio_id = $1
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [id, parseInt(limit, 10)]
+    );
+    const recentExecutions = execResult.rows;
 
     const executionActivities = recentExecutions.map(exec => {
       let type, message;
@@ -1005,16 +1002,17 @@ router.get('/portfolios/:portfolioId/activity', async (req, res) => {
  */
 router.get('/portfolios/:portfolioId/context', async (req, res) => {
   try {
-    const database = getDb();
+    const database = await getDb();
 
     let regime = 'NEUTRAL', regimeConfidence = 0.5, vix = null, vixLevel = null;
 
     try {
-      const regimeData = await database.prepare(`
+      const regimeResult = await database.query(`
         SELECT regime, confidence, vix_value, vix_level
         FROM market_regime_history
         ORDER BY date DESC LIMIT 1
-      `).get();
+      `);
+      const regimeData = regimeResult.rows[0];
 
       if (regimeData) {
         regime = regimeData.regime || 'NEUTRAL';
@@ -1025,11 +1023,15 @@ router.get('/portfolios/:portfolioId/context', async (req, res) => {
     } catch (e) { /* Table may not exist */ }
 
     const signalStrength = { positive: 0, negative: 0, neutral: 0 };
+    const dateCondition = isUsingPostgres()
+      ? 'DATE(created_at) = CURRENT_DATE'
+      : "date(created_at) = date('now')";
     try {
-      const signals = await database.prepare(`
+      const signalsResult = await database.query(`
         SELECT signal_type, score FROM agent_signals
-        WHERE date(created_at) = date('now')
-      `).all();
+        WHERE ${dateCondition}
+      `);
+      const signals = signalsResult.rows;
 
       signals.forEach(s => {
         if (s.score > 0.2) signalStrength.positive++;
@@ -1064,25 +1066,31 @@ router.get('/portfolios/:portfolioId/context', async (req, res) => {
 router.get('/portfolios/:portfolioId/stats/today', async (req, res) => {
   try {
     const { portfolioId } = req.params;
-    const database = getDb();
+    const database = await getDb();
+    const dateCondition = isUsingPostgres()
+      ? 'DATE(created_at) = CURRENT_DATE'
+      : "date(created_at) = date('now')";
 
-    const stats = await database.prepare(`
-      SELECT
+    const statsResult = await database.query(
+      `SELECT
         COUNT(*) as total,
         SUM(CASE WHEN status = 'executed' THEN 1 ELSE 0 END) as executed,
         SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected,
         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending
-      FROM pending_executions
-      WHERE portfolio_id = ? AND date(created_at) = date('now')
-    `).get(parseInt(portfolioId, 10));
+       FROM pending_executions
+       WHERE portfolio_id = $1 AND ${dateCondition}`,
+      [parseInt(portfolioId, 10)]
+    );
+    const stats = statsResult.rows[0] || {};
 
     const winRate = stats.executed > 0 ? Math.round((stats.executed / (stats.executed + stats.rejected || 1)) * 100) : 0;
 
     let signalsGenerated = 0;
     try {
-      const signalCount = await database.prepare(`
-        SELECT COUNT(*) as count FROM agent_signals WHERE date(created_at) = date('now')
-      `).get();
+      const signalCountResult = await database.query(`
+        SELECT COUNT(*) as count FROM agent_signals WHERE ${dateCondition}
+      `);
+      const signalCount = signalCountResult.rows[0];
       signalsGenerated = signalCount?.count || 0;
     } catch (e) { /* Table may not exist */ }
 
@@ -1109,18 +1117,24 @@ router.get('/portfolios/:portfolioId/stats/today', async (req, res) => {
 router.get('/portfolios/:portfolioId/settings', async (req, res) => {
   try {
     const { portfolioId } = req.params;
-    const database = getDb();
+    const database = await getDb();
 
     let settings = null;
     try {
-      settings = await database.prepare('SELECT * FROM execution_settings WHERE portfolio_id = ?')
-        .get(parseInt(portfolioId, 10));
+      const settingsResult = await database.query(
+        'SELECT * FROM execution_settings WHERE portfolio_id = $1',
+        [parseInt(portfolioId, 10)]
+      );
+      settings = settingsResult.rows[0];
     } catch (e) { /* Table may not exist */ }
 
     let riskLimits = null;
     try {
-      riskLimits = await database.prepare('SELECT * FROM risk_limits WHERE portfolio_id = ?')
-        .get(parseInt(portfolioId, 10));
+      const riskLimitsResult = await database.query(
+        'SELECT * FROM risk_limits WHERE portfolio_id = $1',
+        [parseInt(portfolioId, 10)]
+      );
+      riskLimits = riskLimitsResult.rows[0];
     } catch (e) { /* Table may not exist */ }
 
     res.json({
@@ -1151,7 +1165,7 @@ router.put('/portfolios/:portfolioId/settings', async (req, res) => {
     const { portfolioId } = req.params;
     const { execution, mode } = req.body;
     const id = parseInt(portfolioId, 10);
-    const database = getDb();
+    const database = await getDb();
 
     if (mode) {
       const state = getAgentState(id);
@@ -1160,17 +1174,25 @@ router.put('/portfolios/:portfolioId/settings', async (req, res) => {
     }
 
     if (execution) {
-      await database.prepare(`
-        INSERT OR REPLACE INTO execution_settings (
-          portfolio_id, auto_execute, min_confidence, max_trades_per_day, require_confirmation
-        ) VALUES (?, ?, ?, ?, ?)
-      `).run(
+      const upsertSql = isUsingPostgres()
+        ? `INSERT INTO execution_settings (
+            portfolio_id, auto_execute, min_confidence, max_trades_per_day, require_confirmation
+          ) VALUES ($1, $2, $3, $4, $5)
+          ON CONFLICT (portfolio_id) DO UPDATE SET
+            auto_execute = EXCLUDED.auto_execute,
+            min_confidence = EXCLUDED.min_confidence,
+            max_trades_per_day = EXCLUDED.max_trades_per_day,
+            require_confirmation = EXCLUDED.require_confirmation`
+        : `INSERT OR REPLACE INTO execution_settings (
+            portfolio_id, auto_execute, min_confidence, max_trades_per_day, require_confirmation
+          ) VALUES ($1, $2, $3, $4, $5)`;
+      await database.query(upsertSql, [
         id,
         execution.autoExecute ? 1 : 0,
         execution.minConfidence || 0.6,
         execution.maxTradesPerDay || 5,
         execution.requireConfirmation ? 1 : 0
-      );
+      ]);
     }
 
     logActivity(id, 'configured', 'Settings updated');

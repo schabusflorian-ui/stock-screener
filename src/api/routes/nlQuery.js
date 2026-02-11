@@ -656,10 +656,10 @@ router.post('/query/stream', optionalAuth, attachSubscription, checkUsageLimit('
     let resolvedQuery = query;
 
     try {
-      conversation = getOrCreateConversation(db, conversation_id, session_id);
+      conversation = await getOrCreateConversation(db, conversation_id, session_id);
 
       if (conversation.message_count > 0) {
-        conversationContext = getConversationContext(conversation.id);
+        conversationContext = await getConversationContext(db, conversation.id);
         const resolution = resolveContextualReferences(query, conversationContext);
         if (resolution.resolved) {
           resolvedQuery = resolution.query;
@@ -1161,14 +1161,15 @@ router.get('/conversations', async (req, res) => {
 
     const params = [];
     if (session_id) {
-      query += ' WHERE c.session_id = ?';
       params.push(session_id);
+      query += ` WHERE c.session_id = $${params.length}`;
     }
 
-    query += ' ORDER BY c.updated_at DESC LIMIT ?';
     params.push(parseInt(limit));
+    query += ` ORDER BY c.updated_at DESC LIMIT $${params.length}`;
 
-    const conversations = await db.prepare(query).all(...params);
+    const conversationsRes = await db.query(query, params);
+    const conversations = conversationsRes.rows;
 
     res.json({
       conversations,
@@ -1190,15 +1191,17 @@ router.get('/conversation/:id', async (req, res) => {
     const { id } = req.params;
     const { limit = 20 } = req.query;
 
-    const conversation = await db.prepare(
-      'SELECT * FROM nl_conversations WHERE id = ?'
-    ).get(id);
+    const conversationRes = await db.query(
+      'SELECT * FROM nl_conversations WHERE id = $1',
+      [id]
+    );
+    const conversation = conversationRes.rows[0];
 
     if (!conversation) {
       return sendError(res, ERROR_CODES.NOT_FOUND, 'Conversation not found');
     }
 
-    const messages = getConversationHistory(db, id, parseInt(limit));
+    const messages = await getConversationHistory(db, id, parseInt(limit));
 
     res.json({
       conversation,
@@ -1221,12 +1224,13 @@ router.delete('/conversation/:id', async (req, res) => {
     const { id } = req.params;
 
     // Delete messages first (foreign key)
-    await db.prepare('DELETE FROM nl_messages WHERE conversation_id = ?').run(id);
+    await db.query('DELETE FROM nl_messages WHERE conversation_id = $1', [id]);
 
     // Delete conversation
-    const result = await db.prepare('DELETE FROM nl_conversations WHERE id = ?').run(id);
+    const result = await db.query('DELETE FROM nl_conversations WHERE id = $1', [id]);
+    const deletedCount = result.rowCount ?? result.changes ?? 0;
 
-    if (result.changes === 0) {
+    if (deletedCount === 0) {
       return sendError(res, ERROR_CODES.NOT_FOUND, 'Conversation not found');
     }
 
@@ -1248,16 +1252,19 @@ router.post('/conversation/new', async (req, res) => {
 
     // Optionally clear previous conversations for this session
     if (clear_previous && session_id) {
-      await db.prepare(`
-        DELETE FROM nl_messages WHERE conversation_id IN (
-          SELECT id FROM nl_conversations WHERE session_id = ?
-        )
-      `).run(session_id);
-      await db.prepare('DELETE FROM nl_conversations WHERE session_id = ?').run(session_id);
+      await db.query(
+        `
+          DELETE FROM nl_messages WHERE conversation_id IN (
+            SELECT id FROM nl_conversations WHERE session_id = $1
+          )
+        `,
+        [session_id]
+      );
+      await db.query('DELETE FROM nl_conversations WHERE session_id = $1', [session_id]);
     }
 
     // Create new conversation
-    const conversation = getOrCreateConversation(db, null, session_id);
+    const conversation = await getOrCreateConversation(db, null, session_id);
 
     res.json({
       conversation_id: conversation.id,

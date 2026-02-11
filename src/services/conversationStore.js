@@ -15,6 +15,13 @@ class ConversationStore {
     this.cacheMaxAge = 30 * 60 * 1000; // 30 minutes
   }
 
+  _normalizeAnalystId(value) {
+    if (value == null || value === '' || value === 'undefined' || value === 'null') {
+      return 'value';
+    }
+    return value;
+  }
+
   /**
    * Create a new conversation.
    */
@@ -90,9 +97,8 @@ class ConversationStore {
     }));
 
     // Root cause: ensure every conversation has an analyst_id (backfill legacy NULLs)
-    let analystId = row.analyst_id;
-    if (analystId == null || analystId === '' || analystId === 'undefined' || analystId === 'null') {
-      analystId = 'value';
+    let analystId = this._normalizeAnalystId(row.analyst_id);
+    if (analystId !== row.analyst_id) {
       await database.query(
         `UPDATE analyst_conversations SET analyst_id = $1 WHERE id = $2`,
         [analystId, id]
@@ -208,9 +214,18 @@ class ConversationStore {
       LIMIT $1
     `, [limit]);
 
-    return result.rows.map(row => ({
+    const rows = [];
+    for (const row of result.rows) {
+      const normalizedAnalystId = this._normalizeAnalystId(row.analyst_id);
+      if (normalizedAnalystId !== row.analyst_id) {
+        await database.query(
+          `UPDATE analyst_conversations SET analyst_id = $1 WHERE id = $2`,
+          [normalizedAnalystId, row.id]
+        );
+      }
+      rows.push({
       id: row.id,
-      analyst_id: row.analyst_id,
+      analyst_id: normalizedAnalystId,
       company_id: row.company_id,
       company_symbol: row.company_symbol,
       company_name: row.company_name,
@@ -219,7 +234,10 @@ class ConversationStore {
       message_count: row.message_count,
       created_at: row.created_at,
       updated_at: row.updated_at
-    }));
+      });
+    }
+
+    return rows;
   }
 
   /**
@@ -265,9 +283,18 @@ class ConversationStore {
       LIMIT $2
     `, [companySymbol.toUpperCase(), limit]);
 
-    return result.rows.map(row => ({
+    const rows = [];
+    for (const row of result.rows) {
+      const normalizedAnalystId = this._normalizeAnalystId(row.analyst_id);
+      if (normalizedAnalystId !== row.analyst_id) {
+        await database.query(
+          `UPDATE analyst_conversations SET analyst_id = $1 WHERE id = $2`,
+          [normalizedAnalystId, row.id]
+        );
+      }
+      rows.push({
       id: row.id,
-      analyst_id: row.analyst_id,
+      analyst_id: normalizedAnalystId,
       company_id: row.company_id,
       company_symbol: row.company_symbol,
       title: row.title,
@@ -275,7 +302,10 @@ class ConversationStore {
       message_count: row.message_count,
       created_at: row.created_at,
       updated_at: row.updated_at
-    }));
+      });
+    }
+
+    return rows;
   }
 
   /**

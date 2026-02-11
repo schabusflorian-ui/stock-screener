@@ -1587,7 +1587,7 @@ async function generateSignals(agentId) {
 
     // Import TradingAgent (lazy to avoid circular deps)
     const { TradingAgent } = require('./tradingAgent');
-    const tradingAgent = new TradingAgent(config);
+    const tradingAgent = new TradingAgent(database, config);
 
     // Get universe of symbols to scan
     const symbols = await getAgentUniverse(agentId);
@@ -1886,34 +1886,53 @@ async function executeApproved(signalId) {
   try {
     // Check if paper trading or live
     if (portfolio.mode === 'paper') {
-      // Paper trading execution
-      const { PaperTradingEngine } = require('../trading/paperTrading');
-      const paperEngine = new PaperTradingEngine();
+      const initialCap = portfolio.portfolio_initial_capital ?? portfolio.initial_capital ?? 100000;
+      const priceAtSignal = signal.price_at_signal || 0;
+      const shares = signal.suggested_shares || Math.max(1, Math.floor((initialCap * 0.05) / (priceAtSignal || 100)));
 
-      // Get or create paper account for this portfolio
-      const accountName = `portfolio_${portfolio.portfolio_id}`;
-      let account;
+      let executedPrice = priceAtSignal;
+      let executedShares = shares;
+      let tradeResult = null;
+
       try {
-        account = paperEngine.getAccount(accountName);
+        const { PaperTradingEngine } = require('../trading/paperTrading');
+        const paperEngine = new PaperTradingEngine(database);
+        const accountName = `portfolio_${portfolio.portfolio_id}`;
+        let account;
+        try {
+          account = await paperEngine.getAccount(accountName);
+        } catch (e) {
+          account = await paperEngine.createAccount(accountName, initialCap);
+        }
+        const side = signal.action.includes('buy') ? 'BUY' : 'SELL';
+        tradeResult = await paperEngine.submitOrder(account.id, {
+          symbol: signal.symbol,
+          side,
+          orderType: 'MARKET',
+          quantity: shares || 10,
+          notes: `Agent signal ${signal.id}: ${signal.action}`
+        });
+        executedPrice = tradeResult.avgFillPrice ?? tradeResult.fillPrice ?? executedPrice;
+        executedShares = tradeResult.filledQuantity ?? shares;
       } catch (e) {
-        // Create account if it doesn't exist
-        account = paperEngine.createAccount(accountName, portfolio.initial_capital || 100000);
+        console.warn('Paper engine execution failed, using simulated price:', e.message);
+        if (!executedPrice || executedPrice <= 0) {
+          const companyRow = await database.query('SELECT id FROM companies WHERE UPPER(symbol) = UPPER($1)', [signal.symbol]);
+          const companyId = companyRow.rows[0]?.id;
+          if (companyId) {
+            const priceRow = await database.query(
+              `SELECT close as price FROM daily_prices WHERE company_id = $1 ORDER BY date DESC LIMIT 1`,
+              [companyId]
+            );
+            if (priceRow.rows[0]?.price != null) executedPrice = Number(priceRow.rows[0].price);
+          }
+          if (!executedPrice || executedPrice <= 0) executedPrice = priceAtSignal || 0;
+        }
       }
 
-      // Determine order side
-      const side = signal.action.includes('buy') ? 'BUY' : 'SELL';
-      const shares = signal.suggested_shares || Math.floor((portfolio.initial_capital * 0.05) / (signal.price_at_signal || 100));
+      const finalPrice = executedPrice || priceAtSignal || 0;
+      const finalShares = executedShares || shares || 10;
 
-      // Submit order using the paper trading engine
-      const tradeResult = paperEngine.submitOrder(account.id, {
-        symbol: signal.symbol,
-        side: side,
-        orderType: 'MARKET',
-        quantity: shares || 10,
-        notes: `Agent signal ${signal.id}: ${signal.action}`
-      });
-
-      // Update signal status
       await database.query(`
         UPDATE agent_signals
         SET status = 'executed',
@@ -1921,19 +1940,18 @@ async function executeApproved(signalId) {
             executed_price = $2,
             executed_shares = $3
         WHERE id = $4
-      `, [now, tradeResult.avgFillPrice || tradeResult.fillPrice, tradeResult.filledQuantity || shares, signalId]);
+      `, [now, finalPrice, finalShares, signalId]);
 
-      // Log activity
       await logActivity(signal.agent_id, portfolio.portfolio_id, 'trade_executed',
-        `Executed ${signal.action.toUpperCase()} ${tradeResult.filledQuantity || shares} shares of ${signal.symbol} @ $${(tradeResult.avgFillPrice || tradeResult.fillPrice)?.toFixed(2)}`, null, signalId);
+        `Executed ${signal.action.toUpperCase()} ${finalShares} shares of ${signal.symbol} @ $${Number(finalPrice).toFixed(2)}`, null, signalId);
 
       return {
         ...signal,
         status: 'executed',
         executed_at: now,
-        executed_price: tradeResult.avgFillPrice || tradeResult.fillPrice,
-        executed_shares: tradeResult.filledQuantity || shares,
-        trade: tradeResult
+        executed_price: finalPrice,
+        executed_shares: finalShares,
+        trade: tradeResult || { avgFillPrice: finalPrice, fillPrice: finalPrice, filledQuantity: finalShares }
       };
     } else {
       // Live trading - not yet implemented

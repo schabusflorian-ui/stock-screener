@@ -8,6 +8,7 @@ const express = require('express');
 const router = express.Router();
 const { FREDService } = require('../../services/dataProviders');
 const db = require('../../database');
+const { isUsingPostgres } = require('../../lib/db');
 
 // Initialize service
 let fredService = null;
@@ -736,16 +737,7 @@ router.get('/refresh-current-quarter', async (req, res) => {
     const aggregateMetrics = await service.getQuarterMetrics(currentQuarter);
 
     // Upsert into table
-    const stmt = await database.prepare(`
-      INSERT OR REPLACE INTO market_indicator_history (
-        quarter, quarter_end_date,
-        buffett_indicator, buffett_market_cap, buffett_gdp, buffett_stock_count,
-        sp500_pe, sp500_market_cap, sp500_earnings, sp500_company_count,
-        median_pe, median_msi, pct_undervalued, total_stocks_analyzed,
-        calculated_at, data_quality
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
-    `);
-    await stmt.run(
+    const params = [
       currentQuarter,
       quarterEndDate,
       buffett?.value ? Math.round(buffett.value * 100) / 100 : null,
@@ -761,7 +753,39 @@ router.get('/refresh-current-quarter', async (req, res) => {
       aggregateMetrics?.metrics?.pct_undervalued || null,
       aggregateMetrics?.sampleSize || null,
       'complete'
-    );
+    ];
+    const upsertSql = isUsingPostgres()
+      ? `INSERT INTO market_indicator_history (
+           quarter, quarter_end_date,
+           buffett_indicator, buffett_market_cap, buffett_gdp, buffett_stock_count,
+           sp500_pe, sp500_market_cap, sp500_earnings, sp500_company_count,
+           median_pe, median_msi, pct_undervalued, total_stocks_analyzed,
+           calculated_at, data_quality
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), $15)
+         ON CONFLICT (quarter) DO UPDATE SET
+           quarter_end_date = EXCLUDED.quarter_end_date,
+           buffett_indicator = EXCLUDED.buffett_indicator,
+           buffett_market_cap = EXCLUDED.buffett_market_cap,
+           buffett_gdp = EXCLUDED.buffett_gdp,
+           buffett_stock_count = EXCLUDED.buffett_stock_count,
+           sp500_pe = EXCLUDED.sp500_pe,
+           sp500_market_cap = EXCLUDED.sp500_market_cap,
+           sp500_earnings = EXCLUDED.sp500_earnings,
+           sp500_company_count = EXCLUDED.sp500_company_count,
+           median_pe = EXCLUDED.median_pe,
+           median_msi = EXCLUDED.median_msi,
+           pct_undervalued = EXCLUDED.pct_undervalued,
+           total_stocks_analyzed = EXCLUDED.total_stocks_analyzed,
+           calculated_at = EXCLUDED.calculated_at,
+           data_quality = EXCLUDED.data_quality`
+      : `INSERT OR REPLACE INTO market_indicator_history (
+           quarter, quarter_end_date,
+           buffett_indicator, buffett_market_cap, buffett_gdp, buffett_stock_count,
+           sp500_pe, sp500_market_cap, sp500_earnings, sp500_company_count,
+           median_pe, median_msi, pct_undervalued, total_stocks_analyzed,
+           calculated_at, data_quality
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, datetime('now'), $15)`;
+    await database.query(upsertSql, params);
 
     res.json({
       success: true,

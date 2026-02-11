@@ -137,7 +137,7 @@ class CorrelationEngine {
       JOIN companies c ON a.company_id = c.id
       JOIN portfolio_positions pp ON c.id = pp.company_id
       JOIN portfolios p ON pp.portfolio_id = p.id
-      WHERE a.triggered_at > ?
+      WHERE a.triggered_at > $1
         AND a.signal_type IN ('strong_buy', 'buy')
         AND a.is_dismissed = 0
       ORDER BY a.priority DESC, a.triggered_at DESC
@@ -145,7 +145,8 @@ class CorrelationEngine {
     `;
 
     try {
-      const matches = this.db.prepare(query).all(since);
+      const result = await this.db.query(query, [since]);
+      const matches = result.rows || [];
 
       for (const match of matches) {
         // Check if we already created this correlation recently
@@ -207,7 +208,7 @@ class CorrelationEngine {
       JOIN companies c ON w.symbol = c.symbol
       JOIN alerts a ON c.id = a.company_id
       LEFT JOIN price_metrics pm ON c.id = pm.company_id
-      WHERE a.triggered_at > ?
+      WHERE a.triggered_at > $1
         AND a.is_dismissed = 0
         AND (
           (w.target_price_above IS NOT NULL AND pm.last_price >= w.target_price_above)
@@ -218,7 +219,8 @@ class CorrelationEngine {
     `;
 
     try {
-      const matches = this.db.prepare(query).all(since);
+      const result = await this.db.query(query, [since]);
+      const matches = result.rows || [];
 
       for (const match of matches) {
         if (await this.isDuplicate('watchlist_price_signal', match.company_id)) {
@@ -277,7 +279,7 @@ class CorrelationEngine {
         COUNT(*) as total_alerts
       FROM alerts a
       JOIN companies c ON a.company_id = c.id
-      WHERE a.triggered_at > ?
+      WHERE a.triggered_at > $1
         AND a.is_dismissed = 0
         AND a.signal_type IN ('strong_buy', 'buy', 'watch')
       GROUP BY c.id
@@ -287,7 +289,8 @@ class CorrelationEngine {
     `;
 
     try {
-      const matches = this.db.prepare(query).all(since);
+      const result = await this.db.query(query, [since]);
+      const matches = result.rows || [];
 
       for (const match of matches) {
         if (await this.isDuplicate('multiple_signals', match.company_id)) {
@@ -347,7 +350,7 @@ class CorrelationEngine {
       FROM insider_transactions it
       JOIN companies c ON it.company_id = c.id
       LEFT JOIN sentiment_data s ON c.id = s.company_id
-      WHERE it.transaction_date > ?
+      WHERE it.transaction_date > $1
         AND it.transaction_type = 'buy'
         AND it.value > 10000
         AND s.sentiment_score > 0.6
@@ -356,7 +359,8 @@ class CorrelationEngine {
     `;
 
     try {
-      const matches = this.db.prepare(query).all(since);
+      const result = await this.db.query(query, [since]);
+      const matches = result.rows || [];
 
       for (const match of matches) {
         if (await this.isDuplicate('insider_sentiment', match.company_id)) {
@@ -411,7 +415,7 @@ class CorrelationEngine {
         AVG(a.priority) as avg_priority
       FROM alerts a
       JOIN companies c ON a.company_id = c.id
-      WHERE a.triggered_at > ?
+      WHERE a.triggered_at > $1
         AND a.is_dismissed = 0
         AND a.signal_type IN ('strong_buy', 'buy')
         AND c.sector IS NOT NULL
@@ -423,7 +427,8 @@ class CorrelationEngine {
     `;
 
     try {
-      const matches = this.db.prepare(query).all(since);
+      const result = await this.db.query(query, [since]);
+      const matches = result.rows || [];
 
       for (const match of matches) {
         if (await this.isDuplicate('sector_correlation', match.sector)) {
@@ -483,8 +488,8 @@ class CorrelationEngine {
       FROM alerts fa
       JOIN alerts ta ON fa.company_id = ta.company_id
       JOIN companies c ON fa.company_id = c.id
-      WHERE fa.triggered_at > ?
-        AND ta.triggered_at > ?
+      WHERE fa.triggered_at > $1
+        AND ta.triggered_at > $2
         AND fa.alert_type = 'valuation'
         AND ta.alert_type = 'price'
         AND fa.signal_type IN ('strong_buy', 'buy')
@@ -496,7 +501,8 @@ class CorrelationEngine {
     `;
 
     try {
-      const matches = this.db.prepare(query).all(since, since);
+      const result = await this.db.query(query, [since, since]);
+      const matches = result.rows || [];
 
       for (const match of matches) {
         if (await this.isDuplicate('fundamental_technical', match.company_id)) {
@@ -566,18 +572,19 @@ class CorrelationEngine {
       const query = `
         SELECT COUNT(*) as count
         FROM notifications
-        WHERE type = ?
-          AND created_at > ?
-          AND JSON_EXTRACT(data, '$.correlationRule') = ?
-          ${secondaryId ? "AND JSON_EXTRACT(related_entities, '$[0].id') = ?" : ''}
+        WHERE type = $1
+          AND created_at > $2
+          AND JSON_EXTRACT(data, '$.correlationRule') = $3
+          ${secondaryId ? 'AND JSON_EXTRACT(related_entities, \'$[0].id\') = $4' : ''}
       `;
 
       const params = secondaryId
         ? [correlationType, since, correlationType, entityId]
         : [correlationType, since, correlationType];
 
-      const result = this.db.prepare(query).get(...params);
-      return result?.count > 0;
+      const result = await this.db.query(query, params);
+      const row = result.rows?.[0];
+      return row?.count > 0;
     } catch (err) {
       // If notifications table doesn't exist yet, no duplicates
       return false;

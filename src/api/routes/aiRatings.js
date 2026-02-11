@@ -254,12 +254,11 @@ router.post('/screening/suggest', async (req, res) => {
     }
 
     // Generate suggestion using AI analyst
-    const analystService = require('../../services/analystBridge');
+    const { AnalystService } = require('../../services/analystBridge');
+    const analystService = new AnalystService();
 
     // Create a temporary conversation for the suggestion
-    const conversation = await analystService.createConversation({
-      analystId: 'value'
-    });
+    const conversation = await analystService.createConversation('value');
 
     const prompt = `Based on this investment goal: "${goal}"
 

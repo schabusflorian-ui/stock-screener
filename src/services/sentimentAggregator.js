@@ -241,23 +241,22 @@ class SentimentAggregator {
     }
 
     // Try to get from database first (recent posts)
-    const recent = this.db
-      .prepare(
-        `
-      SELECT
+    const database = await getDatabaseAsync();
+    const result = await database.query(
+      `SELECT
         COUNT(*) as total_posts,
         AVG(rp.sentiment_score) as avg_sentiment,
         SUM(CASE WHEN rp.sentiment_label = 'positive' THEN 1 ELSE 0 END) as positive,
         SUM(CASE WHEN rp.sentiment_label = 'negative' THEN 1 ELSE 0 END) as negative,
         SUM(CASE WHEN rp.sentiment_label = 'neutral' THEN 1 ELSE 0 END) as neutral,
         SUM(rp.upvotes) as total_upvotes
-      FROM reddit_posts rp
-      JOIN reddit_ticker_mentions rtm ON rp.id = rtm.post_id
-      WHERE rtm.company_id = ?
-        AND rp.created_at >= datetime('now', '-7 days')
-    `
-      )
-      .get(companyId);
+       FROM reddit_posts rp
+       JOIN reddit_ticker_mentions rtm ON rp.id = rtm.post_id
+       WHERE rtm.company_id = $1
+         AND rp.created_at >= datetime('now', '-7 days')`,
+      [companyId]
+    );
+    const recent = result.rows?.[0];
 
     if (!recent || recent.total_posts === 0) {
       return null;
@@ -552,37 +551,35 @@ class SentimentAggregator {
   /**
    * Get sentiment history for a company
    */
-  getSentimentHistory(companyId, days = 30) {
+  async getSentimentHistory(companyId, days = 30) {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
 
-    return this.db
-      .prepare(
-        `
-      SELECT
+    const database = await getDatabaseAsync();
+    const result = await database.query(
+      `SELECT
         DATE(calculated_at) as date,
         AVG(combined_score) as avg_sentiment,
         AVG(confidence) as avg_confidence,
         GROUP_CONCAT(DISTINCT combined_signal) as signals,
         COUNT(*) as data_points
-      FROM combined_sentiment
-      WHERE company_id = ?
-        AND calculated_at >= ?
-      GROUP BY DATE(calculated_at)
-      ORDER BY date DESC
-    `
-      )
-      .all(companyId, cutoff.toISOString());
+       FROM combined_sentiment
+       WHERE company_id = $1
+         AND calculated_at >= $2
+       GROUP BY DATE(calculated_at)
+       ORDER BY date DESC`,
+      [companyId, cutoff.toISOString()]
+    );
+    return result.rows || [];
   }
 
   /**
    * Get top sentiment movers
    */
-  getTopMovers(limit = 10) {
-    return this.db
-      .prepare(
-        `
-      SELECT
+  async getTopMovers(limit = 10) {
+    const database = await getDatabaseAsync();
+    const result = await database.query(
+      `SELECT
         c.symbol,
         c.name,
         cs.combined_score,
@@ -597,16 +594,16 @@ class SentimentAggregator {
           ORDER BY cs2.calculated_at DESC
           LIMIT 1
         ) as previous_score
-      FROM companies c
-      JOIN combined_sentiment cs ON c.id = cs.company_id
-      WHERE cs.calculated_at >= datetime('now', '-24 hours')
-      GROUP BY c.id
-      HAVING cs.calculated_at = MAX(cs.calculated_at)
-      ORDER BY ABS(cs.combined_score - COALESCE(previous_score, 0)) DESC
-      LIMIT ?
-    `
-      )
-      .all(limit);
+       FROM companies c
+       JOIN combined_sentiment cs ON c.id = cs.company_id
+       WHERE cs.calculated_at >= datetime('now', '-24 hours')
+       GROUP BY c.id
+       HAVING cs.calculated_at = MAX(cs.calculated_at)
+       ORDER BY ABS(cs.combined_score - COALESCE(previous_score, 0)) DESC
+       LIMIT $1`,
+      [limit]
+    );
+    return result.rows || [];
   }
 
 }
