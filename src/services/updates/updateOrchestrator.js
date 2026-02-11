@@ -11,7 +11,7 @@ const EventEmitter = require('events');
 const path = require('path');
 const fs = require('fs');
 const sentry = require('../../lib/sentry'); // PHASE 2.4: Sentry integration for job failures
-const { getDatabaseAsync } = require('../../lib/db');
+const { getDatabaseAsync, dialect } = require('../../lib/db');
 
 class UpdateOrchestrator extends EventEmitter {
   constructor() {
@@ -485,12 +485,13 @@ class UpdateOrchestrator extends EventEmitter {
   async acquireLock(jobKey) {
     try {
       const database = await getDatabaseAsync();
+      const expiresAt = dialect.intervalFromNow(2, 'hours');
       // FIXED: Use atomic INSERT...ON CONFLICT for atomic lock acquisition
       // If we successfully insert, we acquired the lock
       // This prevents race condition where two instances could both think they acquired the lock
       const result = await database.query(`
         INSERT INTO update_locks (job_key, locked_at, locked_by, expires_at)
-        SELECT $1, CURRENT_TIMESTAMP, $2, CURRENT_TIMESTAMP + INTERVAL '2 hours'
+        SELECT $1, CURRENT_TIMESTAMP, $2, ${expiresAt}
         WHERE NOT EXISTS (
           SELECT 1 FROM update_locks
           WHERE job_key = $3 AND expires_at > CURRENT_TIMESTAMP
@@ -527,13 +528,14 @@ class UpdateOrchestrator extends EventEmitter {
   async recoverStalledQueueItems() {
     try {
       const database = await getDatabaseAsync();
+      const staleCutoff = dialect.intervalAgo(10, 'minutes');
       // Find items stuck in 'processing' state for >10 minutes without heartbeat
       const result = await database.query(`
         UPDATE update_queue
         SET status = 'pending',
             attempt = attempt + 1
         WHERE status = 'processing'
-          AND (last_heartbeat IS NULL OR last_heartbeat < CURRENT_TIMESTAMP - INTERVAL '10 minutes')
+          AND (last_heartbeat IS NULL OR last_heartbeat < ${staleCutoff})
           AND attempt < max_attempts
         RETURNING id, job_key, attempt
       `);

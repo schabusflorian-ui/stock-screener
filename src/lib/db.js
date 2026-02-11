@@ -776,6 +776,22 @@ const dialect = {
     return `datetime(${column}, '-${interval} ${unit}')`;
   },
 
+  /** Current time minus interval - use in WHERE/expressions (single source of truth for dialect) */
+  intervalAgo: (amount, unit) => {
+    if (isPostgres) {
+      return `CURRENT_TIMESTAMP - INTERVAL '${amount} ${unit}'`;
+    }
+    return `datetime('now', '-${amount} ${unit}')`;
+  },
+
+  /** Current time plus interval - use in WHERE/expressions (single source of truth for dialect) */
+  intervalFromNow: (amount, unit) => {
+    if (isPostgres) {
+      return `CURRENT_TIMESTAMP + INTERVAL '${amount} ${unit}'`;
+    }
+    return `datetime('now', '+${amount} ${unit}')`;
+  },
+
   // Extract date part
   extractDate: (column) => {
     if (isPostgres) {

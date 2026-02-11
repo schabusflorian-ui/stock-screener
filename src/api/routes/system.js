@@ -14,7 +14,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../../middleware/auth');
-const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
+const { getDatabaseAsync, dialect, isUsingPostgres } = require('../../lib/db');
 
 /**
  * GET /api/system/health
@@ -188,7 +188,7 @@ router.get('/health', async (req, res) => {
         SELECT COUNT(*) as count
         FROM update_queue
         WHERE status = 'processing'
-          AND (last_heartbeat IS NULL OR last_heartbeat < ${isUsingPostgres ? "NOW() - INTERVAL '10 minutes'" : "datetime('now', '-10 minutes')"})
+          AND (last_heartbeat IS NULL OR last_heartbeat < ${dialect.intervalAgo(10, 'minutes')})
       `);
       const stalled = stalledResult.rows[0].count;
 
@@ -257,7 +257,7 @@ router.get('/health', async (req, res) => {
     try {
       // Check if api_usage_daily table exists
       const tableExistsResult = await database.query(
-        isPostgres: isUsingPostgres()
+        isUsingPostgres()
           ? `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = $1) as exists`
           : `SELECT name FROM sqlite_master WHERE type='table' AND name=?`,
         ['api_usage_daily']
