@@ -119,7 +119,8 @@ class AnalyticsBundle {
 
   /**
    * Calculate outcomes for decisions that have enough price history
-   * Runs weekly to update return/alpha calculations
+   * Runs weekly to update return/alpha calculations.
+   * OutcomeCalculator returns { calculated, errors, total }.
    */
   async runOutcomeCalculation(db, onProgress) {
     await onProgress(5, 'Starting outcome calculation...');
@@ -129,18 +130,21 @@ class AnalyticsBundle {
     await onProgress(10, 'Finding decisions needing outcome updates...');
 
     const result = await historicalService.calculateAllOutcomes({
-      onProgress: async (pct, msg) => {
-        await onProgress(10 + pct * 0.85, msg);
-      }
+      limit: 2000,
+      minDaysOld: 365,
+      verbose: false
     });
 
-    await onProgress(100, `Updated ${result.updated} decision outcomes`);
+    const calculated = result.calculated ?? 0;
+    const errors = result.errors ?? 0;
+    const total = result.total ?? 0;
+    await onProgress(100, `Calculated ${calculated} outcomes (${errors} errors, ${total} processed)`);
 
     return {
-      itemsTotal: result.total || 0,
-      itemsProcessed: result.processed || 0,
-      itemsUpdated: result.updated || 0,
-      itemsFailed: result.errors || 0
+      itemsTotal: total,
+      itemsProcessed: total,
+      itemsUpdated: calculated,
+      itemsFailed: errors
     };
   }
 

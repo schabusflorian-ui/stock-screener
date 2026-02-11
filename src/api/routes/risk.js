@@ -7,18 +7,38 @@
 
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
+const { getDatabaseSync, isUsingPostgres } = require('../../lib/db');
 const {
   MarginOfSafetyCalculator,
   BuffettTalebRiskManager
 } = require('../../services/riskManagement');
+
+// Risk endpoints are SQLite-only for now.
+router.use((req, res, next) => {
+  if (isUsingPostgres()) {
+    return res.status(503).json({
+      error: 'Risk endpoints are not available in PostgreSQL deployment',
+      code: 'RISK_NOT_AVAILABLE',
+      message: 'These endpoints use SQLite-specific queries and require migration.'
+    });
+  }
+  next();
+});
+
+let database = null;
+function getDb() {
+  if (!database) {
+    database = getDatabaseSync();
+  }
+  return database;
+}
 
 // Initialize services
 let mosCalculator, riskManager;
 
 function initServices() {
   if (!mosCalculator) {
-    const dbConn = db.getDatabase();
+    const dbConn = getDb();
     mosCalculator = new MarginOfSafetyCalculator(dbConn);
     riskManager = new BuffettTalebRiskManager(dbConn);
   }
@@ -59,7 +79,7 @@ router.get('/margin-of-safety/symbol/:symbol', async (req, res) => {
     const { symbol } = req.params;
     const { recalc = false } = req.query;
 
-    const dbConn = db.getDatabase();
+    const dbConn = getDb();
     const company = await dbConn.prepare('SELECT id FROM companies WHERE symbol = ?').get(symbol.toUpperCase());
 
     if (!company) {
@@ -184,7 +204,7 @@ router.post('/assess/:portfolioId', async (req, res) => {
     // If symbol provided instead of companyId, look it up
     let targetCompanyId = companyId;
     if (!targetCompanyId && symbol) {
-      const dbConn = db.getDatabase();
+      const dbConn = getDb();
       const company = await dbConn.prepare('SELECT id FROM companies WHERE symbol = ?').get(symbol.toUpperCase());
       if (!company) {
         return res.status(404).json({ error: 'Company not found' });

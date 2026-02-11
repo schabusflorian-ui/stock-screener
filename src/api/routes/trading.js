@@ -9,7 +9,27 @@ const express = require('express');
 const router = express.Router();
 const { RegimeDetector, TechnicalSignals, SignalAggregator, REGIMES } = require('../../services/trading');
 const { LiquidityRefresh } = require('../../jobs/liquidityRefresh');
-const db = require('../../database');
+const { getDatabaseSync, isUsingPostgres } = require('../../lib/db');
+
+// Trading endpoints are SQLite-only for now.
+router.use((req, res, next) => {
+  if (isUsingPostgres()) {
+    return res.status(503).json({
+      error: 'Trading endpoints are not available in PostgreSQL deployment',
+      code: 'TRADING_NOT_AVAILABLE',
+      message: 'These endpoints use SQLite-specific queries and require migration.'
+    });
+  }
+  next();
+});
+
+let database = null;
+function getDb() {
+  if (!database) {
+    database = getDatabaseSync();
+  }
+  return database;
+}
 
 // Initialize services
 let regimeDetector = null;
@@ -19,16 +39,16 @@ let liquidityRefresh = null;
 
 function getServices() {
   if (!regimeDetector) {
-    regimeDetector = new RegimeDetector(db);
+    regimeDetector = new RegimeDetector(getDb());
   }
   if (!technicalSignals) {
-    technicalSignals = new TechnicalSignals(db);
+    technicalSignals = new TechnicalSignals(getDb());
   }
   if (!signalAggregator) {
-    signalAggregator = new SignalAggregator(db);
+    signalAggregator = new SignalAggregator(getDb());
   }
   if (!liquidityRefresh) {
-    liquidityRefresh = new LiquidityRefresh(db.getDatabase());
+    liquidityRefresh = new LiquidityRefresh(getDb());
   }
   return { regimeDetector, technicalSignals, signalAggregator, liquidityRefresh };
 }
@@ -397,7 +417,7 @@ router.get('/liquidity/volatile', (req, res) => {
 router.get('/liquidity/:symbol', (req, res) => {
   try {
     const { symbol } = req.params;
-    const database = db.getDatabase();
+    const database = getDb();
 
     const company = database.prepare(`
       SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
@@ -429,7 +449,7 @@ router.get('/liquidity/:symbol', (req, res) => {
  */
 router.get('/liquidity/stats/summary', (req, res) => {
   try {
-    const database = db.getDatabase();
+    const database = getDb();
 
     const stats = database.prepare(`
       SELECT

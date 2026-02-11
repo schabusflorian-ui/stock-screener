@@ -3,15 +3,35 @@
 
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
+const { getDatabaseSync, isUsingPostgres } = require('../../lib/db');
 const { getOrchestrator } = require('../../services/agent');
+
+// Trading orchestrator endpoints are SQLite-only for now.
+router.use((req, res, next) => {
+  if (isUsingPostgres()) {
+    return res.status(503).json({
+      error: 'Trading orchestrator endpoints are not available in PostgreSQL deployment',
+      code: 'ORCHESTRATOR_NOT_AVAILABLE',
+      message: 'These endpoints use SQLite-specific queries and require migration.'
+    });
+  }
+  next();
+});
+
+let database = null;
+function getDb() {
+  if (!database) {
+    database = getDatabaseSync();
+  }
+  return database;
+}
 
 // Initialize orchestrator lazily
 let orchestrator = null;
 
 function ensureOrchestrator() {
   if (!orchestrator) {
-    orchestrator = getOrchestrator(db.getDatabase());
+    orchestrator = getOrchestrator(getDb());
   }
   return orchestrator;
 }
@@ -274,7 +294,7 @@ router.get('/stats', async (req, res) => {
  */
 router.get('/dashboard', async (req, res) => {
   try {
-    const database = db.getDatabase();
+    const database = getDb();
 
     // Get all portfolios with their latest analysis
     const portfolios = database.prepare(`
@@ -346,7 +366,7 @@ router.get('/dashboard', async (req, res) => {
  */
 router.post('/run-all', async (req, res) => {
   try {
-    const database = db.getDatabase();
+    const database = getDb();
     const orch = ensureOrchestrator();
 
     // Get all active portfolios
