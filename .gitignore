@@ -81,3 +81,4 @@ benchmark_results/
 python-services/venv/
 **/venv/
 **/__pycache__/
+stock-screener/
