@@ -109,7 +109,7 @@ module.exports = function(db) {
    * Create a new strategy
    * Body: { name, description?, preset?, ...config }
    */
-  router.post('/', (req, res) => {
+  router.post('/', async (req, res) => {
     try {
       const { preset, ...config } = req.body;
 
