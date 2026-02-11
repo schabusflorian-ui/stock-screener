@@ -101,7 +101,7 @@ class UnifiedBacktestEngine {
     console.log('='.repeat(70));
 
     // Load strategy
-    const strategy = this.strategyManager.getStrategy(strategyId);
+    const strategy = await this.strategyManager.getStrategy(strategyId);
     if (!strategy) {
       throw new Error(`Strategy ${strategyId} not found`);
     }
@@ -111,7 +111,7 @@ class UnifiedBacktestEngine {
     console.log(`📊 Mode: ${mode}`);
 
     // Check if multi-strategy
-    const orchestrator = createOrchestratorIfMulti(database, strategyId);
+    const orchestrator = await createOrchestratorIfMulti(database, strategyId);
     const isMultiStrategy = orchestrator !== null;
 
     // 1. Run simple backtest
@@ -1088,7 +1088,7 @@ class UnifiedBacktestEngine {
       ]);
 
       // Update strategy backtest cache
-      this.strategyManager.updateBacktestCache(strategyId, {
+      await this.strategyManager.updateBacktestCache(strategyId, {
         sharpe: results.backtest.metrics.sharpe,
         alpha: results.backtest.metrics.alpha,
         maxDrawdown: results.backtest.metrics.maxDrawdown

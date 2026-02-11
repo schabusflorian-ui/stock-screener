@@ -466,7 +466,7 @@ class WeightUpdateService {
     const updated = [];
 
     // Get all active strategies that use optimized weights
-    const strategies = this.strategyManager.getAllStrategies();
+    const strategies = await this.strategyManager.getAllStrategies();
 
     for (const strategy of strategies) {
       // Check if strategy uses optimized weights
@@ -475,7 +475,7 @@ class WeightUpdateService {
           // Map optimization weights to strategy weights
           const mappedWeights = this._mapWeightsToStrategy(weights, strategy.signal_weights);
 
-          this.strategyManager.updateStrategy(strategy.id, {
+          await this.strategyManager.updateStrategy(strategy.id, {
             signal_weights: mappedWeights
           });
 

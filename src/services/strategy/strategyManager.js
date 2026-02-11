@@ -2,6 +2,7 @@
 // Strategy Manager - CRUD operations for unified strategies
 
 const { DEFAULT_SIGNAL_WEIGHTS } = require('./unifiedStrategyEngine');
+const { isUsingPostgres, dialect } = require('../../lib/db');
 
 /**
  * Default risk parameters
@@ -81,155 +82,6 @@ const DEFAULT_FEATURE_FLAGS = {
 class StrategyManager {
   constructor(db) {
     this.db = db.getDatabase ? db.getDatabase() : db;
-    this._prepareStatements();
-  }
-
-  _prepareStatements() {
-    // Create strategy
-    this.stmtCreate = this.db.prepare(`
-      INSERT INTO unified_strategies (
-        name, description, strategy_type, is_template,
-        signal_weights, risk_params, universe_config, holding_period,
-        regime_config, feature_flags, min_confidence, min_signal_score,
-        rebalance_frequency, rebalance_threshold,
-        parent_strategy_id, target_allocation, min_allocation, max_allocation, regime_trigger,
-        created_by
-      ) VALUES (
-        ?, ?, ?, ?,
-        ?, ?, ?, ?,
-        ?, ?, ?, ?,
-        ?, ?,
-        ?, ?, ?, ?, ?,
-        ?
-      )
-    `);
-
-    // Get strategy by ID
-    this.stmtGetById = this.db.prepare(`
-      SELECT * FROM unified_strategies WHERE id = ?
-    `);
-
-    // Get all active strategies
-    this.stmtGetAll = this.db.prepare(`
-      SELECT * FROM unified_strategies
-      WHERE is_active = 1 AND parent_strategy_id IS NULL
-      ORDER BY created_at DESC
-    `);
-
-    // Get strategies by type
-    this.stmtGetByType = this.db.prepare(`
-      SELECT * FROM unified_strategies
-      WHERE strategy_type = ? AND is_active = 1 AND parent_strategy_id IS NULL
-      ORDER BY created_at DESC
-    `);
-
-    // Get templates only
-    this.stmtGetTemplates = this.db.prepare(`
-      SELECT * FROM unified_strategies
-      WHERE is_template = 1 AND is_active = 1
-      ORDER BY name
-    `);
-
-    // Get child strategies
-    this.stmtGetChildren = this.db.prepare(`
-      SELECT * FROM unified_strategies
-      WHERE parent_strategy_id = ? AND is_active = 1
-      ORDER BY target_allocation DESC
-    `);
-
-    // Update strategy
-    this.stmtUpdate = this.db.prepare(`
-      UPDATE unified_strategies SET
-        name = COALESCE(?, name),
-        description = COALESCE(?, description),
-        strategy_type = COALESCE(?, strategy_type),
-        signal_weights = COALESCE(?, signal_weights),
-        risk_params = COALESCE(?, risk_params),
-        universe_config = COALESCE(?, universe_config),
-        holding_period = COALESCE(?, holding_period),
-        regime_config = COALESCE(?, regime_config),
-        feature_flags = COALESCE(?, feature_flags),
-        min_confidence = COALESCE(?, min_confidence),
-        min_signal_score = COALESCE(?, min_signal_score),
-        rebalance_frequency = COALESCE(?, rebalance_frequency),
-        rebalance_threshold = COALESCE(?, rebalance_threshold),
-        target_allocation = COALESCE(?, target_allocation),
-        regime_trigger = COALESCE(?, regime_trigger),
-        version = version + 1,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `);
-
-    // Soft delete
-    this.stmtDelete = this.db.prepare(`
-      UPDATE unified_strategies SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-    `);
-
-    // Hard delete
-    this.stmtHardDelete = this.db.prepare(`
-      DELETE FROM unified_strategies WHERE id = ?
-    `);
-
-    // Update backtest cache
-    this.stmtUpdateBacktestCache = this.db.prepare(`
-      UPDATE unified_strategies SET
-        backtest_sharpe = ?,
-        backtest_alpha = ?,
-        backtest_max_drawdown = ?,
-        last_backtest_at = CURRENT_TIMESTAMP,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `);
-
-    // Get presets
-    this.stmtGetPresets = this.db.prepare(`
-      SELECT * FROM strategy_presets_v2
-      WHERE is_active = 1
-      ORDER BY sort_order, name
-    `);
-
-    // Get preset by name
-    this.stmtGetPresetByName = this.db.prepare(`
-      SELECT * FROM strategy_presets_v2
-      WHERE name = ? AND is_active = 1
-    `);
-
-    // Model version binding statements
-    this.stmtUpdateModelVersion = this.db.prepare(`
-      UPDATE unified_strategies SET
-        ml_model_version = ?,
-        ml_model_updated_at = CURRENT_TIMESTAMP,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `);
-
-    this.stmtSetModelLock = this.db.prepare(`
-      UPDATE unified_strategies SET
-        ml_model_locked = ?,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `);
-
-    this.stmtGetByModelVersion = this.db.prepare(`
-      SELECT * FROM unified_strategies
-      WHERE ml_model_version = ? AND is_active = 1
-      ORDER BY name
-    `);
-
-    this.stmtGetMLStrategies = this.db.prepare(`
-      SELECT * FROM unified_strategies
-      WHERE is_active = 1
-        AND json_extract(feature_flags, '$.useMLCombiner') = 1
-      ORDER BY name
-    `);
-
-    this.stmtGetUnlockedMLStrategies = this.db.prepare(`
-      SELECT * FROM unified_strategies
-      WHERE is_active = 1
-        AND json_extract(feature_flags, '$.useMLCombiner') = 1
-        AND (ml_model_locked = 0 OR ml_model_locked IS NULL)
-      ORDER BY name
-    `);
   }
 
   /**
@@ -237,7 +89,7 @@ class StrategyManager {
    * @param {Object} config - Strategy configuration
    * @returns {Object} Created strategy with ID
    */
-  createStrategy(config) {
+  async createStrategy(config) {
     // Validate required fields
     if (!config.name || config.name.trim().length === 0) {
       throw new Error('Strategy name is required');
@@ -257,31 +109,44 @@ class StrategyManager {
       console.warn(`Signal weights sum to ${weightSum}, expected ~1.0`);
     }
 
-    // Insert
-    const result = this.stmtCreate.run(
-      config.name,
-      config.description || null,
-      config.strategy_type || 'single',
-      config.is_template ? 1 : 0,
-      JSON.stringify(signalWeights),
-      JSON.stringify(riskParams),
-      JSON.stringify(universeConfig),
-      JSON.stringify(holdingPeriod),
-      JSON.stringify(regimeConfig),
-      JSON.stringify(featureFlags),
-      config.min_confidence || 0.6,
-      config.min_signal_score || 0.3,
-      config.rebalance_frequency || 'weekly',
-      config.rebalance_threshold || 0.05,
-      config.parent_strategy_id || null,
-      config.target_allocation || null,
-      config.min_allocation || null,
-      config.max_allocation || null,
-      config.regime_trigger ? JSON.stringify(config.regime_trigger) : null,
-      config.created_by || null
+    const returningClause = dialect.returningId ? ' RETURNING id' : '';
+    const result = await this.db.query(
+      `INSERT INTO unified_strategies (
+        name, description, strategy_type, is_template,
+        signal_weights, risk_params, universe_config, holding_period,
+        regime_config, feature_flags, min_confidence, min_signal_score,
+        rebalance_frequency, rebalance_threshold,
+        parent_strategy_id, target_allocation, min_allocation, max_allocation, regime_trigger,
+        created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)${returningClause}`,
+      [
+        config.name,
+        config.description || null,
+        config.strategy_type || 'single',
+        config.is_template ? 1 : 0,
+        JSON.stringify(signalWeights),
+        JSON.stringify(riskParams),
+        JSON.stringify(universeConfig),
+        JSON.stringify(holdingPeriod),
+        JSON.stringify(regimeConfig),
+        JSON.stringify(featureFlags),
+        config.min_confidence || 0.6,
+        config.min_signal_score || 0.3,
+        config.rebalance_frequency || 'weekly',
+        config.rebalance_threshold || 0.05,
+        config.parent_strategy_id || null,
+        config.target_allocation || null,
+        config.min_allocation || null,
+        config.max_allocation || null,
+        config.regime_trigger ? JSON.stringify(config.regime_trigger) : null,
+        config.created_by || null
+      ]
     );
 
-    return this.getStrategy(result.lastInsertRowid);
+    const newId = dialect.returningId
+      ? (result.rows?.[0]?.id ?? null)
+      : (result.lastInsertRowid ?? null);
+    return this.getStrategy(newId);
   }
 
   /**
@@ -289,8 +154,12 @@ class StrategyManager {
    * @param {number} id - Strategy ID
    * @returns {Object|null} Strategy or null
    */
-  getStrategy(id) {
-    const row = this.stmtGetById.get(id);
+  async getStrategy(id) {
+    const result = await this.db.query(
+      'SELECT * FROM unified_strategies WHERE id = $1',
+      [id]
+    );
+    const row = result.rows?.[0];
     return row ? this._parseStrategy(row) : null;
   }
 
@@ -299,18 +168,32 @@ class StrategyManager {
    * @param {Object} filters - Optional filters
    * @returns {Array} Array of strategies
    */
-  getAllStrategies(filters = {}) {
-    let strategies;
+  async getAllStrategies(filters = {}) {
+    let result;
 
     if (filters.type) {
-      strategies = this.stmtGetByType.all(filters.type);
+      result = await this.db.query(
+        `SELECT * FROM unified_strategies
+         WHERE strategy_type = $1 AND is_active = 1 AND parent_strategy_id IS NULL
+         ORDER BY created_at DESC`,
+        [filters.type]
+      );
     } else if (filters.templates) {
-      strategies = this.stmtGetTemplates.all();
+      result = await this.db.query(
+        `SELECT * FROM unified_strategies
+         WHERE is_template = 1 AND is_active = 1
+         ORDER BY name`
+      );
     } else {
-      strategies = this.stmtGetAll.all();
+      result = await this.db.query(
+        `SELECT * FROM unified_strategies
+         WHERE is_active = 1 AND parent_strategy_id IS NULL
+         ORDER BY created_at DESC`
+      );
     }
 
-    return strategies.map(row => this._parseStrategy(row));
+    const rows = result.rows || [];
+    return rows.map(row => this._parseStrategy(row));
   }
 
   /**
@@ -318,9 +201,15 @@ class StrategyManager {
    * @param {number} parentId - Parent strategy ID
    * @returns {Array} Array of child strategies
    */
-  getChildStrategies(parentId) {
-    const children = this.stmtGetChildren.all(parentId);
-    return children.map(row => this._parseStrategy(row));
+  async getChildStrategies(parentId) {
+    const result = await this.db.query(
+      `SELECT * FROM unified_strategies
+       WHERE parent_strategy_id = $1 AND is_active = 1
+       ORDER BY target_allocation DESC`,
+      [parentId]
+    );
+    const rows = result.rows || [];
+    return rows.map(row => this._parseStrategy(row));
   }
 
   /**
@@ -329,29 +218,50 @@ class StrategyManager {
    * @param {Object} updates - Fields to update
    * @returns {Object} Updated strategy
    */
-  updateStrategy(id, updates) {
-    const strategy = this.getStrategy(id);
+  async updateStrategy(id, updates) {
+    const strategy = await this.getStrategy(id);
     if (!strategy) {
       throw new Error(`Strategy ${id} not found`);
     }
 
-    this.stmtUpdate.run(
-      updates.name || null,
-      updates.description || null,
-      updates.strategy_type || null,
-      updates.signal_weights ? JSON.stringify(updates.signal_weights) : null,
-      updates.risk_params ? JSON.stringify(updates.risk_params) : null,
-      updates.universe_config ? JSON.stringify(updates.universe_config) : null,
-      updates.holding_period ? JSON.stringify(updates.holding_period) : null,
-      updates.regime_config ? JSON.stringify(updates.regime_config) : null,
-      updates.feature_flags ? JSON.stringify(updates.feature_flags) : null,
-      updates.min_confidence || null,
-      updates.min_signal_score || null,
-      updates.rebalance_frequency || null,
-      updates.rebalance_threshold || null,
-      updates.target_allocation || null,
-      updates.regime_trigger ? JSON.stringify(updates.regime_trigger) : null,
-      id
+    await this.db.query(
+      `UPDATE unified_strategies SET
+        name = COALESCE($1, name),
+        description = COALESCE($2, description),
+        strategy_type = COALESCE($3, strategy_type),
+        signal_weights = COALESCE($4, signal_weights),
+        risk_params = COALESCE($5, risk_params),
+        universe_config = COALESCE($6, universe_config),
+        holding_period = COALESCE($7, holding_period),
+        regime_config = COALESCE($8, regime_config),
+        feature_flags = COALESCE($9, feature_flags),
+        min_confidence = COALESCE($10, min_confidence),
+        min_signal_score = COALESCE($11, min_signal_score),
+        rebalance_frequency = COALESCE($12, rebalance_frequency),
+        rebalance_threshold = COALESCE($13, rebalance_threshold),
+        target_allocation = COALESCE($14, target_allocation),
+        regime_trigger = COALESCE($15, regime_trigger),
+        version = version + 1,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $16`,
+      [
+        updates.name || null,
+        updates.description || null,
+        updates.strategy_type || null,
+        updates.signal_weights ? JSON.stringify(updates.signal_weights) : null,
+        updates.risk_params ? JSON.stringify(updates.risk_params) : null,
+        updates.universe_config ? JSON.stringify(updates.universe_config) : null,
+        updates.holding_period ? JSON.stringify(updates.holding_period) : null,
+        updates.regime_config ? JSON.stringify(updates.regime_config) : null,
+        updates.feature_flags ? JSON.stringify(updates.feature_flags) : null,
+        updates.min_confidence || null,
+        updates.min_signal_score || null,
+        updates.rebalance_frequency || null,
+        updates.rebalance_threshold || null,
+        updates.target_allocation || null,
+        updates.regime_trigger ? JSON.stringify(updates.regime_trigger) : null,
+        id
+      ]
     );
 
     return this.getStrategy(id);
@@ -362,9 +272,13 @@ class StrategyManager {
    * @param {number} id - Strategy ID
    * @returns {boolean} Success
    */
-  deleteStrategy(id) {
-    const result = this.stmtDelete.run(id);
-    return result.changes > 0;
+  async deleteStrategy(id) {
+    const result = await this.db.query(
+      'UPDATE unified_strategies SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = $1',
+      [id]
+    );
+    const rowCount = result.rowCount ?? result.rows?.length ?? 0;
+    return rowCount > 0;
   }
 
   /**
@@ -372,9 +286,13 @@ class StrategyManager {
    * @param {number} id - Strategy ID
    * @returns {boolean} Success
    */
-  hardDeleteStrategy(id) {
-    const result = this.stmtHardDelete.run(id);
-    return result.changes > 0;
+  async hardDeleteStrategy(id) {
+    const result = await this.db.query(
+      'DELETE FROM unified_strategies WHERE id = $1',
+      [id]
+    );
+    const rowCount = result.rowCount ?? result.changes ?? 0;
+    return rowCount > 0;
   }
 
   /**
@@ -383,7 +301,7 @@ class StrategyManager {
    * @param {Array} childConfigs - Array of child strategy configs with allocations
    * @returns {Object} Created multi-strategy with children
    */
-  createMultiStrategy(parentConfig, childConfigs) {
+  async createMultiStrategy(parentConfig, childConfigs) {
     if (!childConfigs || childConfigs.length < 2) {
       throw new Error('Multi-strategy requires at least 2 child strategies');
     }
@@ -395,18 +313,20 @@ class StrategyManager {
     }
 
     // Create parent
-    const parent = this.createStrategy({
+    const parent = await this.createStrategy({
       ...parentConfig,
       strategy_type: parentConfig.strategy_type || 'multi'
     });
 
     // Create children
-    const children = childConfigs.map(childConfig => {
-      return this.createStrategy({
-        ...childConfig,
-        parent_strategy_id: parent.id
-      });
-    });
+    const children = await Promise.all(
+      childConfigs.map(childConfig =>
+        this.createStrategy({
+          ...childConfig,
+          parent_strategy_id: parent.id
+        })
+      )
+    );
 
     return {
       ...parent,
@@ -420,8 +340,12 @@ class StrategyManager {
    * @param {Object} overrides - Optional overrides
    * @returns {Object} Created strategy
    */
-  createFromPreset(presetName, overrides = {}) {
-    const preset = this.stmtGetPresetByName.get(presetName);
+  async createFromPreset(presetName, overrides = {}) {
+    const result = await this.db.query(
+      'SELECT * FROM strategy_presets_v2 WHERE name = $1 AND is_active = 1',
+      [presetName]
+    );
+    const preset = result.rows?.[0];
     if (!preset) {
       throw new Error(`Preset "${presetName}" not found`);
     }
@@ -447,9 +371,14 @@ class StrategyManager {
    * Get all available presets
    * @returns {Array} Array of presets
    */
-  getPresets() {
-    const presets = this.stmtGetPresets.all();
-    return presets.map(row => ({
+  async getPresets() {
+    const result = await this.db.query(
+      `SELECT * FROM strategy_presets_v2
+       WHERE is_active = 1
+       ORDER BY sort_order, name`
+    );
+    const rows = result.rows || [];
+    return rows.map(row => ({
       id: row.id,
       name: row.name,
       description: row.description,
@@ -467,12 +396,21 @@ class StrategyManager {
    * @param {number} id - Strategy ID
    * @param {Object} results - Backtest results
    */
-  updateBacktestCache(id, results) {
-    this.stmtUpdateBacktestCache.run(
-      results.sharpe || null,
-      results.alpha || null,
-      results.maxDrawdown || null,
-      id
+  async updateBacktestCache(id, results) {
+    await this.db.query(
+      `UPDATE unified_strategies SET
+        backtest_sharpe = $1,
+        backtest_alpha = $2,
+        backtest_max_drawdown = $3,
+        last_backtest_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $4`,
+      [
+        results.sharpe || null,
+        results.alpha || null,
+        results.maxDrawdown || null,
+        id
+      ]
     );
   }
 
@@ -482,8 +420,8 @@ class StrategyManager {
    * @param {string} newName - Name for the duplicate
    * @returns {Object} Duplicated strategy
    */
-  duplicateStrategy(id, newName) {
-    const original = this.getStrategy(id);
+  async duplicateStrategy(id, newName) {
+    const original = await this.getStrategy(id);
     if (!original) {
       throw new Error(`Strategy ${id} not found`);
     }
@@ -571,8 +509,8 @@ class StrategyManager {
    * @param {string} modelVersion - Model version string (e.g., "lstm_20240115_123456")
    * @returns {Object} Updated strategy
    */
-  updateModelVersion(strategyId, modelVersion) {
-    const strategy = this.getStrategy(strategyId);
+  async updateModelVersion(strategyId, modelVersion) {
+    const strategy = await this.getStrategy(strategyId);
     if (!strategy) {
       throw new Error(`Strategy ${strategyId} not found`);
     }
@@ -582,24 +520,36 @@ class StrategyManager {
       throw new Error(`Strategy ${strategyId} has model version locked. Unlock first to update.`);
     }
 
-    this.stmtUpdateModelVersion.run(modelVersion, strategyId);
+    await this.db.query(
+      `UPDATE unified_strategies SET
+        ml_model_version = $1,
+        ml_model_updated_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2`,
+      [modelVersion, strategyId]
+    );
     return this.getStrategy(strategyId);
   }
 
   /**
    * Lock/unlock the model version for a strategy
-   * Locked strategies won't have their model version auto-updated
    * @param {number} strategyId - Strategy ID
    * @param {boolean} locked - Whether to lock (true) or unlock (false)
    * @returns {Object} Updated strategy
    */
-  setModelLock(strategyId, locked) {
-    const strategy = this.getStrategy(strategyId);
+  async setModelLock(strategyId, locked) {
+    const strategy = await this.getStrategy(strategyId);
     if (!strategy) {
       throw new Error(`Strategy ${strategyId} not found`);
     }
 
-    this.stmtSetModelLock.run(locked ? 1 : 0, strategyId);
+    await this.db.query(
+      `UPDATE unified_strategies SET
+        ml_model_locked = $1,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2`,
+      [locked ? 1 : 0, strategyId]
+    );
     return this.getStrategy(strategyId);
   }
 
@@ -608,38 +558,60 @@ class StrategyManager {
    * @param {string} modelVersion - Model version string
    * @returns {Array} Array of strategies
    */
-  getStrategiesByModelVersion(modelVersion) {
-    const strategies = this.stmtGetByModelVersion.all(modelVersion);
-    return strategies.map(row => this._parseStrategy(row));
+  async getStrategiesByModelVersion(modelVersion) {
+    const result = await this.db.query(
+      `SELECT * FROM unified_strategies
+       WHERE ml_model_version = $1 AND is_active = 1
+       ORDER BY name`,
+      [modelVersion]
+    );
+    const rows = result.rows || [];
+    return rows.map(row => this._parseStrategy(row));
   }
 
   /**
    * Get all strategies with ML combiner enabled
    * @returns {Array} Array of strategies using ML
    */
-  getMLEnabledStrategies() {
-    const strategies = this.stmtGetMLStrategies.all();
-    return strategies.map(row => this._parseStrategy(row));
+  async getMLEnabledStrategies() {
+    const mlCondition = isUsingPostgres()
+      ? "(feature_flags::jsonb->>'useMLCombiner') IN ('1', 'true')"
+      : "json_extract(feature_flags, '$.useMLCombiner') = 1";
+    const result = await this.db.query(
+      `SELECT * FROM unified_strategies
+       WHERE is_active = 1 AND ${mlCondition}
+       ORDER BY name`
+    );
+    const rows = result.rows || [];
+    return rows.map(row => this._parseStrategy(row));
   }
 
   /**
    * Get all unlocked strategies with ML combiner enabled
-   * These are eligible for auto-update when a new model is promoted
    * @returns {Array} Array of strategies
    */
-  getUnlockedMLStrategies() {
-    const strategies = this.stmtGetUnlockedMLStrategies.all();
-    return strategies.map(row => this._parseStrategy(row));
+  async getUnlockedMLStrategies() {
+    const mlCondition = isUsingPostgres()
+      ? "(feature_flags::jsonb->>'useMLCombiner') IN ('1', 'true')"
+      : "json_extract(feature_flags, '$.useMLCombiner') = 1";
+    const result = await this.db.query(
+      `SELECT * FROM unified_strategies
+       WHERE is_active = 1
+         AND ${mlCondition}
+         AND (ml_model_locked = 0 OR ml_model_locked IS NULL)
+       ORDER BY name`
+    );
+    const rows = result.rows || [];
+    return rows.map(row => this._parseStrategy(row));
   }
 
   /**
    * Update all unlocked ML strategies to use a new model version
-   * Called when a model is promoted to production
    * @param {string} newModelVersion - New model version string
    * @returns {Object} Update results
    */
-  updateAllUnlockedToModelVersion(newModelVersion) {
-    const strategies = this.getUnlockedMLStrategies();
+  async updateAllUnlockedToModelVersion(newModelVersion) {
+    const strategies = await this.getUnlockedMLStrategies();
     const results = {
       updated: [],
       skipped: [],
@@ -648,7 +620,14 @@ class StrategyManager {
 
     for (const strategy of strategies) {
       try {
-        this.stmtUpdateModelVersion.run(newModelVersion, strategy.id);
+        await this.db.query(
+          `UPDATE unified_strategies SET
+            ml_model_version = $1,
+            ml_model_updated_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2`,
+          [newModelVersion, strategy.id]
+        );
         results.updated.push({
           id: strategy.id,
           name: strategy.name,
@@ -670,9 +649,9 @@ class StrategyManager {
    * Get model binding summary for all strategies
    * @returns {Object} Summary of model bindings
    */
-  getModelBindingSummary() {
-    const allStrategies = this.getAllStrategies();
-    const mlStrategies = this.getMLEnabledStrategies();
+  async getModelBindingSummary() {
+    const allStrategies = await this.getAllStrategies();
+    const mlStrategies = await this.getMLEnabledStrategies();
 
     const versionCounts = {};
     for (const s of mlStrategies) {
@@ -722,7 +701,6 @@ class StrategyManager {
       backtest_alpha: row.backtest_alpha,
       backtest_max_drawdown: row.backtest_max_drawdown,
       last_backtest_at: row.last_backtest_at,
-      // Model binding fields
       ml_model_version: row.ml_model_version,
       ml_model_locked: row.ml_model_locked === 1,
       ml_model_updated_at: row.ml_model_updated_at,

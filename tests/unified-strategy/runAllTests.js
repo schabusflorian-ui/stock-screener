@@ -25,19 +25,13 @@ const colors = {
 
 /**
  * Initialize database connection for tests
+ * Uses lib/db for async-compatible wrapper (StrategyManager etc. need .query())
  */
 async function initializeDatabase() {
-  const dbPath = path.join(__dirname, '../../data/stocks.db');
-
   try {
-    // Try to use the existing database module
-    const Database = require('better-sqlite3');
-    const db = new Database(dbPath, { readonly: false });
-
-    // Enable foreign keys
-    db.pragma('foreign_keys = ON');
-
-    console.log(`${colors.green}✓${colors.reset} Database connected: ${dbPath}`);
+    const { getDatabaseAsync } = require('../../src/lib/db');
+    const db = await getDatabaseAsync();
+    console.log(`${colors.green}✓${colors.reset} Database connected (async wrapper)`);
     return db;
   } catch (e) {
     console.log(`${colors.yellow}⚠${colors.reset} Could not connect to database: ${e.message}`);

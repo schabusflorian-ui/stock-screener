@@ -91,7 +91,7 @@ async function runStrategyManagerTests(t, db) {
         min_signal_score: 0.35
       };
 
-      const strategy = manager.createStrategy(config);
+      const strategy = await manager.createStrategy(config);
       t.assertDefined(strategy, 'Strategy should be created');
       t.assertDefined(strategy.id, 'Strategy should have an ID');
       t.assertEqual(strategy.name, config.name);
@@ -102,7 +102,7 @@ async function runStrategyManagerTests(t, db) {
     await t.asyncTest('Should retrieve created strategy', async () => {
       t.assertDefined(createdStrategyId, 'Need created strategy ID');
 
-      const strategy = manager.getStrategy(createdStrategyId);
+      const strategy = await manager.getStrategy(createdStrategyId);
       t.assertDefined(strategy, 'Strategy should be found');
       t.assertEqual(strategy.id, createdStrategyId);
     });
@@ -115,13 +115,13 @@ async function runStrategyManagerTests(t, db) {
         min_confidence: 0.7
       };
 
-      const updated = manager.updateStrategy(createdStrategyId, updates);
+      const updated = await manager.updateStrategy(createdStrategyId, updates);
       t.assertEqual(updated.description, updates.description);
       t.assertEqual(updated.min_confidence, updates.min_confidence);
     });
 
     await t.asyncTest('Should list all strategies', async () => {
-      const strategies = manager.getAllStrategies();
+      const strategies = await manager.getAllStrategies();
       t.assertArray(strategies);
       t.assert(strategies.length > 0, 'Should have at least one strategy');
 
@@ -133,34 +133,34 @@ async function runStrategyManagerTests(t, db) {
     await t.asyncTest('Should duplicate strategy', async () => {
       t.assertDefined(createdStrategyId, 'Need created strategy ID');
 
-      const duplicated = manager.duplicateStrategy(createdStrategyId, 'Duplicated Test Strategy');
+      const duplicated = await manager.duplicateStrategy(createdStrategyId, 'Duplicated Test Strategy');
       t.assertDefined(duplicated, 'Duplicate should be created');
       t.assert(duplicated.id !== createdStrategyId, 'Duplicate should have new ID');
       t.assertEqual(duplicated.name, 'Duplicated Test Strategy');
 
       // Clean up duplicate
-      manager.hardDeleteStrategy(duplicated.id);
+      await manager.hardDeleteStrategy(duplicated.id);
     });
 
     await t.asyncTest('Should soft delete strategy', async () => {
       t.assertDefined(createdStrategyId, 'Need created strategy ID');
 
-      const deleted = manager.deleteStrategy(createdStrategyId);
+      const deleted = await manager.deleteStrategy(createdStrategyId);
       t.assert(deleted, 'Delete should succeed');
 
       // Verify soft deleted
-      const strategy = manager.getStrategy(createdStrategyId);
+      const strategy = await manager.getStrategy(createdStrategyId);
       t.assert(!strategy.is_active, 'Strategy should be inactive');
     });
 
     await t.asyncTest('Should hard delete strategy', async () => {
       t.assertDefined(createdStrategyId, 'Need created strategy ID');
 
-      const deleted = manager.hardDeleteStrategy(createdStrategyId);
+      const deleted = await manager.hardDeleteStrategy(createdStrategyId);
       t.assert(deleted, 'Hard delete should succeed');
 
       // Verify deleted
-      const strategy = manager.getStrategy(createdStrategyId);
+      const strategy = await manager.getStrategy(createdStrategyId);
       t.assert(!strategy, 'Strategy should not exist');
 
       createdStrategyId = null;
@@ -168,14 +168,14 @@ async function runStrategyManagerTests(t, db) {
   });
 
   await t.asyncSuite('StrategyManager - Presets', async () => {
-    t.test('Should have presets available', () => {
-      const presets = manager.getPresets();
+    await t.asyncTest('Should have presets available', async () => {
+      const presets = await manager.getPresets();
       t.assertArray(presets);
       t.assert(presets.length > 0, 'Should have presets');
     });
 
-    t.test('Presets should have required fields', () => {
-      const presets = manager.getPresets();
+    await t.asyncTest('Presets should have required fields', async () => {
+      const presets = await manager.getPresets();
 
       for (const preset of presets) {
         t.assertDefined(preset.name, 'Preset should have name');
@@ -184,23 +184,28 @@ async function runStrategyManagerTests(t, db) {
     });
 
     await t.asyncTest('Should create strategy from preset', async () => {
-      const presets = manager.getPresets();
+      const presets = await manager.getPresets();
       t.assert(presets.length > 0, 'Need presets');
 
       const presetName = presets[0].name;
-      const strategy = manager.createFromPreset(presetName, { name: 'From Preset ' + Date.now() });
+      const strategy = await manager.createFromPreset(presetName, { name: 'From Preset ' + Date.now() });
 
       t.assertDefined(strategy, 'Strategy should be created');
       t.assertDefined(strategy.id);
 
       // Clean up
-      manager.hardDeleteStrategy(strategy.id);
+      await manager.hardDeleteStrategy(strategy.id);
     });
 
-    t.test('Should throw on invalid preset name', () => {
-      t.assertThrows(() => {
-        manager.createFromPreset('NonExistentPreset', {});
-      }, 'not found');
+    await t.asyncTest('Should throw on invalid preset name', async () => {
+      let threw = false;
+      try {
+        await manager.createFromPreset('NonExistentPreset', {});
+      } catch (e) {
+        threw = true;
+        t.assert(e.message.includes('not found'), `Expected 'not found' in error: ${e.message}`);
+      }
+      t.assert(threw, 'Should have thrown');
     });
   });
 
@@ -235,14 +240,14 @@ async function runStrategyManagerTests(t, db) {
         }
       ];
 
-      const multiStrategy = manager.createMultiStrategy(parentConfig, children);
+      const multiStrategy = await manager.createMultiStrategy(parentConfig, children);
       t.assertDefined(multiStrategy, 'Multi-strategy should be created');
       t.assertEqual(multiStrategy.strategy_type, 'multi');
 
       parentId = multiStrategy.id;
 
       // Get children
-      const childStrategies = manager.getChildStrategies(parentId);
+      const childStrategies = await manager.getChildStrategies(parentId);
       t.assertArray(childStrategies);
       t.assertEqual(childStrategies.length, 2);
 
@@ -252,11 +257,11 @@ async function runStrategyManagerTests(t, db) {
     await t.asyncTest('Should retrieve multi-strategy with children', async () => {
       t.assertDefined(parentId, 'Need parent ID');
 
-      const strategy = manager.getStrategy(parentId);
+      const strategy = await manager.getStrategy(parentId);
       t.assertDefined(strategy);
 
       // Should include children info when type is multi
-      const children = manager.getChildStrategies(parentId);
+      const children = await manager.getChildStrategies(parentId);
       t.assertEqual(children.length, 2);
     });
 
@@ -264,17 +269,17 @@ async function runStrategyManagerTests(t, db) {
       if (parentId) {
         // Delete children first
         for (const childId of childIds) {
-          manager.hardDeleteStrategy(childId);
+          await manager.hardDeleteStrategy(childId);
         }
         // Delete parent
-        manager.hardDeleteStrategy(parentId);
+        await manager.hardDeleteStrategy(parentId);
       }
     });
   });
 
   await t.asyncSuite('StrategyManager - Query Filters', async () => {
-    t.test('Should filter by strategy type', () => {
-      const singleStrategies = manager.getAllStrategies({ type: 'single' });
+    await t.asyncTest('Should filter by strategy type', async () => {
+      const singleStrategies = await manager.getAllStrategies({ type: 'single' });
       t.assertArray(singleStrategies);
 
       for (const s of singleStrategies) {
@@ -282,8 +287,8 @@ async function runStrategyManagerTests(t, db) {
       }
     });
 
-    t.test('Should filter templates only', () => {
-      const templates = manager.getAllStrategies({ templates: true });
+    await t.asyncTest('Should filter templates only', async () => {
+      const templates = await manager.getAllStrategies({ templates: true });
       t.assertArray(templates);
 
       for (const s of templates) {

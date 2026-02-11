@@ -78,15 +78,20 @@ class MultiStrategyOrchestrator {
 
     // Simulation date support
     this.simulationDate = null;
+  }
 
-    this._loadStrategies();
+  /**
+   * Load parent and child strategies from database (call after construction)
+   */
+  async init() {
+    await this._loadStrategies();
   }
 
   /**
    * Load parent and child strategies from database
    */
-  _loadStrategies() {
-    this.parentStrategy = this.strategyManager.getStrategy(this.parentStrategyId);
+  async _loadStrategies() {
+    this.parentStrategy = await this.strategyManager.getStrategy(this.parentStrategyId);
 
     if (!this.parentStrategy) {
       throw new Error(`Parent strategy ${this.parentStrategyId} not found`);
@@ -98,7 +103,7 @@ class MultiStrategyOrchestrator {
     }
 
     // Load child strategies
-    this.childStrategies = this.strategyManager.getChildStrategies(this.parentStrategyId);
+    this.childStrategies = await this.strategyManager.getChildStrategies(this.parentStrategyId);
 
     if (this.childStrategies.length < 2) {
       throw new Error('Multi-strategy requires at least 2 child strategies');
@@ -588,16 +593,18 @@ class MultiStrategyOrchestrator {
  * @param {Object} options Options
  * @returns {MultiStrategyOrchestrator|null} Orchestrator or null if not multi-strategy
  */
-function createOrchestratorIfMulti(db, strategyId, options = {}) {
+async function createOrchestratorIfMulti(db, strategyId, options = {}) {
   const manager = new StrategyManager(db);
-  const strategy = manager.getStrategy(strategyId);
+  const strategy = await manager.getStrategy(strategyId);
 
   if (!strategy) {
     return null;
   }
 
   if (strategy.strategy_type === 'multi' || strategy.strategy_type === 'regime_switching') {
-    return new MultiStrategyOrchestrator(db, strategyId, options);
+    const orchestrator = new MultiStrategyOrchestrator(db, strategyId, options);
+    await orchestrator.init();
+    return orchestrator;
   }
 
   return null;

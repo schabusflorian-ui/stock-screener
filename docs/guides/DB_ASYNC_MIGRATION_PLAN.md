@@ -28,7 +28,7 @@ Eliminate sync SQLite usage and standardize on `getDatabaseAsync()` + `database.
 | featureStore.js | ⏳ Pending | ~33 prepare calls; heavy refactor |
 | moatScoring.js | ✅ Done | |
 | signalCombiner.js | ✅ Done | |
-| strategyManager.js | ⏳ Pending | ~27 calls |
+| strategyManager.js | ✅ Done | |
 | paperTrading.js | ⏳ Pending | ~33 calls |
 | trainingDataAssembler.js | ⏳ Pending | ~11 calls |
 | outcomeCalculator.js | ⏳ Pending | ~34 calls |

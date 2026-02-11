@@ -100,6 +100,28 @@ function validateEnvironment() {
   console.log('✅ Environment validated');
 }
 
+// Pre-start syntax check - fail fast on parse errors
+function validateSyntax() {
+  console.log('');
+  console.log('🔍 Validating server syntax...');
+  try {
+    execSync('node -c src/api/server.js', {
+      cwd: path.join(__dirname, '..'),
+      stdio: 'pipe'
+    });
+    console.log('✅ Syntax OK');
+  } catch (error) {
+    console.error('❌ Syntax error in src/api/server.js (or required modules):');
+    if (error.stderr) {
+      process.stderr.write(error.stderr);
+    }
+    if (error.stdout) {
+      process.stdout.write(error.stdout);
+    }
+    process.exit(1);
+  }
+}
+
 // Run PostgreSQL migrations
 async function runMigrations() {
   console.log('');
@@ -220,6 +242,8 @@ async function main() {
     console.error(error.stack);
     process.exit(1);
   }
+
+  validateSyntax();
 
   try {
     await runMigrations();

@@ -3,11 +3,11 @@
  * Supports S&P 500, Dow Jones, NASDAQ Composite, Russell 2000
  */
 
-const { getDatabaseAsync, isPostgres } = require('../lib/db');
+const { getDatabaseAsync, isUsingPostgres } = require('../lib/db');
 
 class IndexService {
   constructor() {
-    this.isPostgres = isPostgres;
+    this.isPostgres = isUsingPostgres();
     this.dbCache = null;
   }
 

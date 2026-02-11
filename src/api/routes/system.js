@@ -172,7 +172,7 @@ router.get('/health', async (req, res) => {
         SELECT
           status,
           COUNT(*) as count,
-          AVG(${isUsingPostgres ? "EXTRACT(EPOCH FROM (NOW() - scheduled_for))" : "julianday('now') - julianday(scheduled_for)) * 86400"}) as avg_latency_sec
+          AVG(${isUsingPostgres() ? "EXTRACT(EPOCH FROM (NOW() - scheduled_for))" : "(julianday('now') - julianday(scheduled_for)) * 86400"}) as avg_latency_sec
         FROM update_queue
         WHERE status IN ('pending', 'processing')
         GROUP BY status

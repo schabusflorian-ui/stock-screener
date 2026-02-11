@@ -46,7 +46,7 @@ async function runBacktestEngineTests(t, db) {
         min_signal_score: 0.3
       };
 
-      const strategy = strategyManager.createStrategy(config);
+      const strategy = await strategyManager.createStrategy(config);
       testStrategyId = strategy.id;
       t.assertDefined(testStrategyId);
     });
@@ -308,7 +308,7 @@ async function runBacktestEngineTests(t, db) {
   await t.asyncSuite('UnifiedBacktestEngine - Cleanup', async () => {
     await t.asyncTest('Should clean up test strategy', async () => {
       if (testStrategyId && strategyManager) {
-        strategyManager.hardDeleteStrategy(testStrategyId);
+        await strategyManager.hardDeleteStrategy(testStrategyId);
         testStrategyId = null;
       }
       t.assert(true);
