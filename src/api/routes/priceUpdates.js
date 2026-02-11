@@ -5,13 +5,12 @@
 
 const express = require('express');
 const router = express.Router();
-const db = require('../../database');
 const PriceUpdateService = require('../../services/priceUpdateService');
 
 // Initialize service
 let updateService;
 try {
-  updateService = new PriceUpdateService(db.getDatabase());
+  updateService = new PriceUpdateService();
 } catch (error) {
   console.error('Failed to initialize PriceUpdateService:', error.message);
 }
@@ -20,12 +19,12 @@ try {
  * GET /api/price-updates/stats
  * Get update freshness statistics
  */
-router.get('/stats', (req, res) => {
+router.get('/stats', async (req, res) => {
   try {
     if (!updateService) {
       return res.status(500).json({ success: false, error: 'Service not initialized' });
     }
-    const stats = updateService.getUpdateStats();
+    const stats = await updateService.getUpdateStats();
     res.json({ success: true, data: stats });
   } catch (error) {
     console.error('Error getting stats:', error);
@@ -37,12 +36,12 @@ router.get('/stats', (req, res) => {
  * GET /api/price-updates/schedule
  * Get today's update schedule
  */
-router.get('/schedule', (req, res) => {
+router.get('/schedule', async (req, res) => {
   try {
     if (!updateService) {
       return res.status(500).json({ success: false, error: 'Service not initialized' });
     }
-    const schedule = updateService.getTodaysSchedule();
+    const schedule = await updateService.getTodaysSchedule();
     res.json({ success: true, data: schedule });
   } catch (error) {
     console.error('Error getting schedule:', error);
@@ -54,13 +53,13 @@ router.get('/schedule', (req, res) => {
  * GET /api/price-updates/stale
  * Get companies that are overdue for updates
  */
-router.get('/stale', (req, res) => {
+router.get('/stale', async (req, res) => {
   try {
     if (!updateService) {
       return res.status(500).json({ success: false, error: 'Service not initialized' });
     }
     const limit = parseInt(req.query.limit) || 100;
-    const stale = updateService.getStaleCompanies(limit);
+    const stale = await updateService.getStaleCompanies(limit);
     res.json({ success: true, data: stale });
   } catch (error) {
     console.error('Error getting stale companies:', error);

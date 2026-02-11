@@ -158,7 +158,7 @@ router.post('/:id/pause', asyncHandler(async (req, res) => {
 router.post('/:id/scan', asyncHandler(async (req, res) => {
   try {
     const agentId = parseInt(req.params.id, 10);
-    const agent = agentService.getAgent(agentId);
+    const agent = await agentService.getAgent(agentId);
 
     if (!agent) {
       return res.status(404).json({ success: false, error: 'Agent not found' });
@@ -166,6 +166,7 @@ router.post('/:id/scan', asyncHandler(async (req, res) => {
 
     // Run the actual scan using tradingAgent.js
     const result = await agentService.runScan(agentId);
+    const status = await agentService.getAgentStatus(agentId);
 
     res.json({
       success: true,
@@ -173,7 +174,7 @@ router.post('/:id/scan', asyncHandler(async (req, res) => {
         message: 'Scan completed',
         agentId,
         ...result,
-        status: agentService.getAgentStatus(agentId)
+        status
       }
     });
   } catch (error) {

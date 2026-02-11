@@ -870,6 +870,8 @@ router.get('/available-metrics', async (req, res) => {
 // POST /api/factors/define - Create a new custom factor
 router.post('/define', requireAuth, async (req, res) => {
   try {
+    console.log('[/api/factors/define] Request body:', req.body);
+    
     const repo = getFactorRepository();
     if (!repo) {
       return sendServiceUnavailable(res, 'Factor repository not available. Run migration first.');
@@ -878,6 +880,7 @@ router.post('/define', requireAuth, async (req, res) => {
     const { name, formula, description, higherIsBetter, transformations } = req.body;
 
     if (!name || !formula) {
+      console.error('[/api/factors/define] Validation error: name and formula are required');
       return sendValidationError(res, 'name and formula are required');
     }
 
@@ -1194,6 +1197,8 @@ router.post('/calculate-custom', requireAuth, async (req, res) => {
 // POST /api/factors/ic-analysis - Run IC analysis on a custom factor
 router.post('/ic-analysis', requireAuth, async (req, res) => {
   try {
+    console.log('[/api/factors/ic-analysis] Request body:', req.body);
+    
     const {
       factorId,
       formula,
@@ -1205,6 +1210,7 @@ router.post('/ic-analysis', requireAuth, async (req, res) => {
     } = req.body;
 
     if (!formula) {
+      console.error('[/api/factors/ic-analysis] Validation error: formula is required');
       return sendValidationError(res, 'formula is required');
     }
 
@@ -1438,9 +1444,12 @@ router.post('/ic-analysis', requireAuth, async (req, res) => {
 // POST /api/factors/correlation - Calculate correlation with standard factors
 router.post('/correlation', requireAuth, async (req, res) => {
   try {
+    console.log('[/api/factors/correlation] Request body:', req.body);
+    
     const { formula, asOfDate, skipCache = false } = req.body;
 
     if (!formula) {
+      console.error('[/api/factors/correlation] Validation error: formula is required');
       return sendValidationError(res, 'formula is required');
     }
 
@@ -2027,7 +2036,7 @@ router.post('/sector-exposures', requireAuth, async (req, res) => {
   try {
     const { factors = ['Value', 'Quality', 'Momentum', 'Growth', 'Size', 'Volatility'] } = req.body;
 
-    const db = getDatabase();
+    const db = await getDatabaseAsync();
     if (!db) {
       return sendError(res, new Error('Database not available'));
     }
@@ -2149,7 +2158,7 @@ router.get('/sector-stocks/:sector', async (req, res) => {
       return sendValidationError(res, `Unknown sector: ${sector}`);
     }
 
-    const db = getDatabase();
+    const db = await getDatabaseAsync();
     if (!db) {
       return sendError(res, new Error('Database not available'));
     }
@@ -2243,9 +2252,12 @@ router.get('/sector-stocks/:sector', async (req, res) => {
 // POST /api/factors/walk-forward - Run walk-forward validation on a factor
 router.post('/walk-forward', requireAuth, async (req, res) => {
   try {
+    console.log('[/api/factors/walk-forward] Request body:', req.body);
+    
     const { factorId, formula, config = {} } = req.body;
 
     if (!formula || typeof formula !== 'string' || !formula.trim()) {
+      console.error('[/api/factors/walk-forward] Validation error: Formula is required');
       return sendValidationError(res, 'Formula is required and must be a non-empty string');
     }
 
@@ -2351,9 +2363,12 @@ function calculateWalkForwardVerdict(wfe, hitRate) {
 // POST /api/factors/backtest - Run factor backtest with long-short portfolio
 router.post('/backtest', requireAuth, async (req, res) => {
   try {
+    console.log('[/api/factors/backtest] Request body:', req.body);
+    
     const { factorId, formula, config = {} } = req.body;
 
     if (!formula || typeof formula !== 'string' || !formula.trim()) {
+      console.error('[/api/factors/backtest] Validation error: Formula is required');
       return sendValidationError(res, 'Formula is required and must be a non-empty string');
     }
 

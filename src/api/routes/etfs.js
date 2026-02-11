@@ -5,13 +5,11 @@ const express = require('express');
 const router = express.Router();
 const { getEtfService } = require('../../services/etfService');
 const { getETFResolver } = require('../../services/etfResolver');
-const { getDatabase } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 // Initialize services
 const etfService = getEtfService();
 const etfResolver = getETFResolver();
-const db = getDatabase();
-
 // ============================================
 // ETF Holdings Status (for Updates Dashboard)
 // ============================================
@@ -20,17 +18,22 @@ const db = getDatabase();
  * GET /api/etfs/holdings/status
  * Get ETF holdings status for the Updates Dashboard
  */
-router.get('/holdings/status', (req, res) => {
+router.get('/holdings/status', async (req, res) => {
   try {
-    const stats = db.prepare(`
+    const database = await getDatabaseAsync();
+    const statsResult = await database.query(`
       SELECT
         COUNT(DISTINCT etf_id) as etfs_with_holdings,
         COUNT(*) as total_holdings,
         MAX(as_of_date) as last_update
       FROM etf_holdings
-    `).get();
+    `);
 
-    const totalEtfs = db.prepare('SELECT COUNT(*) as count FROM etf_definitions WHERE tier IN (1,2)').get();
+    const totalEtfsResult = await database.query(
+      'SELECT COUNT(*) as count FROM etf_definitions WHERE tier IN (1,2)'
+    );
+    const stats = statsResult.rows[0] || {};
+    const totalEtfs = totalEtfsResult.rows[0] || {};
 
     res.json({
       success: true,
@@ -52,8 +55,9 @@ router.get('/holdings/status', (req, res) => {
 router.post('/holdings/refresh', async (req, res) => {
   try {
     const etfBundle = require('../../services/updates/bundles/etfBundle');
+    const database = await getDatabaseAsync();
 
-    const result = await etfBundle.execute('etf.holdings_static', db, {
+    const result = await etfBundle.execute('etf.holdings_static', database, {
       onProgress: (p, s) => console.log(`[ETF Holdings] [${p}%] ${s}`)
     });
 

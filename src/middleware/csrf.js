@@ -60,9 +60,9 @@ const csrfExcludedPaths = [
   '/api/health',
   '/api/health/detailed',
   '/api/analytics/',  // Analytics tracking endpoints
-  '/api/factors/validate',   // Read-only formula validation (Quant Lab)
-  '/api/factors/preview',     // Read-only factor preview (Quant Lab)
+  '/api/factors/',   // Factor/Quant Lab endpoints (all operations - authenticated via session)
   '/api/analyst/conversations/', // Analyst chat streaming (authenticated via session)
+  '/api/nl/query',            // Prism AI chat NL query + streaming (authenticated via session / optionalAuth)
 ];
 
 // Conditional CSRF middleware that skips excluded paths
