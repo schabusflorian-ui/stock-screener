@@ -11,8 +11,11 @@ const { RegimeDetector, TechnicalSignals, SignalAggregator, REGIMES } = require(
 const { LiquidityRefresh } = require('../../jobs/liquidityRefresh');
 const { getDatabaseSync, isUsingPostgres } = require('../../lib/db');
 
-// Trading endpoints are SQLite-only for now.
+// Regime endpoints work with Postgres; other trading endpoints are SQLite-only for now.
 router.use((req, res, next) => {
+  if (isUsingPostgres() && req.path.startsWith('/regime')) {
+    return next(); // Regime endpoints migrated to Postgres
+  }
   if (isUsingPostgres()) {
     return res.status(503).json({
       error: 'Trading endpoints are not available in PostgreSQL deployment',
@@ -38,17 +41,21 @@ let signalAggregator = null;
 let liquidityRefresh = null;
 
 function getServices() {
+  // RegimeDetector uses getDatabaseAsync internally - works with both SQLite and Postgres
   if (!regimeDetector) {
-    regimeDetector = new RegimeDetector(getDb());
+    regimeDetector = new RegimeDetector();
   }
-  if (!technicalSignals) {
-    technicalSignals = new TechnicalSignals(getDb());
-  }
-  if (!signalAggregator) {
-    signalAggregator = new SignalAggregator(getDb());
-  }
-  if (!liquidityRefresh) {
-    liquidityRefresh = new LiquidityRefresh(getDb());
+  // Other services require SQLite (getDatabaseSync)
+  if (!isUsingPostgres()) {
+    if (!technicalSignals) {
+      technicalSignals = new TechnicalSignals(getDb());
+    }
+    if (!signalAggregator) {
+      signalAggregator = new SignalAggregator(getDb());
+    }
+    if (!liquidityRefresh) {
+      liquidityRefresh = new LiquidityRefresh(getDb());
+    }
   }
   return { regimeDetector, technicalSignals, signalAggregator, liquidityRefresh };
 }
@@ -226,7 +233,7 @@ router.get('/summary/:symbol', async (req, res) => {
     // Try to get cached signals first
     const storedSignal = signalAggregator.getStoredSignal(symbol.toUpperCase());
     const storedTechnical = technicalSignals.getStoredSignal(symbol.toUpperCase());
-    const storedRegime = regimeDetector.getStoredRegime();
+    const storedRegime = await regimeDetector.getStoredRegime();
 
     // If we have recent data (within last hour), use it
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
@@ -300,7 +307,7 @@ router.get('/summary/:symbol', async (req, res) => {
 router.get('/health', async (req, res) => {
   try {
     const { regimeDetector, liquidityRefresh } = getServices();
-    const regime = regimeDetector.getStoredRegime();
+    const regime = await regimeDetector.getStoredRegime();
     const liquidityStatus = liquidityRefresh.getStatus();
 
     res.json({

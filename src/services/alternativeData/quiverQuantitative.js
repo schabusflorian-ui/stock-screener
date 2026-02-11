@@ -361,10 +361,15 @@ class QuiverQuantitativeService {
   async getCongressSignal(symbol, lookbackDays = '-90 days') {
     const database = await getDatabaseAsync();
 
-    // Build dialect-aware date filter
-    const dateCondition = isUsingPostgres()
-      ? `ct.transaction_date >= CURRENT_DATE + INTERVAL '${lookbackDays}'`
-      : `ct.transaction_date >= date('now', '${lookbackDays}')`;
+    // Parse lookbackDays string and build dialect-aware date filter
+    let dateCondition;
+    if (isUsingPostgres()) {
+      const match = lookbackDays.match(/^-(\d+)\s+days?$/);
+      const days = match ? match[1] : '90';
+      dateCondition = `ct.transaction_date >= CURRENT_DATE - INTERVAL '${days} days'`;
+    } else {
+      dateCondition = `ct.transaction_date >= date('now', '${lookbackDays}')`;
+    }
 
     const result = await database.query(`
       SELECT ct.*, cp.track_record_score
@@ -488,10 +493,18 @@ class QuiverQuantitativeService {
   async getTopCongressBuys(lookbackDays = '-30 days', limit = 20) {
     const database = await getDatabaseAsync();
 
-    // Build dialect-aware date filter
-    const dateCondition = isUsingPostgres()
-      ? `ct.transaction_date >= CURRENT_DATE + INTERVAL '${lookbackDays}'`
-      : `ct.transaction_date >= date('now', '${lookbackDays}')`;
+    // Parse lookbackDays string (e.g., "-30 days" -> 30)
+    // For PostgreSQL, we need CURRENT_DATE - INTERVAL '30 days'
+    // For SQLite, we use date('now', '-30 days')
+    let dateCondition;
+    if (isUsingPostgres()) {
+      // Parse "-30 days" or "-90 days" etc.
+      const match = lookbackDays.match(/^-(\d+)\s+days?$/);
+      const days = match ? match[1] : '30';
+      dateCondition = `ct.transaction_date >= CURRENT_DATE - INTERVAL '${days} days'`;
+    } else {
+      dateCondition = `ct.transaction_date >= date('now', '${lookbackDays}')`;
+    }
 
     // Note: PostgreSQL doesn't have GROUP_CONCAT, use STRING_AGG instead
     const aggregateFunction = isUsingPostgres()

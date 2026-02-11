@@ -50,7 +50,14 @@ router.get('/congress/top-buys', async (req, res) => {
       results: topBuys
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('[alt-data/congress/top-buys] Error:', error.message);
+    // Return empty results instead of 500
+    res.status(200).json({
+      lookback: req.query.lookback || '-30 days',
+      count: 0,
+      results: [],
+      _note: 'Congressional trading data unavailable'
+    });
   }
 });
 
@@ -72,7 +79,17 @@ router.get('/congress/:symbol', async (req, res) => {
       ...signal
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error(`[alt-data/congress/${req.params.symbol}] Error:`, error.message);
+    // Return empty signal instead of 500
+    res.status(200).json({
+      symbol: req.params.symbol.toUpperCase(),
+      lookback: req.query.lookback || '-90 days',
+      signal: null,
+      buyCount: 0,
+      sellCount: 0,
+      netSignal: 0,
+      _note: 'Congressional trading data unavailable'
+    });
   }
 });
 

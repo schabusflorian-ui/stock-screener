@@ -487,14 +487,15 @@ class RegimeDetector {
   async getRegimeHistory(days = 30) {
     try {
       const db = await getDatabaseAsync();
-      const dateFilter = isUsingPostgres()
-        ? `CURRENT_DATE - INTERVAL '1 day' * $1`
-        : `date('now', '-' || $1 || ' days')`;
-
-      const result = await db.query(
-        `SELECT * FROM market_regimes WHERE date >= ${dateFilter} ORDER BY date DESC`,
-        [days]
-      );
+      const result = isUsingPostgres()
+        ? await db.query(
+            `SELECT * FROM market_regimes WHERE date >= CURRENT_DATE - ($1 || ' days')::interval ORDER BY date DESC`,
+            [days]
+          )
+        : await db.query(
+            `SELECT * FROM market_regimes WHERE date >= date('now', '-' || $1 || ' days') ORDER BY date DESC`,
+            [days]
+          );
       return result.rows;
     } catch (error) {
       console.error('Error fetching regime history:', error.message);
