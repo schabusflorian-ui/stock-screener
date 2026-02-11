@@ -314,25 +314,20 @@ export default function FactorFormulaBuilder({ onFactorCreated, onRunFullAnalysi
     setError(null);
 
     try {
-      // Step 1: Save the factor
-      const saveResponse = await fetch('/api/factors/define', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          formula,
-          description,
-          higherIsBetter,
-          transformations
-        })
+      // Step 1: Save the factor (use api client for auth/CSRF headers)
+      const saveResponse = await api.post('/factors/define', {
+        name,
+        formula,
+        description,
+        higherIsBetter,
+        transformations
       });
-      const saveData = await saveResponse.json();
-
-      if (!saveData.success) {
-        throw new Error(saveData.error || 'Failed to save factor');
+      
+      if (!saveResponse.data?.success) {
+        throw new Error(saveResponse.data?.error || 'Failed to save factor');
       }
 
-      const savedFactor = saveData.data;
+      const savedFactor = saveResponse.data.data;
 
       // Step 2: Run IC analysis
       const icRes = await factorsAPI.icAnalysis({

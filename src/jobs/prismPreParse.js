@@ -1,11 +1,18 @@
 // src/jobs/prismPreParse.js
 // Job to pre-parse SEC 10-K filings for S&P 500 companies
 
-const db = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 const SECFilingParser = require('../services/secFilingParser');
 
-const database = db.getDatabase();
 const parser = new SECFilingParser();
+let databasePromise;
+
+async function getDatabase() {
+  if (!databasePromise) {
+    databasePromise = getDatabaseAsync();
+  }
+  return databasePromise;
+}
 
 // S&P 500 symbols (can be updated or fetched dynamically)
 // This is a subset of top companies for initial implementation
@@ -34,16 +41,18 @@ const SP500_TOP_100 = [
 /**
  * Get S&P 500 symbols from database index constituents
  */
-function getSP500FromDatabase() {
+async function getSP500FromDatabase() {
   try {
-    const symbols = database.prepare(`
+    const database = await getDatabase();
+    const symbolsResult = await database.query(`
       SELECT c.symbol
       FROM index_constituents ic
       JOIN stock_indexes si ON ic.index_id = si.id
       JOIN companies c ON ic.company_id = c.id
       WHERE si.code = 'SPX'
       AND ic.removed_at IS NULL
-    `).all();
+    `);
+    const symbols = symbolsResult.rows;
 
     return symbols.map(s => s.symbol);
   } catch (error) {
@@ -56,16 +65,18 @@ function getSP500FromDatabase() {
  * Get symbols that need SEC filing parsing
  * (either no filing or filing older than 90 days)
  */
-function getSymbolsNeedingParsing(symbols) {
+async function getSymbolsNeedingParsing(symbols) {
   const needsParsing = [];
+  const database = await getDatabase();
 
   for (const symbol of symbols) {
-    const existing = database.prepare(`
+    const existingResult = await database.query(`
       SELECT parsed_at FROM sec_filings
-      WHERE symbol = ? AND form_type = '10-K'
+      WHERE symbol = $1 AND form_type = '10-K'
       ORDER BY filing_date DESC
       LIMIT 1
-    `).get(symbol);
+    `, [symbol]);
+    const existing = existingResult.rows[0];
 
     if (!existing) {
       needsParsing.push({ symbol, reason: 'no_filing' });
@@ -105,7 +116,7 @@ async function runPreParseJob(options = {}) {
     symbols = symbolList;
   } else {
     // Try to get from database first
-    const dbSymbols = getSP500FromDatabase();
+    const dbSymbols = await getSP500FromDatabase();
     symbols = dbSymbols.length > 0 ? dbSymbols : SP500_TOP_100;
   }
 
@@ -116,7 +127,7 @@ async function runPreParseJob(options = {}) {
   if (forceRefresh) {
     toProcess = symbols.slice(0, maxSymbols).map(s => ({ symbol: s, reason: 'forced' }));
   } else {
-    toProcess = getSymbolsNeedingParsing(symbols).slice(0, maxSymbols);
+    toProcess = (await getSymbolsNeedingParsing(symbols)).slice(0, maxSymbols);
   }
 
   console.log(`Symbols needing parsing: ${toProcess.length}`);
@@ -185,27 +196,26 @@ async function runPreParseJob(options = {}) {
 /**
  * Get parsing statistics
  */
-function getParsingStats() {
-  const total = database.prepare(`
+async function getParsingStats() {
+  const database = await getDatabase();
+  const totalResult = await database.query(`
     SELECT COUNT(DISTINCT symbol) as count FROM sec_filings WHERE form_type = '10-K'
-  `).get();
-
-  const recent = database.prepare(`
+  `);
+  const recentResult = await database.query(`
     SELECT COUNT(DISTINCT symbol) as count FROM sec_filings
     WHERE form_type = '10-K'
     AND parsed_at > datetime('now', '-30 days')
-  `).get();
-
-  const withContent = database.prepare(`
+  `);
+  const withContentResult = await database.query(`
     SELECT COUNT(DISTINCT symbol) as count FROM sec_filings
     WHERE form_type = '10-K'
     AND (business_description IS NOT NULL OR risk_factors IS NOT NULL)
-  `).get();
+  `);
 
   return {
-    totalFilings: total.count,
-    recentlyParsed: recent.count,
-    withExtractedContent: withContent.count
+    totalFilings: totalResult.rows[0].count,
+    recentlyParsed: recentResult.rows[0].count,
+    withExtractedContent: withContentResult.rows[0].count
   };
 }
 
@@ -237,12 +247,16 @@ if (require.main === module) {
       options.symbolList = args[i + 1].split(',').map(s => s.trim().toUpperCase());
       i++;
     } else if (args[i] === '--stats') {
-      const stats = getParsingStats();
-      console.log('SEC Filing Parsing Statistics:');
-      console.log(`  Total 10-K filings: ${stats.totalFilings}`);
-      console.log(`  Recently parsed (30 days): ${stats.recentlyParsed}`);
-      console.log(`  With extracted content: ${stats.withExtractedContent}`);
-      process.exit(0);
+      getParsingStats().then(stats => {
+        console.log('SEC Filing Parsing Statistics:');
+        console.log(`  Total 10-K filings: ${stats.totalFilings}`);
+        console.log(`  Recently parsed (30 days): ${stats.recentlyParsed}`);
+        console.log(`  With extracted content: ${stats.withExtractedContent}`);
+        process.exit(0);
+      }).catch(error => {
+        console.error('Stats failed:', error.message);
+        process.exit(1);
+      });
     } else if (args[i] === '--help') {
       console.log(`
 PRISM Pre-Parse Job - SEC 10-K Filings

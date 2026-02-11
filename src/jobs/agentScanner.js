@@ -20,7 +20,7 @@
  */
 
 const cron = require('node-cron');
-const db = require('../database');
+const { getDatabaseAsync, isUsingPostgres } = require('../lib/db');
 
 // Lazy load agentService to avoid circular dependencies
 let agentService = null;
@@ -41,9 +41,10 @@ class AgentScanner {
   /**
    * Get all active agents that should be scanned
    */
-  getActiveAgents() {
-    const database = db.getDatabase();
-    return database.prepare(`
+  async getActiveAgents() {
+    const database = await getDatabaseAsync();
+    const todayExpr = isUsingPostgres() ? 'CURRENT_DATE' : "DATE('now')";
+    const agentsResult = await database.query(`
       SELECT
         ta.id,
         ta.name,
@@ -53,11 +54,12 @@ class AgentScanner {
         ta.auto_execute,
         ta.pause_in_crisis,
         (SELECT COUNT(*) FROM agent_universe WHERE agent_id = ta.id) as universe_size,
-        (SELECT COUNT(*) FROM agent_signals WHERE agent_id = ta.id AND DATE(created_at) = DATE('now')) as signals_today
+        (SELECT COUNT(*) FROM agent_signals WHERE agent_id = ta.id AND DATE(created_at) = ${todayExpr}) as signals_today
       FROM trading_agents ta
       WHERE ta.status = 'running'
       ORDER BY ta.last_scan_at ASC NULLS FIRST
-    `).all();
+    `);
+    return agentsResult.rows;
   }
 
   /**
@@ -87,7 +89,7 @@ class AgentScanner {
     };
 
     try {
-      const agents = this.getActiveAgents();
+      const agents = await this.getActiveAgents();
       console.log(`\nFound ${agents.length} active agents to scan`);
 
       if (agents.length === 0) {
@@ -173,12 +175,13 @@ class AgentScanner {
    */
   async scanAgent(agentId) {
     const service = getAgentService();
-    const database = db.getDatabase();
+    const database = await getDatabaseAsync();
 
-    const agent = database.prepare(`
+    const agentResult = await database.query(`
       SELECT id, name, strategy_type, status
-      FROM trading_agents WHERE id = ?
-    `).get(agentId);
+      FROM trading_agents WHERE id = $1
+    `, [agentId]);
+    const agent = agentResult.rows[0];
 
     if (!agent) {
       throw new Error(`Agent ${agentId} not found`);
@@ -208,23 +211,28 @@ class AgentScanner {
   /**
    * Get current status
    */
-  getStatus() {
-    const database = db.getDatabase();
+  async getStatus() {
+    const database = await getDatabaseAsync();
+    const todayExpr = isUsingPostgres() ? 'CURRENT_DATE' : "DATE('now')";
+    const last24Hours = isUsingPostgres()
+      ? `CURRENT_TIMESTAMP - INTERVAL '24 hours'`
+      : `datetime('now', '-24 hours')`;
 
     // Get agent statistics
-    const agentStats = database.prepare(`
+    const agentStatsResult = await database.query(`
       SELECT
         ta.status,
         COUNT(*) as count,
         (SELECT COUNT(*) FROM agent_signals as2
          WHERE as2.agent_id IN (SELECT id FROM trading_agents WHERE status = ta.status)
-         AND DATE(as2.created_at) = DATE('now')) as signals_today
+         AND DATE(as2.created_at) = ${todayExpr}) as signals_today
       FROM trading_agents ta
       GROUP BY ta.status
-    `).all();
+    `);
+    const agentStats = agentStatsResult.rows;
 
     // Get recent signals
-    const recentSignals = database.prepare(`
+    const recentSignalsResult = await database.query(`
       SELECT
         as2.id,
         as2.action,
@@ -236,25 +244,27 @@ class AgentScanner {
       FROM agent_signals as2
       JOIN companies c ON as2.company_id = c.id
       JOIN trading_agents ta ON as2.agent_id = ta.id
-      WHERE as2.created_at >= datetime('now', '-24 hours')
+      WHERE as2.created_at >= ${last24Hours}
       ORDER BY as2.created_at DESC
       LIMIT 10
-    `).all();
+    `);
+    const recentSignals = recentSignalsResult.rows;
 
     // Get agents with most recent activity
-    const activeAgents = database.prepare(`
+    const activeAgentsResult = await database.query(`
       SELECT
         ta.id,
         ta.name,
         ta.strategy_type,
         ta.last_scan_at,
         ta.status,
-        (SELECT COUNT(*) FROM agent_signals WHERE agent_id = ta.id AND DATE(created_at) = DATE('now')) as signals_today
+        (SELECT COUNT(*) FROM agent_signals WHERE agent_id = ta.id AND DATE(created_at) = ${todayExpr}) as signals_today
       FROM trading_agents ta
       WHERE ta.status = 'running'
       ORDER BY ta.last_scan_at DESC
       LIMIT 10
-    `).all();
+    `);
+    const activeAgents = activeAgentsResult.rows;
 
     return {
       scheduler: {
@@ -332,26 +342,30 @@ class AgentScanner {
     });
 
     // Display status on startup
-    const status = this.getStatus();
-    console.log('Current status:');
-    console.log(`  Running agents: ${status.agents.byStatus?.running?.count || 0}`);
-    console.log(`  Paused agents: ${status.agents.byStatus?.paused?.count || 0}`);
+    this.getStatus().then(status => {
+      console.log('Current status:');
+      console.log(`  Running agents: ${status.agents.byStatus?.running?.count || 0}`);
+      console.log(`  Paused agents: ${status.agents.byStatus?.paused?.count || 0}`);
 
-    if (status.agents.active.length > 0) {
-      console.log('\n  Active agents:');
-      for (const agent of status.agents.active.slice(0, 5)) {
-        console.log(`    - ${agent.name}: last scan ${agent.lastScan || 'never'}, ${agent.signalsToday || 0} signals today`);
+      if (status.agents.active.length > 0) {
+        console.log('\n  Active agents:');
+        for (const agent of status.agents.active.slice(0, 5)) {
+          console.log(`    - ${agent.name}: last scan ${agent.lastScan || 'never'}, ${agent.signalsToday || 0} signals today`);
+        }
       }
-    }
 
-    if (status.recentSignals.length > 0) {
-      console.log(`\n  Recent signals (24h): ${status.recentSignals.length}`);
-      for (const signal of status.recentSignals.slice(0, 3)) {
-        console.log(`    - ${signal.symbol} ${signal.action} (${signal.agent})`);
+      if (status.recentSignals.length > 0) {
+        console.log(`\n  Recent signals (24h): ${status.recentSignals.length}`);
+        for (const signal of status.recentSignals.slice(0, 3)) {
+          console.log(`    - ${signal.symbol} ${signal.action} (${signal.agent})`);
+        }
       }
-    }
 
-    console.log('\nScheduler running. Press Ctrl+C to stop.\n');
+      console.log('\nScheduler running. Press Ctrl+C to stop.\n');
+    }).catch(err => {
+      console.error('Status load failed:', err.message);
+      console.log('\nScheduler running. Press Ctrl+C to stop.\n');
+    });
 
     // Keep process alive
     process.on('SIGINT', () => {
@@ -398,45 +412,48 @@ if (require.main === module) {
 
   } else if (args.includes('--status') || args.includes('-s')) {
     // Show status
-    const status = scanner.getStatus();
+    scanner.getStatus().then(status => {
+      console.log('\n' + '='.repeat(50));
+      console.log('  Agent Signal Scanner Status');
+      console.log('='.repeat(50));
 
-    console.log('\n' + '='.repeat(50));
-    console.log('  Agent Signal Scanner Status');
-    console.log('='.repeat(50));
-
-    console.log('\nAgents:');
-    for (const [statusName, data] of Object.entries(status.agents.byStatus)) {
-      console.log(`  - ${statusName}: ${data.count} agents, ${data.signalsToday} signals today`);
-    }
-
-    if (status.agents.active.length > 0) {
-      console.log('\nActive agents:');
-      for (const agent of status.agents.active) {
-        console.log(`  - ${agent.name}`);
-        console.log(`    Strategy: ${agent.strategy}`);
-        console.log(`    Last scan: ${agent.lastScan || 'Never'}`);
-        console.log(`    Signals today: ${agent.signalsToday || 0}`);
+      console.log('\nAgents:');
+      for (const [statusName, data] of Object.entries(status.agents.byStatus)) {
+        console.log(`  - ${statusName}: ${data.count} agents, ${data.signalsToday} signals today`);
       }
-    }
 
-    if (status.recentSignals.length > 0) {
-      console.log('\nRecent signals (24h):');
-      for (const signal of status.recentSignals) {
-        console.log(`  - ${signal.symbol} ${signal.action} @ ${(signal.confidence * 100).toFixed(0)}%`);
-        console.log(`    Agent: ${signal.agent}, Status: ${signal.status}`);
-        console.log(`    Created: ${signal.createdAt}`);
+      if (status.agents.active.length > 0) {
+        console.log('\nActive agents:');
+        for (const agent of status.agents.active) {
+          console.log(`  - ${agent.name}`);
+          console.log(`    Strategy: ${agent.strategy}`);
+          console.log(`    Last scan: ${agent.lastScan || 'Never'}`);
+          console.log(`    Signals today: ${agent.signalsToday || 0}`);
+        }
       }
-    }
 
-    if (status.scheduler.lastRun) {
-      console.log('\nLast Run:');
-      console.log(`  Time: ${status.scheduler.lastRun}`);
-      console.log(`  Duration: ${status.scheduler.lastResult?.duration || 'N/A'}`);
-      console.log(`  Agents scanned: ${status.scheduler.lastResult?.scanned || 0}`);
-      console.log(`  Signals generated: ${status.scheduler.lastResult?.totalSignals || 0}`);
-    }
+      if (status.recentSignals.length > 0) {
+        console.log('\nRecent signals (24h):');
+        for (const signal of status.recentSignals) {
+          console.log(`  - ${signal.symbol} ${signal.action} @ ${(signal.confidence * 100).toFixed(0)}%`);
+          console.log(`    Agent: ${signal.agent}, Status: ${signal.status}`);
+          console.log(`    Created: ${signal.createdAt}`);
+        }
+      }
 
-    console.log('');
+      if (status.scheduler.lastRun) {
+        console.log('\nLast Run:');
+        console.log(`  Time: ${status.scheduler.lastRun}`);
+        console.log(`  Duration: ${status.scheduler.lastResult?.duration || 'N/A'}`);
+        console.log(`  Agents scanned: ${status.scheduler.lastResult?.scanned || 0}`);
+        console.log(`  Signals generated: ${status.scheduler.lastResult?.totalSignals || 0}`);
+      }
+
+      console.log('');
+    }).catch(err => {
+      console.error('Status check failed:', err.message);
+      process.exit(1);
+    });
 
   } else if (args.includes('--help') || args.includes('-h')) {
     console.log(`

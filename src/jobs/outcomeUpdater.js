@@ -198,7 +198,7 @@ class OutcomeUpdater {
     }
 
     // Store summary in database
-    this._storeICAnalysisSummary(results);
+    await this._storeICAnalysisSummary(results);
 
     return {
       signalTypes: signalTypes.length,
@@ -310,25 +310,38 @@ class OutcomeUpdater {
   /**
    * Store IC analysis summary for signal optimizer
    */
-  _storeICAnalysisSummary(results) {
-    const database = db.getDatabase();
-
-    try {
-      const upsertStmt = database.prepare(`
+  async _storeICAnalysisSummary(results) {
+    const database = await this.getDatabase();
+    const isPostgres = isUsingPostgres();
+    const nowExpression = isPostgres ? 'CURRENT_TIMESTAMP' : "datetime('now')";
+    const upsertSql = isPostgres
+      ? `
+        INSERT INTO signal_ic_summary
+        (signal_type, optimal_horizon, optimal_ic, decay_rate, is_significant, updated_at)
+        VALUES ($1, $2, $3, $4, $5, ${nowExpression})
+        ON CONFLICT (signal_type) DO UPDATE SET
+          optimal_horizon = EXCLUDED.optimal_horizon,
+          optimal_ic = EXCLUDED.optimal_ic,
+          decay_rate = EXCLUDED.decay_rate,
+          is_significant = EXCLUDED.is_significant,
+          updated_at = EXCLUDED.updated_at
+      `
+      : `
         INSERT OR REPLACE INTO signal_ic_summary
         (signal_type, optimal_horizon, optimal_ic, decay_rate, is_significant, updated_at)
-        VALUES (?, ?, ?, ?, ?, datetime('now'))
-      `);
+        VALUES ($1, $2, $3, $4, $5, ${nowExpression})
+      `;
 
+    try {
       for (const [signalType, data] of Object.entries(results)) {
         if (!data.error) {
-          upsertStmt.run(
+          await database.query(upsertSql, [
             signalType,
             data.optimalHorizon || 21,
             data.optimalIC || 0,
             data.decayRate || 0,
             data.significant ? 1 : 0
-          );
+          ]);
         }
       }
     } catch (error) {
@@ -340,23 +353,40 @@ class OutcomeUpdater {
   /**
    * Store capacity constraints for RiskManager
    */
-  _storeCapacityConstraints(portfolioId, capacity) {
-    const database = db.getDatabase();
-
-    try {
-      database.prepare(`
+  async _storeCapacityConstraints(portfolioId, capacity) {
+    const database = await this.getDatabase();
+    const isPostgres = isUsingPostgres();
+    const nowExpression = isPostgres ? 'CURRENT_TIMESTAMP' : "datetime('now')";
+    const upsertSql = isPostgres
+      ? `
+        INSERT INTO portfolio_capacity_constraints
+        (portfolio_id, estimated_capacity, scalability_ratio, liquidity_score,
+         illiquid_positions, constraints_json, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, ${nowExpression})
+        ON CONFLICT (portfolio_id) DO UPDATE SET
+          estimated_capacity = EXCLUDED.estimated_capacity,
+          scalability_ratio = EXCLUDED.scalability_ratio,
+          liquidity_score = EXCLUDED.liquidity_score,
+          illiquid_positions = EXCLUDED.illiquid_positions,
+          constraints_json = EXCLUDED.constraints_json,
+          updated_at = EXCLUDED.updated_at
+      `
+      : `
         INSERT OR REPLACE INTO portfolio_capacity_constraints
         (portfolio_id, estimated_capacity, scalability_ratio, liquidity_score,
          illiquid_positions, constraints_json, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-      `).run(
+        VALUES ($1, $2, $3, $4, $5, $6, ${nowExpression})
+      `;
+
+    try {
+      await database.query(upsertSql, [
         portfolioId,
         capacity.estimatedCapacity || 0,
         capacity.scalabilityRatio || 1,
         capacity.liquidityMetrics?.overallScore || 0,
         capacity.constraints?.filter(c => c.type === 'illiquid').length || 0,
         JSON.stringify(capacity.constraints || [])
-      );
+      ]);
     } catch (error) {
       // Table may not exist yet
       console.warn('  Could not store capacity constraints:', error.message);
@@ -375,32 +405,55 @@ class OutcomeUpdater {
   /**
    * Update optimized weights in database
    */
-  updateOptimizedWeights() {
+  async updateOptimizedWeights() {
     const tracker = this.getTracker();
-    const database = db.getDatabase();
+    const database = await this.getDatabase();
+    const isPostgres = isUsingPostgres();
+    const calculatedAt = isPostgres ? 'CURRENT_TIMESTAMP' : "datetime('now')";
+    const validUntil = isPostgres ? "CURRENT_TIMESTAMP + INTERVAL '1 day'" : "datetime('now', '+1 day')";
+    const upsertSql = isPostgres
+      ? `
+        INSERT INTO optimized_signal_weights
+        (regime, technical_weight, sentiment_weight, insider_weight, fundamental_weight,
+         alternative_weight, valuation_weight, filing_13f_weight, earnings_weight, lookback_days,
+         avg_ic, calculated_at, valid_until)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, ${calculatedAt}, ${validUntil})
+        ON CONFLICT (regime) DO UPDATE SET
+          technical_weight = EXCLUDED.technical_weight,
+          sentiment_weight = EXCLUDED.sentiment_weight,
+          insider_weight = EXCLUDED.insider_weight,
+          fundamental_weight = EXCLUDED.fundamental_weight,
+          alternative_weight = EXCLUDED.alternative_weight,
+          valuation_weight = EXCLUDED.valuation_weight,
+          filing_13f_weight = EXCLUDED.filing_13f_weight,
+          earnings_weight = EXCLUDED.earnings_weight,
+          lookback_days = EXCLUDED.lookback_days,
+          avg_ic = EXCLUDED.avg_ic,
+          calculated_at = EXCLUDED.calculated_at,
+          valid_until = EXCLUDED.valid_until
+      `
+      : `
+        UPDATE optimized_signal_weights
+        SET technical_weight = $1,
+            sentiment_weight = $2,
+            insider_weight = $3,
+            fundamental_weight = $4,
+            alternative_weight = $5,
+            valuation_weight = $6,
+            filing_13f_weight = $7,
+            earnings_weight = $8,
+            lookback_days = $9,
+            avg_ic = $10,
+            calculated_at = ${calculatedAt},
+            valid_until = ${validUntil}
+        WHERE regime = $11
+      `;
     const regimes = ['BULL', 'BEAR', 'SIDEWAYS', 'HIGH_VOL', 'CRISIS', 'ALL'];
-
-    const updateStmt = database.prepare(`
-      UPDATE optimized_signal_weights
-      SET technical_weight = ?,
-          sentiment_weight = ?,
-          insider_weight = ?,
-          fundamental_weight = ?,
-          alternative_weight = ?,
-          valuation_weight = ?,
-          filing_13f_weight = ?,
-          earnings_weight = ?,
-          lookback_days = ?,
-          avg_ic = ?,
-          calculated_at = datetime('now'),
-          valid_until = datetime('now', '+1 day')
-      WHERE regime = ?
-    `);
 
     for (const regime of regimes) {
       try {
         // Calculate optimal weights for this regime
-        const { weights, ics } = tracker.getOptimalWeights(90);
+        const { weights, ics } = await tracker.getOptimalWeights(90);
 
         // Calculate average IC across signals
         const icValues = Object.values(ics)
@@ -410,19 +463,35 @@ class OutcomeUpdater {
           ? icValues.reduce((a, b) => a + b, 0) / icValues.length
           : null;
 
-        updateStmt.run(
-          weights.technical || 0.12,
-          weights.sentiment || 0.12,
-          weights.insider || 0.12,
-          weights.fundamental || 0.15,
-          weights.alternative || 0.12,
-          weights.valuation || 0.12,
-          weights.filing_13f || 0.13,
-          weights.earnings || 0.12,
-          90,
-          avgIC,
-          regime
-        );
+        if (isPostgres) {
+          await database.query(upsertSql, [
+            regime,
+            weights.technical || 0.12,
+            weights.sentiment || 0.12,
+            weights.insider || 0.12,
+            weights.fundamental || 0.15,
+            weights.alternative || 0.12,
+            weights.valuation || 0.12,
+            weights.filing_13f || 0.13,
+            weights.earnings || 0.12,
+            90,
+            avgIC
+          ]);
+        } else {
+          await database.query(upsertSql, [
+            weights.technical || 0.12,
+            weights.sentiment || 0.12,
+            weights.insider || 0.12,
+            weights.fundamental || 0.15,
+            weights.alternative || 0.12,
+            weights.valuation || 0.12,
+            weights.filing_13f || 0.13,
+            weights.earnings || 0.12,
+            90,
+            avgIC,
+            regime
+          ]);
+        }
 
         console.log(`  Updated weights for ${regime} regime (avg IC: ${avgIC?.toFixed(3) || 'N/A'})`);
       } catch (error) {
@@ -450,14 +519,15 @@ class OutcomeUpdater {
   /**
    * Get current signal weights
    */
-  getSignalWeights(regime = 'ALL') {
-    const database = db.getDatabase();
+  async getSignalWeights(regime = 'ALL') {
+    const database = await this.getDatabase();
 
-    const weights = database.prepare(`
+    const weightsResult = await database.query(`
       SELECT *
       FROM optimized_signal_weights
-      WHERE regime = ?
-    `).get(regime);
+      WHERE regime = $1
+    `, [regime]);
+    const weights = weightsResult.rows[0];
 
     if (!weights) {
       // Return defaults

@@ -15,7 +15,7 @@
  */
 
 const cron = require('node-cron');
-const db = require('../database');
+const { getDatabaseAsync, isUsingPostgres } = require('../lib/db');
 const { AutoExecutor } = require('../services/agent/autoExecutor');
 
 class AgentExecutor {
@@ -28,191 +28,193 @@ class AgentExecutor {
   /**
    * Execute all approved trades for auto-execution portfolios
    */
-  executeApprovedTrades() {
-    return new Promise((resolve, reject) => {
-      if (this.isRunning) {
-        reject(new Error('Execution already in progress'));
-        return;
-      }
+  async executeApprovedTrades() {
+    if (this.isRunning) {
+      throw new Error('Execution already in progress');
+    }
 
-      this.isRunning = true;
-      const startTime = Date.now();
+    this.isRunning = true;
+    const startTime = Date.now();
 
-      console.log(`\n${'='.repeat(60)}`);
-      console.log(`[${new Date().toISOString()}] Executing approved agent trades...`);
-      console.log('='.repeat(60));
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`[${new Date().toISOString()}] Executing approved agent trades...`);
+    console.log('='.repeat(60));
 
-      try {
-        const database = db.getDatabase();
-        const executor = new AutoExecutor(database);
+    try {
+      const database = await getDatabaseAsync();
+      const executor = new AutoExecutor();
 
-        // First, expire any old pending executions (older than 24 hours)
-        console.log('\nExpiring old pending executions...');
-        const expireResult = executor.expireOldExecutions();
-        console.log(`  Expired: ${expireResult.expired}`);
+      // First, expire any old pending executions (older than 24 hours)
+      console.log('\nExpiring old pending executions...');
+      const expireResult = await executor.expireOldExecutions();
+      console.log(`  Expired: ${expireResult.expired}`);
 
-        // Get portfolios linked to agents with auto-execution enabled
-        // Use AGENT's require_confirmation setting (not portfolio's) to avoid dual-gate confusion
-        const autoExecPortfolios = database.prepare(`
-          SELECT DISTINCT
-            p.id,
-            p.name,
-            ta.auto_execute,
-            ta.require_confirmation,
-            ta.name as agent_name,
-            ta.id as agent_id
-          FROM portfolios p
-          INNER JOIN agent_portfolios ap ON ap.portfolio_id = p.id
-          INNER JOIN trading_agents ta ON ta.id = ap.agent_id
-          WHERE ta.auto_execute = 1
-            AND ta.require_confirmation = 0
-            AND p.is_archived = 0
-            AND ta.status != 'paused'
-        `).all();
+      // Get portfolios linked to agents with auto-execution enabled
+      // Use AGENT's require_confirmation setting (not portfolio's) to avoid dual-gate confusion
+      const autoExecPortfoliosResult = await database.query(`
+        SELECT DISTINCT
+          p.id,
+          p.name,
+          ta.auto_execute,
+          ta.require_confirmation,
+          ta.name as agent_name,
+          ta.id as agent_id
+        FROM portfolios p
+        INNER JOIN agent_portfolios ap ON ap.portfolio_id = p.id
+        INNER JOIN trading_agents ta ON ta.id = ap.agent_id
+        WHERE ta.auto_execute = 1
+          AND ta.require_confirmation = 0
+          AND p.is_archived = 0
+          AND ta.status != 'paused'
+      `);
+      const autoExecPortfolios = autoExecPortfoliosResult.rows;
 
-        console.log(`\nFound ${autoExecPortfolios.length} portfolios with full auto-execution enabled`);
+      console.log(`\nFound ${autoExecPortfolios.length} portfolios with full auto-execution enabled`);
 
-        // Get all approved executions waiting to be executed
-        const approvedExecutions = executor.getApprovedExecutions();
-        console.log(`Found ${approvedExecutions.length} approved executions waiting`);
+      // Get all approved executions waiting to be executed
+      const approvedExecutions = await executor.getApprovedExecutions();
+      console.log(`Found ${approvedExecutions.length} approved executions waiting`);
 
-        if (approvedExecutions.length === 0) {
-          console.log('No approved trades to execute.');
+      if (approvedExecutions.length === 0) {
+        console.log('No approved trades to execute.');
 
-          this.isRunning = false;
-          this.lastRun = new Date();
-          this.lastResult = {
-            success: true,
-            duration: `${((Date.now() - startTime) / 1000).toFixed(2)} seconds`,
-            timestamp: this.lastRun.toISOString(),
-            executed: 0,
-            failed: 0,
-            skipped: 0,
-            totalValue: 0,
-            results: []
-          };
-
-          console.log(`\n${'='.repeat(60)}`);
-          console.log(`[${this.lastRun.toISOString()}] Execution check completed (no trades)`);
-          console.log('='.repeat(60) + '\n');
-
-          resolve(this.lastResult);
-          return;
-        }
-
-        // Filter to only execute trades for auto-exec portfolios
-        const autoExecPortfolioIds = new Set(autoExecPortfolios.map(p => p.id));
-        const tradesToExecute = approvedExecutions.filter(e => autoExecPortfolioIds.has(e.portfolio_id));
-        const skippedTrades = approvedExecutions.filter(e => !autoExecPortfolioIds.has(e.portfolio_id));
-
-        console.log(`\nTrades to execute automatically: ${tradesToExecute.length}`);
-        console.log(`Trades skipped (manual confirmation required): ${skippedTrades.length}`);
-
-        if (skippedTrades.length > 0) {
-          console.log('\nSkipped trades (require manual confirmation):');
-          for (const trade of skippedTrades.slice(0, 5)) {
-            console.log(`  - ${trade.symbol} ${trade.action} (Portfolio: ${trade.portfolio_name})`);
-          }
-          if (skippedTrades.length > 5) {
-            console.log(`  ... and ${skippedTrades.length - 5} more`);
-          }
-        }
-
-        // Execute the trades
-        const results = [];
-        let executed = 0;
-        let failed = 0;
-        let totalValue = 0;
-
-        for (const trade of tradesToExecute) {
-          console.log(`\nExecuting: ${trade.symbol} ${trade.action} x${trade.shares} @ $${trade.estimated_price}`);
-          console.log(`  Portfolio: ${trade.portfolio_name} (ID: ${trade.portfolio_id})`);
-
-          try {
-            const result = executor.executeApprovedTrade(trade.id);
-
-            if (result.success) {
-              executed++;
-              totalValue += result.trade?.value || 0;
-              console.log(`  ✓ Success: ${result.trade?.shares} shares @ $${result.trade?.price?.toFixed(2)}`);
-              console.log(`    Transaction ID: ${result.trade?.transactionId}`);
-            } else {
-              failed++;
-              console.log(`  ✗ Failed: ${result.error}`);
-            }
-
-            results.push({
-              executionId: trade.id,
-              symbol: trade.symbol,
-              action: trade.action,
-              portfolio: trade.portfolio_name,
-              ...result
-            });
-          } catch (error) {
-            failed++;
-            console.log(`  ✗ Error: ${error.message}`);
-            results.push({
-              executionId: trade.id,
-              symbol: trade.symbol,
-              action: trade.action,
-              portfolio: trade.portfolio_name,
-              success: false,
-              error: error.message
-            });
-          }
-        }
-
-        const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-
-        console.log('\n' + '-'.repeat(40));
-        console.log('Summary:');
-        console.log(`  Executed successfully: ${executed}`);
-        console.log(`  Failed: ${failed}`);
-        console.log(`  Skipped (manual): ${skippedTrades.length}`);
-        console.log(`  Total value traded: $${totalValue.toFixed(2)}`);
-
-        this.isRunning = false;
         this.lastRun = new Date();
         this.lastResult = {
           success: true,
-          duration: `${duration} seconds`,
+          duration: `${((Date.now() - startTime) / 1000).toFixed(2)} seconds`,
           timestamp: this.lastRun.toISOString(),
-          executed,
-          failed,
-          skipped: skippedTrades.length,
-          totalValue,
-          results
+          executed: 0,
+          failed: 0,
+          skipped: 0,
+          totalValue: 0,
+          results: []
         };
 
         console.log(`\n${'='.repeat(60)}`);
-        console.log(`[${this.lastRun.toISOString()}] Execution completed`);
-        console.log(`  Duration: ${duration} seconds`);
+        console.log(`[${this.lastRun.toISOString()}] Execution check completed (no trades)`);
         console.log('='.repeat(60) + '\n');
 
-        resolve(this.lastResult);
-      } catch (error) {
-        this.isRunning = false;
-        this.lastRun = new Date();
-        this.lastResult = {
-          success: false,
-          error: error.message,
-          timestamp: this.lastRun.toISOString()
-        };
-
-        console.error(`\nError during execution: ${error.message}`);
-        reject(error);
+        return this.lastResult;
       }
-    });
+
+      // Filter to only execute trades for auto-exec portfolios
+      const autoExecPortfolioIds = new Set(autoExecPortfolios.map(p => p.id));
+      const tradesToExecute = approvedExecutions.filter(e => autoExecPortfolioIds.has(e.portfolio_id));
+      const skippedTrades = approvedExecutions.filter(e => !autoExecPortfolioIds.has(e.portfolio_id));
+
+      console.log(`\nTrades to execute automatically: ${tradesToExecute.length}`);
+      console.log(`Trades skipped (manual confirmation required): ${skippedTrades.length}`);
+
+      if (skippedTrades.length > 0) {
+        console.log('\nSkipped trades (require manual confirmation):');
+        for (const trade of skippedTrades.slice(0, 5)) {
+          console.log(`  - ${trade.symbol} ${trade.action} (Portfolio: ${trade.portfolio_name})`);
+        }
+        if (skippedTrades.length > 5) {
+          console.log(`  ... and ${skippedTrades.length - 5} more`);
+        }
+      }
+
+      // Execute the trades
+      const results = [];
+      let executed = 0;
+      let failed = 0;
+      let totalValue = 0;
+
+      for (const trade of tradesToExecute) {
+        console.log(`\nExecuting: ${trade.symbol} ${trade.action} x${trade.shares} @ $${trade.estimated_price}`);
+        console.log(`  Portfolio: ${trade.portfolio_name} (ID: ${trade.portfolio_id})`);
+
+        try {
+          const result = await executor.executeApprovedTrade(trade.id);
+
+          if (result.success) {
+            executed++;
+            totalValue += result.trade?.value || 0;
+            console.log(`  ✓ Success: ${result.trade?.shares} shares @ $${result.trade?.price?.toFixed(2)}`);
+            console.log(`    Transaction ID: ${result.trade?.transactionId}`);
+          } else {
+            failed++;
+            console.log(`  ✗ Failed: ${result.error}`);
+          }
+
+          results.push({
+            executionId: trade.id,
+            symbol: trade.symbol,
+            action: trade.action,
+            portfolio: trade.portfolio_name,
+            ...result
+          });
+        } catch (error) {
+          failed++;
+          console.log(`  ✗ Error: ${error.message}`);
+          results.push({
+            executionId: trade.id,
+            symbol: trade.symbol,
+            action: trade.action,
+            portfolio: trade.portfolio_name,
+            success: false,
+            error: error.message
+          });
+        }
+      }
+
+      const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+
+      console.log('\n' + '-'.repeat(40));
+      console.log('Summary:');
+      console.log(`  Executed successfully: ${executed}`);
+      console.log(`  Failed: ${failed}`);
+      console.log(`  Skipped (manual): ${skippedTrades.length}`);
+      console.log(`  Total value traded: $${totalValue.toFixed(2)}`);
+
+      this.lastRun = new Date();
+      this.lastResult = {
+        success: true,
+        duration: `${duration} seconds`,
+        timestamp: this.lastRun.toISOString(),
+        executed,
+        failed,
+        skipped: skippedTrades.length,
+        totalValue,
+        results
+      };
+
+      console.log(`\n${'='.repeat(60)}`);
+      console.log(`[${this.lastRun.toISOString()}] Execution completed`);
+      console.log(`  Duration: ${duration} seconds`);
+      console.log('='.repeat(60) + '\n');
+
+      return this.lastResult;
+    } catch (error) {
+      this.lastRun = new Date();
+      this.lastResult = {
+        success: false,
+        error: error.message,
+        timestamp: this.lastRun.toISOString()
+      };
+
+      console.error(`\nError during execution: ${error.message}`);
+      throw error;
+    } finally {
+      this.isRunning = false;
+    }
   }
 
   /**
    * Get current status
    */
-  getStatus() {
-    const database = db.getDatabase();
+  async getStatus() {
+    const database = await getDatabaseAsync();
+    const last7Days = isUsingPostgres()
+      ? `CURRENT_TIMESTAMP - INTERVAL '7 days'`
+      : `datetime('now', '-7 days')`;
+    const last24Hours = isUsingPostgres()
+      ? `CURRENT_TIMESTAMP - INTERVAL '24 hours'`
+      : `datetime('now', '-24 hours')`;
 
     // Get portfolios with auto-execution enabled (via agent settings)
-    const autoExecPortfolios = database.prepare(`
+    const autoExecPortfoliosResult = await database.query(`
       SELECT DISTINCT
         p.id,
         p.name,
@@ -224,21 +226,23 @@ class AgentExecutor {
       INNER JOIN trading_agents ta ON ta.id = ap.agent_id
       WHERE ta.auto_execute = 1
         AND p.is_archived = 0
-    `).all();
+    `);
+    const autoExecPortfolios = autoExecPortfoliosResult.rows;
 
     // Get pending execution counts by status
-    const executionStats = database.prepare(`
+    const executionStatsResult = await database.query(`
       SELECT
         status,
         COUNT(*) as count,
         SUM(estimated_value) as total_value
       FROM pending_executions
-      WHERE created_at >= datetime('now', '-7 days')
+      WHERE created_at >= ${last7Days}
       GROUP BY status
-    `).all();
+    `);
+    const executionStats = executionStatsResult.rows;
 
     // Get recent executions
-    const recentExecutions = database.prepare(`
+    const recentExecutionsResult = await database.query(`
       SELECT
         pe.*,
         c.symbol,
@@ -247,13 +251,14 @@ class AgentExecutor {
       LEFT JOIN companies c ON pe.company_id = c.id
       LEFT JOIN portfolios p ON pe.portfolio_id = p.id
       WHERE pe.status = 'executed'
-        AND pe.executed_at >= datetime('now', '-24 hours')
+        AND pe.executed_at >= ${last24Hours}
       ORDER BY pe.executed_at DESC
       LIMIT 10
-    `).all();
+    `);
+    const recentExecutions = recentExecutionsResult.rows;
 
     // Get approved waiting to execute
-    const approvedWaiting = database.prepare(`
+    const approvedWaitingResult = await database.query(`
       SELECT
         pe.*,
         c.symbol,
@@ -264,7 +269,8 @@ class AgentExecutor {
       WHERE pe.status = 'approved'
       ORDER BY pe.created_at DESC
       LIMIT 10
-    `).all();
+    `);
+    const approvedWaiting = approvedWaitingResult.rows;
 
     return {
       scheduler: {
@@ -389,19 +395,23 @@ class AgentExecutor {
     console.log('\nScheduler running. Press Ctrl+C to stop.\n');
 
     // Display status on startup
-    const status = this.getStatus();
-    console.log('Current status:');
-    console.log(`  Portfolios with auto-execute: ${status.portfolios.autoExecuteEnabled}`);
-    console.log(`    - Full auto (no confirmation): ${status.portfolios.fullAutoExec}`);
-    console.log(`    - With confirmation required: ${status.portfolios.withConfirmation}`);
+    this.getStatus().then(status => {
+      console.log('Current status:');
+      console.log(`  Portfolios with auto-execute: ${status.portfolios.autoExecuteEnabled}`);
+      console.log(`    - Full auto (no confirmation): ${status.portfolios.fullAutoExec}`);
+      console.log(`    - With confirmation required: ${status.portfolios.withConfirmation}`);
 
-    if (status.executions.approvedWaiting.length > 0) {
-      console.log(`\n  Approved trades waiting: ${status.executions.approvedWaiting.length}`);
-      for (const exec of status.executions.approvedWaiting.slice(0, 3)) {
-        console.log(`    - ${exec.symbol} ${exec.action} x${exec.shares} (${exec.portfolio})`);
+      if (status.executions.approvedWaiting.length > 0) {
+        console.log(`\n  Approved trades waiting: ${status.executions.approvedWaiting.length}`);
+        for (const exec of status.executions.approvedWaiting.slice(0, 3)) {
+          console.log(`    - ${exec.symbol} ${exec.action} x${exec.shares} (${exec.portfolio})`);
+        }
       }
-    }
-    console.log('');
+      console.log('');
+    }).catch(err => {
+      console.error('Status load failed:', err.message);
+      console.log('');
+    });
 
     // Keep process alive
     process.on('SIGINT', () => {
@@ -426,54 +436,58 @@ if (require.main === module) {
       });
   } else if (args.includes('--status') || args.includes('-s')) {
     // Show status
-    const status = executor.getStatus();
-    console.log('\n' + '='.repeat(50));
-    console.log('  Agent Trade Executor Status');
-    console.log('='.repeat(50));
+    executor.getStatus().then(status => {
+      console.log('\n' + '='.repeat(50));
+      console.log('  Agent Trade Executor Status');
+      console.log('='.repeat(50));
 
-    console.log('\nPortfolios:');
-    console.log(`  Auto-execute enabled: ${status.portfolios.autoExecuteEnabled}`);
-    console.log(`  Full auto (no confirmation): ${status.portfolios.fullAutoExec}`);
-    console.log(`  With confirmation: ${status.portfolios.withConfirmation}`);
+      console.log('\nPortfolios:');
+      console.log(`  Auto-execute enabled: ${status.portfolios.autoExecuteEnabled}`);
+      console.log(`  Full auto (no confirmation): ${status.portfolios.fullAutoExec}`);
+      console.log(`  With confirmation: ${status.portfolios.withConfirmation}`);
 
-    if (status.portfolios.list.length > 0) {
-      console.log('\n  Portfolio list:');
-      for (const p of status.portfolios.list) {
-        const mode = p.requiresConfirmation ? '(manual confirm)' : '(full auto)';
-        console.log(`    - ${p.name} ${mode} [Agent: ${p.agent || 'None'}]`);
+      if (status.portfolios.list.length > 0) {
+        console.log('\n  Portfolio list:');
+        for (const p of status.portfolios.list) {
+          const mode = p.requiresConfirmation ? '(manual confirm)' : '(full auto)';
+          console.log(`    - ${p.name} ${mode} [Agent: ${p.agent || 'None'}]`);
+        }
       }
-    }
 
-    console.log('\nExecution Stats (7 days):');
-    for (const [status_name, data] of Object.entries(status.executions.byStatus)) {
-      console.log(`  - ${status_name}: ${data.count} ($${data.value?.toFixed(2) || 0})`);
-    }
-
-    if (status.executions.approvedWaiting.length > 0) {
-      console.log('\nApproved & Waiting:');
-      for (const exec of status.executions.approvedWaiting) {
-        console.log(`  - ${exec.symbol} ${exec.action} x${exec.shares} @ $${exec.price?.toFixed(2)}`);
-        console.log(`    Portfolio: ${exec.portfolio}, Since: ${exec.createdAt}`);
+      console.log('\nExecution Stats (7 days):');
+      for (const [status_name, data] of Object.entries(status.executions.byStatus)) {
+        console.log(`  - ${status_name}: ${data.count} ($${data.value?.toFixed(2) || 0})`);
       }
-    }
 
-    if (status.executions.recentlyExecuted.length > 0) {
-      console.log('\nRecently Executed (24h):');
-      for (const exec of status.executions.recentlyExecuted) {
-        console.log(`  - ${exec.symbol} ${exec.action} x${exec.shares} @ $${exec.price?.toFixed(2)}`);
-        console.log(`    Portfolio: ${exec.portfolio}, At: ${exec.executedAt}`);
+      if (status.executions.approvedWaiting.length > 0) {
+        console.log('\nApproved & Waiting:');
+        for (const exec of status.executions.approvedWaiting) {
+          console.log(`  - ${exec.symbol} ${exec.action} x${exec.shares} @ $${exec.price?.toFixed(2)}`);
+          console.log(`    Portfolio: ${exec.portfolio}, Since: ${exec.createdAt}`);
+        }
       }
-    }
 
-    if (status.scheduler.lastRun) {
-      console.log('\nLast Run:');
-      console.log(`  Time: ${status.scheduler.lastRun}`);
-      console.log(`  Duration: ${status.scheduler.lastResult?.duration || 'N/A'}`);
-      console.log(`  Executed: ${status.scheduler.lastResult?.executed || 0}`);
-      console.log(`  Failed: ${status.scheduler.lastResult?.failed || 0}`);
-      console.log(`  Skipped: ${status.scheduler.lastResult?.skipped || 0}`);
-    }
-    console.log('');
+      if (status.executions.recentlyExecuted.length > 0) {
+        console.log('\nRecently Executed (24h):');
+        for (const exec of status.executions.recentlyExecuted) {
+          console.log(`  - ${exec.symbol} ${exec.action} x${exec.shares} @ $${exec.price?.toFixed(2)}`);
+          console.log(`    Portfolio: ${exec.portfolio}, At: ${exec.executedAt}`);
+        }
+      }
+
+      if (status.scheduler.lastRun) {
+        console.log('\nLast Run:');
+        console.log(`  Time: ${status.scheduler.lastRun}`);
+        console.log(`  Duration: ${status.scheduler.lastResult?.duration || 'N/A'}`);
+        console.log(`  Executed: ${status.scheduler.lastResult?.executed || 0}`);
+        console.log(`  Failed: ${status.scheduler.lastResult?.failed || 0}`);
+        console.log(`  Skipped: ${status.scheduler.lastResult?.skipped || 0}`);
+      }
+      console.log('');
+    }).catch(err => {
+      console.error('Status check failed:', err.message);
+      process.exit(1);
+    });
   } else if (args.includes('--help') || args.includes('-h')) {
     console.log(`
 Agent Trade Executor Scheduler

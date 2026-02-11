@@ -15,7 +15,6 @@
 require('dotenv').config();
 
 const { FREDService } = require('../services/dataProviders');
-const db = require('../database');
 
 async function main() {
   console.log('='.repeat(50));
@@ -28,7 +27,7 @@ async function main() {
     process.exit(1);
   }
 
-  const fred = new FREDService(db, process.env.FRED_API_KEY);
+  const fred = new FREDService(null, process.env.FRED_API_KEY);
 
   try {
     const result = await fred.updateAllSeries();

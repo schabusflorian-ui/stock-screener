@@ -58,6 +58,17 @@ class MetricsValidator {
     ];
   }
 
+  async _query(sql, params = []) {
+    const result = await this.db.query(sql, params);
+    return result?.rows ?? result;
+  }
+
+  async _queryOne(sql, params = []) {
+    const rows = await this._query(sql, params);
+    const arr = Array.isArray(rows) ? rows : [];
+    return arr[0] || null;
+  }
+
   /**
    * Run full validation
    * @param {Object} options - Validation options
@@ -72,8 +83,8 @@ class MetricsValidator {
     } = options;
 
     console.log('\n1. Selecting sample companies...');
-    const sample = this.selector.selectSample({ targetSize: sampleSize });
-    this.selector.printSampleDistribution(sample);
+    const sample = await this.selector.selectSample({ targetSize: sampleSize });
+    await this.selector.printSampleDistribution(sample);
 
     const estimatedTime = this.fetcher.estimateTime(sample.length);
     const modeLabel = useTTM ? 'TTM (quarterly)' : 'Annual';
@@ -126,7 +137,7 @@ class MetricsValidator {
       }
 
       // Get our data (TTM or annual depending on mode)
-      const ours = this.getOurMetrics(symbol, useTTM);
+      const ours = await this.getOurMetrics(symbol, useTTM);
 
       if (!ours) {
         failCount++;
@@ -140,9 +151,7 @@ class MetricsValidator {
       }
 
       // Get company sector for metric filtering
-      const companyInfo = this.db.prepare(`
-        SELECT sector FROM companies WHERE symbol = ?
-      `).get(symbol);
+      const companyInfo = await this._queryOne('SELECT sector FROM companies WHERE symbol = ?', [symbol]);
       const sector = companyInfo?.sector || null;
 
       // Compare metrics
@@ -170,13 +179,12 @@ class MetricsValidator {
    * @param {string} symbol - Stock symbol
    * @param {boolean} useTTM - If true, calculate TTM from last 4 quarters
    */
-  getOurMetrics(symbol, useTTM = false) {
+  async getOurMetrics(symbol, useTTM = false) {
     if (useTTM) {
       return this.getTTMMetrics(symbol);
     }
 
-    // Get most recent annual metrics
-    let result = this.db.prepare(`
+    let result = await this._queryOne(`
       SELECT m.*, c.symbol
       FROM calculated_metrics m
       JOIN companies c ON c.id = m.company_id
@@ -184,21 +192,19 @@ class MetricsValidator {
         AND m.period_type = 'annual'
       ORDER BY m.fiscal_year DESC
       LIMIT 1
-    `).get(symbol);
+    `, [symbol]);
 
-    // Fallback to any period type
     if (!result) {
-      result = this.db.prepare(`
+      result = await this._queryOne(`
         SELECT m.*, c.symbol
         FROM calculated_metrics m
         JOIN companies c ON c.id = m.company_id
         WHERE c.symbol = ?
         ORDER BY m.fiscal_period DESC
         LIMIT 1
-      `).get(symbol);
+      `, [symbol]);
     }
 
-    // Add field aliases to match Yahoo Finance field names
     if (result) {
       result.revenue_growth = result.revenue_growth_yoy;
       result.earnings_growth = result.earnings_growth_yoy;
@@ -213,9 +219,8 @@ class MetricsValidator {
    * For ratios (current, quick, D/E): use most recent quarter (point-in-time)
    * For ROE/ROA: use TTM income / average equity or assets
    */
-  getTTMMetrics(symbol) {
-    // Get last 4 quarters
-    const quarters = this.db.prepare(`
+  async getTTMMetrics(symbol) {
+    const quarters = await this._query(`
       SELECT m.*, c.symbol
       FROM calculated_metrics m
       JOIN companies c ON c.id = m.company_id
@@ -223,23 +228,22 @@ class MetricsValidator {
         AND m.period_type = 'quarterly'
       ORDER BY m.fiscal_period DESC
       LIMIT 4
-    `).all(symbol);
+    `, [symbol]);
 
-    if (quarters.length < 4) {
-      // Fall back to annual if not enough quarters
+    const arr = Array.isArray(quarters) ? quarters : [];
+
+    if (arr.length < 4) {
       return this.getOurMetrics(symbol, false);
     }
 
-    const latest = quarters[0];
+    const latest = arr[0];
 
-    // Helper to average non-null values
     const avg = (key) => {
-      const values = quarters.map(q => q[key]).filter(v => v != null);
+      const values = arr.map(q => q[key]).filter(v => v != null);
       if (values.length === 0) return null;
       return values.reduce((a, b) => a + b, 0) / values.length;
     };
 
-    // Build TTM metrics
     return {
       symbol: latest.symbol,
       company_id: latest.company_id,
@@ -271,8 +275,7 @@ class MetricsValidator {
       revenue_growth: latest.revenue_growth_yoy,
       earnings_growth: latest.earnings_growth_yoy,
 
-      // Metadata
-      _ttm_quarters: quarters.length,
+      _ttm_quarters: arr.length,
       _latest_quarter: latest.fiscal_period,
     };
   }

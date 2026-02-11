@@ -9,10 +9,16 @@
  *   node src/jobs/secDirectRefresh.js [watchlist|all|SYMBOL1,SYMBOL2,...]
  */
 
-const db = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 const SECProvider = require('../providers/SECProvider');
 
-const database = db.getDatabase();
+let databasePromise;
+async function getDatabase() {
+  if (!databasePromise) {
+    databasePromise = getDatabaseAsync();
+  }
+  return databasePromise;
+}
 const secProvider = new SECProvider();
 
 // Tag mappings for converting XBRL concepts to our standard fields
@@ -58,10 +64,12 @@ async function refreshCompanyFromSEC(symbol) {
   console.log(`\n📥 Fetching ${symbol} from SEC EDGAR...`);
 
   try {
+    const database = await getDatabase();
     // Get company from database
-    const company = database.prepare(`
-      SELECT id, cik, name FROM companies WHERE symbol = ?
-    `).get(symbol.toUpperCase());
+    const companyResult = await database.query(`
+      SELECT id, cik, name FROM companies WHERE symbol = $1
+    `, [symbol.toUpperCase()]);
+    const company = companyResult.rows[0];
 
     if (!company) {
       console.log(`   ⚠️ Company ${symbol} not found in database`);
@@ -235,7 +243,7 @@ async function refreshCompanyFromSEC(symbol) {
 
     // Insert/update financial_data (using actual table columns)
     // UNIQUE constraint is: (company_id, statement_type, fiscal_date_ending, period_type)
-    const insertStmt = database.prepare(`
+    const insertSql = `
       INSERT INTO financial_data (
         company_id, statement_type, fiscal_date_ending, fiscal_period, fiscal_year,
         period_type, filed_date, form, data,
@@ -245,13 +253,13 @@ async function refreshCompanyFromSEC(symbol) {
         shareholder_equity, operating_cashflow, capital_expenditures,
         shares_outstanding
       ) VALUES (
-        ?, 'all', ?, ?, ?,
-        ?, ?, ?, '{}',
-        ?, ?, ?, ?, ?,
-        ?, ?, ?,
-        ?, ?, ?, ?,
-        ?, ?, ?,
-        ?
+        $1, 'all', $2, $3, $4,
+        $5, $6, $7, '{}',
+        $8, $9, $10, $11, $12,
+        $13, $14, $15,
+        $16, $17, $18, $19,
+        $20, $21, $22,
+        $23
       )
       ON CONFLICT(company_id, statement_type, fiscal_date_ending, period_type)
       DO UPDATE SET
@@ -275,14 +283,14 @@ async function refreshCompanyFromSEC(symbol) {
         operating_cashflow = COALESCE(excluded.operating_cashflow, financial_data.operating_cashflow),
         capital_expenditures = COALESCE(excluded.capital_expenditures, financial_data.capital_expenditures),
         shares_outstanding = COALESCE(excluded.shares_outstanding, financial_data.shares_outstanding)
-    `);
+    `;
 
     let inserted = 0;
     const updated = 0;
 
     for (const [key, data] of periodGroups) {
       try {
-        const result = insertStmt.run(
+        const result = await database.query(insertSql, [
           data.company_id,
           data.fiscal_date_ending,
           data.fiscal_period,
@@ -306,9 +314,9 @@ async function refreshCompanyFromSEC(symbol) {
           data.operating_cashflow || null,
           data.capital_expenditures || null,
           data.shares_outstanding || null
-        );
+        ]);
 
-        if (result.changes > 0) {
+        if (result && (result.rowCount > 0 || result.changes > 0)) {
           inserted++;
         }
       } catch (err) {
@@ -319,13 +327,14 @@ async function refreshCompanyFromSEC(symbol) {
     console.log(`   ✅ Processed ${periodGroups.size} periods (${inserted} new/updated)`);
 
     // Show latest data
-    const latest = database.prepare(`
+    const latestResult = await database.query(`
       SELECT fiscal_date_ending, fiscal_period, filed_date, total_revenue
       FROM financial_data
-      WHERE company_id = ?
+      WHERE company_id = $1
       ORDER BY fiscal_date_ending DESC
       LIMIT 3
-    `).all(company.id);
+    `, [company.id]);
+    const latest = latestResult.rows;
 
     console.log('   📅 Latest periods:');
     for (const l of latest) {
@@ -349,14 +358,16 @@ async function refreshCompanyFromSEC(symbol) {
 /**
  * Get watchlist symbols
  */
-function getWatchlistSymbols() {
-  const watchlist = database.prepare(`
+async function getWatchlistSymbols() {
+  const database = await getDatabase();
+  const watchlistResult = await database.query(`
     SELECT c.symbol
     FROM watchlist w
     JOIN companies c ON c.id = w.company_id
     WHERE c.symbol IS NOT NULL AND c.symbol NOT LIKE 'CIK_%'
     ORDER BY w.added_at DESC
-  `).all();
+  `);
+  const watchlist = watchlistResult.rows;
 
   return watchlist.map(w => w.symbol);
 }
@@ -364,8 +375,9 @@ function getWatchlistSymbols() {
 /**
  * Get top companies by market activity
  */
-function getTopCompanies(limit = 50) {
-  const companies = database.prepare(`
+async function getTopCompanies(limit = 50) {
+  const database = await getDatabase();
+  const companiesResult = await database.query(`
     SELECT DISTINCT c.symbol
     FROM companies c
     JOIN financial_data fd ON fd.company_id = c.id
@@ -373,8 +385,9 @@ function getTopCompanies(limit = 50) {
       AND c.symbol NOT LIKE 'CIK_%'
       AND c.is_active = 1
     ORDER BY fd.total_revenue DESC
-    LIMIT ?
-  `).all(limit);
+    LIMIT $1
+  `, [limit]);
+  const companies = companiesResult.rows;
 
   return companies.map(c => c.symbol);
 }
@@ -393,10 +406,10 @@ async function main() {
   let symbols = [];
 
   if (mode === 'watchlist') {
-    symbols = getWatchlistSymbols();
+    symbols = await getWatchlistSymbols();
     console.log(`\n📋 Refreshing ${symbols.length} watchlist companies`);
   } else if (mode === 'all' || mode === 'top') {
-    symbols = getTopCompanies(50);
+    symbols = await getTopCompanies(50);
     console.log(`\n📋 Refreshing top ${symbols.length} companies`);
   } else {
     // Assume comma-separated symbols

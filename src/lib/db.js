@@ -206,6 +206,7 @@ const TABLE_CONFLICT_COLUMNS = {
   // Model/ML tables
   model_performance_log: 'model_name, version, log_date',
   ml_predictions: 'model_id, company_id, prediction_date',
+  ml_models: 'model_name, model_type',
 
   // Trading tables
   cointegration_pairs: 'symbol1, symbol2',
@@ -350,6 +351,29 @@ function convertSQLDialect(sql) {
   converted = converted.replace(
     /date\s*\(\s*'now'\s*,\s*'-'\s*\|\|\s*\?\s*\|\|\s*'\s*days'\s*\)/gi,
     "CURRENT_DATE - (? || ' days')::interval"
+  );
+
+  // datetime('now', ? || ' days') or datetime('now', $1 || ' days') with param like '-180'
+  // → NOW() - (ABS(param) || ' days')::interval
+  converted = converted.replace(
+    /datetime\s*\(\s*'now'\s*,\s*(\?|\$\d+)\s*\|\|\s*'\s*days'\s*\)/gi,
+    "NOW() - (ABS($1::integer) || ' days')::interval"
+  );
+
+  // date(column, '+N days') → column + (N || ' days')::interval (PostgreSQL)
+  converted = converted.replace(
+    /date\s*\(\s*([^,]+)\s*,\s*'\+(\d+)\s+days'\s*\)/gi,
+    "$1 + ($2 || ' days')::interval"
+  );
+  converted = converted.replace(
+    /date\s*\(\s*([^,]+)\s*,\s*'\+(\d+)\s+day'\s*\)/gi,
+    "$1 + ($2 || ' days')::interval"
+  );
+
+  // json_extract(col, '$.key') → (col::jsonb)->>'key' for PostgreSQL
+  converted = converted.replace(
+    /json_extract\s*\(\s*([^,]+)\s*,\s*'\$\.([^']+)'\s*\)/gi,
+    "($1::jsonb)->>'$2'"
   );
 
   // GLOB → LIKE (note: GLOB is case-sensitive, LIKE in PG is case-sensitive too)
