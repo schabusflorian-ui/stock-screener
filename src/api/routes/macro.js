@@ -57,6 +57,11 @@ router.get('/signals', async (req, res) => {
 // Yield Curve
 // ========================================
 
+/** Return true if error is "table/view does not exist" (Postgres 42P01 or message match). */
+function isMissingRelation(err) {
+  return err.code === '42P01' || (err.message && /relation .* does not exist/i.test(err.message));
+}
+
 /**
  * GET /api/macro/yield-curve
  * Get current yield curve
@@ -64,11 +69,12 @@ router.get('/signals', async (req, res) => {
 router.get('/yield-curve', async (req, res) => {
   try {
     const dbConn = await db.getDatabaseAsync();
-    const curve = await dbConn.get(`
+    const result = await dbConn.query(`
       SELECT * FROM yield_curve
       ORDER BY curve_date DESC
       LIMIT 1
     `);
+    const curve = result.rows && result.rows[0] ? result.rows[0] : null;
 
     if (!curve) {
       return res.status(404).json({ error: 'No yield curve data available' });
@@ -91,6 +97,9 @@ router.get('/yield-curve', async (req, res) => {
       ].filter(m => m.yield !== null),
     });
   } catch (error) {
+    if (isMissingRelation(error)) {
+      return res.status(404).json({ error: 'No yield curve data available' });
+    }
     console.error('Yield curve error:', error);
     res.status(500).json({ error: 'Failed to get yield curve', message: error.message });
   }
@@ -106,29 +115,34 @@ router.get('/yield-curve/history', async (req, res) => {
     const dbConn = await db.getDatabaseAsync();
 
     // First try yield_curve table
-    let history = await dbConn.all(`
+    let result = await dbConn.query(`
       SELECT curve_date, y_2y, y_5y, y_10y, y_30y, spread_2s10s, is_inverted_2s10s
       FROM yield_curve
-      WHERE curve_date >= date('now', '-' || ? || ' days')
+      WHERE curve_date >= CURRENT_DATE - ($1 || ' days')::interval
       ORDER BY curve_date ASC
-    `, days);
+    `, [days]);
+    let history = result.rows || [];
 
     // If yield_curve table is empty or has few records, use economic_indicators
     if (!history || history.length < 5) {
-      history = await dbConn.all(`
+      result = await dbConn.query(`
         SELECT
           observation_date as curve_date,
           value as spread_2s10s,
           CASE WHEN value < 0 THEN 1 ELSE 0 END as is_inverted_2s10s
         FROM economic_indicators
         WHERE series_id = 'T10Y2Y'
-          AND observation_date >= date('now', '-' || ? || ' days')
+          AND observation_date >= CURRENT_DATE - ($1 || ' days')::interval
         ORDER BY observation_date ASC
-      `, days);
+      `, [days]);
+      history = result.rows || [];
     }
 
     res.json(history);
   } catch (error) {
+    if (isMissingRelation(error)) {
+      return res.json([]);
+    }
     console.error('Yield curve history error:', error);
     res.status(500).json({ error: 'Failed to get yield curve history', message: error.message });
   }
@@ -140,29 +154,51 @@ router.get('/yield-curve/history', async (req, res) => {
 
 /**
  * GET /api/macro/indicators
- * Get all latest economic indicators
+ * Get all latest economic indicators (uses economic_indicators when view does not exist)
  */
 router.get('/indicators', async (req, res) => {
   try {
     const category = req.query.category;
     const dbConn = await db.getDatabaseAsync();
 
-    let query = `
-      SELECT * FROM v_latest_economic_indicators
-    `;
-
-    if (category) {
-      query += ' WHERE category = ?';
+    // Prefer view if it exists; otherwise latest per series from economic_indicators
+    let result;
+    try {
+      let query = `SELECT * FROM v_latest_economic_indicators`;
+      if (category) query += ' WHERE category = $1';
+      query += ' ORDER BY category, series_name';
+      result = category
+        ? await dbConn.query(query, [category])
+        : await dbConn.query(query);
+    } catch (viewErr) {
+      if (isMissingRelation(viewErr)) {
+        try {
+          const sub = `
+            SELECT ei.*, esd.series_name, esd.category
+            FROM economic_indicators ei
+            LEFT JOIN economic_series_definitions esd ON esd.series_id = ei.series_id
+            WHERE (ei.series_id, ei.observation_date) IN (
+              SELECT series_id, MAX(observation_date) FROM economic_indicators GROUP BY series_id
+            )
+          `;
+          const q = category ? sub + ' AND esd.category = $1' : sub;
+          result = await dbConn.query(q + ' ORDER BY esd.category, esd.series_name', category ? [category] : []);
+        } catch (fallbackErr) {
+          if (isMissingRelation(fallbackErr)) {
+            return res.json([]);
+          }
+          throw fallbackErr;
+        }
+      } else {
+        throw viewErr;
+      }
     }
 
-    query += ' ORDER BY category, series_name';
-
-    const indicators = category
-      ? await dbConn.all(query, category)
-      : await dbConn.all(query);
-
-    res.json(indicators);
+    res.json(result.rows || []);
   } catch (error) {
+    if (isMissingRelation(error)) {
+      return res.json([]);
+    }
     console.error('Indicators error:', error);
     res.status(500).json({ error: 'Failed to get indicators', message: error.message });
   }
@@ -177,25 +213,30 @@ router.get('/indicators/:seriesId', async (req, res) => {
     const { seriesId } = req.params;
     const days = parseInt(req.query.days) || 365;
     const dbConn = await db.getDatabaseAsync();
+    const sid = seriesId.toUpperCase();
 
-    const history = await dbConn.all(`
+    const historyResult = await dbConn.query(`
       SELECT observation_date, value, change_1m, change_1y
       FROM economic_indicators
-      WHERE series_id = ?
-        AND observation_date >= date('now', '-' || ? || ' days')
+      WHERE series_id = $1
+        AND observation_date >= CURRENT_DATE - ($2 || ' days')::interval
       ORDER BY observation_date ASC
-    `, seriesId.toUpperCase(), days);
+    `, [sid, days]);
 
-    const metadata = await dbConn.get(`
-      SELECT * FROM economic_series_definitions WHERE series_id = ?
-    `, seriesId.toUpperCase());
+    const metaResult = await dbConn.query(`
+      SELECT * FROM economic_series_definitions WHERE series_id = $1
+    `, [sid]);
+    const metadata = metaResult.rows && metaResult.rows[0] ? metaResult.rows[0] : null;
 
     res.json({
-      seriesId: seriesId.toUpperCase(),
+      seriesId: sid,
       metadata,
-      history,
+      history: historyResult.rows || [],
     });
   } catch (error) {
+    if (isMissingRelation(error)) {
+      return res.json({ seriesId: req.params.seriesId.toUpperCase(), metadata: null, history: [] });
+    }
     console.error('Indicator history error:', error);
     res.status(500).json({ error: 'Failed to get indicator history', message: error.message });
   }
@@ -208,7 +249,7 @@ router.get('/indicators/:seriesId', async (req, res) => {
 router.get('/categories', async (req, res) => {
   try {
     const dbConn = await db.getDatabaseAsync();
-    const categories = await dbConn.all(`
+    const result = await dbConn.query(`
       SELECT category, COUNT(*) as series_count
       FROM economic_series_definitions
       WHERE is_active = 1
@@ -216,8 +257,11 @@ router.get('/categories', async (req, res) => {
       ORDER BY category
     `);
 
-    res.json(categories);
+    res.json(result.rows || []);
   } catch (error) {
+    if (isMissingRelation(error)) {
+      return res.json([]);
+    }
     console.error('Categories error:', error);
     res.status(500).json({ error: 'Failed to get categories', message: error.message });
   }
@@ -258,25 +302,17 @@ router.get('/status', async (req, res) => {
   try {
     const dbConn = await db.getDatabaseAsync();
 
-    const latestIndicator = await dbConn.get(`
-      SELECT MAX(observation_date) as latest_date
-      FROM economic_indicators
-    `);
+    const r1 = await dbConn.query(`SELECT MAX(observation_date) as latest_date FROM economic_indicators`);
+    const latestIndicator = r1.rows && r1.rows[0] ? r1.rows[0] : null;
 
-    const latestYieldCurve = await dbConn.get(`
-      SELECT MAX(curve_date) as latest_date
-      FROM yield_curve
-    `);
+    const r2 = await dbConn.query(`SELECT MAX(curve_date) as latest_date FROM yield_curve`);
+    const latestYieldCurve = r2.rows && r2.rows[0] ? r2.rows[0] : null;
 
-    const seriesCount = await dbConn.get(`
-      SELECT COUNT(DISTINCT series_id) as count
-      FROM economic_indicators
-    `);
+    const r3 = await dbConn.query(`SELECT COUNT(DISTINCT series_id) as count FROM economic_indicators`);
+    const seriesCount = r3.rows && r3.rows[0] ? r3.rows[0] : null;
 
-    const totalObservations = await dbConn.get(`
-      SELECT COUNT(*) as count
-      FROM economic_indicators
-    `);
+    const r4 = await dbConn.query(`SELECT COUNT(*) as count FROM economic_indicators`);
+    const totalObservations = r4.rows && r4.rows[0] ? r4.rows[0] : null;
 
     res.json({
       status: 'ok',
@@ -287,6 +323,16 @@ router.get('/status', async (req, res) => {
       totalObservations: totalObservations?.count || 0,
     });
   } catch (error) {
+    if (isMissingRelation(error)) {
+      return res.json({
+        status: 'ok',
+        apiKeyConfigured: !!process.env.FRED_API_KEY,
+        latestIndicatorDate: null,
+        latestYieldCurveDate: null,
+        seriesTracked: 0,
+        totalObservations: 0,
+      });
+    }
     console.error('Status error:', error);
     res.status(500).json({ error: 'Failed to get status', message: error.message });
   }
@@ -501,15 +547,14 @@ router.get('/key-metrics', async (req, res) => {
   try {
     const dbConn = await db.getDatabaseAsync();
 
-    // Get key values
     const getValue = async (seriesId) => {
-      const result = await dbConn.get(`
+      const result = await dbConn.query(`
         SELECT value, observation_date FROM economic_indicators
-        WHERE series_id = ?
+        WHERE series_id = $1
         ORDER BY observation_date DESC
         LIMIT 1
-      `, seriesId);
-      return result;
+      `, [seriesId]);
+      return result.rows && result.rows[0] ? result.rows[0] : null;
     };
 
     const fedFunds = await getValue('DFF');
@@ -520,13 +565,13 @@ router.get('/key-metrics', async (req, res) => {
     const unemployment = await getValue('UNRATE');
     const cpi = await getValue('CPIAUCSL');
 
-    // Get yield curve
-    const yieldCurve = await dbConn.get(`
+    const yieldResult = await dbConn.query(`
       SELECT spread_2s10s, is_inverted_2s10s
       FROM yield_curve
       ORDER BY curve_date DESC
       LIMIT 1
     `);
+    const yieldCurve = yieldResult.rows && yieldResult.rows[0] ? yieldResult.rows[0] : null;
 
     res.json({
       timestamp: new Date().toISOString(),
@@ -551,6 +596,15 @@ router.get('/key-metrics', async (req, res) => {
       },
     });
   } catch (error) {
+    if (isMissingRelation(error)) {
+      return res.json({
+        timestamp: new Date().toISOString(),
+        rates: {},
+        volatility: {},
+        credit: {},
+        economy: {},
+      });
+    }
     console.error('Key metrics error:', error);
     res.status(500).json({ error: 'Failed to get key metrics', message: error.message });
   }

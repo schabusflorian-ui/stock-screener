@@ -22,6 +22,11 @@ function sectorErrorPayload(error) {
   return payload;
 }
 
+// Return true if error is missing table/view (e.g. fresh Postgres without migrations)
+function isMissingRelation(error) {
+  return error.code === '42P01' || (error.message && /relation .* does not exist/i.test(error.message));
+}
+
 /**
  * GET /api/sectors
  * Get all sectors with aggregate metrics
@@ -37,6 +42,9 @@ router.get('/', async (req, res) => {
       periodType
     });
   } catch (error) {
+    if (isMissingRelation(error)) {
+      return res.json({ sectors: [], count: 0, periodType: req.query.periodType || 'annual' });
+    }
     logSectorError('GET / (sector overview)', error);
     res.status(500).json(sectorErrorPayload(error));
   }
@@ -97,6 +105,14 @@ router.get('/top-performers', async (req, res) => {
       periodType
     });
   } catch (error) {
+    if (isMissingRelation(error)) {
+      return res.json({
+        topPerformers: [],
+        metric: req.query.metric || 'roic',
+        limit: parseInt(req.query.limit, 10) || 5,
+        periodType: req.query.periodType || 'annual'
+      });
+    }
     logSectorError('GET /top-performers', error);
     res.status(500).json(sectorErrorPayload(error));
   }
