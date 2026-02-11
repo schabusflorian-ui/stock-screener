@@ -86,6 +86,9 @@ function NotesPage() {
       setTags(tagsRes.data.tags || []);
     } catch (error) {
       console.error('Error loading notes data:', error);
+      setNotebooks([]);
+      setNotes([]);
+      setTags([]);
     } finally {
       setLoading(false);
     }
@@ -101,6 +104,8 @@ function NotesPage() {
       setTheses(thesesRes.data.theses || []);
     } catch (error) {
       console.error('Error loading theses data:', error);
+      setTheses([]);
+      setThesesDashboard(null);
     }
   };
 
@@ -205,8 +210,12 @@ function NotesPage() {
     setEditingThesis(null);
   };
 
+  // Ensure arrays (API may return non-array on error)
+  const safeNotes = Array.isArray(notes) ? notes : [];
+  const safeTheses = Array.isArray(theses) ? theses : [];
+
   // Filter notes
-  const filteredNotes = notes.filter(note => {
+  const filteredNotes = safeNotes.filter(note => {
     if (selectedNotebook && note.notebook_id !== selectedNotebook) return false;
     if (selectedTags.length > 0) {
       const noteTags = note.tagNames || [];
@@ -239,7 +248,7 @@ function NotesPage() {
   });
 
   // Filter theses by symbol
-  const filteredTheses = theses.filter(thesis => {
+  const filteredTheses = safeTheses.filter(thesis => {
     if (symbolFilter && !thesis.symbol?.toUpperCase().includes(symbolFilter.toUpperCase())) {
       return false;
     }

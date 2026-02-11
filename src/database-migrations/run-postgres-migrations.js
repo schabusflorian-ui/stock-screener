@@ -20,6 +20,7 @@ const POSTGRES_MIGRATIONS = [
   '001-add-all-missing-tables.js',
   '002-add-historical-intelligence-tables.js',
   '003-add-quant-lab-factor-tables.js',
+  '004-add-notes-tables-postgres.js',
   'add-postgres-alert-system.js',
   'add-dividend-metrics.js',
   'add-price-metrics.js',
@@ -111,8 +112,23 @@ async function runMigrations() {
   console.log('');
   console.log('================================');
   console.log(`✅ Migrations complete: ${migrationsRun} new, ${appliedMigrations.size} previously applied`);
+  console.log('');
 
-  await db.close();
+  // List tables to verify schema
+  const tablesResult = await db.query(`
+    SELECT table_name
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+    ORDER BY table_name
+  `);
+  const tables = tablesResult.rows.map(r => r.table_name);
+  console.log(`📋 Tables in database (${tables.length} total):`);
+  console.log(tables.join(', '));
+  console.log('');
+
+  if (db.close) {
+    await db.close();
+  }
 }
 
 // Run migrations
