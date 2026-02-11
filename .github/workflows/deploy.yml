@@ -22,11 +22,12 @@ env:
 
 jobs:
   # ============================================
-  # Run Tests First
+  # Run Tests First (TEMPORARILY DISABLED)
   # ============================================
   test:
     name: Test
     runs-on: ubuntu-latest
+    if: false  # Disabled temporarily to avoid billing issues
 
     services:
       postgres:
@@ -63,13 +64,13 @@ jobs:
           DATABASE_URL: postgresql://test:test@localhost:5432/test
 
   # ============================================
-  # Run Database Migrations
+  # Run Database Migrations (TEMPORARILY DISABLED)
   # ============================================
   migrate:
     name: Run Migrations
     runs-on: ubuntu-latest
     needs: test
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/railway-deploy-clean' || github.event.inputs.environment != ''
+    if: false  # Disabled temporarily to avoid billing issues
     environment: ${{ github.ref == 'refs/heads/railway-deploy-clean' && 'production' || 'staging' }}
 
     steps:
@@ -95,7 +96,6 @@ jobs:
   # ============================================
   deploy-staging:
     name: Deploy to Staging
-    needs: [test, migrate]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/railway-deploy-clean' || github.event.inputs.environment == 'staging'
     environment:

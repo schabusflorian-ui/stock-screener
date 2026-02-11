@@ -7,28 +7,29 @@
  * - Position analysis
  */
 
-const db = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * Get portfolio summary data for AI analysis
  */
-function getPortfolioDataForAI(portfolioId) {
-  const database = db.getDatabase();
+async function getPortfolioDataForAI(portfolioId) {
+  const database = await getDatabaseAsync();
 
   // Get portfolio info
-  const portfolio = database.prepare(`
+  const portfolioRes = await database.query(`
     SELECT p.*,
       (SELECT name FROM market_indices WHERE id = p.benchmark_index_id) as benchmark_name
     FROM portfolios p
-    WHERE p.id = ?
-  `).get(portfolioId);
+    WHERE p.id = $1
+  `, [portfolioId]);
+  const portfolio = portfolioRes.rows[0];
 
   if (!portfolio) {
     return null;
   }
 
   // Get positions with current prices
-  const positions = database.prepare(`
+  const positionsRes = await database.query(`
     SELECT
       pp.*,
       c.symbol,
@@ -50,30 +51,33 @@ function getPortfolioDataForAI(portfolioId) {
         ROW_NUMBER() OVER (PARTITION BY company_id ORDER BY date DESC) as rn
       FROM daily_prices
     ) dp ON dp.company_id = c.id AND dp.rn = 1
-    WHERE pp.portfolio_id = ?
+    WHERE pp.portfolio_id = $1
     ORDER BY current_value DESC
-  `).all(portfolioId);
+  `, [portfolioId]);
+  const positions = positionsRes.rows;
 
   // Get recent transactions
-  const recentTransactions = database.prepare(`
+  const transactionsRes = await database.query(`
     SELECT
       pt.*,
       c.symbol,
       c.name as company_name
     FROM portfolio_transactions pt
     LEFT JOIN companies c ON pt.company_id = c.id
-    WHERE pt.portfolio_id = ?
+    WHERE pt.portfolio_id = $1
     ORDER BY pt.transaction_date DESC
     LIMIT 10
-  `).all(portfolioId);
+  `, [portfolioId]);
+  const recentTransactions = transactionsRes.rows;
 
   // Get recent snapshots for performance
-  const snapshots = database.prepare(`
+  const snapshotsRes = await database.query(`
     SELECT * FROM portfolio_snapshots
-    WHERE portfolio_id = ?
+    WHERE portfolio_id = $1
     ORDER BY snapshot_date DESC
     LIMIT 30
-  `).all(portfolioId);
+  `, [portfolioId]);
+  const snapshots = snapshotsRes.rows;
 
   // Calculate totals
   const totalPositionsValue = positions.reduce((sum, p) => sum + (p.current_value || 0), 0);
@@ -167,24 +171,26 @@ function getPortfolioDataForAI(portfolioId) {
 /**
  * Get all portfolios summary for briefing
  */
-function getAllPortfoliosForBriefing() {
-  const database = db.getDatabase();
+async function getAllPortfoliosForBriefing() {
+  const database = await getDatabaseAsync();
 
-  const portfolios = database.prepare(`
+  const portfoliosRes = await database.query(`
     SELECT id, name FROM portfolios WHERE is_archived = 0
-  `).all();
+  `);
+  const portfolios = portfoliosRes.rows;
 
-  return portfolios.map(p => getPortfolioDataForAI(p.id)).filter(p => p !== null);
+  const results = await Promise.all(portfolios.map(p => getPortfolioDataForAI(p.id)));
+  return results.filter(p => p !== null);
 }
 
 /**
  * Get market data for briefing
  */
-function getMarketDataForBriefing() {
-  const database = db.getDatabase();
+async function getMarketDataForBriefing() {
+  const database = await getDatabaseAsync();
 
   // Get major indices performance
-  const indices = database.prepare(`
+  const indicesRes = await database.query(`
     SELECT
       mi.id,
       mi.name,
@@ -200,10 +206,11 @@ function getMarketDataForBriefing() {
     ) ip ON ip.index_id = mi.id AND ip.rn = 1
     WHERE mi.symbol IN ('SPY', 'QQQ', 'DIA', 'IWM', 'VTI')
     ORDER BY mi.symbol
-  `).all();
+  `);
+  const indices = indicesRes.rows;
 
   // Get sector performance (based on sector ETFs or sector averages)
-  const sectorPerformance = database.prepare(`
+  const sectorPerformanceRes = await database.query(`
     SELECT
       sector,
       COUNT(*) as company_count,
@@ -227,7 +234,8 @@ function getMarketDataForBriefing() {
     )
     GROUP BY sector
     ORDER BY avg_daily_change DESC
-  `).all();
+  `);
+  const sectorPerformance = sectorPerformanceRes.rows;
 
   return {
     indices: indices.map(i => ({
@@ -247,49 +255,54 @@ function getMarketDataForBriefing() {
 /**
  * Get company data for AI analysis
  */
-function getCompanyDataForAI(companyId) {
-  const database = db.getDatabase();
+async function getCompanyDataForAI(companyId) {
+  const database = await getDatabaseAsync();
 
   // Get company info
-  const company = database.prepare(`
-    SELECT * FROM companies WHERE id = ?
-  `).get(companyId);
+  const companyRes = await database.query(`
+    SELECT * FROM companies WHERE id = $1
+  `, [companyId]);
+  const company = companyRes.rows[0];
 
   if (!company) {
     return null;
   }
 
   // Get latest price
-  const price = database.prepare(`
+  const priceRes = await database.query(`
     SELECT * FROM daily_prices
-    WHERE company_id = ?
+    WHERE company_id = $1
     ORDER BY date DESC
     LIMIT 1
-  `).get(companyId);
+  `, [companyId]);
+  const price = priceRes.rows[0];
 
   // Get key metrics
-  const metrics = database.prepare(`
+  const metricsRes = await database.query(`
     SELECT * FROM company_metrics
-    WHERE company_id = ?
+    WHERE company_id = $1
     ORDER BY updated_at DESC
     LIMIT 1
-  `).get(companyId);
+  `, [companyId]);
+  const metrics = metricsRes.rows[0];
 
   // Get recent financials
-  const incomeStatement = database.prepare(`
+  const incomeRes = await database.query(`
     SELECT * FROM financial_data
-    WHERE company_id = ? AND statement_type = 'income_statement'
+    WHERE company_id = $1 AND statement_type = 'income_statement'
     ORDER BY fiscal_date_ending DESC
     LIMIT 4
-  `).all(companyId);
+  `, [companyId]);
+  const incomeStatement = incomeRes.rows;
 
   // Get sentiment if available
-  const sentiment = database.prepare(`
+  const sentimentRes = await database.query(`
     SELECT * FROM company_sentiment
-    WHERE company_id = ?
+    WHERE company_id = $1
     ORDER BY updated_at DESC
     LIMIT 1
-  `).get(companyId);
+  `, [companyId]);
+  const sentiment = sentimentRes.rows[0];
 
   return {
     company: {

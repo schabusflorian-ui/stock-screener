@@ -3,6 +3,7 @@
 
 const express = require('express');
 const router = express.Router();
+const { getDatabaseAsync } = require('../../lib/db');
 
 module.exports = function(db) {
   const { StrategyConfigManager } = require('../../services/agent/strategyConfig');
@@ -19,9 +20,9 @@ module.exports = function(db) {
    * GET /api/strategies/presets
    * Get all available strategy presets
    */
-  router.get('/presets', (req, res) => {
+  router.get('/presets', async (req, res) => {
     try {
-      const presets = configManager.getPresets();
+      const presets = await configManager.getPresets();
       res.json({
         success: true,
         presets: presets.map(p => ({
@@ -47,15 +48,17 @@ module.exports = function(db) {
    * GET /api/strategies
    * Get all strategies (optionally filter by active status)
    */
-  router.get('/', (req, res) => {
+  router.get('/', async (req, res) => {
     try {
       const { active } = req.query;
       let strategies;
 
       if (active === 'true') {
-        strategies = configManager.getActiveStrategies();
+        strategies = await configManager.getActiveStrategies();
       } else {
-        strategies = db.prepare('SELECT * FROM strategy_configs ORDER BY name').all();
+        const database = await getDatabaseAsync();
+        const result = await database.query('SELECT * FROM strategy_configs ORDER BY name');
+        strategies = result.rows;
       }
 
       res.json({
@@ -80,16 +83,15 @@ module.exports = function(db) {
    * GET /api/strategies/:id
    * Get a single strategy with full configuration
    */
-  router.get('/:id', (req, res) => {
+  router.get('/:id', async (req, res) => {
     try {
-      const strategy = configManager.getStrategy(parseInt(req.params.id));
+      const strategy = await configManager.getStrategy(parseInt(req.params.id));
 
       if (!strategy) {
         return res.status(404).json({ success: false, error: 'Strategy not found' });
       }
 
-      // Get agent config format
-      const agentConfig = configManager.getAgentConfig(strategy.id);
+      const agentConfig = await configManager.getAgentConfig(strategy.id);
 
       res.json({
         success: true,
@@ -121,8 +123,7 @@ module.exports = function(db) {
         });
       }
 
-      // Create strategy
-      const strategy = configManager.createStrategy(config, preset);
+      const strategy = await configManager.createStrategy(config, preset);
 
       res.status(201).json({
         success: true,
@@ -139,13 +140,12 @@ module.exports = function(db) {
    * PUT /api/strategies/:id
    * Update an existing strategy
    */
-  router.put('/:id', (req, res) => {
+  router.put('/:id', async (req, res) => {
     try {
       const strategyId = parseInt(req.params.id);
       const updates = req.body;
 
-      // Validate updates
-      const existing = configManager.getStrategy(strategyId);
+      const existing = await configManager.getStrategy(strategyId);
       if (!existing) {
         return res.status(404).json({ success: false, error: 'Strategy not found' });
       }
@@ -160,8 +160,7 @@ module.exports = function(db) {
         });
       }
 
-      // Update
-      const strategy = configManager.updateStrategy(strategyId, updates);
+      const strategy = await configManager.updateStrategy(strategyId, updates);
 
       res.json({
         success: true,
@@ -178,17 +177,16 @@ module.exports = function(db) {
    * DELETE /api/strategies/:id
    * Deactivate a strategy (soft delete)
    */
-  router.delete('/:id', (req, res) => {
+  router.delete('/:id', async (req, res) => {
     try {
       const strategyId = parseInt(req.params.id);
 
-      const strategy = configManager.getStrategy(strategyId);
+      const strategy = await configManager.getStrategy(strategyId);
       if (!strategy) {
         return res.status(404).json({ success: false, error: 'Strategy not found' });
       }
 
-      // Soft delete by deactivating
-      configManager.updateStrategy(strategyId, { is_active: 0 });
+      await configManager.updateStrategy(strategyId, { is_active: 0 });
 
       res.json({ success: true, message: 'Strategy deactivated' });
     } catch (error) {
@@ -206,7 +204,7 @@ module.exports = function(db) {
    * Create a multi-strategy configuration
    * Body: { name, description, childStrategies: [{strategyId, targetAllocation, minAllocation?, maxAllocation?}] }
    */
-  router.post('/multi', (req, res) => {
+  router.post('/multi', async (req, res) => {
     try {
       const { name, description, childStrategies } = req.body;
 
@@ -217,7 +215,6 @@ module.exports = function(db) {
         });
       }
 
-      // Validate allocations sum to ~1
       const totalAlloc = childStrategies.reduce((sum, c) => sum + (c.targetAllocation || 0), 0);
       if (Math.abs(totalAlloc - 1) > 0.01) {
         return res.status(400).json({
@@ -226,9 +223,8 @@ module.exports = function(db) {
         });
       }
 
-      // Verify child strategies exist
       for (const child of childStrategies) {
-        const strategy = configManager.getStrategy(child.strategyId);
+        const strategy = await configManager.getStrategy(child.strategyId);
         if (!strategy) {
           return res.status(400).json({
             success: false,
@@ -243,7 +239,7 @@ module.exports = function(db) {
         }
       }
 
-      const multiStrategy = configManager.createMultiStrategy(name, description, childStrategies);
+      const multiStrategy = await configManager.createMultiStrategy(name, description, childStrategies);
 
       res.status(201).json({
         success: true,
@@ -259,10 +255,10 @@ module.exports = function(db) {
    * GET /api/strategies/:id/allocations
    * Get current optimal allocations for a multi-strategy
    */
-  router.get('/:id/allocations', (req, res) => {
+  router.get('/:id/allocations', async (req, res) => {
     try {
       const strategyId = parseInt(req.params.id);
-      const strategy = configManager.getStrategy(strategyId);
+      const strategy = await configManager.getStrategy(strategyId);
 
       if (!strategy) {
         return res.status(404).json({ success: false, error: 'Strategy not found' });
@@ -276,7 +272,7 @@ module.exports = function(db) {
       }
 
       const allocator = new MetaAllocator(db, strategyId);
-      const allocations = allocator.calculateOptimalAllocations();
+      const allocations = await allocator.calculateOptimalAllocations();
 
       res.json({
         success: true,
@@ -297,17 +293,16 @@ module.exports = function(db) {
    * Generate trading signals for a strategy
    * Body: { currentPositions?: [{symbol, shares, avgCost, marketValue}] }
    */
-  router.post('/:id/signals', (req, res) => {
+  router.post('/:id/signals', async (req, res) => {
     try {
       const strategyId = parseInt(req.params.id);
       const { currentPositions = [] } = req.body;
 
-      const strategy = configManager.getStrategy(strategyId);
+      const strategy = await configManager.getStrategy(strategyId);
       if (!strategy) {
         return res.status(404).json({ success: false, error: 'Strategy not found' });
       }
 
-      // Convert positions array to Map
       const positionsMap = new Map();
       for (const pos of currentPositions) {
         positionsMap.set(pos.symbol, pos);
@@ -316,24 +311,21 @@ module.exports = function(db) {
       let signals;
 
       if (strategy.mode === 'multi') {
-        // Use MetaAllocator for multi-strategy
         const allocator = new MetaAllocator(db, strategyId);
-        signals = allocator.getWeightedSignals(positionsMap);
+        signals = await allocator.getWeightedSignals(positionsMap);
       } else {
-        // Use single agent
         const agent = new ConfigurableStrategyAgent(db, strategyId);
-        const universe = agent.getUniverse();
+        await agent.initialize();
+        const universe = await agent.getUniverse();
 
         signals = [];
-        for (const stock of universe.slice(0, 100)) { // Limit to top 100 for performance
-          const signal = agent.generateSignal(stock, positionsMap);
+        for (const stock of universe.slice(0, 100)) {
+          const signal = await agent.generateSignal(stock, positionsMap);
           if (signal && (signal.action === 'buy' || signal.action === 'strong_buy' ||
                         signal.action === 'sell' || signal.action === 'strong_sell')) {
             signals.push(signal);
           }
         }
-
-        // Sort by absolute score
         signals.sort((a, b) => Math.abs(b.score) - Math.abs(a.score));
       }
 
@@ -355,12 +347,12 @@ module.exports = function(db) {
    * Calculate position size for a signal
    * Body: { symbol, score, confidence, portfolioValue, currentPositions }
    */
-  router.post('/:id/position-size', (req, res) => {
+  router.post('/:id/position-size', async (req, res) => {
     try {
       const strategyId = parseInt(req.params.id);
       const { symbol, score, confidence, portfolioValue, currentPositions = [] } = req.body;
 
-      const strategy = configManager.getStrategy(strategyId);
+      const strategy = await configManager.getStrategy(strategyId);
       if (!strategy) {
         return res.status(404).json({ success: false, error: 'Strategy not found' });
       }
@@ -373,17 +365,20 @@ module.exports = function(db) {
       }
 
       const agent = new ConfigurableStrategyAgent(db, strategyId);
+      await agent.initialize();
 
-      // Get stock info
-      const stock = db.prepare('SELECT * FROM companies WHERE LOWER(symbol) = LOWER(?)').get(symbol);
+      const database = await getDatabaseAsync();
+      const stockRes = await database.query('SELECT * FROM companies WHERE LOWER(symbol) = LOWER($1)', [symbol]);
+      const stock = stockRes.rows[0];
       if (!stock) {
         return res.status(404).json({ success: false, error: 'Stock not found' });
       }
 
-      const price = db.prepare(`
+      const priceRes = await database.query(`
         SELECT close as price FROM daily_prices
-        WHERE company_id = ? ORDER BY date DESC LIMIT 1
-      `).get(stock.id);
+        WHERE company_id = $1 ORDER BY date DESC LIMIT 1
+      `, [stock.id]);
+      const price = priceRes.rows[0];
 
       const signal = { symbol, score, confidence, price: price?.price || 0, sector: stock.sector };
 
@@ -413,11 +408,11 @@ module.exports = function(db) {
    * GET /api/strategies/:id/universe
    * Get the stock universe for a strategy
    */
-  router.get('/:id/universe', (req, res) => {
+  router.get('/:id/universe', async (req, res) => {
     try {
       const strategyId = parseInt(req.params.id);
 
-      const strategy = configManager.getStrategy(strategyId);
+      const strategy = await configManager.getStrategy(strategyId);
       if (!strategy) {
         return res.status(404).json({ success: false, error: 'Strategy not found' });
       }
@@ -430,7 +425,8 @@ module.exports = function(db) {
       }
 
       const agent = new ConfigurableStrategyAgent(db, strategyId);
-      const universe = agent.getUniverse();
+      await agent.initialize();
+      const universe = await agent.getUniverse();
 
       res.json({
         success: true,
@@ -453,11 +449,11 @@ module.exports = function(db) {
    * GET /api/strategies/:id/summary
    * Get strategy summary and current state
    */
-  router.get('/:id/summary', (req, res) => {
+  router.get('/:id/summary', async (req, res) => {
     try {
       const strategyId = parseInt(req.params.id);
 
-      const strategy = configManager.getStrategy(strategyId);
+      const strategy = await configManager.getStrategy(strategyId);
       if (!strategy) {
         return res.status(404).json({ success: false, error: 'Strategy not found' });
       }
@@ -466,10 +462,11 @@ module.exports = function(db) {
 
       if (strategy.mode === 'multi') {
         const allocator = new MetaAllocator(db, strategyId);
-        summary = allocator.getSummary();
+        summary = await allocator.getSummary();
       } else {
         const agent = new ConfigurableStrategyAgent(db, strategyId);
-        summary = agent.getSummary();
+        await agent.initialize();
+        summary = await agent.getSummary();
       }
 
       res.json({

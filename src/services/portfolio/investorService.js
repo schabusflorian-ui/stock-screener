@@ -418,10 +418,11 @@ async function getHoldingChanges(investorId) {
 /**
  * Get investors who own a specific stock
  * Consolidates multiple holdings per investor (13F filings report separate entries for voting authority)
+ * Root cause fix: if fund_name column is missing (pre-022), fallback query avoids it.
  */
 async function getInvestorsByStock(companyId) {
   const database = await getDatabaseAsync();
-  const result = await database.query(`
+  const sqlWithFundName = `
     SELECT
       fi.id,
       fi.name as investor_name,
@@ -440,12 +441,45 @@ async function getInvestorsByStock(companyId) {
     JOIN famous_investors fi ON ih.investor_id = fi.id
     WHERE ih.company_id = $1
       AND ih.filing_date = fi.latest_filing_date
-      AND fi.is_active = 1
-    GROUP BY fi.id
+      AND (fi.is_active = true OR fi.is_active = 1)
+    GROUP BY fi.id, fi.name, fi.fund_name, fi.investment_style
     HAVING SUM(ih.shares) > 0
     ORDER BY SUM(ih.market_value) DESC
-  `, [companyId]);
-  return result.rows;
+  `;
+  const sqlWithoutFundName = `
+    SELECT
+      fi.id,
+      fi.name as investor_name,
+      '' as manager_name,
+      fi.investment_style,
+      SUM(ih.shares) as shares,
+      SUM(ih.market_value) as market_value,
+      SUM(ih.portfolio_weight) as portfolio_weight,
+      MAX(ih.change_type) as change_type,
+      CASE
+        WHEN SUM(ih.prev_shares) > 0 THEN (SUM(ih.shares_change) * 100.0 / NULLIF(SUM(ih.prev_shares), 0))
+        ELSE NULL
+      END as shares_change_pct,
+      MAX(ih.filing_date) as filing_date
+    FROM investor_holdings ih
+    JOIN famous_investors fi ON ih.investor_id = fi.id
+    WHERE ih.company_id = $1
+      AND ih.filing_date = fi.latest_filing_date
+      AND (fi.is_active = true OR fi.is_active = 1)
+    GROUP BY fi.id, fi.name, fi.investment_style
+    HAVING SUM(ih.shares) > 0
+    ORDER BY SUM(ih.market_value) DESC
+  `;
+  try {
+    const result = await database.query(sqlWithFundName, [companyId]);
+    return result.rows;
+  } catch (err) {
+    if (err.code === '42703') {
+      const result = await database.query(sqlWithoutFundName, [companyId]);
+      return result.rows;
+    }
+    throw err;
+  }
 }
 
 /**

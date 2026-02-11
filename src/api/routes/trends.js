@@ -35,10 +35,10 @@ router.get('/:symbol', async (req, res) => {
  */
 router.get('/compare/all', async (req, res) => {
   try {
-    const { getDatabaseAsync } = require('../../database');
+    const { getDatabaseAsync } = require('../../lib/db');
     const database = await getDatabaseAsync();
-    const stmt = await database.prepare('SELECT symbol FROM companies WHERE is_active = 1');
-    const companies = await stmt.all();
+    const result = await database.query('SELECT symbol FROM companies WHERE is_active = 1');
+    const companies = result.rows;
 
     const symbols = companies.map(c => c.symbol);
     const comparison = await analyzer.compareCompanies(symbols);

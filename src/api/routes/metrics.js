@@ -1,7 +1,7 @@
 // src/api/routes/metrics.js
 const express = require('express');
 const router = express.Router();
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * GET /api/metrics/summary
@@ -10,7 +10,7 @@ const { getDatabaseAsync } = require('../../database');
 router.get('/summary', async (req, res) => {
   try {
     const database = await getDatabaseAsync();
-    const summary = database.prepare(`
+    const result = await database.query(`
       SELECT 
         COUNT(DISTINCT m.company_id) as total_companies,
         AVG(m.roic) as avg_roic,
@@ -26,7 +26,8 @@ router.get('/summary', async (req, res) => {
         FROM calculated_metrics 
         WHERE company_id = m.company_id
       )
-    `).get();
+    `);
+    const summary = result.rows[0];
 
     res.json(summary);
   } catch (error) {
@@ -47,9 +48,10 @@ router.get('/compare', async (req, res) => {
     }
 
     const symbolList = symbols.split(',').map(s => s.trim().toUpperCase());
-    const placeholders = symbolList.map(() => '?').join(',');
+    const placeholders = symbolList.map((_, i) => `$${i + 1}`).join(', ');
 
-    const data = database.prepare(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT 
         c.symbol,
         c.name,
@@ -59,7 +61,8 @@ router.get('/compare', async (req, res) => {
       JOIN companies c ON m.company_id = c.id
       WHERE c.symbol IN (${placeholders})
       ORDER BY c.symbol, m.fiscal_period DESC
-    `).all(...symbolList);
+    `, symbolList);
+    const data = result.rows;
 
     // Group by symbol
     const grouped = {};
@@ -126,10 +129,10 @@ router.get('/leaderboard', async (req, res) => {
 
     const bounds = metricBounds[metric] || { min: -1000, max: 1000 };
 
-    // For TTM, use TTM records; otherwise use most recent of specified type
+    const database = await getDatabaseAsync();
     let leaderboard;
     if (periodType === 'ttm') {
-      leaderboard = database.prepare(`
+      const result = await database.query(`
         SELECT
           c.symbol,
           c.name,
@@ -141,13 +144,14 @@ router.get('/leaderboard', async (req, res) => {
         JOIN companies c ON m.company_id = c.id
         WHERE m.period_type = 'ttm'
           AND m.${metric} IS NOT NULL
-          AND m.${metric} BETWEEN ? AND ?
+          AND m.${metric} BETWEEN $1 AND $2
           AND c.symbol NOT LIKE 'CIK_%'
         ORDER BY m.${metric} ${order === 'ASC' ? 'ASC' : 'DESC'}
-        LIMIT ?
-      `).all(bounds.min, bounds.max, parseInt(limit));
+        LIMIT $3
+      `, [bounds.min, bounds.max, parseInt(limit)]);
+      leaderboard = result.rows;
     } else {
-      leaderboard = database.prepare(`
+      const result = await database.query(`
         SELECT
           c.symbol,
           c.name,
@@ -157,19 +161,20 @@ router.get('/leaderboard', async (req, res) => {
           m.period_type
         FROM calculated_metrics m
         JOIN companies c ON m.company_id = c.id
-        WHERE m.period_type = ?
+        WHERE m.period_type = $1
           AND m.fiscal_period = (
             SELECT MAX(fiscal_period)
             FROM calculated_metrics
-            WHERE company_id = m.company_id AND period_type = ?
+            WHERE company_id = m.company_id AND period_type = $2
           )
           AND m.${metric} IS NOT NULL
-          AND m.${metric} BETWEEN ? AND ?
+          AND m.${metric} BETWEEN $3 AND $4
           AND c.symbol NOT LIKE 'CIK_%'
           AND m.fiscal_period >= '2020-01-01'
         ORDER BY m.${metric} ${order === 'ASC' ? 'ASC' : 'DESC'}
-        LIMIT ?
-      `).all(periodType, periodType, bounds.min, bounds.max, parseInt(limit));
+        LIMIT $5
+      `, [periodType, periodType, bounds.min, bounds.max, parseInt(limit)]);
+      leaderboard = result.rows;
     }
 
     res.json({

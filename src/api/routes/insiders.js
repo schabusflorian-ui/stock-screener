@@ -3,7 +3,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 // Check if error is due to missing insider tables (e.g. in fresh PostgreSQL deployments)
 function isInsiderTableMissingError(err) {

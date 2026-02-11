@@ -23,23 +23,19 @@ class ConfigurableStrategyAgent {
     this.strategyId = strategyId;
     this.simulationDate = null; // For backtesting - if set, queries use this date
 
-    // Load configuration
     this.configManager = new StrategyConfigManager(db);
-    this.config = this.configManager.getAgentConfig(strategyId);
+    this.config = null; // Set in initialize()
 
-    if (!this.config) {
-      throw new Error(`Strategy ${strategyId} not found`);
-    }
-
-    // Initialize quant system (used selectively based on config)
     this.quantSystem = new EnhancedQuantSystem(db);
-
-    // Initialize insider trading signals
     this.insiderSignals = new InsiderTradingSignals(db);
-
-    // Initialize congressional trading signals
     this.congressionalSignals = new CongressionalTradingSignals(db);
+  }
 
+  async initialize() {
+    this.config = await this.configManager.getAgentConfig(this.strategyId);
+    if (!this.config) {
+      throw new Error(`Strategy ${this.strategyId} not found`);
+    }
     console.log(`🤖 ConfigurableStrategyAgent initialized: "${this.config.name}"`);
     console.log(`   Mode: ${this.config.mode}`);
     console.log(`   Weights: ${JSON.stringify(this.config.weights)}`);
@@ -819,9 +815,8 @@ class ConfigurableStrategyAgent {
    * Get strategy summary
    * @returns {Object} Strategy description
    */
-  getSummary() {
-    // Get ML model binding info from the strategy
-    const strategy = this.configManager.getStrategy(this.config.strategyId);
+  async getSummary() {
+    const strategy = await this.configManager.getStrategy(this.config.strategyId);
     const featureFlags = strategy?.feature_flags ?
       (typeof strategy.feature_flags === 'string' ? JSON.parse(strategy.feature_flags) : strategy.feature_flags) : {};
 

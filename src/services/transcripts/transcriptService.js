@@ -116,7 +116,8 @@ class TranscriptService {
       source, sourceUrl
     ];
 
-    return await this.db.query(`
+    const database = await this._getDatabase();
+    return await database.query(`
       INSERT INTO earnings_transcripts (
         company_id, symbol, fiscal_year, fiscal_quarter, call_date, call_type,
         title, full_transcript, prepared_remarks, qa_section,
@@ -261,7 +262,8 @@ class TranscriptService {
    * Get latest transcript for a symbol
    */
   async getLatestTranscript(symbol) {
-    const res = await this.db.query(`
+    const database = await this._getDatabase();
+    const res = await database.query(`
       SELECT * FROM earnings_transcripts
       WHERE symbol = $1
       ORDER BY call_date DESC
@@ -274,7 +276,8 @@ class TranscriptService {
    * Get transcript history for a company
    */
   async getTranscriptHistory(symbol, limit = 8) {
-    const res = await this.db.query(`
+    const database = await this._getDatabase();
+    const res = await database.query(`
       SELECT
         id, symbol, fiscal_year, fiscal_quarter, call_date, call_type,
         title, sentiment_score, confidence_score, tone,
@@ -292,7 +295,8 @@ class TranscriptService {
    * Get sentiment trend for a company
    */
   async getSentimentTrend(symbol, quarters = 8) {
-    const res = await this.db.query(`
+    const database = await this._getDatabase();
+    const res = await database.query(`
       SELECT fiscal_year, fiscal_quarter, call_date,
              sentiment_score, tone, tone_change, guidance_change
       FROM earnings_transcripts
@@ -321,7 +325,8 @@ class TranscriptService {
    * Find companies with deteriorating sentiment
    */
   async findDeterioratingSentiment() {
-    const res = await this.db.query(`
+    const database = await this._getDatabase();
+    const res = await database.query(`
       WITH recent AS (
         SELECT company_id, symbol, sentiment_score, tone_change,
                ROW_NUMBER() OVER (PARTITION BY company_id ORDER BY call_date DESC) as rn
@@ -342,7 +347,8 @@ class TranscriptService {
    * Find companies with improving sentiment
    */
   async findImprovingSentiment() {
-    const res = await this.db.query(`
+    const database = await this._getDatabase();
+    const res = await database.query(`
       WITH recent AS (
         SELECT company_id, symbol, sentiment_score, tone_change,
                ROW_NUMBER() OVER (PARTITION BY company_id ORDER BY call_date DESC) as rn
@@ -372,7 +378,8 @@ class TranscriptService {
       source
     } = data;
 
-    const priorRes = await this.db.query(`
+    const database = await this._getDatabase();
+    const priorRes = await database.query(`
       SELECT revenue_low, revenue_high, eps_low, eps_high
       FROM management_guidance
       WHERE company_id = $1 AND fiscal_year = $2
@@ -414,7 +421,7 @@ class TranscriptService {
       source
     ];
 
-    return await this.db.query(`
+    return await database.query(`
       INSERT INTO management_guidance (
         company_id, symbol, guidance_date, fiscal_year, fiscal_quarter,
         revenue_low, revenue_high, revenue_mid,
@@ -432,7 +439,8 @@ class TranscriptService {
    * Get guidance history
    */
   async getGuidanceHistory(symbol, limit = 8) {
-    const res = await this.db.query(`
+    const database = await this._getDatabase();
+    const res = await database.query(`
       SELECT * FROM management_guidance
       WHERE symbol = $1
       ORDER BY guidance_date DESC
@@ -445,7 +453,8 @@ class TranscriptService {
    * Update management track record
    */
   async updateTrackRecord(companyId, symbol) {
-    const guidanceRes = await this.db.query(`
+    const database = await this._getDatabase();
+    const guidanceRes = await database.query(`
       SELECT
         COUNT(*) as total,
         SUM(CASE WHEN beat_prior_guidance = 1 THEN 1 ELSE 0 END) as beats,
@@ -455,7 +464,7 @@ class TranscriptService {
     `, [companyId]);
     const guidanceStats = guidanceRes.rows[0];
 
-    const earningsRes = await this.db.query(`
+    const earningsRes = await database.query(`
       SELECT
         COUNT(*) as total,
         SUM(CASE WHEN actual_eps > estimated_eps THEN 1 ELSE 0 END) as beats,
@@ -465,7 +474,7 @@ class TranscriptService {
     `, [companyId]);
     const earningsStats = earningsRes.rows[0];
 
-    const sentimentRes = await this.db.query(`
+    const sentimentRes = await database.query(`
       SELECT
         AVG(confidence_score) as avg_confidence,
         STDEV(sentiment_score) as sentiment_volatility
@@ -506,7 +515,7 @@ class TranscriptService {
       transparencyScore, consistencyScore, credibilityScore
     ];
 
-    return await this.db.query(`
+    return await database.query(`
       INSERT INTO management_track_record (
         company_id, symbol,
         total_guidance_given, guidance_beats, guidance_misses, guidance_accuracy_rate,
@@ -532,7 +541,8 @@ class TranscriptService {
    * Get most credible management teams
    */
   async getTopCredibleManagement(limit = 20) {
-    const res = await this.db.query(`
+    const database = await this._getDatabase();
+    const res = await database.query(`
       SELECT
         mtr.symbol, c.name, c.sector,
         mtr.guidance_accuracy_rate,

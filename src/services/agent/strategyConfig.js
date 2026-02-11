@@ -2,7 +2,7 @@
 // Strategy Configuration Schema - User-definable trading strategy parameters
 // Supports both Single Strategy and Multi-Strategy modes
 
-const { getDatabaseAsync, isPostgres } = require('../../database');
+const { isUsingPostgres } = require('../../lib/db');
 
 /**
  * StrategyConfigManager - Manages user-defined trading strategies
@@ -18,7 +18,7 @@ class StrategyConfigManager {
   constructor(db, options = {}) {
     this.db = db;
     this.readOnly = options.readOnly || false;
-    this.isPostgres = isPostgres;
+    this.isPostgres = isUsingPostgres();
     console.log('📋 StrategyConfigManager initialized');
   }
 
@@ -47,9 +47,6 @@ class StrategyConfigManager {
           }
         }
       }
-    }
-    if (!this.isPostgres) {
-      this._prepareStatements();
     }
     return this;
   }
@@ -321,127 +318,62 @@ class StrategyConfigManager {
         JSON.stringify(preset.config)
       ];
 
-      if (this.isPostgres) {
-        await this.db.query(`
-          INSERT INTO strategy_presets (name, description, category, risk_profile, typical_holding_period, config_json)
-          VALUES ($1, $2, $3, $4, $5, $6)
-          ON CONFLICT (name) DO NOTHING
-        `, params);
-      } else {
-        const stmt = this.db.prepare(`
-          INSERT OR IGNORE INTO strategy_presets (name, description, category, risk_profile, typical_holding_period, config_json)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `);
-        stmt.run(...params);
-      }
-    }
-  }
-
-  _prepareStatements() {
-    // Only prepare statements for SQLite
-    if (this.isPostgres) return;
-
-    this.stmtGetStrategy = this.db.prepare(`
-      SELECT * FROM strategy_configs WHERE id = ?
-    `);
-
-    this.stmtGetStrategyByName = this.db.prepare(`
-      SELECT * FROM strategy_configs WHERE name = ?
-    `);
-
-    this.stmtGetActiveStrategies = this.db.prepare(`
-      SELECT * FROM strategy_configs WHERE is_active = 1 ORDER BY name
-    `);
-
-    this.stmtGetPresets = this.db.prepare(`
-      SELECT * FROM strategy_presets ORDER BY category, name
-    `);
-
-    this.stmtGetPreset = this.db.prepare(`
-      SELECT * FROM strategy_presets WHERE name = ?
-    `);
-
-    this.stmtGetMultiStrategyAllocations = this.db.prepare(`
-      SELECT msa.*, sc.name as child_name, sc.description as child_description
-      FROM multi_strategy_allocations msa
-      JOIN strategy_configs sc ON sc.id = msa.child_strategy_id
-      WHERE msa.parent_strategy_id = ?
-    `);
-
-    this.stmtStorePerformance = this.db.prepare(`
-      INSERT OR REPLACE INTO strategy_performance (
-        strategy_id, date, portfolio_value, daily_return, cumulative_return,
-        sharpe_ratio_30d, max_drawdown, position_count, cash_pct
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    this.stmtUpdateAllocation = this.db.prepare(`
-      UPDATE multi_strategy_allocations
-      SET current_allocation = ?, allocation_rationale = ?, last_rebalance = datetime('now')
-      WHERE parent_strategy_id = ? AND child_strategy_id = ?
-    `);
-  }
-
-  // Helper methods for async database operations
-  async _getPresetByName(name) {
-    if (this.isPostgres) {
-      const result = await this.db.query(
-        'SELECT * FROM strategy_presets WHERE name = $1',
-        [name]
+      await this.db.query(
+        this.isPostgres
+          ? `INSERT INTO strategy_presets (name, description, category, risk_profile, typical_holding_period, config_json)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (name) DO NOTHING`
+          : `INSERT OR IGNORE INTO strategy_presets (name, description, category, risk_profile, typical_holding_period, config_json)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+        params
       );
-      return result.rows[0];
-    } else {
-      return this.stmtGetPreset.get(name);
     }
+  }
+
+  async _getPresetByName(name) {
+    const result = await this.db.query('SELECT * FROM strategy_presets WHERE name = $1', [name]);
+    return result.rows[0];
   }
 
   async _getMultiStrategyAllocations(parentStrategyId) {
-    if (this.isPostgres) {
-      const result = await this.db.query(`
-        SELECT msa.*, sc.name as child_name, sc.description as child_description
-        FROM multi_strategy_allocations msa
-        JOIN strategy_configs sc ON sc.id = msa.child_strategy_id
-        WHERE msa.parent_strategy_id = $1
-      `, [parentStrategyId]);
-      return result.rows;
-    } else {
-      return this.stmtGetMultiStrategyAllocations.all(parentStrategyId);
-    }
+    const result = await this.db.query(`
+      SELECT msa.*, sc.name as child_name, sc.description as child_description
+      FROM multi_strategy_allocations msa
+      JOIN strategy_configs sc ON sc.id = msa.child_strategy_id
+      WHERE msa.parent_strategy_id = $1
+    `, [parentStrategyId]);
+    return result.rows;
   }
 
   async _storePerformance(strategyId, date, portfolioValue, dailyReturn, cumulativeReturn, sharpeRatio30d, maxDrawdown, positionCount, cashPct) {
     const params = [strategyId, date, portfolioValue, dailyReturn, cumulativeReturn, sharpeRatio30d, maxDrawdown, positionCount, cashPct];
-
-    if (this.isPostgres) {
-      await this.db.query(`
-        INSERT INTO strategy_performance (
-          strategy_id, date, portfolio_value, daily_return, cumulative_return,
-          sharpe_ratio_30d, max_drawdown, position_count, cash_pct
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        ON CONFLICT (strategy_id, date) DO UPDATE SET
-          portfolio_value = EXCLUDED.portfolio_value,
-          daily_return = EXCLUDED.daily_return,
-          cumulative_return = EXCLUDED.cumulative_return,
-          sharpe_ratio_30d = EXCLUDED.sharpe_ratio_30d,
-          max_drawdown = EXCLUDED.max_drawdown,
-          position_count = EXCLUDED.position_count,
-          cash_pct = EXCLUDED.cash_pct
-      `, params);
-    } else {
-      this.stmtStorePerformance.run(...params);
-    }
+    const sql = this.isPostgres
+      ? `INSERT INTO strategy_performance (
+           strategy_id, date, portfolio_value, daily_return, cumulative_return,
+           sharpe_ratio_30d, max_drawdown, position_count, cash_pct
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (strategy_id, date) DO UPDATE SET
+           portfolio_value = EXCLUDED.portfolio_value,
+           daily_return = EXCLUDED.daily_return,
+           cumulative_return = EXCLUDED.cumulative_return,
+           sharpe_ratio_30d = EXCLUDED.sharpe_ratio_30d,
+           max_drawdown = EXCLUDED.max_drawdown,
+           position_count = EXCLUDED.position_count,
+           cash_pct = EXCLUDED.cash_pct`
+      : `INSERT OR REPLACE INTO strategy_performance (
+           strategy_id, date, portfolio_value, daily_return, cumulative_return,
+           sharpe_ratio_30d, max_drawdown, position_count, cash_pct
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`;
+    await this.db.query(sql, params);
   }
 
   async _updateAllocation(parentStrategyId, childStrategyId, currentAllocation, allocationRationale) {
-    if (this.isPostgres) {
-      await this.db.query(`
-        UPDATE multi_strategy_allocations
-        SET current_allocation = $1, allocation_rationale = $2, last_rebalance = CURRENT_TIMESTAMP
-        WHERE parent_strategy_id = $3 AND child_strategy_id = $4
-      `, [currentAllocation, allocationRationale, parentStrategyId, childStrategyId]);
-    } else {
-      this.stmtUpdateAllocation.run(currentAllocation, allocationRationale, parentStrategyId, childStrategyId);
-    }
+    const timestamp = this.isPostgres ? 'CURRENT_TIMESTAMP' : "datetime('now')";
+    await this.db.query(`
+      UPDATE multi_strategy_allocations
+      SET current_allocation = $1, allocation_rationale = $2, last_rebalance = ${timestamp}
+      WHERE parent_strategy_id = $3 AND child_strategy_id = $4
+    `, [currentAllocation, allocationRationale, parentStrategyId, childStrategyId]);
   }
 
   /**
@@ -480,9 +412,7 @@ class StrategyConfigManager {
 
     // Build INSERT statement
     const columns = Object.keys(finalConfig).filter(k => k !== 'id');
-    const placeholders = this.isPostgres
-      ? columns.map((_, i) => `$${i + 1}`).join(', ')
-      : columns.map(() => '?').join(', ');
+    const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
     const values = columns.map(c => {
       const val = finalConfig[c];
       return Array.isArray(val) || typeof val === 'object' ? JSON.stringify(val) : val;
@@ -494,14 +424,12 @@ class StrategyConfigManager {
       ${this.isPostgres ? 'RETURNING *' : ''}
     `;
 
+    const result = await this.db.query(sql, values);
     if (this.isPostgres) {
-      const result = await this.db.query(sql, values);
       return result.rows[0];
-    } else {
-      const stmt = this.db.prepare(sql);
-      const result = stmt.run(...values);
-      return this.stmtGetStrategy.get(result.lastInsertRowid);
     }
+    const idRes = await this.db.query('SELECT * FROM strategy_configs WHERE id = (SELECT last_insert_rowid())');
+    return idRes.rows[0];
   }
 
   /**
@@ -527,14 +455,9 @@ class StrategyConfigManager {
       ${this.isPostgres ? 'RETURNING *' : ''}
     `;
 
-    if (this.isPostgres) {
-      const result = await this.db.query(sql, [...values, strategyId]);
-      return result.rows[0];
-    } else {
-      const stmt = this.db.prepare(sql);
-      stmt.run(...values, strategyId);
-      return this.stmtGetStrategy.get(strategyId);
-    }
+    await this.db.query(sql, [...values, strategyId]);
+    const fetchRes = await this.db.query('SELECT * FROM strategy_configs WHERE id = $1', [strategyId]);
+    return fetchRes.rows[0];
   }
 
   /**
@@ -569,12 +492,7 @@ class StrategyConfigManager {
         child.maxAllocation || 1
       ];
 
-      if (this.isPostgres) {
-        await this.db.query(sql, params);
-      } else {
-        const stmt = this.db.prepare(sql);
-        stmt.run(...params);
-      }
+      await this.db.query(sql, params);
     }
 
     const allocations = await this._getMultiStrategyAllocations(parent.id);
@@ -590,16 +508,8 @@ class StrategyConfigManager {
    * @returns {Object} Strategy with allocations if multi-strategy
    */
   async getStrategy(strategyId) {
-    let strategy;
-    if (this.isPostgres) {
-      const result = await this.db.query(
-        'SELECT * FROM strategy_configs WHERE id = $1',
-        [strategyId]
-      );
-      strategy = result.rows[0];
-    } else {
-      strategy = this.stmtGetStrategy.get(strategyId);
-    }
+    const result = await this.db.query('SELECT * FROM strategy_configs WHERE id = $1', [strategyId]);
+    const strategy = result.rows[0];
 
     if (!strategy) return null;
 
@@ -628,15 +538,8 @@ class StrategyConfigManager {
    * @returns {Array} Strategy presets
    */
   async getPresets() {
-    let presets;
-    if (this.isPostgres) {
-      const result = await this.db.query(
-        'SELECT * FROM strategy_presets ORDER BY category, name'
-      );
-      presets = result.rows;
-    } else {
-      presets = this.stmtGetPresets.all();
-    }
+    const result = await this.db.query('SELECT * FROM strategy_presets ORDER BY category, name');
+    const presets = result.rows;
 
     return presets.map(p => ({
       ...p,
@@ -649,14 +552,8 @@ class StrategyConfigManager {
    * @returns {Array} Active strategies
    */
   async getActiveStrategies() {
-    if (this.isPostgres) {
-      const result = await this.db.query(
-        'SELECT * FROM strategy_configs WHERE is_active = 1 ORDER BY name'
-      );
-      return result.rows;
-    } else {
-      return this.stmtGetActiveStrategies.all();
-    }
+    const result = await this.db.query('SELECT * FROM strategy_configs WHERE is_active = 1 ORDER BY name');
+    return result.rows;
   }
 
   /**

@@ -50,6 +50,8 @@ class MetaAllocator {
   }
 
   async _ensureSchema() {
+    const { isUsingPostgres } = require('../../lib/db');
+    if (!isUsingPostgres()) return; // SQLite: meta_allocation_decisions not used
     await this.db.query(`
       CREATE TABLE IF NOT EXISTS meta_allocation_decisions (
         id SERIAL PRIMARY KEY,

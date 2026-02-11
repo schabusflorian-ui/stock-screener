@@ -32,6 +32,12 @@ class MemoryCache {
 
     // Periodic cleanup
     this._cleanupTimer = setInterval(() => this._cleanup(), this.cleanupInterval);
+    if (this._cleanupTimer && typeof this._cleanupTimer.unref === 'function') {
+      this._cleanupTimer.unref();
+    }
+    if (this._cleanupTimer && typeof this._cleanupTimer.unref === 'function') {
+      this._cleanupTimer.unref();
+    }
   }
 
   /**

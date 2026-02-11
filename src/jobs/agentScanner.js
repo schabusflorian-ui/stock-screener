@@ -40,11 +40,12 @@ class AgentScanner {
 
   /**
    * Get all active agents that should be scanned
+   * Resilient when agent_universe table does not exist (pre-023 migration).
    */
   async getActiveAgents() {
     const database = await getDatabaseAsync();
     const todayExpr = isUsingPostgres() ? 'CURRENT_DATE' : "DATE('now')";
-    const agentsResult = await database.query(`
+    const sqlWithUniverse = `
       SELECT
         ta.id,
         ta.name,
@@ -58,8 +59,32 @@ class AgentScanner {
       FROM trading_agents ta
       WHERE ta.status = 'running'
       ORDER BY ta.last_scan_at ASC NULLS FIRST
-    `);
-    return agentsResult.rows;
+    `;
+    const sqlWithoutUniverse = `
+      SELECT
+        ta.id,
+        ta.name,
+        ta.strategy_type,
+        ta.status,
+        ta.last_scan_at,
+        ta.auto_execute,
+        ta.pause_in_crisis,
+        0 as universe_size,
+        (SELECT COUNT(*) FROM agent_signals WHERE agent_id = ta.id AND DATE(created_at) = ${todayExpr}) as signals_today
+      FROM trading_agents ta
+      WHERE ta.status = 'running'
+      ORDER BY ta.last_scan_at ASC NULLS FIRST
+    `;
+    try {
+      const agentsResult = await database.query(sqlWithUniverse);
+      return agentsResult.rows;
+    } catch (err) {
+      if (err.code === '42P01') {
+        const agentsResult = await database.query(sqlWithoutUniverse);
+        return agentsResult.rows;
+      }
+      throw err;
+    }
   }
 
   /**

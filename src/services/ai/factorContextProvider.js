@@ -12,6 +12,7 @@
  */
 
 const { getFactorAnalysisService } = require('../factors');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * Get historical intelligence service lazily to avoid circular deps
@@ -24,17 +25,20 @@ function getHistoricalService() {
 class FactorContextProvider {
   constructor() {
     this.factorService = null;
-    this.db = null;
+    this.dbPromise = null;
   }
 
   _ensureInitialized() {
     if (!this.factorService) {
       this.factorService = getFactorAnalysisService();
-      const { db } = require('../../database');
-      // In PostgreSQL mode, db is a proxy that returns stubs
-      // Methods that need real database access should use getDatabaseAsync()
-      this.db = db;
     }
+  }
+
+  async _getDatabase() {
+    if (!this.dbPromise) {
+      this.dbPromise = getDatabaseAsync();
+    }
+    return this.dbPromise;
   }
 
   /**
@@ -134,12 +138,12 @@ class FactorContextProvider {
 
       // Get investor profile - who owns this stock and their factor preferences
       if (includeInvestors) {
-        context.investorProfile = this._getInvestorFactorProfile(symbol);
+        context.investorProfile = await this._getInvestorFactorProfile(symbol);
       }
 
       // Get historical precedents - what famous investors did with this stock
       if (includePrecedents) {
-        context.historicalPrecedents = this._getHistoricalPrecedents(symbol, context.factorRanking);
+        context.historicalPrecedents = await this._getHistoricalPrecedents(symbol, context.factorRanking);
       }
 
       // Generate human-readable factor summary
@@ -157,15 +161,17 @@ class FactorContextProvider {
    */
   async _getPeerFactorComparison(symbol) {
     try {
+      const database = await this._getDatabase();
       // Get company's sector
-      const company = this.db.prepare(`
-        SELECT id, sector, market_cap FROM companies WHERE symbol = ?
-      `).get(symbol);
+      const companyRes = await database.query(`
+        SELECT id, sector, market_cap FROM companies WHERE symbol = $1
+      `, [symbol]);
+      const company = companyRes.rows[0];
 
       if (!company || !company.sector) return null;
 
       // Get factor scores for same sector
-      const peers = this.db.prepare(`
+      const peersRes = await database.query(`
         SELECT
           c.symbol,
           c.name,
@@ -177,11 +183,12 @@ class FactorContextProvider {
            COALESCE(sfs.momentum_percentile, 0) + COALESCE(sfs.growth_percentile, 0)) / 4.0 as composite_score
         FROM stock_factor_scores sfs
         JOIN companies c ON sfs.company_id = c.id
-        WHERE c.sector = ?
+        WHERE c.sector = $1
           AND sfs.score_date = (SELECT MAX(score_date) FROM stock_factor_scores)
         ORDER BY composite_score DESC
         LIMIT 20
-      `).all(company.sector);
+      `, [company.sector]);
+      const peers = peersRes.rows;
 
       if (peers.length === 0) return null;
 
@@ -225,10 +232,11 @@ class FactorContextProvider {
   /**
    * Get investor profile for a stock - what type of investors own it
    */
-  _getInvestorFactorProfile(symbol) {
+  async _getInvestorFactorProfile(symbol) {
     try {
+      const database = await this._getDatabase();
       // Get investors who hold this stock and their factor profiles
-      const investors = this.db.prepare(`
+      const investorsRes = await database.query(`
         SELECT
           fi.name,
           fi.investment_style,
@@ -244,10 +252,11 @@ class FactorContextProvider {
         JOIN companies c ON ih.company_id = c.id
         LEFT JOIN portfolio_factor_exposures pfe ON pfe.investor_id = fi.id
           AND pfe.snapshot_date = (SELECT MAX(snapshot_date) FROM portfolio_factor_exposures WHERE investor_id = fi.id)
-        WHERE c.symbol = ?
+        WHERE c.symbol = $1
         ORDER BY ih.market_value DESC
         LIMIT 10
-      `).all(symbol);
+      `, [symbol]);
+      const investors = investorsRes.rows;
 
       if (investors.length === 0) return null;
 
@@ -294,10 +303,11 @@ class FactorContextProvider {
    * Get historical precedents - what famous investors did with this stock
    * Also finds similar factor situations from history
    */
-  _getHistoricalPrecedents(symbol, factorRanking) {
+  async _getHistoricalPrecedents(symbol, factorRanking) {
     try {
+      const database = await this._getDatabase();
       // Get recent decisions by famous investors on this stock
-      const recentDecisions = this.db.prepare(`
+      const decisionsRes = await database.query(`
         SELECT
           d.decision_date,
           d.decision_type,
@@ -310,10 +320,11 @@ class FactorContextProvider {
           fi.investment_style
         FROM investment_decisions d
         JOIN famous_investors fi ON d.investor_id = fi.id
-        WHERE d.symbol = ?
+        WHERE d.symbol = $1
         ORDER BY d.decision_date DESC
         LIMIT 15
-      `).all(symbol);
+      `, [symbol]);
+      const recentDecisions = decisionsRes.rows;
 
       // Group by decision type
       const decisionsByType = {
@@ -327,7 +338,7 @@ class FactorContextProvider {
       let similarSituations = null;
       if (factorRanking) {
         const tolerance = 15; // +/- 15 percentile points
-        similarSituations = this.db.prepare(`
+        const similarRes = await database.query(`
           SELECT
             d.symbol,
             d.decision_date,
@@ -341,19 +352,20 @@ class FactorContextProvider {
           FROM decision_factor_context dfc
           JOIN investment_decisions d ON dfc.decision_id = d.id
           JOIN famous_investors fi ON d.investor_id = fi.id
-          WHERE dfc.value_percentile BETWEEN ? AND ?
-            AND dfc.quality_percentile BETWEEN ? AND ?
-            AND d.symbol != ?
+          WHERE dfc.value_percentile BETWEEN $1 AND $2
+            AND dfc.quality_percentile BETWEEN $3 AND $4
+            AND d.symbol != $5
             AND d.return_1y IS NOT NULL
           ORDER BY d.decision_date DESC
           LIMIT 10
-        `).all(
+        `, [
           (factorRanking.valuePercentile || 50) - tolerance,
           (factorRanking.valuePercentile || 50) + tolerance,
           (factorRanking.qualityPercentile || 50) - tolerance,
           (factorRanking.qualityPercentile || 50) + tolerance,
           symbol
-        );
+        ]);
+        similarSituations = similarRes.rows;
       }
 
       // Calculate success rate of similar situations

@@ -492,9 +492,12 @@ function deduplicationMiddleware(options = {}) {
     });
 
     // Clean up after TTL
-    setTimeout(() => {
+    const cleanupTimer = setTimeout(() => {
       inflightRequests.delete(key);
     }, ttl);
+    if (cleanupTimer && typeof cleanupTimer.unref === 'function') {
+      cleanupTimer.unref();
+    }
 
     // Wrap res.json to capture the response
     const originalJson = res.json.bind(res);

@@ -95,13 +95,28 @@ class RedditFetcher {
 
     try {
       const database = await getDatabaseAsync();
-      const result = await database.query(`
+      const sqlWithRegion = `
         SELECT name FROM tracked_subreddits
         WHERE is_active = 1 AND (region = $1 OR region = 'global')
         ORDER BY priority DESC, quality_score DESC
         LIMIT 20
-      `, [region]);
-
+      `;
+      const sqlWithoutRegion = `
+        SELECT name FROM tracked_subreddits
+        WHERE is_active = 1
+        ORDER BY priority DESC, quality_score DESC
+        LIMIT 20
+      `;
+      let result;
+      try {
+        result = await database.query(sqlWithRegion, [region]);
+      } catch (e) {
+        if (e.code === '42703') {
+          result = await database.query(sqlWithoutRegion);
+        } else {
+          throw e;
+        }
+      }
       if (result.rows.length > 0) {
         if (!this._subredditsCache) this._subredditsCache = {};
         this._subredditsCache[cacheKey] = result.rows.map(r => r.name);
@@ -109,7 +124,7 @@ class RedditFetcher {
         return this._subredditsCache[cacheKey];
       }
     } catch (e) {
-      // Table might not exist yet or doesn't have region column
+      // Table might not exist yet
     }
 
     // Fall back to default lists based on region

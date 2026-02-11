@@ -511,7 +511,7 @@ router.get('/usage', async (req, res) => {
 router.get('/portfolio/:portfolioId/data', async (req, res) => {
     try {
         const { portfolioId } = req.params;
-        const data = portfolioDataProvider.getPortfolioDataForAI(parseInt(portfolioId));
+        const data = await portfolioDataProvider.getPortfolioDataForAI(parseInt(portfolioId));
 
         if (!data) {
             return res.status(404).json({ error: 'Portfolio not found' });
@@ -531,7 +531,7 @@ router.get('/portfolio/:portfolioId/data', async (req, res) => {
 router.get('/company/:companyId/data', async (req, res) => {
     try {
         const { companyId } = req.params;
-        const data = portfolioDataProvider.getCompanyDataForAI(parseInt(companyId));
+        const data = await portfolioDataProvider.getCompanyDataForAI(parseInt(companyId));
 
         if (!data) {
             return res.status(404).json({ error: 'Company not found' });
@@ -550,7 +550,7 @@ router.get('/company/:companyId/data', async (req, res) => {
  */
 router.get('/market/data', async (req, res) => {
     try {
-        const data = portfolioDataProvider.getMarketDataForBriefing();
+        const data = await portfolioDataProvider.getMarketDataForBriefing();
         res.json(data);
     } catch (error) {
         console.error('Market data error:', error);
@@ -568,7 +568,7 @@ router.post('/portfolio/:portfolioId/analyze', async (req, res) => {
         const { analystId, question } = req.body;
 
         // Get portfolio data
-        const portfolioData = portfolioDataProvider.getPortfolioDataForAI(parseInt(portfolioId));
+        const portfolioData = await portfolioDataProvider.getPortfolioDataForAI(parseInt(portfolioId));
         if (!portfolioData) {
             return res.status(404).json({ error: 'Portfolio not found' });
         }

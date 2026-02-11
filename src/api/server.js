@@ -503,7 +503,12 @@ app.use('/api/paper-trading', paperTradingRouter);
 app.use('/api/xbrl', xbrlRouter); // FIXED: Now uses lazy initialization
 app.use('/api/data', dataRouter);
 app.use('/api/identifiers', identifiersRouter);
-app.use('/api/strategies', strategiesRouter(db.getDatabase()));
+const strategiesRouterReady = require('../lib/db').getDatabaseAsync().then(database =>
+  strategiesRouter(database)
+);
+app.use('/api/strategies', (req, res, next) => {
+  strategiesRouterReady.then(router => router(req, res, next)).catch(next);
+});
 app.use('/api/congressional', congressionalRouter);
 app.use('/api/onboarding', onboardingRouter);
 app.use('/api/watchlist', watchlistRouter);
