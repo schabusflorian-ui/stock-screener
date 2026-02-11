@@ -14,7 +14,7 @@
  */
 
 const cron = require('node-cron');
-const db = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 const investorService = require('../services/portfolio/investorService');
 
 class Investor13FRefresh {
@@ -22,7 +22,14 @@ class Investor13FRefresh {
     this.isRunning = false;
     this.lastRun = null;
     this.lastResult = null;
-    this.database = db.getDatabase();
+    this.databasePromise = null;
+  }
+
+  async getDatabase() {
+    if (!this.databasePromise) {
+      this.databasePromise = getDatabaseAsync();
+    }
+    return this.databasePromise;
   }
 
   /**
@@ -89,22 +96,25 @@ class Investor13FRefresh {
   /**
    * Get status of the refresh job
    */
-  getStatus() {
-    const investors = this.database.prepare(`
+  async getStatus() {
+    const database = await this.getDatabase();
+    const investorsResult = await database.query(`
       SELECT
         COUNT(*) as total,
         SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) as active,
         MAX(latest_filing_date) as latest_filing
       FROM famous_investors
-    `).get();
+    `);
+    const investors = investorsResult.rows[0];
 
-    const recentFilings = this.database.prepare(`
+    const recentFilingsResult = await database.query(`
       SELECT f.investor_id, i.name, f.report_date, f.filing_date, f.form_type
       FROM investor_filings f
       JOIN famous_investors i ON i.id = f.investor_id
       ORDER BY f.filing_date DESC
       LIMIT 5
-    `).all();
+    `);
+    const recentFilings = recentFilingsResult.rows;
 
     return {
       isRunning: this.isRunning,
@@ -187,7 +197,7 @@ if (require.main === module) {
         process.exit(1);
       });
   } else if (args.includes('--status')) {
-    const status = scheduler.getStatus();
+    const status = await scheduler.getStatus();
     console.log('\n13F Refresh Status:');
     console.log('='.repeat(40));
     console.log('Running:', status.isRunning);

@@ -24,7 +24,7 @@
 
 require('dotenv').config();
 
-const db = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 const MetricCalculator = require('../services/metricCalculator');
 
 // European country codes for filtering
@@ -77,7 +77,7 @@ function parseArgs() {
 
 async function main() {
   const options = parseArgs();
-  const database = db.getDatabase();
+  const database = await getDatabaseAsync();
   const calculator = new MetricCalculator(database);
 
   console.log('='.repeat(60));
@@ -97,35 +97,36 @@ async function main() {
   `;
 
   const params = [];
+  const addParam = (value) => {
+    params.push(value);
+    return `$${params.length}`;
+  };
 
   if (options.symbol) {
-    query += ' AND c.symbol = ?';
-    params.push(options.symbol);
+    query += ` AND c.symbol = ${addParam(options.symbol)}`;
   }
 
   if (options.country) {
-    query += ' AND c.country = ?';
-    params.push(options.country);
+    query += ` AND c.country = ${addParam(options.country)}`;
   }
 
   if (options.european) {
-    query += ` AND c.country IN (${EUROPEAN_COUNTRIES.map(() => '?').join(',')})`;
-    params.push(...EUROPEAN_COUNTRIES);
+    const placeholders = EUROPEAN_COUNTRIES.map(country => addParam(country)).join(',');
+    query += ` AND c.country IN (${placeholders})`;
   }
 
   query += ' ORDER BY c.market_cap DESC NULLS LAST';
 
   if (options.limit) {
-    query += ' LIMIT ?';
-    params.push(options.limit);
+    query += ` LIMIT ${addParam(options.limit)}`;
   }
 
   if (options.offset > 0) {
-    query += ' OFFSET ?';
-    params.push(options.offset);
+    query += ` OFFSET ${addParam(options.offset)}`;
   }
 
-  const companies = database.prepare(query).all(...params);
+  const companiesResult = await database.query(query, params);
+  const companies = companiesResult.rows;
 
   console.log(`Found ${companies.length} companies to process\n`);
 

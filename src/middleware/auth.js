@@ -56,9 +56,18 @@ const hasLocalAdminBypass = (req) => {
   return hasAdminBypassHeader(req);
 };
 
+// Check if user is an admin (by email or is_admin flag)
+const isUserAdmin = (user) => {
+  if (!user) return false;
+  if (user.is_admin) return true;
+  const adminEmails = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase());
+  return adminEmails.length > 0 && adminEmails.includes(user.email?.toLowerCase());
+};
+
 /**
  * Require authenticated user
- * In production: Always requires OAuth authentication
+ * In production: Always requires OAuth authentication (except for admins)
+ * Admins (by ADMIN_EMAILS or is_admin flag) can access all features regardless of auth
  * In development: Requires ALLOW_DEV_AUTH=true for bypass
  */
 const requireAuth = (req, res, next) => {
@@ -70,9 +79,20 @@ const requireAuth = (req, res, next) => {
     return next();
   }
 
-  // Production: require session auth (unless bypass above)
+  // Check if user is authenticated via OAuth
+  const isAuthenticated = req.isAuthenticated && req.isAuthenticated();
+  
+  // If authenticated, check if they're an admin - admins get full access
+  if (isAuthenticated && isUserAdmin(req.user)) {
+    req.isAdmin = true;
+    req.userId = req.user.id;
+    return next();
+  }
+
+  // Production: require session auth (unless admin above)
   if (process.env.NODE_ENV === 'production') {
-    if (req.isAuthenticated && req.isAuthenticated()) {
+    if (isAuthenticated) {
+      req.userId = req.user.id;
       return next();
     }
     return res.status(401).json({
@@ -88,7 +108,8 @@ const requireAuth = (req, res, next) => {
   }
 
   // Standard authentication check
-  if (req.isAuthenticated && req.isAuthenticated()) {
+  if (isAuthenticated) {
+    req.userId = req.user.id;
     return next();
   }
 

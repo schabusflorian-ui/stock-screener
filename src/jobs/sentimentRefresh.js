@@ -7,13 +7,26 @@
  * 3. As a scheduled task in your hosting environment
  */
 
-const db = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 const RedditFetcher = require('../services/redditFetcher');
 const SentimentSignalGenerator = require('../services/sentimentSignal');
 
-const database = db.getDatabase();
-const redditFetcher = new RedditFetcher(database);
-const signalGenerator = new SentimentSignalGenerator(database);
+let databaseInstance;
+let redditFetcher;
+let signalGenerator;
+
+async function getServices() {
+  if (!databaseInstance) {
+    databaseInstance = await getDatabaseAsync();
+  }
+  if (!redditFetcher) {
+    redditFetcher = new RedditFetcher(databaseInstance);
+  }
+  if (!signalGenerator) {
+    signalGenerator = new SentimentSignalGenerator(databaseInstance);
+  }
+  return { database: databaseInstance, redditFetcher, signalGenerator };
+}
 
 /**
  * Scan for trending tickers across Reddit
@@ -21,7 +34,8 @@ const signalGenerator = new SentimentSignalGenerator(database);
 async function refreshTrending() {
   console.log('Scanning subreddits for trending tickers...');
   try {
-    const trending = await redditFetcher.scanTrendingTickers();
+    const { redditFetcher: fetcher } = await getServices();
+    const trending = await fetcher.scanTrendingTickers();
     console.log(`Found ${trending.length} trending tickers`);
     return trending;
   } catch (error) {
@@ -35,10 +49,11 @@ async function refreshTrending() {
  */
 async function refreshSingleCompany(company) {
   try {
+    const { redditFetcher: fetcher, signalGenerator: generator } = await getServices();
     // Fetch from Reddit
-    await redditFetcher.fetchTickerSentiment(company.symbol, company.id);
+    await fetcher.fetchTickerSentiment(company.symbol, company.id);
     // Calculate signal
-    await signalGenerator.calculateSignal(company.id, company.symbol, '7d');
+    await generator.calculateSignal(company.id, company.symbol, '7d');
     return { symbol: company.symbol, success: true };
   } catch (error) {
     console.error(`  Error refreshing ${company.symbol}:`, error.message);
@@ -91,15 +106,17 @@ async function refreshWatchlist(options = {}) {
 
   try {
     // Get companies that need refreshing
-    const companies = database.prepare(`
+    const { database } = await getServices();
+    const companiesResult = await database.query(`
       SELECT id, symbol FROM companies
       WHERE sentiment_updated_at < datetime('now', '-${staleHours} hours')
          OR sentiment_updated_at IS NULL
       ORDER BY
         CASE WHEN sentiment_updated_at IS NULL THEN 0 ELSE 1 END,
         sentiment_updated_at ASC
-      LIMIT ?
-    `).all(maxCompanies);
+      LIMIT $1
+    `, [maxCompanies]);
+    const companies = companiesResult.rows;
 
     console.log(`Found ${companies.length} companies to refresh (batch size: ${batchSize})`);
 
@@ -135,11 +152,13 @@ async function refreshSymbols(symbols, options = {}) {
   console.log(`Refreshing sentiment for: ${symbols.join(', ')}`);
 
   // Batch lookup all company IDs at once (avoids N+1 queries)
-  const placeholders = symbols.map(() => '?').join(',');
-  const companies = database.prepare(`
+  const { database } = await getServices();
+  const placeholders = symbols.map((_, index) => `$${index + 1}`).join(',');
+  const companiesResult = await database.query(`
     SELECT id, symbol FROM companies
     WHERE UPPER(symbol) IN (${placeholders})
-  `).all(symbols.map(s => s.toUpperCase()));
+  `, symbols.map(s => s.toUpperCase()));
+  const companies = companiesResult.rows;
 
   const foundSymbols = new Set(companies.map(c => c.symbol));
   const notFound = symbols.filter(s => !foundSymbols.has(s.toUpperCase()));

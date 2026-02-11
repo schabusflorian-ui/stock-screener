@@ -10,11 +10,18 @@
  * without needing to fetch from Yahoo Finance each time.
  */
 
-const db = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 const EarningsCalendarService = require('../services/earningsCalendar');
 
-const database = db.getDatabase();
 let earningsService;
+let databaseInstance;
+
+async function getDatabase() {
+  if (!databaseInstance) {
+    databaseInstance = await getDatabaseAsync();
+  }
+  return databaseInstance;
+}
 
 try {
   earningsService = new EarningsCalendarService();
@@ -88,7 +95,9 @@ async function refreshEarnings(options = {}) {
 
     query += ' LIMIT ?';
 
-    const companies = database.prepare(query).all(maxCompanies);
+    const database = await getDatabase();
+    const companiesResult = await database.query(query, [maxCompanies]);
+    const companies = companiesResult.rows;
 
     console.log(`   Found ${companies.length} companies to refresh\n`);
 
@@ -160,7 +169,8 @@ async function refreshWatchlistEarnings(options = {}) {
   console.log('\n⭐ Refreshing watchlist earnings...');
 
   try {
-    const watchlist = database.prepare(`
+    const database = await getDatabase();
+    const watchlistResult = await database.query(`
       SELECT c.id, c.symbol, c.name,
              ec.fetched_at as last_fetched
       FROM watchlist w
@@ -169,7 +179,8 @@ async function refreshWatchlistEarnings(options = {}) {
       WHERE ec.fetched_at IS NULL
          OR ec.fetched_at < datetime('now', '-${staleHours} hours')
       ORDER BY w.added_at DESC
-    `).all();
+    `);
+    const watchlist = watchlistResult.rows;
 
     console.log(`   Found ${watchlist.length} watchlist companies to refresh\n`);
 
@@ -217,8 +228,9 @@ async function refreshWatchlistEarnings(options = {}) {
 /**
  * Get summary of stored earnings data
  */
-function getEarningsSummary() {
-  const stats = database.prepare(`
+async function getEarningsSummary() {
+  const database = await getDatabase();
+  const statsResult = await database.query(`
     SELECT
       COUNT(*) as total_stored,
       COUNT(CASE WHEN fetched_at >= datetime('now', '-24 hours') THEN 1 END) as fresh_24h,
@@ -230,9 +242,10 @@ function getEarningsSummary() {
       MIN(fetched_at) as oldest_fetch,
       MAX(fetched_at) as newest_fetch
     FROM earnings_calendar
-  `).get();
+  `);
+  const stats = statsResult.rows[0];
 
-  const watchlistCoverage = database.prepare(`
+  const watchlistCoverageResult = await database.query(`
     SELECT
       COUNT(*) as total_watchlist,
       COUNT(ec.id) as with_earnings_data,
@@ -240,7 +253,8 @@ function getEarningsSummary() {
     FROM watchlist w
     JOIN companies c ON c.id = w.company_id
     LEFT JOIN earnings_calendar ec ON ec.company_id = c.id
-  `).get();
+  `);
+  const watchlistCoverage = watchlistCoverageResult.rows[0];
 
   return { overall: stats, watchlist: watchlistCoverage };
 }
@@ -269,7 +283,7 @@ async function main() {
         break;
 
       case 'stats':
-        const summary = getEarningsSummary();
+        const summary = await getEarningsSummary();
         console.log('\n📊 Earnings Data Summary:');
         console.log(`   Total stored: ${summary.overall.total_stored}`);
         console.log(`   Fresh (24h): ${summary.overall.fresh_24h}`);

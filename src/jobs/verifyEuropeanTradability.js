@@ -11,7 +11,7 @@
  *   node src/jobs/verifyEuropeanTradability.js --recheck    # Re-verify all
  */
 
-const db = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 
 // Yahoo Finance exchange suffixes by country
 const COUNTRY_SUFFIXES = {
@@ -40,7 +40,7 @@ const EUROPEAN_COUNTRIES = Object.keys(COUNTRY_SUFFIXES);
 
 class TradabilityVerifier {
   constructor() {
-    this.database = db.getDatabase();
+    this.databasePromise = null;
     this.yahooFinance = null;
     this.rateLimitMs = 3000; // 3 seconds between Yahoo requests (very conservative)
     this.lastRequestTime = 0;
@@ -52,6 +52,13 @@ class TradabilityVerifier {
       notTradable: 0,
       errors: 0,
     };
+  }
+
+  async getDatabase() {
+    if (!this.databasePromise) {
+      this.databasePromise = getDatabaseAsync();
+    }
+    return this.databasePromise;
   }
 
   /**
@@ -143,32 +150,26 @@ class TradabilityVerifier {
   /**
    * Get companies to verify
    */
-  getCompaniesToVerify(options = {}) {
+  async getCompaniesToVerify(options = {}) {
     const { country, limit, recheck } = options;
 
     let query = `
       SELECT id, symbol, name, country, exchange
       FROM companies
-      WHERE country IN (${EUROPEAN_COUNTRIES.map(() => '?').join(',')})
     `;
-    const params = [...EUROPEAN_COUNTRIES];
+    const params = [];
+
+    if (country) {
+      query += ' WHERE country = $1';
+      params.push(country);
+    } else {
+      const placeholders = EUROPEAN_COUNTRIES.map((_, index) => `$${index + 1}`).join(',');
+      query += ` WHERE country IN (${placeholders})`;
+      params.push(...EUROPEAN_COUNTRIES);
+    }
 
     if (!recheck) {
       query += ' AND is_publicly_traded IS NULL';
-    }
-
-    if (country) {
-      query = `
-        SELECT id, symbol, name, country, exchange
-        FROM companies
-        WHERE country = ?
-      `;
-      params.length = 0;
-      params.push(country);
-
-      if (!recheck) {
-        query += ' AND is_publicly_traded IS NULL';
-      }
     }
 
     query += ' ORDER BY country, symbol';
@@ -177,27 +178,28 @@ class TradabilityVerifier {
       query += ` LIMIT ${parseInt(limit)}`;
     }
 
-    return this.database.prepare(query).all(...params);
+    const database = await this.getDatabase();
+    const result = await database.query(query, params);
+    return result.rows;
   }
 
   /**
    * Update company tradability status
    */
-  updateCompany(companyId, result) {
-    const stmt = this.database.prepare(`
+  async updateCompany(companyId, result) {
+    const database = await this.getDatabase();
+    await database.query(`
       UPDATE companies
-      SET is_publicly_traded = ?,
-          yahoo_symbol = ?,
-          tradability_checked_at = ?
-      WHERE id = ?
-    `);
-
-    stmt.run(
+      SET is_publicly_traded = $1,
+          yahoo_symbol = $2,
+          tradability_checked_at = $3
+      WHERE id = $4
+    `, [
       result.tradable ? 1 : 0,
       result.yahooSymbol,
       new Date().toISOString(),
       companyId
-    );
+    ]);
   }
 
   /**
@@ -215,7 +217,7 @@ class TradabilityVerifier {
     if (options.recheck) console.log(`  Mode: Re-check all`);
     console.log('='.repeat(60) + '\n');
 
-    const companies = this.getCompaniesToVerify(options);
+    const companies = await this.getCompaniesToVerify(options);
     this.stats.total = companies.length;
 
     console.log(`Found ${companies.length} companies to verify\n`);
@@ -251,7 +253,7 @@ class TradabilityVerifier {
           this.stats.notTradable++;
         }
 
-        this.updateCompany(company.id, result);
+        await this.updateCompany(company.id, result);
 
       } catch (error) {
         console.log(`  ⚠ Error: ${error.message}`);
@@ -275,8 +277,10 @@ class TradabilityVerifier {
   /**
    * Get summary of tradability status
    */
-  getSummary() {
-    const summary = this.database.prepare(`
+  async getSummary() {
+    const database = await this.getDatabase();
+    const placeholders = EUROPEAN_COUNTRIES.map((_, index) => `$${index + 1}`).join(',');
+    const summaryResult = await database.query(`
       SELECT
         country,
         COUNT(*) as total,
@@ -284,63 +288,64 @@ class TradabilityVerifier {
         SUM(CASE WHEN is_publicly_traded = 0 THEN 1 ELSE 0 END) as not_tradable,
         SUM(CASE WHEN is_publicly_traded IS NULL THEN 1 ELSE 0 END) as unchecked
       FROM companies
-      WHERE country IN (${EUROPEAN_COUNTRIES.map(() => '?').join(',')})
+      WHERE country IN (${placeholders})
       GROUP BY country
       ORDER BY country
-    `).all(...EUROPEAN_COUNTRIES);
+    `, EUROPEAN_COUNTRIES);
 
-    return summary;
+    return summaryResult.rows;
   }
 }
 
 // CLI entry point
 if (require.main === module) {
-  const args = process.argv.slice(2);
+  (async () => {
+    const args = process.argv.slice(2);
 
-  const options = {
-    country: null,
-    limit: null,
-    recheck: false,
-  };
+    const options = {
+      country: null,
+      limit: null,
+      recheck: false,
+    };
 
-  // Parse arguments
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--country' && args[i + 1]) {
-      options.country = args[i + 1].toUpperCase();
-      i++;
-    } else if (args[i] === '--limit' && args[i + 1]) {
-      options.limit = parseInt(args[i + 1]);
-      i++;
-    } else if (args[i] === '--recheck') {
-      options.recheck = true;
-    } else if (args[i] === '--status') {
-      const verifier = new TradabilityVerifier();
-      const summary = verifier.getSummary();
+    // Parse arguments
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--country' && args[i + 1]) {
+        options.country = args[i + 1].toUpperCase();
+        i++;
+      } else if (args[i] === '--limit' && args[i + 1]) {
+        options.limit = parseInt(args[i + 1]);
+        i++;
+      } else if (args[i] === '--recheck') {
+        options.recheck = true;
+      } else if (args[i] === '--status') {
+        const verifier = new TradabilityVerifier();
+        const summary = await verifier.getSummary();
 
-      console.log('\n' + '='.repeat(60));
-      console.log('  European Tradability Status');
-      console.log('='.repeat(60));
-      console.log('Country | Total | Tradable | Not Tradable | Unchecked');
-      console.log('-'.repeat(60));
+        console.log('\n' + '='.repeat(60));
+        console.log('  European Tradability Status');
+        console.log('='.repeat(60));
+        console.log('Country | Total | Tradable | Not Tradable | Unchecked');
+        console.log('-'.repeat(60));
 
-      let totals = { total: 0, tradable: 0, not_tradable: 0, unchecked: 0 };
-      for (const row of summary) {
+        let totals = { total: 0, tradable: 0, not_tradable: 0, unchecked: 0 };
+        for (const row of summary) {
+          console.log(
+            `${row.country.padEnd(7)} | ${String(row.total).padStart(5)} | ${String(row.tradable).padStart(8)} | ${String(row.not_tradable).padStart(12)} | ${String(row.unchecked).padStart(9)}`
+          );
+          totals.total += row.total;
+          totals.tradable += row.tradable;
+          totals.not_tradable += row.not_tradable;
+          totals.unchecked += row.unchecked;
+        }
+        console.log('-'.repeat(60));
         console.log(
-          `${row.country.padEnd(7)} | ${String(row.total).padStart(5)} | ${String(row.tradable).padStart(8)} | ${String(row.not_tradable).padStart(12)} | ${String(row.unchecked).padStart(9)}`
+          `${'TOTAL'.padEnd(7)} | ${String(totals.total).padStart(5)} | ${String(totals.tradable).padStart(8)} | ${String(totals.not_tradable).padStart(12)} | ${String(totals.unchecked).padStart(9)}`
         );
-        totals.total += row.total;
-        totals.tradable += row.tradable;
-        totals.not_tradable += row.not_tradable;
-        totals.unchecked += row.unchecked;
-      }
-      console.log('-'.repeat(60));
-      console.log(
-        `${'TOTAL'.padEnd(7)} | ${String(totals.total).padStart(5)} | ${String(totals.tradable).padStart(8)} | ${String(totals.not_tradable).padStart(12)} | ${String(totals.unchecked).padStart(9)}`
-      );
-      console.log('='.repeat(60) + '\n');
-      process.exit(0);
-    } else if (args[i] === '--help' || args[i] === '-h') {
-      console.log(`
+        console.log('='.repeat(60) + '\n');
+        process.exit(0);
+      } else if (args[i] === '--help' || args[i] === '-h') {
+        console.log(`
 European Tradability Verifier
 
 Usage:
@@ -359,18 +364,18 @@ Examples:
   node src/jobs/verifyEuropeanTradability.js --limit 50          # First 50
   node src/jobs/verifyEuropeanTradability.js --status            # Show summary
 `);
-      process.exit(0);
+        process.exit(0);
+      }
     }
-  }
 
-  // Run verification
-  const verifier = new TradabilityVerifier();
-  verifier.run(options)
-    .then(() => process.exit(0))
-    .catch(err => {
-      console.error('Error:', err.message);
-      process.exit(1);
-    });
+    // Run verification
+    const verifier = new TradabilityVerifier();
+    await verifier.run(options);
+    process.exit(0);
+  })().catch(err => {
+    console.error('Error:', err.message);
+    process.exit(1);
+  });
 }
 
 module.exports = TradabilityVerifier;

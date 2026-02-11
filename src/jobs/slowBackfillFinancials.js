@@ -17,7 +17,7 @@
 
 require('dotenv').config();
 
-const db = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 const YahooFetcher = require('../validation/yahooFetcher');
 const fs = require('fs');
 const path = require('path');
@@ -52,7 +52,7 @@ const EUROPEAN_COUNTRIES = Object.keys(COUNTRY_SUFFIX);
 
 class SlowBackfiller {
   constructor() {
-    this.database = db.getDatabase();
+    this.databasePromise = null;
     // Very conservative: 30 second delay, 5 retries, 2 minute wait on rate limit
     this.fetcher = new YahooFetcher({
       delay: 30000,
@@ -60,6 +60,13 @@ class SlowBackfiller {
       rateLimitWaitMs: 120000 // 2 minutes on rate limit
     });
     this.progress = this.loadProgress();
+  }
+
+  async getDatabase() {
+    if (!this.databasePromise) {
+      this.databasePromise = getDatabaseAsync();
+    }
+    return this.databasePromise;
   }
 
   /**
@@ -120,15 +127,17 @@ class SlowBackfiller {
   /**
    * Get next companies to process
    */
-  getNextCompanies(options = {}) {
+  async getNextCompanies(options = {}) {
     const { country, symbol, count = 1 } = options;
 
     if (symbol) {
-      const company = this.database.prepare(`
+      const database = await this.getDatabase();
+      const companyResult = await database.query(`
         SELECT id, symbol, name, country
         FROM companies
-        WHERE symbol = ? COLLATE NOCASE
-      `).get(symbol);
+        WHERE symbol = $1 COLLATE NOCASE
+      `, [symbol]);
+      const company = companyResult.rows[0];
       return company ? [company] : [];
     }
 
@@ -147,11 +156,12 @@ class SlowBackfiller {
     const params = [];
 
     if (country) {
-      query += ' AND c.country = ?';
+      query += ' AND c.country = $1';
       params.push(country.toUpperCase());
     } else {
       // Default to European companies
-      query += ` AND c.country IN (${EUROPEAN_COUNTRIES.map(() => '?').join(',')})`;
+      const placeholders = EUROPEAN_COUNTRIES.map((_, index) => `$${index + 1}`).join(',');
+      query += ` AND c.country IN (${placeholders})`;
       params.push(...EUROPEAN_COUNTRIES);
     }
 
@@ -161,7 +171,9 @@ class SlowBackfiller {
       ORDER BY c.market_cap DESC NULLS LAST
     `;
 
-    const candidates = this.database.prepare(query).all(...params);
+    const database = await this.getDatabase();
+    const candidatesResult = await database.query(query, params);
+    const candidates = candidatesResult.rows;
 
     // Filter out already processed
     const unprocessed = candidates.filter(c => !processedSet.has(c.symbol));
@@ -172,10 +184,11 @@ class SlowBackfiller {
   /**
    * Store financial statements in database
    */
-  storeFinancials(companyId, data) {
+  async storeFinancials(companyId, data) {
     let recordsAdded = 0;
 
-    const stmt = this.database.prepare(`
+    const database = await this.getDatabase();
+    const insertSql = `
       INSERT INTO financial_data (
         company_id, statement_type, fiscal_date_ending,
         fiscal_year, period_type,
@@ -187,7 +200,7 @@ class SlowBackfiller {
         cost_of_revenue, gross_profit,
         operating_cashflow, capital_expenditures
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
       ON CONFLICT(company_id, statement_type, fiscal_date_ending, period_type)
       DO UPDATE SET
         data = excluded.data,
@@ -207,37 +220,40 @@ class SlowBackfiller {
         operating_cashflow = COALESCE(excluded.operating_cashflow, financial_data.operating_cashflow),
         capital_expenditures = COALESCE(excluded.capital_expenditures, financial_data.capital_expenditures),
         updated_at = CURRENT_TIMESTAMP
-    `);
+    `;
 
-    const storeStatements = (reports, statementType, periodType) => {
+    const storeStatements = async (reports, statementType, periodType) => {
       for (const report of (reports || [])) {
         try {
           const isIncome = statementType === 'income_statement';
           const isBalance = statementType === 'balance_sheet';
           const isCashFlow = statementType === 'cash_flow';
 
-          stmt.run(
-            companyId,
-            statementType,
-            report.fiscalDateEnding,
-            report.fiscalYear,
-            periodType,
-            JSON.stringify(report),
-            isBalance ? report.totalAssets : null,
-            isBalance ? report.totalLiabilities : null,
-            isBalance ? report.shareholderEquity : null,
-            isBalance ? report.currentAssets : null,
-            isBalance ? report.currentLiabilities : null,
-            isBalance ? report.cashAndEquivalents : null,
-            isBalance ? report.longTermDebt : null,
-            isBalance ? report.shortTermDebt : null,
-            isIncome ? report.totalRevenue : null,
-            isIncome ? report.netIncome : null,
-            isIncome ? report.operatingIncome : null,
-            isIncome ? report.costOfRevenue : null,
-            isIncome ? report.grossProfit : null,
-            isCashFlow ? report.operatingCashflow : null,
-            isCashFlow ? report.capitalExpenditures : null
+          await database.query(
+            insertSql,
+            [
+              companyId,
+              statementType,
+              report.fiscalDateEnding,
+              report.fiscalYear,
+              periodType,
+              JSON.stringify(report),
+              isBalance ? report.totalAssets : null,
+              isBalance ? report.totalLiabilities : null,
+              isBalance ? report.shareholderEquity : null,
+              isBalance ? report.currentAssets : null,
+              isBalance ? report.currentLiabilities : null,
+              isBalance ? report.cashAndEquivalents : null,
+              isBalance ? report.longTermDebt : null,
+              isBalance ? report.shortTermDebt : null,
+              isIncome ? report.totalRevenue : null,
+              isIncome ? report.netIncome : null,
+              isIncome ? report.operatingIncome : null,
+              isIncome ? report.costOfRevenue : null,
+              isIncome ? report.grossProfit : null,
+              isCashFlow ? report.operatingCashflow : null,
+              isCashFlow ? report.capitalExpenditures : null
+            ]
           );
           recordsAdded++;
         } catch (e) {
@@ -248,9 +264,9 @@ class SlowBackfiller {
 
     // Store all statement types
     for (const period of ['annual', 'quarterly']) {
-      storeStatements(data.incomeStatement[period], 'income_statement', period);
-      storeStatements(data.balanceSheet[period], 'balance_sheet', period);
-      storeStatements(data.cashFlow[period], 'cash_flow', period);
+      await storeStatements(data.incomeStatement[period], 'income_statement', period);
+      await storeStatements(data.balanceSheet[period], 'balance_sheet', period);
+      await storeStatements(data.cashFlow[period], 'cash_flow', period);
     }
 
     return recordsAdded;
@@ -271,7 +287,7 @@ class SlowBackfiller {
       const result = await this.fetcher.fetchFinancials(yahooSymbol);
 
       if (result.success) {
-        const recordsAdded = this.storeFinancials(company.id, result.data);
+        const recordsAdded = await this.storeFinancials(company.id, result.data);
         console.log(`   ✓ Success: ${recordsAdded} records added`);
 
         this.progress.successful.push(company.symbol);
@@ -296,7 +312,7 @@ class SlowBackfiller {
   /**
    * Show current status
    */
-  showStatus() {
+  async showStatus() {
     console.log('\n' + '='.repeat(60));
     console.log('  Slow Backfill Progress');
     console.log('='.repeat(60));
@@ -307,7 +323,7 @@ class SlowBackfiller {
     console.log(`  Records added:   ${this.progress.totalRecordsAdded}`);
 
     // Show remaining companies
-    const remaining = this.getNextCompanies({ count: 1000 });
+    const remaining = await this.getNextCompanies({ count: 1000 });
     console.log(`  Remaining:       ${remaining.length}`);
 
     if (remaining.length > 0) {
@@ -335,7 +351,7 @@ class SlowBackfiller {
    */
   async run(options = {}) {
     if (options.status) {
-      this.showStatus();
+      await this.showStatus();
       return;
     }
 
@@ -355,11 +371,11 @@ class SlowBackfiller {
     console.log(`  Count: ${options.count || 1}`);
     console.log('='.repeat(60));
 
-    const companies = this.getNextCompanies(options);
+    const companies = await this.getNextCompanies(options);
 
     if (companies.length === 0) {
       console.log('\n✓ No companies to process (all done or none match criteria)');
-      this.showStatus();
+      await this.showStatus();
       return;
     }
 
@@ -394,7 +410,7 @@ class SlowBackfiller {
     console.log(`  ✗ Failed: ${failCount}`);
     console.log('='.repeat(60));
 
-    this.showStatus();
+    await this.showStatus();
   }
 }
 
