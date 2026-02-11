@@ -252,7 +252,7 @@ router.get('/company/:symbol/history', async (req, res) => {
     const { limit } = req.query;
 
     // First get company ID
-    const { getDatabaseAsync } = require('../../database');
+    const { getDatabaseAsync } = require('../../lib/db');
     const database = await getDatabaseAsync();
     const result = await database.query('SELECT id FROM companies WHERE symbol = $1', [symbol.toUpperCase()]);
     const company = result.rows[0];

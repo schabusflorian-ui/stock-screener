@@ -8,7 +8,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const { getDatabaseAsync, isPostgres } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 // Middleware imports
 const { optionalAuth, requireAdmin, attachUserId } = require('../../middleware/auth');

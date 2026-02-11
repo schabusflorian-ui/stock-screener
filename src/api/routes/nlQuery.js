@@ -10,7 +10,7 @@ const router = express.Router();
 const { spawn } = require('child_process');
 const path = require('path');
 const crypto = require('crypto');
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { routeQuery, shouldUseLLM } = require('../../services/nl/queryRouter');
 const { getLLMHandler, SSE_EVENTS } = require('../../services/nl/llmHandler');
 const { ERROR_CODES, sendError, asyncHandler, safeErrorMessage } = require('../../utils/errorHandler');
@@ -486,11 +486,11 @@ router.post('/query', optionalAuth, attachSubscription, checkUsageLimit('ai_quer
     let contextResolved = false;
 
     try {
-      conversation = getOrCreateConversation(db, conversation_id, session_id);
+      conversation = await getOrCreateConversation(db, conversation_id, session_id);
 
       // Get context from previous messages
       if (conversation.message_count > 0) {
-        conversationContext = getConversationContext(conversation.id);
+        conversationContext = await getConversationContext(db, conversation.id);
 
         // Resolve pronouns and references using conversation history
         const resolution = resolveContextualReferences(query, conversationContext);
@@ -511,7 +511,7 @@ router.post('/query', optionalAuth, attachSubscription, checkUsageLimit('ai_quer
       message_count: conversation?.message_count || 0,
       last_symbol: conversationContext?.last_symbol,
       recent_symbols: conversationContext?.recent_symbols,
-      history: conversation?.id ? getConversationHistory(db, conversation.id, 5) : []
+      history: conversation?.id ? await getConversationHistory(db, conversation.id, 5) : []
     };
 
     // Route query - decides between LLM path and fast handler path
@@ -567,7 +567,7 @@ router.post('/query', optionalAuth, attachSubscription, checkUsageLimit('ai_quer
             symbols = match[1].split(',').map(s => s.trim()).filter(s => s.length > 0 && s.length <= 5);
           }
         }
-        storeMessage(
+        await storeMessage(
           db,
           conversation.id,
           'user',
@@ -581,7 +581,7 @@ router.post('/query', optionalAuth, attachSubscription, checkUsageLimit('ai_quer
         const responseSummary = response.result?.summary ||
           response.confirmation ||
           `${response.intent} response`;
-        storeMessage(
+        await storeMessage(
           db,
           conversation.id,
           'assistant',
@@ -676,7 +676,7 @@ router.post('/query/stream', optionalAuth, attachSubscription, checkUsageLimit('
       message_count: conversation?.message_count || 0,
       last_symbol: conversationContext?.last_symbol,
       recent_symbols: conversationContext?.recent_symbols,
-      history: conversation?.id ? getConversationHistory(db, conversation.id, 5) : []
+      history: conversation?.id ? await getConversationHistory(db, conversation.id, 5) : []
     };
 
     // Send conversation ID
@@ -698,7 +698,7 @@ router.post('/query/stream', optionalAuth, attachSubscription, checkUsageLimit('
       if (conversation && result.success) {
         const symbols = result.result?.symbol ? [result.result.symbol] : [];
 
-        storeMessage(
+        await storeMessage(
           db,
           conversation.id,
           'user',
@@ -708,7 +708,7 @@ router.post('/query/stream', optionalAuth, attachSubscription, checkUsageLimit('
           null
         );
 
-        storeMessage(
+        await storeMessage(
           db,
           conversation.id,
           'assistant',
@@ -945,12 +945,14 @@ function shuffleArray(arr) {
 /**
  * Get or create a conversation
  */
-function getOrCreateConversation(db, conversationId, sessionId) {
+async function getOrCreateConversation(db, conversationId, sessionId) {
   if (conversationId) {
     // Check if conversation exists
-    const existing = db.prepare(
-      'SELECT * FROM nl_conversations WHERE id = ?'
-    ).get(conversationId);
+    const existingRes = await db.query(
+      'SELECT * FROM nl_conversations WHERE id = $1',
+      [conversationId]
+    );
+    const existing = existingRes.rows[0];
 
     if (existing) {
       return existing;
@@ -959,10 +961,13 @@ function getOrCreateConversation(db, conversationId, sessionId) {
 
   // Create new conversation
   const newId = conversationId || crypto.randomUUID();
-  db.prepare(`
-    INSERT INTO nl_conversations (id, session_id, created_at, updated_at)
-    VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-  `).run(newId, sessionId || 'anonymous');
+  await db.query(
+    `
+      INSERT INTO nl_conversations (id, session_id, created_at, updated_at)
+      VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `,
+    [newId, sessionId || 'anonymous']
+  );
 
   return { id: newId, session_id: sessionId, message_count: 0 };
 }
@@ -970,62 +975,78 @@ function getOrCreateConversation(db, conversationId, sessionId) {
 /**
  * Get conversation history (last N messages)
  */
-function getConversationHistory(db, conversationId, limit = 5) {
-  return db.prepare(`
-    SELECT role, content, intent, symbols, entities, timestamp
-    FROM nl_messages
-    WHERE conversation_id = ?
-    ORDER BY timestamp DESC
-    LIMIT ?
-  `).all(conversationId, limit).reverse(); // Reverse to get chronological order
+async function getConversationHistory(db, conversationId, limit = 5) {
+  const res = await db.query(
+    `
+      SELECT role, content, intent, symbols, entities, timestamp
+      FROM nl_messages
+      WHERE conversation_id = $1
+      ORDER BY timestamp DESC
+      LIMIT $2
+    `,
+    [conversationId, limit]
+  );
+  return (res.rows || []).reverse(); // Reverse to get chronological order
 }
 
 /**
  * Store a message in conversation history
  */
-function storeMessage(db, conversationId, role, content, intent, symbols, entities) {
-  db.prepare(`
-    INSERT INTO nl_messages (conversation_id, role, content, intent, symbols, entities)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(
-    conversationId,
-    role,
-    content,
-    intent,
-    JSON.stringify(symbols || []),
-    JSON.stringify(entities || {})
+async function storeMessage(db, conversationId, role, content, intent, symbols, entities) {
+  await db.query(
+    `
+      INSERT INTO nl_messages (conversation_id, role, content, intent, symbols, entities)
+      VALUES ($1, $2, $3, $4, $5, $6)
+    `,
+    [
+      conversationId,
+      role,
+      content,
+      intent,
+      JSON.stringify(symbols || []),
+      JSON.stringify(entities || {})
+    ]
   );
 
   // Update conversation metadata
   const lastSymbol = symbols && symbols.length > 0 ? symbols[0] : null;
-  db.prepare(`
-    UPDATE nl_conversations
-    SET updated_at = CURRENT_TIMESTAMP,
-        last_symbol = COALESCE(?, last_symbol),
-        last_intent = COALESCE(?, last_intent),
-        message_count = message_count + 1
-    WHERE id = ?
-  `).run(lastSymbol, intent, conversationId);
+  await db.query(
+    `
+      UPDATE nl_conversations
+      SET updated_at = CURRENT_TIMESTAMP,
+          last_symbol = COALESCE($1, last_symbol),
+          last_intent = COALESCE($2, last_intent),
+          message_count = message_count + 1
+      WHERE id = $3
+    `,
+    [lastSymbol, intent, conversationId]
+  );
 }
 
 /**
  * Get context from previous messages for follow-up queries
  */
-function getConversationContext(conversationId) {
-  const conversation = database.prepare(
-    'SELECT last_symbol, last_intent FROM nl_conversations WHERE id = ?'
-  ).get(conversationId);
+async function getConversationContext(db, conversationId) {
+  const conversationRes = await db.query(
+    'SELECT last_symbol, last_intent FROM nl_conversations WHERE id = $1',
+    [conversationId]
+  );
+  const conversation = conversationRes.rows[0];
 
   if (!conversation) return null;
 
   // Get recent symbols from messages
-  const recentMessages = database.prepare(`
-    SELECT symbols, intent
-    FROM nl_messages
-    WHERE conversation_id = ? AND role = 'user'
-    ORDER BY timestamp DESC
-    LIMIT 3
-  `).all(conversationId);
+  const recentRes = await db.query(
+    `
+      SELECT symbols, intent
+      FROM nl_messages
+      WHERE conversation_id = $1 AND role = 'user'
+      ORDER BY timestamp DESC
+      LIMIT 3
+    `,
+    [conversationId]
+  );
+  const recentMessages = recentRes.rows;
 
   const recentSymbols = [];
   for (const msg of recentMessages) {

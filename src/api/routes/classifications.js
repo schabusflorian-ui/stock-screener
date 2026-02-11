@@ -1,7 +1,7 @@
 // src/api/routes/classifications.js
 const express = require('express');
 const router = express.Router();
-const { getDatabaseAsync, isPostgres } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 /**
  * GET /api/classifications

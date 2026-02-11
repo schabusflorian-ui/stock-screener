@@ -3,7 +3,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { AutoExecutor } = require('../../services/agent/autoExecutor');
 const { getExecutor: getAlgoExecutor, ALGORITHMS, URGENCY } = require('../../services/execution/algorithmicExecutor');
 
@@ -563,7 +563,7 @@ router.get('/algo/orders/:id', async (req, res) => {
     const executor = await ensureAlgoExecutorInitialized();
     const { id } = req.params;
 
-    const status = executor.getOrderStatus(parseInt(id));
+    const status = await executor.getOrderStatus(parseInt(id));
 
     if (!status) {
       return res.status(404).json({
@@ -630,7 +630,7 @@ router.post('/algo/orders/:id/execute-all', async (req, res) => {
       }
     }
 
-    const status = executor.getOrderStatus(parseInt(id));
+    const status = await executor.getOrderStatus(parseInt(id));
 
     res.json({
       success: true,
@@ -670,7 +670,7 @@ router.get('/algo/analytics', async (req, res) => {
     const executor = await ensureAlgoExecutorInitialized();
     const { portfolioId, startDate, endDate, algorithm } = req.query;
 
-    const analytics = executor.getAnalytics(
+    const analytics = await executor.getAnalytics(
       portfolioId ? parseInt(portfolioId) : null,
       { startDate, endDate, algorithm }
     );
@@ -692,7 +692,7 @@ router.get('/algo/portfolios/:id/analytics', async (req, res) => {
     const { id } = req.params;
     const { startDate, endDate, algorithm } = req.query;
 
-    const analytics = executor.getAnalytics(parseInt(id), { startDate, endDate, algorithm });
+    const analytics = await executor.getAnalytics(parseInt(id), { startDate, endDate, algorithm });
 
     res.json({
       success: true,
@@ -780,8 +780,8 @@ router.post('/algo/recommend', async (req, res) => {
 
     // Get historical analytics
     const analytics = portfolioId
-      ? executor.getAnalytics(parseInt(portfolioId), {})
-      : executor.getAnalytics(null, {});
+      ? await executor.getAnalytics(parseInt(portfolioId), {})
+      : await executor.getAnalytics(null, {});
 
     // Simple recommendation logic based on order characteristics
     let recommendedAlgo = 'vwap';

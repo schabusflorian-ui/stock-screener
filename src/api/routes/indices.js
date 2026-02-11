@@ -5,7 +5,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const indexService = require('../../services/indexService');
 const IndexPriceService = require('../../services/indexPriceService');
 
@@ -229,10 +229,11 @@ router.get('/alpha/timeseries/:symbol', async (req, res) => {
     const { symbol } = req.params;
     const { period = '1y', rollingWindow } = req.query;
 
-    // Get company_id
-    const company = await db.prepare(`
-      SELECT id FROM companies WHERE LOWER(symbol) = LOWER(?)
-    `).get(symbol);
+    const companyRes = await db.query(
+      'SELECT id FROM companies WHERE LOWER(symbol) = LOWER($1)',
+      [symbol]
+    );
+    const company = companyRes.rows[0];
 
     if (!company) {
       return res.status(404).json({
@@ -257,63 +258,62 @@ router.get('/alpha/timeseries/:symbol', async (req, res) => {
     startDate.setDate(startDate.getDate() - days);
     const startDateStr = startDate.toISOString().split('T')[0];
 
-    // Get stock daily prices (use close when adjusted_close is null)
-    const stockPrices = await db.prepare(`
+    const stockPricesRes = await db.query(`
       SELECT date, COALESCE(adjusted_close, close) as close
       FROM daily_prices
-      WHERE company_id = ?
-        AND date >= ?
+      WHERE company_id = $1
+        AND date >= $2
         AND (adjusted_close IS NOT NULL OR close IS NOT NULL)
       ORDER BY date ASC
-    `).all(company.id, startDateStr);
+    `, [company.id, startDateStr]);
+    const stockPrices = stockPricesRes.rows;
 
-    // Get SPY prices for the same period
-    // 1) SPY as company in daily_prices (ETFs are tracked as companies)
     let benchmarkPrices = [];
-    const spyCompany = await db.prepare(`
-      SELECT id FROM companies WHERE LOWER(symbol) = 'spy'
-    `).get();
+    const spyRes = await db.query(
+      "SELECT id FROM companies WHERE LOWER(symbol) = 'spy'"
+    );
+    const spyCompany = spyRes.rows[0];
 
     if (spyCompany) {
-      benchmarkPrices = await db.prepare(`
+      const benchRes = await db.query(`
         SELECT date, COALESCE(adjusted_close, close) as close
         FROM daily_prices
-        WHERE company_id = ?
-          AND date >= ?
+        WHERE company_id = $1
+          AND date >= $2
           AND (adjusted_close IS NOT NULL OR close IS NOT NULL)
         ORDER BY date ASC
-      `).all(spyCompany.id, startDateStr);
+      `, [spyCompany.id, startDateStr]);
+      benchmarkPrices = benchRes.rows;
     }
 
-    // 2) Fallback: market_index_prices (used by indexService)
     if (!benchmarkPrices || benchmarkPrices.length === 0) {
       try {
-        const mipResult = await db.prepare(`
+        const mipRes = await db.query(`
           SELECT mip.date, mip.close
           FROM market_index_prices mip
           JOIN market_indices mi ON mip.index_id = mi.id
           WHERE (LOWER(mi.symbol) = 'spy' OR LOWER(mi.short_name) = 'spy')
-            AND mip.date >= ?
+            AND mip.date >= $1
             AND mip.close IS NOT NULL
           ORDER BY mip.date ASC
-        `).all(startDateStr);
-        benchmarkPrices = mipResult;
+        `, [startDateStr]);
+        benchmarkPrices = mipRes.rows;
       } catch (e) {
         // Table might not exist (e.g. SQLite without migration)
       }
     }
 
-    // 3) Fallback: index_daily_prices (legacy table)
     if (!benchmarkPrices || benchmarkPrices.length === 0) {
       try {
-        benchmarkPrices = await db.prepare(`
+        const idxRes = await db.query(`
           SELECT date, close
           FROM index_daily_prices
           WHERE LOWER(symbol) = 'spy'
-            AND date >= ?
+            AND date >= $1
             AND close IS NOT NULL
           ORDER BY date ASC
-        `).all(startDateStr);
+        `, [startDateStr]);
+        benchmarkPrices = idxRes.rows;
       } catch (e) {
         // Table might not exist
       }

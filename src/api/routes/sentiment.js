@@ -3,7 +3,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const RedditFetcher = require('../../services/redditFetcher');
 const SentimentSignalGenerator = require('../../services/sentimentSignal');
 const NewsFetcher = require('../../services/newsFetcher');

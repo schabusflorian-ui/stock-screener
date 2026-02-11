@@ -1,7 +1,7 @@
 // src/api/routes/stats.js
 const express = require('express');
 const router = express.Router();
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 
 // Cache for expensive queries (refresh every 5 minutes)
 let statsCache = null;

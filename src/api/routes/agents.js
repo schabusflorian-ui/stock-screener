@@ -178,8 +178,12 @@ router.post('/:id/scan', asyncHandler(async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error triggering scan:', error);
-    res.status(500).json({ success: false, error: error.message });
+    console.error('Error triggering scan:', error?.message, error?.stack);
+    res.status(500).json({
+      success: false,
+      error: error?.message || 'Scan failed',
+      code: error?.code || 'SCAN_ERROR'
+    });
   }
 }));
 

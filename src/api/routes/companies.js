@@ -1,7 +1,7 @@
 // src/api/routes/companies.js
 const express = require('express');
 const router = express.Router();
-const { getDatabaseAsync, isPostgres } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const newsService = require('../../services/newsService');
 const currencyService = require('../../services/currencyService');
 const indexMappingService = require('../../services/indexMappingService');

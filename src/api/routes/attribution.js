@@ -3,7 +3,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const { PerformanceAttribution } = require('../../services/analytics/performanceAttribution');
 const { RegimeDetector, REGIMES, REGIME_DESCRIPTIONS } = require('../../services/trading/regimeDetector');
 

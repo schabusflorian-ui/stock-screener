@@ -687,7 +687,7 @@ router.get('/quality_momentum', async (req, res) => {
  */
 router.get('/factors', async (req, res) => {
   try {
-    const { getDatabaseAsync } = require('../../database');
+    const { getDatabaseAsync } = require('../../lib/db');
     const database = await getDatabaseAsync();
     const {
       min_value, max_value,
@@ -768,7 +768,7 @@ router.get('/factors', async (req, res) => {
  */
 router.get('/factor-presets/:preset', async (req, res) => {
   try {
-    const { getDatabaseAsync } = require('../../database');
+    const { getDatabaseAsync } = require('../../lib/db');
     const database = await getDatabaseAsync();
     const { preset } = req.params;
     const { sector, limit = 20 } = req.query;
@@ -1114,7 +1114,7 @@ router.get('/macro/presets', (req, res) => {
  */
 router.get('/sectors-by-factor', async (req, res) => {
   try {
-    const { getDatabaseAsync } = require('../../database');
+    const { getDatabaseAsync } = require('../../lib/db');
     const database = await getDatabaseAsync();
     const sectorsResult = await database.query(`
       SELECT

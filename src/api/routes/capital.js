@@ -3,7 +3,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { getDatabaseAsync } = require('../../database');
+const { getDatabaseAsync } = require('../../lib/db');
 const CapitalAllocationTracker = require('../../services/capitalAllocationTracker');
 const DividendService = require('../../services/dividendService');
 

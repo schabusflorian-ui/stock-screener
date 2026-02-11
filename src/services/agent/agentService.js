@@ -1444,93 +1444,103 @@ function calculateNextContributionDate(config) {
 // ============================================
 
 /**
- * Get the universe of symbols to scan for an agent
+ * Get the universe of symbols to scan for an agent.
+ * Returns [] on schema errors (missing table/column) so the scan can complete with 0 symbols.
  */
 async function getAgentUniverse(agentId) {
-  const database = await getDatabaseAsync();
-  const agentResult = await database.query('SELECT * FROM trading_agents WHERE id = $1', [agentId]);
-  const agent = agentResult.rows[0];
-  if (!agent) return [];
+  try {
+    const database = await getDatabaseAsync();
+    const agentResult = await database.query('SELECT * FROM trading_agents WHERE id = $1', [agentId]);
+    const agent = agentResult.rows[0];
+    if (!agent) return [];
 
-  const universeType = agent.universe_type || 'all';
-  let universeFilter = null;
+    const universeType = agent.universe_type || 'all';
+    let universeFilter = null;
 
-  if (agent.universe_filter) {
-    universeFilter = safeJsonParse(agent.universe_filter, 'agent.universe_filter');
-  }
+    if (agent.universe_filter) {
+      universeFilter = safeJsonParse(agent.universe_filter, 'agent.universe_filter');
+    }
 
-  let symbols = [];
+    let symbols = [];
 
-  switch (universeType) {
-    case 'watchlist':
-      // Get symbols from user's watchlist
-      const watchlistResult = await database.query(`
-        SELECT DISTINCT c.symbol
-        FROM watchlist_items wi
-        JOIN companies c ON wi.company_id = c.id
+    switch (universeType) {
+      case 'watchlist':
+        // Get symbols from user's watchlist
+        const watchlistResult = await database.query(`
+          SELECT DISTINCT c.symbol
+          FROM watchlist_items wi
+          JOIN companies c ON wi.company_id = c.id
+          ORDER BY c.symbol
+        `);
+        symbols = watchlistResult.rows.map(r => r.symbol);
+        break;
+
+      case 'sector':
+        // Get symbols from specific sectors
+        if (universeFilter?.sectors?.length > 0) {
+          const placeholders = universeFilter.sectors.map((_, idx) => `$${idx + 1}`).join(',');
+          const sectorResult = await database.query(`
+            SELECT symbol FROM companies
+            WHERE sector IN (${placeholders})
+            ORDER BY symbol
+          `, universeFilter.sectors);
+          symbols = sectorResult.rows.map(r => r.symbol);
+        }
+        break;
+
+      case 'custom':
+        // Use explicit symbol list from filter
+        if (universeFilter?.symbols?.length > 0) {
+          symbols = universeFilter.symbols;
+        }
+        break;
+
+      case 'all':
+      default:
+        // Get all active companies with actual trading data
+        // Filter for valid symbols with price data, ordered by market cap
+        const allResult = await database.query(`
+          SELECT c.symbol
+          FROM companies c
+          WHERE c.is_active = true
+            AND LENGTH(c.symbol) <= 5
+            AND c.symbol NOT LIKE '%=%'
+            AND c.symbol NOT LIKE '%.%'
+            AND c.symbol !~ '[0-9]{5,}'
+            AND EXISTS (
+              SELECT 1 FROM daily_prices dp
+              WHERE dp.company_id = c.id
+              AND dp.date >= CURRENT_DATE - INTERVAL '30 days'
+            )
+          ORDER BY c.market_cap DESC NULLS LAST
+          LIMIT 500
+        `);
+        symbols = allResult.rows.map(r => r.symbol);
+        break;
+    }
+
+    // Apply market cap filter if specified
+    if (universeFilter?.min_market_cap && symbols.length > 0) {
+      const minCap = universeFilter.min_market_cap;
+      const placeholders = symbols.map((_, idx) => `$${idx + 1}`).join(',');
+      const filteredResult = await database.query(`
+        SELECT c.symbol FROM companies c
+        WHERE c.symbol IN (${placeholders})
+          AND c.market_cap >= $${symbols.length + 1}
         ORDER BY c.symbol
-      `);
-      symbols = watchlistResult.rows.map(r => r.symbol);
-      break;
+      `, [...symbols, minCap]);
+      symbols = filteredResult.rows.map(r => r.symbol);
+    }
 
-    case 'sector':
-      // Get symbols from specific sectors
-      if (universeFilter?.sectors?.length > 0) {
-        const placeholders = universeFilter.sectors.map((_, idx) => `$${idx + 1}`).join(',');
-        const sectorResult = await database.query(`
-          SELECT symbol FROM companies
-          WHERE sector IN (${placeholders})
-          ORDER BY symbol
-        `, universeFilter.sectors);
-        symbols = sectorResult.rows.map(r => r.symbol);
-      }
-      break;
-
-    case 'custom':
-      // Use explicit symbol list from filter
-      if (universeFilter?.symbols?.length > 0) {
-        symbols = universeFilter.symbols;
-      }
-      break;
-
-    case 'all':
-    default:
-      // Get all active companies with actual trading data
-      // Filter for valid symbols with price data, ordered by market cap
-      const allResult = await database.query(`
-        SELECT c.symbol
-        FROM companies c
-        WHERE c.is_active = true
-          AND LENGTH(c.symbol) <= 5
-          AND c.symbol NOT LIKE '%=%'
-          AND c.symbol NOT LIKE '%.%'
-          AND c.symbol !~ '[0-9]{5,}'
-          AND EXISTS (
-            SELECT 1 FROM daily_prices dp
-            WHERE dp.company_id = c.id
-            AND dp.date >= CURRENT_DATE - INTERVAL '30 days'
-          )
-        ORDER BY c.market_cap DESC NULLS LAST
-        LIMIT 500
-      `);
-      symbols = allResult.rows.map(r => r.symbol);
-      break;
+    return symbols;
+  } catch (err) {
+    // Missing table (42P01) or column (42703) – return empty so scan completes without 500
+    if (err.code === '42P01' || err.code === '42703') {
+      console.warn('getAgentUniverse: schema error, returning empty universe:', err.code, err.message);
+      return [];
+    }
+    throw err;
   }
-
-  // Apply market cap filter if specified
-  if (universeFilter?.min_market_cap && symbols.length > 0) {
-    const minCap = universeFilter.min_market_cap;
-    const placeholders = symbols.map((_, idx) => `$${idx + 1}`).join(',');
-    const filteredResult = await database.query(`
-      SELECT c.symbol FROM companies c
-      WHERE c.symbol IN (${placeholders})
-        AND c.market_cap >= $${symbols.length + 1}
-      ORDER BY c.symbol
-    `, [...symbols, minCap]);
-    symbols = filteredResult.rows.map(r => r.symbol);
-  }
-
-  return symbols;
 }
 
 /**
@@ -1608,10 +1618,11 @@ async function generateSignals(agentId) {
     }
 
     const primaryPortfolio = portfolios[0];
+    const initialCap = primaryPortfolio.portfolio_initial_capital ?? primaryPortfolio.initial_capital;
     portfolioContext = {
       portfolioId: primaryPortfolio.portfolio_id,
-      totalValue: primaryPortfolio.current_value || primaryPortfolio.initial_capital,
-      cash: primaryPortfolio.current_cash || primaryPortfolio.initial_capital,
+      totalValue: primaryPortfolio.current_value ?? initialCap,
+      cash: primaryPortfolio.current_cash ?? initialCap,
     };
 
     // Run batch recommendations
