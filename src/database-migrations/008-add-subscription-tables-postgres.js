@@ -84,6 +84,13 @@ async function migrate(db) {
   `);
   await db.query('CREATE INDEX IF NOT EXISTS idx_subscription_events_user ON subscription_events(user_id, created_at DESC)');
 
+  // Ensure name has a unique constraint for ON CONFLICT (name) — table may exist from partial run without UNIQUE
+  try {
+    await db.query('ALTER TABLE subscription_tiers ADD CONSTRAINT subscription_tiers_name_key UNIQUE (name)');
+  } catch (e) {
+    if (e.code !== '42710') throw e; // 42710 = duplicate_object (constraint already exists)
+  }
+
   const tiers = [
     ['free', 'Free', 'Get started with essential investment research tools', 0, 0, { ai_queries_monthly: 10, prism_reports_monthly: 2, watchlist_stocks: 10, portfolios: 1, alerts: 5, agents: 0 }, { basic_screener: true, advanced_screener: false, ai_research_agents: false, paper_trading_bots: false, factor_analysis: false }, '#6B7280', 1],
     ['pro', 'Pro', 'Full AI-powered research toolkit', 500, 4800, { ai_queries_monthly: 200, prism_reports_monthly: 20, watchlist_stocks: -1, portfolios: 5, alerts: 50, agents: 5 }, { basic_screener: true, advanced_screener: true, ai_research_agents: true, paper_trading_bots: true, factor_analysis: true }, '#3B82F6', 2],
