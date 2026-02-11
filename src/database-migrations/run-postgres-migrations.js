@@ -21,6 +21,8 @@ const POSTGRES_MIGRATIONS = [
   '002-add-historical-intelligence-tables.js',
   '003-add-quant-lab-factor-tables.js',
   '004-add-notes-tables-postgres.js',
+  '005-add-market-indices-tables.js', // ← NEW: market_indices + market_index_prices for alpha calculations
+  '005-backfill-historical-company-ids.js',
   'add-postgres-alert-system.js',
   'add-dividend-metrics.js',
   'add-price-metrics.js',

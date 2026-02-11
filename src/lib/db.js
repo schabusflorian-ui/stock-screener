@@ -26,9 +26,11 @@ function initSQLite() {
   const dbPath = process.env.DATABASE_PATH || path.join(dataDir, 'stocks.db');
   const sqliteDb = new Database(dbPath);
 
-  // Enable foreign keys and WAL mode
-  sqliteDb.pragma('foreign_keys = ON');
-  sqliteDb.pragma('journal_mode = WAL');
+    // Enable foreign keys and performance pragmas
+    sqliteDb.pragma('foreign_keys = ON');
+    sqliteDb.pragma('journal_mode = WAL');
+    sqliteDb.pragma('synchronous = NORMAL');
+    sqliteDb.pragma('cache_size = 2000');
 
   console.log(`📊 SQLite database initialized: ${dbPath}`);
 
@@ -56,11 +58,18 @@ function initSQLite() {
         });
       }
 
+      const normalizedParams = params.map(param => {
+        if (typeof param === 'boolean') {
+          return param ? 1 : 0;
+        }
+        return param;
+      });
+
       const stmt = sqliteDb.prepare(convertedSql);
       if (convertedSql.trim().toUpperCase().startsWith('SELECT')) {
-        return { rows: stmt.all(...params) };
+        return { rows: stmt.all(...normalizedParams) };
       }
-      const result = stmt.run(...params);
+      const result = stmt.run(...normalizedParams);
       return {
         rows: [],
         rowCount: result.changes,

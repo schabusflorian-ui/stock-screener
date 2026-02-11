@@ -79,7 +79,7 @@ describe('API Response Caching', () => {
 
 describe('SQLite Performance Pragmas', () => {
   test('database.js should have performance pragmas', () => {
-    const dbPath = path.join(__dirname, '../../src/database.js');
+    const dbPath = path.join(__dirname, '../../src/lib/db.js');
     const dbCode = fs.readFileSync(dbPath, 'utf8');
 
     // Verify WAL mode
