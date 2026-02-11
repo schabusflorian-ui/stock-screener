@@ -632,10 +632,30 @@ router.get('/stats/debug', async (req, res) => {
       }
     }
     
+    // Check date range of insider_transactions
+    let dateRange = null;
+    try {
+      const dateResult = await database.query(`
+        SELECT 
+          MIN(transaction_date) as oldest,
+          MAX(transaction_date) as newest,
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE transaction_date >= CURRENT_DATE - INTERVAL '1 year') as last_year,
+          COUNT(*) FILTER (WHERE transaction_date >= CURRENT_DATE - INTERVAL '6 months') as last_6_months,
+          COUNT(*) FILTER (WHERE transaction_date >= CURRENT_DATE - INTERVAL '3 months') as last_3_months,
+          COUNT(*) FILTER (WHERE transaction_date >= CURRENT_DATE - INTERVAL '1 month') as last_month
+        FROM insider_transactions
+      `);
+      dateRange = dateResult.rows[0];
+    } catch (err) {
+      dateRange = { error: err.message };
+    }
+    
     res.json({
       success: true,
       deployment_time: new Date().toISOString(),
       tables,
+      dateRange,
       errorHandlerVersion: 'v2-comprehensive'
     });
   } catch (error) {
@@ -675,7 +695,30 @@ router.get('/stats', async (req, res) => {
     const database = await getDatabaseAsync();
     console.log('[insiders/stats] Database obtained');
     
-    // Overall stats (Postgres: CURRENT_DATE - INTERVAL)
+    // Allow flexible time period via query param (default: all time)
+    const { period = 'all' } = req.query;
+    let whereClause = '';
+    let monthsBack = 12;
+    
+    if (period !== 'all') {
+      const periodMap = {
+        '1m': { interval: '1 month', months: 1 },
+        '3m': { interval: '3 months', months: 3 },
+        '6m': { interval: '6 months', months: 6 },
+        '1y': { interval: '1 year', months: 12 },
+        '2y': { interval: '2 years', months: 24 }
+      };
+      
+      const periodConfig = periodMap[period];
+      if (periodConfig) {
+        whereClause = `WHERE it.transaction_date >= CURRENT_DATE - INTERVAL '${periodConfig.interval}'`;
+        monthsBack = periodConfig.months;
+      }
+    }
+    
+    console.log('[insiders/stats] Using period:', period, 'whereClause:', whereClause || 'NONE (all time)');
+    
+    // Overall stats
     console.log('[insiders/stats] Querying overall stats...');
     const statsResult = await database.query(`
       SELECT
@@ -687,13 +730,17 @@ router.get('/stats', async (req, res) => {
         COALESCE(SUM(CASE WHEN it.transaction_type = 'buy' THEN it.total_value ELSE 0 END), 0) as total_buy_value,
         COALESCE(SUM(CASE WHEN it.transaction_type = 'sell' THEN it.total_value ELSE 0 END), 0) as total_sell_value
       FROM insider_transactions it
-      WHERE it.transaction_date >= CURRENT_DATE - INTERVAL '1 year'
+      ${whereClause}
     `);
     const stats = statsResult.rows[0];
     console.log('[insiders/stats] Stats retrieved:', stats);
 
-    // Monthly trend (Postgres: TO_CHAR, CURRENT_DATE - INTERVAL)
+    // Monthly trend (limit to last N months based on period)
     console.log('[insiders/stats] Querying monthly trend...');
+    const trendWhereClause = period === 'all' 
+      ? '' 
+      : `WHERE transaction_date >= CURRENT_DATE - INTERVAL '${monthsBack} months'`;
+      
     const monthlyTrendResult = await database.query(`
       SELECT
         TO_CHAR(transaction_date, 'YYYY-MM') as month,
@@ -702,7 +749,7 @@ router.get('/stats', async (req, res) => {
         COUNT(CASE WHEN transaction_type = 'buy' THEN 1 END)::int as buy_count,
         COUNT(CASE WHEN transaction_type = 'sell' THEN 1 END)::int as sell_count
       FROM insider_transactions
-      WHERE transaction_date >= CURRENT_DATE - INTERVAL '12 months'
+      ${trendWhereClause}
       GROUP BY TO_CHAR(transaction_date, 'YYYY-MM')
       ORDER BY month ASC
     `);
@@ -732,6 +779,7 @@ router.get('/stats', async (req, res) => {
 
     console.log('[insiders/stats] Sending successful response...');
     return res.json({
+      period: period === 'all' ? 'all time' : period,
       yearToDate: stats,
       monthlyTrend,
       signalDistribution
