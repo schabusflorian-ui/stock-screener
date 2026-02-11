@@ -23,9 +23,12 @@ class FactorAttribution {
 
   async _initializeTables() {
     const database = await getDatabaseAsync();
+    const isPostgres = database.type === 'postgres';
+    const idType = isPostgres ? 'SERIAL PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT';
+
     await database.query(`
       CREATE TABLE IF NOT EXISTS daily_factor_returns (
-        id SERIAL PRIMARY KEY,
+        id ${idType},
         date TEXT NOT NULL UNIQUE,
         mkt_rf DOUBLE PRECISION,
         smb DOUBLE PRECISION,
@@ -35,10 +38,12 @@ class FactorAttribution {
         bab DOUBLE PRECISION,
         rf DOUBLE PRECISION,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
+      )
+    `);
 
+    await database.query(`
       CREATE TABLE IF NOT EXISTS backtest_factor_exposures (
-        id SERIAL PRIMARY KEY,
+        id ${idType},
         backtest_id INTEGER,
         date TEXT NOT NULL,
         window_days INTEGER,
@@ -53,7 +58,7 @@ class FactorAttribution {
         beta_bab DOUBLE PRECISION,
         r_squared DOUBLE PRECISION,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
+      )
     `);
   }
 

@@ -22,20 +22,13 @@ describe('AutoExecutor', () => {
   describe('constructor', () => {
     it('should initialize with database connection', () => {
       expect(executor.db).toBe(db);
-      expect(executor.stmts).toBeDefined();
-    });
-
-    it('should prepare all required statements', () => {
-      expect(executor.stmts.getPortfolioSettings).toBeDefined();
-      expect(executor.stmts.getPortfolioSummary).toBeDefined();
-      expect(executor.stmts.getCurrentPrice).toBeDefined();
-      expect(executor.stmts.queueExecution).toBeDefined();
+      expect(executor.dbAdapter).toBeNull();
     });
   });
 
   describe('getPortfolioSettings', () => {
-    it('should return settings for valid portfolio', () => {
-      const settings = executor.getPortfolioSettings(1);
+    it('should return settings for valid portfolio', async () => {
+      const settings = await executor.getPortfolioSettings(1);
 
       expect(settings).toBeDefined();
       expect(settings.portfolioId).toBe(1);
@@ -44,15 +37,15 @@ describe('AutoExecutor', () => {
       expect(settings.maxAutoPositionPct).toBe(0.05);
     });
 
-    it('should return null for invalid portfolio', () => {
-      const settings = executor.getPortfolioSettings(999);
+    it('should return null for invalid portfolio', async () => {
+      const settings = await executor.getPortfolioSettings(999);
       expect(settings).toBeNull();
     });
   });
 
   describe('updatePortfolioSettings', () => {
-    it('should update execution settings', () => {
-      const updated = executor.updatePortfolioSettings(1, {
+    it('should update execution settings', async () => {
+      const updated = await executor.updatePortfolioSettings(1, {
         autoExecute: false,
         executionThreshold: 0.5,
         maxAutoPositionPct: 0.1
@@ -65,8 +58,8 @@ describe('AutoExecutor', () => {
   });
 
   describe('submitRecommendation', () => {
-    it('should reject if missing required fields', () => {
-      const result = executor.submitRecommendation({
+    it('should reject if missing required fields', async () => {
+      const result = await executor.submitRecommendation({
         symbol: 'AAPL'
         // missing portfolioId and action
       });
@@ -75,8 +68,8 @@ describe('AutoExecutor', () => {
       expect(result.error).toContain('Missing required fields');
     });
 
-    it('should reject if company not found', () => {
-      const result = executor.submitRecommendation({
+    it('should reject if company not found', async () => {
+      const result = await executor.submitRecommendation({
         portfolioId: 1,
         symbol: 'INVALID',
         action: 'buy'
@@ -86,8 +79,8 @@ describe('AutoExecutor', () => {
       expect(result.error).toContain('Company not found');
     });
 
-    it('should submit valid recommendation for auto-execute portfolio', () => {
-      const result = executor.submitRecommendation({
+    it('should submit valid recommendation for auto-execute portfolio', async () => {
+      const result = await executor.submitRecommendation({
         portfolioId: 1,
         symbol: 'AAPL',
         action: 'buy',
@@ -101,8 +94,8 @@ describe('AutoExecutor', () => {
       expect(result.recommendation.action).toBe('buy');
     });
 
-    it('should calculate shares based on max position size', () => {
-      const result = executor.submitRecommendation({
+    it('should calculate shares based on max position size', async () => {
+      const result = await executor.submitRecommendation({
         portfolioId: 1,
         symbol: 'AAPL',
         action: 'buy',
@@ -117,8 +110,8 @@ describe('AutoExecutor', () => {
       expect(result.recommendation.shares).toBeLessThan(1000);
     });
 
-    it('should use provided shares if specified', () => {
-      const result = executor.submitRecommendation({
+    it('should use provided shares if specified', async () => {
+      const result = await executor.submitRecommendation({
         portfolioId: 1,
         symbol: 'AAPL',
         action: 'buy',
@@ -133,11 +126,11 @@ describe('AutoExecutor', () => {
   });
 
   describe('processRecommendation', () => {
-    it('should reject if auto-execute is disabled', () => {
+    it('should reject if auto-execute is disabled', async () => {
       // Disable auto-execute
-      executor.updatePortfolioSettings(1, { autoExecute: false });
+      await executor.updatePortfolioSettings(1, { autoExecute: false });
 
-      const result = executor.processRecommendation({
+      const result = await executor.processRecommendation({
         symbol: 'AAPL',
         companyId: 1,
         action: 'buy',
@@ -149,8 +142,8 @@ describe('AutoExecutor', () => {
       expect(result.reason).toContain('disabled');
     });
 
-    it('should reject if score below threshold', () => {
-      const result = executor.processRecommendation({
+    it('should reject if score below threshold', async () => {
+      const result = await executor.processRecommendation({
         symbol: 'AAPL',
         companyId: 1,
         action: 'buy',
@@ -162,8 +155,8 @@ describe('AutoExecutor', () => {
       expect(result.reason).toContain('threshold');
     });
 
-    it('should queue for approval if confirmation required', () => {
-      const result = executor.processRecommendation({
+    it('should queue for approval if confirmation required', async () => {
+      const result = await executor.processRecommendation({
         symbol: 'AAPL',
         companyId: 1,
         action: 'buy',
@@ -176,8 +169,8 @@ describe('AutoExecutor', () => {
       expect(result.pendingExecutionId).toBeDefined();
     });
 
-    it('should auto-approve if confirmation not required', () => {
-      const result = executor.processRecommendation({
+    it('should auto-approve if confirmation not required', async () => {
+      const result = await executor.processRecommendation({
         symbol: 'AAPL',
         companyId: 1,
         action: 'buy',
@@ -191,9 +184,9 @@ describe('AutoExecutor', () => {
   });
 
   describe('getPendingExecutions', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
       // Create a pending execution
-      executor.processRecommendation({
+      await executor.processRecommendation({
         symbol: 'AAPL',
         companyId: 1,
         action: 'buy',
@@ -202,8 +195,8 @@ describe('AutoExecutor', () => {
       }, 2);
     });
 
-    it('should return pending executions for portfolio', () => {
-      const pending = executor.getPendingExecutions(2);
+    it('should return pending executions for portfolio', async () => {
+      const pending = await executor.getPendingExecutions(2);
 
       expect(Array.isArray(pending)).toBe(true);
       expect(pending.length).toBeGreaterThan(0);
@@ -211,8 +204,8 @@ describe('AutoExecutor', () => {
       expect(pending[0].status).toBe('pending');
     });
 
-    it('should return all pending executions when no portfolio specified', () => {
-      const pending = executor.getPendingExecutions();
+    it('should return all pending executions when no portfolio specified', async () => {
+      const pending = await executor.getPendingExecutions();
       expect(Array.isArray(pending)).toBe(true);
     });
   });
@@ -220,8 +213,8 @@ describe('AutoExecutor', () => {
   describe('approveExecution', () => {
     let pendingId;
 
-    beforeEach(() => {
-      const result = executor.processRecommendation({
+    beforeEach(async () => {
+      const result = await executor.processRecommendation({
         symbol: 'AAPL',
         companyId: 1,
         action: 'buy',
@@ -231,23 +224,23 @@ describe('AutoExecutor', () => {
       pendingId = result.pendingExecutionId;
     });
 
-    it('should approve pending execution', () => {
-      const result = executor.approveExecution(pendingId, 'test_user');
+    it('should approve pending execution', async () => {
+      const result = await executor.approveExecution(pendingId, 'test_user');
 
       expect(result.success).toBe(true);
       expect(result.message).toBe('Execution approved');
     });
 
-    it('should fail for non-existent execution', () => {
-      const result = executor.approveExecution(9999);
+    it('should fail for non-existent execution', async () => {
+      const result = await executor.approveExecution(9999);
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('not found');
     });
 
-    it('should fail if already approved', () => {
-      executor.approveExecution(pendingId);
-      const result = executor.approveExecution(pendingId);
+    it('should fail if already approved', async () => {
+      await executor.approveExecution(pendingId);
+      const result = await executor.approveExecution(pendingId);
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('already');
@@ -257,8 +250,8 @@ describe('AutoExecutor', () => {
   describe('rejectExecution', () => {
     let pendingId;
 
-    beforeEach(() => {
-      const result = executor.processRecommendation({
+    beforeEach(async () => {
+      const result = await executor.processRecommendation({
         symbol: 'AAPL',
         companyId: 1,
         action: 'buy',
@@ -268,8 +261,8 @@ describe('AutoExecutor', () => {
       pendingId = result.pendingExecutionId;
     });
 
-    it('should reject pending execution with reason', () => {
-      const result = executor.rejectExecution(pendingId, 'Too risky', 'test_user');
+    it('should reject pending execution with reason', async () => {
+      const result = await executor.rejectExecution(pendingId, 'Too risky', 'test_user');
 
       expect(result.success).toBe(true);
       expect(result.message).toBe('Execution rejected');
@@ -280,9 +273,9 @@ describe('AutoExecutor', () => {
   describe('executeApprovedTrade', () => {
     let approvedId;
 
-    beforeEach(() => {
+    beforeEach(async () => {
       // Create and approve an execution
-      const result = executor.processRecommendation({
+      const result = await executor.processRecommendation({
         symbol: 'AAPL',
         companyId: 1,
         action: 'buy',
@@ -290,12 +283,12 @@ describe('AutoExecutor', () => {
         confidence: 0.8
       }, 2);
       approvedId = result.pendingExecutionId;
-      executor.approveExecution(approvedId);
+      await executor.approveExecution(approvedId);
     });
 
-    it('should fail if execution not approved', () => {
+    it('should fail if execution not approved', async () => {
       // Create a new pending (not approved) execution
-      const pendingResult = executor.processRecommendation({
+      const pendingResult = await executor.processRecommendation({
         symbol: 'GOOGL',
         companyId: 2,
         action: 'buy',
@@ -303,14 +296,14 @@ describe('AutoExecutor', () => {
         confidence: 0.8
       }, 2);
 
-      const result = executor.executeApprovedTrade(pendingResult.pendingExecutionId);
+      const result = await executor.executeApprovedTrade(pendingResult.pendingExecutionId);
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('must be approved first');
     });
 
-    it('should fail for non-existent execution', () => {
-      const result = executor.executeApprovedTrade(9999);
+    it('should fail for non-existent execution', async () => {
+      const result = await executor.executeApprovedTrade(9999);
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('not found');
@@ -321,35 +314,35 @@ describe('AutoExecutor', () => {
   });
 
   describe('executeAllApproved', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
       // Create and approve multiple executions
       for (const symbol of ['AAPL', 'GOOGL']) {
         const company = fixtures.companies[symbol];
-        const result = executor.processRecommendation({
+        const result = await executor.processRecommendation({
           symbol,
           companyId: company.id,
           action: 'buy',
           score: 0.7,
           confidence: 0.8
         }, 2);
-        executor.approveExecution(result.pendingExecutionId);
+        await executor.approveExecution(result.pendingExecutionId);
       }
     });
 
-    it('should attempt to execute all approved trades', () => {
+    it('should attempt to execute all approved trades', async () => {
       // The full test requires complete PortfolioService schema
       // which involves many more tables. We verify the method exists
       // and handles execution attempts gracefully.
       expect(typeof executor.executeAllApproved).toBe('function');
 
       // Verify approved executions exist before calling
-      const approved = executor.getApprovedExecutions(2);
+      const approved = await executor.getApprovedExecutions(2);
       expect(approved.length).toBe(2);
 
       // The actual execution will fail due to incomplete test schema
       // but the method should still return a proper result structure
       try {
-        const result = executor.executeAllApproved(2);
+        const result = await executor.executeAllApproved(2);
         // If it doesn't throw, check the result structure
         expect(result).toBeDefined();
         expect(typeof result.executed).toBe('number');
@@ -363,19 +356,19 @@ describe('AutoExecutor', () => {
   });
 
   describe('getApprovedExecutions', () => {
-    beforeEach(() => {
-      const result = executor.processRecommendation({
+    beforeEach(async () => {
+      const result = await executor.processRecommendation({
         symbol: 'AAPL',
         companyId: 1,
         action: 'buy',
         score: 0.7,
         confidence: 0.8
       }, 2);
-      executor.approveExecution(result.pendingExecutionId);
+      await executor.approveExecution(result.pendingExecutionId);
     });
 
-    it('should return approved executions', () => {
-      const approved = executor.getApprovedExecutions(2);
+    it('should return approved executions', async () => {
+      const approved = await executor.getApprovedExecutions(2);
 
       expect(Array.isArray(approved)).toBe(true);
       expect(approved.length).toBeGreaterThan(0);
@@ -384,16 +377,16 @@ describe('AutoExecutor', () => {
   });
 
   describe('getExecutionHistory', () => {
-    it('should return execution history', () => {
-      const history = executor.getExecutionHistory(1, 10);
+    it('should return execution history', async () => {
+      const history = await executor.getExecutionHistory(1, 10);
 
       expect(Array.isArray(history)).toBe(true);
     });
   });
 
   describe('getExecutionStats', () => {
-    it('should return execution statistics', () => {
-      const stats = executor.getExecutionStats(1);
+    it('should return execution statistics', async () => {
+      const stats = await executor.getExecutionStats(1);
 
       expect(stats).toBeDefined();
       expect(typeof stats.pending).toBe('number');
@@ -404,30 +397,30 @@ describe('AutoExecutor', () => {
   });
 
   describe('expireOldExecutions', () => {
-    it('should expire old executions', () => {
+    it('should expire old executions', async () => {
       // Create an expired execution by manually setting expires_at
       db.prepare(`
         INSERT INTO pending_executions (portfolio_id, symbol, company_id, action, shares, estimated_price, status, expires_at)
         VALUES (?, ?, ?, ?, ?, ?, 'pending', datetime('now', '-1 day'))
       `).run(1, 'AAPL', 1, 'BUY', 10, 178.0);
 
-      const result = executor.expireOldExecutions();
+      const result = await executor.expireOldExecutions();
 
       expect(result.expired).toBeGreaterThanOrEqual(1);
     });
   });
 
   describe('approveAllPending', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
       // Create multiple pending executions
-      executor.processRecommendation({
+      await executor.processRecommendation({
         symbol: 'AAPL',
         companyId: 1,
         action: 'buy',
         score: 0.7,
         confidence: 0.8
       }, 2);
-      executor.processRecommendation({
+      await executor.processRecommendation({
         symbol: 'GOOGL',
         companyId: 2,
         action: 'buy',
@@ -436,8 +429,8 @@ describe('AutoExecutor', () => {
       }, 2);
     });
 
-    it('should approve all pending executions for portfolio', () => {
-      const result = executor.approveAllPending(2, 'batch_approver');
+    it('should approve all pending executions for portfolio', async () => {
+      const result = await executor.approveAllPending(2, 'batch_approver');
 
       expect(result.approved).toBe(2);
       expect(result.failed).toBe(0);
@@ -445,8 +438,8 @@ describe('AutoExecutor', () => {
   });
 
   describe('rejectAllPending', () => {
-    beforeEach(() => {
-      executor.processRecommendation({
+    beforeEach(async () => {
+      await executor.processRecommendation({
         symbol: 'AAPL',
         companyId: 1,
         action: 'buy',
@@ -455,8 +448,8 @@ describe('AutoExecutor', () => {
       }, 2);
     });
 
-    it('should reject all pending executions for portfolio', () => {
-      const result = executor.rejectAllPending(2, 'Market conditions changed', 'user');
+    it('should reject all pending executions for portfolio', async () => {
+      const result = await executor.rejectAllPending(2, 'Market conditions changed', 'user');
 
       expect(result.rejected).toBe(1);
       expect(result.failed).toBe(0);

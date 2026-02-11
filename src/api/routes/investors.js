@@ -10,6 +10,13 @@ const { responseCacheMiddleware } = require('../../middleware/apiOptimization');
 // Cache configurations (Tier 3 optimization)
 const CACHE_LONG = { ttl: 300000 };   // 5 minutes for leaderboard/aggregates
 
+// On error, return 200 with empty/safe data so Investor Detail page loads (e.g. missing tables on Postgres)
+const emptyBreakdown = () => ({ stock: { count: 0, value: 0, weight: 0 }, put: { count: 0, value: 0, weight: 0 }, call: { count: 0, value: 0, weight: 0 } });
+function handleInvestorDetailError(res, error, payload) {
+  console.warn('[Investors API]', error.message);
+  return res.status(200).json(payload);
+}
+
 // ============================================
 // Investor List and Details
 // ============================================
@@ -386,8 +393,15 @@ router.get('/:id/holdings', async (req, res) => {
       breakdown // NEW: Stock vs Options breakdown
     });
   } catch (error) {
-    console.error('Error fetching holdings:', error);
-    res.status(500).json({ success: false, error: error.message });
+    handleInvestorDetailError(res, error, {
+      success: true,
+      holdings: [],
+      filingDate: null,
+      totalValue: 0,
+      totalPositions: 0,
+      filteredPositions: 0,
+      breakdown: emptyBreakdown()
+    });
   }
 });
 
@@ -404,8 +418,7 @@ router.get('/:id/changes', async (req, res) => {
       changes
     });
   } catch (error) {
-    console.error('Error fetching holding changes:', error);
-    res.status(500).json({ success: false, error: error.message });
+    handleInvestorDetailError(res, error, { success: true, changes: [] });
   }
 });
 
@@ -476,8 +489,14 @@ router.get('/:id/returns', responseCacheMiddleware(CACHE_LONG), async (req, res)
       ...data
     });
   } catch (error) {
-    console.error('Error fetching portfolio returns:', error);
-    res.status(500).json({ success: false, error: error.message });
+    handleInvestorDetailError(res, error, {
+      success: true,
+      investorId: parseInt(req.params.id),
+      cached: false,
+      summary: null,
+      quarterly: [],
+      benchmark: null
+    });
   }
 });
 
@@ -553,8 +572,7 @@ router.get('/:id/stats', async (req, res) => {
       stats
     });
   } catch (error) {
-    console.error('Error fetching investor stats:', error);
-    res.status(500).json({ success: false, error: error.message });
+    handleInvestorDetailError(res, error, { success: true, stats: null });
   }
 });
 
