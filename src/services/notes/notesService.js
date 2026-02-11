@@ -283,7 +283,7 @@ class NotesService {
 
     // Add tags
     for (const tagId of tagIds) {
-      const onConflict = isUsingPostgres() ? 'ON CONFLICT DO NOTHING' : 'OR IGNORE';
+      const onConflict = isUsingPostgres() ? 'ON CONFLICT (note_id, tag_id) DO NOTHING' : 'OR IGNORE';
       await database.query(`
         INSERT ${onConflict} INTO note_tags (note_id, tag_id) VALUES ($1, $2)
       `, [noteId, tagId]);
@@ -365,7 +365,7 @@ class NotesService {
     if (tagIds !== null) {
       await database.query('DELETE FROM note_tags WHERE note_id = $1', [noteId]);
       for (const tagId of tagIds) {
-        const onConflict = isUsingPostgres() ? 'ON CONFLICT DO NOTHING' : 'OR IGNORE';
+        const onConflict = isUsingPostgres() ? 'ON CONFLICT (note_id, tag_id) DO NOTHING' : 'OR IGNORE';
         await database.query(`
           INSERT ${onConflict} INTO note_tags (note_id, tag_id) VALUES ($1, $2)
         `, [noteId, tagId]);
@@ -515,7 +515,7 @@ class NotesService {
 
   async addTagToNote(noteId, tagId) {
     const database = await getDatabaseAsync();
-    const onConflict = isUsingPostgres() ? 'ON CONFLICT DO NOTHING' : 'OR IGNORE';
+    const onConflict = isUsingPostgres() ? 'ON CONFLICT (note_id, tag_id) DO NOTHING' : 'OR IGNORE';
     await database.query(`
       INSERT ${onConflict} INTO note_tags (note_id, tag_id) VALUES ($1, $2)
     `, [noteId, tagId]);

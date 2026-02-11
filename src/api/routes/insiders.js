@@ -772,7 +772,13 @@ router.get('/stats', async (req, res) => {
       period: period === 'all' ? 'all time' : period,
       yearToDate: stats,
       monthlyTrend,
-      signalDistribution
+      signalDistribution,
+      _debug: {
+        period_param: period,
+        where_clause: whereClause || 'NONE',
+        raw_stats: stats,
+        has_monthly_data: monthlyTrend.length > 0
+      }
     });
   } catch (error) {
     // Log full error details for debugging

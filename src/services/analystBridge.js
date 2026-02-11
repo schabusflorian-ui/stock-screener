@@ -594,19 +594,20 @@ class AnalystService {
       throw new Error(`Conversation not found: ${conversationId}`);
     }
 
-    const analyst = ANALYSTS[conv.analyst_id];
+    const analystId = conv.analyst_id || 'value';
+    const analyst = ANALYSTS[analystId];
     if (!analyst) {
-      throw new Error(`Invalid analyst: ${conv.analyst_id}`);
+      throw new Error(`Invalid analyst: ${analystId}`);
     }
 
     // Enrich context with factor analysis
-    let enrichedContext = await this._enrichWithFactors(companyContext, conv.analyst_id);
+    let enrichedContext = await this._enrichWithFactors(companyContext, analystId);
 
     // Enrich context with knowledge base content (quotes, frameworks, case studies)
-    enrichedContext = this._enrichWithKnowledge(enrichedContext, conv.analyst_id, message);
+    enrichedContext = this._enrichWithKnowledge(enrichedContext, analystId, message);
 
     // Add analyst_id to context for Python service
-    enrichedContext = { ...enrichedContext, analyst_id: conv.analyst_id };
+    enrichedContext = { ...enrichedContext, analyst_id: analystId };
 
     // Add user message
     const userMsg = {
@@ -687,19 +688,20 @@ class AnalystService {
       throw new Error(`Conversation not found: ${conversationId}`);
     }
 
-    const analyst = ANALYSTS[conv.analyst_id];
+    const analystId = conv.analyst_id || 'value';
+    const analyst = ANALYSTS[analystId];
     if (!analyst) {
-      throw new Error(`Invalid analyst: ${conv.analyst_id}`);
+      throw new Error(`Invalid analyst: ${analystId}`);
     }
 
     // Enrich context with factor analysis
-    let enrichedContext = await this._enrichWithFactors(companyContext, conv.analyst_id);
+    let enrichedContext = await this._enrichWithFactors(companyContext, analystId);
 
     // Enrich context with knowledge base content (quotes, frameworks, case studies)
-    enrichedContext = this._enrichWithKnowledge(enrichedContext, conv.analyst_id, message);
+    enrichedContext = this._enrichWithKnowledge(enrichedContext, analystId, message);
 
     // Add analyst_id to context for Python service
-    enrichedContext = { ...enrichedContext, analyst_id: conv.analyst_id };
+    enrichedContext = { ...enrichedContext, analyst_id: analystId };
 
     // Add user message
     const userMsg = {

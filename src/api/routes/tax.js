@@ -13,6 +13,7 @@
 const express = require('express');
 const router = express.Router();
 const { PortfolioTaxService } = require('../../services/portfolio/portfolioTaxService');
+const { getDatabaseAsync } = require('../../lib/db');
 const {
   getTaxRegime,
   getCountryOptions,
@@ -22,9 +23,9 @@ const {
 
 let taxService = null;
 
-function getTaxService(req) {
+function getTaxService() {
   if (!taxService) {
-    taxService = new PortfolioTaxService(req.db);
+    taxService = new PortfolioTaxService();
   }
   return taxService;
 }
@@ -37,16 +38,16 @@ function getTaxService(req) {
  * GET /api/tax/settings
  * Get user's global tax settings
  */
-router.get('/settings', (req, res) => {
+router.get('/settings', async (req, res) => {
   try {
     // For now, store in a simple settings table
     // In production, this would be user-specific
-    const db = req.db.getDatabase ? req.db.getDatabase() : req.db;
+    const database = await getDatabaseAsync();
 
     // Ensure table exists
-    db.exec(`
+    await database.query(`
       CREATE TABLE IF NOT EXISTS user_tax_settings (
-        id INTEGER PRIMARY KEY DEFAULT 1,
+        id INTEGER PRIMARY KEY,
         tax_country TEXT DEFAULT 'AT',
         tax_year INTEGER DEFAULT 2024,
         lot_method TEXT DEFAULT 'fifo',
@@ -55,21 +56,24 @@ router.get('/settings', (req, res) => {
         enable_tax_loss_harvesting INTEGER DEFAULT 1,
         tax_loss_threshold REAL DEFAULT 500,
         show_tax_impact INTEGER DEFAULT 1,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
-    let settings = db.prepare('SELECT * FROM user_tax_settings WHERE id = 1').get();
+    const settingsResult = await database.query('SELECT * FROM user_tax_settings WHERE id = $1', [1]);
+    let settings = settingsResult.rows[0];
 
     if (!settings) {
       // Insert defaults
-      db.prepare(`
-        INSERT INTO user_tax_settings (id, tax_country, tax_year)
-        VALUES (1, 'AT', ?)
-      `).run(new Date().getFullYear());
+      await database.query(
+        `INSERT INTO user_tax_settings (id, tax_country, tax_year)
+        VALUES ($1, $2, $3)`,
+        [1, 'AT', new Date().getFullYear()]
+      );
 
-      settings = db.prepare('SELECT * FROM user_tax_settings WHERE id = 1').get();
+      const refreshedSettings = await database.query('SELECT * FROM user_tax_settings WHERE id = $1', [1]);
+      settings = refreshedSettings.rows[0];
     }
 
     // Get regime summary for the selected country
@@ -96,7 +100,7 @@ router.get('/settings', (req, res) => {
  * PUT /api/tax/settings
  * Update user's global tax settings
  */
-router.put('/settings', (req, res) => {
+router.put('/settings', async (req, res) => {
   try {
     const {
       taxCountry,
@@ -109,21 +113,21 @@ router.put('/settings', (req, res) => {
       showTaxImpact
     } = req.body;
 
-    const db = req.db.getDatabase ? req.db.getDatabase() : req.db;
+    const database = await getDatabaseAsync();
 
-    db.prepare(`
+    await database.query(`
       UPDATE user_tax_settings SET
-        tax_country = COALESCE(?, tax_country),
-        tax_year = COALESCE(?, tax_year),
-        lot_method = COALESCE(?, lot_method),
-        broker_type = COALESCE(?, broker_type),
-        track_tax_lots = COALESCE(?, track_tax_lots),
-        enable_tax_loss_harvesting = COALESCE(?, enable_tax_loss_harvesting),
-        tax_loss_threshold = COALESCE(?, tax_loss_threshold),
-        show_tax_impact = COALESCE(?, show_tax_impact),
+        tax_country = COALESCE($1, tax_country),
+        tax_year = COALESCE($2, tax_year),
+        lot_method = COALESCE($3, lot_method),
+        broker_type = COALESCE($4, broker_type),
+        track_tax_lots = COALESCE($5, track_tax_lots),
+        enable_tax_loss_harvesting = COALESCE($6, enable_tax_loss_harvesting),
+        tax_loss_threshold = COALESCE($7, tax_loss_threshold),
+        show_tax_impact = COALESCE($8, show_tax_impact),
         updated_at = CURRENT_TIMESTAMP
       WHERE id = 1
-    `).run(
+    `, [
       taxCountry,
       taxYear,
       lotMethod,
@@ -132,7 +136,7 @@ router.put('/settings', (req, res) => {
       enableTaxLossHarvesting !== undefined ? (enableTaxLossHarvesting ? 1 : 0) : null,
       taxLossHarvestingThreshold,
       showTaxImpact !== undefined ? (showTaxImpact ? 1 : 0) : null
-    );
+    ]);
 
     res.json({ success: true, message: 'Tax settings updated' });
   } catch (error) {
@@ -194,11 +198,11 @@ router.get('/regimes/:code', (req, res) => {
  * GET /api/portfolios/:portfolioId/tax/settings
  * Get tax settings for a specific portfolio
  */
-router.get('/portfolios/:portfolioId/settings', (req, res) => {
+router.get('/portfolios/:portfolioId/settings', async (req, res) => {
   try {
     const { portfolioId } = req.params;
-    const service = getTaxService(req);
-    const settings = service.getTaxSettings(parseInt(portfolioId));
+    const service = getTaxService();
+    const settings = await service.getTaxSettings(parseInt(portfolioId, 10));
 
     res.json({
       success: true,
@@ -214,11 +218,11 @@ router.get('/portfolios/:portfolioId/settings', (req, res) => {
  * PUT /api/portfolios/:portfolioId/tax/settings
  * Update tax settings for a specific portfolio
  */
-router.put('/portfolios/:portfolioId/settings', (req, res) => {
+router.put('/portfolios/:portfolioId/settings', async (req, res) => {
   try {
     const { portfolioId } = req.params;
-    const service = getTaxService(req);
-    const settings = service.updateTaxSettings(parseInt(portfolioId), req.body);
+    const service = getTaxService();
+    const settings = await service.updateTaxSettings(parseInt(portfolioId, 10), req.body);
 
     res.json({
       success: true,
@@ -234,15 +238,15 @@ router.put('/portfolios/:portfolioId/settings', (req, res) => {
  * GET /api/portfolios/:portfolioId/tax/summary
  * Get year-end tax summary for portfolio
  */
-router.get('/portfolios/:portfolioId/summary', (req, res) => {
+router.get('/portfolios/:portfolioId/summary', async (req, res) => {
   try {
     const { portfolioId } = req.params;
     const { year } = req.query;
-    const service = getTaxService(req);
+    const service = getTaxService();
 
-    const summary = service.getYearEndSummary(
-      parseInt(portfolioId),
-      year ? parseInt(year) : new Date().getFullYear()
+    const summary = await service.getYearEndSummary(
+      parseInt(portfolioId, 10),
+      year ? parseInt(year, 10) : new Date().getFullYear()
     );
 
     res.json({
@@ -259,12 +263,11 @@ router.get('/portfolios/:portfolioId/summary', (req, res) => {
  * GET /api/portfolios/:portfolioId/tax/harvesting
  * Get tax loss harvesting opportunities
  */
-router.get('/portfolios/:portfolioId/harvesting', (req, res) => {
+router.get('/portfolios/:portfolioId/harvesting', async (req, res) => {
   try {
     const { portfolioId } = req.params;
-    const service = getTaxService(req);
-
-    const opportunities = service.getTaxLossHarvestingOpportunities(parseInt(portfolioId));
+    const service = getTaxService();
+    const opportunities = await service.getTaxLossHarvestingOpportunities(parseInt(portfolioId, 10));
 
     res.json({
       success: true,
@@ -280,7 +283,7 @@ router.get('/portfolios/:portfolioId/harvesting', (req, res) => {
  * POST /api/portfolios/:portfolioId/tax/impact
  * Calculate tax impact for a potential trade
  */
-router.post('/portfolios/:portfolioId/impact', (req, res) => {
+router.post('/portfolios/:portfolioId/impact', async (req, res) => {
   try {
     const { portfolioId } = req.params;
     const { symbol, shares, price, side } = req.body;
@@ -292,9 +295,9 @@ router.post('/portfolios/:portfolioId/impact', (req, res) => {
       });
     }
 
-    const service = getTaxService(req);
-    const impact = service.calculateTradeImpact(
-      parseInt(portfolioId),
+    const service = getTaxService();
+    const impact = await service.calculateTradeImpact(
+      parseInt(portfolioId, 10),
       symbol,
       parseFloat(shares),
       parseFloat(price),

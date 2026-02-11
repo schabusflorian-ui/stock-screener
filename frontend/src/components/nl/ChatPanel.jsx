@@ -267,6 +267,7 @@ function ChatPanel() {
       // Use streaming endpoint
       const response = await fetch(`${API_BASE}/api/nl/query/stream`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           query,
