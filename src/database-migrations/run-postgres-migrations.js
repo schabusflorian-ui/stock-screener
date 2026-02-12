@@ -51,6 +51,7 @@ const POSTGRES_MIGRATIONS = [
   '023-agent-universe-and-subreddit-region-postgres.js',
   '024-fix-user-factors-boolean-columns-postgres.js',
   '025-add-paper-trading-tables-postgres.js',
+  '026-fix-user-factors-higher-is-better-postgres.js',
   '018-add-congressional-postgres.js',
   '019-add-tracked-subreddits-region-postgres.js',
   'add-postgres-alert-system.js',
