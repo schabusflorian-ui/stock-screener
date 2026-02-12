@@ -12,11 +12,16 @@ async function up(db) {
   console.log('🔄 Running migration: 026-fix-user-factors-higher-is-better');
 
   try {
+    // Step 1: Drop the default (e.g. DEFAULT 1) - it blocks type change
+    await db.query(`ALTER TABLE user_factors ALTER COLUMN higher_is_better DROP DEFAULT`);
+    // Step 2: Change column type
     await db.query(`
       ALTER TABLE user_factors 
       ALTER COLUMN higher_is_better TYPE BOOLEAN 
       USING CASE WHEN higher_is_better = 0 THEN FALSE ELSE TRUE END
     `);
+    // Step 3: Restore default
+    await db.query(`ALTER TABLE user_factors ALTER COLUMN higher_is_better SET DEFAULT TRUE`);
     console.log('✓ Fixed user_factors.higher_is_better column type');
 
     console.log('✅ Migration 026 completed successfully');
