@@ -257,7 +257,7 @@ router.get('/health', async (req, res) => {
     try {
       // Check if api_usage_daily table exists
       const tableExistsResult = await database.query(
-        isPostgres: isUsingPostgres()
+        isUsingPostgres()
           ? `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = $1) as exists`
           : `SELECT name FROM sqlite_master WHERE type='table' AND name=?`,
         ['api_usage_daily']
