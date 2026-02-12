@@ -84,7 +84,7 @@ router.get('/decisions', async (req, res) => {
     params.push(parseInt(limit), parseInt(offset));
 
     const decisionsResult = await database.query(query, params);
-    const decisions = decisionsResult.rows;
+    const decisions = Array.isArray(decisionsResult.rows) ? decisionsResult.rows : [];
 
     // Get total count
     const countQuery = query.replace(/SELECT[\s\S]*?FROM/, 'SELECT COUNT(*) as count FROM')
@@ -94,7 +94,7 @@ router.get('/decisions', async (req, res) => {
     const count = countResult.rows[0].count;
 
     res.json({
-      decisions,
+      decisions: Array.isArray(decisions) ? decisions : [],
       pagination: {
         total: count,
         limit: parseInt(limit),
@@ -362,9 +362,9 @@ router.get('/similar-decisions', async (req, res) => {
     params.push(parseInt(limit));
 
     const decisionsResult = await database.query(query, params);
-    const decisions = decisionsResult.rows;
+    const decisions = Array.isArray(decisionsResult.rows) ? decisionsResult.rows : [];
 
-    res.json({ decisions });
+    res.json({ decisions: Array.isArray(decisions) ? decisions : [] });
   } catch (err) {
     console.error('Error fetching similar decisions:', err);
     res.status(500).json({ error: err.message });
@@ -433,7 +433,7 @@ router.get('/performance-by-factor', async (req, res) => {
 
     res.json({
       factor,
-      performance,
+      performance: Array.isArray(performance) ? performance : [],
       interpretation
     });
   } catch (err) {

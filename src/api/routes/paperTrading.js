@@ -61,7 +61,7 @@ router.get('/accounts', async (req, res) => {
     getEngine(req);
     const db = req.app.get('db');
     const res_ = await query(db, 'SELECT * FROM paper_accounts ORDER BY created_at DESC');
-    const accounts = res_.rows || [];
+    const accounts = Array.isArray(res_.rows) ? res_.rows : [];
     res.json({ success: true, data: accounts });
   } catch (error) {
     console.error('Error fetching paper accounts:', error);
@@ -215,7 +215,8 @@ router.get('/accounts/:id/positions', async (req, res) => {
     const engine = getEngine(req);
     const accountId = parseInt(req.params.id);
     const positions = await engine.getPositions(accountId);
-    res.json({ success: true, data: positions });
+    const positionsList = Array.isArray(positions) ? positions : [];
+    res.json({ success: true, data: positionsList });
   } catch (error) {
     console.error('Error fetching positions:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -236,7 +237,8 @@ router.get('/accounts/:id/trades', async (req, res) => {
     const accountId = parseInt(req.params.id);
     const limit = parseInt(req.query.limit) || 50;
     const trades = await engine.getTrades(accountId, limit);
-    res.json({ success: true, data: trades });
+    const tradesList = Array.isArray(trades) ? trades : [];
+    res.json({ success: true, data: tradesList });
   } catch (error) {
     console.error('Error fetching trades:', error);
     res.status(500).json({ success: false, error: error.message });

@@ -250,11 +250,12 @@ router.get('/:id/holdings', requireAuth, requirePortfolioOwnership, asyncHandler
     }
 
     const positions = await service.getPositions(portfolioId);
+    const holdings = Array.isArray(positions) ? positions : [];
     res.json({
       success: true,
       portfolioId,
-      count: positions.length,
-      holdings: positions  // Frontend expects 'holdings'
+      count: holdings.length,
+      holdings  // Frontend expects 'holdings'
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -275,11 +276,12 @@ router.get('/:id/positions', requireAuth, requirePortfolioOwnership, asyncHandle
     }
 
     const positions = await service.getPositions(portfolioId);
+    const positionsList = Array.isArray(positions) ? positions : [];
     res.json({
       success: true,
       portfolioId,
-      count: positions.length,
-      positions
+      count: positionsList.length,
+      positions: positionsList
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -324,7 +326,8 @@ router.get('/:id/underlying', asyncHandler(async (req, res) => {
     }
 
     // Get positions
-    const positions = await service.getPositions(portfolioId);
+    const rawPositions = await service.getPositions(portfolioId);
+    const positions = Array.isArray(rawPositions) ? rawPositions : [];
 
     // Find ETF positions
     const etfPositions = positions.filter(p => p.sector === 'ETF' || p.is_etf);
@@ -636,12 +639,13 @@ router.get('/:id/orders', asyncHandler(async (req, res) => {
     } else {
       orders = await service.getActiveOrders(portfolioId);
     }
+    const ordersList = Array.isArray(orders) ? orders : [];
 
     res.json({
       success: true,
       portfolioId,
-      count: orders.length,
-      orders
+      count: ordersList.length,
+      orders: ordersList
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -725,12 +729,13 @@ router.get('/:id/transactions', asyncHandler(async (req, res) => {
       limit: parseInt(limit),
       offset: parseInt(offset)
     });
+    const transactionsList = Array.isArray(transactions) ? transactions : [];
 
     res.json({
       success: true,
       portfolioId,
-      count: transactions.length,
-      transactions
+      count: transactionsList.length,
+      transactions: transactionsList
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

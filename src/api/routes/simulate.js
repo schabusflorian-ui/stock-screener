@@ -239,10 +239,15 @@ router.get('/backtest/:id', async (req, res) => {
   try {
     const backtestId = parseInt(req.params.id);
     const backtest = await backtestEngine.getBacktest(backtestId);
+    const data = backtest ? {
+      ...backtest,
+      equityCurve: Array.isArray(backtest.equityCurve) ? backtest.equityCurve : [],
+      monthlyReturns: Array.isArray(backtest.monthlyReturns) ? backtest.monthlyReturns : []
+    } : null;
 
     res.json({
       success: true,
-      data: backtest
+      data
     });
   } catch (error) {
     console.error('Error getting backtest:', error);
@@ -793,9 +798,11 @@ router.post('/stress-test/all', async (req, res) => {
  * Get available stress test scenarios
  */
 router.get('/stress-test/scenarios', async (req, res) => {
+  const raw = await stressTestEngine.getAvailableScenarios();
+  const data = Array.isArray(raw) ? raw : [];
   res.json({
     success: true,
-    data: await stressTestEngine.getAvailableScenarios()
+    data
   });
 });
 
@@ -1092,10 +1099,15 @@ router.post('/portfolios/:id/rebalance-calc', async (req, res) => {
     }
 
     const result = await rebalanceCalculator.calculateRebalanceTrades(portfolioId, targetAllocation, options);
+    const data = result ? {
+      ...result,
+      positions: Array.isArray(result.positions) ? result.positions : [],
+      trades: Array.isArray(result.trades) ? result.trades : []
+    } : { positions: [], trades: [] };
 
     res.json({
       success: true,
-      data: result
+      data
     });
   } catch (error) {
     console.error('Error calculating rebalance trades:', error);
