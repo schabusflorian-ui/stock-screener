@@ -1,7 +1,7 @@
 // src/services/features/featureMonitor.js
 // Feature Drift Monitoring - Detect distribution shifts and data quality issues
 
-const { getDatabaseAsync } = require('../../lib/db');
+const { db } = require('../../database');
 const { getRegistry, FEATURE_TYPES } = require('./featureRegistry');
 const { getStore } = require('./featureStore');
 
@@ -31,15 +31,14 @@ class FeatureMonitor {
     // Store baseline statistics
     this.baselineStats = new Map();
 
-    this._initPromise = this._ensureTablesExist();
+    this._ensureTablesExist();
   }
 
   /**
    * Create monitoring tables
    */
-  async _ensureTablesExist() {
-    const database = await getDatabaseAsync();
-    await database.exec(`
+  _ensureTablesExist() {
+    db.exec(`
       -- Feature baseline statistics
       CREATE TABLE IF NOT EXISTS feature_baselines (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,11 +106,10 @@ class FeatureMonitor {
    * @param {string} endDate - End date for baseline period
    */
   async computeBaseline(featureName, symbols, startDate, endDate) {
-    const feature = await this.registry.get(featureName);
+    const feature = this.registry.get(featureName);
     if (!feature) {
       throw new Error(`Feature ${featureName} not found`);
     }
-    await this._initPromise;
 
     // Collect feature values
     const values = [];
@@ -119,8 +117,7 @@ class FeatureMonitor {
     let totalCount = 0;
 
     // Get all trading dates
-    const database = await getDatabaseAsync();
-    const dates = await database.prepare(`
+    const dates = db.prepare(`
       SELECT DISTINCT date FROM daily_prices
       WHERE date >= ? AND date <= ?
       ORDER BY date
@@ -163,7 +160,7 @@ class FeatureMonitor {
     };
 
     // Store in database
-    await database.prepare(`
+    db.prepare(`
       INSERT INTO feature_baselines (
         feature_name, baseline_date, sample_size,
         mean, std, min_val, max_val,
@@ -206,12 +203,10 @@ class FeatureMonitor {
    * @returns {object} Drift analysis results
    */
   async checkDrift(featureName, symbols, checkDate) {
-    await this._initPromise;
     // Get baseline
     let baseline = this.baselineStats.get(featureName);
     if (!baseline) {
-      const database = await getDatabaseAsync();
-      const row = await database.prepare(`
+      const row = db.prepare(`
         SELECT * FROM feature_baselines
         WHERE feature_name = ?
         ORDER BY baseline_date DESC
@@ -323,8 +318,7 @@ class FeatureMonitor {
 
     // Store alerts
     for (const alert of alerts) {
-      const database = await getDatabaseAsync();
-      await database.prepare(`
+      db.prepare(`
         INSERT INTO feature_drift_alerts (
           feature_name, alert_date, alert_type, severity,
           metric_value, threshold, details
@@ -360,10 +354,9 @@ class FeatureMonitor {
    * @param {string} featureName - Feature to check
    * @param {string[]} symbols - Symbols to check
    * @param {string} date - Date to check
-   * @returns {object} Outlier analysis
+   * @returns {Promise<object>} Outlier analysis
    */
   async checkOutliers(featureName, symbols, date) {
-    await this._initPromise;
     const baseline = this.baselineStats.get(featureName);
     if (!baseline) {
       return { error: 'No baseline found' };
@@ -389,8 +382,7 @@ class FeatureMonitor {
     // Alert if too many outliers
     const outlierRate = outliers.length / symbols.length;
     if (outlierRate > 0.05) { // More than 5% outliers
-      const database = await getDatabaseAsync();
-      await database.prepare(`
+      db.prepare(`
         INSERT INTO feature_drift_alerts (
           feature_name, alert_date, alert_type, severity,
           metric_value, threshold, details
@@ -418,8 +410,8 @@ class FeatureMonitor {
    * @param {string} featureName - Feature to check
    * @returns {object} Freshness analysis
    */
-  async checkFreshness(featureName) {
-    const feature = await this.registry.get(featureName);
+  checkFreshness(featureName) {
+    const feature = this.registry.get(featureName);
     if (!feature) {
       return { error: 'Feature not found' };
     }
@@ -432,8 +424,7 @@ class FeatureMonitor {
         feature.sourceTable === 'calculated_metrics' ? 'calculation_date' : 'date';
 
       try {
-        const database = await getDatabaseAsync();
-        const result = await database.prepare(`
+        const result = db.prepare(`
           SELECT MAX(${dateColumn}) as latest_date
           FROM ${feature.sourceTable}
         `).get();
@@ -459,8 +450,7 @@ class FeatureMonitor {
     const stale = daysSinceUpdate > this.stalenessThresholdDays;
 
     if (stale) {
-      const database = await getDatabaseAsync();
-      await database.prepare(`
+      db.prepare(`
         INSERT INTO feature_drift_alerts (
           feature_name, alert_date, alert_type, severity,
           metric_value, threshold, details
@@ -493,7 +483,7 @@ class FeatureMonitor {
   async computeHealthScore(featureName, symbols, date) {
     const driftResult = await this.checkDrift(featureName, symbols, date);
     const outlierResult = await this.checkOutliers(featureName, symbols, date);
-    const freshnessResult = await this.checkFreshness(featureName);
+    const freshnessResult = this.checkFreshness(featureName);
 
     // Calculate component scores (0-100)
     let driftScore = 100;
@@ -529,8 +519,7 @@ class FeatureMonitor {
     );
 
     // Store snapshot
-    const database = await getDatabaseAsync();
-    await database.prepare(`
+    db.prepare(`
       INSERT INTO feature_health_snapshots (
         snapshot_date, feature_name, health_score,
         drift_score, completeness_score, freshness_score, stability_score
@@ -571,7 +560,7 @@ class FeatureMonitor {
    * @returns {object} Full health report
    */
   async runFullHealthCheck(symbols, date) {
-    const mlFeatures = await this.registry.getMLFeatures();
+    const mlFeatures = this.registry.getMLFeatures();
     const results = [];
     const alerts = [];
 
@@ -621,7 +610,7 @@ class FeatureMonitor {
    * @param {object} options - Filter options
    * @returns {Array} Recent alerts
    */
-  async getRecentAlerts(options = {}) {
+  getRecentAlerts(options = {}) {
     const {
       days = 7,
       severity = null,
@@ -644,16 +633,14 @@ class FeatureMonitor {
 
     sql += ` ORDER BY created_at DESC LIMIT ${limit}`;
 
-    const database = await getDatabaseAsync();
-    return database.prepare(sql).all();
+    return db.prepare(sql).all();
   }
 
   /**
    * Acknowledge an alert
    */
-  async acknowledgeAlert(alertId) {
-    const database = await getDatabaseAsync();
-    await database.prepare(`
+  acknowledgeAlert(alertId) {
+    db.prepare(`
       UPDATE feature_drift_alerts SET acknowledged = 1 WHERE id = ?
     `).run(alertId);
   }
@@ -661,9 +648,8 @@ class FeatureMonitor {
   /**
    * Get feature health history
    */
-  async getHealthHistory(featureName, days = 30) {
-    const database = await getDatabaseAsync();
-    return database.prepare(`
+  getHealthHistory(featureName, days = 30) {
+    return db.prepare(`
       SELECT * FROM feature_health_snapshots
       WHERE feature_name = ?
         AND snapshot_date >= date('now', '-${days} days')

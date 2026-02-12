@@ -122,42 +122,42 @@ class FeatureStoreIntegration {
     }
 
     const date = this._getEffectiveDate();
-    return this.store.getFeatures(symbol, featureNames, date);
+    return await this.store.getFeatures(symbol, featureNames, date);
   }
 
   /**
    * Get technical features for a symbol
    */
   async getTechnicalFeatures(symbol) {
-    return this.getFeaturesForSignal(symbol, 'technical');
+    return await this.getFeaturesForSignal(symbol, 'technical');
   }
 
   /**
    * Get fundamental features for a symbol
    */
   async getFundamentalFeatures(symbol) {
-    return this.getFeaturesForSignal(symbol, 'fundamental');
+    return await this.getFeaturesForSignal(symbol, 'fundamental');
   }
 
   /**
    * Get factor features for a symbol
    */
   async getFactorFeatures(symbol) {
-    return this.getFeaturesForSignal(symbol, 'factors');
+    return await this.getFeaturesForSignal(symbol, 'factors');
   }
 
   /**
    * Get sentiment features for a symbol
    */
   async getSentimentFeatures(symbol) {
-    return this.getFeaturesForSignal(symbol, 'sentiment');
+    return await this.getFeaturesForSignal(symbol, 'sentiment');
   }
 
   /**
    * Get all ML features for a symbol
    */
   async getMLFeatures(symbol) {
-    return this.getFeaturesForSignal(symbol, 'ml');
+    return await this.getFeaturesForSignal(symbol, 'ml');
   }
 
   /**
@@ -175,7 +175,7 @@ class FeatureStoreIntegration {
     }
 
     const date = this._getEffectiveDate();
-    return this.store.getBatchFeatures(symbols, featureNames, date);
+    return await this.store.getBatchFeatures(symbols, featureNames, date);
   }
 
   /**
@@ -246,7 +246,7 @@ class FeatureStoreIntegration {
    * Create feature vector for ML model
    *
    * @param {string} symbol - Stock symbol
-   * @returns {object} { features: number[], featureNames: string[] }
+   * @returns {Promise<object>} { features: number[], featureNames: string[] }
    */
   async createMLFeatureVector(symbol) {
     const features = await this.getMLFeatures(symbol);
@@ -271,7 +271,7 @@ class FeatureStoreIntegration {
    * Create feature matrix for multiple symbols
    *
    * @param {string[]} symbols - Stock symbols
-   * @returns {object} { matrix: number[][], featureNames: string[], symbols: string[] }
+   * @returns {Promise<object>} { matrix: number[][], featureNames: string[], symbols: string[] }
    */
   async createMLFeatureMatrix(symbols) {
     const matrix = [];
@@ -347,7 +347,7 @@ class FeatureStoreIntegration {
     const stats = {};
 
     for (const [name, value] of Object.entries(features)) {
-      const feature = await this.registry.get(name);
+      const feature = this.registry.get(name);
       stats[name] = {
         value,
         expected: feature ? {

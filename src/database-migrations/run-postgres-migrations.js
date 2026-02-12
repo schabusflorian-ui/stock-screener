@@ -50,6 +50,7 @@ const POSTGRES_MIGRATIONS = [
   '022-add-investor-famous-columns-postgres.js',
   '023-agent-universe-and-subreddit-region-postgres.js',
   '024-fix-user-factors-boolean-columns-postgres.js',
+  '024-add-paper-trading-postgres.js',
   '025-add-paper-trading-tables-postgres.js',
   '026-fix-user-factors-higher-is-better-postgres.js',
   '018-add-congressional-postgres.js',

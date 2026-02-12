@@ -2,7 +2,7 @@
 // Service for managing Trading Agents as first-class entities
 // Pattern follows investorService.js for consistency
 
-const { getDatabaseAsync } = require('../../lib/db');
+const { getDatabaseAsync } = require('../../database');
 const { agent: logger } = require('../../utils/logger');
 
 /**
@@ -56,6 +56,23 @@ const DEFAULT_WEIGHTS = {
   earnings: 0.10,
   valueQuality: 0.10
 };
+
+/**
+ * Fields stored as INTEGER (0/1) in trading_agents; frontend sends booleans.
+ * Coerce to 0/1 so PostgreSQL accepts the value.
+ */
+const INTEGER_BOOLEAN_FIELDS = [
+  'regime_scaling_enabled', 'vix_scaling_enabled', 'pause_in_crisis',
+  'auto_execute', 'require_confirmation',
+  'use_optimized_weights', 'use_hmm_regime', 'use_ml_combiner',
+  'use_factor_exposure', 'use_probabilistic_dcf', 'apply_earnings_filter'
+];
+
+function toIntegerIfBoolean(field, value) {
+  if (!INTEGER_BOOLEAN_FIELDS.includes(field)) return value;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  return value;
+}
 
 /**
  * Safely parse JSON with logging on failure
@@ -393,7 +410,9 @@ async function updateAgent(id, updates) {
 
   const setClause = fieldsToUpdate.map((field, idx) => `${field} = $${idx + 1}`).join(', ');
   const values = fieldsToUpdate.map(field => {
-    const value = updates[field];
+    let value = updates[field];
+    // Coerce booleans to 0/1 for INTEGER columns
+    value = toIntegerIfBoolean(field, value);
     // Convert arrays to JSON strings for PostgreSQL storage
     if (field === 'allowed_actions' && Array.isArray(value)) {
       return JSON.stringify(value);
@@ -963,16 +982,16 @@ async function createPortfolioForAgent(agentId, portfolioConfig) {
     if (mode === 'paper') {
       try {
         const { PaperTradingEngine } = require('../trading/paperTrading');
-        const paperEngine = new PaperTradingEngine();
+        const paperEngine = new PaperTradingEngine(database);
         const accountName = `portfolio_${portfolioId}`;
 
         // Check if account already exists
         let account;
         try {
-          account = paperEngine.getAccount(accountName);
+          account = await paperEngine.getAccount(accountName);
         } catch (err) {
           // Create new paper trading account
-          account = paperEngine.createAccount(accountName, initial_capital);
+          account = await paperEngine.createAccount(accountName, initial_capital);
         }
 
         // Paper account linked via agent_portfolios table (mode column)
@@ -1444,103 +1463,93 @@ function calculateNextContributionDate(config) {
 // ============================================
 
 /**
- * Get the universe of symbols to scan for an agent.
- * Returns [] on schema errors (missing table/column) so the scan can complete with 0 symbols.
+ * Get the universe of symbols to scan for an agent
  */
 async function getAgentUniverse(agentId) {
-  try {
-    const database = await getDatabaseAsync();
-    const agentResult = await database.query('SELECT * FROM trading_agents WHERE id = $1', [agentId]);
-    const agent = agentResult.rows[0];
-    if (!agent) return [];
+  const database = await getDatabaseAsync();
+  const agentResult = await database.query('SELECT * FROM trading_agents WHERE id = $1', [agentId]);
+  const agent = agentResult.rows[0];
+  if (!agent) return [];
 
-    const universeType = agent.universe_type || 'all';
-    let universeFilter = null;
+  const universeType = agent.universe_type || 'all';
+  let universeFilter = null;
 
-    if (agent.universe_filter) {
-      universeFilter = safeJsonParse(agent.universe_filter, 'agent.universe_filter');
-    }
-
-    let symbols = [];
-
-    switch (universeType) {
-      case 'watchlist':
-        // Get symbols from user's watchlist
-        const watchlistResult = await database.query(`
-          SELECT DISTINCT c.symbol
-          FROM watchlist_items wi
-          JOIN companies c ON wi.company_id = c.id
-          ORDER BY c.symbol
-        `);
-        symbols = watchlistResult.rows.map(r => r.symbol);
-        break;
-
-      case 'sector':
-        // Get symbols from specific sectors
-        if (universeFilter?.sectors?.length > 0) {
-          const placeholders = universeFilter.sectors.map((_, idx) => `$${idx + 1}`).join(',');
-          const sectorResult = await database.query(`
-            SELECT symbol FROM companies
-            WHERE sector IN (${placeholders})
-            ORDER BY symbol
-          `, universeFilter.sectors);
-          symbols = sectorResult.rows.map(r => r.symbol);
-        }
-        break;
-
-      case 'custom':
-        // Use explicit symbol list from filter
-        if (universeFilter?.symbols?.length > 0) {
-          symbols = universeFilter.symbols;
-        }
-        break;
-
-      case 'all':
-      default:
-        // Get all active companies with actual trading data
-        // Filter for valid symbols with price data, ordered by market cap
-        const allResult = await database.query(`
-          SELECT c.symbol
-          FROM companies c
-          WHERE c.is_active = true
-            AND LENGTH(c.symbol) <= 5
-            AND c.symbol NOT LIKE '%=%'
-            AND c.symbol NOT LIKE '%.%'
-            AND c.symbol !~ '[0-9]{5,}'
-            AND EXISTS (
-              SELECT 1 FROM daily_prices dp
-              WHERE dp.company_id = c.id
-              AND dp.date >= CURRENT_DATE - INTERVAL '30 days'
-            )
-          ORDER BY c.market_cap DESC NULLS LAST
-          LIMIT 500
-        `);
-        symbols = allResult.rows.map(r => r.symbol);
-        break;
-    }
-
-    // Apply market cap filter if specified
-    if (universeFilter?.min_market_cap && symbols.length > 0) {
-      const minCap = universeFilter.min_market_cap;
-      const placeholders = symbols.map((_, idx) => `$${idx + 1}`).join(',');
-      const filteredResult = await database.query(`
-        SELECT c.symbol FROM companies c
-        WHERE c.symbol IN (${placeholders})
-          AND c.market_cap >= $${symbols.length + 1}
-        ORDER BY c.symbol
-      `, [...symbols, minCap]);
-      symbols = filteredResult.rows.map(r => r.symbol);
-    }
-
-    return symbols;
-  } catch (err) {
-    // Missing table (42P01) or column (42703) – return empty so scan completes without 500
-    if (err.code === '42P01' || err.code === '42703') {
-      console.warn('getAgentUniverse: schema error, returning empty universe:', err.code, err.message);
-      return [];
-    }
-    throw err;
+  if (agent.universe_filter) {
+    universeFilter = safeJsonParse(agent.universe_filter, 'agent.universe_filter');
   }
+
+  let symbols = [];
+
+  switch (universeType) {
+    case 'watchlist':
+      // Get symbols from user's watchlist
+      const watchlistResult = await database.query(`
+        SELECT DISTINCT c.symbol
+        FROM watchlist_items wi
+        JOIN companies c ON wi.company_id = c.id
+        ORDER BY c.symbol
+      `);
+      symbols = watchlistResult.rows.map(r => r.symbol);
+      break;
+
+    case 'sector':
+      // Get symbols from specific sectors
+      if (universeFilter?.sectors?.length > 0) {
+        const placeholders = universeFilter.sectors.map((_, idx) => `$${idx + 1}`).join(',');
+        const sectorResult = await database.query(`
+          SELECT symbol FROM companies
+          WHERE sector IN (${placeholders})
+          ORDER BY symbol
+        `, universeFilter.sectors);
+        symbols = sectorResult.rows.map(r => r.symbol);
+      }
+      break;
+
+    case 'custom':
+      // Use explicit symbol list from filter
+      if (universeFilter?.symbols?.length > 0) {
+        symbols = universeFilter.symbols;
+      }
+      break;
+
+    case 'all':
+    default:
+      // Get all active companies with actual trading data
+      // Filter for valid symbols with price data, ordered by market cap
+      const allResult = await database.query(`
+        SELECT c.symbol
+        FROM companies c
+        WHERE c.is_active = true
+          AND LENGTH(c.symbol) <= 5
+          AND c.symbol NOT LIKE '%=%'
+          AND c.symbol NOT LIKE '%.%'
+          AND c.symbol !~ '[0-9]{5,}'
+          AND EXISTS (
+            SELECT 1 FROM daily_prices dp
+            WHERE dp.company_id = c.id
+            AND dp.date >= CURRENT_DATE - INTERVAL '30 days'
+          )
+        ORDER BY c.market_cap DESC NULLS LAST
+        LIMIT 500
+      `);
+      symbols = allResult.rows.map(r => r.symbol);
+      break;
+  }
+
+  // Apply market cap filter if specified
+  if (universeFilter?.min_market_cap && symbols.length > 0) {
+    const minCap = universeFilter.min_market_cap;
+    const placeholders = symbols.map((_, idx) => `$${idx + 1}`).join(',');
+    const filteredResult = await database.query(`
+      SELECT c.symbol FROM companies c
+      WHERE c.symbol IN (${placeholders})
+        AND c.market_cap >= $${symbols.length + 1}
+      ORDER BY c.symbol
+    `, [...symbols, minCap]);
+    symbols = filteredResult.rows.map(r => r.symbol);
+  }
+
+  return symbols;
 }
 
 /**
@@ -1587,7 +1596,7 @@ async function generateSignals(agentId) {
 
     // Import TradingAgent (lazy to avoid circular deps)
     const { TradingAgent } = require('./tradingAgent');
-    const tradingAgent = new TradingAgent(database, config);
+    const tradingAgent = new TradingAgent(config);
 
     // Get universe of symbols to scan
     const symbols = await getAgentUniverse(agentId);
@@ -1618,11 +1627,10 @@ async function generateSignals(agentId) {
     }
 
     const primaryPortfolio = portfolios[0];
-    const initialCap = primaryPortfolio.portfolio_initial_capital ?? primaryPortfolio.initial_capital;
     portfolioContext = {
       portfolioId: primaryPortfolio.portfolio_id,
-      totalValue: primaryPortfolio.current_value ?? initialCap,
-      cash: primaryPortfolio.current_cash ?? initialCap,
+      totalValue: primaryPortfolio.current_value || primaryPortfolio.initial_capital,
+      cash: primaryPortfolio.current_cash || primaryPortfolio.initial_capital,
     };
 
     // Run batch recommendations
@@ -1886,53 +1894,29 @@ async function executeApproved(signalId) {
   try {
     // Check if paper trading or live
     if (portfolio.mode === 'paper') {
-      const initialCap = portfolio.portfolio_initial_capital ?? portfolio.initial_capital ?? 100000;
-      const priceAtSignal = signal.price_at_signal || 0;
-      const shares = signal.suggested_shares || Math.max(1, Math.floor((initialCap * 0.05) / (priceAtSignal || 100)));
+      const { PaperTradingEngine } = require('../trading/paperTrading');
+      const paperEngine = new PaperTradingEngine(database);
 
-      let executedPrice = priceAtSignal;
-      let executedShares = shares;
-      let tradeResult = null;
-
+      const accountName = `portfolio_${portfolio.portfolio_id}`;
+      let account;
       try {
-        const { PaperTradingEngine } = require('../trading/paperTrading');
-        const paperEngine = new PaperTradingEngine(database);
-        const accountName = `portfolio_${portfolio.portfolio_id}`;
-        let account;
-        try {
-          account = await paperEngine.getAccount(accountName);
-        } catch (e) {
-          account = await paperEngine.createAccount(accountName, initialCap);
-        }
-        const side = signal.action.includes('buy') ? 'BUY' : 'SELL';
-        tradeResult = await paperEngine.submitOrder(account.id, {
-          symbol: signal.symbol,
-          side,
-          orderType: 'MARKET',
-          quantity: shares || 10,
-          notes: `Agent signal ${signal.id}: ${signal.action}`
-        });
-        executedPrice = tradeResult.avgFillPrice ?? tradeResult.fillPrice ?? executedPrice;
-        executedShares = tradeResult.filledQuantity ?? shares;
+        account = await paperEngine.getAccount(accountName);
       } catch (e) {
-        console.warn('Paper engine execution failed, using simulated price:', e.message);
-        if (!executedPrice || executedPrice <= 0) {
-          const companyRow = await database.query('SELECT id FROM companies WHERE UPPER(symbol) = UPPER($1)', [signal.symbol]);
-          const companyId = companyRow.rows[0]?.id;
-          if (companyId) {
-            const priceRow = await database.query(
-              `SELECT close as price FROM daily_prices WHERE company_id = $1 ORDER BY date DESC LIMIT 1`,
-              [companyId]
-            );
-            if (priceRow.rows[0]?.price != null) executedPrice = Number(priceRow.rows[0].price);
-          }
-          if (!executedPrice || executedPrice <= 0) executedPrice = priceAtSignal || 0;
-        }
+        account = await paperEngine.createAccount(accountName, portfolio.initial_capital || 100000);
       }
 
-      const finalPrice = executedPrice || priceAtSignal || 0;
-      const finalShares = executedShares || shares || 10;
+      const side = signal.action.includes('buy') ? 'BUY' : 'SELL';
+      const shares = signal.suggested_shares || Math.floor((portfolio.initial_capital * 0.05) / (signal.price_at_signal || 100));
 
+      const tradeResult = await paperEngine.submitOrder(account.id, {
+        symbol: signal.symbol,
+        side: side,
+        orderType: 'MARKET',
+        quantity: shares || 10,
+        notes: `Agent signal ${signal.id}: ${signal.action}`
+      });
+
+      // Update signal status
       await database.query(`
         UPDATE agent_signals
         SET status = 'executed',
@@ -1940,18 +1924,19 @@ async function executeApproved(signalId) {
             executed_price = $2,
             executed_shares = $3
         WHERE id = $4
-      `, [now, finalPrice, finalShares, signalId]);
+      `, [now, tradeResult.avgFillPrice || tradeResult.fillPrice, tradeResult.filledQuantity || shares, signalId]);
 
+      // Log activity
       await logActivity(signal.agent_id, portfolio.portfolio_id, 'trade_executed',
-        `Executed ${signal.action.toUpperCase()} ${finalShares} shares of ${signal.symbol} @ $${Number(finalPrice).toFixed(2)}`, null, signalId);
+        `Executed ${signal.action.toUpperCase()} ${tradeResult.filledQuantity || shares} shares of ${signal.symbol} @ $${(tradeResult.avgFillPrice || tradeResult.fillPrice)?.toFixed(2)}`, null, signalId);
 
       return {
         ...signal,
         status: 'executed',
         executed_at: now,
-        executed_price: finalPrice,
-        executed_shares: finalShares,
-        trade: tradeResult || { avgFillPrice: finalPrice, fillPrice: finalPrice, filledQuantity: finalShares }
+        executed_price: tradeResult.avgFillPrice || tradeResult.fillPrice,
+        executed_shares: tradeResult.filledQuantity || shares,
+        trade: tradeResult
       };
     } else {
       // Live trading - not yet implemented
@@ -2034,7 +2019,9 @@ async function updateAgentSettings(agentId, settings) {
   for (const field of settableFields) {
     if (settings[field] !== undefined) {
       updates.push(`${field} = $${paramIndex++}`);
-      values.push(typeof settings[field] === 'object' ? JSON.stringify(settings[field]) : settings[field]);
+      let val = settings[field];
+      val = toIntegerIfBoolean(field, val);
+      values.push(typeof val === 'object' ? JSON.stringify(val) : val);
     }
   }
 

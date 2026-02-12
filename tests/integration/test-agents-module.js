@@ -16,7 +16,8 @@ const db = database.getDatabase();
 const results = {
   passed: 0,
   failed: 0,
-  errors: []
+  errors: [],
+  asyncPromises: []
 };
 
 function test(name, fn) {
@@ -32,17 +33,20 @@ function test(name, fn) {
   }
 }
 
-async function testAsync(name, fn) {
-  try {
-    await fn();
-    console.log(`✅ ${name}`);
-    results.passed++;
-  } catch (error) {
-    console.log(`❌ ${name}`);
-    console.log(`   Error: ${error.message}`);
-    results.failed++;
-    results.errors.push({ name, error: error.message });
-  }
+function testAsync(name, fn) {
+  const p = (async () => {
+    try {
+      await fn();
+      console.log(`✅ ${name}`);
+      results.passed++;
+    } catch (error) {
+      console.log(`❌ ${name}`);
+      console.log(`   Error: ${error.message}`);
+      results.failed++;
+      results.errors.push({ name, error: error.message });
+    }
+  })();
+  results.asyncPromises.push(p);
 }
 
 console.log('='.repeat(60));
@@ -243,36 +247,36 @@ test('Paper trading tables created', () => {
   }
 });
 
-test('createAccount creates paper account', () => {
-  const account = paperEngine.createAccount('test_account_' + Date.now(), 50000);
+testAsync('createAccount creates paper account', async () => {
+  const account = await paperEngine.createAccount('test_account_' + Date.now(), 50000);
   if (!account || !account.id) throw new Error('Account not created');
   paperAccountId = account.id;
   console.log(`   Created paper account ID: ${paperAccountId}`);
 });
 
-test('getAccountStatus returns status', () => {
+testAsync('getAccountStatus returns status', async () => {
   if (!paperAccountId) throw new Error('No paper account');
-  const status = paperEngine.getAccountStatus(paperAccountId);
+  const status = await paperEngine.getAccountStatus(paperAccountId);
   if (!status) throw new Error('Status not returned');
   if (!status.summary) throw new Error('Summary missing');
   if (!status.positions) throw new Error('Positions missing');
 });
 
-test('getPositions returns empty array', () => {
+testAsync('getPositions returns empty array', async () => {
   if (!paperAccountId) throw new Error('No paper account');
-  const positions = paperEngine.getPositions(paperAccountId);
+  const positions = await paperEngine.getPositions(paperAccountId);
   if (!Array.isArray(positions)) throw new Error('Expected array');
 });
 
-test('getTrades returns empty array', () => {
+testAsync('getTrades returns empty array', async () => {
   if (!paperAccountId) throw new Error('No paper account');
-  const trades = paperEngine.getTrades(paperAccountId);
+  const trades = await paperEngine.getTrades(paperAccountId);
   if (!Array.isArray(trades)) throw new Error('Expected array');
 });
 
-test('getOrders returns empty array', () => {
+testAsync('getOrders returns empty array', async () => {
   if (!paperAccountId) throw new Error('No paper account');
-  const orders = paperEngine.getOrders(paperAccountId);
+  const orders = await paperEngine.getOrders(paperAccountId);
   if (!Array.isArray(orders)) throw new Error('Expected array');
 });
 
@@ -349,19 +353,23 @@ test('Delete test paper account', () => {
 // ============================================
 // RESULTS
 // ============================================
-console.log('\n' + '='.repeat(60));
-console.log('TEST RESULTS');
-console.log('='.repeat(60));
-console.log(`✅ Passed: ${results.passed}`);
-console.log(`❌ Failed: ${results.failed}`);
+async function reportAndExit() {
+  await Promise.all(results.asyncPromises);
+  console.log('\n' + '='.repeat(60));
+  console.log('TEST RESULTS');
+  console.log('='.repeat(60));
+  console.log(`✅ Passed: ${results.passed}`);
+  console.log(`❌ Failed: ${results.failed}`);
 
-if (results.errors.length > 0) {
-  console.log('\nFailed Tests:');
-  results.errors.forEach(({ name, error }) => {
-    console.log(`  - ${name}: ${error}`);
-  });
+  if (results.errors.length > 0) {
+    console.log('\nFailed Tests:');
+    results.errors.forEach(({ name, error }) => {
+      console.log(`  - ${name}: ${error}`);
+    });
+  }
+
+  console.log('\n' + '='.repeat(60));
+  process.exit(results.failed > 0 ? 1 : 0);
 }
 
-console.log('\n' + '='.repeat(60));
-
-process.exit(results.failed > 0 ? 1 : 0);
+reportAndExit();

@@ -105,7 +105,7 @@ function createSessionStore() {
 
   logger.warn('[Session Store] Using SQLite (dev mode only)');
   return new SQLiteStore({
-    client: getDatabaseSync(),
+    client: database.getDatabase(),
     expired: {
       clear: true,
       intervalMs: 900000 // Clear expired sessions every 15 min

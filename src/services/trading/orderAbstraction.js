@@ -18,7 +18,7 @@
  * - getAccountBalance()
  */
 
-const { getDatabaseSync, isUsingPostgres } = require('../../lib/db');
+const { getDatabase } = require('../../lib/db');
 
 /**
  * Order types supported across all brokers
@@ -122,20 +122,16 @@ class PaperTradingAdapter extends BrokerAdapter {
 
   async connect() {
     const { PaperTradingEngine } = require('./paperTrading');
-    if (isUsingPostgres()) {
-      throw new Error('Paper trading requires SQLite. PostgreSQL is not supported yet.');
-    }
-    const db = getDatabaseSync();
+    const db = await getDatabase();
 
     this.engine = new PaperTradingEngine(db, this.config);
 
-    // Get or create account
     const accountName = this.config.accountName || 'default';
     try {
-      const account = this.engine.getAccount(accountName);
+      const account = await this.engine.getAccount(accountName);
       this.accountId = account.id;
     } catch (err) {
-      const account = this.engine.createAccount(
+      const account = await this.engine.createAccount(
         accountName,
         this.config.initialCapital || 100000
       );
@@ -167,12 +163,12 @@ class PaperTradingAdapter extends BrokerAdapter {
 
   async cancelOrder(orderId) {
     if (!this.connected) throw new Error('Not connected');
-    return this.engine.cancelOrder(this.accountId, orderId);
+    return await this.engine.cancelOrder(this.accountId, orderId);
   }
 
   async getOrderStatus(orderId) {
     if (!this.connected) throw new Error('Not connected');
-    const orders = this.engine.getOrders(this.accountId, 100);
+    const orders = await this.engine.getOrders(this.accountId, 100);
     const order = orders.find(o => o.order_id === orderId);
     if (!order) throw new Error(`Order not found: ${orderId}`);
     return order;
@@ -180,12 +176,12 @@ class PaperTradingAdapter extends BrokerAdapter {
 
   async getPositions() {
     if (!this.connected) throw new Error('Not connected');
-    return this.engine.getPositions(this.accountId);
+    return await this.engine.getPositions(this.accountId);
   }
 
   async getAccountBalance() {
     if (!this.connected) throw new Error('Not connected');
-    const status = this.engine.getAccountStatus(this.accountId);
+    const status = await this.engine.getAccountStatus(this.accountId);
     return {
       portfolioValue: status.summary.portfolioValue,
       cashBalance: status.summary.cashBalance,
@@ -196,7 +192,15 @@ class PaperTradingAdapter extends BrokerAdapter {
 
   async getQuote(symbol) {
     if (!this.connected) throw new Error('Not connected');
-    const priceData = this.engine.stmtGetPrice.get(symbol);
+    const priceData = await this.engine._queryOne(
+      `SELECT p.close as price, p.date as price_date
+       FROM daily_prices p
+       JOIN companies c ON c.id = p.company_id
+       WHERE c.symbol = ?
+       ORDER BY p.date DESC
+       LIMIT 1`,
+      [symbol]
+    );
     if (!priceData) throw new Error(`No price data for ${symbol}`);
     return {
       symbol,
@@ -205,14 +209,14 @@ class PaperTradingAdapter extends BrokerAdapter {
     };
   }
 
-  getPerformance(days = 30) {
+  async getPerformance(days = 30) {
     if (!this.connected) throw new Error('Not connected');
-    return this.engine.getPerformance(this.accountId, days);
+    return await this.engine.getPerformance(this.accountId, days);
   }
 
-  takeSnapshot() {
+  async takeSnapshot() {
     if (!this.connected) throw new Error('Not connected');
-    return this.engine.takeSnapshot(this.accountId);
+    return await this.engine.takeSnapshot(this.accountId);
   }
 }
 

@@ -1097,63 +1097,59 @@ class IPOTracker {
   async getIPOByCIK(cik) {
     // Normalize CIK (remove leading zeros for comparison)
     const normalizedCik = cik.toString().replace(/^0+/, '');
-    const stmt = await this.db.prepare(`
+    const res = await this.db.query(`
       SELECT * FROM ipo_tracker
-      WHERE CAST(cik AS TEXT) = ? OR CAST(cik AS TEXT) = ?
-    `);
-    return await stmt.get(normalizedCik, cik);
+      WHERE CAST(cik AS TEXT) = $1 OR CAST(cik AS TEXT) = $2
+    `, [normalizedCik, cik]);
+    return (res.rows && res.rows[0]) || null;
   }
 
   /**
    * Create IPO filing record
    */
   async createIPOFiling(data) {
-    const stmt = await this.db.prepare(`
-      INSERT OR IGNORE INTO ipo_filings (
+    await this.db.query(`
+      INSERT INTO ipo_filings (
         ipo_id, form_type, accession_number, filing_date, filing_url,
         price_range_low, price_range_high, final_price, shares_offered,
         is_amendment, amendment_number
-      ) VALUES (
-        @ipo_id, @form_type, @accession_number, @filing_date, @filing_url,
-        @price_range_low, @price_range_high, @final_price, @shares_offered,
-        @is_amendment, @amendment_number
-      )
-    `);
-
-    return await stmt.run({
-      ipo_id: data.ipo_id,
-      form_type: data.form_type,
-      accession_number: data.accession_number,
-      filing_date: data.filing_date,
-      filing_url: data.filing_url || null,
-      price_range_low: data.price_range_low || null,
-      price_range_high: data.price_range_high || null,
-      final_price: data.final_price || null,
-      shares_offered: data.shares_offered || null,
-      is_amendment: data.is_amendment || 0,
-      amendment_number: data.amendment_number || null
-    });
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      ON CONFLICT (accession_number) DO NOTHING
+    `, [
+      data.ipo_id,
+      data.form_type,
+      data.accession_number,
+      data.filing_date,
+      data.filing_url || null,
+      data.price_range_low || null,
+      data.price_range_high || null,
+      data.final_price || null,
+      data.shares_offered || null,
+      data.is_amendment || 0,
+      data.amendment_number || null
+    ]);
+    return { changes: 1 };
   }
 
   /**
    * Get filing by accession number
    */
   async getFilingByAccession(accessionNumber) {
-    const stmt = await this.db.prepare(`
-      SELECT * FROM ipo_filings WHERE accession_number = ?
-    `);
-    return await stmt.get(accessionNumber);
+    const res = await this.db.query(
+      'SELECT * FROM ipo_filings WHERE accession_number = $1',
+      [accessionNumber]
+    );
+    return (res.rows && res.rows[0]) || null;
   }
 
   /**
    * Log check activity
    */
   async logCheck(checkType, newFound, updatesFound, errorMessage = null, durationMs = null) {
-    const stmt = await this.db.prepare(`
+    await this.db.query(`
       INSERT INTO ipo_check_log (check_type, new_filings_found, updates_found, error_message, duration_ms)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-    await stmt.run(checkType, newFound, updatesFound, errorMessage, durationMs);
+      VALUES ($1, $2, $3, $4, $5)
+    `, [checkType, newFound, updatesFound, errorMessage, durationMs]);
   }
 
   // ============================================
