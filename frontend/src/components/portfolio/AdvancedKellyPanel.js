@@ -270,8 +270,9 @@ function AdvancedKellyPanel({ portfolioId, holdings, portfolioValue, onApplyReco
           setError(data.error);
         } else {
           setCompareData(data);
-          if (data.missingData?.length > 0) {
-            setMissingDataWarning(`Some holdings excluded: ${data.missingData.join(', ')}`);
+          const missing = Array.isArray(data?.missingData) ? data.missingData : [];
+          if (missing.length > 0) {
+            setMissingDataWarning(`Some holdings excluded: ${missing.join(', ')}`);
           }
         }
       }
@@ -296,7 +297,11 @@ function AdvancedKellyPanel({ portfolioId, holdings, portfolioValue, onApplyReco
       if (allocRes.status === 'fulfilled') {
         const data = allocRes.value?.data?.data || allocRes.value?.data;
         if (data && !data?.error) {
-          setAllocationData(data);
+          setAllocationData({
+            ...data,
+            optimalWeights: Array.isArray(data.optimalWeights) ? data.optimalWeights : [],
+            riskContribution: Array.isArray(data.riskContribution) ? data.riskContribution : []
+          });
         }
       }
 
@@ -314,10 +319,11 @@ function AdvancedKellyPanel({ portfolioId, holdings, portfolioValue, onApplyReco
 
   // Calculate recommended strategy from compare data
   const recommendation = useMemo(() => {
-    if (!compareData?.strategies) return null;
+    const strategies = Array.isArray(compareData?.strategies) ? compareData.strategies : [];
+    if (strategies.length === 0) return null;
 
     // Find best risk-adjusted strategy
-    const sorted = [...compareData.strategies].sort((a, b) => a.compositeScore - b.compositeScore);
+    const sorted = [...strategies].sort((a, b) => a.compositeScore - b.compositeScore);
     const best = sorted[0];
 
     // Determine risk level based on max drawdown and volatility
@@ -611,7 +617,7 @@ function AdvancedKellyPanel({ portfolioId, holdings, portfolioValue, onApplyReco
                     </div>
 
                     <div className="allocation-bars-container">
-                      {allocationData?.optimalWeights ? (
+                      {Array.isArray(allocationData?.optimalWeights) && allocationData.optimalWeights.length > 0 ? (
                         allocationData.optimalWeights.map((item, idx) => (
                           <AllocationBar
                             key={item.symbol || idx}
@@ -645,13 +651,13 @@ function AdvancedKellyPanel({ portfolioId, holdings, portfolioValue, onApplyReco
                         </h6>
                         <CorrelationMatrix
                           matrix={allocationData.correlationMatrix}
-                          symbols={allocationData.optimalWeights?.map(w => w.symbol) || []}
+                          symbols={Array.isArray(allocationData.optimalWeights) ? allocationData.optimalWeights.map(w => w.symbol) : []}
                         />
                       </div>
                     )}
 
                     {/* Advanced View: Risk Contribution */}
-                    {advancedView && allocationData?.riskContribution && (
+                    {advancedView && Array.isArray(allocationData?.riskContribution) && allocationData.riskContribution.length > 0 && (
                       <div className="risk-contribution-section">
                         <h6>
                           Risk Contribution by Holding
@@ -882,7 +888,8 @@ function AdvancedKellyPanel({ portfolioId, holdings, portfolioValue, onApplyReco
                     </div>
 
                     {/* Distribution Interpretation */}
-                    {riskData.distributionAnalysis?.interpretation &&
+                    {Array.isArray(riskData.distributionAnalysis?.interpretation) &&
+                     riskData.distributionAnalysis.interpretation.length > 0 &&
                      riskData.distributionAnalysis.bestFit !== 'normal' && (
                       <div className="distribution-interpretation">
                         <div className="interpretation-header">
@@ -925,7 +932,7 @@ function AdvancedKellyPanel({ portfolioId, holdings, portfolioValue, onApplyReco
                     )}
 
                     {/* Risk Warnings */}
-                    {riskData.talebWarnings?.length > 0 && (
+                    {Array.isArray(riskData.talebWarnings) && riskData.talebWarnings.length > 0 && (
                       <div className="risk-warnings">
                         {riskData.talebWarnings.map((warning, i) => (
                           <div key={i} className={`risk-warning-item ${warning.severity}`}>
@@ -1013,7 +1020,7 @@ function AdvancedKellyPanel({ portfolioId, holdings, portfolioValue, onApplyReco
                     </div>
 
                     {/* Historical Distribution */}
-                    {regimeData.regimeBreakdown && (
+                    {Array.isArray(regimeData?.regimeBreakdown) && regimeData.regimeBreakdown.length > 0 && (
                       <div className="regime-history">
                         <h6>Historical Regime Distribution</h6>
                         <div className="regime-bars">

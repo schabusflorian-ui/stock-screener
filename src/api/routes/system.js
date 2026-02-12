@@ -14,7 +14,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../../middleware/auth');
-const { getDatabaseAsync, dialect, isUsingPostgres } = require('../../lib/db');
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 
 /**
  * GET /api/system/health
@@ -188,7 +188,7 @@ router.get('/health', async (req, res) => {
         SELECT COUNT(*) as count
         FROM update_queue
         WHERE status = 'processing'
-          AND (last_heartbeat IS NULL OR last_heartbeat < ${dialect.intervalAgo(10, 'minutes')})
+          AND (last_heartbeat IS NULL OR last_heartbeat < ${isUsingPostgres() ? "NOW() - INTERVAL '10 minutes'" : "datetime('now', '-10 minutes')"})
       `);
       const stalled = stalledResult.rows[0].count;
 

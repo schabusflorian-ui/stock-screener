@@ -365,17 +365,18 @@ router.get('/:id/holdings', async (req, res) => {
     const optionType = req.query.optionType || 'all';
 
     const data = await investorService.getLatestHoldings(id, { limit, sortBy, sortOrder });
+    const holdings = Array.isArray(data.holdings) ? data.holdings : [];
 
     // Filter by option type if specified (case-insensitive)
-    let filteredHoldings = data.holdings;
+    let filteredHoldings = holdings;
     if (optionType === 'stock') {
-      filteredHoldings = data.holdings.filter(h => !h.option_type);
+      filteredHoldings = holdings.filter(h => !h.option_type);
     } else if (optionType === 'put') {
-      filteredHoldings = data.holdings.filter(h => (h.option_type || '').toUpperCase() === 'PUT');
+      filteredHoldings = holdings.filter(h => (h.option_type || '').toUpperCase() === 'PUT');
     } else if (optionType === 'call') {
-      filteredHoldings = data.holdings.filter(h => (h.option_type || '').toUpperCase() === 'CALL');
+      filteredHoldings = holdings.filter(h => (h.option_type || '').toUpperCase() === 'CALL');
     } else if (optionType === 'options') {
-      filteredHoldings = data.holdings.filter(h => h.option_type);
+      filteredHoldings = holdings.filter(h => h.option_type);
     }
 
     // Calculate breakdown by type
@@ -385,7 +386,7 @@ router.get('/:id/holdings', async (req, res) => {
       call: { count: 0, value: 0, weight: 0 }
     };
 
-    for (const h of data.holdings) {
+    for (const h of holdings) {
       const optType = (h.option_type || '').toUpperCase();
       if (optType === 'PUT') {
         breakdown.put.count++;
@@ -404,11 +405,11 @@ router.get('/:id/holdings', async (req, res) => {
 
     res.json({
       success: true,
-      holdings: filteredHoldings,
+      holdings: Array.isArray(filteredHoldings) ? filteredHoldings : [],
       filingDate: data.filingDate,
       totalValue: data.totalValue,
-      totalPositions: data.holdings.length,
-      filteredPositions: filteredHoldings.length,
+      totalPositions: holdings.length,
+      filteredPositions: Array.isArray(filteredHoldings) ? filteredHoldings.length : 0,
       breakdown // NEW: Stock vs Options breakdown
     });
   } catch (error) {
@@ -432,9 +433,10 @@ router.get('/:id/changes', async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const changes = await investorService.getHoldingChanges(id);
+    const changesList = Array.isArray(changes) ? changes : [];
     res.json({
       success: true,
-      changes
+      changes: changesList
     });
   } catch (error) {
     handleInvestorDetailError(res, error, { success: true, changes: [] });

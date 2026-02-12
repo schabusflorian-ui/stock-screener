@@ -212,7 +212,7 @@ class AdvancedKelly {
   // Regime-Aware Kelly Sizing
   // Adjust Kelly based on market regime
   // ============================================
-  regimeAwareKelly(portfolioId, params = {}) {
+  async regimeAwareKelly(portfolioId, params = {}) {
     const {
       period = '5y',
       regimeWindow = this.config.DEFAULT_LOOKBACK_WINDOW,
@@ -222,13 +222,13 @@ class AdvancedKelly {
 
     this._currentRiskFreeRate = riskFreeRate;
 
-    const positions = this._getPortfolioPositions(portfolioId);
+    const positions = await this._getPortfolioPositions(portfolioId);
     if (positions.length === 0) {
       return { error: 'Portfolio has no positions' };
     }
 
     const { startDate } = this._getPeriodDates(period);
-    const returns = this._loadDailyReturns(positions, startDate);
+    const returns = await this._loadDailyReturns(positions, startDate);
     const dates = this._getAlignedDates(returns);
 
     if (dates.length < regimeWindow + 60) {
@@ -292,7 +292,7 @@ class AdvancedKelly {
   // Kelly Drawdown Analysis
   // Analyze historical drawdowns at various Kelly levels
   // ============================================
-  kellyDrawdownAnalysis(portfolioId, params = {}) {
+  async kellyDrawdownAnalysis(portfolioId, params = {}) {
     const {
       period = '5y',
       kellyFractions = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5],
@@ -302,13 +302,13 @@ class AdvancedKelly {
 
     this._currentRiskFreeRate = riskFreeRate;
 
-    const positions = this._getPortfolioPositions(portfolioId);
+    const positions = await this._getPortfolioPositions(portfolioId);
     if (positions.length === 0) {
       return { error: 'Portfolio has no positions' };
     }
 
     const { startDate } = this._getPeriodDates(period);
-    const returns = this._loadDailyReturns(positions, startDate);
+    const returns = await this._loadDailyReturns(positions, startDate);
     const dates = this._getAlignedDates(returns);
 
     if (dates.length < 252) {
@@ -369,7 +369,7 @@ class AdvancedKelly {
   // Kelly Strategy Comparison
   // Compare Kelly vs other sizing methods
   // ============================================
-  compareKellyStrategies(portfolioId, params = {}) {
+  async compareKellyStrategies(portfolioId, params = {}) {
     const {
       period = '5y',
       initialCapital = this.config.DEFAULT_INITIAL_CAPITAL,
@@ -379,13 +379,13 @@ class AdvancedKelly {
 
     this._currentRiskFreeRate = riskFreeRate;
 
-    const positions = this._getPortfolioPositions(portfolioId);
+    const positions = await this._getPortfolioPositions(portfolioId);
     if (positions.length === 0) {
       return { error: 'Portfolio has no positions' };
     }
 
     const { startDate } = this._getPeriodDates(period);
-    const returns = this._loadDailyReturns(positions, startDate);
+    const returns = await this._loadDailyReturns(positions, startDate);
     const missingData = returns._missingData || [];
     const dates = this._getAlignedDates(returns);
 
@@ -1237,19 +1237,19 @@ class AdvancedKelly {
   // Taleb/Spitznagel Risk Analysis
   // Non-ergodic, tail-aware risk assessment
   // ============================================
-  getTalebRiskAnalysis(portfolioId, params = {}) {
+  async getTalebRiskAnalysis(portfolioId, params = {}) {
     const {
       period = '5y',
       initialCapital = this.config.DEFAULT_INITIAL_CAPITAL
     } = params;
 
-    const positions = this._getPortfolioPositions(portfolioId);
+    const positions = await this._getPortfolioPositions(portfolioId);
     if (positions.length === 0) {
       return { error: 'Portfolio has no positions' };
     }
 
     const { startDate } = this._getPeriodDates(period);
-    const returns = this._loadDailyReturns(positions, startDate);
+    const returns = await this._loadDailyReturns(positions, startDate);
     const dates = this._getAlignedDates(returns);
 
     if (dates.length < MIN_OBSERVATIONS_FOR_KELLY) {
@@ -1860,7 +1860,7 @@ class AdvancedKelly {
     // Portfolio context
     let portfolioContext = null;
     if (portfolioId) {
-      const positions = this._getPortfolioPositions(portfolioId);
+      const positions = await this._getPortfolioPositions(portfolioId);
       const existingPosition = positions.find(p => p.symbol.toUpperCase() === symbol.toUpperCase());
 
       if (existingPosition) {
@@ -2052,20 +2052,20 @@ class AdvancedKelly {
   // Multi-Asset Kelly Allocation
   // Returns optimal weights using full covariance matrix
   // ============================================
-  getMultiAssetAllocation(portfolioId, params = {}) {
+  async getMultiAssetAllocation(portfolioId, params = {}) {
     const {
       period = '3y',
       kellyFraction = 0.25,
       riskFreeRate = 0.05
     } = params;
 
-    const positions = this._getPortfolioPositions(portfolioId);
+    const positions = await this._getPortfolioPositions(portfolioId);
     if (positions.length === 0) {
       return { error: 'Portfolio has no positions' };
     }
 
     const { startDate } = this._getPeriodDates(period);
-    const returns = this._loadDailyReturns(positions, startDate);
+    const returns = await this._loadDailyReturns(positions, startDate);
     const dates = this._getAlignedDates(returns);
 
     if (dates.length < MIN_OBSERVATIONS_FOR_KELLY) {

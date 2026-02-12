@@ -113,7 +113,10 @@ function BacktestPanel({ portfolioId, holdings }) {
         benchmarkIndexId: config.benchmarkIndexId
       });
 
-      setResults(res.data.data || res.data);
+      const data = res.data.data ?? res.data;
+      const equityCurve = Array.isArray(data?.equityCurve) ? data.equityCurve : undefined;
+      const monthlyReturns = Array.isArray(data?.monthlyReturns) ? data.monthlyReturns : undefined;
+      setResults(data ? { ...data, equityCurve, monthlyReturns } : null);
     } catch (err) {
       console.error('Backtest failed:', err);
       setError(err.response?.data?.error || err.message);
@@ -139,7 +142,7 @@ function BacktestPanel({ portfolioId, holdings }) {
   // Uses Geometric Brownian Motion with correlated portfolio/benchmark returns
   const equityCurveData = useMemo(() => {
     if (!results) return [];
-    if (results.equityCurve) return results.equityCurve;
+    if (Array.isArray(results.equityCurve) && results.equityCurve.length > 0) return results.equityCurve;
 
     // Box-Muller transform for normal random numbers
     const normalRandom = () => {
@@ -270,7 +273,7 @@ function BacktestPanel({ portfolioId, holdings }) {
 
       return data;
     }
-    return results.monthlyReturns;
+    return Array.isArray(results.monthlyReturns) ? results.monthlyReturns : [];
   }, [results, normalizedAnnualReturns]);
 
   const getReturnColor = (value) => {

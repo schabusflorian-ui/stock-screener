@@ -596,9 +596,11 @@ function InvestorDetailPage() {
       console.log('[InvestorDetailPage] Data fetched successfully');
       console.log('[InvestorDetailPage] investorRes:', investorRes?.data);
       setInvestor(investorRes.data.investor);
-      setHoldings(holdingsRes.data.holdings || []);
+      const rawHoldings = holdingsRes.data.holdings;
+      const rawChanges = changesRes.data.changes;
+      setHoldings(Array.isArray(rawHoldings) ? rawHoldings : []);
       setBreakdown(holdingsRes.data.breakdown || null);
-      setChanges(changesRes.data.changes);
+      setChanges(Array.isArray(rawChanges) ? rawChanges : []);
       setStats(statsRes.data.stats);
       setReturns(returnsRes.data?.summary || null);
       console.log('[InvestorDetailPage] State updated');
@@ -634,7 +636,10 @@ function InvestorDetailPage() {
   useEffect(() => {
     if (investor) {
       investorsAPI.getHoldings(id, { limit: 500, sortBy, sortOrder })
-        .then(res => setHoldings(res.data.holdings || []));
+        .then(res => {
+          const raw = res.data.holdings;
+          setHoldings(Array.isArray(raw) ? raw : []);
+        });
     }
   }, [sortBy, sortOrder, id, investor]);
 

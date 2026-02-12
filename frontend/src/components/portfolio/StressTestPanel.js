@@ -33,7 +33,8 @@ function StressTestPanel({ portfolioId }) {
   const loadScenarios = async () => {
     try {
       const res = await simulateAPI.getStressTestScenarios();
-      setScenarios(res.data.data || res.data.scenarios || []);
+      const raw = res.data.data ?? res.data.scenarios;
+      setScenarios(Array.isArray(raw) ? raw : []);
     } catch (err) {
       console.error('Failed to load scenarios:', err);
     }
@@ -64,7 +65,9 @@ function StressTestPanel({ portfolioId }) {
       setAllResults(null);
 
       const res = await simulateAPI.runAllStressTests(parseInt(portfolioId));
-      setAllResults(res.data.data || res.data);
+      const data = res.data.data ?? res.data;
+      const resultsList = Array.isArray(data?.results) ? data.results : [];
+      setAllResults(data ? { ...data, results: resultsList } : null);
     } catch (err) {
       console.error('All stress tests failed:', err);
       setError(err.response?.data?.error || err.message);
@@ -111,7 +114,7 @@ function StressTestPanel({ portfolioId }) {
           <h4>Select Crisis Scenario</h4>
 
           <div className="scenario-grid">
-            {scenarios.map((scenario) => (
+            {(Array.isArray(scenarios) ? scenarios : []).map((scenario) => (
               <button
                 key={scenario.id}
                 className={`scenario-card ${selectedScenario === scenario.id ? 'selected' : ''}`}
@@ -285,7 +288,7 @@ function StressTestPanel({ portfolioId }) {
                 <span>Benchmark</span>
                 <span>Relative</span>
               </div>
-              {allResults.results?.map((result) => {
+              {(Array.isArray(allResults.results) ? allResults.results : []).map((result) => {
                 const relative = result.portfolioReturn - (result.benchmarkReturn || 0);
                 return (
                   <div key={result.scenarioId} className="table-row">

@@ -232,7 +232,8 @@ export default function HistoricalAnalyticsPage() {
     try {
       setLoading(true);
       const response = await historicalAPI.getDecisions(decisionFilters);
-      setDecisions(response.data.decisions || []);
+      const raw = response.data.decisions;
+      setDecisions(Array.isArray(raw) ? raw : []);
       setError(null);
     } catch (err) {
       setError('Failed to load decisions');
@@ -256,7 +257,8 @@ export default function HistoricalAnalyticsPage() {
       try {
         setLoading(true);
         const response = await investorsAPI.getAll();
-        setInvestors(response.data?.investors || response.data || []);
+        const raw = response.data?.investors ?? response.data;
+        setInvestors(Array.isArray(raw) ? raw : []);
         setError(null);
       } catch (err) {
         setError('Failed to load investors');

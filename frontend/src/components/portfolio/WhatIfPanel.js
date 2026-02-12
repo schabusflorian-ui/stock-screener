@@ -88,7 +88,9 @@ function WhatIfPanel({ portfolioId, positions = [] }) {
         res = await simulateAPI.runWhatIfWeights(parseInt(portfolioId), weights);
       }
 
-      setResults(res.data.data || res.data);
+      const data = res.data.data ?? res.data;
+      const tradesToExecute = Array.isArray(data?.tradesToExecute) ? data.tradesToExecute : [];
+      setResults(data ? { ...data, tradesToExecute } : null);
     } catch (err) {
       console.error('What-if analysis failed:', err);
       setError(err.response?.data?.error || err.message);
@@ -321,7 +323,7 @@ function WhatIfPanel({ portfolioId, positions = [] }) {
               )}
             </div>
 
-            {results.tradesToExecute && results.tradesToExecute.length > 0 && (
+            {Array.isArray(results.tradesToExecute) && results.tradesToExecute.length > 0 && (
               <div className="trades-section">
                 <h5>Trades to Execute</h5>
                 <div className="trades-list">

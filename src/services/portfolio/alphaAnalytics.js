@@ -39,10 +39,22 @@ class AlphaAnalytics {
     // Align returns
     const aligned = this._alignReturns(portfolioReturns, benchmarkReturns);
 
+    if (aligned.dates.length < 60) {
+      return {
+        error: `Insufficient overlapping data for alpha analysis. Portfolio has ${portfolioReturns.length} days, benchmark has ${benchmarkReturns.length} days, but only ${aligned.dates.length} overlap. Ensure benchmark (${benchmarkSymbol}) has price history for the period.`
+      };
+    }
+
     // Calculate various alpha measures
     const jensensAlpha = this._calculateJensensAlpha(aligned);
+    if (jensensAlpha.error) return { error: jensensAlpha.error };
+
     const multiFactor = this._calculateMultiFactorAlpha(positions, startDate, aligned);
+    if (multiFactor.error) return { error: multiFactor.error };
+
     const rollingAlpha = this._calculateRollingAlpha(aligned);
+    if (rollingAlpha.error) return { error: rollingAlpha.error };
+
     const attribution = await this._calculateAlphaAttribution(positions, startDate, aligned);
     const skillAnalysis = this._analyzeSkillVsLuck(aligned, rollingAlpha);
 
@@ -125,22 +137,29 @@ class AlphaAnalytics {
     const pValue = this._tStatToPValue(Math.abs(tStat), n - 2);
     const isSignificant = pValue < 0.05;
 
-    // Correlation and R-squared
-    const correlation = covariance / (Math.sqrt(portfolioVariance) * Math.sqrt(benchmarkVariance)) || 0;
-    const rSquared = correlation * correlation;
+    // Correlation and R-squared (guard against zero variance → NaN/Infinity)
+    const denom = Math.sqrt(portfolioVariance) * Math.sqrt(benchmarkVariance);
+    const correlation = (denom > 1e-12 && isFinite(denom))
+      ? Math.max(-1, Math.min(1, covariance / denom))
+      : 0;
+    const rSquared = (Number.isFinite(correlation) && !Number.isNaN(correlation))
+      ? correlation * correlation
+      : 0;
+
+    const safe = (val, fallback = 0) => (Number.isFinite(val) && !Number.isNaN(val) ? val : fallback);
 
     return {
-      alpha: Math.round(alpha * 10000) / 100, // As percentage
-      beta: Math.round(beta * 100) / 100,
-      expectedReturn: Math.round(expectedReturn * 10000) / 100,
-      actualReturn: Math.round(annualizedPortfolio * 10000) / 100,
-      benchmarkReturn: Math.round(annualizedBenchmark * 10000) / 100,
-      trackingError: Math.round(trackingError * 10000) / 100,
-      informationRatio: Math.round(informationRatio * 100) / 100,
-      correlation: Math.round(correlation * 100) / 100,
-      rSquared: Math.round(rSquared * 100) / 100,
-      tStatistic: Math.round(tStat * 100) / 100,
-      pValue: Math.round(pValue * 1000) / 1000,
+      alpha: Math.round(safe(alpha, 0) * 10000) / 100, // As percentage
+      beta: Math.round(safe(beta, 1) * 100) / 100,
+      expectedReturn: Math.round(safe(expectedReturn, 0) * 10000) / 100,
+      actualReturn: Math.round(safe(annualizedPortfolio, 0) * 10000) / 100,
+      benchmarkReturn: Math.round(safe(annualizedBenchmark, 0) * 10000) / 100,
+      trackingError: Math.round(safe(trackingError, 0) * 10000) / 100,
+      informationRatio: Math.round(safe(informationRatio, 0) * 100) / 100,
+      correlation: Math.round(safe(correlation, 0) * 100) / 100,
+      rSquared: Math.round(safe(rSquared, 0) * 100) / 100,
+      tStatistic: Math.round(safe(tStat, 0) * 100) / 100,
+      pValue: Math.round(safe(pValue, 0.5) * 1000) / 1000,
       isStatisticallySignificant: isSignificant,
       interpretation: this._interpretJensensAlpha(alpha, beta, isSignificant)
     };
@@ -709,10 +728,17 @@ class AlphaAnalytics {
     const portfolioMap = new Map(portfolioReturns.map(r => [r.date, r.return]));
     const benchmarkMap = new Map(benchmarkReturns.map(r => [r.date, r.return]));
 
+    // Filter out dates where either return is missing or invalid
+    const validDates = commonDates.filter(d => {
+      const pr = portfolioMap.get(d);
+      const br = benchmarkMap.get(d);
+      return pr != null && br != null && Number.isFinite(pr) && Number.isFinite(br);
+    });
+
     return {
-      dates: commonDates,
-      portfolioReturns: commonDates.map(d => portfolioMap.get(d)),
-      benchmarkReturns: commonDates.map(d => benchmarkMap.get(d))
+      dates: validDates,
+      portfolioReturns: validDates.map(d => portfolioMap.get(d)),
+      benchmarkReturns: validDates.map(d => benchmarkMap.get(d))
     };
   }
 

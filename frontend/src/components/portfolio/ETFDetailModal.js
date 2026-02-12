@@ -27,7 +27,8 @@ function ETFDetailModal({ symbol, onClose }) {
       if (holdingsRes.data.etf) {
         setEtfData(holdingsRes.data.etf);
       }
-      setHoldings(holdingsRes.data.holdings || []);
+      const raw = holdingsRes.data.holdings;
+      setHoldings(Array.isArray(raw) ? raw : []);
     } catch (err) {
       console.error('Error loading ETF data:', err);
       setError(err.message || 'Failed to load ETF data');
@@ -150,7 +151,7 @@ function ETFDetailModal({ symbol, onClose }) {
               {/* Holdings Table */}
               <div className="holdings-section">
                 <h3>Top Holdings</h3>
-                {holdings.length > 0 ? (
+                {Array.isArray(holdings) && holdings.length > 0 ? (
                   <div className="holdings-table-wrapper">
                     <table className="holdings-table">
                       <thead>

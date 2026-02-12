@@ -48,7 +48,7 @@ class MonteCarloEngine {
     }
 
     // Calculate historical returns for the portfolio
-    const { returns, meanReturn, stdReturn } = await this._calculateHistoricalReturns(
+    const { returns, meanReturn, stdReturn, isDailyFrequency } = await this._calculateHistoricalReturns(
       portfolioAllocations,
       lookbackYears
     );
@@ -122,6 +122,7 @@ class MonteCarloEngine {
         meanReturn: simMean,
         stdReturn: simStd,
         historicalReturns: returns,
+        historicalIsDaily: isDailyFrequency !== false,
         returnModel,
         fittedDistribution,
         returnDistribution
@@ -596,14 +597,21 @@ class MonteCarloEngine {
 
     const stdReturn = Math.sqrt(variance);
 
-    // Annualize
-    const annualizedMean = meanReturn * TRADING_DAYS_PER_YEAR;
-    const annualizedStd = stdReturn * Math.sqrt(TRADING_DAYS_PER_YEAR);
+    // Annualize only when we have enough data to be daily returns (~1 year+)
+    // With sparse data (e.g. yearly), returns are already at annual frequency
+    const isDailyFrequency = returns.length >= TRADING_DAYS_PER_YEAR;
+    const annualizedMean = isDailyFrequency
+      ? meanReturn * TRADING_DAYS_PER_YEAR
+      : meanReturn;
+    const annualizedStd = isDailyFrequency
+      ? stdReturn * Math.sqrt(TRADING_DAYS_PER_YEAR)
+      : stdReturn;
 
     return {
       returns,
       meanReturn: annualizedMean,
-      stdReturn: annualizedStd
+      stdReturn: annualizedStd,
+      isDailyFrequency
     };
   }
 
@@ -617,6 +625,7 @@ class MonteCarloEngine {
       meanReturn,
       stdReturn,
       historicalReturns,
+      historicalIsDaily = true,
       returnModel,
       fittedDistribution,
       returnDistribution
@@ -637,13 +646,19 @@ class MonteCarloEngine {
 
       if (returnModel === 'historical' && historicalReturns.length > 0) {
         // Bootstrap from historical returns
-        // Sample 252 daily returns and compound them
-        let compoundReturn = 1;
-        for (let day = 0; day < TRADING_DAYS_PER_YEAR; day++) {
+        if (historicalIsDaily && historicalReturns.length >= TRADING_DAYS_PER_YEAR) {
+          // Daily data: sample 252 daily returns and compound
+          let compoundReturn = 1;
+          for (let day = 0; day < TRADING_DAYS_PER_YEAR; day++) {
+            const idx = Math.floor(Math.random() * historicalReturns.length);
+            compoundReturn *= (1 + historicalReturns[idx]);
+          }
+          yearReturn = compoundReturn - 1;
+        } else {
+          // Sparse data (e.g. yearly): treat as annual returns, one sample per year
           const idx = Math.floor(Math.random() * historicalReturns.length);
-          compoundReturn *= (1 + historicalReturns[idx]);
+          yearReturn = historicalReturns[idx];
         }
-        yearReturn = compoundReturn - 1;
       } else if (returnModel === 'parametric' && fittedDistribution && returnDistribution !== 'normal') {
         // NEW: Use fitted parametric distribution (Student's t, Skewed t, etc.)
         // This captures fat tails and skewness in the simulation

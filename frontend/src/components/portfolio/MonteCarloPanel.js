@@ -113,6 +113,9 @@ function MonteCarloPanel({ portfolioId, initialValue }) {
 
   const formatValue = (value) => {
     if (!value && value !== 0) return '-';
+    if (value >= 1e12) {
+      return `$${(value / 1e12).toFixed(2)}T`;
+    }
     if (value >= 1000000) {
       return `$${(value / 1000000).toFixed(2)}M`;
     }

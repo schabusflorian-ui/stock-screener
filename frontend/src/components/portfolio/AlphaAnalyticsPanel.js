@@ -178,11 +178,12 @@ function AlphaAnalyticsPanel({ portfolioId }) {
   };
 
   const formatPercent = (value, decimals = 2) => {
-    if (value === null || value === undefined) return '-';
+    if (value === null || value === undefined || Number.isNaN(value) || !Number.isFinite(value)) return '-';
     return `${value >= 0 ? '+' : ''}${value.toFixed(decimals)}%`;
   };
 
   const getAlphaColor = (alpha) => {
+    if (alpha == null || !Number.isFinite(alpha)) return 'var(--color-text-muted)';
     if (alpha > 5) return 'var(--color-success)';
     if (alpha > 0) return 'var(--positive-light)';
     if (alpha > -5) return 'var(--color-warning)';
@@ -190,6 +191,7 @@ function AlphaAnalyticsPanel({ portfolioId }) {
   };
 
   const getConfidenceColor = (confidence) => {
+    if (confidence == null || !Number.isFinite(confidence)) return 'var(--color-text-muted)';
     if (confidence >= 70) return 'var(--color-success)';
     if (confidence >= 50) return 'var(--color-warning)';
     return 'var(--color-danger)';
@@ -415,7 +417,7 @@ function AlphaAnalyticsPanel({ portfolioId }) {
             <div className="summary-card">
               <div className="summary-label">Skill Confidence</div>
               <div className="summary-value" style={{ color: getConfidenceColor(alphaData.summary.alphaConfidence) }}>
-                {alphaData.summary.alphaConfidence}%
+                {Number.isFinite(alphaData.summary.alphaConfidence) ? `${alphaData.summary.alphaConfidence}%` : '-'}
               </div>
               <div className="summary-sublabel">Statistical</div>
             </div>
@@ -423,7 +425,7 @@ function AlphaAnalyticsPanel({ portfolioId }) {
             <div className="summary-card">
               <div className="summary-label">Consistency</div>
               <div className="summary-value" style={{ color: getConfidenceColor(alphaData.summary.alphaConsistency) }}>
-                {alphaData.summary.alphaConsistency}%
+                {Number.isFinite(alphaData.summary.alphaConsistency) ? `${alphaData.summary.alphaConsistency}%` : '-'}
               </div>
               <div className="summary-sublabel">Periods positive</div>
             </div>
@@ -431,7 +433,7 @@ function AlphaAnalyticsPanel({ portfolioId }) {
             <div className="summary-card">
               <div className="summary-label">Information Ratio</div>
               <div className="summary-value">
-                {alphaData.summary.informationRatio?.toFixed(2)}
+                {Number.isFinite(alphaData.summary.informationRatio) ? alphaData.summary.informationRatio.toFixed(2) : '-'}
               </div>
               <div className="summary-sublabel">Risk-adjusted</div>
             </div>
@@ -471,15 +473,17 @@ function AlphaAnalyticsPanel({ portfolioId }) {
                     </div>
                     <div className="detail-item">
                       <span className="detail-label">Beta</span>
-                      <span className="detail-value">{alphaData.jensensAlpha.beta}</span>
+                      <span className="detail-value">{Number.isFinite(alphaData.jensensAlpha.beta) ? alphaData.jensensAlpha.beta : '-'}</span>
                     </div>
                     <div className="detail-item">
                       <span className="detail-label">Correlation</span>
-                      <span className="detail-value">{alphaData.jensensAlpha.correlation}</span>
+                      <span className="detail-value">{Number.isFinite(alphaData.jensensAlpha.correlation) ? alphaData.jensensAlpha.correlation : '-'}</span>
                     </div>
                     <div className="detail-item">
                       <span className="detail-label">R-Squared</span>
-                      <span className="detail-value">{(alphaData.jensensAlpha.rSquared * 100).toFixed(0)}%</span>
+                      <span className="detail-value">
+                        {Number.isFinite(alphaData.jensensAlpha.rSquared) ? `${(alphaData.jensensAlpha.rSquared * 100).toFixed(0)}%` : '-'}
+                      </span>
                     </div>
                     <div className="detail-item">
                       <span className="detail-label">Tracking Error</span>
@@ -487,11 +491,11 @@ function AlphaAnalyticsPanel({ portfolioId }) {
                     </div>
                     <div className="detail-item">
                       <span className="detail-label">T-Statistic</span>
-                      <span className="detail-value">{alphaData.jensensAlpha.tStatistic}</span>
+                      <span className="detail-value">{Number.isFinite(alphaData.jensensAlpha.tStatistic) ? alphaData.jensensAlpha.tStatistic : '-'}</span>
                     </div>
                     <div className="detail-item">
                       <span className="detail-label">P-Value</span>
-                      <span className="detail-value">{alphaData.jensensAlpha.pValue}</span>
+                      <span className="detail-value">{Number.isFinite(alphaData.jensensAlpha.pValue) ? alphaData.jensensAlpha.pValue : '-'}</span>
                     </div>
                   </div>
                   <div className="interpretation-box">

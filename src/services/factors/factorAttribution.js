@@ -2,7 +2,7 @@
 // Factor Attribution System - Asness/AQR-inspired factor decomposition
 // Decomposes portfolio returns into factor contributions to identify true alpha
 
-const { getDatabaseAsync } = require('../../lib/db');
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 
 /**
  * FactorAttribution - Fama-French style factor decomposition
@@ -23,7 +23,7 @@ class FactorAttribution {
 
   async _initializeTables() {
     const database = await getDatabaseAsync();
-    const isPostgres = database.type === 'postgres';
+    const isPostgres = isUsingPostgres();
     const idType = isPostgres ? 'SERIAL PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT';
 
     await database.query(`

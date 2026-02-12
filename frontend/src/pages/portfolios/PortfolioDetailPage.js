@@ -507,7 +507,12 @@ function PortfolioDetailPage() {
   };
 
   useEffect(() => {
-    loadPortfolio();
+    if (id && id !== 'null') {
+      loadPortfolio();
+    } else {
+      setLoading(false);
+      setError(id === 'null' ? 'Invalid portfolio ID.' : 'Select a portfolio.');
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -564,8 +569,10 @@ function PortfolioDetailPage() {
   });
 
   const loadPortfolio = async () => {
+    if (!id || id === 'null') return;
     try {
       setLoading(true);
+      setError(null);
       const [portfolioRes, holdingsRes, ordersRes, transactionsRes] = await Promise.all([
         portfoliosAPI.get(id),
         portfoliosAPI.getHoldings(id),
@@ -589,9 +596,12 @@ function PortfolioDetailPage() {
         // Map positions count
         positions_count: portfolioRes.data.positions?.count ?? 0
       });
-      setHoldings(holdingsRes.data.holdings || []);
-      setOrders(ordersRes.data.orders || []);
-      setTransactions(transactionsRes.data.transactions || []);
+      const rawHoldings = holdingsRes.data.holdings;
+      const rawOrders = ordersRes.data.orders;
+      const rawTransactions = transactionsRes.data.transactions;
+      setHoldings(Array.isArray(rawHoldings) ? rawHoldings : []);
+      setOrders(Array.isArray(rawOrders) ? rawOrders : []);
+      setTransactions(Array.isArray(rawTransactions) ? rawTransactions : []);
 
       // Load performance, allocation, and risk metrics
       try {

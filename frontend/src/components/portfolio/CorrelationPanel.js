@@ -103,12 +103,26 @@ function CorrelationPanel({ portfolioId }) {
         setError(corrResult.error);
       }
 
-      // Set data (null if error)
-      setCorrelationData(corrResult.data);
+      const corr = corrResult.data;
+      const rolling = rollingResult.data;
+      const cluster = clusterResult.data;
+      setCorrelationData(corr ? {
+        ...corr,
+        symbols: Array.isArray(corr.symbols) ? corr.symbols : [],
+        matrix: Array.isArray(corr.matrix) ? corr.matrix : [],
+        highlyCorrelated: Array.isArray(corr.highlyCorrelated) ? corr.highlyCorrelated : []
+      } : null);
       setCovarianceData(covResult.data);
       setRiskContribution(riskResult.data);
-      setRollingData(rollingResult.data);
-      setClusterData(clusterResult.data);
+      setRollingData(rolling ? {
+        ...rolling,
+        rollingData: Array.isArray(rolling.rollingData) ? rolling.rollingData : [],
+        correlationSpikes: Array.isArray(rolling.correlationSpikes) ? rolling.correlationSpikes : []
+      } : null);
+      setClusterData(cluster ? {
+        ...cluster,
+        clusters: Array.isArray(cluster.clusters) ? cluster.clusters : []
+      } : null);
     } catch (err) {
       console.error('Failed to load correlation data:', err);
       setError(err.response?.data?.error || err.message);
@@ -130,11 +144,13 @@ function CorrelationPanel({ portfolioId }) {
 
   // Correlation Matrix Heatmap
   const CorrelationMatrix = () => {
-    if (!correlationData?.matrix || !correlationData?.symbols) {
+    const symbols = Array.isArray(correlationData?.symbols) ? correlationData.symbols : [];
+    const matrix = Array.isArray(correlationData?.matrix) ? correlationData.matrix : [];
+    if (symbols.length === 0 || matrix.length === 0) {
       return <div className="no-data">Insufficient data for correlation matrix</div>;
     }
 
-    const { matrix, symbols, avgCorrelation, highlyCorrelated } = correlationData;
+    const { avgCorrelation, highlyCorrelated } = correlationData;
     const n = symbols.length;
     const cellSize = Math.min(50, Math.max(30, 400 / n));
 
@@ -357,11 +373,12 @@ function CorrelationPanel({ portfolioId }) {
 
   // Rolling Correlation Chart
   const RollingCorrelationChart = () => {
-    if (!rollingData?.rollingData || rollingData.rollingData.length === 0) {
+    const data = Array.isArray(rollingData?.rollingData) ? rollingData.rollingData : [];
+    if (data.length === 0) {
       return <div className="no-data">Insufficient data for rolling correlation</div>;
     }
 
-    const { rollingData: data, statistics, warning, trend } = rollingData;
+    const { statistics, warning, trend } = rollingData;
     const chartWidth = 600;
     const chartHeight = 200;
     const padding = { top: 20, right: 20, bottom: 30, left: 50 };
@@ -497,7 +514,7 @@ function CorrelationPanel({ portfolioId }) {
           </div>
         )}
 
-        {rollingData.correlationSpikes && rollingData.correlationSpikes.length > 0 && (
+        {Array.isArray(rollingData?.correlationSpikes) && rollingData.correlationSpikes.length > 0 && (
           <div className="correlation-spikes">
             <h5>Recent Correlation Spikes</h5>
             <div className="spikes-list">
@@ -515,11 +532,12 @@ function CorrelationPanel({ portfolioId }) {
 
   // Cluster Analysis
   const ClusterAnalysis = () => {
-    if (!clusterData?.clusters) {
+    const clusters = Array.isArray(clusterData?.clusters) ? clusterData.clusters : [];
+    if (clusters.length === 0) {
       return <div className="no-data">Cluster analysis unavailable</div>;
     }
 
-    const { clusters, concentrationRisk, hiddenRisks, recommendations } = clusterData;
+    const { concentrationRisk, hiddenRisks, recommendations } = clusterData;
     const clusterColors = ['var(--color-ai-violet)', 'var(--chart-1)', 'var(--info)', 'var(--warning-dark)', 'var(--positive)', 'var(--negative)'];
 
     return (

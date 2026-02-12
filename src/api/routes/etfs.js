@@ -304,9 +304,11 @@ router.get('/:symbol/holdings', async (req, res) => {
       return res.status(404).json({ success: false, error: 'ETF not found' });
     }
 
+    const holdings = Array.isArray(data.holdings) ? data.holdings : [];
     res.json({
       success: true,
-      ...data
+      ...data,
+      holdings
     });
   } catch (error) {
     console.error('Error fetching ETF holdings:', error);

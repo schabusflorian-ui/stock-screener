@@ -249,7 +249,7 @@ function RebalancePanel({ portfolioId, positions = [] }) {
           <div className="results-section">
             <h4>Rebalancing Plan</h4>
 
-            {rebalancePlan.positions && rebalancePlan.positions.length > 0 && (
+            {Array.isArray(rebalancePlan.positions) && rebalancePlan.positions.length > 0 && (
               <div className="rebalance-table">
                 <div className="table-header">
                   <span>Symbol</span>
@@ -276,7 +276,7 @@ function RebalancePanel({ portfolioId, positions = [] }) {
               </div>
             )}
 
-            {rebalancePlan.trades && rebalancePlan.trades.length > 0 && (
+            {Array.isArray(rebalancePlan.trades) && rebalancePlan.trades.length > 0 && (
               <div className="trades-section">
                 <h5>Required Trades</h5>
                 <div className="trades-list">
@@ -307,7 +307,7 @@ function RebalancePanel({ portfolioId, positions = [] }) {
               </div>
             )}
 
-            {rebalancePlan.trades?.length === 0 && (
+            {Array.isArray(rebalancePlan.trades) && rebalancePlan.trades.length === 0 && (
               <div className="no-trades-message">
                 <Check size={20} />
                 <span>No trades needed - portfolio is within drift threshold</span>

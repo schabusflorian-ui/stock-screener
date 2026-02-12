@@ -138,12 +138,27 @@ function FactorExposurePanel({ portfolioId }) {
         factorsAPI.getFactorReturns({}).catch(() => null)
       ]);
 
-      setFactorData(factorRes.data.data || factorRes.data);
-      setDiversification(divRes.data.data || divRes.data);
-      setCorrelation(corrRes.data.data || corrRes.data);
-      setIncomeProjection(incomeRes.data.data || incomeRes.data);
-      setFamaFrenchData(ffRes?.data?.data || null);
-      setFactorReturns(returnsRes?.data?.data || null);
+      const div = divRes.data.data ?? divRes.data;
+      const corr = corrRes.data.data ?? corrRes.data;
+      const income = incomeRes.data.data ?? incomeRes.data;
+      setFactorData(factorRes.data.data ?? factorRes.data);
+      setDiversification(div ? {
+        ...div,
+        suggestions: Array.isArray(div.suggestions) ? div.suggestions : [],
+        components: div.components && typeof div.components === 'object' ? div.components : {}
+      } : null);
+      setCorrelation(corr ? {
+        ...corr,
+        highCorrelationPairs: Array.isArray(corr.highCorrelationPairs) ? corr.highCorrelationPairs : [],
+        lowCorrelationPairs: Array.isArray(corr.lowCorrelationPairs) ? corr.lowCorrelationPairs : []
+      } : null);
+      setIncomeProjection(income ? {
+        ...income,
+        projection: Array.isArray(income.projection) ? income.projection : [],
+        topDividendPayers: Array.isArray(income.topDividendPayers) ? income.topDividendPayers : []
+      } : null);
+      setFamaFrenchData(ffRes?.data?.data ?? null);
+      setFactorReturns(Array.isArray(returnsRes?.data?.data) ? returnsRes.data.data : (returnsRes?.data?.data ? [] : null));
     } catch (err) {
       console.error('Failed to load analytics:', err);
       setError(err.response?.data?.error || err.message);
@@ -382,7 +397,7 @@ function FactorExposurePanel({ portfolioId }) {
                   ))}
                 </div>
 
-                {diversification.suggestions && diversification.suggestions.length > 0 && (
+                {Array.isArray(diversification.suggestions) && diversification.suggestions.length > 0 && (
                   <div className="suggestions-section">
                     <h5>Suggestions for Improvement</h5>
                     <ul className="suggestions-list">
@@ -413,7 +428,7 @@ function FactorExposurePanel({ portfolioId }) {
                   </div>
                 </div>
 
-                {correlation.highCorrelationPairs && correlation.highCorrelationPairs.length > 0 && (
+                {Array.isArray(correlation.highCorrelationPairs) && correlation.highCorrelationPairs.length > 0 && (
                   <div className="correlation-pairs">
                     <h5>Highly Correlated Pairs (&gt;0.7)</h5>
                     <div className="pairs-list">
@@ -432,7 +447,7 @@ function FactorExposurePanel({ portfolioId }) {
                   </div>
                 )}
 
-                {correlation.lowCorrelationPairs && correlation.lowCorrelationPairs.length > 0 && (
+                {Array.isArray(correlation.lowCorrelationPairs) && correlation.lowCorrelationPairs.length > 0 && (
                   <div className="correlation-pairs">
                     <h5>Uncorrelated Pairs (&lt;0.3)</h5>
                     <div className="pairs-list">
@@ -479,7 +494,7 @@ function FactorExposurePanel({ portfolioId }) {
                   </div>
                 </div>
 
-                {incomeProjection.projection && (
+                {Array.isArray(incomeProjection.projection) && incomeProjection.projection.length > 0 && (
                   <div className="projection-section">
                     <h5>10-Year Income Projection (5% growth)</h5>
                     <div className="projection-chart">
@@ -499,7 +514,7 @@ function FactorExposurePanel({ portfolioId }) {
                   </div>
                 )}
 
-                {incomeProjection.topDividendPayers && incomeProjection.topDividendPayers.length > 0 && (
+                {Array.isArray(incomeProjection.topDividendPayers) && incomeProjection.topDividendPayers.length > 0 && (
                   <div className="top-payers">
                     <h5>Top Dividend Contributors</h5>
                     <div className="payers-list">
@@ -596,7 +611,7 @@ function FactorExposurePanel({ portfolioId }) {
                     </div>
 
                     {/* Historical Factor Returns Chart */}
-                    {factorReturns && factorReturns.length > 0 && (
+                    {Array.isArray(factorReturns) && factorReturns.length > 0 && (
                       <div className="ff-returns-section">
                         <h4>Cumulative Factor Returns</h4>
                         <ResponsiveContainer width="100%" height={250}>

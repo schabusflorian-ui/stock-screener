@@ -77,7 +77,9 @@ function DistributionPanel({ portfolioId, symbol }) {
         throw new Error('Either portfolioId or symbol is required');
       }
 
-      setAnalysisData(response.data.data || response.data);
+      const data = response.data.data ?? response.data;
+      const returns = Array.isArray(data?.returns) ? data.returns : [];
+      setAnalysisData(data ? { ...data, returns } : null);
     } catch (err) {
       console.error('Distribution analysis failed:', err);
       setError(err.response?.data?.error || err.message);
@@ -95,9 +97,8 @@ function DistributionPanel({ portfolioId, symbol }) {
 
   // Generate histogram bins from returns
   const histogramData = useMemo(() => {
-    if (!analysisData?.returns || analysisData.returns.length === 0) return null;
-
-    const returns = analysisData.returns;
+    const returns = Array.isArray(analysisData?.returns) ? analysisData.returns : [];
+    if (returns.length === 0) return null;
     const numBins = Math.min(30, Math.ceil(Math.sqrt(returns.length)));
 
     const min = Math.min(...returns);
@@ -129,9 +130,10 @@ function DistributionPanel({ portfolioId, symbol }) {
 
   // Generate Q-Q plot data
   const qqData = useMemo(() => {
-    if (!analysisData?.returns || analysisData.returns.length === 0) return null;
+    const rawReturns = Array.isArray(analysisData?.returns) ? analysisData.returns : [];
+    if (rawReturns.length === 0) return null;
 
-    const returns = [...analysisData.returns].sort((a, b) => a - b);
+    const returns = [...rawReturns].sort((a, b) => a - b);
     const n = returns.length;
     const mean = returns.reduce((a, b) => a + b, 0) / n;
     const std = Math.sqrt(returns.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / n);
@@ -429,7 +431,7 @@ function DistributionPanel({ portfolioId, symbol }) {
                     data={histogramData}
                     fittedParams={analysisData.distributionFit}
                     moments={analysisData.moments}
-                    returns={analysisData.returns}
+                    returns={Array.isArray(analysisData.returns) ? analysisData.returns : []}
                   />
                 </div>
               </div>
