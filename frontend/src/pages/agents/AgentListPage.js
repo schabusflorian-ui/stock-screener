@@ -216,7 +216,7 @@ const STATUS_FILTER_OPTIONS = {
 
 function AgentListPage() {
   const navigate = useNavigate();
-  const { hasFeature, promptUpgrade, getUsageStatus, isGrandfatheredActive } = useSubscription();
+  const { hasFeature, promptUpgrade, getUsageStatus, isGrandfatheredActive, isAdmin } = useSubscription();
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -227,7 +227,7 @@ function AgentListPage() {
   const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' });
 
   // Check if user can create agents
-  const canCreateAgents = hasFeature('paper_trading_bots') || isGrandfatheredActive;
+  const canCreateAgents = isAdmin || hasFeature('paper_trading_bots') || isGrandfatheredActive;
   const agentUsage = getUsageStatus('agents');
   const atAgentLimit = !agentUsage.unlimited && agentUsage.current >= agentUsage.limit;
 

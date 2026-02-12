@@ -58,6 +58,23 @@ const DEFAULT_WEIGHTS = {
 };
 
 /**
+ * Fields stored as INTEGER (0/1) in trading_agents; frontend sends booleans.
+ * Coerce to 0/1 so PostgreSQL accepts the value.
+ */
+const INTEGER_BOOLEAN_FIELDS = [
+  'regime_scaling_enabled', 'vix_scaling_enabled', 'pause_in_crisis',
+  'auto_execute', 'require_confirmation',
+  'use_optimized_weights', 'use_hmm_regime', 'use_ml_combiner',
+  'use_factor_exposure', 'use_probabilistic_dcf', 'apply_earnings_filter'
+];
+
+function toIntegerIfBoolean(field, value) {
+  if (!INTEGER_BOOLEAN_FIELDS.includes(field)) return value;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  return value;
+}
+
+/**
  * Safely parse JSON with logging on failure
  * @param {string} jsonString - The string to parse
  * @param {string} context - Context for error logging
@@ -393,7 +410,9 @@ async function updateAgent(id, updates) {
 
   const setClause = fieldsToUpdate.map((field, idx) => `${field} = $${idx + 1}`).join(', ');
   const values = fieldsToUpdate.map(field => {
-    const value = updates[field];
+    let value = updates[field];
+    // Coerce booleans to 0/1 for INTEGER columns
+    value = toIntegerIfBoolean(field, value);
     // Convert arrays to JSON strings for PostgreSQL storage
     if (field === 'allowed_actions' && Array.isArray(value)) {
       return JSON.stringify(value);
@@ -2000,7 +2019,9 @@ async function updateAgentSettings(agentId, settings) {
   for (const field of settableFields) {
     if (settings[field] !== undefined) {
       updates.push(`${field} = $${paramIndex++}`);
-      values.push(typeof settings[field] === 'object' ? JSON.stringify(settings[field]) : settings[field]);
+      let val = settings[field];
+      val = toIntegerIfBoolean(field, val);
+      values.push(typeof val === 'object' ? JSON.stringify(val) : val);
     }
   }
 

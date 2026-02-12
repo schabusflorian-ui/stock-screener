@@ -50,10 +50,15 @@ router.get('/search-cik', async (req, res) => {
       }
     };
 
-    // Fetch the company tickers JSON
+    // Fetch the company tickers JSON (SEC-registered companies; 13F filers may need manual CIK entry)
     const companyData = await new Promise((resolve, reject) => {
       const request = https.get(cikLookupUrl, options, (response) => {
         let data = '';
+
+        if (response.statusCode !== 200) {
+          reject(new Error(`SEC API returned ${response.statusCode}. Try again later or enter CIK manually.`));
+          return;
+        }
 
         // Handle gzip/deflate compression
         const encoding = response.headers['content-encoding'];
@@ -73,17 +78,23 @@ router.get('/search-cik', async (req, res) => {
             const parsed = JSON.parse(data);
             resolve(parsed);
           } catch (e) {
-            console.error('Failed to parse SEC JSON:', e.message);
-            resolve({});
+            console.error('CIK search: Failed to parse SEC JSON:', e.message);
+            reject(new Error('SEC data format changed. Enter CIK manually if known.'));
           }
         });
-        stream.on('error', reject);
+        stream.on('error', (err) => {
+          console.error('CIK search: SEC stream error:', err.message);
+          reject(err);
+        });
       });
 
-      request.on('error', reject);
+      request.on('error', (err) => {
+        console.error('CIK search: SEC request failed:', err.message);
+        reject(new Error('Could not reach SEC. Check network or enter CIK manually.'));
+      });
       request.setTimeout(10000, () => {
         request.destroy();
-        reject(new Error('Request timeout'));
+        reject(new Error('SEC request timeout. Try again or enter CIK manually.'));
       });
     });
 
@@ -146,15 +157,15 @@ router.get('/search-cik', async (req, res) => {
       count: limitedResults.length,
       results: limitedResults,
       message: limitedResults.length === 0
-        ? 'No matches found in SEC database. Try a different search term or enter CIK manually.'
-        : `Found ${limitedResults.length} match${limitedResults.length !== 1 ? 'es' : ''} in SEC database. Click to select.`
+        ? 'No matches in SEC company list. Search finds SEC-registered companies. For fund managers, enter CIK manually.'
+        : `Found ${limitedResults.length} match${limitedResults.length !== 1 ? 'es' : ''}. Click to select.`
     });
   } catch (error) {
-    console.error('Error searching CIK:', error);
+    console.error('CIK search error:', error.message);
     res.status(500).json({
       success: false,
-      error: 'Failed to search SEC database. Please try again or enter CIK manually.',
-      details: error.message
+      error: error.message || 'Failed to search SEC database. Enter CIK manually if known.',
+      results: []
     });
   }
 });

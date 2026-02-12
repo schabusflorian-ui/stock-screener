@@ -426,10 +426,15 @@ router.get('/performance-by-factor', async (req, res) => {
     `, [minDecisions]);
     const performance = performanceResult.rows;
 
+    const interpretation = _getFactorInterpretation(factor, performance);
+    if (performance.length === 0) {
+      interpretation.summary = 'No factor data yet. Run "Calculate outcomes" and ensure decision_factor_context is populated.';
+    }
+
     res.json({
       factor,
       performance,
-      interpretation: _getFactorInterpretation(factor, performance)
+      interpretation
     });
   } catch (err) {
     console.error('Error fetching factor performance:', err);
@@ -439,7 +444,7 @@ router.get('/performance-by-factor', async (req, res) => {
       return res.json({
         factor: req.query.factor || 'value',
         performance: [],
-        interpretation: { summary: 'Historical factor data not available.', details: null }
+        interpretation: { summary: 'Historical factor tables missing. Run migrations and populate decision_factor_context.', details: null }
       });
     }
     res.status(500).json({ error: err.message });
@@ -739,18 +744,18 @@ router.get('/factor-timeseries', async (req, res) => {
     const database = await getDatabaseAsync();
     const factorColumn = `${factor}_percentile`;
 
-    // Get performance by time period and quintile
+    // Get performance by time period and quintile (Postgres/SQLite compatible date extraction)
     const timeseriesResult = await database.query(`
       SELECT
         CASE
-          WHEN $1 = 'quarter' THEN substr(d.decision_date, 1, 4) || '-Q' ||
+          WHEN $1 = 'quarter' THEN SUBSTR(CAST(d.decision_date AS TEXT), 1, 4) || '-Q' ||
             CASE
-              WHEN substr(d.decision_date, 6, 2) IN ('01','02','03') THEN '1'
-              WHEN substr(d.decision_date, 6, 2) IN ('04','05','06') THEN '2'
-              WHEN substr(d.decision_date, 6, 2) IN ('07','08','09') THEN '3'
+              WHEN SUBSTR(CAST(d.decision_date AS TEXT), 6, 2) IN ('01','02','03') THEN '1'
+              WHEN SUBSTR(CAST(d.decision_date AS TEXT), 6, 2) IN ('04','05','06') THEN '2'
+              WHEN SUBSTR(CAST(d.decision_date AS TEXT), 6, 2) IN ('07','08','09') THEN '3'
               ELSE '4'
             END
-          ELSE substr(d.decision_date, 1, 4)
+          ELSE SUBSTR(CAST(d.decision_date AS TEXT), 1, 4)
         END as period,
         CASE
           WHEN dfc.${factorColumn} >= 80 THEN 'top'
@@ -803,11 +808,11 @@ router.get('/decision-heatmap', async (req, res) => {
     let query = `
       SELECT
         sector,
-        substr(decision_date, 1, 4) || '-Q' ||
+        SUBSTR(CAST(decision_date AS TEXT), 1, 4) || '-Q' ||
           CASE
-            WHEN substr(decision_date, 6, 2) IN ('01','02','03') THEN '1'
-            WHEN substr(decision_date, 6, 2) IN ('04','05','06') THEN '2'
-            WHEN substr(decision_date, 6, 2) IN ('07','08','09') THEN '3'
+            WHEN SUBSTR(CAST(decision_date AS TEXT), 6, 2) IN ('01','02','03') THEN '1'
+            WHEN SUBSTR(CAST(decision_date AS TEXT), 6, 2) IN ('04','05','06') THEN '2'
+            WHEN SUBSTR(CAST(decision_date AS TEXT), 6, 2) IN ('07','08','09') THEN '3'
             ELSE '4'
           END as period,
         COUNT(*) as count,
@@ -869,7 +874,7 @@ router.get('/investor-styles', async (req, res) => {
       LEFT JOIN investment_decisions d ON fi.id = d.investor_id AND d.return_1y IS NOT NULL
       WHERE fi.investment_style IS NOT NULL
       GROUP BY fi.investment_style
-      HAVING COUNT(d.id) >= 50
+      HAVING COUNT(d.id) >= 10
       ORDER BY avg_alpha DESC NULLS LAST
     `, []);
     const stylePerformance = stylePerformanceResult.rows;
@@ -889,7 +894,7 @@ router.get('/investor-styles', async (req, res) => {
       JOIN investment_decisions d ON fi.id = d.investor_id
       WHERE fi.investment_style IS NOT NULL AND d.return_1y IS NOT NULL
       GROUP BY fi.id, fi.name, fi.investment_style
-      HAVING COUNT(d.id) >= 20
+      HAVING COUNT(d.id) >= 5
       ORDER BY avg_alpha DESC
     `, []);
     const topByStyle = topByStyleResult.rows;

@@ -21,6 +21,13 @@ function getIndexPriceService() {
   return indexPriceService;
 }
 
+function toDateKey(val) {
+  if (val == null) return null;
+  if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}/.test(val)) return val.slice(0, 10);
+  if (val instanceof Date) return val.toISOString().slice(0, 10);
+  return String(val).slice(0, 10);
+}
+
 /**
  * GET /api/indices
  * Get all indices with current metrics
@@ -319,9 +326,13 @@ router.get('/alpha/timeseries/:symbol', async (req, res) => {
       }
     }
 
-    // Build date-indexed maps for alignment
-    const stockMap = new Map(stockPrices.map(p => [p.date, p.close]));
-    const benchmarkMap = new Map((benchmarkPrices || []).map(p => [p.date, p.close]));
+    // Build date-indexed maps for alignment (normalize dates for Postgres/SQLite compatibility)
+    const stockMap = new Map(
+      stockPrices.map(p => [toDateKey(p.date), p.close]).filter(([k]) => k != null)
+    );
+    const benchmarkMap = new Map(
+      (benchmarkPrices || []).map(p => [toDateKey(p.date), p.close]).filter(([k]) => k != null)
+    );
 
     // Get all unique dates where we have both stock and benchmark data
     const commonDates = [...stockMap.keys()].filter(d => benchmarkMap.has(d)).sort();
