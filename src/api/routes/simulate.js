@@ -212,10 +212,15 @@ router.post('/backtest', async (req, res) => {
     }
 
     const result = await backtestEngine.runBacktest(config);
+    const data = result ? {
+      ...result,
+      equityCurve: Array.isArray(result.equityCurve) ? result.equityCurve : [],
+      monthlyReturns: Array.isArray(result.monthlyReturns) ? result.monthlyReturns : []
+    } : { equityCurve: [], monthlyReturns: [] };
 
     res.json({
       success: true,
-      data: result
+      data
     });
   } catch (error) {
     console.error('Error running backtest:', error);
@@ -415,10 +420,11 @@ router.get('/portfolios/:id/distribution', async (req, res) => {
       lookbackYears: parseFloat(lookbackYears),
       distributionType
     });
+    const data = result ? { ...result, returns: Array.isArray(result.returns) ? result.returns : [] } : { returns: [] };
 
     res.json({
       success: true,
-      data: result
+      data
     });
   } catch (error) {
     console.error('Error analyzing distribution:', error);
@@ -453,10 +459,11 @@ router.post('/distribution/analyze', async (req, res) => {
       lookbackYears: parseFloat(lookbackYears),
       distributionType
     });
+    const data = result ? { ...result, returns: Array.isArray(result.returns) ? result.returns : [] } : { returns: [] };
 
     res.json({
       success: true,
-      data: result
+      data
     });
   } catch (error) {
     console.error('Error analyzing distribution:', error);
@@ -766,10 +773,11 @@ router.post('/stress-test/all', async (req, res) => {
     }
 
     const result = await stressTestEngine.runAllScenarios(portfolioId);
+    const data = result ? { ...result, results: Array.isArray(result.results) ? result.results : [] } : { results: [] };
 
     res.json({
       success: true,
-      data: result
+      data
     });
   } catch (error) {
     console.error('Error running all stress tests:', error);
@@ -986,10 +994,11 @@ router.post('/portfolios/:id/what-if', async (req, res) => {
     }
 
     const result = await whatIfAnalysis.simulateChange(portfolioId, changes);
+    const data = result ? { ...result, tradesToExecute: Array.isArray(result.tradesToExecute) ? result.tradesToExecute : [] } : { tradesToExecute: [] };
 
     res.json({
       success: true,
-      data: result
+      data
     });
   } catch (error) {
     console.error('Error running what-if analysis:', error);

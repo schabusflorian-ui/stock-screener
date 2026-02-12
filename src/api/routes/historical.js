@@ -424,7 +424,7 @@ router.get('/performance-by-factor', async (req, res) => {
           ELSE 5
         END
     `, [minDecisions]);
-    const performance = performanceResult.rows;
+    const performance = Array.isArray(performanceResult.rows) ? performanceResult.rows : [];
 
     const interpretation = _getFactorInterpretation(factor, performance);
     if (performance.length === 0) {
