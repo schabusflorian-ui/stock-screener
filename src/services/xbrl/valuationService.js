@@ -81,7 +81,7 @@ class ValuationService {
     await database.query(`
       INSERT INTO calculated_metrics (company_id, fiscal_period, period_type, data_source)
       VALUES ($1, $2, 'annual', 'xbrl')
-      ON CONFLICT (company_id, fiscal_period) DO NOTHING
+      ON CONFLICT (company_id, fiscal_period, period_type) DO NOTHING
     `, [companyId, periodEnd]);
   }
 
