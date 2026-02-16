@@ -550,6 +550,37 @@ class UpdateOrchestrator extends EventEmitter {
         this.log('No stalled queue items found');
       }
 
+      // FIXED: Clean up old completed/failed entries to prevent queue table bloat
+      const completedCutoff = dialect.intervalAgo(1, 'days');
+      const failedCutoff = dialect.intervalAgo(7, 'days');
+
+      const cleanupResult = await database.query(`
+        DELETE FROM update_queue
+        WHERE (status = 'completed' AND processed_at < ${completedCutoff})
+           OR (status = 'failed' AND processed_at < ${failedCutoff})
+      `);
+
+      if (cleanupResult.rowCount > 0) {
+        this.log(`CLEANUP: Removed ${cleanupResult.rowCount} old queue entries`);
+      }
+
+      // FIXED: Remove duplicate pending entries (keep only oldest per job_key)
+      const dedupResult = await database.query(`
+        DELETE FROM update_queue
+        WHERE id IN (
+          SELECT id FROM (
+            SELECT id, ROW_NUMBER() OVER (PARTITION BY job_key ORDER BY scheduled_for ASC) as rn
+            FROM update_queue
+            WHERE status = 'pending'
+          ) ranked
+          WHERE rn > 1
+        )
+      `);
+
+      if (dedupResult.rowCount > 0) {
+        this.log(`DEDUP: Removed ${dedupResult.rowCount} duplicate pending queue entries`, 'WARN');
+      }
+
       return stalled;
     } catch (error) {
       this.log(`Failed to recover stalled queue items: ${error.message}`, 'ERROR');
@@ -564,6 +595,19 @@ class UpdateOrchestrator extends EventEmitter {
   async queueJobInternal(jobKey, options = {}) {
     const { triggerType = 'manual', triggeredBy = 'system', priority = 50, scheduledFor = null, jobOptions = null } = options;
     const database = await getDatabaseAsync();
+
+    // FIXED: Check for existing pending entry to prevent duplicate queue items
+    // This prevents the queue from filling up with duplicate entries for the same job
+    const existingResult = await database.query(`
+      SELECT id FROM update_queue
+      WHERE job_key = $1 AND status = 'pending'
+      LIMIT 1
+    `, [jobKey]);
+
+    if (existingResult.rows.length > 0) {
+      this.log(`Job ${jobKey} already queued (pending), skipping duplicate`, 'DEBUG');
+      return;
+    }
 
     await database.query(`
       INSERT INTO update_queue (job_key, priority, scheduled_for, trigger_type, triggered_by, options)
