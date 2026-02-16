@@ -12,6 +12,14 @@ const CACHE_SHORT = { ttl: 30000 };   // 30 seconds for frequently changing data
 const CACHE_MEDIUM = { ttl: 120000 }; // 2 minutes for moderate data
 const CACHE_LONG = { ttl: 300000 };   // 5 minutes for stable data
 
+/** Normalize date to YYYY-MM-DD so Map lookups work (DB may return Date objects or ISO strings) */
+function normalizePeriodKey(value) {
+  if (value == null) return '';
+  if (typeof value === 'string') return value.substring(0, 10);
+  if (value instanceof Date) return value.toISOString().substring(0, 10);
+  return String(value).substring(0, 10);
+}
+
 /**
  * Calculate Q4 data from annual report minus Q1+Q2+Q3
  * Companies don't file 10-Q for Q4, only 10-K annual reports
@@ -603,7 +611,7 @@ router.get('/:symbol/metrics', responseCacheMiddleware(CACHE_MEDIUM), async (req
         AND fiscal_date_ending IN (${fiscalPeriods.map(() => '?').join(',')})
     `, [company.id, ...fiscalPeriods]);
     const incomeDataBatch = incomeDataBatchResult.rows;
-    const incomeMap = new Map(incomeDataBatch.map(d => [d.fiscal_date_ending, d]));
+    const incomeMap = new Map(incomeDataBatch.map(d => [normalizePeriodKey(d.fiscal_date_ending), d]));
 
     // Batch fetch balance sheet data for all periods
     const balanceSheetBatchResult = await database.query(`
@@ -613,7 +621,7 @@ router.get('/:symbol/metrics', responseCacheMiddleware(CACHE_MEDIUM), async (req
         AND fiscal_date_ending IN (${fiscalPeriods.map(() => '?').join(',')})
     `, [company.id, ...fiscalPeriods]);
     const balanceSheetBatch = balanceSheetBatchResult.rows;
-    const balanceSheetMap = new Map(balanceSheetBatch.map(d => [d.fiscal_date_ending, d]));
+    const balanceSheetMap = new Map(balanceSheetBatch.map(d => [normalizePeriodKey(d.fiscal_date_ending), d]));
 
     // Batch fetch stock prices - get latest price <= each fiscal period
     // Use window function to get the most recent price for each period
@@ -640,14 +648,15 @@ router.get('/:symbol/metrics', responseCacheMiddleware(CACHE_MEDIUM), async (req
         WHERE rn = 1
       `, [...fiscalPeriods, company.id]);
     const priceDataBatch = priceDataBatchResult.rows;
-      priceMap = new Map(priceDataBatch.map(d => [d.period, d]));
+      priceMap = new Map(priceDataBatch.map(d => [normalizePeriodKey(d.period), d]));
     }
 
-    // Enrich metrics with pre-fetched data
+    // Enrich metrics with pre-fetched data (use normalized keys so Date vs string match)
     const enrichedMetrics = metrics.map(m => {
-      const priceData = priceMap.get(m.fiscal_period);
-      const incomeData = incomeMap.get(m.fiscal_period);
-      const balanceSheet = balanceSheetMap.get(m.fiscal_period);
+      const periodKey = normalizePeriodKey(m.fiscal_period);
+      const priceData = priceMap.get(periodKey);
+      const incomeData = incomeMap.get(periodKey);
+      const balanceSheet = balanceSheetMap.get(periodKey);
 
       // Build fiscal label - calculate based on fiscal year end config
       let fiscalLabel = null;
