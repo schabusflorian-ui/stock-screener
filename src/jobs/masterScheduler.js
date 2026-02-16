@@ -281,13 +281,14 @@ const DEFAULT_JOB_TIMEOUT_MS = 30 * 60 * 1000;
 const JOB_TIMEOUTS = {
   'price-update': 45 * 60 * 1000,      // 45 min - lots of API calls
   'sec-refresh': 60 * 60 * 1000,       // 60 min - parsing SEC filings
-  'dividend-refresh': 30 * 60 * 1000,  // 30 min
+  'dividend-refresh': 30 * 60 * 1000, // 30 min
   'sentiment-refresh': 20 * 60 * 1000, // 20 min
   'knowledge-refresh': 60 * 60 * 1000, // 60 min
   'investor-13f': 90 * 60 * 1000,      // 90 min - large data imports
   'xbrl-sync': 60 * 60 * 1000,         // 60 min
   'market-indicator': 10 * 60 * 1000,  // 10 min - calculates Buffett, P/E, MSI
   'agent-scanner': 60 * 60 * 1000,     // 60 min - scans all agents for signals
+  'Capital Allocation Update': 45 * 60 * 1000, // 45 min - recalc from financial_data
 };
 
 /**
@@ -1100,7 +1101,8 @@ class MasterScheduler {
         { name: 'European Index Update', schedule: 'Sunday 5:00 AM ET' },
         { name: 'EU/UK Sector Enrichment', schedule: 'Sunday 6:00 AM ET' },
         { name: 'EU/UK Ticker Resolution', schedule: 'Sunday 2:30 AM ET, Tuesday 3:00 AM ET' },
-        { name: 'Market Indicator Update', schedule: '1st of Jan/Apr/Jul/Oct 10 AM ET, Sundays 9 AM ET' }
+        { name: 'Market Indicator Update', schedule: '1st of Jan/Apr/Jul/Oct 10 AM ET, Sundays 9 AM ET' },
+        { name: 'Capital Allocation Update', schedule: 'Sunday 5:00 AM ET' }
       ]
     };
   }
@@ -1220,6 +1222,22 @@ class MasterScheduler {
     }, { timezone: 'America/New_York' });
 
     this.log('Scheduled: Dividend Refresh (Sunday 4:00 AM ET)');
+
+    // ============================================
+    // CAPITAL ALLOCATION UPDATE
+    // ============================================
+    // Recalculate capital_allocation_summary from financial_data (no external API)
+    // Runs after Dividend Refresh so capital/dividend views stay fresh on Railway
+    cron.schedule('0 5 * * 0', async () => {
+      await this.runJob('Capital Allocation Update', async () => {
+        const capitalRouter = require('../api/routes/capital');
+        if (typeof capitalRouter.runCapitalUpdate === 'function') {
+          await capitalRouter.runCapitalUpdate();
+        }
+      });
+    }, { timezone: 'America/New_York' });
+
+    this.log('Scheduled: Capital Allocation Update (Sunday 5:00 AM ET)');
 
     // ============================================
     // PORTFOLIO DIVIDEND PROCESSING
@@ -1526,13 +1544,18 @@ class MasterScheduler {
   }
 
   /**
-   * Run all jobs immediately (for testing)
+   * Run all jobs immediately (for testing / validation).
+   * Covers every job type registered in the scheduler; may take a long time.
    */
   async runAll() {
-    this.log('Running all jobs immediately...');
+    this.log('Running all jobs immediately (full validation run)...');
 
     await this.runJob('Price Update', async () => {
       await this.priceUpdater.runUpdate('update');
+    });
+
+    await this.runJob('Price Backfill', async () => {
+      await this.priceUpdater.runUpdate('backfill');
     });
 
     await this.runJob('Sentiment Refresh', async () => {
@@ -1543,11 +1566,56 @@ class MasterScheduler {
       await this.knowledgeRefresher.runIncrementalRefresh();
     });
 
+    await this.runJob('Knowledge Base (Full)', async () => {
+      await this.knowledgeRefresher.runFullRefresh();
+    });
+
     await this.runJob('SEC Filing Check', async () => {
       await this.runSecRefresh();
     });
 
+    await this.runJob('EU IPO Prospectus Check (ESMA)', async () => {
+      await this.runEUIPOCheck('esma');
+    });
+
+    await this.runJob('UK IPO Prospectus Check (FCA)', async () => {
+      await this.runEUIPOCheck('fca');
+    });
+
+    await this.runJob('Dividend Refresh', async () => {
+      await this.runDividendRefresh(true);
+    });
+
+    await this.runJob('Capital Allocation Update', async () => {
+      const capitalRouter = require('../api/routes/capital');
+      if (typeof capitalRouter.runCapitalUpdate === 'function') {
+        await capitalRouter.runCapitalUpdate();
+      }
+    });
+
+    await this.runJob('Portfolio Dividend Processing', async () => {
+      await this.processPortfolioDividends();
+    });
+
+    await this.runJob('ETF Update (Tier 1)', async () => {
+      await this.etfUpdater.updateTier1();
+    });
+
+    await this.runJob('ETF Update (Tier 2)', async () => {
+      await this.etfUpdater.updateTier2();
+    });
+
+    await this.runJob('ETF Tier 3 Promotion', async () => {
+      await this.etfUpdater.promoteTier3();
+      await this.etfUpdater.updateIssuerStats();
+      this.etfUpdater.cleanupOldLogs();
+    });
+
     await this.runJob('13F Holdings Update', async () => {
+      await this.investor13FRefresher.fetchAll();
+    });
+
+    await this.runJob('13F Holdings Check', async () => {
       await this.investor13FRefresher.fetchAll();
     });
 
@@ -1565,6 +1633,38 @@ class MasterScheduler {
 
     await this.runJob('Agent Trade Execution', async () => {
       await this.agentExecutor.executeApprovedTrades();
+    });
+
+    await this.runJob('EU/UK XBRL Import', async () => {
+      await this.runXBRLImport({ limit: 10, delayMs: 500 });
+    });
+
+    await this.runJob('EU/UK Price Update (GB)', async () => {
+      await this.runEuropeanPriceUpdate(['GB']);
+    });
+
+    await this.runJob('EU/UK Price Update (EU)', async () => {
+      await this.runEuropeanPriceUpdate(['DE']);
+    });
+
+    await this.runJob('EU/UK Valuation Update', async () => {
+      await this.runEuropeanValuationUpdate();
+    });
+
+    await this.runJob('European Index Update', async () => {
+      await this.runEuropeanIndexUpdate();
+    });
+
+    await this.runJob('EU/UK Sector Enrichment', async () => {
+      await this.runEuropeanEnrichment();
+    });
+
+    await this.runJob('EU/UK Ticker Resolution', async () => {
+      await this.runTickerResolution({ limit: 20, delayMs: 500 });
+    });
+
+    await this.runJob('Market Indicator Update', async () => {
+      await this.runMarketIndicatorUpdate();
     });
 
     this.log('All jobs completed.');
@@ -1604,14 +1704,11 @@ if (require.main === module) {
     console.log('');
 
   } else if (args.includes('--list') || args.includes('-l')) {
+    const listStatus = scheduler.getStatus();
     console.log('\nScheduled Jobs:');
-    console.log('  1. Price Update         - Weekdays 6:00 PM ET');
-    console.log('  2. Price Backfill       - Weekends 12:00 PM ET');
-    console.log('  3. Sentiment Refresh    - Every 4 hours');
-    console.log('  4. Knowledge Incremental - Mon-Sat 6:00 AM ET');
-    console.log('  5. Knowledge Full       - Sunday 3:00 AM ET');
-    console.log('  6. SEC Filing Check     - Weekdays 7:00 PM ET');
-    console.log('  7. Dividend Refresh     - Sunday 4:00 AM ET');
+    listStatus.scheduledJobs.forEach((job, i) => {
+      console.log(`  ${(i + 1).toString().padStart(2)}. ${job.name.padEnd(28)} - ${job.schedule}`);
+    });
     console.log('');
 
   } else if (args.includes('--run-all')) {
@@ -1642,6 +1739,9 @@ Jobs:
   - Knowledge Full:        Full knowledge base rebuild (weekly)
   - SEC Filing Check:      Checks for new 10-K/10-Q filings (weekdays)
   - Dividend Refresh:      Updates dividend history and metrics (weekly)
+  - Capital Allocation:    Recalculates capital_allocation_summary (weekly, Sunday 5 AM ET)
+  - Plus ETF, 13F, EU/UK, Agent, Market Indicator, etc. Use --list for full list.
+  --run-all runs every job type (can take a long time); use for full validation.
 `);
 
   } else {

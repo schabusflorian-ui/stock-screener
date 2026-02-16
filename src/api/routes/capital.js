@@ -1487,4 +1487,7 @@ async function runCapitalUpdate() {
   }
 }
 
+// Expose for Master Scheduler so capital allocation runs on schedule (e.g. Railway)
+router.runCapitalUpdate = runCapitalUpdate;
+
 module.exports = router;

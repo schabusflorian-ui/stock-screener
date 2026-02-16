@@ -1,12 +1,13 @@
 # railway.toml
 # Railway deployment configuration for PostgreSQL production environment
+# Healthcheck: /health, 60s (canonical: same as railway.json)
 
 [build]
 builder = "nixpacks"
 
 [deploy]
 startCommand = "npm run start:production"
-healthcheckPath = "/api/health"
+healthcheckPath = "/health"
 healthcheckTimeout = 60
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3

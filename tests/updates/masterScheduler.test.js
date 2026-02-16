@@ -46,4 +46,10 @@ describe('Master Scheduler', () => {
     expect(names).toContain('Price Update');
     expect(names).toContain('Sentiment Refresh');
   });
+
+  it('scheduled jobs include Capital Allocation Update (Railway refresh)', () => {
+    const status = scheduler.getStatus();
+    const names = status.scheduledJobs.map(j => j.name);
+    expect(names).toContain('Capital Allocation Update');
+  });
 });
