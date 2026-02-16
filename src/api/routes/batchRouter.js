@@ -135,15 +135,15 @@ async function handleInsidersRequest(db, symbol, query) {
   const symbolUpper = symbol.toUpperCase();
   const { limit = 10 } = query;
 
-  const stmt = db.prepare(`
+  const result = await db.query(`
     SELECT *
     FROM insider_trades
-    WHERE symbol = ?
+    WHERE symbol = $1
     ORDER BY filing_date DESC
-    LIMIT ?
-  `);
+    LIMIT $2
+  `, [symbolUpper, parseInt(limit, 10)]);
 
-  const trades = stmt.all(symbolUpper, parseInt(limit, 10));
+  const trades = result.rows || [];
 
   return {
     symbol: symbolUpper,
@@ -159,31 +159,29 @@ async function handleCongressionalRequest(db, param1, query) {
   const { limit = 10 } = query;
 
   if (param1) {
-    // Specific representative or symbol
-    const stmt = db.prepare(`
+    const result = await db.query(`
       SELECT *
       FROM congressional_trades
-      WHERE representative = ? OR ticker = ?
+      WHERE representative = $1 OR ticker = $2
       ORDER BY transaction_date DESC
-      LIMIT ?
-    `);
+      LIMIT $3
+    `, [param1, param1.toUpperCase(), parseInt(limit, 10)]);
 
-    const trades = stmt.all(param1, param1.toUpperCase(), parseInt(limit, 10));
+    const trades = result.rows || [];
 
     return {
       trades,
       count: trades.length
     };
   } else {
-    // Recent trades
-    const stmt = db.prepare(`
+    const result = await db.query(`
       SELECT *
       FROM congressional_trades
       ORDER BY transaction_date DESC
-      LIMIT ?
-    `);
+      LIMIT $1
+    `, [parseInt(limit, 10)]);
 
-    const trades = stmt.all(parseInt(limit, 10));
+    const trades = result.rows || [];
 
     return {
       trades,
@@ -199,8 +197,8 @@ async function handleCongressionalRequest(db, param1, query) {
 /**
  * Get company overview data
  */
-function getCompanyOverview(db, symbol) {
-  const stmt = db.prepare(`
+async function getCompanyOverview(db, symbol) {
+  const result = await db.query(`
     SELECT
       c.id,
       c.symbol,
@@ -225,10 +223,10 @@ function getCompanyOverview(db, symbol) {
       pm.avg_volume_20d
     FROM companies c
     LEFT JOIN price_metrics pm ON c.symbol = pm.symbol
-    WHERE c.symbol = ?
-  `);
+    WHERE c.symbol = $1
+  `, [symbol]);
 
-  const company = stmt.get(symbol);
+  const company = result.rows?.[0];
 
   if (!company) {
     throw createError(404, `Company not found: ${symbol}`);
@@ -240,17 +238,17 @@ function getCompanyOverview(db, symbol) {
 /**
  * Get company financial metrics
  */
-function getCompanyMetrics(db, symbol) {
-  const stmt = db.prepare(`
+async function getCompanyMetrics(db, symbol) {
+  const result = await db.query(`
     SELECT cm.*
     FROM calculated_metrics cm
     JOIN companies c ON cm.company_id = c.id
-    WHERE c.symbol = ?
+    WHERE c.symbol = $1
     ORDER BY cm.fiscal_period DESC
     LIMIT 1
-  `);
+  `, [symbol]);
 
-  const metrics = stmt.get(symbol);
+  const metrics = result.rows?.[0];
 
   if (!metrics) {
     return null; // Not an error - some companies don't have metrics yet
@@ -262,10 +260,11 @@ function getCompanyMetrics(db, symbol) {
 /**
  * Get company financial statements
  */
-function getCompanyFinancials(db, symbol, query) {
+async function getCompanyFinancials(db, symbol, query) {
   const { period = 'annual', limit = 4 } = query;
 
-  const stmt = db.prepare(`
+  const periodFilter = period === 'annual' ? 'FY%' : 'Q%';
+  const result = await db.query(`
     SELECT
       fs.fiscal_period,
       fs.fiscal_year,
@@ -283,14 +282,13 @@ function getCompanyFinancials(db, symbol, query) {
       fs.free_cash_flow
     FROM financial_statements fs
     JOIN companies c ON fs.company_id = c.id
-    WHERE c.symbol = ?
-    AND fs.fiscal_period LIKE ?
+    WHERE c.symbol = $1
+    AND fs.fiscal_period LIKE $2
     ORDER BY fs.period_end_date DESC
-    LIMIT ?
-  `);
+    LIMIT $3
+  `, [symbol, periodFilter, parseInt(limit, 10)]);
 
-  const periodFilter = period === 'annual' ? 'FY%' : 'Q%';
-  const financials = stmt.all(symbol, periodFilter, parseInt(limit, 10));
+  const financials = result.rows || [];
 
   return {
     symbol,
@@ -303,10 +301,10 @@ function getCompanyFinancials(db, symbol, query) {
 /**
  * Get company SEC filings
  */
-function getCompanyFilings(db, symbol, query) {
+async function getCompanyFilings(db, symbol, query) {
   const { limit = 10 } = query;
 
-  const stmt = db.prepare(`
+  const result = await db.query(`
     SELECT
       form_type,
       filing_date,
@@ -315,12 +313,12 @@ function getCompanyFilings(db, symbol, query) {
       url
     FROM sec_filings sf
     JOIN companies c ON sf.cik = c.cik
-    WHERE c.symbol = ?
+    WHERE c.symbol = $1
     ORDER BY filing_date DESC
-    LIMIT ?
-  `);
+    LIMIT $2
+  `, [symbol, parseInt(limit, 10)]);
 
-  const filings = stmt.all(symbol, parseInt(limit, 10));
+  const filings = result.rows || [];
 
   return {
     symbol,
@@ -332,23 +330,21 @@ function getCompanyFilings(db, symbol, query) {
 /**
  * Get price data for a symbol
  */
-function getPriceData(db, symbol, query) {
+async function getPriceData(db, symbol, query) {
   const { period = '1y' } = query;
 
-  // Get current price metrics
-  const metricsStmt = db.prepare(`
+  const metricsResult = await db.query(`
     SELECT *
     FROM price_metrics
-    WHERE symbol = ?
-  `);
+    WHERE symbol = $1
+  `, [symbol]);
 
-  const metrics = metricsStmt.get(symbol);
+  const metrics = metricsResult.rows?.[0];
 
   if (!metrics) {
     throw createError(404, `Price data not found: ${symbol}`);
   }
 
-  // Get historical prices based on period
   let days;
   switch (period) {
     case '1d': days = 1; break;
@@ -361,15 +357,19 @@ function getPriceData(db, symbol, query) {
     default: days = 365;
   }
 
-  const historyStmt = db.prepare(`
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const cutoffStr = cutoff.toISOString().split('T')[0];
+
+  const historyResult = await db.query(`
     SELECT date, close, volume
     FROM historical_prices
-    WHERE symbol = ?
-    AND date >= date('now', '-${days} days')
+    WHERE symbol = $1
+    AND date >= $2
     ORDER BY date ASC
-  `);
+  `, [symbol, cutoffStr]);
 
-  const history = historyStmt.all(symbol);
+  const history = historyResult.rows || [];
 
   return {
     symbol,
@@ -382,8 +382,8 @@ function getPriceData(db, symbol, query) {
 /**
  * Get sentiment data for a symbol
  */
-function getSentimentData(db, symbol, query) {
-  const stmt = db.prepare(`
+async function getSentimentData(db, symbol, query) {
+  const result = await db.query(`
     SELECT
       symbol,
       source,
@@ -395,11 +395,11 @@ function getSentimentData(db, symbol, query) {
       neutral_count,
       last_updated
     FROM sentiment_aggregates
-    WHERE symbol = ?
+    WHERE symbol = $1
     ORDER BY last_updated DESC
-  `);
+  `, [symbol]);
 
-  const sentiments = stmt.all(symbol);
+  const sentiments = result.rows || [];
 
   // Calculate aggregate
   let totalScore = 0;

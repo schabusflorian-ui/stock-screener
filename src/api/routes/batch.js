@@ -186,7 +186,7 @@ router.get('/symbols', async (req, res) => {
 
       if (includeTypes.includes('prices')) {
         fetches.push(
-          fetchPriceData(db, symbol).then(data => {
+          fetchPriceData(database, symbol).then(data => {
             results[symbol].prices = data;
           })
         );
@@ -194,7 +194,7 @@ router.get('/symbols', async (req, res) => {
 
       if (includeTypes.includes('metrics')) {
         fetches.push(
-          fetchMetricsData(db, symbol).then(data => {
+          fetchMetricsData(database, symbol).then(data => {
             results[symbol].metrics = data;
           })
         );
@@ -202,7 +202,7 @@ router.get('/symbols', async (req, res) => {
 
       if (includeTypes.includes('info')) {
         fetches.push(
-          fetchCompanyInfo(db, symbol).then(data => {
+          fetchCompanyInfo(database, symbol).then(data => {
             results[symbol].info = data;
           })
         );
@@ -228,44 +228,41 @@ router.get('/symbols', async (req, res) => {
 /**
  * Helper: Fetch price data for a symbol
  */
-function fetchPriceData(db, symbol) {
-  const stmt = database.prepare(`
+async function fetchPriceData(db, symbol) {
+  const result = await db.query(`
     SELECT last_price, change_1d, change_1w, change_1m, change_ytd,
            volume, avg_volume_20d, high_52w, low_52w
     FROM price_metrics
-    WHERE symbol = ?
-  `);
-
-  return stmt.get(symbol) || null;
+    WHERE symbol = $1
+  `, [symbol]);
+  return result.rows?.[0] ?? null;
 }
 
 /**
  * Helper: Fetch metrics data for a symbol
  */
-function fetchMetricsData(db, symbol) {
-  const stmt = database.prepare(`
+async function fetchMetricsData(db, symbol) {
+  const result = await db.query(`
     SELECT cm.*
     FROM calculated_metrics cm
     JOIN companies c ON cm.company_id = c.id
-    WHERE c.symbol = ?
+    WHERE c.symbol = $1
     ORDER BY cm.fiscal_period DESC
     LIMIT 1
-  `);
-
-  return stmt.get(symbol) || null;
+  `, [symbol]);
+  return result.rows?.[0] ?? null;
 }
 
 /**
  * Helper: Fetch company info for a symbol
  */
-function fetchCompanyInfo(db, symbol) {
-  const stmt = database.prepare(`
+async function fetchCompanyInfo(db, symbol) {
+  const result = await db.query(`
     SELECT id, symbol, name, sector, industry, country, market_cap, description
     FROM companies
-    WHERE symbol = ?
-  `);
-
-  return stmt.get(symbol) || null;
+    WHERE symbol = $1
+  `, [symbol]);
+  return result.rows?.[0] ?? null;
 }
 
 module.exports = router;

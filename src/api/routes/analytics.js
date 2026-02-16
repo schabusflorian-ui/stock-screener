@@ -40,9 +40,10 @@ router.post('/track', optionalAuth, attachUserId, async (req, res) => {
 
     // Check if user has opted out of analytics
     if (req.userId) {
-      const prefs = await db.prepare(`
-        SELECT analytics_opted_in FROM user_preferences WHERE user_id = ?
-      `).get(req.userId);
+      const prefsResult = await db.query(`
+        SELECT analytics_opted_in FROM user_preferences WHERE user_id = $1
+      `, [req.userId]);
+      const prefs = prefsResult.rows?.[0];
 
       if (prefs && prefs.analytics_opted_in === 0) {
         // User opted out, don't track but return success
@@ -51,14 +52,12 @@ router.post('/track', optionalAuth, attachUserId, async (req, res) => {
     }
 
     // Insert event
-    const stmt = db.prepare(`
+    await db.query(`
       INSERT INTO analytics_events (
         session_id, user_id, event_name, event_category,
         properties, page, referrer, device, browser, session_duration_seconds
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    await stmt.run(
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `, [
       sessionId,
       req.userId || null,
       event,
@@ -69,7 +68,7 @@ router.post('/track', optionalAuth, attachUserId, async (req, res) => {
       device || null,
       browser || null,
       sessionDuration || null
-    );
+    ]);
 
     res.json({ success: true, tracked: true });
   } catch (error) {
@@ -96,9 +95,10 @@ router.post('/track/batch', optionalAuth, attachUserId, async (req, res) => {
 
     // Check if user has opted out
     if (req.userId) {
-      const prefs = await database.prepare(`
-        SELECT analytics_opted_in FROM user_preferences WHERE user_id = ?
-      `).get(req.userId);
+      const prefsResult = await database.query(`
+        SELECT analytics_opted_in FROM user_preferences WHERE user_id = $1
+      `, [req.userId]);
+      const prefs = prefsResult.rows?.[0];
 
       if (prefs && prefs.analytics_opted_in === 0) {
         return res.json({ success: true, tracked: 0 });
@@ -109,26 +109,25 @@ router.post('/track/batch', optionalAuth, attachUserId, async (req, res) => {
     let count = 0;
     await database.query('BEGIN');
     try {
-      for (const event of events) {
-        if (event.event && event.category && event.sessionId) {
-          const stmt = await database.prepare(`
+      for (const ev of events) {
+        if (ev.event && ev.category && ev.sessionId) {
+          await database.query(`
             INSERT INTO analytics_events (
               session_id, user_id, event_name, event_category,
               properties, page, referrer, device, browser, session_duration_seconds
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `);
-          await stmt.run(
-            event.sessionId,
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          `, [
+            ev.sessionId,
             req.userId || null,
-            event.event,
-            event.category,
-            JSON.stringify(event.properties || {}),
-            event.page || null,
-            event.referrer || null,
-            event.device || null,
-            event.browser || null,
-            event.sessionDuration || null
-          );
+            ev.event,
+            ev.category,
+            JSON.stringify(ev.properties || {}),
+            ev.page || null,
+            ev.referrer || null,
+            ev.device || null,
+            ev.browser || null,
+            ev.sessionDuration || null
+          ]);
           count++;
         }
       }
@@ -173,24 +172,25 @@ router.post('/session/start', optionalAuth, attachUserId, async (req, res) => {
     }
 
     // Check if session already exists
-    const existing = await db.prepare('SELECT id FROM analytics_sessions WHERE session_id = ?').get(sessionId);
+    const existingResult = await db.query('SELECT id FROM analytics_sessions WHERE session_id = $1', [sessionId]);
+    const existing = existingResult.rows?.[0];
 
     if (existing) {
       // Update existing session
-      await db.prepare(`
+      await db.query(`
         UPDATE analytics_sessions
-        SET user_id = COALESCE(?, user_id)
-        WHERE session_id = ?
-      `).run(req.userId, sessionId);
+        SET user_id = COALESCE($1, user_id)
+        WHERE session_id = $2
+      `, [req.userId, sessionId]);
     } else {
       // Create new session
-      await db.prepare(`
+      await db.query(`
         INSERT INTO analytics_sessions (
           session_id, user_id, device, browser, os,
           screen_width, screen_height, landing_page, referrer,
           utm_source, utm_medium, utm_campaign
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      `, [
         sessionId,
         req.userId || null,
         device || null,
@@ -203,7 +203,7 @@ router.post('/session/start', optionalAuth, attachUserId, async (req, res) => {
         utmSource || null,
         utmMedium || null,
         utmCampaign || null
-      );
+      ]);
     }
 
     res.json({ success: true });
@@ -229,14 +229,14 @@ router.post('/session/end', async (req, res) => {
       });
     }
 
-    await db.prepare(`
+    await db.query(`
       UPDATE analytics_sessions
       SET ended_at = CURRENT_TIMESTAMP,
-          duration_seconds = ?,
-          page_views = COALESCE(?, page_views),
-          events_count = COALESCE(?, events_count)
-      WHERE session_id = ?
-    `).run(duration || null, pageViews, eventsCount, sessionId);
+          duration_seconds = $1,
+          page_views = COALESCE($2, page_views),
+          events_count = COALESCE($3, events_count)
+      WHERE session_id = $4
+    `, [duration || null, pageViews, eventsCount, sessionId]);
 
     res.json({ success: true });
   } catch (error) {
@@ -270,70 +270,77 @@ router.get('/admin/summary', requireAdmin, async (req, res) => {
     const prevStartDateStr = prevStartDate.toISOString().split('T')[0];
 
     // Current period metrics
-    const currentMetrics = await db.prepare(`
+    const currentMetricsResult = await db.query(`
       SELECT
         COUNT(DISTINCT session_id) as unique_sessions,
         COUNT(DISTINCT user_id) as unique_users,
         COUNT(*) as total_events
       FROM analytics_events
-      WHERE created_at >= ?
-    `).get(startDateStr);
+      WHERE created_at >= $1
+    `, [startDateStr]);
+    const currentMetrics = currentMetricsResult.rows?.[0];
 
     // Previous period metrics
-    const prevMetrics = await db.prepare(`
+    const prevMetricsResult = await db.query(`
       SELECT
         COUNT(DISTINCT session_id) as unique_sessions,
         COUNT(DISTINCT user_id) as unique_users,
         COUNT(*) as total_events
       FROM analytics_events
-      WHERE created_at >= ? AND created_at < ?
-    `).get(prevStartDateStr, startDateStr);
+      WHERE created_at >= $1 AND created_at < $2
+    `, [prevStartDateStr, startDateStr]);
+    const prevMetrics = prevMetricsResult.rows?.[0];
 
     // Page views
-    const pageViews = await db.prepare(`
+    const pageViewsResult = await db.query(`
       SELECT COUNT(*) as count
       FROM analytics_events
-      WHERE event_name = 'page_view' AND created_at >= ?
-    `).get(startDateStr);
+      WHERE event_name = 'page_view' AND created_at >= $1
+    `, [startDateStr]);
+    const pageViews = pageViewsResult.rows?.[0];
 
     // Average feedback rating
-    const feedbackStats = await db.prepare(`
+    const feedbackStatsResult = await db.query(`
       SELECT
         AVG(rating) as avg_rating,
         COUNT(*) as count
       FROM user_feedback
-      WHERE rating IS NOT NULL AND created_at >= ?
-    `).get(startDateStr);
+      WHERE rating IS NOT NULL AND created_at >= $1
+    `, [startDateStr]);
+    const feedbackStats = feedbackStatsResult.rows?.[0];
 
     // Open issues count
-    const openIssues = await db.prepare(`
+    const openIssuesResult = await db.query(`
       SELECT COUNT(*) as count
       FROM user_feedback
       WHERE status = 'new' AND category = 'bug'
-    `).get();
+    `);
+    const openIssues = openIssuesResult.rows?.[0];
 
     // Feature usage
-    const featureUsage = await db.prepare(`
+    const featureUsageResult = await db.query(`
       SELECT
         event_name,
         COUNT(*) as count,
         COUNT(DISTINCT session_id) as unique_sessions
       FROM analytics_events
-      WHERE event_category = 'feature' AND created_at >= ?
+      WHERE event_category = 'feature' AND created_at >= $1
       GROUP BY event_name
       ORDER BY count DESC
       LIMIT 10
-    `).all(startDateStr);
+    `, [startDateStr]);
+    const featureUsage = featureUsageResult.rows || [];
 
     // Recent feedback
-    const recentFeedback = await db.prepare(`
+    const recentFeedbackResult = await db.query(`
       SELECT
         id, feedback_type, rating, sentiment, message, feature, created_at
       FROM user_feedback
       WHERE message IS NOT NULL
       ORDER BY created_at DESC
       LIMIT 5
-    `).all();
+    `);
+    const recentFeedback = recentFeedbackResult.rows || [];
 
     // Calculate changes
     const calculateChange = (current, previous) => {
@@ -391,7 +398,7 @@ router.get('/admin/features', requireAdmin, async (req, res) => {
     const startDateStr = startDate.toISOString().split('T')[0];
 
     // Feature usage with completion rates
-    const features = await db.prepare(`
+    const featuresResult = await db.query(`
       SELECT
         COALESCE(JSON_EXTRACT(properties, '$.feature'), event_name) as feature_name,
         COUNT(*) as usage_count,
@@ -399,22 +406,24 @@ router.get('/admin/features', requireAdmin, async (req, res) => {
         COUNT(DISTINCT user_id) as unique_users
       FROM analytics_events
       WHERE event_category IN ('feature', 'analysis', 'portfolio')
-        AND created_at >= ?
+        AND created_at >= $1
       GROUP BY feature_name
       ORDER BY usage_count DESC
-    `).all(startDateStr);
+    `, [startDateStr]);
+    const features = featuresResult.rows || [];
 
     // Feature feedback (quick feedback)
-    const featureFeedback = await db.prepare(`
+    const featureFeedbackResult = await db.query(`
       SELECT
         feature,
         SUM(CASE WHEN response = 'positive' THEN 1 ELSE 0 END) as positive,
         SUM(CASE WHEN response = 'negative' THEN 1 ELSE 0 END) as negative,
         COUNT(*) as total
       FROM quick_feedback
-      WHERE created_at >= ?
+      WHERE created_at >= $1
       GROUP BY feature
-    `).all(startDateStr);
+    `, [startDateStr]);
+    const featureFeedback = featureFeedbackResult.rows || [];
 
     // Create a map for quick lookup
     const feedbackMap = {};
@@ -495,12 +504,16 @@ router.get('/admin/funnel', requireAdmin, async (req, res) => {
         params.push(step.filter.page);
       }
 
-      const result = await db.prepare(query).get(...params);
+      let pgQuery = query;
+      let n = 0;
+      pgQuery = query.replace(/\?/g, () => `$${++n}`);
+      const result = await db.query(pgQuery, params);
+      const row = result.rows?.[0];
 
       funnelData.push({
         step: step.step,
         name: step.name,
-        count: result.count || 0
+        count: row?.count || 0
       });
     }
 
@@ -549,65 +562,67 @@ router.get('/admin/feedback', requireAdmin, async (req, res) => {
     const startDateStr = startDate.toISOString().split('T')[0];
 
     // Feedback by category
-    const byCategory = await db.prepare(`
+    const byCategoryResult = await db.query(`
       SELECT
         category,
         COUNT(*) as count,
         AVG(rating) as avg_rating
       FROM user_feedback
-      WHERE created_at >= ?
+      WHERE created_at >= $1
       GROUP BY category
       ORDER BY count DESC
-    `).all(startDateStr);
+    `, [startDateStr]);
+    const byCategory = byCategoryResult.rows || [];
 
     // Feedback by sentiment
-    const bySentiment = await db.prepare(`
+    const bySentimentResult = await db.query(`
       SELECT
         sentiment,
         COUNT(*) as count
       FROM user_feedback
-      WHERE sentiment IS NOT NULL AND created_at >= ?
+      WHERE sentiment IS NOT NULL AND created_at >= $1
       GROUP BY sentiment
-    `).all(startDateStr);
+    `, [startDateStr]);
+    const bySentiment = bySentimentResult.rows || [];
 
     // Feedback by status
-    const byStatus = await db.prepare(`
+    const byStatusResult = await db.query(`
       SELECT
         status,
         COUNT(*) as count
       FROM user_feedback
-      WHERE created_at >= ?
+      WHERE created_at >= $1
       GROUP BY status
-    `).all(startDateStr);
+    `, [startDateStr]);
+    const byStatus = byStatusResult.rows || [];
 
     // Recent feedback with messages
+    const recentParams = status !== 'all' ? [startDateStr, status] : [startDateStr];
     let recentQuery = `
       SELECT
         id, feedback_type, category, rating, sentiment,
         message, feature, page, status, priority, created_at
       FROM user_feedback
-      WHERE message IS NOT NULL AND created_at >= ?
+      WHERE message IS NOT NULL AND created_at >= $1
     `;
-
     if (status !== 'all') {
-      recentQuery += ' AND status = ?';
+      recentQuery += ' AND status = $2';
     }
-
     recentQuery += ' ORDER BY created_at DESC LIMIT 20';
 
-    const recent = status !== 'all'
-      ? await db.prepare(recentQuery).all(startDateStr, status)
-      : await db.prepare(recentQuery).all(startDateStr);
+    const recentResult = await db.query(recentQuery, recentParams);
+    const recent = recentResult.rows || [];
 
     // Quick feedback stats
-    const quickFeedbackStats = await db.prepare(`
+    const quickFeedbackStatsResult = await db.query(`
       SELECT
         response,
         COUNT(*) as count
       FROM quick_feedback
-      WHERE created_at >= ?
+      WHERE created_at >= $1
       GROUP BY response
-    `).all(startDateStr);
+    `, [startDateStr]);
+    const quickFeedbackStats = quickFeedbackStatsResult.rows || [];
 
     res.json({
       success: true,
@@ -668,7 +683,10 @@ router.get('/admin/events', requireAdmin, async (req, res) => {
     query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
     params.push(parseInt(limit), parseInt(offset));
 
-    const events = await db.prepare(query).all(...params);
+    let n = 0;
+    const pgQuery = query.replace(/\?/g, () => `$${++n}`);
+    const eventsResult = await db.query(pgQuery, params);
+    const events = eventsResult.rows || [];
 
     // Get total count
     let countQuery = `
@@ -687,8 +705,10 @@ router.get('/admin/events', requireAdmin, async (req, res) => {
       countQuery += ' AND event_name = ?';
       countParams.push(event);
     }
-
-    const total = await db.prepare(countQuery).get(...countParams);
+    let cn = 0;
+    const countPgQuery = countQuery.replace(/\?/g, () => `$${++cn}`);
+    const totalResult = await db.query(countPgQuery, countParams);
+    const total = totalResult.rows?.[0];
 
     // Parse properties JSON
     const parsedEvents = events.map(e => ({
@@ -733,43 +753,47 @@ router.get('/user/summary', optionalAuth, attachUserId, async (req, res) => {
     const startDateStr = startOfMonth.toISOString();
 
     // Total analyses
-    const analyses = await db.prepare(`
+    const analysesResult = await db.query(`
       SELECT COUNT(*) as count
       FROM analytics_events
-      WHERE user_id = ?
+      WHERE user_id = $1
         AND event_category = 'analysis'
-        AND created_at >= ?
-    `).get(req.userId, startDateStr);
+        AND created_at >= $2
+    `, [req.userId, startDateStr]);
+    const analyses = analysesResult.rows?.[0];
 
     // Total page views
-    const pageViews = await db.prepare(`
+    const pageViewsResult = await db.query(`
       SELECT COUNT(*) as count
       FROM analytics_events
-      WHERE user_id = ?
+      WHERE user_id = $1
         AND event_name = 'page_view'
-        AND created_at >= ?
-    `).get(req.userId, startDateStr);
+        AND created_at >= $2
+    `, [req.userId, startDateStr]);
+    const pageViews = pageViewsResult.rows?.[0];
 
     // Most used features
-    const topFeatures = await db.prepare(`
+    const topFeaturesResult = await db.query(`
       SELECT
         COALESCE(JSON_EXTRACT(properties, '$.feature'), event_name) as feature,
         COUNT(*) as count
       FROM analytics_events
-      WHERE user_id = ?
+      WHERE user_id = $1
         AND event_category IN ('feature', 'analysis')
-        AND created_at >= ?
+        AND created_at >= $2
       GROUP BY feature
       ORDER BY count DESC
       LIMIT 5
-    `).all(req.userId, startDateStr);
+    `, [req.userId, startDateStr]);
+    const topFeatures = topFeaturesResult.rows || [];
 
     // Session count
-    const sessions = await db.prepare(`
+    const sessionsResult = await db.query(`
       SELECT COUNT(DISTINCT session_id) as count
       FROM analytics_events
-      WHERE user_id = ? AND created_at >= ?
-    `).get(req.userId, startDateStr);
+      WHERE user_id = $1 AND created_at >= $2
+    `, [req.userId, startDateStr]);
+    const sessions = sessionsResult.rows?.[0];
 
     res.json({
       success: true,

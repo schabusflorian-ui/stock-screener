@@ -51,9 +51,10 @@ router.get('/:symbol', async (req, res) => {
     const { refresh } = req.query;
 
     // Get company ID
-    const company = database.prepare(`
-      SELECT id, symbol, name, sector FROM companies WHERE symbol = ?
-    `).get(symbol.toUpperCase());
+    const companyResult = await database.query(`
+      SELECT id, symbol, name, sector FROM companies WHERE symbol = $1
+    `, [symbol.toUpperCase()]);
+    const company = companyResult.rows?.[0];
 
     if (!company) {
       return res.status(404).json({
@@ -148,9 +149,10 @@ router.get('/upcoming/watchlist', async (req, res) => {
     const { days = 30 } = req.query;
 
     // Get watchlist company IDs
-    const watchlist = database.prepare(`
+    const watchlistResult = await database.query(`
       SELECT company_id FROM watchlist ORDER BY added_at DESC
-    `).all();
+    `);
+    const watchlist = watchlistResult.rows || [];
 
     if (!watchlist.length) {
       return res.json({
@@ -343,9 +345,10 @@ router.post('/batch', async (req, res) => {
         const data = await earningsService.fetchEarningsData(symbol.toUpperCase());
         if (data) {
           // Get company info
-          const company = database.prepare(`
-            SELECT id, name, sector FROM companies WHERE symbol = ?
-          `).get(symbol.toUpperCase());
+          const companyRes = await database.query(`
+            SELECT id, name, sector FROM companies WHERE symbol = $1
+          `, [symbol.toUpperCase()]);
+          const company = companyRes.rows?.[0];
 
           if (company) {
             earningsService.storeEarningsData(company.id, data);
@@ -387,7 +390,7 @@ router.post('/batch', async (req, res) => {
 router.get('/stats', async (req, res) => {
   try {
     // Get stored earnings data stats
-    const stats = database.prepare(`
+    const statsResult = await database.query(`
       SELECT
         COUNT(*) as companies_tracked,
         AVG(beat_rate) as avg_beat_rate,
@@ -396,10 +399,11 @@ router.get('/stats', async (req, res) => {
         COUNT(CASE WHEN next_earnings_date >= date('now') AND next_earnings_date <= date('now', '+30 days') THEN 1 END) as earnings_this_month
       FROM earnings_calendar
       WHERE fetched_at >= datetime('now', '-7 days')
-    `).get();
+    `);
+    const stats = statsResult.rows?.[0];
 
     // Get sector breakdown
-    const bySector = database.prepare(`
+    const bySectorResult = await database.query(`
       SELECT
         c.sector,
         COUNT(*) as count,
@@ -411,10 +415,11 @@ router.get('/stats', async (req, res) => {
         AND c.sector IS NOT NULL
       GROUP BY c.sector
       ORDER BY count DESC
-    `).all();
+    `);
+    const bySector = bySectorResult.rows || [];
 
     // Get upcoming earnings summary
-    const upcoming = database.prepare(`
+    const upcomingResult = await database.query(`
       SELECT
         DATE(next_earnings_date) as date,
         COUNT(*) as count
@@ -423,7 +428,8 @@ router.get('/stats', async (req, res) => {
         AND next_earnings_date <= date('now', '+14 days')
       GROUP BY DATE(next_earnings_date)
       ORDER BY date
-    `).all();
+    `);
+    const upcoming = upcomingResult.rows || [];
 
     res.json({
       success: true,
@@ -493,7 +499,10 @@ router.get('/calendar/stored', async (req, res) => {
 
     query += ' ORDER BY ec.next_earnings_date ASC';
 
-    const earnings = database.prepare(query).all(...params);
+    let paramIndex = 0;
+    const pgQuery = query.replace(/\?/g, () => `$${++paramIndex}`);
+    const earningsResult = await database.query(pgQuery, params);
+    const earnings = earningsResult.rows || [];
 
     // Parse history and format response
     const data = earnings.map(e => ({
@@ -713,9 +722,9 @@ router.get('/eu/company/:identifierId', (req, res) => {
  * GET /api/earnings/eu/stats
  * Get EU/UK earnings coverage statistics
  */
-router.get('/eu/stats', (req, res) => {
+router.get('/eu/stats', async (req, res) => {
   try {
-    const stats = database.prepare(`
+    const statsResult = await database.query(`
       SELECT
         COUNT(DISTINCT i.id) as companies_with_filings,
         COUNT(f.id) as total_filings,
@@ -723,9 +732,10 @@ router.get('/eu/stats', (req, res) => {
         COUNT(DISTINCT i.country) as countries_covered
       FROM company_identifiers i
       LEFT JOIN xbrl_filings f ON f.identifier_id = i.id
-    `).get();
+    `);
+    const stats = statsResult.rows?.[0];
 
-    const byCountry = database.prepare(`
+    const byCountryResult = await database.query(`
       SELECT
         i.country,
         COUNT(DISTINCT i.id) as companies,
@@ -734,7 +744,8 @@ router.get('/eu/stats', (req, res) => {
       LEFT JOIN xbrl_filings f ON f.identifier_id = i.id
       GROUP BY i.country
       ORDER BY companies DESC
-    `).all();
+    `);
+    const byCountry = byCountryResult.rows || [];
 
     res.json({
       success: true,
