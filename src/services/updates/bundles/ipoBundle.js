@@ -230,7 +230,7 @@ class IPOBundle {
           const updatedIpoResult = await database.query('SELECT * FROM ipo_tracker WHERE id = $1', [ipo.id]);
           const updatedIpo = updatedIpoResult.rows[0];
           if (updatedIpo && !updatedIpo.company_id) {
-            tracker.ensureCompanyExists(updatedIpo);
+            await tracker.ensureCompanyExists(updatedIpo);
           }
 
           updated++;

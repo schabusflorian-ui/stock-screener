@@ -19,6 +19,7 @@ module.exports = {
     'src/services/trading/**/*.js',
     'src/services/backtesting/**/*.js',
     'src/services/factors/**/*.js',
+    'src/services/updates/**/*.js',
     'src/services/prism*.js',
     'src/services/dataFusionEngine.js',
     'src/services/qualitativeNarrativeService.js',

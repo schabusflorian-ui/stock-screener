@@ -11,10 +11,12 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const { getDatabaseAsync } = require('../../../lib/db');
+const StockTwitsFetcher = require('../../stocktwitsFetcher');
 
 class SentimentBundle {
   constructor() {
     this.projectRoot = path.join(__dirname, '../../../..');
+    this.stockTwitsFetcher = new StockTwitsFetcher();
   }
 
   async execute(jobKey, db, context) {
@@ -95,9 +97,19 @@ class SentimentBundle {
         await onProgress(progress, `Processing ${tickers[i].symbol}...`);
 
         try {
-          // In production, call StockTwits API
-          updated++;
-        } catch {
+          // Get company_id for this symbol
+          const companyResult = await database.query(
+            'SELECT id FROM companies WHERE symbol = $1',
+            [tickers[i].symbol]
+          );
+          const companyId = companyResult.rows[0]?.id;
+
+          if (companyId) {
+            await this.stockTwitsFetcher.fetchSymbolSentiment(tickers[i].symbol, companyId);
+            updated++;
+          }
+        } catch (error) {
+          console.error(`StockTwits error for ${tickers[i].symbol}:`, error.message);
           failed++;
         }
       }

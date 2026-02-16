@@ -107,17 +107,22 @@ class PriceBundle {
     let updated = 0;
     let failed = 0;
 
-    for (let i = 0; i < stocks.length; i++) {
-      const progress = 20 + Math.floor((i / stocks.length) * 75);
-      await onProgress(progress, `Updating ${stocks[i].symbol}...`);
+    // Note: Intraday updates use the same price fetcher as daily updates
+    // but target only watchlist/portfolio stocks for faster execution.
+    // This is a manual-trigger job (is_automatic=0) for use during market hours.
+    if (stocks.length === 0) {
+      await onProgress(100, 'No stocks to update (empty watchlist/portfolio)');
+      return { itemsTotal: 0, itemsProcessed: 0, itemsUpdated: 0, itemsFailed: 0 };
+    }
 
-      try {
-        // In production, call actual price API
-        // For now, this is a placeholder
-        updated++;
-      } catch {
-        failed++;
-      }
+    // Use the price scheduler for actual updates
+    try {
+      await onProgress(30, 'Running price updater for tracked stocks...');
+      await this.priceScheduler.runUpdate('update');
+      updated = stocks.length;
+    } catch (error) {
+      console.error('Intraday update error:', error.message);
+      failed = stocks.length;
     }
 
     await onProgress(100, 'Intraday update complete');
@@ -139,17 +144,15 @@ class PriceBundle {
     let updated = 0;
     let failed = 0;
 
-    for (let i = 0; i < indices.length; i++) {
-      const progress = 10 + Math.floor((i / indices.length) * 85);
-      await onProgress(progress, `Updating ${indices[i]}...`);
-
-      try {
-        // Use existing price infrastructure
-        // This would call the actual price fetcher
-        updated++;
-      } catch {
-        failed++;
-      }
+    // Index prices are fetched via the same price infrastructure
+    // These ETFs track major indices and are updated like regular stocks
+    try {
+      await onProgress(30, 'Running price updater for indices...');
+      await this.priceScheduler.runUpdate('update');
+      updated = indices.length;
+    } catch (error) {
+      console.error('Index update error:', error.message);
+      failed = indices.length;
     }
 
     await onProgress(100, 'Index update complete');
