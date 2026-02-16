@@ -16,7 +16,7 @@ class IPOBundle {
 
   getIPOTracker(database) {
     if (!this.ipoTracker) {
-      const IPOTracker = require('../../ipoTracker');
+      const { IPOTracker } = require('../../ipoTracker');
       this.ipoTracker = new IPOTracker(database);
     }
     return this.ipoTracker;
