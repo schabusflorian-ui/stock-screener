@@ -4,7 +4,7 @@
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const crypto = require('crypto');
-const { getDatabaseAsync, getDatabaseSync, isUsingPostgres } = require('../lib/db');
+const { getDatabaseAsync } = require('../lib/db');
 
 function configurePassport() {
   // Serialize user into session
@@ -17,28 +17,17 @@ function configurePassport() {
     done(null, user.id);
   });
 
-  // Deserialize user from session
+  // Deserialize user from session (async DB for both SQLite and Postgres)
   passport.deserializeUser(async (data, done) => {
     try {
-      // Handle dev-admin sessions (bypass database lookup)
       if (data && typeof data === 'object' && data.devAdmin) {
         return done(null, data.user);
       }
-
       const userId = data;
-
-      // PostgreSQL mode - use async query
-      if (isUsingPostgres()) {
-        const dbClient = await getDatabaseAsync();
-        const result = await dbClient.query('SELECT * FROM users WHERE id = $1', [userId]);
-        const user = result.rows[0] || null;
-        return done(null, user);
-      }
-
-      // SQLite mode - use synchronous query
-      const sqliteDb = getDatabaseSync();
-      const user = sqliteDb.prepare('SELECT * FROM users WHERE id = ?').get(userId);
-      done(null, user || null);
+      const db = await getDatabaseAsync();
+      const result = await db.query('SELECT * FROM users WHERE id = $1', [userId]);
+      const user = (result.rows && result.rows[0]) || null;
+      done(null, user);
     } catch (error) {
       console.error('[Passport] deserializeUser error:', error);
       done(error, null);
@@ -54,89 +43,42 @@ function configurePassport() {
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
-        // PostgreSQL mode - use async queries
-        if (isUsingPostgres()) {
-          const database = await getDatabaseAsync();
+        const database = await getDatabaseAsync();
 
-          // Check if user already exists
-          let result = await database.query(
-            'SELECT * FROM users WHERE google_id = $1',
-            [profile.id]
-          );
-          let user = result.rows[0];
-
-          if (user) {
-            // Update last login and profile info
-            await database.query(`
-              UPDATE users
-              SET last_login_at = CURRENT_TIMESTAMP,
-                  name = $1,
-                  picture = $2,
-                  updated_at = CURRENT_TIMESTAMP
-              WHERE id = $3
-            `, [profile.displayName, profile.photos?.[0]?.value, user.id]);
-
-            // Refresh user data
-            result = await database.query('SELECT * FROM users WHERE id = $1', [user.id]);
-            user = result.rows[0];
-          } else {
-            // Create new user
-            const userId = crypto.randomUUID();
-            await database.query(`
-              INSERT INTO users (id, google_id, email, name, picture, last_login_at)
-              VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
-            `, [
-              userId,
-              profile.id,
-              profile.emails[0].value,
-              profile.displayName,
-              profile.photos?.[0]?.value
-            ]);
-
-            result = await database.query('SELECT * FROM users WHERE id = $1', [userId]);
-            user = result.rows[0];
-
-            console.log(`[OAuth] New user created: ${user.email}`);
-          }
-
-          return done(null, user);
-        }
-
-        // SQLite mode - use synchronous queries
-        const sqliteDb = getDatabaseSync();
-        // Check if user already exists
-        let user = sqliteDb.prepare('SELECT * FROM users WHERE google_id = ?').get(profile.id);
+        let result = await database.query(
+          'SELECT * FROM users WHERE google_id = $1',
+          [profile.id]
+        );
+        let user = (result.rows && result.rows[0]) || null;
 
         if (user) {
-          // Update last login and profile info
-          sqliteDb.prepare(`
+          await database.query(`
             UPDATE users
             SET last_login_at = CURRENT_TIMESTAMP,
-                name = ?,
-                picture = ?,
+                name = $1,
+                picture = $2,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-          `).run(profile.displayName, profile.photos?.[0]?.value, user.id);
+            WHERE id = $3
+          `, [profile.displayName, profile.photos?.[0]?.value, user.id]);
 
-          // Refresh user data
-          user = sqliteDb.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
+          result = await database.query('SELECT * FROM users WHERE id = $1', [user.id]);
+          user = result.rows[0];
         } else {
-          // Create new user
           const userId = crypto.randomUUID();
-          sqliteDb.prepare(`
+          await database.query(`
             INSERT INTO users (id, google_id, email, name, picture, last_login_at)
-            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-          `).run(
+            VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+          `, [
             userId,
             profile.id,
-            profile.emails[0].value,
-            profile.displayName,
-            profile.photos?.[0]?.value
-          );
+            profile.emails?.[0]?.value ?? '',
+            profile.displayName ?? '',
+            profile.photos?.[0]?.value ?? null
+          ]);
 
-          user = sqliteDb.prepare('SELECT * FROM users WHERE id = ?').get(userId);
-
-          console.log(`[OAuth] New user created: ${user.email}`);
+          result = await database.query('SELECT * FROM users WHERE id = $1', [userId]);
+          user = result.rows[0];
+          console.log(`[OAuth] New user created: ${user?.email ?? userId}`);
         }
 
         return done(null, user);

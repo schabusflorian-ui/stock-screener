@@ -618,13 +618,25 @@ async function getDatabase() {
  */
 const getDatabaseAsync = getDatabase;
 
+/** Once-per-process deprecation warning for getDatabaseSync (Phase 2: deprecate sync DB) */
+let _getDatabaseSyncDeprecationWarned = false;
+
 /**
  * Get database instance synchronously (for SQLite backwards compatibility)
- * Throws error if using PostgreSQL
+ * Throws error if using PostgreSQL.
+ * @deprecated Use getDatabaseAsync() / getDatabase() instead. New code must use async DB only.
  */
 function getDatabaseSync() {
   if (isPostgres) {
     throw new Error('getDatabaseSync() not supported with PostgreSQL. Use await getDatabase() instead.');
+  }
+
+  if (!_getDatabaseSyncDeprecationWarned) {
+    _getDatabaseSyncDeprecationWarned = true;
+    console.warn(
+      '[Database] getDatabaseSync() is deprecated. Use getDatabaseAsync() and database.query() instead. ' +
+      'See docs/guides/DB_ASYNC_MIGRATION_PLAN.md'
+    );
   }
 
   if (db) return db;

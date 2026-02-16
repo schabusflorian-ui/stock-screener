@@ -18,7 +18,7 @@ const morgan = require('morgan');
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const SQLiteStore = require('better-sqlite3-session-store')(session);
-const { getDatabaseSync, getDatabaseAsync, isUsingPostgres } = require('../lib/db');
+const { getDatabaseAsync, isUsingPostgres, dialect } = require('../lib/db');
 const { configurePassport } = require('../auth/passport');
 const { conditionalCsrf, csrfErrorHandler, csrfProtection } = require('../middleware/csrf');
 
@@ -148,10 +148,10 @@ app.get('/api/health', (req, res) => {
 // Routes must use: const database = await getDatabaseAsync() from '../../lib/db'
 // See MIGRATION_AUDIT.md for details on why app.set('db') was removed
 
-// Configure Passport (only if Google OAuth is configured)
+// Configure Passport (only if Google OAuth is configured; uses getDatabaseAsync internally)
 let passport = null;
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-  passport = configurePassport(isUsingPostgres() ? null : getDatabaseSync());
+  passport = configurePassport();
 }
 
 // Middleware
@@ -682,36 +682,34 @@ server.listen(PORT, HOST, async () => {
     logger.info('Auth disabled (set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to enable)');
   }
 
-  // Initialize Update Orchestrator if enabled
-  try {
-    const autoStartScheduler = process.env.AUTO_START_SCHEDULER !== 'false';
+  // Initialize Update Orchestrator if enabled (async DB; works with SQLite and Postgres)
+  (async () => {
+    try {
+      const autoStartScheduler = process.env.AUTO_START_SCHEDULER !== 'false';
+      if (!autoStartScheduler) {
+        logger.info('Update Scheduler disabled (AUTO_START_SCHEDULER=false)');
+        return;
+      }
 
-    // UpdateOrchestrator uses SQLite-specific prepared statements and is not yet compatible with PostgreSQL
-    if (isUsingPostgres()) {
-      logger.info('Update Scheduler: Skipped in PostgreSQL mode (SQLite-only feature)');
-    } else if (autoStartScheduler) {
-      const { getUpdateOrchestrator } = require('../services/updates/updateOrchestrator');
-      const sqliteDb = getDatabaseSync();
-      const orchestrator = getUpdateOrchestrator(sqliteDb);
+      const database = await getDatabaseAsync();
+      const tableExistsSql = dialect.tableExistsQuery('update_jobs');
+      const tableResult = await database.query(tableExistsSql);
+      const exists = isUsingPostgres()
+        ? tableResult.rows[0]?.exists
+        : !!tableResult.rows[0];
 
-      // Check if update_jobs table exists (migration has run)
-      const tableExists = sqliteDb.prepare(`
-        SELECT name FROM sqlite_master
-        WHERE type='table' AND name='update_jobs'
-      `).get();
-
-      if (tableExists) {
-        orchestrator.start();
+      if (exists) {
+        const { getUpdateOrchestrator } = require('../services/updates/updateOrchestrator');
+        const orchestrator = getUpdateOrchestrator();
+        await orchestrator.start();
         logger.info('Update Scheduler started');
       } else {
         logger.warn('Update Scheduler: Migration not yet run. Run: node src/database-migrations/add-update-system.js');
       }
-    } else {
-      logger.info('Update Scheduler disabled (AUTO_START_SCHEDULER=false)');
+    } catch (err) {
+      logger.error('Update Scheduler failed to start', err);
     }
-  } catch (err) {
-    logger.error('Update Scheduler failed to start', err);
-  }
+  })();
 });
 
 // Graceful shutdown handler
@@ -745,10 +743,9 @@ async function gracefulShutdown(signal) {
     // Stop update orchestrator if running
     try {
       const { getUpdateOrchestrator } = require('../services/updates/updateOrchestrator');
-      const sqliteDb = getDatabaseSync();
-      const orchestrator = getUpdateOrchestrator(sqliteDb);
+      const orchestrator = getUpdateOrchestrator();
       if (orchestrator.isRunning) {
-        orchestrator.stop();
+        await orchestrator.stop();
         logger.info('Update Scheduler stopped');
       }
     } catch (e) {

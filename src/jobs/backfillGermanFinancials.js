@@ -11,7 +11,7 @@
  *   node src/jobs/backfillGermanFinancials.js --country FR # Other European country
  */
 
-const db = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 const YahooFetcher = require('../validation/yahooFetcher');
 
 // Yahoo Finance suffix by country
@@ -38,7 +38,6 @@ const COUNTRY_SUFFIX = {
 
 class GermanFinancialsBackfiller {
   constructor() {
-    this.database = db.getDatabase();
     this.fetcher = new YahooFetcher({ delay: 10000, maxRetries: 5 }); // 10 second delay for aggressive rate limiting
     this.stats = {
       total: 0,
@@ -51,40 +50,36 @@ class GermanFinancialsBackfiller {
   /**
    * Get companies that need financial data backfill
    */
-  getCompaniesNeedingBackfill(options = {}) {
+  async getCompaniesNeedingBackfill(options = {}) {
     const { country = 'DE', limit, symbol } = options;
+    const database = await getDatabaseAsync();
 
     if (symbol) {
-      // Single symbol mode
-      const company = this.database.prepare(`
+      const result = await database.query(`
         SELECT id, symbol, name, country
         FROM companies
-        WHERE symbol = ? COLLATE NOCASE
-      `).get(symbol);
-
+        WHERE LOWER(symbol) = LOWER($1)
+      `, [symbol]);
+      const company = (result.rows && result.rows[0]) || null;
       return company ? [company] : [];
     }
 
-    // Find companies with no or minimal financial data
-    let query = `
+    const limitClause = limit ? ` LIMIT ${parseInt(limit, 10)}` : '';
+    const result = await database.query(`
       SELECT c.id, c.symbol, c.name, c.country,
              COUNT(f.id) as financial_count
       FROM companies c
       LEFT JOIN financial_data f ON f.company_id = c.id
-      WHERE c.country = ?
+      WHERE c.country = $1
         AND c.symbol IS NOT NULL
         AND c.symbol != ''
         AND LENGTH(c.symbol) <= 10
       GROUP BY c.id
       HAVING financial_count < 3
       ORDER BY c.symbol
-    `;
-
-    if (limit) {
-      query += ` LIMIT ${parseInt(limit)}`;
-    }
-
-    return this.database.prepare(query).all(country);
+      ${limitClause}
+    `, [country]);
+    return result.rows || [];
   }
 
   /**
@@ -101,120 +96,113 @@ class GermanFinancialsBackfiller {
   /**
    * Store financial statements in database
    */
-  storeFinancials(companyId, data) {
+  async storeFinancials(companyId, data) {
     let recordsAdded = 0;
+    const database = await getDatabaseAsync();
 
-    const stmt = this.database.prepare(`
-      INSERT INTO financial_data (
-        company_id, statement_type, fiscal_date_ending,
-        fiscal_year, period_type,
-        data,
-        total_assets, total_liabilities, shareholder_equity,
-        current_assets, current_liabilities, cash_and_equivalents,
-        long_term_debt, short_term_debt,
-        total_revenue, net_income, operating_income,
-        cost_of_revenue, gross_profit,
-        operating_cashflow, capital_expenditures,
-        data_source
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'yahoo_finance')
-      ON CONFLICT(company_id, statement_type, fiscal_date_ending, period_type)
-      DO UPDATE SET
-        data = excluded.data,
-        total_assets = COALESCE(excluded.total_assets, financial_data.total_assets),
-        total_liabilities = COALESCE(excluded.total_liabilities, financial_data.total_liabilities),
-        shareholder_equity = COALESCE(excluded.shareholder_equity, financial_data.shareholder_equity),
-        current_assets = COALESCE(excluded.current_assets, financial_data.current_assets),
-        current_liabilities = COALESCE(excluded.current_liabilities, financial_data.current_liabilities),
-        cash_and_equivalents = COALESCE(excluded.cash_and_equivalents, financial_data.cash_and_equivalents),
-        long_term_debt = COALESCE(excluded.long_term_debt, financial_data.long_term_debt),
-        short_term_debt = COALESCE(excluded.short_term_debt, financial_data.short_term_debt),
-        total_revenue = COALESCE(excluded.total_revenue, financial_data.total_revenue),
-        net_income = COALESCE(excluded.net_income, financial_data.net_income),
-        operating_income = COALESCE(excluded.operating_income, financial_data.operating_income),
-        cost_of_revenue = COALESCE(excluded.cost_of_revenue, financial_data.cost_of_revenue),
-        gross_profit = COALESCE(excluded.gross_profit, financial_data.gross_profit),
-        operating_cashflow = COALESCE(excluded.operating_cashflow, financial_data.operating_cashflow),
-        capital_expenditures = COALESCE(excluded.capital_expenditures, financial_data.capital_expenditures),
-        data_source = 'yahoo_finance',
-        updated_at = CURRENT_TIMESTAMP
-    `);
+    const runRow = async (row) => {
+      try {
+        await database.query(`
+          INSERT INTO financial_data (
+            company_id, statement_type, fiscal_date_ending,
+            fiscal_year, period_type,
+            data,
+            total_assets, total_liabilities, shareholder_equity,
+            current_assets, current_liabilities, cash_and_equivalents,
+            long_term_debt, short_term_debt,
+            total_revenue, net_income, operating_income,
+            cost_of_revenue, gross_profit,
+            operating_cashflow, capital_expenditures,
+            data_source
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, 'yahoo_finance')
+          ON CONFLICT(company_id, statement_type, fiscal_date_ending, period_type)
+          DO UPDATE SET
+            data = excluded.data,
+            total_assets = COALESCE(excluded.total_assets, financial_data.total_assets),
+            total_liabilities = COALESCE(excluded.total_liabilities, financial_data.total_liabilities),
+            shareholder_equity = COALESCE(excluded.shareholder_equity, financial_data.shareholder_equity),
+            current_assets = COALESCE(excluded.current_assets, financial_data.current_assets),
+            current_liabilities = COALESCE(excluded.current_liabilities, financial_data.current_liabilities),
+            cash_and_equivalents = COALESCE(excluded.cash_and_equivalents, financial_data.cash_and_equivalents),
+            long_term_debt = COALESCE(excluded.long_term_debt, financial_data.long_term_debt),
+            short_term_debt = COALESCE(excluded.short_term_debt, financial_data.short_term_debt),
+            total_revenue = COALESCE(excluded.total_revenue, financial_data.total_revenue),
+            net_income = COALESCE(excluded.net_income, financial_data.net_income),
+            operating_income = COALESCE(excluded.operating_income, financial_data.operating_income),
+            cost_of_revenue = COALESCE(excluded.cost_of_revenue, financial_data.cost_of_revenue),
+            gross_profit = COALESCE(excluded.gross_profit, financial_data.gross_profit),
+            operating_cashflow = COALESCE(excluded.operating_cashflow, financial_data.operating_cashflow),
+            capital_expenditures = COALESCE(excluded.capital_expenditures, financial_data.capital_expenditures),
+            data_source = 'yahoo_finance',
+            updated_at = CURRENT_TIMESTAMP
+        `, row);
+        recordsAdded++;
+      } catch (e) {
+        // Likely duplicate, which is fine
+      }
+    };
 
     // Store income statements
     for (const period of ['annual', 'quarterly']) {
       for (const report of (data.incomeStatement[period] || [])) {
-        try {
-          stmt.run(
-            companyId,
-            'income_statement',
-            report.fiscalDateEnding,
-            report.fiscalYear,
-            period,
-            JSON.stringify(report),
-            null, null, null, null, null, null, null, null, // Balance sheet fields
-            report.totalRevenue,
-            report.netIncome,
-            report.operatingIncome,
-            report.costOfRevenue,
-            report.grossProfit,
-            null, null // Cash flow fields
-          );
-          recordsAdded++;
-        } catch (e) {
-          // Likely duplicate, which is fine
-        }
+        await runRow([
+          companyId,
+          'income_statement',
+          report.fiscalDateEnding,
+          report.fiscalYear,
+          period,
+          JSON.stringify(report),
+          null, null, null, null, null, null, null, null,
+          report.totalRevenue,
+          report.netIncome,
+          report.operatingIncome,
+          report.costOfRevenue,
+          report.grossProfit,
+          null, null
+        ]);
       }
     }
 
     // Store balance sheets
     for (const period of ['annual', 'quarterly']) {
       for (const report of (data.balanceSheet[period] || [])) {
-        try {
-          stmt.run(
-            companyId,
-            'balance_sheet',
-            report.fiscalDateEnding,
-            report.fiscalYear,
-            period,
-            JSON.stringify(report),
-            report.totalAssets,
-            report.totalLiabilities,
-            report.shareholderEquity,
-            report.currentAssets,
-            report.currentLiabilities,
-            report.cashAndEquivalents,
-            report.longTermDebt,
-            report.shortTermDebt,
-            null, null, null, null, null, // Income fields
-            null, null // Cash flow fields
-          );
-          recordsAdded++;
-        } catch (e) {
-          // Likely duplicate
-        }
+        await runRow([
+          companyId,
+          'balance_sheet',
+          report.fiscalDateEnding,
+          report.fiscalYear,
+          period,
+          JSON.stringify(report),
+          report.totalAssets,
+          report.totalLiabilities,
+          report.shareholderEquity,
+          report.currentAssets,
+          report.currentLiabilities,
+          report.cashAndEquivalents,
+          report.longTermDebt,
+          report.shortTermDebt,
+          null, null, null, null, null,
+          null, null
+        ]);
       }
     }
 
     // Store cash flows
     for (const period of ['annual', 'quarterly']) {
       for (const report of (data.cashFlow[period] || [])) {
-        try {
-          stmt.run(
-            companyId,
-            'cash_flow',
-            report.fiscalDateEnding,
-            report.fiscalYear,
-            period,
-            JSON.stringify(report),
-            null, null, null, null, null, null, null, null, // Balance sheet fields
-            null, null, null, null, null, // Income fields
-            report.operatingCashflow,
-            report.capitalExpenditures
-          );
-          recordsAdded++;
-        } catch (e) {
-          // Likely duplicate
-        }
+        await runRow([
+          companyId,
+          'cash_flow',
+          report.fiscalDateEnding,
+          report.fiscalYear,
+          period,
+          JSON.stringify(report),
+          null, null, null, null, null, null, null, null,
+          null, null, null, null, null,
+          report.operatingCashflow,
+          report.capitalExpenditures
+        ]);
       }
     }
 
@@ -234,7 +222,7 @@ class GermanFinancialsBackfiller {
     if (options.symbol) console.log(`  Symbol: ${options.symbol}`);
     console.log('='.repeat(60) + '\n');
 
-    const companies = this.getCompaniesNeedingBackfill(options);
+    const companies = await this.getCompaniesNeedingBackfill(options);
     this.stats.total = companies.length;
 
     console.log(`Found ${companies.length} companies to backfill\n`);
@@ -255,7 +243,7 @@ class GermanFinancialsBackfiller {
         const result = await this.fetcher.fetchFinancials(yahooSymbol);
 
         if (result.success) {
-          const recordsAdded = this.storeFinancials(company.id, result.data);
+          const recordsAdded = await this.storeFinancials(company.id, result.data);
           console.log(`  ✓ ${recordsAdded} records (${yahooSymbol})`);
           this.stats.successful++;
           this.stats.recordsAdded += recordsAdded;

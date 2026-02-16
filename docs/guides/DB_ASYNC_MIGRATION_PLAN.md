@@ -40,31 +40,45 @@ Eliminate sync SQLite usage and standardize on `getDatabaseAsync()` + `database.
 ### Jobs
 | File | Status |
 |------|--------|
-| masterScheduler.js | ⏳ Pending |
-| historicalInvestorBackfill.js | ⏳ Pending |
-| backfillGermanFinancials.js | ⏳ Pending |
+| masterScheduler.js | ✅ Done | getDatabaseAsync + query |
+| historicalInvestorBackfill.js | ✅ Done | getDatabaseAsync + query; saveCheckpoint/getBackfillProgress/getStatus/verify/backfillInvestor/resume async |
+| backfillGermanFinancials.js | ✅ Done | getDatabaseAsync + query; getCompaniesNeedingBackfill/storeFinancials/run async |
+
+### Bulk import
+| File | Status | Notes |
+|------|--------|-------|
+| tagMappings.js | ✅ Done | insertTagMappings async; uses database.query() |
+| importSECBulk.js | Partial | initializeTagMappings async + await; rest still sync |
+| importSECBulkUnified.js | Partial | initializeTagMappings async + await; rest still sync |
+| verifySECImport.js | ⏳ Pending | Many prepare calls |
 
 ---
 
-## Phase 2: Deprecate Sync DB Surface
+## Phase 2: Deprecate Sync DB Surface ✅ Done
 
 ### 2.1 database.js (src/database.js)
 
-- [ ] Add deprecation warning when `getDatabaseSync()` is called (even in SQLite mode)
-- [ ] In Postgres mode: `getDatabaseSync()` already throws – keep that
-- [ ] Document that new code must use `getDatabaseAsync()` only
+- [x] Add deprecation warning when `getDatabaseSync()` is called (even in SQLite mode) — implemented in lib/db.js (single source)
+- [x] In Postgres mode: `getDatabaseSync()` already throws – kept
+- [x] Document that new code must use `getDatabaseAsync()` only — comment at top of database.js
 
 ### 2.2 lib/db.js
 
-- [ ] Ensure `getDatabaseAsync` is the primary export
-- [ ] Consider exporting `getDatabase` as alias for `getDatabaseAsync` (avoid "Sync" in name)
-- [ ] No changes to `.query()` – it remains the single DB API
+- [x] Ensure `getDatabaseAsync` is the primary export — already exported; `getDatabase` is async
+- [x] Deprecation: `getDatabaseSync()` now logs a one-time console.warn in SQLite mode with link to this doc
+- [x] No changes to `.query()` – it remains the single DB API
 
 ---
 
-## Phase 3: ESLint Rules (Prevent Regressions)
+## Phase 3: ESLint / CI (Prevent Regressions) ✅ Partial
 
-### 3.1 Create custom rule or use no-restricted-syntax
+### 3.0 CI: check-sync-db script
+
+- [x] Script `scripts/check-sync-db-usage.sh` exists; `npm run check:sync-db` and `npm run check:sync-db:warn`
+- [x] CI (`.github/workflows/ci.yml`) runs `npm run check:sync-db:warn` in the Lint job (continue-on-error: true while violations remain)
+- [ ] When remaining sync usage is converted, switch CI to `npm run check:sync-db` (fail on violations)
+
+### 3.1 Create custom rule or use no-restricted-syntax (optional)
 
 Add to `.eslintrc.js`:
 

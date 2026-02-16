@@ -2,18 +2,19 @@
 // Enhanced health check endpoint with detailed system checks
 
 const os = require('os');
+const { getDatabaseAsync, getDatabaseType } = require('../lib/db');
 
 /**
  * Create health check router
  * @param {Object} options - Configuration options
- * @param {Object} options.db - Database instance
+ * @param {Object} options.db - Database instance (optional; DB check uses getDatabaseAsync)
  * @param {Object} options.redis - Redis client (optional)
  */
 function createHealthCheckRouter(options = {}) {
   const express = require('express');
   const router = express.Router();
 
-  const { db, redis } = options;
+  const { redis } = options;
 
   /**
    * Basic health check (for load balancer / k8s liveness probe)
@@ -37,15 +38,8 @@ function createHealthCheckRouter(options = {}) {
    */
   router.get('/health/ready', async (req, res) => {
     try {
-      // Check database connection
-      if (db) {
-        if (db.type === 'postgres') {
-          await db.query('SELECT 1');
-        } else {
-          db.prepare('SELECT 1').get();
-        }
-      }
-
+      const database = await getDatabaseAsync();
+      await database.query('SELECT 1');
       res.status(200).send('OK');
     } catch (err) {
       res.status(503).send('Not Ready');
@@ -67,28 +61,23 @@ function createHealthCheckRouter(options = {}) {
       system: {},
     };
 
-    // Database check
-    if (db) {
-      try {
-        const dbStart = Date.now();
-        if (db.type === 'postgres') {
-          await db.query('SELECT 1');
-        } else {
-          db.prepare('SELECT 1').get();
-        }
-        health.checks.database = {
-          status: 'ok',
-          type: db.type || 'sqlite',
-          latency: Date.now() - dbStart,
-        };
-      } catch (err) {
-        health.checks.database = {
-          status: 'error',
-          type: db.type || 'sqlite',
-          error: err.message,
-        };
-        health.status = 'degraded';
-      }
+    // Database check (async DB only)
+    try {
+      const dbStart = Date.now();
+      const database = await getDatabaseAsync();
+      await database.query('SELECT 1');
+      health.checks.database = {
+        status: 'ok',
+        type: getDatabaseType(),
+        latency: Date.now() - dbStart,
+      };
+    } catch (err) {
+      health.checks.database = {
+        status: 'error',
+        type: getDatabaseType(),
+        error: err.message,
+      };
+      health.status = 'degraded';
     }
 
     // Redis check

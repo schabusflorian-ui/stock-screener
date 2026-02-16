@@ -40,14 +40,8 @@ class MigrationRunner {
    */
   async getExecutedMigrations() {
     const sql = 'SELECT name FROM schema_migrations ORDER BY name';
-
-    if (this.db.type === 'postgres') {
-      const result = await this.db.query(sql);
-      return result.rows.map(r => r.name);
-    } else {
-      const stmt = this.db.prepare(sql);
-      return stmt.all().map(r => r.name);
-    }
+    const result = await this.db.query(sql);
+    return (result.rows || []).map(r => r.name);
   }
 
   /**
@@ -89,16 +83,9 @@ class MigrationRunner {
     console.log(`\n📦 Running ${pending.length} pending migration(s)...\n`);
 
     // Get next batch number
-    let batch = 1;
     const batchSQL = 'SELECT MAX(batch) as max_batch FROM schema_migrations';
-    if (this.db.type === 'postgres') {
-      const result = await this.db.query(batchSQL);
-      batch = (result.rows[0]?.max_batch || 0) + 1;
-    } else {
-      const stmt = this.db.prepare(batchSQL);
-      const result = stmt.get();
-      batch = (result?.max_batch || 0) + 1;
-    }
+    const batchResult = await this.db.query(batchSQL);
+    const batch = (batchResult.rows?.[0]?.max_batch ?? 0) + 1;
 
     const migrated = [];
 
@@ -119,12 +106,8 @@ class MigrationRunner {
         // Otherwise, the migration runs on require (legacy support)
 
         // Record migration
-        const insertSQL = 'INSERT INTO schema_migrations (name, batch) VALUES (?, ?)';
-        if (this.db.type === 'postgres') {
-          await this.db.query(insertSQL, [migrationFile, batch]);
-        } else {
-          this.db.prepare(insertSQL).run(migrationFile, batch);
-        }
+        const insertSQL = 'INSERT INTO schema_migrations (name, batch) VALUES ($1, $2)';
+        await this.db.query(insertSQL, [migrationFile, batch]);
 
         migrated.push(migrationFile);
         console.log(`  ✅ ${migrationFile}`);

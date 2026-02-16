@@ -226,7 +226,8 @@ router.post('/backtest', async (req, res) => {
     console.error('Error running backtest:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message || 'Backtest failed',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
@@ -251,9 +252,10 @@ router.get('/backtest/:id', async (req, res) => {
     });
   } catch (error) {
     console.error('Error getting backtest:', error);
-    res.status(error.message.includes('not found') ? 404 : 500).json({
+    res.status(error.message?.includes('not found') ? 404 : 500).json({
       success: false,
-      error: error.message
+      error: error.message || 'Failed to get backtest',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
@@ -275,7 +277,8 @@ router.get('/backtests', async (req, res) => {
     console.error('Error listing backtests:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message || 'Failed to list backtests',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
@@ -332,7 +335,8 @@ router.post('/monte-carlo', async (req, res) => {
     console.error('Error running Monte Carlo simulation:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message || 'Monte Carlo simulation failed',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
@@ -352,9 +356,10 @@ router.get('/monte-carlo/:id', async (req, res) => {
     });
   } catch (error) {
     console.error('Error getting Monte Carlo simulation:', error);
-    res.status(error.message.includes('not found') ? 404 : 500).json({
+    res.status(error.message?.includes('not found') ? 404 : 500).json({
       success: false,
-      error: error.message
+      error: error.message || 'Failed to get simulation',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });

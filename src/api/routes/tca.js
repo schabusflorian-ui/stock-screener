@@ -164,14 +164,15 @@ router.get('/summary', async (req, res) => {
     // Get execution benchmarks if they exist
     let benchmarks = [];
     try {
-      benchmarks = await db.prepare(`
+      const result = await db.query(`
         SELECT eb.*, ao.symbol, ao.side, ao.total_shares, ao.algorithm
         FROM execution_benchmarks eb
         JOIN algo_orders ao ON eb.order_id = ao.id
         WHERE ao.status = 'completed'
         ORDER BY eb.created_at DESC
         LIMIT 100
-      `).all();
+      `);
+      benchmarks = result.rows || [];
     } catch (e) {
       // Table may not exist
     }
@@ -240,21 +241,23 @@ router.get('/orders/:orderId', async (req, res) => {
     const { orderId } = req.params;
     const db = await getDatabaseAsync();
 
-    const order = await db.prepare(`
+    const orderResult = await db.query(`
       SELECT ao.*, eb.*
       FROM algo_orders ao
       LEFT JOIN execution_benchmarks eb ON ao.id = eb.order_id
-      WHERE ao.id = ?
-    `).get(orderId);
+      WHERE ao.id = $1
+    `, [orderId]);
+    const order = orderResult.rows?.[0];
 
     if (!order) {
       return res.status(404).json({ success: false, error: 'Order not found' });
     }
 
     // Get execution slices
-    const slices = await db.prepare(`
-      SELECT * FROM algo_executions WHERE order_id = ? ORDER BY slice_number
-    `).all(orderId);
+    const slicesResult = await db.query(`
+      SELECT * FROM algo_executions WHERE order_id = $1 ORDER BY slice_number
+    `, [orderId]);
+    const slices = slicesResult.rows || [];
 
     res.json({
       success: true,

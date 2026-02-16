@@ -53,6 +53,7 @@ const POSTGRES_MIGRATIONS = [
   '024-add-paper-trading-postgres.js',
   '025-add-paper-trading-tables-postgres.js',
   '026-fix-user-factors-higher-is-better-postgres.js',
+  '027-add-backtests-postgres.js',
   '018-add-congressional-postgres.js',
   '019-add-tracked-subreddits-region-postgres.js',
   'add-postgres-alert-system.js',

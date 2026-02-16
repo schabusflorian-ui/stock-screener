@@ -19,7 +19,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const db = require('../database');
+const { getDatabaseAsync } = require('../lib/db');
 const investorService = require('../services/portfolio/investorService');
 
 const CHECKPOINT_FILE = path.join(__dirname, '../../data/backfill_checkpoint.json');
@@ -27,7 +27,6 @@ const CHECKPOINT_FILE = path.join(__dirname, '../../data/backfill_checkpoint.jso
 class HistoricalInvestorBackfill {
   constructor() {
     this.isRunning = false;
-    this.database = db.getDatabase();
     this.progress = {
       currentInvestor: null,
       currentInvestorName: null,
@@ -42,7 +41,7 @@ class HistoricalInvestorBackfill {
   /**
    * Save checkpoint for resumability
    */
-  saveCheckpoint(investorId, lastAccession, status = 'in_progress') {
+  async saveCheckpoint(investorId, lastAccession, status = 'in_progress') {
     const checkpoint = {
       investorId,
       lastAccessionNumber: lastAccession,
@@ -59,24 +58,23 @@ class HistoricalInvestorBackfill {
 
     fs.writeFileSync(CHECKPOINT_FILE, JSON.stringify(checkpoint, null, 2));
 
-    // Also save to database
-    this.database.prepare(`
-      INSERT OR REPLACE INTO backfill_progress (
+    const database = await getDatabaseAsync();
+    await database.query(`
+      INSERT INTO backfill_progress (
         investor_id, last_accession_number, last_filing_date,
         filings_processed, filings_total, status, started_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, COALESCE(
-        (SELECT started_at FROM backfill_progress WHERE investor_id = ?),
+      ) VALUES ($1, $2, $3, $4, $5, $6, COALESCE(
+        (SELECT started_at FROM backfill_progress WHERE investor_id = $7),
         CURRENT_TIMESTAMP
       ), CURRENT_TIMESTAMP)
-    `).run(
-      investorId,
-      lastAccession,
-      null,
-      this.progress.filingsProcessed,
-      this.progress.filingsTotal,
-      status,
-      investorId
-    );
+      ON CONFLICT(investor_id) DO UPDATE SET
+        last_accession_number = excluded.last_accession_number,
+        last_filing_date = excluded.last_filing_date,
+        filings_processed = excluded.filings_processed,
+        filings_total = excluded.filings_total,
+        status = excluded.status,
+        updated_at = CURRENT_TIMESTAMP
+    `, [investorId, lastAccession, null, this.progress.filingsProcessed, this.progress.filingsTotal, status, investorId]);
   }
 
   /**
@@ -97,15 +95,17 @@ class HistoricalInvestorBackfill {
   /**
    * Get backfill progress from database
    */
-  getBackfillProgress() {
-    return this.database.prepare(`
+  async getBackfillProgress() {
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         bp.*,
         fi.name as investor_name
       FROM backfill_progress bp
       JOIN famous_investors fi ON fi.id = bp.investor_id
       ORDER BY bp.updated_at DESC
-    `).all();
+    `);
+    return result.rows || [];
   }
 
   /**
@@ -130,10 +130,10 @@ class HistoricalInvestorBackfill {
     try {
       const result = await investorService.backfillInvestorFilings(investorId, {
         yearsBack,
-        onProgress: (current, total, filing) => {
+        onProgress: async (current, total, filing) => {
           this.progress.filingsProcessed = current;
           this.progress.filingsTotal = total;
-          this.saveCheckpoint(investorId, filing.accessionNumber);
+          await this.saveCheckpoint(investorId, filing.accessionNumber);
         },
         onError: (filing, error) => {
           this.progress.errors.push({
@@ -146,21 +146,23 @@ class HistoricalInvestorBackfill {
       });
 
       // Mark as completed
-      this.saveCheckpoint(investorId, null, 'completed');
-      this.database.prepare(`
+      await this.saveCheckpoint(investorId, null, 'completed');
+      const database = await getDatabaseAsync();
+      await database.query(`
         UPDATE backfill_progress
         SET status = 'completed', completed_at = CURRENT_TIMESTAMP
-        WHERE investor_id = ?
-      `).run(investorId);
+        WHERE investor_id = $1
+      `, [investorId]);
 
       return result;
     } catch (error) {
-      this.saveCheckpoint(investorId, null, 'error');
-      this.database.prepare(`
+      await this.saveCheckpoint(investorId, null, 'error');
+      const database = await getDatabaseAsync();
+      await database.query(`
         UPDATE backfill_progress
-        SET status = 'error', error_message = ?
-        WHERE investor_id = ?
-      `).run(error.message, investorId);
+        SET status = 'error', error_message = $1
+        WHERE investor_id = $2
+      `, [error.message, investorId]);
       throw error;
     }
   }
@@ -257,13 +259,14 @@ class HistoricalInvestorBackfill {
     if (!checkpoint || checkpoint.status === 'completed') {
       console.log('No incomplete backfill to resume.');
 
-      // Check database for incomplete investors
-      const incomplete = this.database.prepare(`
+      const database = await getDatabaseAsync();
+      const incompleteResult = await database.query(`
         SELECT investor_id FROM backfill_progress
         WHERE status = 'in_progress' OR status = 'error'
         ORDER BY investor_id
         LIMIT 1
-      `).get();
+      `);
+      const incomplete = (incompleteResult.rows && incompleteResult.rows[0]) || null;
 
       if (incomplete) {
         console.log(`Found incomplete investor ${incomplete.investor_id} in database, resuming...`);
@@ -283,36 +286,47 @@ class HistoricalInvestorBackfill {
   /**
    * Get detailed status of backfill
    */
-  getStatus() {
-    // Get investor filing counts
-    const filingsPerInvestor = this.database.prepare(`
+  async getStatus() {
+    const database = await getDatabaseAsync();
+
+    // Get investor filing counts (years_covered computed in JS for dialect compatibility)
+    const filingsResult = await database.query(`
       SELECT
         fi.id,
         fi.name,
         fi.cik,
         COUNT(DISTINCT if2.id) as filing_count,
         MIN(if2.filing_date) as earliest_filing,
-        MAX(if2.filing_date) as latest_filing,
-        ROUND((julianday(MAX(if2.filing_date)) - julianday(MIN(if2.filing_date))) / 365.25, 1) as years_covered
+        MAX(if2.filing_date) as latest_filing
       FROM famous_investors fi
       LEFT JOIN investor_filings if2 ON if2.investor_id = fi.id
       WHERE fi.is_active = 1 AND fi.cik IS NOT NULL
       GROUP BY fi.id
       ORDER BY fi.display_order
-    `).all();
+    `);
+    const rows = filingsResult.rows || [];
+    const filingsPerInvestor = rows.map(r => ({
+      ...r,
+      years_covered: (r.earliest_filing && r.latest_filing)
+        ? parseFloat((((new Date(r.latest_filing) - new Date(r.earliest_filing)) / (86400 * 1000 * 365.25))).toFixed(1))
+        : null
+    }));
 
     // Get backfill progress
-    const backfillProgress = this.getBackfillProgress();
+    const backfillProgress = await this.getBackfillProgress();
 
     // Get error count
-    const errorCount = this.database.prepare(`
+    const errorResult = await database.query(`
       SELECT COUNT(*) as count FROM backfill_progress WHERE status = 'error'
-    `).get();
+    `);
+    const errorCount = (errorResult.rows && errorResult.rows[0]) || { count: 0 };
 
     // Calculate coverage stats
     const totalInvestors = filingsPerInvestor.length;
     const investorsWithData = filingsPerInvestor.filter(i => i.filing_count > 0).length;
     const investorsWithFullHistory = filingsPerInvestor.filter(i => i.years_covered >= 9).length;
+    const totalFilings = filingsPerInvestor.reduce((sum, i) => sum + (i.filing_count || 0), 0);
+    const averageFilingsPerInvestor = totalInvestors > 0 ? (totalFilings / totalInvestors).toFixed(1) : '0';
 
     return {
       isRunning: this.isRunning,
@@ -321,7 +335,7 @@ class HistoricalInvestorBackfill {
         totalInvestors,
         investorsWithData,
         investorsWithFullHistory,
-        averageFilingsPerInvestor: (filingsPerInvestor.reduce((sum, i) => sum + i.filing_count, 0) / totalInvestors).toFixed(1)
+        averageFilingsPerInvestor
       },
       investors: filingsPerInvestor,
       backfillProgress,
@@ -332,24 +346,31 @@ class HistoricalInvestorBackfill {
   /**
    * Verify data completeness
    */
-  verify() {
+  async verify() {
     console.log('\n📊 Verifying backfill data completeness...\n');
 
-    const investors = this.database.prepare(`
+    const database = await getDatabaseAsync();
+    const result = await database.query(`
       SELECT
         fi.id,
         fi.name,
         fi.cik,
         COUNT(DISTINCT if2.report_date) as quarters,
         MIN(if2.report_date) as earliest,
-        MAX(if2.report_date) as latest,
-        ROUND((julianday(MAX(if2.report_date)) - julianday(MIN(if2.report_date))) / 365.25, 1) as years
+        MAX(if2.report_date) as latest
       FROM famous_investors fi
       LEFT JOIN investor_filings if2 ON if2.investor_id = fi.id
       WHERE fi.is_active = 1 AND fi.cik IS NOT NULL
       GROUP BY fi.id
       ORDER BY fi.display_order
-    `).all();
+    `);
+    const rows = result.rows || [];
+    const investors = rows.map(r => ({
+      ...r,
+      years: (r.earliest && r.latest)
+        ? parseFloat((((new Date(r.latest) - new Date(r.earliest)) / (86400 * 1000 * 365.25))).toFixed(1))
+        : null
+    }));
 
     const issues = [];
 
@@ -452,8 +473,7 @@ if (require.main === module) {
       });
 
   } else if (args.includes('--status')) {
-    const status = backfiller.getStatus();
-
+    backfiller.getStatus().then(status => {
     console.log('\n📊 Historical Backfill Status');
     console.log('='.repeat(60));
     console.log(`Running: ${status.isRunning}`);
@@ -477,10 +497,12 @@ if (require.main === module) {
     }
 
     process.exit(0);
+    }).catch(err => { console.error(err); process.exit(1); });
 
   } else if (args.includes('--verify')) {
-    backfiller.verify();
-    process.exit(0);
+    backfiller.verify()
+      .then(() => process.exit(0))
+      .catch(err => { console.error(err); process.exit(1); });
 
   } else {
     console.log(`

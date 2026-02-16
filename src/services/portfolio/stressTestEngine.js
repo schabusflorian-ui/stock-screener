@@ -291,7 +291,7 @@ class StressTestEngine {
       SELECT * FROM stress_test_runs WHERE id = $1
     `, [resultId]);
 
-    const r = result.rows[0];
+    const r = result.rows?.[0];
 
     if (!r) {
       return null;
@@ -356,52 +356,56 @@ class StressTestEngine {
   // ============================================
 
   /**
-   * Save stress test result to database
+   * Save stress test result to database (optional - returns null if save fails)
    */
   async _saveResult(portfolioId, scenario, result, benchmarkResult, comparison, executionTime) {
-    const database = await getDatabaseAsync();
+    try {
+      const database = await getDatabaseAsync();
+      const insertResult = await database.query(`
+        INSERT INTO stress_test_runs (
+          portfolio_id, scenario_id, scenario_name, scenario_description,
+          scenario_start_date, scenario_end_date, data_points, has_data,
+          start_value, end_value, total_return, max_drawdown,
+          max_drawdown_start, max_drawdown_end, recovery_days,
+          worst_day_date, worst_day_return,
+          benchmark_symbol, benchmark_total_return, benchmark_max_drawdown,
+          relative_drawdown, outperformed, beta_estimate,
+          value_series, execution_time_ms
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+        RETURNING id
+      `, [
+        portfolioId,
+        scenario.id,
+        scenario.name,
+        scenario.description,
+        scenario.startDate,
+        scenario.endDate,
+        result.dataPoints,
+        result.hasData,
+        result.startValue,
+        result.endValue,
+        result.totalReturn,
+        result.maxDrawdown,
+        result.maxDrawdownStart,
+        result.maxDrawdownEnd,
+        result.recoveryDays,
+        result.worstDay?.date,
+        result.worstDay?.return,
+        benchmarkResult?.symbol,
+        benchmarkResult?.totalReturn,
+        benchmarkResult?.maxDrawdown,
+        comparison.relativeDrawdown,
+        comparison.outperformed,
+        comparison.betaEstimate,
+        result.valueSeries ? JSON.stringify(result.valueSeries) : null,
+        executionTime
+      ]);
 
-    const insertResult = await database.query(`
-      INSERT INTO stress_test_runs (
-        portfolio_id, scenario_id, scenario_name, scenario_description,
-        scenario_start_date, scenario_end_date, data_points, has_data,
-        start_value, end_value, total_return, max_drawdown,
-        max_drawdown_start, max_drawdown_end, recovery_days,
-        worst_day_date, worst_day_return,
-        benchmark_symbol, benchmark_total_return, benchmark_max_drawdown,
-        relative_drawdown, outperformed, beta_estimate,
-        value_series, execution_time_ms
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
-      RETURNING id
-    `, [
-      portfolioId,
-      scenario.id,
-      scenario.name,
-      scenario.description,
-      scenario.startDate,
-      scenario.endDate,
-      result.dataPoints,
-      result.hasData,
-      result.startValue,
-      result.endValue,
-      result.totalReturn,
-      result.maxDrawdown,
-      result.maxDrawdownStart,
-      result.maxDrawdownEnd,
-      result.recoveryDays,
-      result.worstDay?.date,
-      result.worstDay?.return,
-      benchmarkResult?.symbol,
-      benchmarkResult?.totalReturn,
-      benchmarkResult?.maxDrawdown,
-      comparison.relativeDrawdown,
-      comparison.outperformed,
-      comparison.betaEstimate,
-      result.valueSeries ? JSON.stringify(result.valueSeries) : null,
-      executionTime
-    ]);
-
-    return insertResult.rows[0].id;
+      return insertResult?.rows?.[0]?.id ?? insertResult?.lastInsertRowid ?? null;
+    } catch (saveErr) {
+      console.warn('Stress test save failed (results still returned):', saveErr.message);
+      return null;
+    }
   }
 
   async _getPortfolioAllocations(portfolioId) {
@@ -572,7 +576,7 @@ class StressTestEngine {
       SELECT id FROM market_indices WHERE symbol = '^GSPC' OR symbol = 'SPY' LIMIT 1
     `);
 
-    const benchmarkIndex = indexResult.rows[0];
+    const benchmarkIndex = indexResult.rows?.[0];
 
     if (!benchmarkIndex) {
       return null;

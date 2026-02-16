@@ -61,16 +61,19 @@ function MonteCarloPanel({ portfolioId, initialValue }) {
     }
   };
 
-  // ... (keep all the existing helper functions: formatValue, formatFullValue, getSurvivalColor, etc.)
   const formatValue = (value) => {
     if (!value && value !== 0) return '-';
-    if (value >= 1000000) return `$${(value / 1000000).toFixed(2)}M`;
-    if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return '-';
+    if (value >= 1e12) return `$${(value / 1e12).toFixed(2)}T`;
+    if (value >= 1e9) return `$${(value / 1e9).toFixed(2)}B`;
+    if (value >= 1e6) return `$${(value / 1e6).toFixed(2)}M`;
+    if (value >= 1000) return `$${(value / 1000).toFixed(1)}K`;
     return `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   };
 
   const formatFullValue = (value) => {
     if (!value && value !== 0) return '-';
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return '-';
     return `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   };
 

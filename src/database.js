@@ -1,6 +1,9 @@
 // src/database.js
 // Compatibility shim - forwards to the unified database abstraction layer
-// This allows existing code to continue working while using the new DB layer
+// This allows existing code to continue working while using the new DB layer.
+//
+// **New code must use getDatabaseAsync() only** (from lib/db or this module).
+// getDatabaseSync() is deprecated; see docs/guides/DB_ASYNC_MIGRATION_PLAN.md.
 
 const {
   getDatabase,

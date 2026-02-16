@@ -1,8 +1,8 @@
 // src/services/historical/outcomeCalculator.js
 // Calculates investment outcomes for historical decisions
-// Supports both SQLite (this.db passed in) and Postgres (getDatabaseAsync when this.db not set)
+// Uses getDatabaseAsync + db.query() for both SQLite and PostgreSQL
 
-const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
+const { getDatabaseAsync, isUsingPostgres, dialect } = require('../../lib/db');
 
 /**
  * OutcomeCalculator
@@ -35,13 +35,8 @@ class OutcomeCalculator {
     const db = await this._getDb();
     if (!db) throw new Error('Database not available');
 
-    let decision;
-    if (await this._pg()) {
-      const r = await db.query('SELECT * FROM investment_decisions WHERE id = $1', [decisionId]);
-      decision = r.rows[0];
-    } else {
-      decision = db.prepare('SELECT * FROM investment_decisions WHERE id = ?').get(decisionId);
-    }
+    const decisionRes = await db.query('SELECT * FROM investment_decisions WHERE id = $1', [decisionId]);
+    const decision = decisionRes.rows?.[0];
 
     if (!decision) {
       throw new Error(`Decision not found: ${decisionId}`);
@@ -49,9 +44,9 @@ class OutcomeCalculator {
 
     let companyId = decision.company_id;
     if (!companyId && decision.symbol) {
-      companyId = await this._resolveCompanyIdFromSymbol(db, await this._pg(), decision.symbol);
+      companyId = await this._resolveCompanyIdFromSymbol(db, null, decision.symbol);
       if (companyId) {
-        await this._setDecisionCompanyId(db, await this._pg(), decisionId, companyId);
+        await this._setDecisionCompanyId(db, null, decisionId, companyId);
         decision.company_id = companyId;
       }
     }
@@ -166,25 +161,14 @@ class OutcomeCalculator {
 
     const cutoffDate = this._addDays(new Date().toISOString().split('T')[0], -minDaysOld);
 
-    let decisions;
-    if (await this._pg()) {
-      const r = await db.query(`
-        SELECT id, company_id, decision_date, symbol
-        FROM investment_decisions
-        WHERE (company_id IS NOT NULL OR symbol IS NOT NULL) AND decision_date <= $1
-          AND (outcome_calculated_at IS NULL OR return_1y IS NULL)
-        ORDER BY decision_date ASC LIMIT $2
-      `, [cutoffDate, limit]);
-      decisions = r.rows;
-    } else {
-      decisions = db.prepare(`
-        SELECT id, company_id, decision_date, symbol
-        FROM investment_decisions
-        WHERE (company_id IS NOT NULL OR symbol IS NOT NULL) AND decision_date <= ?
-          AND (outcome_calculated_at IS NULL OR return_1y IS NULL)
-        ORDER BY decision_date ASC LIMIT ?
-      `).all(cutoffDate, limit);
-    }
+    const decisionsRes = await db.query(`
+      SELECT id, company_id, decision_date, symbol
+      FROM investment_decisions
+      WHERE (company_id IS NOT NULL OR symbol IS NOT NULL) AND decision_date <= $1
+        AND (outcome_calculated_at IS NULL OR return_1y IS NULL)
+      ORDER BY decision_date ASC LIMIT $2
+    `, [cutoffDate, limit]);
+    const decisions = decisionsRes.rows || [];
 
     if (verbose) {
       console.log(`📊 Calculating outcomes for ${decisions.length} decisions...`);
@@ -227,33 +211,21 @@ class OutcomeCalculator {
 
     const cutoffDate = this._addDays(new Date().toISOString().split('T')[0], -daysOld);
 
-    let decisions;
-    if (await this._pg()) {
-      const r = await db.query(`
-        SELECT id, decision_date
-        FROM investment_decisions
-        WHERE company_id IS NOT NULL AND outcome_calculated_at < $1
-          AND (
-            (return_1y IS NULL AND decision_date <= (CURRENT_DATE - INTERVAL '365 days')::date)
-            OR (return_2y IS NULL AND decision_date <= (CURRENT_DATE - INTERVAL '730 days')::date)
-            OR (return_3y IS NULL AND decision_date <= (CURRENT_DATE - INTERVAL '1095 days')::date)
-          )
-        ORDER BY decision_date ASC LIMIT $2
-      `, [cutoffDate, limit]);
-      decisions = r.rows;
-    } else {
-      decisions = db.prepare(`
-        SELECT id, decision_date
-        FROM investment_decisions
-        WHERE company_id IS NOT NULL AND outcome_calculated_at < ?
-          AND (
-            (return_1y IS NULL AND decision_date <= date('now', '-365 days'))
-            OR (return_2y IS NULL AND decision_date <= date('now', '-730 days'))
-            OR (return_3y IS NULL AND decision_date <= date('now', '-1095 days'))
-          )
-        ORDER BY decision_date ASC LIMIT ?
-      `).all(cutoffDate, limit);
-    }
+    const date365 = isUsingPostgres() ? "(CURRENT_DATE - INTERVAL '365 days')" : "date('now', '-365 days')";
+    const date730 = isUsingPostgres() ? "(CURRENT_DATE - INTERVAL '730 days')" : "date('now', '-730 days')";
+    const date1095 = isUsingPostgres() ? "(CURRENT_DATE - INTERVAL '1095 days')" : "date('now', '-1095 days')";
+    const decisionsRes = await db.query(`
+      SELECT id, decision_date
+      FROM investment_decisions
+      WHERE company_id IS NOT NULL AND outcome_calculated_at < $1
+        AND (
+          (return_1y IS NULL AND decision_date <= ${date365})
+          OR (return_2y IS NULL AND decision_date <= ${date730})
+          OR (return_3y IS NULL AND decision_date <= ${date1095})
+        )
+      ORDER BY decision_date ASC LIMIT $2
+    `, [cutoffDate, limit]);
+    const decisions = decisionsRes.rows || [];
 
     if (verbose) {
       console.log(`📊 Refreshing outcomes for ${decisions.length} decisions...`);
@@ -282,27 +254,21 @@ class OutcomeCalculator {
    * Calculate investor track record
    */
   async calculateInvestorTrackRecord(investorId, periodType = 'all_time') {
-    // Define period filter
+    const db = await this._getDb();
+    if (!db) throw new Error('Database not available');
+
+    // Dialect-aware date filter
+    const intervalMap = { 1y: '1 year', 3y: '3 years', 5y: '5 years', 10y: '10 years' };
+    const interval = intervalMap[periodType];
     let dateFilter = '';
-    switch (periodType) {
-      case '1y':
-        dateFilter = 'AND decision_date >= date(\'now\', \'-1 year\')';
-        break;
-      case '3y':
-        dateFilter = 'AND decision_date >= date(\'now\', \'-3 years\')';
-        break;
-      case '5y':
-        dateFilter = 'AND decision_date >= date(\'now\', \'-5 years\')';
-        break;
-      case '10y':
-        dateFilter = 'AND decision_date >= date(\'now\', \'-10 years\')';
-        break;
-      default:
-        dateFilter = '';
+    if (interval) {
+      dateFilter = isUsingPostgres()
+        ? `AND decision_date >= (CURRENT_DATE - INTERVAL '${interval}')::date`
+        : `AND decision_date >= date('now', '-${interval}')`;
     }
 
     // Get basic statistics
-    const stats = this.db.prepare(`
+    const statsRes = await db.query(`
       SELECT
         COUNT(*) as total_decisions,
         SUM(CASE WHEN decision_type = 'new_position' THEN 1 ELSE 0 END) as new_positions,
@@ -320,72 +286,75 @@ class OutcomeCalculator {
         MIN(decision_date) as period_start,
         MAX(decision_date) as period_end
       FROM investment_decisions
-      WHERE investor_id = ?
+      WHERE investor_id = $1
         AND return_1y IS NOT NULL
         ${dateFilter}
-    `).get(investorId);
+    `, [investorId]);
+    const stats = statsRes.rows?.[0] || {};
 
     // Get median return
-    const returns = this.db.prepare(`
+    const returnsRes = await db.query(`
       SELECT return_1y
       FROM investment_decisions
-      WHERE investor_id = ? AND return_1y IS NOT NULL ${dateFilter}
+      WHERE investor_id = $1 AND return_1y IS NOT NULL ${dateFilter}
       ORDER BY return_1y
-    `).all(investorId);
-
-    const medianReturn = returns.length > 0
-      ? returns[Math.floor(returns.length / 2)].return_1y
-      : null;
+    `, [investorId]);
+    const returns = returnsRes.rows || [];
+    const medianReturn = returns.length > 0 ? returns[Math.floor(returns.length / 2)].return_1y : null;
 
     // Get best and worst picks
-    const bestPick = this.db.prepare(`
+    const bestPickRes = await db.query(`
       SELECT symbol, return_1y
       FROM investment_decisions
-      WHERE investor_id = ? AND return_1y IS NOT NULL ${dateFilter}
+      WHERE investor_id = $1 AND return_1y IS NOT NULL ${dateFilter}
       ORDER BY return_1y DESC
       LIMIT 1
-    `).get(investorId);
+    `, [investorId]);
+    const bestPick = bestPickRes.rows?.[0] || null;
 
-    const worstPick = this.db.prepare(`
+    const worstPickRes = await db.query(`
       SELECT symbol, return_1y
       FROM investment_decisions
-      WHERE investor_id = ? AND return_1y IS NOT NULL ${dateFilter}
+      WHERE investor_id = $1 AND return_1y IS NOT NULL ${dateFilter}
       ORDER BY return_1y ASC
       LIMIT 1
-    `).get(investorId);
+    `, [investorId]);
+    const worstPick = worstPickRes.rows?.[0] || null;
 
     // Get sector allocations
-    const sectorData = this.db.prepare(`
+    const sectorRes = await db.query(`
       SELECT
         sector,
         COUNT(*) as count,
         SUM(CASE WHEN beat_market_1y = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as success_rate
       FROM investment_decisions
-      WHERE investor_id = ? AND return_1y IS NOT NULL AND sector IS NOT NULL ${dateFilter}
+      WHERE investor_id = $1 AND return_1y IS NOT NULL AND sector IS NOT NULL ${dateFilter}
       GROUP BY sector
       ORDER BY count DESC
-    `).all(investorId);
+    `, [investorId]);
+    const sectorData = sectorRes.rows || [];
 
     const sectorAllocations = {};
     const sectorSuccessRates = {};
-    const totalSectorDecisions = sectorData.reduce((sum, s) => sum + s.count, 0);
+    const totalSectorDecisions = sectorData.reduce((sum, s) => sum + (s.count || 0), 0);
     for (const s of sectorData) {
-      sectorAllocations[s.sector] = s.count / totalSectorDecisions;
+      sectorAllocations[s.sector] = totalSectorDecisions ? (s.count || 0) / totalSectorDecisions : 0;
       sectorSuccessRates[s.sector] = s.success_rate;
     }
 
     // Get pattern usage
-    const patternData = this.db.prepare(`
+    const patternRes = await db.query(`
       SELECT
         ip.pattern_code,
         COUNT(*) as count,
         SUM(CASE WHEN d.beat_market_1y = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as success_rate
       FROM investment_decisions d
       JOIN investment_patterns ip ON d.primary_pattern_id = ip.id
-      WHERE d.investor_id = ? AND d.return_1y IS NOT NULL ${dateFilter}
+      WHERE d.investor_id = $1 AND d.return_1y IS NOT NULL ${dateFilter}
       GROUP BY ip.pattern_code
       ORDER BY count DESC
-    `).all(investorId);
+    `, [investorId]);
+    const patternData = patternRes.rows || [];
 
     const patternUsage = {};
     const patternSuccess = {};
@@ -398,8 +367,8 @@ class OutcomeCalculator {
     const concentrationScore = Object.values(sectorAllocations)
       .reduce((sum, weight) => sum + weight * weight, 0) * 100;
 
-    // Upsert track record
-    this.db.prepare(`
+    const nowExpr = dialect.now();
+    await db.query(`
       INSERT INTO investor_track_records (
         investor_id, period_type, period_start, period_end,
         total_decisions, new_positions, increased_positions,
@@ -412,71 +381,53 @@ class OutcomeCalculator {
         pattern_usage, pattern_success,
         calculated_at
       ) VALUES (
-        @investor_id, @period_type, @period_start, @period_end,
-        @total_decisions, @new_positions, @increased_positions,
-        @decreased_positions, @sold_positions,
-        @win_rate, @avg_return_1y, @median_return_1y, @avg_alpha_1y,
-        @best_pick, @best_pick_return, @worst_pick, @worst_pick_return,
-        @avg_pe_at_purchase, @avg_market_cap_at_purchase,
-        @avg_holding_period_days, @avg_position_size, @concentration_score,
-        @sector_allocations, @sector_success_rates,
-        @pattern_usage, @pattern_success,
-        datetime('now')
+        $1, $2, $3, $4,
+        $5, $6, $7, $8, $9,
+        $10, $11, $12, $13,
+        $14, $15, $16, $17,
+        $18, $19,
+        $20, $21, $22,
+        $23, $24,
+        $25, $26,
+        ${nowExpr}
       )
       ON CONFLICT(investor_id, period_type) DO UPDATE SET
-        period_start = @period_start,
-        period_end = @period_end,
-        total_decisions = @total_decisions,
-        new_positions = @new_positions,
-        increased_positions = @increased_positions,
-        decreased_positions = @decreased_positions,
-        sold_positions = @sold_positions,
-        win_rate = @win_rate,
-        avg_return_1y = @avg_return_1y,
-        median_return_1y = @median_return_1y,
-        avg_alpha_1y = @avg_alpha_1y,
-        best_pick = @best_pick,
-        best_pick_return = @best_pick_return,
-        worst_pick = @worst_pick,
-        worst_pick_return = @worst_pick_return,
-        avg_pe_at_purchase = @avg_pe_at_purchase,
-        avg_market_cap_at_purchase = @avg_market_cap_at_purchase,
-        avg_holding_period_days = @avg_holding_period_days,
-        avg_position_size = @avg_position_size,
-        concentration_score = @concentration_score,
-        sector_allocations = @sector_allocations,
-        sector_success_rates = @sector_success_rates,
-        pattern_usage = @pattern_usage,
-        pattern_success = @pattern_success,
-        calculated_at = datetime('now')
-    `).run({
-      investor_id: investorId,
-      period_type: periodType,
-      period_start: stats.period_start,
-      period_end: stats.period_end,
-      total_decisions: stats.total_decisions,
-      new_positions: stats.new_positions,
-      increased_positions: stats.increased_positions,
-      decreased_positions: stats.decreased_positions,
-      sold_positions: stats.sold_positions,
-      win_rate: stats.win_rate,
-      avg_return_1y: stats.avg_return_1y,
-      median_return_1y: medianReturn,
-      avg_alpha_1y: stats.avg_alpha_1y,
-      best_pick: bestPick?.symbol,
-      best_pick_return: bestPick?.return_1y,
-      worst_pick: worstPick?.symbol,
-      worst_pick_return: worstPick?.return_1y,
-      avg_pe_at_purchase: stats.avg_pe_at_purchase,
-      avg_market_cap_at_purchase: stats.avg_market_cap_at_purchase,
-      avg_holding_period_days: stats.avg_holding_period_days,
-      avg_position_size: stats.avg_position_size,
-      concentration_score: concentrationScore,
-      sector_allocations: JSON.stringify(sectorAllocations),
-      sector_success_rates: JSON.stringify(sectorSuccessRates),
-      pattern_usage: JSON.stringify(patternUsage),
-      pattern_success: JSON.stringify(patternSuccess)
-    });
+        period_start = $3,
+        period_end = $4,
+        total_decisions = $5,
+        new_positions = $6,
+        increased_positions = $7,
+        decreased_positions = $8,
+        sold_positions = $9,
+        win_rate = $10,
+        avg_return_1y = $11,
+        median_return_1y = $12,
+        avg_alpha_1y = $13,
+        best_pick = $14,
+        best_pick_return = $15,
+        worst_pick = $16,
+        worst_pick_return = $17,
+        avg_pe_at_purchase = $18,
+        avg_market_cap_at_purchase = $19,
+        avg_holding_period_days = $20,
+        avg_position_size = $21,
+        concentration_score = $22,
+        sector_allocations = $23,
+        sector_success_rates = $24,
+        pattern_usage = $25,
+        pattern_success = $26,
+        calculated_at = ${nowExpr}
+    `, [
+      investorId, periodType, stats.period_start, stats.period_end,
+      stats.total_decisions, stats.new_positions, stats.increased_positions,
+      stats.decreased_positions, stats.sold_positions,
+      stats.win_rate, stats.avg_return_1y, medianReturn, stats.avg_alpha_1y,
+      bestPick?.symbol, bestPick?.return_1y, worstPick?.symbol, worstPick?.return_1y,
+      stats.avg_pe_at_purchase, stats.avg_market_cap_at_purchase,
+      stats.avg_holding_period_days, stats.avg_position_size, concentrationScore,
+      JSON.stringify(sectorAllocations), JSON.stringify(sectorSuccessRates),
+      JSON.stringify(patternUsage), JSON.stringify(patternSuccess)
+    ]);
 
     return {
       investorId,
@@ -502,45 +453,33 @@ class OutcomeCalculator {
   /**
    * Resolve company_id from symbol (companies table). Used when decision has symbol but no company_id.
    */
-  async _resolveCompanyIdFromSymbol(db, isPg, symbol) {
+  async _resolveCompanyIdFromSymbol(db, _isPg, symbol) {
     if (!symbol || !db) return null;
-    if (isPg) {
-      const r = await db.query('SELECT id FROM companies WHERE symbol = $1 LIMIT 1', [symbol]);
-      return r.rows[0]?.id ?? null;
-    }
-    const row = db.prepare('SELECT id FROM companies WHERE symbol = ? LIMIT 1').get(symbol);
-    return row?.id ?? null;
+    const r = await db.query('SELECT id FROM companies WHERE symbol = $1 LIMIT 1', [symbol]);
+    return r.rows?.[0]?.id ?? null;
   }
 
   /**
    * Persist company_id on investment_decisions when we resolved it from symbol.
    */
-  async _setDecisionCompanyId(db, isPg, decisionId, companyId) {
+  async _setDecisionCompanyId(db, _isPg, decisionId, companyId) {
     if (!db || !decisionId || !companyId) return;
-    if (isPg) {
-      await db.query('UPDATE investment_decisions SET company_id = $1, updated_at = NOW() WHERE id = $2', [companyId, decisionId]);
-    } else {
-      db.prepare('UPDATE investment_decisions SET company_id = ?, updated_at = datetime(\'now\') WHERE id = ?').run(companyId, decisionId);
-    }
+    const now = dialect.now();
+    await db.query(
+      `UPDATE investment_decisions SET company_id = $1, updated_at = ${now} WHERE id = $2`,
+      [companyId, decisionId]
+    );
   }
 
   async _getPrice(companyId, date) {
     const db = await this._getDb();
     if (!db) return null;
-    if (await this._pg()) {
-      const r = await db.query(`
-        SELECT close FROM daily_prices
-        WHERE company_id = $1 AND date <= $2
-        ORDER BY date DESC LIMIT 1
-      `, [companyId, date]);
-      return r.rows[0]?.close ?? null;
-    }
-    const result = db.prepare(`
+    const r = await db.query(`
       SELECT close FROM daily_prices
-      WHERE company_id = ? AND date <= ?
+      WHERE company_id = $1 AND date <= $2
       ORDER BY date DESC LIMIT 1
-    `).get(companyId, date);
-    return result?.close || null;
+    `, [companyId, date]);
+    return r.rows?.[0]?.close ?? null;
   }
 
   /**
@@ -559,21 +498,12 @@ class OutcomeCalculator {
   async _calculateMaxDrawdownGain(companyId, entryPrice, startDate, endDate) {
     const db = await this._getDb();
     if (!db) return { maxDrawdown: null, maxGain: null };
-    let prices;
-    if (await this._pg()) {
-      const r = await db.query(`
-        SELECT date, close FROM daily_prices
-        WHERE company_id = $1 AND date BETWEEN $2 AND $3
-        ORDER BY date
-      `, [companyId, startDate, endDate]);
-      prices = r.rows;
-    } else {
-      prices = db.prepare(`
-        SELECT date, close FROM daily_prices
-        WHERE company_id = ? AND date BETWEEN ? AND ?
-        ORDER BY date
-      `).all(companyId, startDate, endDate);
-    }
+    const r = await db.query(`
+      SELECT date, close FROM daily_prices
+      WHERE company_id = $1 AND date BETWEEN $2 AND $3
+      ORDER BY date
+    `, [companyId, startDate, endDate]);
+    const prices = r.rows || [];
 
     if (!prices.length) return { maxDrawdown: null, maxGain: null };
 
@@ -594,42 +524,23 @@ class OutcomeCalculator {
     const db = await this._getDb();
     if (!db) return null;
 
-    if (await this._pg()) {
-      const spyRes = await db.query("SELECT id FROM companies WHERE symbol = 'SPY' LIMIT 1");
-      const spy = spyRes.rows[0];
-      if (spy) {
-        const startPrice = await this._getPrice(spy.id, startDate);
-        const endPrice = await this._getPrice(spy.id, endDate);
-        if (startPrice != null && endPrice != null) return ((endPrice - startPrice) / startPrice) * 100;
-      }
-      try {
-        const s = await db.query(`
-          SELECT close FROM index_prices WHERE symbol = 'SPY' AND date <= $1 ORDER BY date DESC LIMIT 1
-        `, [startDate]);
-        const e = await db.query(`
-          SELECT close FROM index_prices WHERE symbol = 'SPY' AND date <= $1 ORDER BY date DESC LIMIT 1
-        `, [endDate]);
-        const startClose = s.rows[0]?.close;
-        const endClose = e.rows[0]?.close;
-        if (startClose != null && endClose != null) return ((endClose - startClose) / startClose) * 100;
-      } catch (_) { /* index_prices may not exist */ }
-      return null;
-    }
-
-    const spy = db.prepare("SELECT id FROM companies WHERE symbol = 'SPY'").get();
+    const spyRes = await db.query("SELECT id FROM companies WHERE symbol = 'SPY' LIMIT 1");
+    const spy = spyRes.rows?.[0];
     if (spy) {
       const startPrice = await this._getPrice(spy.id, startDate);
       const endPrice = await this._getPrice(spy.id, endDate);
       if (startPrice != null && endPrice != null) return ((endPrice - startPrice) / startPrice) * 100;
     }
     try {
-      const startPrice = db.prepare(`
-        SELECT close FROM index_prices WHERE symbol = 'SPY' AND date <= ? ORDER BY date DESC LIMIT 1
-      `).get(startDate);
-      const endPrice = db.prepare(`
-        SELECT close FROM index_prices WHERE symbol = 'SPY' AND date <= ? ORDER BY date DESC LIMIT 1
-      `).get(endDate);
-      if (startPrice?.close != null && endPrice?.close != null) return ((endPrice.close - startPrice.close) / startPrice.close) * 100;
+      const s = await db.query(`
+        SELECT close FROM index_prices WHERE symbol = 'SPY' AND date <= $1 ORDER BY date DESC LIMIT 1
+      `, [startDate]);
+      const e = await db.query(`
+        SELECT close FROM index_prices WHERE symbol = 'SPY' AND date <= $1 ORDER BY date DESC LIMIT 1
+      `, [endDate]);
+      const startClose = s.rows?.[0]?.close;
+      const endClose = e.rows?.[0]?.close;
+      if (startClose != null && endClose != null) return ((endClose - startClose) / startClose) * 100;
     } catch (_) { /* index_prices may not exist */ }
     return null;
   }
@@ -641,39 +552,23 @@ class OutcomeCalculator {
     const db = await this._getDb();
     if (!db) return { exited: false };
 
-    let exitDecision;
-    if (await this._pg()) {
-      const r = await db.query(`
-        SELECT decision_date, stock_price
-        FROM investment_decisions
-        WHERE investor_id = $1 AND (cusip = $2 OR symbol = $3) AND decision_type = 'sold_out' AND decision_date > $4
-        ORDER BY decision_date ASC LIMIT 1
-      `, [decision.investor_id, decision.cusip || null, decision.symbol, decision.decision_date]);
-      exitDecision = r.rows[0];
-      if (!exitDecision) {
-        try {
-          const h = await db.query(`
-            SELECT filing_date FROM investor_holdings
-            WHERE investor_id = $1 AND (cusip = $2 OR company_id = $3)
-            ORDER BY filing_date DESC LIMIT 1
-          `, [decision.investor_id, decision.cusip || null, decision.company_id]);
-          if (h.rows[0]) return { exited: false };
-        } catch (_) { /* investor_holdings may not exist */ }
-      }
-    } else {
-      exitDecision = db.prepare(`
-        SELECT decision_date, stock_price FROM investment_decisions
-        WHERE investor_id = ? AND (cusip = ? OR symbol = ?) AND decision_type = 'sold_out' AND decision_date > ?
-        ORDER BY decision_date ASC LIMIT 1
-      `).get(decision.investor_id, decision.cusip, decision.symbol, decision.decision_date);
-      if (!exitDecision) {
-        const latestHolding = db.prepare(`
+    const exitRes = await db.query(`
+      SELECT decision_date, stock_price
+      FROM investment_decisions
+      WHERE investor_id = $1 AND (cusip = $2 OR symbol = $3) AND decision_type = 'sold_out' AND decision_date > $4
+      ORDER BY decision_date ASC LIMIT 1
+    `, [decision.investor_id, decision.cusip || null, decision.symbol, decision.decision_date]);
+    let exitDecision = exitRes.rows?.[0];
+
+    if (!exitDecision) {
+      try {
+        const h = await db.query(`
           SELECT filing_date FROM investor_holdings
-          WHERE investor_id = ? AND (cusip = ? OR company_id = ?)
+          WHERE investor_id = $1 AND (cusip = $2 OR company_id = $3)
           ORDER BY filing_date DESC LIMIT 1
-        `).get(decision.investor_id, decision.cusip, decision.company_id);
-        if (latestHolding) return { exited: false };
-      }
+        `, [decision.investor_id, decision.cusip || null, decision.company_id]);
+        if (h.rows?.[0]) return { exited: false };
+      } catch (_) { /* investor_holdings may not exist */ }
     }
 
     if (exitDecision) {
@@ -727,30 +622,18 @@ class OutcomeCalculator {
     const entries = Object.entries(outcomes).filter(([, v]) => v !== undefined);
     if (entries.length === 0) return;
 
-    if (await this._pg()) {
-      const setParts = [];
-      const params = [];
-      let i = 1;
-      for (const [key, value] of entries) {
-        setParts.push(`${key} = $${i++}`);
-        params.push(value);
-      }
-      setParts.push("outcome_calculated_at = NOW()", "updated_at = NOW()");
-      params.push(decisionId);
-      const sql = `UPDATE investment_decisions SET ${setParts.join(', ')} WHERE id = $${i}`;
-      await db.query(sql, params);
-      return;
-    }
-
-    const fields = [];
-    const values = { id: decisionId };
+    const setParts = [];
+    const params = [];
+    let i = 1;
     for (const [key, value] of entries) {
-      fields.push(`${key} = @${key}`);
-      values[key] = value;
+      setParts.push(`${key} = $${i++}`);
+      params.push(value);
     }
-    fields.push('outcome_calculated_at = datetime(\'now\')', 'updated_at = datetime(\'now\')');
-    const sql = `UPDATE investment_decisions SET ${fields.join(', ')} WHERE id = @id`;
-    db.prepare(sql).run(values);
+    const now = dialect.now();
+    setParts.push(`outcome_calculated_at = ${now}`, `updated_at = ${now}`);
+    params.push(decisionId);
+    const sql = `UPDATE investment_decisions SET ${setParts.join(', ')} WHERE id = $${i}`;
+    await db.query(sql, params);
   }
 
   /**

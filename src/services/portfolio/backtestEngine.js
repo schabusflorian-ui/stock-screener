@@ -219,57 +219,61 @@ class BacktestEngine {
       returnDrag: Math.round((this._totalTransactionCosts / initialValue) * 100 * 100) / 100, // As percentage
     } : null;
 
-    // Save backtest to database
-    const database = await getDatabaseAsync();
+    // Save backtest to database (optional - continue even if save fails)
+    let backtestId = null;
+    try {
+      const database = await getDatabaseAsync();
+      const insertResult = await database.query(`
+        INSERT INTO backtests (
+          name, config, start_date, end_date, initial_value, benchmark_index_id,
+          rebalance_frequency, final_value, total_return_pct, cagr, volatility,
+          sharpe_ratio, sortino_ratio, max_drawdown, max_drawdown_start, max_drawdown_end,
+          calmar_ratio, benchmark_final_value, benchmark_cagr, alpha, beta,
+          tracking_error, information_ratio, total_trades, annual_returns,
+          value_series, drawdown_series, execution_time_ms
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+          $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28
+        )
+        RETURNING id
+      `, [
+        name,
+        JSON.stringify(config),
+        tradingDays[0],
+        tradingDays[tradingDays.length - 1],
+        initialValue,
+        benchmarkIndexId,
+        rebalanceFrequency,
+        finalValue,
+        totalReturnPct,
+        cagr,
+        volatility,
+        sharpeRatio,
+        sortinoRatio,
+        maxDrawdown * 100,
+        maxDrawdownStart,
+        maxDrawdownEnd,
+        calmarRatio,
+        benchmarkMetrics?.finalValue,
+        benchmarkMetrics?.cagr,
+        benchmarkMetrics?.alpha,
+        benchmarkMetrics?.beta,
+        benchmarkMetrics?.trackingError,
+        benchmarkMetrics?.informationRatio,
+        totalTrades,
+        JSON.stringify(annualReturnsList),
+        JSON.stringify(this._sampleSeries(valueSeries, 500)),
+        JSON.stringify(this._sampleSeries(drawdownSeries, 500)),
+        executionTimeMs
+      ]);
 
-    const insertResult = await database.query(`
-      INSERT INTO backtests (
-        name, config, start_date, end_date, initial_value, benchmark_index_id,
-        rebalance_frequency, final_value, total_return_pct, cagr, volatility,
-        sharpe_ratio, sortino_ratio, max_drawdown, max_drawdown_start, max_drawdown_end,
-        calmar_ratio, benchmark_final_value, benchmark_cagr, alpha, beta,
-        tracking_error, information_ratio, total_trades, annual_returns,
-        value_series, drawdown_series, execution_time_ms
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-        $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28
-      )
-      RETURNING id
-    `, [
-      name,
-      JSON.stringify(config),
-      tradingDays[0],
-      tradingDays[tradingDays.length - 1],
-      initialValue,
-      benchmarkIndexId,
-      rebalanceFrequency,
-      finalValue,
-      totalReturnPct,
-      cagr,
-      volatility,
-      sharpeRatio,
-      sortinoRatio,
-      maxDrawdown * 100,
-      maxDrawdownStart,
-      maxDrawdownEnd,
-      calmarRatio,
-      benchmarkMetrics?.finalValue,
-      benchmarkMetrics?.cagr,
-      benchmarkMetrics?.alpha,
-      benchmarkMetrics?.beta,
-      benchmarkMetrics?.trackingError,
-      benchmarkMetrics?.informationRatio,
-      totalTrades,
-      JSON.stringify(annualReturnsList),
-      JSON.stringify(this._sampleSeries(valueSeries, 500)),
-      JSON.stringify(this._sampleSeries(drawdownSeries, 500)),
-      executionTimeMs
-    ]);
-
-    const backtestId = insertResult.rows[0].id;
+      backtestId = insertResult?.rows?.[0]?.id ?? insertResult?.lastInsertRowid ?? null;
+    } catch (saveErr) {
+      console.warn('Backtest save failed (results still returned):', saveErr.message);
+    }
 
     const result = {
-      id: backtestId,
+      id: backtestId ?? 0,
       name,
       config: JSON.stringify(config),
       startDate: tradingDays[0],
@@ -320,7 +324,7 @@ class BacktestEngine {
       SELECT * FROM backtests WHERE id = $1
     `, [id]);
 
-    const backtest = result.rows[0];
+    const backtest = result.rows?.[0];
 
     if (!backtest) {
       throw new Error(`Backtest ${id} not found`);
@@ -378,7 +382,7 @@ class BacktestEngine {
         SELECT id, symbol, name FROM companies WHERE LOWER(symbol) = LOWER($1)
       `, [alloc.symbol]);
 
-      const company = companyResult.rows[0];
+      const company = companyResult.rows?.[0];
 
       if (!company) {
         throw new Error(`Symbol ${alloc.symbol} not found`);

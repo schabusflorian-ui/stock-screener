@@ -32,10 +32,12 @@ class SECBulkImporterUnified {
   }
 
   /**
-   * Initialize tag mappings in database
+   * Initialize tag mappings in database (async)
    */
-  initializeTagMappings() {
-    return insertTagMappings(this.database);
+  async initializeTagMappings() {
+    const { getDatabaseAsync } = require('../lib/db');
+    const database = await getDatabaseAsync();
+    return insertTagMappings(database);
   }
 
   /**
@@ -619,7 +621,7 @@ class SECBulkImporterUnified {
 
     // Initialize tag mappings
     console.log('🏷️  Initializing tag mappings...');
-    const tagCount = this.initializeTagMappings();
+    const tagCount = await this.initializeTagMappings();
     console.log(`✅ Loaded ${tagCount} tag mappings\n`);
 
     const results = {

@@ -59,24 +59,38 @@ class MonteCarloEngine {
     let distributionMoments = null;
     if (returns.length >= 30) {
       try {
-        // Calculate annualized returns for fitting (convert daily to annual)
-        const annualizedReturns = returns.map(r => r * Math.sqrt(TRADING_DAYS_PER_YEAR));
+        // Calculate annualized returns for distribution fitting via block compounding.
+        // Mean scales with T, std scales with sqrt(T). Use overlapping 252-day blocks
+        // to get a proper sample of annual returns from daily data.
+        const annualizedReturns = [];
+        const blockSize = TRADING_DAYS_PER_YEAR;
+        for (let i = 0; i <= returns.length - blockSize; i++) {
+          let compound = 1;
+          for (let j = 0; j < blockSize; j++) {
+            compound *= (1 + returns[i + j]);
+          }
+          annualizedReturns.push(compound - 1);
+        }
+        const effectiveAnnualized =
+          annualizedReturns.length >= 10
+            ? annualizedReturns
+            : returns.map(r => (1 + r) ** blockSize - 1); // fallback if too few blocks
 
         if (returnDistribution === 'auto') {
-          fittedDistribution = this.parametricDist.findBestFit(annualizedReturns);
+          fittedDistribution = this.parametricDist.findBestFit(effectiveAnnualized);
         } else if (returnDistribution !== 'normal') {
-          fittedDistribution = this.parametricDist.fitDistribution(annualizedReturns, returnDistribution);
+          fittedDistribution = this.parametricDist.fitDistribution(effectiveAnnualized, returnDistribution);
         } else {
           // Normal distribution - just calculate moments
           fittedDistribution = {
             type: 'normal',
             params: { mean: meanReturn, std: stdReturn },
-            moments: this.parametricDist.calculateMoments(annualizedReturns),
-            goodnessOfFit: this.parametricDist.ksTest(annualizedReturns, { mean: meanReturn, std: stdReturn }, 'normal')
+            moments: this.parametricDist.calculateMoments(effectiveAnnualized),
+            goodnessOfFit: this.parametricDist.ksTest(effectiveAnnualized, { mean: meanReturn, std: stdReturn }, 'normal')
           };
         }
 
-        distributionMoments = fittedDistribution.moments || this.parametricDist.calculateMoments(annualizedReturns);
+        distributionMoments = fittedDistribution.moments || this.parametricDist.calculateMoments(effectiveAnnualized);
       } catch (e) {
         console.warn('Failed to fit distribution:', e.message);
         // Fall back to normal
@@ -158,43 +172,48 @@ class MonteCarloEngine {
 
     const executionTimeMs = Date.now() - startTime;
 
-    // Save to database
-    const database = await getDatabaseAsync();
-    const insertResult = await database.query(`
-      INSERT INTO monte_carlo_runs (
-        name, config, portfolio_id, simulation_count, time_horizon_years,
-        return_model, initial_value, annual_contribution, annual_withdrawal,
-        inflation_rate, survival_rate, median_ending_value, mean_ending_value,
-        percentile_5, percentile_25, percentile_75, percentile_95,
-        median_depletion_year, percentile_paths, execution_time_ms
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
-      )
-      RETURNING id
-    `, [
-      name,
-      JSON.stringify(config),
-      portfolioId,
-      simulationCount,
-      timeHorizonYears,
-      returnModel,
-      initialValue,
-      annualContribution,
-      annualWithdrawal,
-      inflationRate,
-      survivalRate,
-      medianEndingValue,
-      meanEndingValue,
-      percentile5,
-      percentile25,
-      percentile75,
-      percentile95,
-      medianDepletionYear,
-      JSON.stringify(percentilePaths),
-      executionTimeMs
-    ]);
+    // Save to database (optional - continue even if save fails)
+    let simulationId = null;
+    try {
+      const database = await getDatabaseAsync();
+      const insertResult = await database.query(`
+        INSERT INTO monte_carlo_runs (
+          name, config, portfolio_id, simulation_count, time_horizon_years,
+          return_model, initial_value, annual_contribution, annual_withdrawal,
+          inflation_rate, survival_rate, median_ending_value, mean_ending_value,
+          percentile_5, percentile_25, percentile_75, percentile_95,
+          median_depletion_year, percentile_paths, execution_time_ms
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
+        )
+        RETURNING id
+      `, [
+        name,
+        JSON.stringify(config),
+        portfolioId,
+        simulationCount,
+        timeHorizonYears,
+        returnModel,
+        initialValue,
+        annualContribution,
+        annualWithdrawal,
+        inflationRate,
+        survivalRate,
+        medianEndingValue,
+        meanEndingValue,
+        percentile5,
+        percentile25,
+        percentile75,
+        percentile95,
+        medianDepletionYear,
+        JSON.stringify(percentilePaths),
+        executionTimeMs
+      ]);
 
-    const simulationId = insertResult.rows[0].id;
+      simulationId = insertResult?.rows?.[0]?.id ?? insertResult?.lastInsertRowid ?? null;
+    } catch (saveErr) {
+      console.warn('Monte Carlo save failed (results still returned):', saveErr.message);
+    }
 
     const result = {
       id: simulationId,
@@ -404,7 +423,7 @@ class MonteCarloEngine {
       SELECT * FROM monte_carlo_runs WHERE id = $1
     `, [id]);
 
-    const simulation = result.rows[0];
+    const simulation = result.rows?.[0];
 
     if (!simulation) {
       throw new Error(`Monte Carlo run ${id} not found`);
@@ -565,7 +584,7 @@ class MonteCarloEngine {
     );
 
     // Calculate portfolio returns
-    const returns = [];
+    const rawReturns = [];
     for (let i = 1; i < validDays.length; i++) {
       let portfolioReturn = 0;
 
@@ -583,8 +602,15 @@ class MonteCarloEngine {
         }
       }
 
-      returns.push(portfolioReturn);
+      rawReturns.push(portfolioReturn);
     }
+
+    // Winsorize returns: cap extreme daily returns to prevent bad data (e.g. unadjusted
+    // splits, price errors) from producing absurd simulated outcomes
+    const MAX_DAILY_RETURN = 0.50; // ±50% per day - beyond this is almost certainly bad data
+    const returns = rawReturns.map(r =>
+      Math.max(-MAX_DAILY_RETURN, Math.min(MAX_DAILY_RETURN, r))
+    );
 
     // Calculate mean and std
     const meanReturn = returns.length > 0
@@ -668,8 +694,12 @@ class MonteCarloEngine {
         yearReturn = this._normalRandom(meanReturn, stdReturn);
       }
 
+      // Clamp year return to prevent bad data/unit errors from producing absurd values
+      // (e.g. percent used as decimal: 7 instead of 0.07 would cause 8x per year)
+      const clampedReturn = Math.max(-0.99, Math.min(2, yearReturn));
+
       // Apply return
-      currentValue *= (1 + yearReturn);
+      currentValue *= (1 + clampedReturn);
 
       // Apply cash flows (end of year)
       currentValue += currentContribution;

@@ -297,31 +297,31 @@ function getOriginalTags(canonicalTag) {
 }
 
 /**
- * Insert tag mappings into database
+ * Insert tag mappings into database (async; use getDatabaseAsync() and pass result)
  */
-function insertTagMappings(database) {
+async function insertTagMappings(database) {
   console.log('\n📋 Inserting tag mappings into database...');
 
-  const stmt = database.prepare(`
-    INSERT OR REPLACE INTO tag_mappings
-    (original_tag, canonical_tag, statement_type, priority)
-    VALUES (?, ?, ?, ?)
-  `);
+  const sql = `
+    INSERT INTO tag_mappings (original_tag, canonical_tag, statement_type, priority)
+    VALUES ($1, $2, $3, $4)
+    ON CONFLICT(original_tag) DO UPDATE SET
+      canonical_tag = excluded.canonical_tag,
+      statement_type = excluded.statement_type,
+      priority = excluded.priority
+  `;
 
-  const insertMany = database.transaction((mappings) => {
-    for (const [original, canonical] of Object.entries(mappings)) {
-      const statementType = getStatementType(canonical);
-      const priority = getTagPriority(original);
-      stmt.run(original, canonical, statementType, priority);
-    }
-  });
+  for (const [original, canonical] of Object.entries(TAG_MAPPINGS)) {
+    const statementType = getStatementType(canonical);
+    const priority = getTagPriority(original);
+    await database.query(sql, [original, canonical, statementType, priority]);
+  }
 
-  insertMany(TAG_MAPPINGS);
+  const result = await database.query('SELECT COUNT(*) as count FROM tag_mappings');
+  const count = Number((result.rows && result.rows[0] && result.rows[0].count) ?? 0);
+  console.log(`✅ Inserted ${count} tag mappings\n`);
 
-  const count = database.prepare('SELECT COUNT(*) as count FROM tag_mappings').get();
-  console.log(`✅ Inserted ${count.count} tag mappings\n`);
-
-  return count.count;
+  return count;
 }
 
 module.exports = {
