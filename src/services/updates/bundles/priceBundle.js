@@ -92,9 +92,11 @@ class PriceBundle {
     await onProgress(5, 'Starting intraday update...');
 
     // Get watchlist and portfolio stocks for intraday updates
+    // FIXED: watchlist table has company_id, not symbol - need to join with companies
     const result = await database.query(`
       SELECT DISTINCT symbol FROM (
-        SELECT symbol FROM watchlist
+        SELECT c.symbol FROM watchlist w
+        JOIN companies c ON w.company_id = c.id
         UNION
         SELECT c.symbol FROM portfolio_holdings ph
         JOIN companies c ON ph.company_id = c.id
