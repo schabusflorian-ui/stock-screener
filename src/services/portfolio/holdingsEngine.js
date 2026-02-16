@@ -628,6 +628,9 @@ class HoldingsEngine {
 
     // Update portfolio total value
     const portfolio = await this.getPortfolio(portfolioId);
+    if (!portfolio) {
+      throw new Error(`Portfolio ${portfolioId} not found`);
+    }
     const totalValue = portfolio.current_cash + totalPositionsValue;
     await database.query(`
       UPDATE portfolios

@@ -31,7 +31,7 @@ import {
   Info,
   Edit3
 } from '../../components/icons';
-import { portfoliosAPI, simulateAPI, attributionAPI, pricesAPI, prismAPI } from '../../services/api';
+import { portfoliosAPI, simulateAPI, attributionAPI, pricesAPI, indicesAPI, prismAPI } from '../../services/api';
 import { usePreferences, useAutoRefresh } from '../../context/PreferencesContext';
 import { useSubscription } from '../../context/SubscriptionContext';
 import { FeatureGate, LockedIndicator } from '../../components/subscription';
@@ -632,12 +632,14 @@ function PortfolioDetailPage() {
       const benchmarkSymbol = preferences.defaultBenchmark || 'SPY';
       const [historyRes, benchmarkRes] = await Promise.all([
         portfoliosAPI.getValueHistory(id, period).catch(() => ({ data: { history: [] } })),
-        pricesAPI.get(benchmarkSymbol, { period }).catch(() => ({ data: { data: { prices: [] } } }))
+        // Use indicesAPI for ETFs (SPY, QQQ, DIA, IWM) - market_index_prices; avoids 404 from pricesAPI
+        indicesAPI.getPrices(benchmarkSymbol, period).catch(() => ({ data: { data: [] } }))
       ]);
 
       setValueHistory(historyRes.data.history || []);
-      // pricesAPI returns { data: { prices: [...] } }
-      const prices = benchmarkRes.data?.data?.prices || [];
+      // indicesAPI returns { data: { success, symbol, count, data: [...] } } - data.data is the prices array
+      const rawPrices = benchmarkRes.data?.data || [];
+      const prices = Array.isArray(rawPrices) ? rawPrices : [];
       setBenchmarkHistory(prices);
     } catch (err) {
       console.log('Chart data not available:', err.message);

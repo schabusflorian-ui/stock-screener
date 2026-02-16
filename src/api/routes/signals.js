@@ -344,7 +344,7 @@ router.get('/summary', async (req, res) => {
         FROM insider_transactions it
         WHERE it.transaction_code = 'P'
           AND it.acquisition_disposition = 'A'
-          AND it.transaction_date >= CURRENT_DATE - INTERVAL '60 days'
+          AND (it.transaction_date)::date >= CURRENT_DATE - INTERVAL '60 days'
           AND it.total_value >= 10000
       `);
       if (r.rows[0]) insiderStats = r.rows[0];

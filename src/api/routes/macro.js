@@ -112,7 +112,7 @@ router.get('/yield-curve', async (req, res) => {
 router.get('/yield-curve/history', async (req, res) => {
   try {
     const days = parseInt(req.query.days) || 90;
-    const dbConn = await db.getDatabaseAsync();
+    const dbConn = await getDatabaseAsync();
 
     // First try yield_curve table
     let result = await dbConn.query(`
@@ -159,7 +159,7 @@ router.get('/yield-curve/history', async (req, res) => {
 router.get('/indicators', async (req, res) => {
   try {
     const category = req.query.category;
-    const dbConn = await db.getDatabaseAsync();
+    const dbConn = await getDatabaseAsync();
 
     // Prefer view if it exists; otherwise latest per series from economic_indicators
     let result;
@@ -212,7 +212,7 @@ router.get('/indicators/:seriesId', async (req, res) => {
   try {
     const { seriesId } = req.params;
     const days = parseInt(req.query.days) || 365;
-    const dbConn = await db.getDatabaseAsync();
+    const dbConn = await getDatabaseAsync();
     const sid = seriesId.toUpperCase();
 
     const historyResult = await dbConn.query(`
@@ -248,7 +248,7 @@ router.get('/indicators/:seriesId', async (req, res) => {
  */
 router.get('/categories', async (req, res) => {
   try {
-    const dbConn = await db.getDatabaseAsync();
+    const dbConn = await getDatabaseAsync();
     const result = await dbConn.query(`
       SELECT category, COUNT(*) as series_count
       FROM economic_series_definitions
@@ -300,7 +300,7 @@ router.post('/update', async (req, res) => {
  */
 router.get('/status', async (req, res) => {
   try {
-    const dbConn = await db.getDatabaseAsync();
+    const dbConn = await getDatabaseAsync();
 
     const r1 = await dbConn.query(`SELECT MAX(observation_date) as latest_date FROM economic_indicators`);
     const latestIndicator = r1.rows && r1.rows[0] ? r1.rows[0] : null;
@@ -545,7 +545,7 @@ router.get('/opportunities', async (req, res) => {
  */
 router.get('/key-metrics', async (req, res) => {
   try {
-    const dbConn = await db.getDatabaseAsync();
+    const dbConn = await getDatabaseAsync();
 
     const getValue = async (seriesId) => {
       const result = await dbConn.query(`

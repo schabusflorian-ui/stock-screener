@@ -71,7 +71,7 @@ class CompositeDetector {
   }
 
   async getCompositeMetrics(companyId) {
-    const database = getDatabaseAsync();
+    const database = await getDatabaseAsync();
     const result = await database.query(`
       SELECT
         cm.roic,
@@ -158,13 +158,13 @@ class CompositeDetector {
    * Check for recent insider buying activity
    */
   async hasRecentInsiderBuying(companyId) {
-    const database = getDatabaseAsync();
+    const database = await getDatabaseAsync();
     const result = await database.query(`
       SELECT COUNT(*) as count
       FROM insider_transactions
       WHERE company_id = $1
         AND transaction_type = 'Buy'
-        AND transaction_date >= CURRENT_DATE - INTERVAL '30 days'
+        AND (transaction_date)::date >= CURRENT_DATE - INTERVAL '30 days'
     `, [companyId]);
 
     const row = result.rows[0];

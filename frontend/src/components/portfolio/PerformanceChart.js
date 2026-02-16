@@ -13,7 +13,7 @@ import {
   ResponsiveContainer,
   ReferenceLine
 } from 'recharts';
-import { pricesAPI } from '../../services/api';
+import { indicesAPI } from '../../services/api';
 import { useAskAI, createChartExtractor } from '../../hooks';
 import './PerformanceChart.css';
 
@@ -69,15 +69,15 @@ function PerformanceChart({
 
       const indexPromises = indexSymbols.map(async (idx) => {
         try {
-          // Use pricesAPI.get() which fetches from daily_prices table (current data)
-          const res = await pricesAPI.get(idx.symbol, { period });
-          // Response structure: { success: true, data: { prices: [...] } }
-          const prices = res.data?.data?.prices;
-          if (res.data.success && prices && prices.length > 0) {
-            // Sort ascending (oldest first) for chart
-            const sortedData = [...prices].sort((a, b) =>
-              new Date(a.date) - new Date(b.date)
-            );
+          // Use indicesAPI.getPrices() - fetches from market_index_prices (ETFs: SPY, QQQ, DIA)
+          const res = await indicesAPI.getPrices(idx.symbol, period);
+          // Response: { data: { success, symbol, count, data: [...] } } - data.data is the prices array
+          const prices = res.data?.data;
+          if (res.data?.success && Array.isArray(prices) && prices.length > 0) {
+            // Normalize: indices API returns { date, close } - add adjusted_close for chart compatibility
+            const sortedData = [...prices]
+              .map(p => ({ ...p, adjusted_close: p.adjusted_close ?? p.close }))
+              .sort((a, b) => new Date(a.date) - new Date(b.date));
             return { key: idx.key, data: sortedData };
           }
         } catch (e) {

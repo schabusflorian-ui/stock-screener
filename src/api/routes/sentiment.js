@@ -707,7 +707,7 @@ router.get('/insider-activity', async (req, res) => {
       JOIN companies c ON it.company_id = c.id
       JOIN insiders i ON it.insider_id = i.id
       WHERE it.transaction_type IN ('buy', 'purchase')
-        AND it.transaction_date >= CURRENT_DATE - INTERVAL '$1 days'
+        AND (it.transaction_date)::date >= CURRENT_DATE - INTERVAL '$1 days'
         AND it.total_value >= 50000
       ORDER BY it.total_value DESC
       LIMIT $2
@@ -731,7 +731,7 @@ router.get('/insider-activity', async (req, res) => {
       JOIN companies c ON it.company_id = c.id
       JOIN insiders i ON it.insider_id = i.id
       WHERE it.transaction_type IN ('sell', 'sale')
-        AND it.transaction_date >= CURRENT_DATE - INTERVAL '$1 days'
+        AND (it.transaction_date)::date >= CURRENT_DATE - INTERVAL '$1 days'
         AND it.total_value >= 100000
       ORDER BY it.total_value DESC
       LIMIT $2
@@ -751,7 +751,7 @@ router.get('/insider-activity', async (req, res) => {
         MAX(it.transaction_date) as last_activity
       FROM insider_transactions it
       JOIN companies c ON it.company_id = c.id
-      WHERE it.transaction_date >= CURRENT_DATE - INTERVAL '$1 days'
+      WHERE (it.transaction_date)::date >= CURRENT_DATE - INTERVAL '$1 days'
       GROUP BY c.symbol, c.name
       HAVING (buy_count > 0 OR sell_count > 0)
       ORDER BY (total_bought - total_sold) DESC
@@ -772,7 +772,7 @@ router.get('/insider-activity', async (req, res) => {
         SUM(CASE WHEN transaction_type IN ('sell', 'sale') THEN total_value ELSE 0 END) as total_sell_value,
         COUNT(DISTINCT company_id) as companies_with_activity
       FROM insider_transactions
-      WHERE transaction_date >= CURRENT_DATE - INTERVAL '$1 days'
+      WHERE (transaction_date)::date >= CURRENT_DATE - INTERVAL '$1 days'
     `, [parseInt(days)]);
     const overallStats = overallStatsQuery.rows[0];
 
@@ -945,7 +945,7 @@ router.get('/trending-enhanced', async (req, res) => {
           COALESCE(SUM(CASE WHEN transaction_type IN ('sell', 'sale') THEN total_value ELSE 0 END), 0) as net_value
         FROM insider_transactions
         WHERE company_id IN (${companyIdPlaceholders})
-          AND transaction_date >= CURRENT_DATE - INTERVAL '30 days'
+          AND (transaction_date)::date >= CURRENT_DATE - INTERVAL '30 days'
         GROUP BY company_id
       `, companyIds);
       const insiderRows = insiderRowsQuery.rows;

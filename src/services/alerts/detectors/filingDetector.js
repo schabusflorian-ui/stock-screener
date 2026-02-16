@@ -74,7 +74,7 @@ class FilingDetector {
         SUM(CASE WHEN transaction_type = 'Sell' OR transaction_code = 'S' THEN COALESCE(total_value, 0) ELSE 0 END) as "sellValue"
       FROM insider_transactions
       WHERE company_id = $1
-        AND transaction_date >= CURRENT_DATE - INTERVAL '30 days'
+        AND (transaction_date)::date >= CURRENT_DATE - INTERVAL '30 days'
     `, [companyId]);
 
     const row = result.rows[0];

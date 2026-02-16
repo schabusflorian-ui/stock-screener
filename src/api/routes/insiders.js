@@ -635,10 +635,10 @@ router.get('/stats/debug', async (req, res) => {
           MIN(transaction_date) as oldest,
           MAX(transaction_date) as newest,
           COUNT(*) as total,
-          COUNT(*) FILTER (WHERE transaction_date >= CURRENT_DATE - INTERVAL '1 year') as last_year,
-          COUNT(*) FILTER (WHERE transaction_date >= CURRENT_DATE - INTERVAL '6 months') as last_6_months,
-          COUNT(*) FILTER (WHERE transaction_date >= CURRENT_DATE - INTERVAL '3 months') as last_3_months,
-          COUNT(*) FILTER (WHERE transaction_date >= CURRENT_DATE - INTERVAL '1 month') as last_month
+          COUNT(*) FILTER (WHERE (transaction_date)::date >= CURRENT_DATE - INTERVAL '1 year') as last_year,
+          COUNT(*) FILTER (WHERE (transaction_date)::date >= CURRENT_DATE - INTERVAL '6 months') as last_6_months,
+          COUNT(*) FILTER (WHERE (transaction_date)::date >= CURRENT_DATE - INTERVAL '3 months') as last_3_months,
+          COUNT(*) FILTER (WHERE (transaction_date)::date >= CURRENT_DATE - INTERVAL '1 month') as last_month
         FROM insider_transactions
       `);
       dateRange = dateResult.rows[0];
@@ -706,7 +706,7 @@ router.get('/stats', async (req, res) => {
       
       const periodConfig = periodMap[period];
       if (periodConfig) {
-        whereClause = `WHERE it.transaction_date >= CURRENT_DATE - INTERVAL '${periodConfig.interval}'`;
+        whereClause = `WHERE (it.transaction_date)::date >= CURRENT_DATE - INTERVAL '${periodConfig.interval}'`;
         monthsBack = periodConfig.months;
       }
     }
@@ -734,7 +734,7 @@ router.get('/stats', async (req, res) => {
     console.log('[insiders/stats] Querying monthly trend...');
     const trendWhereClause = period === 'all' 
       ? '' 
-      : `WHERE transaction_date >= CURRENT_DATE - INTERVAL '${monthsBack} months'`;
+      : `WHERE (transaction_date)::date >= CURRENT_DATE - INTERVAL '${monthsBack} months'`;
       
     const monthlyTrendResult = await database.query(`
       SELECT

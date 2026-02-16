@@ -81,14 +81,14 @@ router.post('/holdings/refresh', async (req, res) => {
  * List all ETFs with optional filters and pagination
  * Query params: category, issuer, tier, essential, assetClass, search, sortBy, sortOrder, limit, offset
  */
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const {
       category, issuer, tier, essential, assetClass,
       search, q, sortBy, sortOrder, limit, offset
     } = req.query;
 
-    const result = etfResolver.list({
+    const result = await etfResolver.list({
       category,
       issuer,
       tier: tier ? parseInt(tier) : undefined,
@@ -101,16 +101,28 @@ router.get('/', (req, res) => {
       offset: offset ? parseInt(offset) : 0
     });
 
+    const etfs = Array.isArray(result.etfs) ? result.etfs : [];
     res.json({
       success: true,
-      count: result.etfs.length,
-      total: result.total,
-      limit: result.limit,
-      offset: result.offset,
-      etfs: result.etfs
+      count: etfs.length,
+      total: result.total ?? 0,
+      limit: result.limit ?? 50,
+      offset: result.offset ?? 0,
+      etfs
     });
   } catch (error) {
     console.error('Error fetching ETFs:', error);
+    const msg = error.message || '';
+    if (msg.includes('does not exist') || msg.includes('relation') || msg.includes('ENOTFOUND') || msg.includes('ETIMEDOUT')) {
+      return res.json({
+        success: true,
+        count: 0,
+        total: 0,
+        limit: parseInt(req.query.limit) || 50,
+        offset: parseInt(req.query.offset) || 0,
+        etfs: []
+      });
+    }
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -119,7 +131,7 @@ router.get('/', (req, res) => {
  * GET /api/etfs/search
  * Search ETFs by symbol or name
  */
-router.get('/search', (req, res) => {
+router.get('/search', async (req, res) => {
   try {
     const query = req.query.q || req.query.query;
     const limit = parseInt(req.query.limit) || 20;
@@ -128,8 +140,9 @@ router.get('/search', (req, res) => {
       return res.json({ success: true, etfs: [] });
     }
 
-    const etfs = etfResolver.search(query, limit);
-    res.json({ success: true, count: etfs.length, etfs });
+    const etfs = await etfResolver.search(query, limit);
+    const list = Array.isArray(etfs) ? etfs : [];
+    res.json({ success: true, count: list.length, etfs: list });
   } catch (error) {
     console.error('Error searching ETFs:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -140,10 +153,11 @@ router.get('/search', (req, res) => {
  * GET /api/etfs/essential
  * Get essential (must-have) ETFs
  */
-router.get('/essential', (req, res) => {
+router.get('/essential', async (req, res) => {
   try {
-    const etfs = etfResolver.getEssentials();
-    res.json({ success: true, count: etfs.length, etfs });
+    const etfs = await etfResolver.getEssentials();
+    const list = Array.isArray(etfs) ? etfs : [];
+    res.json({ success: true, count: list.length, etfs: list });
   } catch (error) {
     console.error('Error fetching essential ETFs:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -154,13 +168,13 @@ router.get('/essential', (req, res) => {
  * GET /api/etfs/categories
  * Get all ETF categories (hierarchical tree with counts)
  */
-router.get('/categories', (req, res) => {
+router.get('/categories', async (req, res) => {
   try {
     const withCounts = req.query.counts === 'true';
     const categories = withCounts
-      ? etfResolver.getCategoriesWithCounts()
+      ? await etfResolver.getCategoriesWithCounts()
       : etfResolver.getCategories();
-    res.json({ success: true, categories });
+    res.json({ success: true, categories: categories ?? [] });
   } catch (error) {
     console.error('Error fetching categories:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -192,10 +206,11 @@ router.get('/categories/:slug', (req, res) => {
  * GET /api/etfs/issuers
  * Get all ETF issuers with counts
  */
-router.get('/issuers', (req, res) => {
+router.get('/issuers', async (req, res) => {
   try {
-    const issuers = etfResolver.getIssuers();
-    res.json({ success: true, count: issuers.length, issuers });
+    const issuers = await etfResolver.getIssuers();
+    const list = Array.isArray(issuers) ? issuers : [];
+    res.json({ success: true, count: list.length, issuers: list });
   } catch (error) {
     console.error('Error fetching issuers:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -206,13 +221,14 @@ router.get('/issuers', (req, res) => {
  * GET /api/etfs/lazy-portfolios
  * Get all lazy (pre-defined) portfolios
  */
-router.get('/lazy-portfolios', (req, res) => {
+router.get('/lazy-portfolios', async (req, res) => {
   try {
     const featured = req.query.featured === 'true';
     const portfolios = featured
-      ? etfResolver.getFeaturedLazyPortfolios()
-      : etfResolver.getLazyPortfolios();
-    res.json({ success: true, count: portfolios.length, portfolios });
+      ? await etfResolver.getFeaturedLazyPortfolios()
+      : await etfResolver.getLazyPortfolios();
+    const list = Array.isArray(portfolios) ? portfolios : [];
+    res.json({ success: true, count: list.length, portfolios: list });
   } catch (error) {
     console.error('Error fetching lazy portfolios:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -223,9 +239,9 @@ router.get('/lazy-portfolios', (req, res) => {
  * GET /api/etfs/lazy-portfolios/:slug
  * Get lazy portfolio details with allocations
  */
-router.get('/lazy-portfolios/:slug', (req, res) => {
+router.get('/lazy-portfolios/:slug', async (req, res) => {
   try {
-    const portfolio = etfResolver.getLazyPortfolio(req.params.slug);
+    const portfolio = await etfResolver.getLazyPortfolio(req.params.slug);
 
     if (!portfolio) {
       return res.status(404).json({ success: false, error: 'Portfolio not found' });

@@ -247,7 +247,7 @@ class SignalEnhancements {
         it.title
       FROM insider_transactions it
       WHERE it.company_id = $1
-        AND it.transaction_date >= CURRENT_DATE - INTERVAL '180 days'
+        AND (it.transaction_date)::date >= CURRENT_DATE - INTERVAL '180 days'
       ORDER BY it.transaction_date DESC
     `, [companyId]);
 
@@ -365,7 +365,7 @@ class SignalEnhancements {
       LEFT JOIN insiders i ON it.insider_id = i.id
       WHERE it.transaction_code = 'P'
         AND it.acquisition_disposition = 'A'
-        AND it.transaction_date >= CURRENT_DATE - INTERVAL '90 days'
+        AND (it.transaction_date)::date >= CURRENT_DATE - INTERVAL '90 days'
       ORDER BY it.total_value DESC NULLS LAST
       LIMIT $1
     `, [limit]);
