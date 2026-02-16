@@ -366,7 +366,7 @@ class QuiverQuantitativeService {
     if (isUsingPostgres()) {
       const match = lookbackDays.match(/^-(\d+)\s+days?$/);
       const days = match ? match[1] : '90';
-      dateCondition = `ct.transaction_date >= CURRENT_DATE - INTERVAL '${days} days'`;
+      dateCondition = `(ct.transaction_date)::date >= CURRENT_DATE - INTERVAL '${days} days'`;
     } else {
       dateCondition = `ct.transaction_date >= date('now', '${lookbackDays}')`;
     }
@@ -501,7 +501,7 @@ class QuiverQuantitativeService {
       // Parse "-30 days" or "-90 days" etc.
       const match = lookbackDays.match(/^-(\d+)\s+days?$/);
       const days = match ? match[1] : '30';
-      dateCondition = `ct.transaction_date >= CURRENT_DATE - INTERVAL '${days} days'`;
+      dateCondition = `(ct.transaction_date)::date >= CURRENT_DATE - INTERVAL '${days} days'`;
     } else {
       dateCondition = `ct.transaction_date >= date('now', '${lookbackDays}')`;
     }
@@ -553,19 +553,19 @@ class QuiverQuantitativeService {
       try {
         // Build dialect-aware date calculations
         const dateFilter = isUsingPostgres()
-          ? `ct.transaction_date >= CURRENT_DATE - INTERVAL '2 years'`
+          ? `(ct.transaction_date)::date >= CURRENT_DATE - INTERVAL '2 years'`
           : `ct.transaction_date >= date('now', '-2 years')`;
 
         const date30Condition = isUsingPostgres()
-          ? `dp_30.date = ct.transaction_date + INTERVAL '30 days'`
+          ? `dp_30.date = (ct.transaction_date)::date + INTERVAL '30 days'`
           : `date(dp_30.date) = date(ct.transaction_date, '+30 days')`;
 
         const date90Condition = isUsingPostgres()
-          ? `dp_90.date = ct.transaction_date + INTERVAL '90 days'`
+          ? `dp_90.date = (ct.transaction_date)::date + INTERVAL '90 days'`
           : `date(dp_90.date) = date(ct.transaction_date, '+90 days')`;
 
         const tradeDateCondition = isUsingPostgres()
-          ? `dp.date = ct.transaction_date`
+          ? `dp.date = (ct.transaction_date)::date`
           : `date(dp.date) = date(ct.transaction_date)`;
 
         // Get all trades for this politician in last 2 years

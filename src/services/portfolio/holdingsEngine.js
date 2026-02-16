@@ -634,17 +634,18 @@ class HoldingsEngine {
     if (!portfolio) {
       throw new Error(`Portfolio ${portfolioId} not found`);
     }
-    const totalValue = portfolio.current_cash + totalPositionsValue;
+    const currentCash = Number(portfolio.current_cash) || 0;
+    const totalValue = currentCash + totalPositionsValue;
     await database.query(`
       UPDATE portfolios
       SET current_cash = $1, current_value = $2, updated_at = CURRENT_TIMESTAMP
       WHERE id = $3
-    `, [portfolio.current_cash, totalValue, portfolioId]);
+    `, [currentCash, totalValue, portfolioId]);
 
     return {
       positionsUpdated: positions.length,
       positionsValue: totalPositionsValue,
-      cashValue: portfolio.current_cash,
+      cashValue: currentCash,
       totalValue
     };
   }

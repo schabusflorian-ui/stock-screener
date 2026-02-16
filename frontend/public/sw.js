@@ -3,15 +3,13 @@
  * Provides intelligent caching and offline support (Tier 4 optimization)
  */
 
-const CACHE_VERSION = 'v2'; // v2: never reject API fetch; return 503 on network failure
+const CACHE_VERSION = 'v4'; // v4: bump to clear stale chunks after deploy; ErrorBoundary handles ChunkLoadError
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
 const API_CACHE = `api-${CACHE_VERSION}`;
 const IMAGE_CACHE = `images-${CACHE_VERSION}`;
 
-// Static assets to pre-cache
+// Static assets to pre-cache (exclude HTML so deploy serves fresh index; JS/CSS are network-first)
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
   '/manifest.json'
 ];
 
@@ -100,7 +98,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Handle static assets
+  // HTML/JS/CSS: network-first so deploy always serves new chunks (avoids ChunkLoadError)
+  if (isHtmlJsCss(url.pathname)) {
+    event.respondWith(handleHtmlJsCssRequest(event.request));
+    return;
+  }
+
+  // Other static assets (fonts, etc.)
   if (isStaticAsset(url.pathname)) {
     event.respondWith(handleStaticRequest(event.request));
     return;
@@ -192,7 +196,38 @@ async function handleApiRequest(request, url) {
 }
 
 /**
- * Handle static asset requests
+ * Paths that must never be cache-first (after deploy, new hashes; old chunks 404)
+ */
+function isHtmlJsCss(pathname) {
+  return pathname === '/' ||
+         pathname === '/index.html' ||
+         pathname.endsWith('.js') ||
+         pathname.endsWith('.css');
+}
+
+/**
+ * Network-first for HTML/JS/CSS so users always get current chunks after deploy
+ */
+async function handleHtmlJsCssRequest(request) {
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(STATIC_CACHE);
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch (err) {
+    const cached = await caches.open(STATIC_CACHE).then((c) => c.match(request));
+    return cached || response503();
+  }
+}
+
+function response503() {
+  return new Response('Service Unavailable', { status: 503, statusText: 'Service Unavailable' });
+}
+
+/**
+ * Handle other static asset requests (fonts, etc.) – cache-first
  */
 async function handleStaticRequest(request) {
   const cache = await caches.open(STATIC_CACHE);
@@ -298,13 +333,10 @@ async function refreshCache(cache, request, key) {
 }
 
 /**
- * Check if path is a static asset
+ * Check if path is a static asset (excluding HTML/JS/CSS handled by isHtmlJsCss)
  */
 function isStaticAsset(pathname) {
-  return pathname.endsWith('.js') ||
-         pathname.endsWith('.css') ||
-         pathname.endsWith('.html') ||
-         pathname.endsWith('.woff2') ||
+  return pathname.endsWith('.woff2') ||
          pathname.endsWith('.woff') ||
          pathname.endsWith('.ttf');
 }

@@ -327,7 +327,7 @@ router.get('/company/:symbol/chart', async (req, res) => {
         COUNT(DISTINCT insider_id)::int as unique_insiders
       FROM insider_transactions
       WHERE company_id = $1
-        AND transaction_date >= $2::date
+        AND (transaction_date)::date >= $2::date
         AND transaction_type IN ('buy', 'sell')
       GROUP BY TO_CHAR(transaction_date, 'YYYY-MM')
       ORDER BY month ASC
@@ -349,7 +349,7 @@ router.get('/company/:symbol/chart', async (req, res) => {
       FROM insider_transactions it
       JOIN insiders i ON it.insider_id = i.id
       WHERE it.company_id = $1
-        AND it.transaction_date >= $2::date
+        AND (it.transaction_date)::date >= $2::date
         AND it.transaction_type IN ('buy', 'sell')
       ORDER BY it.transaction_date ASC
     `, [company.id, startDateStr]);
@@ -478,7 +478,7 @@ router.get('/cluster-buying', async (req, res) => {
       JOIN companies c ON it.company_id = c.id
       JOIN insiders i ON it.insider_id = i.id
       WHERE it.transaction_type = 'buy'
-        AND it.transaction_date >= $1::date
+        AND (it.transaction_date)::date >= $1::date
         AND (it.is_derivative = 0 OR it.is_derivative IS NULL)
       GROUP BY c.id
       HAVING COUNT(DISTINCT it.insider_id) >= $2

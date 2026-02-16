@@ -788,7 +788,7 @@ class TradingAgent {
         MAX(transaction_date) as last_trade_date
       FROM congressional_trades
       WHERE company_id = $1
-        AND transaction_date >= CURRENT_DATE - INTERVAL '90 days'`,
+        AND (transaction_date)::date >= CURRENT_DATE - INTERVAL '90 days'`,
       [companyId]
     );
     const shortInterest = await this.db.oneOrNone(

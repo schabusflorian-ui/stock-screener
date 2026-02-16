@@ -1,9 +1,10 @@
 // frontend/src/services/api.js
 import axios from 'axios';
 
+// Same-origin when REACT_APP_API_URL unset (e.g. production) to avoid wrong host / connection refused
 const API_BASE_URL = process.env.REACT_APP_API_URL
   ? `${process.env.REACT_APP_API_URL}/api`
-  : '/api';  // Use relative URL to leverage CRA proxy in development
+  : (typeof window !== 'undefined' ? `${window.location.origin}/api` : '/api');
 
 // SECURITY NOTE: Admin bypass mechanism was removed.
 // All authentication must go through proper backend JWT/session validation.

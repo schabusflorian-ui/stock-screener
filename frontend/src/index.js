@@ -39,8 +39,7 @@ if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
           const newWorker = registration.installing;
           newWorker.addEventListener('statechange', () => {
             if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              // New version available
-              console.log('[SW] New version available');
+              console.log('[SW] New version available - refresh to update');
             }
           });
         });
