@@ -95,7 +95,7 @@ class FilingDetector {
       WHERE it.company_id = $1
         AND (it.transaction_type = 'Buy' OR it.transaction_code = 'P')
         AND it.total_value >= 500000
-        AND it.transaction_date >= CURRENT_DATE - INTERVAL '7 days'
+        AND (it.transaction_date)::date >= CURRENT_DATE - INTERVAL '7 days'
       ORDER BY it.total_value DESC
       LIMIT 5
     `, [companyId]);
@@ -117,7 +117,7 @@ class FilingDetector {
       WHERE it.company_id = $1
         AND (it.transaction_type = 'Buy' OR it.transaction_code = 'P')
         AND it.total_value >= 100000
-        AND it.transaction_date >= CURRENT_DATE - INTERVAL '7 days'
+        AND (it.transaction_date)::date >= CURRENT_DATE - INTERVAL '7 days'
       ORDER BY it.transaction_date DESC
       LIMIT 5
     `, [companyId]);

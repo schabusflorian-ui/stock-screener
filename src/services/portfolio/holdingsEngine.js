@@ -594,6 +594,9 @@ class HoldingsEngine {
   // ============================================
 
   async refreshPositionValues(portfolioId) {
+    if (portfolioId == null) {
+      throw new Error('Portfolio ID is required for refreshPositionValues');
+    }
     const database = await getDatabaseAsync();
     const positions = await this.getPositions(portfolioId);
     let totalPositionsValue = 0;
@@ -667,23 +670,18 @@ class HoldingsEngine {
       totalDividends += position.total_dividends || 0;
     }
 
-    const totalValue = portfolio.current_cash + positionsValue;
-    const netInvested = (portfolio.total_deposited || 0) - (portfolio.total_withdrawn || 0);
-    // Total return = how much more (or less) you have than what you put in (consistent with Total Value)
-    const totalReturn = totalValue - netInvested;
-
     return {
       portfolioId,
       cashValue: portfolio.current_cash,
       positionsValue,
-      totalValue,
+      totalValue: portfolio.current_cash + positionsValue,
       totalCostBasis,
       unrealizedPnl,
       realizedPnl,
       totalDividends,
-      totalReturn,
+      totalReturn: unrealizedPnl + realizedPnl + totalDividends,
       positionsCount: positions.length,
-      netInvested
+      netInvested: portfolio.total_deposited - portfolio.total_withdrawn
     };
   }
 

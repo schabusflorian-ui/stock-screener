@@ -910,9 +910,11 @@ class MasterScheduler {
    */
   async runEUIPOCheck(source = 'all') {
     const { IPOTracker } = require('../services/ipoTracker');
-    const db = require('../database');
+    const { getDatabaseAsync, isUsingPostgres } = require('../lib/db');
 
-    const database = db.getDatabase();
+    const database = isUsingPostgres()
+      ? await getDatabaseAsync()
+      : require('../database').getDatabase();
     const ipoTracker = new IPOTracker(database);
 
     const days = 7; // Check last 7 days of prospectuses
@@ -952,20 +954,34 @@ class MasterScheduler {
   async runInsiderRefresh() {
     const InsiderTracker = require('../services/insiderTracker');
     const SECFilingFetcher = require('../services/secFilingFetcher');
-    const db = require('../database');
+    const { getDatabaseAsync, isUsingPostgres } = require('../lib/db');
 
-    const database = db.getDatabase();
+    const database = isUsingPostgres()
+      ? await getDatabaseAsync()
+      : require('../database').getDatabase();
     const secFetcher = new SECFilingFetcher();
     const insiderTracker = new InsiderTracker(secFetcher);
 
     // Get top companies by market cap to check for insider activity
-    const companies = database.prepare(`
-      SELECT id, symbol, cik
-      FROM companies
-      WHERE cik IS NOT NULL AND market_cap > 1000000000
-      ORDER BY market_cap DESC
-      LIMIT 100
-    `).all();
+    let companies;
+    if (isUsingPostgres()) {
+      const result = await database.query(`
+        SELECT id, symbol, cik
+        FROM companies
+        WHERE cik IS NOT NULL AND market_cap > 1000000000
+        ORDER BY market_cap DESC
+        LIMIT 100
+      `);
+      companies = result.rows || [];
+    } else {
+      companies = database.prepare(`
+        SELECT id, symbol, cik
+        FROM companies
+        WHERE cik IS NOT NULL AND market_cap > 1000000000
+        ORDER BY market_cap DESC
+        LIMIT 100
+      `).all();
+    }
 
     this.log(`Checking insider transactions for ${companies.length} companies...`);
 
@@ -998,9 +1014,11 @@ class MasterScheduler {
   async runMarketIndicatorUpdate() {
     const { HistoricalMarketIndicatorsService } = require('../services/historicalMarketIndicators');
     const { FREDService } = require('../services/dataProviders/fredService');
-    const db = require('../database');
+    const { getDatabaseAsync, isUsingPostgres } = require('../lib/db');
 
-    const database = db.getDatabase();
+    const database = isUsingPostgres()
+      ? await getDatabaseAsync()
+      : require('../database').getDatabase();
     const service = new HistoricalMarketIndicatorsService(database);
     const fredService = new FREDService();
 

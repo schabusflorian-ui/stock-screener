@@ -448,7 +448,7 @@ class OpportunityScanner {
         FROM congressional_trades ct
         JOIN companies c ON ct.company_id = c.id
         LEFT JOIN price_metrics pm ON pm.company_id = c.id
-        WHERE ct.transaction_date >= CURRENT_DATE - INTERVAL '$1 days'
+        WHERE ct.transaction_date >= CURRENT_DATE - ($1::text || ' days')::interval
           AND c.symbol NOT LIKE 'CIK_%'
         GROUP BY c.id, c.symbol, c.name, c.sector, pm.last_price, pm.market_cap
         HAVING COUNT(CASE WHEN ct.transaction_type = 'purchase' THEN 1 END) > COUNT(CASE WHEN ct.transaction_type = 'sale' THEN 1 END)

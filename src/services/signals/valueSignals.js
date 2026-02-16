@@ -164,6 +164,7 @@ class ValueSignals {
     const dateFilter = isUsingPostgres()
       ? "CURRENT_DATE - INTERVAL '90 days'"
       : "date('now', '-90 days')";
+    const txDateCol = isUsingPostgres() ? '(it.transaction_date)::date' : 'date(it.transaction_date)';
     const result = await database.query(
       `
         SELECT
@@ -177,7 +178,7 @@ class ValueSignals {
         WHERE it.company_id = $1
           AND it.transaction_code = 'P'
           AND it.acquisition_disposition = 'A'
-          AND it.transaction_date >= ${dateFilter}
+          AND ${txDateCol} >= ${dateFilter}
         ORDER BY it.transaction_date DESC
       `,
       [companyId]

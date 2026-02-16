@@ -473,7 +473,7 @@ class ScreeningService {
         (
           SELECT COUNT(*) FROM insider_transactions it
           WHERE it.company_id = c.id
-            AND it.transaction_date >= CURRENT_DATE - INTERVAL '365 days'
+            AND (it.transaction_date)::date >= CURRENT_DATE - INTERVAL '365 days'
             AND it.transaction_type IN ('P', 'Purchase', 'BUY')
         ) >= $${paramCounter++}
       )`);
@@ -486,7 +486,7 @@ class ScreeningService {
       where.push(`EXISTS (
         SELECT 1 FROM insider_transactions it
         WHERE it.company_id = c.id
-          AND it.transaction_date >= CURRENT_DATE - INTERVAL '90 days'
+          AND (it.transaction_date)::date >= CURRENT_DATE - INTERVAL '90 days'
           AND it.transaction_type IN ('P', 'Purchase', 'BUY')
           AND it.shares > 0
       )`);

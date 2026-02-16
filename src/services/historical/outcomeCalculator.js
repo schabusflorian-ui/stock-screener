@@ -258,7 +258,7 @@ class OutcomeCalculator {
     if (!db) throw new Error('Database not available');
 
     // Dialect-aware date filter
-    const intervalMap = { 1y: '1 year', 3y: '3 years', 5y: '5 years', 10y: '10 years' };
+    const intervalMap = { '1y': '1 year', '3y': '3 years', '5y': '5 years', '10y': '10 years' };
     const interval = intervalMap[periodType];
     let dateFilter = '';
     if (interval) {
