@@ -237,7 +237,7 @@ class UpdateOrchestrator extends EventEmitter {
           current_step = $4,
           updated_at = CURRENT_TIMESTAMP
         WHERE job_key = $5
-      `, ['running', true, 0, 'Starting...', jobKey]);
+      `, ['running', 1, 0, 'Starting...', jobKey]);
 
       this.emit('jobStarted', { jobKey, runId });
       this.log(`Starting job: ${jobKey} (${triggerType})`);
@@ -277,7 +277,7 @@ class UpdateOrchestrator extends EventEmitter {
           successful_runs = successful_runs + CASE WHEN $6 = 'completed' THEN 1 ELSE 0 END,
           failed_runs = failed_runs + CASE WHEN $7 = 'failed' THEN 1 ELSE 0 END,
           status = 'idle',
-          is_running = false,
+          is_running = 0,
           current_progress = 0,
           current_step = NULL,
           updated_at = CURRENT_TIMESTAMP
@@ -321,7 +321,7 @@ class UpdateOrchestrator extends EventEmitter {
           successful_runs = successful_runs + CASE WHEN $6 = 'completed' THEN 1 ELSE 0 END,
           failed_runs = failed_runs + CASE WHEN $7 = 'failed' THEN 1 ELSE 0 END,
           status = 'idle',
-          is_running = false,
+          is_running = 0,
           current_progress = 0,
           current_step = NULL,
           updated_at = CURRENT_TIMESTAMP
@@ -416,7 +416,7 @@ class UpdateOrchestrator extends EventEmitter {
         current_step = $4,
         updated_at = CURRENT_TIMESTAMP
       WHERE job_key = $5
-    `, ['running', true, progress, step, jobKey]);
+    `, ['running', 1, progress, step, jobKey]);
     this.emit('progress', { jobKey, runId, progress, step });
   }
 
