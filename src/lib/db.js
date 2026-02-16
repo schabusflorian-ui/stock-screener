@@ -70,8 +70,14 @@ function initSQLite() {
         return { rows: stmt.all(...normalizedParams) };
       }
       const result = stmt.run(...normalizedParams);
+      // Handle RETURNING clause for INSERT statements (SQLite 3.35+ compatibility)
+      // Return the inserted row id if RETURNING is present and insert succeeded
+      const hasReturning = convertedSql.toUpperCase().includes('RETURNING');
+      const rows = (hasReturning && result.changes > 0)
+        ? [{ id: result.lastInsertRowid }]
+        : [];
       return {
-        rows: [],
+        rows,
         rowCount: result.changes,
         lastInsertRowid: result.lastInsertRowid
       };
