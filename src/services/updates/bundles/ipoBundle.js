@@ -198,8 +198,7 @@ class IPOBundle {
         SELECT * FROM ipo_tracker
         WHERE status IN ('PRICED', 'APPROVED', 'EXPECTED')
           AND (
-            expected_trade_date <= $1
-            OR first_trade_date <= $1
+            trading_date <= $1
             OR pricing_date <= $1
           )
       `, [today]);
@@ -221,7 +220,7 @@ class IPOBundle {
           await database.query(`
             UPDATE ipo_tracker
             SET status = 'TRADING',
-                first_trade_date = COALESCE(first_trade_date, $1),
+                trading_date = COALESCE(trading_date, $1),
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = $2
           `, [today, ipo.id]);
