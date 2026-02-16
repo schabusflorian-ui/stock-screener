@@ -27,4 +27,4 @@ async function migrate(db) {
   console.log('✅ ml_models table ready');
 }
 
-module.exports = { migrate };
+module.exports = migrate;

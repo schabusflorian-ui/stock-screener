@@ -45,8 +45,11 @@ const POSTGRES_MIGRATIONS = [
   '016-add-agent-recommendations-postgres.js',
   '017-add-index-prices-postgres.js',
   '018-add-trading-regime-tables-postgres.js',
+  '018-add-congressional-postgres.js',
   '019-backfill-analyst-conversations-analyst-id-postgres.js',
+  '019-add-tracked-subreddits-region-postgres.js',
   '020-add-trading-signals-tables-postgres.js',
+  '021-add-ml-models-postgres.js',
   '022-add-investor-famous-columns-postgres.js',
   '023-agent-universe-and-subreddit-region-postgres.js',
   '024-fix-user-factors-boolean-columns-postgres.js',
@@ -55,12 +58,14 @@ const POSTGRES_MIGRATIONS = [
   '026-fix-user-factors-higher-is-better-postgres.js',
   '027-add-backtests-postgres.js',
   '028-add-update-locks-unique-postgres.js',
+  '028-add-update-locks-job-key-unique-postgres.js',
   '018-add-congressional-postgres.js',
   '019-add-tracked-subreddits-region-postgres.js',
   'add-postgres-alert-system.js',
   'add-dividend-metrics.js',
   'add-price-metrics.js',
   'add-help-tables.js',
+  '029-seed-update-jobs-postgres.js',
 ];
 
 async function runMigrations() {
