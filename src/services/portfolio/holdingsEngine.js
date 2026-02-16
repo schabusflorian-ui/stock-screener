@@ -664,18 +664,23 @@ class HoldingsEngine {
       totalDividends += position.total_dividends || 0;
     }
 
+    const totalValue = portfolio.current_cash + positionsValue;
+    const netInvested = (portfolio.total_deposited || 0) - (portfolio.total_withdrawn || 0);
+    // Total return = how much more (or less) you have than what you put in (consistent with Total Value)
+    const totalReturn = totalValue - netInvested;
+
     return {
       portfolioId,
       cashValue: portfolio.current_cash,
       positionsValue,
-      totalValue: portfolio.current_cash + positionsValue,
+      totalValue,
       totalCostBasis,
       unrealizedPnl,
       realizedPnl,
       totalDividends,
-      totalReturn: unrealizedPnl + realizedPnl + totalDividends,
+      totalReturn,
       positionsCount: positions.length,
-      netInvested: portfolio.total_deposited - portfolio.total_withdrawn
+      netInvested
     };
   }
 

@@ -37,11 +37,55 @@ class ErrorBoundary extends React.Component {
     this.setState({ hasError: false, error: null, errorInfo: null });
   };
 
+  /** Hard refresh after deploy: clear SW and caches, then reload */
+  handleChunkLoadRefresh = () => {
+    const clearAndReload = () => {
+      window.location.reload();
+    };
+    if ('caches' in window) {
+      caches.keys().then((names) => {
+        Promise.all(names.map((name) => caches.delete(name))).then(clearAndReload);
+      }).catch(clearAndReload);
+    } else {
+      clearAndReload();
+    }
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then((regs) => {
+        regs.forEach((reg) => reg.unregister());
+      });
+    }
+  };
+
   render() {
     if (this.state.hasError) {
+      const error = this.state.error;
+      const isChunkLoadError = error &&
+        (error.name === 'ChunkLoadError' ||
+         (error.message && (error.message.includes('Loading chunk') || error.message.includes('Loading CSS chunk'))));
+
       // Custom fallback UI provided
-      if (this.props.fallback) {
+      if (this.props.fallback && !isChunkLoadError) {
         return this.props.fallback;
+      }
+
+      // ChunkLoadError: new deploy, stale cache – prompt to refresh
+      if (isChunkLoadError) {
+        return (
+          <div className="error-boundary">
+            <div className="error-boundary-content">
+              <div className="error-icon"><AlertTriangle size={48} /></div>
+              <h2 className="error-title">New version available</h2>
+              <p className="error-message">
+                The app was updated. Refresh to load the latest version.
+              </p>
+              <div className="error-actions">
+                <button className="error-retry-btn" onClick={this.handleChunkLoadRefresh}>
+                  Refresh page
+                </button>
+              </div>
+            </div>
+          </div>
+        );
       }
 
       // Default fallback UI
