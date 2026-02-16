@@ -50,7 +50,20 @@ Eliminate sync SQLite usage and standardize on `getDatabaseAsync()` + `database.
 | tagMappings.js | ✅ Done | insertTagMappings async; uses database.query() |
 | importSECBulk.js | Partial | initializeTagMappings async + await; rest still sync |
 | importSECBulkUnified.js | Partial | initializeTagMappings async + await; rest still sync |
-| verifySECImport.js | ⏳ Pending | Many prepare calls |
+| verifySECImport.js | ✅ Done | getDatabaseAsync + query; all methods async |
+
+### Scripts
+| File | Status | Notes |
+|------|--------|-------|
+| migrate-data-to-user.js | ✅ Done | getDatabaseAsync + dialect.tableExistsQuery/columnInfoQuery |
+| backfill-market-indicator-history.js | ⏳ Pending | |
+| backfill-metrics.js | ⏳ Pending | |
+| import-etf-data.js | ⏳ Pending | |
+
+### Lib
+| File | Status | Notes |
+|------|--------|-------|
+| migrationRunner.js | ✅ Done | query() only; no prepare/get/run |
 
 ---
 

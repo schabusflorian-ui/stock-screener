@@ -3,7 +3,7 @@
  * Provides intelligent caching and offline support (Tier 4 optimization)
  */
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2'; // v2: never reject API fetch; return 503 on network failure
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
 const API_CACHE = `api-${CACHE_VERSION}`;
 const IMAGE_CACHE = `images-${CACHE_VERSION}`;
@@ -89,9 +89,14 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Handle API requests
+  // Handle API requests - wrap so we never leave FetchEvent with a rejected promise
   if (url.pathname.startsWith('/api/')) {
-    event.respondWith(handleApiRequest(event.request, url));
+    event.respondWith(
+      handleApiRequest(event.request, url).catch((err) => {
+        console.warn('[SW] handleApiRequest error:', err);
+        return networkErrorResponse(event.request.url);
+      })
+    );
     return;
   }
 
@@ -115,24 +120,42 @@ self.addEventListener('fetch', (event) => {
 });
 
 /**
+ * Return a JSON error response so the client always gets a Response (no uncaught rejections)
+ */
+function networkErrorResponse(url) {
+  return new Response(
+    JSON.stringify({ error: 'Network error', message: 'Service unavailable. Please try again.' }),
+    {
+      status: 503,
+      statusText: 'Service Unavailable',
+      headers: { 'Content-Type': 'application/json' }
+    }
+  );
+}
+
+/**
  * Handle API requests with intelligent caching
+ * Never rejects: returns synthetic 503 if network fails and no cache is available.
  */
 async function handleApiRequest(request, url) {
   const cacheRule = findCacheRule(url.pathname);
 
   if (!cacheRule) {
-    // No caching for unknown endpoints
-    return fetch(request);
+    // No caching for unknown endpoints - still catch so we don't leave promise rejected
+    try {
+      return await fetch(request);
+    } catch (error) {
+      console.warn('[SW] Network failed for (no cache rule):', request.url);
+      return networkErrorResponse(request.url);
+    }
   }
 
   const cache = await caches.open(API_CACHE);
   const cacheKey = request.url;
 
   if (cacheRule.strategy === 'cache-first') {
-    // Try cache first, then network
     const cached = await getCachedResponse(cache, cacheKey, cacheRule.ttl);
     if (cached) {
-      // Return cached response and refresh in background
       refreshCache(cache, request, cacheKey);
       return cached;
     }
@@ -144,13 +167,12 @@ async function handleApiRequest(request, url) {
       }
       return response;
     } catch (error) {
-      // Return stale cache if network fails
       const stale = await cache.match(cacheKey);
       if (stale) return stale;
-      throw error;
+      console.warn('[SW] Network failed (cache-first):', request.url);
+      return networkErrorResponse(request.url);
     }
   } else {
-    // Network first, fall back to cache
     try {
       const response = await fetch(request);
       if (response.ok) {
@@ -163,7 +185,8 @@ async function handleApiRequest(request, url) {
         console.log('[SW] Returning stale cache for:', cacheKey);
         return cached;
       }
-      throw error;
+      console.warn('[SW] Network failed (network-first):', request.url);
+      return networkErrorResponse(request.url);
     }
   }
 }
