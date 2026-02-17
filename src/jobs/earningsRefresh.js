@@ -85,14 +85,16 @@ async function refreshEarnings(options = {}) {
       return `$${params.length}`;
     };
     const staleHoursParam = addParam(staleHours);
+    // PostgreSQL needs explicit cast from TEXT to TIMESTAMP for comparison
     const staleCutoff = isPostgres
       ? `CURRENT_TIMESTAMP - (${staleHoursParam} || ' hours')::interval`
       : `datetime('now', '-' || ${staleHoursParam} || ' hours')`;
+    const fetchedAtField = isPostgres ? `ec.fetched_at::timestamp` : `ec.fetched_at`;
 
     // Filter for stale or missing data
     conditions.push(`(
       ec.fetched_at IS NULL
-      OR ec.fetched_at < ${staleCutoff}
+      OR ${fetchedAtField} < ${staleCutoff}
     )`);
 
     query += ` WHERE ${conditions.join(' AND ')}`;
