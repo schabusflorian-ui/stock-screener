@@ -9,11 +9,20 @@ import numpy as np
 import sqlite3
 import argparse
 import json
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# PostgreSQL support (optional)
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    HAS_PSYCOPG2 = True
+except ImportError:
+    HAS_PSYCOPG2 = False
 
 # Configure logging
 logging.basicConfig(
@@ -22,19 +31,36 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Database path
+# Database path (SQLite fallback)
 DB_PATH = Path(__file__).parent.parent / 'data' / 'stocks.db'
+
+# Check for PostgreSQL via environment variable
+DATABASE_URL = os.environ.get('DATABASE_URL')
 
 
 class DividendFetcher:
     """Fetches and stores dividend data"""
 
     def __init__(self, db_path=None):
+        # PostgreSQL takes priority over SQLite path argument
+        self.use_postgres = DATABASE_URL is not None and HAS_PSYCOPG2
         self.db_path = db_path or DB_PATH
+        if self.use_postgres:
+            logger.info("Using PostgreSQL database (DATABASE_URL set)")
+        else:
+            logger.info(f"Using SQLite database: {self.db_path}")
 
     def get_connection(self):
         """Get database connection"""
+        if self.use_postgres:
+            return psycopg2.connect(DATABASE_URL)
         return sqlite3.connect(self.db_path)
+
+    def _sql(self, query):
+        """Convert SQLite-style ? placeholders to PostgreSQL %s if needed"""
+        if self.use_postgres:
+            return query.replace('?', '%s')
+        return query
 
     def get_companies_to_fetch(self, sp500_only=False, limit=None):
         """Get list of companies to fetch dividends for"""
