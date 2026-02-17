@@ -34,16 +34,117 @@ class SettingsService {
   // UPDATE SCHEDULES
   // =========================================================================
 
+  // Map frontend UPDATE_TYPES IDs to update_jobs job_keys
+  // This bridges the legacy settings UI with the new update system
+  _getJobKeyMapping() {
+    return {
+      'stock_prices': 'prices.daily',
+      'stock_fundamentals': 'sec.filings',
+      'insider_transactions': 'sec.insiders',
+      'capital_allocation': 'capital.allocation',
+      'investor_13f': 'sec.13f',
+      'etf_holdings': 'etf.holdings',
+      'reddit_sentiment': 'sentiment.reddit',
+      'index_prices': 'market.indices',
+      'knowledge_base': 'knowledge.incremental',
+      'liquidity_metrics': 'portfolio.liquidity',
+      'portfolio_snapshots': 'portfolio.snapshots',
+      'market_regime': 'analytics.regime',
+      'xbrl_import': 'eu.xbrl_import',
+      'european_prices': 'eu.prices',
+      'european_indices': 'eu.indices',
+      'european_valuations': 'eu.valuation',
+    };
+  }
+
+  // Convert cron expression to human-readable frequency
+  _cronToFrequency(cron) {
+    if (!cron) return 'Manual';
+    if (cron.includes('* * *')) return 'Hourly';
+    if (cron.includes('0 * * * 1-5')) return 'Hourly (weekdays)';
+    if (cron.match(/\d+ \d+ \* \* 1-5/)) return 'Daily';
+    if (cron.match(/\d+ \d+ \* \* 0/)) return 'Weekly';
+    if (cron.match(/\d+ \d+ \d+ \*\/3/)) return 'Quarterly';
+    return 'Scheduled';
+  }
+
   async getUpdateSchedules() {
     try {
-      // Check if table exists (using dialect-aware helper)
+      const database = await getDatabaseAsync();
+
+      // First, try to read from the new update_jobs system
+      const jobsTableExists = await this._tableExists('update_jobs');
+
+      if (jobsTableExists) {
+        // Read from the new update system
+        const result = await database.query(`
+          SELECT
+            j.id,
+            j.job_key,
+            j.name as display_name,
+            j.description,
+            j.is_enabled,
+            j.cron_expression,
+            j.status,
+            j.last_run_at,
+            j.last_run_status,
+            j.last_error,
+            j.total_runs,
+            j.successful_runs,
+            j.failed_runs,
+            b.name as bundle_name
+          FROM update_jobs j
+          LEFT JOIN update_bundles b ON b.id = j.bundle_id
+          WHERE j.is_enabled = 1
+          ORDER BY j.job_key
+        `);
+
+        const rows = result.rows;
+        const mapping = this._getJobKeyMapping();
+
+        // Map job_keys back to frontend IDs
+        const schedules = [];
+        for (const [frontendId, jobKey] of Object.entries(mapping)) {
+          const job = rows.find(r => r.job_key === jobKey);
+          if (job) {
+            schedules.push({
+              id: job.id,
+              name: frontendId,
+              displayName: job.display_name,
+              description: job.description,
+              isEnabled: job.is_enabled === 1,
+              frequency: this._cronToFrequency(job.cron_expression),
+              cronExpression: job.cron_expression,
+              status: job.status || 'idle',
+              lastRunAt: job.last_run_at,
+              lastSuccessAt: job.last_run_status === 'completed' ? job.last_run_at : null,
+              lastError: job.last_error,
+              nextRunAt: null, // Would need cron parsing to calculate
+              itemsProcessed: null,
+              itemsUpdated: null,
+              itemsFailed: null,
+              averageDurationSeconds: null,
+              // Extra info from new system
+              totalRuns: job.total_runs,
+              successfulRuns: job.successful_runs,
+              failedRuns: job.failed_runs,
+              bundleName: job.bundle_name,
+            });
+          }
+        }
+
+        // If we got data from update_jobs, return it
+        if (schedules.length > 0) {
+          return schedules;
+        }
+      }
+
+      // Fallback: Read from legacy update_schedules table
       const tableExists = await this._tableExists('update_schedules');
       if (!tableExists) {
-        // Create the table and seed it
         await this._ensureUpdateSchedulesTable();
       }
 
-      const database = await getDatabaseAsync();
       const result = await database.query(`
         SELECT * FROM update_schedules ORDER BY display_name
       `);
@@ -167,6 +268,28 @@ class SettingsService {
 
   async toggleUpdateSchedule(name, enabled) {
     const database = await getDatabaseAsync();
+
+    // First, try to update in the new update_jobs system
+    const mapping = this._getJobKeyMapping();
+    const jobKey = mapping[name];
+
+    if (jobKey) {
+      const jobsTableExists = await this._tableExists('update_jobs');
+      if (jobsTableExists) {
+        const result = await database.query(`
+          UPDATE update_jobs
+          SET is_enabled = $1
+          WHERE job_key = $2
+        `, [enabled ? 1 : 0, jobKey]);
+
+        if ((result.rowCount || 0) > 0) {
+          await this.log('info', 'update', `Update job "${jobKey}" ${enabled ? 'enabled' : 'disabled'}`);
+          return true;
+        }
+      }
+    }
+
+    // Fallback: Update legacy update_schedules table
     const result = await database.query(`
       UPDATE update_schedules
       SET is_enabled = $1, updated_at = CURRENT_TIMESTAMP
