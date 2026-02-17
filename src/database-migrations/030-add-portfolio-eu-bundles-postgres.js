@@ -23,6 +23,7 @@ async function migrate(db) {
   // Helper to get bundle ID
   async function getBundleId(name) {
     const result = await db.query('SELECT id FROM update_bundles WHERE name = $1', [name]);
+    console.log(`  DEBUG: getBundleId('${name}') result:`, result.rows);
     return result.rows[0]?.id;
   }
 
@@ -39,6 +40,7 @@ async function migrate(db) {
 
   // === PORTFOLIO BUNDLE ===
   const portfolioId = await getBundleId('portfolio');
+  console.log('  DEBUG: portfolioId =', portfolioId, typeof portfolioId);
   if (portfolioId) {
     await insertJob(
       portfolioId,
@@ -67,6 +69,7 @@ async function migrate(db) {
 
   // === EU BUNDLE ===
   const euId = await getBundleId('eu');
+  console.log('  DEBUG: euId =', euId, typeof euId);
   if (euId) {
     await insertJob(
       euId,
