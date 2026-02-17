@@ -26,6 +26,8 @@ class MarketBundle {
         return this.runSectorsUpdate(db, onProgress);
       case 'market.calendar':
         return this.runCalendarUpdate(db, onProgress);
+      case 'market.economic':
+        return this.runEconomicUpdate(db, onProgress);
       default:
         throw new Error(`Unknown market job: ${jobKey}`);
     }
@@ -204,6 +206,75 @@ class MarketBundle {
         itemsProcessed: 0,
         itemsUpdated: 0,
         itemsFailed: 0
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  /**
+   * Update economic indicators (GDP, rates, etc.) from FRED
+   */
+  async runEconomicUpdate(db, onProgress) {
+    const database = await getDatabaseAsync();
+    await onProgress(5, 'Starting economic indicators update...');
+
+    try {
+      // Check if FREDService is available
+      let fredService;
+      try {
+        const { FREDService } = require('../../../services/dataProviders/fredService');
+        fredService = new FREDService();
+      } catch (error) {
+        console.warn('FREDService not available:', error.message);
+        await onProgress(100, 'Economic update skipped - FREDService not available');
+        return {
+          itemsTotal: 0,
+          itemsProcessed: 0,
+          itemsUpdated: 0,
+          itemsFailed: 0,
+          skipped: true,
+          reason: 'FREDService not available'
+        };
+      }
+
+      // Key economic indicators to fetch
+      const indicators = [
+        { series: 'GDP', name: 'US GDP' },
+        { series: 'CPIAUCSL', name: 'CPI' },
+        { series: 'UNRATE', name: 'Unemployment Rate' },
+        { series: 'FEDFUNDS', name: 'Federal Funds Rate' },
+        { series: 'DGS10', name: '10-Year Treasury' },
+        { series: 'DGS2', name: '2-Year Treasury' },
+        { series: 'VIXCLS', name: 'VIX' }
+      ];
+
+      await onProgress(10, `Fetching ${indicators.length} economic indicators from FRED...`);
+
+      let updated = 0;
+      let failed = 0;
+
+      for (let i = 0; i < indicators.length; i++) {
+        const indicator = indicators[i];
+        try {
+          await fredService.fetchAndStoreSeries(indicator.series);
+          updated++;
+        } catch (error) {
+          console.error(`Error fetching ${indicator.name}:`, error.message);
+          failed++;
+        }
+
+        const progress = 10 + Math.round(((i + 1) / indicators.length) * 85);
+        await onProgress(progress, `Updated ${indicator.name}`);
+      }
+
+      await onProgress(100, 'Economic indicators update complete');
+
+      return {
+        itemsTotal: indicators.length,
+        itemsProcessed: indicators.length,
+        itemsUpdated: updated,
+        itemsFailed: failed
       };
     } catch (error) {
       throw error;

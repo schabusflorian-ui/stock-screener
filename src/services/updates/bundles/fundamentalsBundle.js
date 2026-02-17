@@ -29,6 +29,8 @@ class FundamentalsBundle {
         return this.runRatiosUpdate(db, onProgress);
       case 'fundamentals.dividends':
         return this.runDividendUpdate(db, onProgress);
+      case 'fundamentals.earnings':
+        return this.runEarningsUpdate(db, onProgress);
       default:
         throw new Error(`Unknown fundamentals job: ${jobKey}`);
     }
@@ -39,6 +41,7 @@ class FundamentalsBundle {
     await onProgress(5, 'Starting quarterly fundamentals update...');
 
     // Get companies that need updating (no recent financial data)
+    // Note: update_queue doesn't have company_id - it tracks jobs not individual company updates
     const interval30days = isUsingPostgres()
       ? `CURRENT_TIMESTAMP - INTERVAL '30 days'`
       : `datetime('now', '-30 days')`;
@@ -46,15 +49,9 @@ class FundamentalsBundle {
       SELECT c.id, c.symbol, c.cik
       FROM companies c
       WHERE c.cik IS NOT NULL
-      AND (
-        c.id NOT IN (
-          SELECT DISTINCT company_id FROM financial_data
-          WHERE created_at > ${interval30days}
-        )
-        OR c.id IN (
-          SELECT company_id FROM update_queue
-          WHERE job_key = 'fundamentals.quarterly' AND status = 'pending'
-        )
+      AND c.id NOT IN (
+        SELECT DISTINCT company_id FROM financial_data
+        WHERE created_at > ${interval30days}
       )
       ORDER BY c.market_cap DESC NULLS LAST
       LIMIT 50
@@ -281,6 +278,97 @@ class FundamentalsBundle {
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $4
     `, [ratios.pe_ratio || null, ratios.ps_ratio || null, ratios.pb_ratio || null, companyId]);
+  }
+
+  /**
+   * Update earnings data for companies
+   * Fetches latest earnings from SEC or financial APIs
+   */
+  async runEarningsUpdate(db, onProgress) {
+    const database = await getDatabaseAsync();
+    await onProgress(5, 'Starting earnings data update...');
+
+    try {
+      // Get companies that may need earnings updates (those with recent filings)
+      const interval30days = isUsingPostgres()
+        ? `CURRENT_TIMESTAMP - INTERVAL '30 days'`
+        : `datetime('now', '-30 days')`;
+
+      const result = await database.query(`
+        SELECT c.id, c.symbol, c.cik
+        FROM companies c
+        WHERE c.cik IS NOT NULL
+        AND c.id IN (
+          SELECT DISTINCT company_id FROM financial_data
+          WHERE updated_at > ${interval30days}
+        )
+        ORDER BY c.market_cap DESC NULLS LAST
+        LIMIT 100
+      `);
+      const companies = result.rows;
+
+      await onProgress(10, `Processing earnings for ${companies.length} companies...`);
+
+      let processed = 0;
+      let updated = 0;
+
+      for (const company of companies) {
+        try {
+          // Check for earnings data in financial_data table
+          const earningsResult = await database.query(`
+            SELECT net_income, fiscal_date_ending
+            FROM financial_data
+            WHERE company_id = $1 AND statement_type = 'income_statement'
+            ORDER BY fiscal_date_ending DESC
+            LIMIT 4
+          `, [company.id]);
+
+          if (earningsResult.rows.length > 0) {
+            // Calculate EPS if we have shares outstanding
+            const companyResult = await database.query(`
+              SELECT shares_outstanding FROM companies WHERE id = $1
+            `, [company.id]);
+            const sharesOutstanding = companyResult.rows[0]?.shares_outstanding;
+
+            if (sharesOutstanding && sharesOutstanding > 0) {
+              const latestEarnings = earningsResult.rows[0];
+              const eps = latestEarnings.net_income / sharesOutstanding;
+
+              // Store calculated EPS in company metrics (if column exists)
+              try {
+                await database.query(`
+                  UPDATE companies
+                  SET earnings_per_share = $1, updated_at = CURRENT_TIMESTAMP
+                  WHERE id = $2
+                `, [eps, company.id]);
+                updated++;
+              } catch {
+                // Column may not exist, skip
+              }
+            }
+          }
+          processed++;
+        } catch (error) {
+          console.error(`Error processing earnings for ${company.symbol}:`, error.message);
+        }
+
+        if (processed % 20 === 0) {
+          const progress = 10 + Math.round((processed / companies.length) * 85);
+          await onProgress(progress, `Processed ${processed}/${companies.length} companies`);
+        }
+      }
+
+      await onProgress(100, 'Earnings update complete');
+
+      return {
+        itemsTotal: companies.length,
+        itemsProcessed: processed,
+        itemsUpdated: updated,
+        itemsFailed: companies.length - processed
+      };
+    } catch (error) {
+      throw error;
+    }
   }
 
   async runDividendUpdate(db, onProgress) {

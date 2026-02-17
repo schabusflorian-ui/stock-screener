@@ -91,8 +91,26 @@ class AnalyticsBundle {
    * Enrich decisions with factor context
    * Links decisions to factor scores at time of decision
    * Runs weekly after factor calculation
+   *
+   * NOTE: This job requires SQLite-specific APIs (db.prepare) in decisionEnricher.js
+   * On PostgreSQL, it will return early with a warning until the service is refactored.
    */
   async runFactorContextEnrichment(db, onProgress) {
+    const { isUsingPostgres } = require('../../../lib/db');
+
+    if (isUsingPostgres()) {
+      await onProgress(100, 'Factor context enrichment skipped - requires PostgreSQL refactoring of decisionEnricher.js');
+      console.warn('[analyticsBundle] analytics.factor_context: decisionEnricher.js uses SQLite db.prepare() API which is incompatible with PostgreSQL');
+      return {
+        itemsTotal: 0,
+        itemsProcessed: 0,
+        itemsUpdated: 0,
+        itemsFailed: 0,
+        skipped: true,
+        reason: 'PostgreSQL not yet supported for this job - decisionEnricher.js needs refactoring'
+      };
+    }
+
     await onProgress(5, 'Starting factor context enrichment...');
 
     const historicalService = this.getHistoricalService();
@@ -173,14 +191,16 @@ class AnalyticsBundle {
       const investor = investors[i];
 
       // Calculate investor's factor preferences from their decisions
+      // Note: size_percentile and volatility_percentile don't exist in the PostgreSQL schema
+      // Using size_score as a proxy (lower = smaller cap)
       const factorResult = await database.query(`
         SELECT
           AVG(dfc.value_percentile) as avg_value_pct,
           AVG(dfc.quality_percentile) as avg_quality_pct,
           AVG(dfc.momentum_percentile) as avg_momentum_pct,
           AVG(dfc.growth_percentile) as avg_growth_pct,
-          AVG(dfc.size_percentile) as avg_size_pct,
-          AVG(dfc.volatility_percentile) as avg_volatility_pct,
+          AVG(dfc.size_score * 20) as avg_size_pct,
+          AVG(dfc.volatility_score * 20) as avg_volatility_pct,
           COUNT(*) as decision_count
         FROM investment_decisions d
         JOIN decision_factor_context dfc ON dfc.decision_id = d.id
@@ -321,8 +341,26 @@ class AnalyticsBundle {
   /**
    * Match decisions to investment patterns
    * Identifies value plays, turnarounds, growth plays, etc.
+   *
+   * NOTE: This job requires SQLite-specific APIs (db.prepare) in patternMatcher.js
+   * On PostgreSQL, it will return early with a warning until the service is refactored.
    */
   async runPatternMatching(db, onProgress) {
+    const { isUsingPostgres } = require('../../../lib/db');
+
+    if (isUsingPostgres()) {
+      await onProgress(100, 'Pattern matching skipped - requires PostgreSQL refactoring of patternMatcher.js');
+      console.warn('[analyticsBundle] analytics.pattern_matching: patternMatcher.js uses SQLite db.prepare() API which is incompatible with PostgreSQL');
+      return {
+        itemsTotal: 0,
+        itemsProcessed: 0,
+        itemsUpdated: 0,
+        itemsFailed: 0,
+        skipped: true,
+        reason: 'PostgreSQL not yet supported for this job - patternMatcher.js needs refactoring'
+      };
+    }
+
     await onProgress(5, 'Starting pattern matching...');
 
     const historicalService = this.getHistoricalService();
