@@ -388,6 +388,12 @@ class UpdateOrchestrator extends EventEmitter {
         case 'eu':
           handler = require('./bundles/euBundle');
           break;
+        case 'agent':
+          handler = require('./bundles/agentBundle');
+          break;
+        case 'capital':
+          handler = require('./bundles/capitalBundle');
+          break;
         default:
           throw new Error(`Unknown bundle: ${bundleName}`);
       }

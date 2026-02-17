@@ -57,6 +57,12 @@ class EUBundle {
         return this.runIndicesUpdate(db, onProgress);
       case 'eu.prices':
         return this.runPricesUpdate(db, onProgress);
+      case 'eu.valuation':
+        return this.runValuationUpdate(db, onProgress);
+      case 'eu.enrichment':
+        return this.runEnrichment(db, onProgress);
+      case 'eu.ticker_resolution':
+        return this.runTickerResolution(db, onProgress);
       default:
         throw new Error(`Unknown EU job: ${jobKey}`);
     }
@@ -396,6 +402,277 @@ class EUBundle {
         itemsUpdated: totalUpdated,
         itemsFailed: totalFailed,
         metadata: { countryResults }
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async runValuationUpdate(db, onProgress) {
+    await onProgress(5, 'Starting EU/UK valuation calculation...');
+
+    const database = await getDatabaseAsync();
+
+    try {
+      // Get EU/UK companies with XBRL data but missing or stale valuation metrics
+      await onProgress(10, 'Finding companies needing valuation update...');
+
+      const companiesResult = await database.query(`
+        SELECT DISTINCT c.id, c.symbol, c.name, c.country_code
+        FROM companies c
+        JOIN xbrl_companies xc ON xc.company_id = c.id
+        WHERE c.country_code IN ('GB', 'DE', 'FR', 'NL', 'CH', 'ES', 'IT', 'SE', 'BE', 'AT')
+          AND xc.latest_filing_date IS NOT NULL
+        ORDER BY c.market_cap DESC NULLS LAST
+        LIMIT 200
+      `);
+      const companies = companiesResult.rows;
+
+      if (companies.length === 0) {
+        await onProgress(100, 'No EU/UK companies found for valuation update');
+        return {
+          itemsTotal: 0,
+          itemsProcessed: 0,
+          itemsUpdated: 0,
+          itemsFailed: 0,
+          metadata: { skipped: true, reason: 'No companies found' }
+        };
+      }
+
+      await onProgress(15, `Calculating valuations for ${companies.length} companies...`);
+
+      let updated = 0;
+      let failed = 0;
+
+      for (let i = 0; i < companies.length; i++) {
+        const company = companies[i];
+        const progress = 15 + Math.floor((i / companies.length) * 80);
+
+        try {
+          // Get latest price
+          const priceResult = await database.query(`
+            SELECT close FROM daily_prices
+            WHERE company_id = $1
+            ORDER BY date DESC LIMIT 1
+          `, [company.id]);
+          const price = priceResult.rows[0]?.close;
+
+          if (!price) continue;
+
+          // Get shares outstanding from XBRL
+          const xbrlResult = await database.query(`
+            SELECT shares_outstanding, net_income, total_equity, revenue
+            FROM xbrl_financials
+            WHERE company_id = $1
+            ORDER BY period_end DESC LIMIT 1
+          `, [company.id]);
+          const xbrl = xbrlResult.rows[0];
+
+          if (!xbrl || !xbrl.shares_outstanding) continue;
+
+          // Calculate metrics
+          const marketCap = price * xbrl.shares_outstanding;
+          const peRatio = xbrl.net_income > 0 ? marketCap / xbrl.net_income : null;
+          const pbRatio = xbrl.total_equity > 0 ? marketCap / xbrl.total_equity : null;
+          const psRatio = xbrl.revenue > 0 ? marketCap / xbrl.revenue : null;
+
+          // Update calculated_metrics (upsert)
+          await database.query(`
+            INSERT INTO calculated_metrics (company_id, metric_name, metric_value, calculated_at)
+            VALUES ($1, 'pe_ratio', $2, NOW()),
+                   ($1, 'pb_ratio', $3, NOW()),
+                   ($1, 'ps_ratio', $4, NOW())
+            ON CONFLICT (company_id, metric_name) DO UPDATE SET
+              metric_value = EXCLUDED.metric_value,
+              calculated_at = EXCLUDED.calculated_at
+          `, [company.id, peRatio, pbRatio, psRatio]);
+
+          updated++;
+        } catch (error) {
+          console.error(`Error calculating valuation for ${company.symbol}:`, error.message);
+          failed++;
+        }
+
+        if (i % 20 === 0) {
+          await onProgress(progress, `Processed ${i + 1}/${companies.length} companies...`);
+        }
+      }
+
+      await onProgress(100, `Valuation update complete: ${updated} updated, ${failed} failed`);
+
+      return {
+        itemsTotal: companies.length,
+        itemsProcessed: companies.length,
+        itemsUpdated: updated,
+        itemsFailed: failed
+      };
+    } catch (error) {
+      // Handle missing tables gracefully
+      if (error.message.includes('does not exist')) {
+        await onProgress(100, 'Skipped: Required tables not available');
+        return {
+          itemsTotal: 0,
+          itemsProcessed: 0,
+          itemsUpdated: 0,
+          itemsFailed: 0,
+          metadata: { skipped: true, reason: error.message }
+        };
+      }
+      throw error;
+    }
+  }
+
+  async runEnrichment(db, onProgress) {
+    await onProgress(5, 'Starting EU/UK sector enrichment...');
+
+    const database = await getDatabaseAsync();
+
+    try {
+      // Find EU/UK companies missing sector data
+      await onProgress(10, 'Finding companies needing sector enrichment...');
+
+      const companiesResult = await database.query(`
+        SELECT c.id, c.symbol, c.name, c.country_code
+        FROM companies c
+        WHERE c.country_code IN ('GB', 'DE', 'FR', 'NL', 'CH', 'ES', 'IT', 'SE', 'BE', 'AT')
+          AND (c.sector IS NULL OR c.sector = '' OR c.industry IS NULL OR c.industry = '')
+          AND c.symbol IS NOT NULL
+        ORDER BY c.market_cap DESC NULLS LAST
+        LIMIT 100
+      `);
+      const companies = companiesResult.rows;
+
+      if (companies.length === 0) {
+        await onProgress(100, 'No EU/UK companies need sector enrichment');
+        return {
+          itemsTotal: 0,
+          itemsProcessed: 0,
+          itemsUpdated: 0,
+          itemsFailed: 0,
+          metadata: { skipped: true, reason: 'No companies need enrichment' }
+        };
+      }
+
+      await onProgress(15, `Enriching ${companies.length} companies from Yahoo Finance...`);
+
+      let enriched = 0;
+      let failed = 0;
+      const errors = [];
+
+      for (let i = 0; i < companies.length; i++) {
+        const company = companies[i];
+        const progress = 15 + Math.floor((i / companies.length) * 80);
+
+        try {
+          // Construct Yahoo symbol (add exchange suffix)
+          let yahooSymbol = company.symbol;
+          if (company.country_code === 'GB' && !yahooSymbol.includes('.L')) {
+            yahooSymbol = `${company.symbol}.L`;
+          } else if (company.country_code === 'DE' && !yahooSymbol.includes('.DE')) {
+            yahooSymbol = `${company.symbol}.DE`;
+          } else if (company.country_code === 'FR' && !yahooSymbol.includes('.PA')) {
+            yahooSymbol = `${company.symbol}.PA`;
+          }
+
+          // Fetch from Yahoo Finance
+          const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(yahooSymbol)}?modules=assetProfile`;
+          const response = await fetch(url);
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          const data = await response.json();
+          const profile = data.quoteSummary?.result?.[0]?.assetProfile;
+
+          if (profile?.sector || profile?.industry) {
+            await database.query(`
+              UPDATE companies
+              SET sector = COALESCE($2, sector),
+                  industry = COALESCE($3, industry)
+              WHERE id = $1
+            `, [company.id, profile.sector, profile.industry]);
+            enriched++;
+          }
+        } catch (error) {
+          errors.push(`${company.symbol}: ${error.message}`);
+          failed++;
+        }
+
+        // Rate limiting
+        if (i < companies.length - 1) {
+          await new Promise(r => setTimeout(r, 1000));
+        }
+
+        if (i % 10 === 0) {
+          await onProgress(progress, `Enriched ${i + 1}/${companies.length} companies...`);
+        }
+      }
+
+      await onProgress(100, `Sector enrichment complete: ${enriched} enriched, ${failed} failed`);
+
+      return {
+        itemsTotal: companies.length,
+        itemsProcessed: companies.length,
+        itemsUpdated: enriched,
+        itemsFailed: failed,
+        metadata: { errors: errors.length > 0 ? errors.slice(0, 10) : undefined }
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async runTickerResolution(db, onProgress) {
+    await onProgress(5, 'Starting EU/UK ticker resolution...');
+
+    const syncService = this.getXBRLSyncService();
+    if (!syncService) {
+      await onProgress(100, 'Skipped: XBRL sync service not available');
+      return {
+        itemsTotal: 0,
+        itemsProcessed: 0,
+        itemsUpdated: 0,
+        itemsFailed: 0,
+        metadata: { skipped: true, reason: 'XBRL sync service not available' }
+      };
+    }
+
+    try {
+      await onProgress(10, 'Resolving tickers for EU/UK companies without symbols...');
+
+      // Check if resolvePendingTickers method exists
+      if (typeof syncService.resolvePendingTickers !== 'function') {
+        await onProgress(100, 'Skipped: resolvePendingTickers not available');
+        return {
+          itemsTotal: 0,
+          itemsProcessed: 0,
+          itemsUpdated: 0,
+          itemsFailed: 0,
+          metadata: { skipped: true, reason: 'resolvePendingTickers method not available' }
+        };
+      }
+
+      const result = await syncService.resolvePendingTickers(100, 500);
+
+      if (result.skipped) {
+        await onProgress(100, `Skipped: ${result.reason}`);
+        return {
+          itemsTotal: 0,
+          itemsProcessed: 0,
+          itemsUpdated: 0,
+          itemsFailed: 0,
+          metadata: { skipped: true, reason: result.reason }
+        };
+      }
+
+      await onProgress(100, `Ticker resolution complete: ${result.resolved} resolved`);
+
+      return {
+        itemsTotal: result.processed || 0,
+        itemsProcessed: result.processed || 0,
+        itemsUpdated: result.resolved || 0,
+        itemsFailed: result.failed || 0
       };
     } catch (error) {
       throw error;

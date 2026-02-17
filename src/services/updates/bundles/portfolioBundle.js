@@ -13,6 +13,7 @@ class PortfolioBundle {
   constructor() {
     this.liquidityRefresh = null;
     this.snapshotCreator = null;
+    this.dividendProcessor = null;
   }
 
   getLiquidityRefresh() {
@@ -31,6 +32,19 @@ class PortfolioBundle {
     return this.snapshotCreator;
   }
 
+  getDividendProcessor() {
+    if (!this.dividendProcessor) {
+      try {
+        const { DividendProcessor } = require('../../portfolio/dividendProcessor');
+        this.dividendProcessor = new DividendProcessor();
+      } catch (error) {
+        console.warn('DividendProcessor not available:', error.message);
+        return null;
+      }
+    }
+    return this.dividendProcessor;
+  }
+
   async execute(jobKey, db, context) {
     const { onProgress } = context;
 
@@ -39,6 +53,8 @@ class PortfolioBundle {
         return this.runLiquidityUpdate(db, onProgress);
       case 'portfolio.snapshots':
         return this.runSnapshotCreation(db, onProgress);
+      case 'portfolio.dividends':
+        return this.runDividendProcessing(db, onProgress);
       default:
         throw new Error(`Unknown portfolio job: ${jobKey}`);
     }
@@ -147,6 +163,58 @@ class PortfolioBundle {
           itemsUpdated: 0,
           itemsFailed: 0,
           metadata: { skipped: true, reason: 'Portfolio metrics engine not available' }
+        };
+      }
+      throw error;
+    }
+  }
+
+  async runDividendProcessing(db, onProgress) {
+    await onProgress(5, 'Starting portfolio dividend processing...');
+
+    const processor = this.getDividendProcessor();
+    if (!processor) {
+      await onProgress(100, 'Skipped: DividendProcessor not available');
+      return {
+        itemsTotal: 0,
+        itemsProcessed: 0,
+        itemsUpdated: 0,
+        itemsFailed: 0,
+        metadata: { skipped: true, reason: 'DividendProcessor not available' }
+      };
+    }
+
+    try {
+      await onProgress(10, 'Processing dividends for all portfolios...');
+      const result = await processor.processAllDividends({ lookbackDays: 7 });
+
+      const totalAmount = result.totalAmount || 0;
+      const dripShares = result.dripShares || 0;
+
+      await onProgress(100, `Dividend processing complete: ${result.dividendsProcessed} dividends, $${totalAmount.toFixed(2)} credited`);
+
+      return {
+        itemsTotal: result.portfoliosChecked,
+        itemsProcessed: result.portfoliosChecked,
+        itemsUpdated: result.dividendsProcessed,
+        itemsFailed: result.errors?.length || 0,
+        metadata: {
+          totalAmount,
+          dripShares,
+          portfoliosChecked: result.portfoliosChecked,
+          details: result.details?.slice(0, 10) // Limit to 10 for metadata size
+        }
+      };
+    } catch (error) {
+      // If dividend tables don't exist, return gracefully
+      if (error.message.includes('does not exist') || error.message.includes('Cannot find module')) {
+        await onProgress(100, 'Skipped: Dividend processing not available');
+        return {
+          itemsTotal: 0,
+          itemsProcessed: 0,
+          itemsUpdated: 0,
+          itemsFailed: 0,
+          metadata: { skipped: true, reason: error.message }
         };
       }
       throw error;
