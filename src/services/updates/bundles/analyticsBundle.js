@@ -169,8 +169,27 @@ class AnalyticsBundle {
   /**
    * Re-classify investor styles based on their decision history
    * Runs weekly to keep classifications current
+   *
+   * NOTE: This job has data type compatibility issues with PostgreSQL
+   * (decision_factor_context schema differs from SQLite version)
+   * Skipping on PostgreSQL until schema is aligned.
    */
   async runStyleClassification(db, onProgress) {
+    const { isUsingPostgres } = require('../../../lib/db');
+
+    if (isUsingPostgres()) {
+      await onProgress(100, 'Investor style classification skipped - requires PostgreSQL schema alignment');
+      console.warn('[analyticsBundle] analytics.investor_styles: Skipped on PostgreSQL due to schema differences');
+      return {
+        itemsTotal: 0,
+        itemsProcessed: 0,
+        itemsUpdated: 0,
+        itemsFailed: 0,
+        skipped: true,
+        reason: 'PostgreSQL schema alignment needed for decision_factor_context'
+      };
+    }
+
     const database = await getDatabaseAsync();
     await onProgress(5, 'Starting investor style classification...');
 
