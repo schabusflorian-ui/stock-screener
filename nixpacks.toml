@@ -15,10 +15,12 @@ NODE_OPTIONS = "--max-old-space-size=4096"
 aptPkgs = ["curl", "python3", "python3-pip", "postgresql-client"]
 
 [phases.install]
-# Install Python dependencies for knowledge base and data services
+# Default npm ci runs automatically for Node.js projects
+# Add Python dependencies after npm install
 cmds = [
-  "pip install --no-cache-dir requests beautifulsoup4 || true",
-  "pip install --no-cache-dir -r python-services/requirements.txt || true"
+  "npm ci",
+  "pip3 install --break-system-packages --no-cache-dir requests beautifulsoup4",
+  "pip3 install --break-system-packages --no-cache-dir -r python-services/requirements.txt || true"
 ]
 
 [phases.build]
