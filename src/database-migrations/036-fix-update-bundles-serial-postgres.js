@@ -76,25 +76,42 @@ async function migrate(db) {
     throw new Error(`Failed to create bundles: portfolio=${portfolioId}, eu=${euId}`);
   }
 
-  // Step 7: Insert jobs
+  // Step 7: Add unique constraint on update_jobs.job_key if not exists
+  try {
+    await db.query('ALTER TABLE update_jobs ADD CONSTRAINT update_jobs_job_key_unique UNIQUE (job_key)');
+    console.log('  Added unique constraint on update_jobs.job_key');
+  } catch (err) {
+    if (err.message.includes('already exists') || err.message.includes('duplicate key')) {
+      console.log('  Unique constraint on job_key already exists');
+    } else {
+      console.log('  Could not add unique constraint:', err.message);
+    }
+  }
+
+  // Step 8: Insert jobs (check for existence first instead of ON CONFLICT)
   let inserted = 0;
 
   async function insertJob(bundleId, jobKey, name, description, cronExpression, isAutomatic = 1, batchSize = 100, batchDelayMs = 500, timeoutSeconds = 3600) {
+    // First check if job exists
+    const existsResult = await db.query('SELECT id FROM update_jobs WHERE job_key = $1', [jobKey]);
+    if (existsResult.rows.length > 0) {
+      console.log(`  - Exists: ${jobKey}`);
+      return false;
+    }
+
+    // Insert new job
     const result = await db.query(
       `INSERT INTO update_jobs (bundle_id, job_key, name, description, cron_expression, is_automatic, batch_size, batch_delay_ms, timeout_seconds)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       ON CONFLICT (job_key) DO NOTHING
        RETURNING id`,
       [bundleId, jobKey, name, description, cronExpression, isAutomatic, batchSize, batchDelayMs, timeoutSeconds]
     );
 
-    if (result.rowCount > 0) {
+    if (result.rows.length > 0) {
       console.log(`  ✓ Created: ${jobKey} (id=${result.rows[0].id})`);
       return true;
-    } else {
-      console.log(`  - Exists: ${jobKey}`);
-      return false;
     }
+    return false;
   }
 
   // Portfolio jobs
