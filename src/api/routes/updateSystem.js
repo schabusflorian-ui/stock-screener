@@ -7,7 +7,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { getDatabaseAsync } = require('../../lib/db');
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 
 // Lazy load dependencies
 let db = null;
@@ -137,6 +137,10 @@ router.get('/jobs', async (req, res) => {
   try {
     const { bundle, status, automatic } = req.query;
     const database = await getDb();
+    const isPostgres = isUsingPostgres();
+
+    // Use dialect-appropriate JSON object function
+    const jsonObjFunc = isPostgres ? 'json_build_object' : 'json_object';
 
     let sql = `
       SELECT
@@ -161,7 +165,7 @@ router.get('/jobs', async (req, res) => {
         b.name as bundle_name,
         b.display_name as bundle_display_name,
         (
-          SELECT json_object(
+          SELECT ${jsonObjFunc}(
             'id', r.id,
             'status', r.status,
             'started_at', r.started_at,
