@@ -6,7 +6,7 @@
  * so we can estimate next earnings based on historical filing patterns.
  */
 
-const { getDatabaseAsync } = require('../lib/db');
+const { getDatabaseAsync, isUsingPostgres } = require('../lib/db');
 
 class EUEarningsCalendarService {
   constructor() {
@@ -57,10 +57,14 @@ class EUEarningsCalendarService {
   async getUpcomingEarnings(daysAhead = 30, country = null) {
     const database = await getDatabaseAsync();
 
+    const avgDaysFormula = isUsingPostgres()
+      ? `AVG(EXTRACT(EPOCH FROM (f.filing_date::timestamp - f.period_end::timestamp)) / 86400)`
+      : `AVG(julianday(f.filing_date) - julianday(f.period_end))`;
+
     const companiesResult = await database.query(`
       SELECT i.id as identifier_id, i.legal_name, i.lei, i.country, i.ticker, i.yahoo_symbol,
              MAX(f.period_end) as latest_period_end, MAX(f.filing_date) as latest_filing_date,
-             AVG(julianday(f.filing_date) - julianday(f.period_end)) as avg_days_to_file
+             ${avgDaysFormula} as avg_days_to_file
       FROM company_identifiers i
       JOIN xbrl_filings f ON f.identifier_id = i.id
       WHERE f.filing_date IS NOT NULL AND f.period_end IS NOT NULL

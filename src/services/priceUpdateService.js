@@ -5,7 +5,7 @@
 
 const { spawn } = require('child_process');
 const path = require('path');
-const { getDatabaseAsync } = require('../lib/db');
+const { getDatabaseAsync, isUsingPostgres } = require('../lib/db');
 
 class PriceUpdateService {
   constructor() {
@@ -32,12 +32,20 @@ class PriceUpdateService {
     `);
     const overall = overallResult.rows[0];
 
+    // Use dialect-aware date functions
+    const date1dAgo = isUsingPostgres()
+      ? `CURRENT_DATE - INTERVAL '1 day'`
+      : `date('now', '-1 day')`;
+    const avgAgeDays = isUsingPostgres()
+      ? `ROUND(AVG(EXTRACT(EPOCH FROM (NOW() - last_price_update)) / 86400)::numeric, 1)`
+      : `ROUND(AVG(julianday('now') - julianday(last_price_update)), 1)`;
+
     const byTierResult = await database.query(`
       SELECT
         update_tier,
         COUNT(*) as total,
-        SUM(CASE WHEN last_price_update >= date('now', '-1 day') THEN 1 ELSE 0 END) as fresh_1d,
-        ROUND(AVG(julianday('now') - julianday(last_price_update)), 1) as avg_age_days
+        SUM(CASE WHEN last_price_update >= ${date1dAgo} THEN 1 ELSE 0 END) as fresh_1d,
+        ${avgAgeDays} as avg_age_days
       FROM companies
       WHERE symbol IS NOT NULL AND symbol NOT LIKE 'CIK_%'
       GROUP BY update_tier
@@ -132,6 +140,15 @@ class PriceUpdateService {
   async getStaleCompanies(limit = 100) {
     const database = await getDatabaseAsync();
 
+    // Dialect-aware date functions
+    const daysStale = isUsingPostgres()
+      ? `EXTRACT(EPOCH FROM (NOW() - c.last_price_update)) / 86400`
+      : `julianday('now') - julianday(c.last_price_update)`;
+    const date2daysAgo = isUsingPostgres() ? `CURRENT_DATE - INTERVAL '2 days'` : `date('now', '-2 days')`;
+    const date4daysAgo = isUsingPostgres() ? `CURRENT_DATE - INTERVAL '4 days'` : `date('now', '-4 days')`;
+    const date5daysAgo = isUsingPostgres() ? `CURRENT_DATE - INTERVAL '5 days'` : `date('now', '-5 days')`;
+    const date10daysAgo = isUsingPostgres() ? `CURRENT_DATE - INTERVAL '10 days'` : `date('now', '-10 days')`;
+
     const result = await database.query(`
       SELECT
         c.id,
@@ -139,15 +156,15 @@ class PriceUpdateService {
         c.name,
         c.update_tier,
         c.last_price_update,
-        julianday('now') - julianday(c.last_price_update) as days_stale
+        ${daysStale} as days_stale
       FROM companies c
       WHERE c.symbol IS NOT NULL
         AND c.symbol NOT LIKE 'CIK_%'
         AND (
-          (c.update_tier = 1 AND (c.last_price_update < date('now', '-2 days') OR c.last_price_update IS NULL))
-          OR (c.update_tier = 2 AND (c.last_price_update < date('now', '-4 days') OR c.last_price_update IS NULL))
-          OR (c.update_tier = 3 AND (c.last_price_update < date('now', '-5 days') OR c.last_price_update IS NULL))
-          OR (c.update_tier = 4 AND (c.last_price_update < date('now', '-10 days') OR c.last_price_update IS NULL))
+          (c.update_tier = 1 AND (c.last_price_update < ${date2daysAgo} OR c.last_price_update IS NULL))
+          OR (c.update_tier = 2 AND (c.last_price_update < ${date4daysAgo} OR c.last_price_update IS NULL))
+          OR (c.update_tier = 3 AND (c.last_price_update < ${date5daysAgo} OR c.last_price_update IS NULL))
+          OR (c.update_tier = 4 AND (c.last_price_update < ${date10daysAgo} OR c.last_price_update IS NULL))
         )
       ORDER BY c.update_tier ASC, days_stale DESC NULLS FIRST
       LIMIT $1

@@ -489,7 +489,7 @@ router.get('/european/status', async (req, res) => {
       SELECT
         c.country,
         COUNT(DISTINCT c.id) as companies,
-        COUNT(DISTINCT CASE WHEN pm.latest_price IS NOT NULL THEN c.id END) as with_prices
+        COUNT(DISTINCT CASE WHEN pm.last_price IS NOT NULL THEN c.id END) as with_prices
       FROM companies c
       LEFT JOIN price_metrics pm ON pm.company_id = c.id
       WHERE c.country NOT IN ('US', 'USA') AND c.country IS NOT NULL

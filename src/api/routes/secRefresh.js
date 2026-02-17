@@ -30,41 +30,48 @@ router.get('/status', async (req, res) => {
       });
     }
 
+    const database = await getDatabaseAsync();
+
     // Get watchlist count (fast)
-    const watchlistCount = database.prepare(`
+    const watchlistCountResult = await database.query(`
       SELECT COUNT(*) as count
       FROM watchlist w
       JOIN companies c ON c.id = w.company_id
       WHERE c.symbol IS NOT NULL AND c.symbol NOT LIKE 'CIK_%'
-    `).get();
+    `);
+    const watchlistCount = watchlistCountResult.rows[0];
 
     // Get total active companies count (fast)
-    const activeCompaniesCount = database.prepare(`
-      SELECT COUNT(*) as count FROM companies WHERE is_active = 1 AND symbol IS NOT NULL
-    `).get();
+    const activeCompaniesCountResult = await database.query(`
+      SELECT COUNT(*) as count FROM companies WHERE is_active = true AND symbol IS NOT NULL
+    `);
+    const activeCompaniesCount = activeCompaniesCountResult.rows[0];
 
     // Get total filings count (fast - simple count)
-    const filingsCount = database.prepare(`
+    const filingsCountResult = await database.query(`
       SELECT COUNT(*) as count FROM financial_data
-    `).get();
+    `);
+    const filingsCount = filingsCountResult.rows[0];
 
     // Get the last time data was actually updated (created_at from financial_data)
-    const lastUpdate = database.prepare(`
+    const lastUpdateResult = await database.query(`
       SELECT MAX(created_at) as last_update FROM financial_data
-    `).get();
+    `);
+    const lastUpdate = lastUpdateResult.rows[0];
 
     // Get the most recent filing date (handles mixed formats)
     // String format YYYY-MM-DD sorts correctly for recent dates
-    const recentFiling = database.prepare(`
+    const recentFilingResult = await database.query(`
       SELECT MAX(filed_date) as latest_filed
       FROM financial_data
       WHERE filed_date LIKE '202%-%'
-    `).get();
+    `);
+    const recentFiling = recentFilingResult.rows[0];
 
     const statusData = {
-      watchlistCount: watchlistCount.count,
-      activeCompanies: activeCompaniesCount.count,
-      totalFilings: filingsCount.count,
+      watchlistCount: watchlistCount?.count || 0,
+      activeCompanies: activeCompaniesCount?.count || 0,
+      totalFilings: filingsCount?.count || 0,
       lastUpdate: lastUpdate?.last_update || null,
       latestFiling: recentFiling?.latest_filed || null,
       lastCheck: new Date().toISOString()
