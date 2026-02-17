@@ -205,10 +205,12 @@ router.get('/jobs', async (req, res) => {
     const jobsResult = await database.query(sql, params);
     const jobs = jobsResult.rows;
 
-    // Parse JSON fields
+    // Parse JSON fields (PostgreSQL returns object, SQLite returns string)
     const parsedJobs = jobs.map(job => ({
       ...job,
-      last_run: job.last_run ? JSON.parse(job.last_run) : null
+      last_run: job.last_run
+        ? (typeof job.last_run === 'string' ? JSON.parse(job.last_run) : job.last_run)
+        : null
     }));
 
     res.json({ jobs: parsedJobs });
