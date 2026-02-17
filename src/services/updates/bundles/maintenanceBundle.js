@@ -11,7 +11,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { getDatabaseAsync } = require('../../../lib/db');
+const { getDatabaseAsync, isUsingPostgres } = require('../../../lib/db');
 
 class MaintenanceBundle {
   constructor() {
@@ -33,6 +33,10 @@ class MaintenanceBundle {
         return this.runIntegrityCheck(database, onProgress);
       case 'maintenance.backup':
         return this.runBackup(database, onProgress);
+      case 'maintenance.health_check':
+        return this.runHealthCheck(database, onProgress);
+      case 'maintenance.stale_check':
+        return this.runStaleCheck(database, onProgress);
       default:
         throw new Error(`Unknown maintenance job: ${jobKey}`);
     }
@@ -97,14 +101,14 @@ class MaintenanceBundle {
       // Clean old price data if too much (keep last 5 years)
       await onProgress(85, 'Checking price data volume...');
       const priceCountResult = await database.query(`
-        SELECT COUNT(*) as count FROM stock_prices
+        SELECT COUNT(*) as count FROM daily_prices
         WHERE date < CURRENT_DATE - INTERVAL '5 years'
       `);
       const priceCount = priceCountResult.rows[0];
 
       if (priceCount && priceCount.count > 0) {
         const priceResult = await database.query(`
-          DELETE FROM stock_prices
+          DELETE FROM daily_prices
           WHERE date < CURRENT_DATE - INTERVAL '5 years'
         `);
         totalDeleted += priceResult.rowCount;
@@ -185,7 +189,7 @@ class MaintenanceBundle {
       // Check for orphaned prices
       await onProgress(40, 'Checking for orphaned price data...');
       const orphanedPricesResult = await database.query(`
-        SELECT COUNT(*) as count FROM stock_prices
+        SELECT COUNT(*) as count FROM daily_prices
         WHERE company_id NOT IN (SELECT id FROM companies)
       `);
       const orphanedPrices = orphanedPricesResult.rows[0];
@@ -201,7 +205,7 @@ class MaintenanceBundle {
       await onProgress(55, 'Checking for companies without price data...');
       const companiesWithoutPricesResult = await database.query(`
         SELECT COUNT(*) as count FROM companies
-        WHERE id NOT IN (SELECT DISTINCT company_id FROM stock_prices)
+        WHERE id NOT IN (SELECT DISTINCT company_id FROM daily_prices)
       `);
       const companiesWithoutPrices = companiesWithoutPricesResult.rows[0];
       if (companiesWithoutPrices.count > 0) {
@@ -217,7 +221,7 @@ class MaintenanceBundle {
       await onProgress(70, 'Checking for duplicate prices...');
       const duplicatePricesResult = await database.query(`
         SELECT company_id, date, COUNT(*) as count
-        FROM stock_prices
+        FROM daily_prices
         GROUP BY company_id, date
         HAVING COUNT(*) > 1
         LIMIT 10
@@ -249,7 +253,30 @@ class MaintenanceBundle {
   async runBackup(database, onProgress) {
     await onProgress(5, 'Starting database backup...');
 
+    const { exec } = require('child_process');
+    const { promisify } = require('util');
+    const execAsync = promisify(exec);
+
     try {
+      // Check if pg_dump is available (not available on Railway)
+      await onProgress(10, 'Checking pg_dump availability...');
+      try {
+        await execAsync('which pg_dump');
+      } catch {
+        // pg_dump not available - skip backup gracefully
+        await onProgress(100, 'Skipped: pg_dump not available (expected on Railway)');
+        return {
+          itemsTotal: 0,
+          itemsProcessed: 0,
+          itemsUpdated: 0,
+          itemsFailed: 0,
+          metadata: {
+            skipped: true,
+            reason: 'pg_dump not available in environment (Railway)'
+          }
+        };
+      }
+
       // Ensure backup directory exists
       if (!fs.existsSync(this.backupDir)) {
         fs.mkdirSync(this.backupDir, { recursive: true });
@@ -261,11 +288,6 @@ class MaintenanceBundle {
       await onProgress(20, 'Creating backup...');
 
       // For PostgreSQL, create a SQL dump using pg_dump
-      // Note: This requires pg_dump to be available in the system PATH
-      const { exec } = require('child_process');
-      const { promisify } = require('util');
-      const execAsync = promisify(exec);
-
       const databaseUrl = process.env.DATABASE_URL || 'postgresql://localhost/stocks';
       await execAsync(`pg_dump "${databaseUrl}" > "${backupPath}"`);
 
@@ -302,6 +324,160 @@ class MaintenanceBundle {
           size: backupStats.size,
           timestamp
         }
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async runHealthCheck(database, onProgress) {
+    await onProgress(5, 'Starting health check...');
+
+    try {
+      const issues = [];
+
+      // Check database connectivity
+      await onProgress(15, 'Checking database connectivity...');
+      const connectResult = await database.query('SELECT 1 as connected');
+      if (!connectResult.rows[0]?.connected) {
+        issues.push({ type: 'connectivity', severity: 'critical', message: 'Database not responding' });
+      }
+
+      // Check table existence
+      await onProgress(30, 'Checking core tables...');
+      const coreTables = ['companies', 'daily_prices', 'financial_data', 'update_jobs', 'update_runs'];
+      for (const table of coreTables) {
+        try {
+          await database.query(`SELECT COUNT(*) FROM ${table} LIMIT 1`);
+        } catch {
+          issues.push({ type: 'missing_table', severity: 'critical', message: `Table ${table} is missing or inaccessible` });
+        }
+      }
+
+      // Check for recent data
+      await onProgress(50, 'Checking data freshness...');
+      const priceResult = await database.query(`
+        SELECT MAX(date) as latest_date FROM daily_prices
+      `);
+      const latestPrice = priceResult.rows[0]?.latest_date;
+      if (latestPrice) {
+        const daysSinceUpdate = Math.floor((Date.now() - new Date(latestPrice).getTime()) / (1000 * 60 * 60 * 24));
+        if (daysSinceUpdate > 3) {
+          issues.push({ type: 'stale_data', severity: 'warning', message: `Price data is ${daysSinceUpdate} days old` });
+        }
+      }
+
+      // Check update job status
+      await onProgress(70, 'Checking job status...');
+      const interval24h = isUsingPostgres()
+        ? `CURRENT_TIMESTAMP - INTERVAL '24 hours'`
+        : `datetime('now', '-24 hours')`;
+      const failedJobsResult = await database.query(`
+        SELECT COUNT(*) as count FROM update_runs
+        WHERE status = 'failed' AND started_at > ${interval24h}
+      `);
+      const failedJobs = parseInt(failedJobsResult.rows[0]?.count || 0);
+      if (failedJobs > 5) {
+        issues.push({ type: 'job_failures', severity: 'warning', message: `${failedJobs} jobs failed in last 24 hours` });
+      }
+
+      await onProgress(100, `Health check complete - ${issues.length} issues found`);
+
+      return {
+        itemsTotal: 4,
+        itemsProcessed: 4,
+        itemsUpdated: 0,
+        itemsFailed: issues.filter(i => i.severity === 'critical').length,
+        metadata: { issues, healthy: issues.filter(i => i.severity === 'critical').length === 0 }
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async runStaleCheck(database, onProgress) {
+    await onProgress(5, 'Starting stale data check...');
+
+    // Define date intervals for different databases
+    const date7daysAgo = isUsingPostgres()
+      ? `CURRENT_DATE - INTERVAL '7 days'`
+      : `date('now', '-7 days')`;
+    const timestamp90daysAgo = isUsingPostgres()
+      ? `CURRENT_TIMESTAMP - INTERVAL '90 days'`
+      : `datetime('now', '-90 days')`;
+    const timestamp7daysAgo = isUsingPostgres()
+      ? `CURRENT_TIMESTAMP - INTERVAL '7 days'`
+      : `datetime('now', '-7 days')`;
+
+    try {
+      const staleItems = [];
+
+      // Check for companies without recent price data
+      await onProgress(20, 'Checking for stale price data...');
+      const stalePricesResult = await database.query(`
+        SELECT c.symbol, MAX(dp.date) as last_date
+        FROM companies c
+        LEFT JOIN daily_prices dp ON c.id = dp.company_id
+        WHERE c.is_active = 1
+        GROUP BY c.id, c.symbol
+        HAVING MAX(dp.date) < ${date7daysAgo} OR MAX(dp.date) IS NULL
+        LIMIT 100
+      `);
+      const stalePrices = stalePricesResult.rows;
+      if (stalePrices.length > 0) {
+        staleItems.push({
+          type: 'stale_prices',
+          count: stalePrices.length,
+          symbols: stalePrices.slice(0, 10).map(r => r.symbol)
+        });
+      }
+
+      // Check for companies without recent financial data
+      await onProgress(50, 'Checking for stale financial data...');
+      const staleFinancialsResult = await database.query(`
+        SELECT c.symbol, MAX(fd.created_at) as last_update
+        FROM companies c
+        LEFT JOIN financial_data fd ON c.id = fd.company_id
+        WHERE c.is_active = 1 AND c.cik IS NOT NULL
+        GROUP BY c.id, c.symbol
+        HAVING MAX(fd.created_at) < ${timestamp90daysAgo} OR MAX(fd.created_at) IS NULL
+        LIMIT 100
+      `);
+      const staleFinancials = staleFinancialsResult.rows;
+      if (staleFinancials.length > 0) {
+        staleItems.push({
+          type: 'stale_financials',
+          count: staleFinancials.length,
+          symbols: staleFinancials.slice(0, 10).map(r => r.symbol)
+        });
+      }
+
+      // Check for stale ETF data
+      await onProgress(80, 'Checking for stale ETF data...');
+      const staleETFResult = await database.query(`
+        SELECT symbol FROM etf_definitions
+        WHERE tier IN (1, 2)
+        AND (last_fundamentals_update < ${timestamp7daysAgo} OR last_fundamentals_update IS NULL)
+        LIMIT 50
+      `);
+      const staleETFs = staleETFResult.rows;
+      if (staleETFs.length > 0) {
+        staleItems.push({
+          type: 'stale_etfs',
+          count: staleETFs.length,
+          symbols: staleETFs.slice(0, 10).map(r => r.symbol)
+        });
+      }
+
+      const totalStale = staleItems.reduce((sum, item) => sum + item.count, 0);
+      await onProgress(100, `Stale check complete - ${totalStale} stale items found`);
+
+      return {
+        itemsTotal: totalStale,
+        itemsProcessed: totalStale,
+        itemsUpdated: 0,
+        itemsFailed: 0,
+        metadata: { staleItems }
       };
     } catch (error) {
       throw error;

@@ -43,7 +43,7 @@ class ETFBundle {
 
     // Use existing ETF scheduler
     await onProgress(10, 'Updating curated ETFs...');
-    await this.etfScheduler.runTier1Update();
+    await this.etfScheduler.updateTier1();
 
     const stats = await this.getETFStats(database, 1);
     await onProgress(100, 'Tier 1 update complete');
@@ -61,7 +61,7 @@ class ETFBundle {
     await onProgress(5, 'Starting Tier 2 ETF update...');
 
     await onProgress(10, 'Updating indexed ETFs...');
-    await this.etfScheduler.runTier2Update();
+    await this.etfScheduler.updateTier2();
 
     const stats = await this.getETFStats(database, 2);
     await onProgress(100, 'Tier 2 update complete');

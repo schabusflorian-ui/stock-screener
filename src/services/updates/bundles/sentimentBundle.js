@@ -10,7 +10,7 @@
 
 const { spawn } = require('child_process');
 const path = require('path');
-const { getDatabaseAsync } = require('../../../lib/db');
+const { getDatabaseAsync, isUsingPostgres } = require('../../../lib/db');
 const StockTwitsFetcher = require('../../stocktwitsFetcher');
 
 class SentimentBundle {
@@ -74,18 +74,40 @@ class SentimentBundle {
     await onProgress(5, 'Starting StockTwits sentiment update...');
 
     try {
-      // Get tickers to update
-      const result = await database.query(`
-        SELECT DISTINCT symbol FROM (
-          SELECT symbol FROM watchlist
-          UNION
-          SELECT c.symbol FROM portfolio_holdings ph
+      // Get tickers to update - try watchlist/portfolio first, fall back to top companies
+      let tickers = [];
+
+      // Try to get tickers from watchlist_items (may not exist in all environments)
+      try {
+        const watchlistResult = await database.query(`SELECT DISTINCT symbol FROM watchlist_items`);
+        tickers.push(...watchlistResult.rows);
+      } catch {
+        // Table doesn't exist, skip
+      }
+
+      // Try to get tickers from portfolio_holdings (may not exist in all environments)
+      try {
+        const portfolioResult = await database.query(`
+          SELECT DISTINCT c.symbol FROM portfolio_holdings ph
           JOIN companies c ON ph.company_id = c.id
-          UNION
-          SELECT symbol FROM companies WHERE market_cap > 10000000000 LIMIT 100
-        )
+        `);
+        tickers.push(...portfolioResult.rows);
+      } catch {
+        // Table doesn't exist, skip
+      }
+
+      // Always get top companies by market cap as fallback
+      const topCompaniesResult = await database.query(`
+        SELECT symbol FROM companies
+        WHERE market_cap > 10000000000
+        ORDER BY market_cap DESC
+        LIMIT 100
       `);
-      const tickers = result.rows;
+      tickers.push(...topCompaniesResult.rows);
+
+      // Deduplicate
+      const uniqueSymbols = [...new Set(tickers.map(t => t.symbol))];
+      tickers = uniqueSymbols.map(symbol => ({ symbol }));
 
       await onProgress(10, `Updating ${tickers.length} tickers...`);
 
@@ -131,13 +153,19 @@ class SentimentBundle {
     const database = await getDatabaseAsync();
     await onProgress(5, 'Starting trending analysis...');
 
+    // Dialect-aware date interval
+    const interval24h = isUsingPostgres()
+      ? `CURRENT_TIMESTAMP - INTERVAL '24 hours'`
+      : `datetime('now', '-24 hours')`;
+
     try {
       // Analyze recent sentiment data for trends
       const result = await database.query(`
-        SELECT symbol, COUNT(*) as mention_count, AVG(sentiment_score) as avg_sentiment
-        FROM reddit_mentions
-        WHERE created_at > CURRENT_TIMESTAMP - INTERVAL '24 hours'
-        GROUP BY symbol
+        SELECT c.symbol, COUNT(*) as mention_count, AVG(rp.sentiment_score) as avg_sentiment
+        FROM reddit_posts rp
+        JOIN companies c ON rp.company_id = c.id
+        WHERE rp.posted_at > ${interval24h}
+        GROUP BY c.symbol
         ORDER BY mention_count DESC
         LIMIT 100
       `);
@@ -179,13 +207,17 @@ class SentimentBundle {
       const today = new Date().toISOString().split('T')[0];
 
       const totalTickersResult = await database.query(`
-        SELECT COUNT(DISTINCT symbol) as count FROM reddit_mentions
+        SELECT COUNT(DISTINCT c.symbol) as count
+        FROM reddit_posts rp
+        JOIN companies c ON rp.company_id = c.id
       `);
       const totalTickers = totalTickersResult.rows[0]?.count || 0;
 
       const updatedTodayResult = await database.query(`
-        SELECT COUNT(DISTINCT symbol) as count FROM reddit_mentions
-        WHERE DATE(created_at) = $1
+        SELECT COUNT(DISTINCT c.symbol) as count
+        FROM reddit_posts rp
+        JOIN companies c ON rp.company_id = c.id
+        WHERE DATE(rp.posted_at) = $1
       `, [today]);
       const updatedToday = updatedTodayResult.rows[0]?.count || 0;
 

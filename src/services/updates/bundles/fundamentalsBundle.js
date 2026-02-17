@@ -27,6 +27,8 @@ class FundamentalsBundle {
         return this.runMetricsUpdate(db, onProgress);
       case 'fundamentals.ratios':
         return this.runRatiosUpdate(db, onProgress);
+      case 'fundamentals.dividends':
+        return this.runDividendUpdate(db, onProgress);
       default:
         throw new Error(`Unknown fundamentals job: ${jobKey}`);
     }
@@ -141,7 +143,7 @@ class FundamentalsBundle {
       SELECT DISTINCT c.id, c.symbol
       FROM companies c
       WHERE c.id IN (SELECT company_id FROM financial_data)
-      AND c.id IN (SELECT company_id FROM stock_prices WHERE date > CURRENT_DATE - INTERVAL '7 days')
+      AND c.id IN (SELECT company_id FROM daily_prices WHERE date > CURRENT_DATE - INTERVAL '7 days')
       ORDER BY c.market_cap DESC NULLS LAST
       LIMIT 500
     `);
@@ -224,12 +226,13 @@ class FundamentalsBundle {
     const financial = financialResult.rows[0];
     if (!financial) return;
 
-    // Get latest price data
+    // Get latest price data and market cap from companies table
     const priceResult = await database.query(`
-      SELECT close_price, market_cap
-      FROM stock_prices
-      WHERE company_id = $1
-      ORDER BY date DESC
+      SELECT dp.close, c.market_cap
+      FROM daily_prices dp
+      JOIN companies c ON dp.company_id = c.id
+      WHERE dp.company_id = $1
+      ORDER BY dp.date DESC
       LIMIT 1
     `, [companyId]);
 
@@ -269,6 +272,117 @@ class FundamentalsBundle {
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $4
     `, [ratios.pe_ratio || null, ratios.ps_ratio || null, ratios.pb_ratio || null, companyId]);
+  }
+
+  async runDividendUpdate(db, onProgress) {
+    await onProgress(5, 'Starting dividend data update via Python dividend_fetcher...');
+
+    try {
+      // Path to Python script
+      const pythonScript = path.join(this.projectRoot, 'python-services/dividend_fetcher.py');
+      const dbPath = path.join(this.projectRoot, 'data/stocks.db');
+
+      await onProgress(10, 'Fetching dividend data for S&P 500 companies...');
+
+      // Call Python dividend_fetcher with sp500 command for priority companies
+      const result = await new Promise((resolve) => {
+        const child = spawn('python3', [
+          pythonScript,
+          '--db', dbPath,
+          'sp500',  // Fetch S&P 500 companies (dividend-paying priority)
+          '--workers', '3',  // Limit concurrent workers to avoid rate limiting
+          '--years', '10'
+        ], {
+          cwd: path.dirname(pythonScript)
+        });
+
+        let stdout = '';
+        let stderr = '';
+
+        child.stdout.on('data', (data) => {
+          stdout += data.toString();
+          // Log progress updates
+          const progressMatch = data.toString().match(/Progress: (\d+)\/(\d+)/);
+          if (progressMatch) {
+            const current = parseInt(progressMatch[1]);
+            const total = parseInt(progressMatch[2]);
+            const progress = 10 + Math.round((current / total) * 80);
+            onProgress(progress, `Processing ${current}/${total} companies...`).catch(() => {});
+          }
+        });
+
+        child.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+
+        child.on('close', (code) => {
+          // Parse results from output
+          const processedMatch = stdout.match(/Processed:\s*(\d+)/);
+          const withDividendsMatch = stdout.match(/With dividends:\s*(\d+)/);
+          const errorsMatch = stdout.match(/Errors:\s*(\d+)/);
+
+          if (code === 0) {
+            resolve({
+              success: true,
+              processed: processedMatch ? parseInt(processedMatch[1]) : 0,
+              withDividends: withDividendsMatch ? parseInt(withDividendsMatch[1]) : 0,
+              errors: errorsMatch ? parseInt(errorsMatch[1]) : 0,
+              output: stdout
+            });
+          } else {
+            resolve({
+              success: false,
+              processed: 0,
+              withDividends: 0,
+              errors: 1,
+              error: stderr || `Exit code ${code}`
+            });
+          }
+        });
+
+        child.on('error', (err) => {
+          resolve({
+            success: false,
+            processed: 0,
+            withDividends: 0,
+            errors: 1,
+            error: err.message
+          });
+        });
+
+        // Timeout after 10 minutes (dividends fetch can take a while)
+        setTimeout(() => {
+          child.kill();
+          resolve({
+            success: false,
+            processed: 0,
+            withDividends: 0,
+            errors: 1,
+            error: 'Timeout after 10 minutes'
+          });
+        }, 600000);
+      });
+
+      if (result.success) {
+        await onProgress(100, `Dividend update complete: ${result.withDividends} companies with dividends`);
+      } else {
+        console.error('Dividend fetch error:', result.error);
+        await onProgress(100, `Dividend update failed: ${result.error}`);
+      }
+
+      return {
+        itemsTotal: result.processed,
+        itemsProcessed: result.processed,
+        itemsUpdated: result.withDividends,
+        itemsFailed: result.errors,
+        metadata: {
+          success: result.success,
+          error: result.error
+        }
+      };
+    } catch (error) {
+      throw error;
+    }
   }
 }
 

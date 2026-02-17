@@ -112,9 +112,9 @@ class UpdateOrchestrator extends EventEmitter {
       SELECT j.*, b.name as bundle_name, b.is_automatic as bundle_automatic
       FROM update_jobs j
       JOIN update_bundles b ON j.bundle_id = b.id
-      WHERE j.is_enabled = true
-        AND b.is_enabled = true
-        AND COALESCE(j.is_automatic, b.is_automatic) = true
+      WHERE j.is_enabled = 1
+        AND b.is_enabled = 1
+        AND COALESCE(j.is_automatic, b.is_automatic) = 1
         AND j.cron_expression IS NOT NULL
     `);
     const jobs = result.rows;
@@ -382,6 +382,12 @@ class UpdateOrchestrator extends EventEmitter {
         case 'analytics':
           handler = require('./bundles/analyticsBundle');
           break;
+        case 'portfolio':
+          handler = require('./bundles/portfolioBundle');
+          break;
+        case 'eu':
+          handler = require('./bundles/euBundle');
+          break;
         default:
           throw new Error(`Unknown bundle: ${bundleName}`);
       }
@@ -465,7 +471,7 @@ class UpdateOrchestrator extends EventEmitter {
     const database = await getDatabaseAsync();
     const result = await database.query(`
       SELECT job_key FROM update_jobs
-      WHERE depends_on LIKE $1 AND is_enabled = true AND COALESCE(is_automatic, true) = true
+      WHERE depends_on LIKE $1 AND is_enabled = 1 AND COALESCE(is_automatic, 1) = 1
     `, [`%"${jobKey}"%`]);
     const dependents = result.rows;
 
@@ -835,7 +841,7 @@ class UpdateOrchestrator extends EventEmitter {
     const result = await database.query(`
       SELECT j.*, b.name as bundle_name FROM update_jobs j
       JOIN update_bundles b ON j.bundle_id = b.id
-      WHERE b.name = $1 AND j.is_enabled = true
+      WHERE b.name = $1 AND j.is_enabled = 1
       ORDER BY j.id
     `, [bundleName]);
     const jobs = result.rows;

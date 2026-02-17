@@ -21,10 +21,12 @@ import os
 import sys
 
 # Configuration
-BATCH_SIZE = 100              # Tickers per yfinance call
-DELAY_BETWEEN_BATCHES = 2     # Seconds between API calls
+BATCH_SIZE = 50               # Tickers per yfinance call (reduced from 100 for rate limit safety)
+DELAY_BETWEEN_BATCHES = 5     # Seconds between API calls (increased from 2 for rate limit safety)
 MAX_DAILY_UPDATES = 4500      # Safety cap
 FETCH_DAYS = 7                # Fetch last 7 days of data
+MAX_RETRIES = 3               # Max retries on rate limit
+BACKOFF_BASE = 5              # Base seconds for exponential backoff
 
 # Tier definitions
 TIER_CONFIG = {
@@ -66,6 +68,46 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+def fetch_with_backoff(symbols: List[str], period: str = "7d", max_retries: int = MAX_RETRIES) -> pd.DataFrame:
+    """
+    Fetch data from Yahoo Finance with exponential backoff on rate limit errors.
+
+    Args:
+        symbols: List of ticker symbols to fetch
+        period: Time period for data (e.g., "7d", "1mo")
+        max_retries: Maximum number of retry attempts
+
+    Returns:
+        DataFrame with price data, or empty DataFrame on failure
+    """
+    for attempt in range(max_retries):
+        try:
+            data = yf.download(
+                symbols,
+                period=period,
+                interval="1d",
+                group_by="ticker",
+                auto_adjust=False,
+                threads=True,
+                progress=False
+            )
+            return data
+        except Exception as e:
+            error_str = str(e).lower()
+            # Check for rate limiting indicators
+            if '429' in error_str or 'rate limit' in error_str or 'too many requests' in error_str:
+                wait_time = BACKOFF_BASE * (2 ** attempt)  # 5s, 10s, 20s
+                logger.warning(f"Rate limited (attempt {attempt + 1}/{max_retries}), waiting {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                # For non-rate-limit errors, log and return empty
+                logger.error(f"Download error (non-retryable): {e}")
+                return pd.DataFrame()
+
+    logger.error(f"Failed after {max_retries} retries due to rate limiting")
+    return pd.DataFrame()
 
 
 class PriceUpdater:
@@ -217,22 +259,15 @@ class PriceUpdater:
         return companies
 
     def fetch_recent_prices(self, symbols: List[str], days: int = FETCH_DAYS) -> Dict[str, pd.DataFrame]:
-        """Fetch last N days of prices for multiple symbols using yfinance batch."""
+        """Fetch last N days of prices for multiple symbols using yfinance batch with retry."""
         if not symbols:
             return {}
 
         try:
             clean_symbols = [s.upper().strip() for s in symbols if s]
 
-            data = yf.download(
-                clean_symbols,
-                period=f"{days}d",
-                interval="1d",
-                group_by="ticker",
-                auto_adjust=False,
-                threads=True,
-                progress=False
-            )
+            # Use backoff function for rate limit resilience
+            data = fetch_with_backoff(clean_symbols, period=f"{days}d")
 
             if data.empty:
                 return {}
