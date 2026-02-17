@@ -93,16 +93,32 @@ class PriceBundle {
 
     // Get watchlist and portfolio stocks for intraday updates
     // FIXED: watchlist table has company_id, not symbol - need to join with companies
-    const result = await database.query(`
-      SELECT DISTINCT symbol FROM (
-        SELECT c.symbol FROM watchlist w
-        JOIN companies c ON w.company_id = c.id
-        UNION
-        SELECT c.symbol FROM portfolio_holdings ph
-        JOIN companies c ON ph.company_id = c.id
-      ) AS combined
-    `);
-    const stocks = result.rows;
+    // Handle case where portfolio_holdings table doesn't exist
+    let stocks = [];
+    try {
+      const result = await database.query(`
+        SELECT DISTINCT symbol FROM (
+          SELECT c.symbol FROM watchlist w
+          JOIN companies c ON w.company_id = c.id
+          UNION
+          SELECT c.symbol FROM portfolio_holdings ph
+          JOIN companies c ON ph.company_id = c.id
+        ) AS combined
+      `);
+      stocks = result.rows;
+    } catch (error) {
+      // Fallback: just use watchlist if portfolio_holdings doesn't exist
+      if (error.message?.includes('portfolio_holdings')) {
+        console.log('[priceBundle] portfolio_holdings table not found, using watchlist only');
+        const result = await database.query(`
+          SELECT DISTINCT c.symbol FROM watchlist w
+          JOIN companies c ON w.company_id = c.id
+        `);
+        stocks = result.rows;
+      } else {
+        throw error;
+      }
+    }
 
     await onProgress(20, `Updating ${stocks.length} tracked stocks...`);
 
