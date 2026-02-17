@@ -596,4 +596,96 @@ router.delete('/sessions/:userId', async (req, res) => {
   }
 });
 
+// POST /api/admin/seed-portfolio-eu-jobs - Seed missing portfolio/EU update jobs
+router.post('/seed-portfolio-eu-jobs', async (req, res) => {
+  try {
+    const database = await getDatabaseAsync();
+    const results = [];
+
+    // Helper to get bundle ID
+    async function getBundleId(name) {
+      const result = await database.query('SELECT id FROM update_bundles WHERE name = $1', [name]);
+      return result.rows[0]?.id;
+    }
+
+    // Helper to insert job
+    async function insertJob(bundleId, jobKey, name, description, cronExpression, isAutomatic = 1, batchSize = 100, batchDelayMs = 500, timeoutSeconds = 3600) {
+      if (!bundleId) {
+        results.push({ job: jobKey, status: 'skipped', reason: 'no bundle' });
+        return false;
+      }
+      const checkResult = await database.query('SELECT id FROM update_jobs WHERE job_key = $1', [jobKey]);
+      if (checkResult.rows.length > 0) {
+        results.push({ job: jobKey, status: 'exists' });
+        return false;
+      }
+      await database.query(
+        `INSERT INTO update_jobs (bundle_id, job_key, name, description, cron_expression, is_automatic, batch_size, batch_delay_ms, timeout_seconds)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [bundleId, jobKey, name, description, cronExpression, isAutomatic, batchSize, batchDelayMs, timeoutSeconds]
+      );
+      results.push({ job: jobKey, status: 'inserted' });
+      return true;
+    }
+
+    // Ensure bundles exist
+    const portfolioCheck = await database.query("SELECT id FROM update_bundles WHERE name = 'portfolio'");
+    if (portfolioCheck.rows.length === 0) {
+      await database.query(
+        `INSERT INTO update_bundles (name, display_name, description, priority, is_automatic)
+         VALUES ('portfolio', 'Portfolio', 'Portfolio snapshots and liquidity metrics', 55, 1)`
+      );
+      results.push({ bundle: 'portfolio', status: 'created' });
+    }
+
+    const euCheck = await database.query("SELECT id FROM update_bundles WHERE name = 'eu'");
+    if (euCheck.rows.length === 0) {
+      await database.query(
+        `INSERT INTO update_bundles (name, display_name, description, priority, is_automatic)
+         VALUES ('eu', 'EU/UK Data', 'European and UK company data from XBRL', 65, 1)`
+      );
+      results.push({ bundle: 'eu', status: 'created' });
+    }
+
+    // Get bundle IDs
+    const portfolioId = await getBundleId('portfolio');
+    const euId = await getBundleId('eu');
+
+    // Portfolio jobs
+    await insertJob(portfolioId, 'portfolio.liquidity', 'Liquidity Metrics',
+        'Calculate liquidity metrics (volume, volatility, spreads) for all companies',
+        '0 20 * * 1-5', 1, 500, 100, 7200);
+    await insertJob(portfolioId, 'portfolio.snapshots', 'Portfolio Snapshots',
+        'Create daily portfolio value snapshots for performance tracking',
+        '0 19 * * 1-5', 1, 50, 500, 3600);
+
+    // EU jobs
+    await insertJob(euId, 'eu.xbrl_import', 'XBRL Filing Import',
+        'Import XBRL filings from EU/UK regulatory sources',
+        '0 2 * * 0', 1, 100, 2000, 14400);
+    await insertJob(euId, 'eu.sync', 'XBRL Data Sync',
+        'Link XBRL companies and sync metrics to main tables',
+        '0 4 * * 0', 1, 200, 500, 7200);
+    await insertJob(euId, 'eu.indices', 'European Indices',
+        'Update European stock indices (FTSE, DAX, CAC, etc.)',
+        '0 18 * * 1-5', 1, 30, 1000, 1800);
+    await insertJob(euId, 'eu.prices', 'EU/UK Prices',
+        'Fetch daily prices for EU/UK companies',
+        '0 17 * * 1-5', 1, 100, 500, 3600);
+
+    // Count results
+    const inserted = results.filter(r => r.status === 'inserted').length;
+    const existed = results.filter(r => r.status === 'exists').length;
+
+    res.json({
+      success: true,
+      message: `Seeded ${inserted} new jobs, ${existed} already existed`,
+      results
+    });
+  } catch (error) {
+    console.error('Error seeding jobs:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
