@@ -217,13 +217,14 @@ class AnalyticsBundle {
       const newStyle = this._classifyStyle(factorPrefs);
 
       if (newStyle && newStyle !== investor.investment_style) {
+        // Note: style_updated_at and style_confidence columns don't exist in PostgreSQL schema
+        // Only update investment_style and updated_at
         await database.query(`
           UPDATE famous_investors
           SET investment_style = $1,
-              style_updated_at = CURRENT_TIMESTAMP,
-              style_confidence = $2
-          WHERE id = $3
-        `, [newStyle, factorPrefs.confidence || 0.7, investor.id]);
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2
+        `, [newStyle, investor.id]);
         updated++;
       }
 
