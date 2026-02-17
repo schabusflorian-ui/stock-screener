@@ -10,7 +10,7 @@
 
 const path = require('path');
 const { spawn } = require('child_process');
-const { getDatabaseAsync } = require('../../../lib/db');
+const { getDatabaseAsync, isUsingPostgres } = require('../../../lib/db');
 
 class FundamentalsBundle {
   constructor() {
@@ -39,6 +39,9 @@ class FundamentalsBundle {
     await onProgress(5, 'Starting quarterly fundamentals update...');
 
     // Get companies that need updating (no recent financial data)
+    const interval30days = isUsingPostgres()
+      ? `CURRENT_TIMESTAMP - INTERVAL '30 days'`
+      : `datetime('now', '-30 days')`;
     const result = await database.query(`
       SELECT c.id, c.symbol, c.cik
       FROM companies c
@@ -46,7 +49,7 @@ class FundamentalsBundle {
       AND (
         c.id NOT IN (
           SELECT DISTINCT company_id FROM financial_data
-          WHERE created_at > CURRENT_TIMESTAMP - INTERVAL '30 days'
+          WHERE created_at > ${interval30days}
         )
         OR c.id IN (
           SELECT company_id FROM update_queue
@@ -94,11 +97,14 @@ class FundamentalsBundle {
     await onProgress(5, 'Starting metrics recalculation...');
 
     // Get companies with financial data
+    const interval7days = isUsingPostgres()
+      ? `CURRENT_TIMESTAMP - INTERVAL '7 days'`
+      : `datetime('now', '-7 days')`;
     const result = await database.query(`
       SELECT DISTINCT c.id, c.symbol
       FROM companies c
       JOIN financial_data f ON f.company_id = c.id
-      WHERE f.updated_at > CURRENT_TIMESTAMP - INTERVAL '7 days'
+      WHERE f.updated_at > ${interval7days}
       ORDER BY c.market_cap DESC NULLS LAST
     `);
     const companies = result.rows;
@@ -139,11 +145,14 @@ class FundamentalsBundle {
     await onProgress(5, 'Starting ratios calculation...');
 
     // Get companies with price and fundamental data
+    const date7daysAgo = isUsingPostgres()
+      ? `CURRENT_DATE - INTERVAL '7 days'`
+      : `date('now', '-7 days')`;
     const result = await database.query(`
       SELECT DISTINCT c.id, c.symbol
       FROM companies c
       WHERE c.id IN (SELECT company_id FROM financial_data)
-      AND c.id IN (SELECT company_id FROM daily_prices WHERE date > CURRENT_DATE - INTERVAL '7 days')
+      AND c.id IN (SELECT company_id FROM daily_prices WHERE date > ${date7daysAgo})
       ORDER BY c.market_cap DESC NULLS LAST
       LIMIT 500
     `);

@@ -48,11 +48,28 @@ class MaintenanceBundle {
     try {
       let totalDeleted = 0;
 
+      // Dialect-aware date intervals
+      const interval30days = isUsingPostgres()
+        ? `NOW() - INTERVAL '30 days'`
+        : `datetime('now', '-30 days')`;
+      const interval90days = isUsingPostgres()
+        ? `NOW() - INTERVAL '90 days'`
+        : `datetime('now', '-90 days')`;
+      const interval7days = isUsingPostgres()
+        ? `NOW() - INTERVAL '7 days'`
+        : `datetime('now', '-7 days')`;
+      const interval14days = isUsingPostgres()
+        ? `NOW() - INTERVAL '14 days'`
+        : `datetime('now', '-14 days')`;
+      const date5years = isUsingPostgres()
+        ? `CURRENT_DATE - INTERVAL '5 years'`
+        : `date('now', '-5 years')`;
+
       // Clean old update_runs (keep last 30 days)
       await onProgress(10, 'Cleaning old update runs...');
       const runsResult = await database.query(`
         DELETE FROM update_runs
-        WHERE started_at < NOW() - INTERVAL '30 days'
+        WHERE started_at < ${interval30days}
         AND status IN ('completed', 'failed')
       `);
       totalDeleted += runsResult.rowCount;
@@ -62,7 +79,7 @@ class MaintenanceBundle {
       try {
         const sentimentResult = await database.query(`
           DELETE FROM sentiment_scores
-          WHERE created_at < NOW() - INTERVAL '90 days'
+          WHERE created_at < ${interval90days}
         `);
         totalDeleted += sentimentResult.rowCount;
       } catch (e) {
@@ -74,7 +91,7 @@ class MaintenanceBundle {
       const queueResult = await database.query(`
         DELETE FROM update_queue
         WHERE status IN ('completed', 'failed')
-        AND created_at < NOW() - INTERVAL '7 days'
+        AND created_at < ${interval7days}
       `);
       totalDeleted += queueResult.rowCount;
 
@@ -83,7 +100,7 @@ class MaintenanceBundle {
       try {
         const logsResult = await database.query(`
           DELETE FROM update_logs
-          WHERE created_at < NOW() - INTERVAL '14 days'
+          WHERE created_at < ${interval14days}
         `);
         totalDeleted += logsResult.rowCount;
       } catch (e) {
@@ -102,14 +119,14 @@ class MaintenanceBundle {
       await onProgress(85, 'Checking price data volume...');
       const priceCountResult = await database.query(`
         SELECT COUNT(*) as count FROM daily_prices
-        WHERE date < CURRENT_DATE - INTERVAL '5 years'
+        WHERE date < ${date5years}
       `);
       const priceCount = priceCountResult.rows[0];
 
       if (priceCount && priceCount.count > 0) {
         const priceResult = await database.query(`
           DELETE FROM daily_prices
-          WHERE date < CURRENT_DATE - INTERVAL '5 years'
+          WHERE date < ${date5years}
         `);
         totalDeleted += priceResult.rowCount;
       }

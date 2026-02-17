@@ -11,7 +11,7 @@
 
 const { spawn } = require('child_process');
 const path = require('path');
-const { getDatabaseAsync } = require('../../../lib/db');
+const { getDatabaseAsync, isUsingPostgres } = require('../../../lib/db');
 
 // Import existing price update infrastructure
 const PriceUpdateScheduler = require('../../../jobs/priceUpdateScheduler');
@@ -181,13 +181,16 @@ class PriceBundle {
       `, [today]);
       const updatedToday = updatedResult.rows[0]?.count || 0;
 
+      const date3daysAgo = isUsingPostgres()
+        ? `CURRENT_DATE - INTERVAL '3 days'`
+        : `date('now', '-3 days')`;
       const staleResult = await database.query(`
         SELECT COUNT(*) as count FROM companies c
         WHERE c.is_active = true
         AND NOT EXISTS (
           SELECT 1 FROM daily_prices dp
           WHERE dp.company_id = c.id
-          AND dp.date >= CURRENT_DATE - INTERVAL '3 days'
+          AND dp.date >= ${date3daysAgo}
         )
       `);
       const staleCount = staleResult.rows[0]?.count || 0;

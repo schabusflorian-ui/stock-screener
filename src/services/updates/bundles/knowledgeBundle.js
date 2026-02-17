@@ -7,7 +7,7 @@
  * - knowledge.full - Weekly full rebuild
  */
 
-const { getDatabaseAsync } = require('../../../lib/db');
+const { getDatabaseAsync, isUsingPostgres } = require('../../../lib/db');
 const KnowledgeBaseRefresh = require('../../../jobs/knowledgeBaseRefresh');
 
 class KnowledgeBundle {
@@ -73,9 +73,12 @@ class KnowledgeBundle {
       `);
       const totalDocuments = totalDocumentsResult.rows[0]?.count || 0;
 
+      const interval1day = isUsingPostgres()
+        ? `CURRENT_TIMESTAMP - INTERVAL '1 day'`
+        : `datetime('now', '-1 day')`;
       const recentlyUpdatedResult = await database.query(`
         SELECT COUNT(*) as count FROM knowledge_base
-        WHERE updated_at > CURRENT_TIMESTAMP - INTERVAL '1 day'
+        WHERE updated_at > ${interval1day}
       `);
       const recentlyUpdated = recentlyUpdatedResult.rows[0]?.count || 0;
 
