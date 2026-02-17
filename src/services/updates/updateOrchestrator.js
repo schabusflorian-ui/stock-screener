@@ -710,18 +710,34 @@ class UpdateOrchestrator extends EventEmitter {
     const item = itemResult.rows[0];
     if (!item) return;
 
+    // FIXED: Use job_key + scheduled_for as unique identifier since id may be NULL
+    const whereClause = item.id
+      ? { sql: 'id = $1', params: [item.id] }
+      : { sql: 'job_key = $1 AND scheduled_for = $2 AND status = $3', params: [item.job_key, item.scheduled_for, 'pending'] };
+
     // Mark as processing and set initial heartbeat
-    await database.query('UPDATE update_queue SET status = $1, processed_at = CURRENT_TIMESTAMP WHERE id = $2',
-      ['processing', item.id]);
-    await database.query('UPDATE update_queue SET last_heartbeat = CURRENT_TIMESTAMP WHERE id = $1', [item.id]);
+    if (item.id) {
+      await database.query('UPDATE update_queue SET status = $1, processed_at = CURRENT_TIMESTAMP WHERE id = $2',
+        ['processing', item.id]);
+      await database.query('UPDATE update_queue SET last_heartbeat = CURRENT_TIMESTAMP WHERE id = $1', [item.id]);
+    } else {
+      // Use job_key + scheduled_for for items without id
+      await database.query(
+        'UPDATE update_queue SET status = $1, processed_at = CURRENT_TIMESTAMP WHERE job_key = $2 AND scheduled_for = $3 AND status = $4',
+        ['processing', item.job_key, item.scheduled_for, 'pending']
+      );
+    }
 
     // RESILIENCE: Update heartbeat every 30 seconds during processing
     const heartbeatInterval = setInterval(async () => {
       try {
         const db = await getDatabaseAsync();
-        await db.query('UPDATE update_queue SET last_heartbeat = CURRENT_TIMESTAMP WHERE id = $1', [item.id]);
+        if (item.id) {
+          await db.query('UPDATE update_queue SET last_heartbeat = CURRENT_TIMESTAMP WHERE id = $1', [item.id]);
+        }
+        // Skip heartbeat for items without id - they're legacy entries
       } catch (error) {
-        this.log(`Failed to update heartbeat for queue item ${item.id}: ${error.message}`, 'WARN');
+        this.log(`Failed to update heartbeat for queue item ${item.job_key}: ${error.message}`, 'WARN');
       }
     }, 30000);
 
@@ -741,12 +757,27 @@ class UpdateOrchestrator extends EventEmitter {
         jobOptions
       });
 
-      await database.query('UPDATE update_queue SET status = $1, processed_at = CURRENT_TIMESTAMP WHERE id = $2',
-        ['completed', item.id]);
+      // FIXED: Handle NULL id by using job_key + scheduled_for
+      if (item.id) {
+        await database.query('UPDATE update_queue SET status = $1, processed_at = CURRENT_TIMESTAMP WHERE id = $2',
+          ['completed', item.id]);
+      } else {
+        await database.query(
+          'UPDATE update_queue SET status = $1, processed_at = CURRENT_TIMESTAMP WHERE job_key = $2 AND scheduled_for = $3 AND status = $4',
+          ['completed', item.job_key, item.scheduled_for, 'processing']
+        );
+      }
     } catch (error) {
       this.log(`Queue item ${item.job_key} failed: ${error.message}`, 'ERROR');
-      await database.query('UPDATE update_queue SET status = $1, last_error = $2 WHERE id = $3',
-        ['failed', error.message, item.id]);
+      if (item.id) {
+        await database.query('UPDATE update_queue SET status = $1, last_error = $2 WHERE id = $3',
+          ['failed', error.message, item.id]);
+      } else {
+        await database.query(
+          'UPDATE update_queue SET status = $1, last_error = $2 WHERE job_key = $3 AND scheduled_for = $4 AND status = $5',
+          ['failed', error.message, item.job_key, item.scheduled_for, 'processing']
+        );
+      }
 
       // PHASE 2.4: Report to Sentry if it's a recurring failure
       const isLastAttempt = item.attempt >= (item.max_attempts - 1);
