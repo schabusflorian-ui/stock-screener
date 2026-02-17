@@ -68,9 +68,9 @@ const POSTGRES_MIGRATIONS = [
   '029-seed-update-jobs-postgres.js',
   '030-add-portfolio-eu-bundles-postgres.js',
   '031-add-portfolio-eu-jobs-postgres.js',
-  // 033 must run BEFORE 032 to delete corrupt rows (id=NULL) first
-  '033-fix-corrupt-bundles-postgres.js',
-  '032-fix-portfolio-eu-jobs-postgres.js',
+  // 034 is the final fix that cleans up corrupt data and adds all jobs
+  // It also removes 032/033 from schema_migrations to prevent blocking
+  '034-reset-portfolio-eu-bundles-postgres.js',
 ];
 
 async function runMigrations() {
