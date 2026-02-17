@@ -15,11 +15,11 @@ NODE_OPTIONS = "--max-old-space-size=4096"
 aptPkgs = ["curl", "python3", "python3-pip", "postgresql-client"]
 
 # Custom phase for Python dependencies - runs after install, before build
-# Updated 2026-02-17: Added sentence-transformers for knowledge base embeddings
+# Updated 2026-02-17: Added sentence-transformers, psycopg2-binary for knowledge base and dividend fetcher
 [phases.python_deps]
 dependsOn = ["install"]
 cmds = [
-  "pip3 install --break-system-packages --no-cache-dir requests beautifulsoup4 sentence-transformers && pip3 install --break-system-packages --no-cache-dir -r python-services/requirements.txt || echo 'pip install done'"
+  "pip3 install --break-system-packages --no-cache-dir requests beautifulsoup4 sentence-transformers psycopg2-binary && pip3 install --break-system-packages --no-cache-dir -r python-services/requirements.txt || echo 'pip install done'"
 ]
 
 [phases.build]
