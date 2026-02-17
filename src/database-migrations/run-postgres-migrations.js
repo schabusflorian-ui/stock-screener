@@ -66,6 +66,7 @@ const POSTGRES_MIGRATIONS = [
   'add-price-metrics.js',
   'add-help-tables.js',
   '029-seed-update-jobs-postgres.js',
+  '030-add-portfolio-eu-bundles-postgres.js',
 ];
 
 async function runMigrations() {
