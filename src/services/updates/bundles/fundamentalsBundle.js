@@ -101,7 +101,7 @@ class FundamentalsBundle {
       ? `CURRENT_TIMESTAMP - INTERVAL '7 days'`
       : `datetime('now', '-7 days')`;
     const result = await database.query(`
-      SELECT DISTINCT c.id, c.symbol
+      SELECT DISTINCT c.id, c.symbol, c.market_cap
       FROM companies c
       JOIN financial_data f ON f.company_id = c.id
       WHERE f.updated_at > ${interval7days}
@@ -149,7 +149,7 @@ class FundamentalsBundle {
       ? `CURRENT_DATE - INTERVAL '7 days'`
       : `date('now', '-7 days')`;
     const result = await database.query(`
-      SELECT DISTINCT c.id, c.symbol
+      SELECT DISTINCT c.id, c.symbol, c.market_cap
       FROM companies c
       WHERE c.id IN (SELECT company_id FROM financial_data)
       AND c.id IN (SELECT company_id FROM daily_prices WHERE date > ${date7daysAgo})
