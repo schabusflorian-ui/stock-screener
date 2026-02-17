@@ -2,6 +2,7 @@
 # Configuration for Railway Nixpacks builder
 # Updated: 2026-01-30 to fix cache conflicts
 # Updated: 2026-02-10 to add Python for AI analyst service (analystBridge.js spawns python3)
+# Updated: 2026-02-17 to add Python deps and postgresql-client for pg_dump
 
 [variables]
 # Speed up and stabilize frontend build (avoids timeout/OOM on Railway)
@@ -10,7 +11,15 @@ NODE_OPTIONS = "--max-old-space-size=4096"
 # No other env needed at build time; sensitive vars are runtime-only
 
 [phases.setup]
-aptPkgs = ["curl", "python3", "python3-pip"]
+# Add postgresql-client for pg_dump (database backups)
+aptPkgs = ["curl", "python3", "python3-pip", "postgresql-client"]
+
+[phases.install]
+# Install Python dependencies for knowledge base and data services
+cmds = [
+  "pip install --no-cache-dir requests beautifulsoup4 || true",
+  "pip install --no-cache-dir -r python-services/requirements.txt || true"
+]
 
 [phases.build]
 cmds = ["cd frontend && npm ci --legacy-peer-deps && CI=false npm run build"]

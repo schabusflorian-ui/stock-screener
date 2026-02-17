@@ -2,7 +2,7 @@
 // Comprehensive data collection service for PRISM equity research reports
 // Aggregates all available data sources for AI synthesis
 
-const { getDatabaseAsync } = require('../lib/db');
+const { getDatabaseAsync, isUsingPostgres } = require('../lib/db');
 const SECFilingParser = require('./secFilingParser');
 const EarningsTranscriptService = require('./earningsTranscriptService');
 const WikipediaService = require('./wikipediaService');
@@ -455,13 +455,16 @@ class PRISMDataCollector {
 
     try {
       // Get recent news (last 30 days, quality filtered)
+      const interval30days = isUsingPostgres()
+        ? `CURRENT_TIMESTAMP - INTERVAL '30 days'`
+        : `datetime('now', '-30 days')`;
       const recentResult = await database.query(`
         SELECT
           title, description, source, published_at, url,
           sentiment_score, sentiment_label
         FROM news_articles
         WHERE company_id = $1
-          AND published_at > datetime('now', '-30 days')
+          AND published_at > ${interval30days}
         ORDER BY published_at DESC
         LIMIT 50
       `, [companyId]);
@@ -551,13 +554,16 @@ class PRISMDataCollector {
       data.combined = combinedResult.rows[0];
 
       // Reddit mentions (quality filtered) - using company_id
+      const redditInterval7days = isUsingPostgres()
+        ? `CURRENT_TIMESTAMP - INTERVAL '7 days'`
+        : `datetime('now', '-7 days')`;
       const redditPostsResult = await database.query(`
         SELECT
           title, selftext as body, subreddit, score, num_comments,
           sentiment_score, posted_at as created_utc
         FROM reddit_posts
         WHERE company_id = $1
-          AND posted_at > datetime('now', '-7 days')
+          AND posted_at > ${redditInterval7days}
           AND score > 10
         ORDER BY score DESC
         LIMIT 20
@@ -576,12 +582,15 @@ class PRISMDataCollector {
       }
 
       // StockTwits sentiment - using company_id
+      const interval7days = isUsingPostgres()
+        ? `CURRENT_TIMESTAMP - INTERVAL '7 days'`
+        : `datetime('now', '-7 days')`;
       const stocktwitsMessagesResult = await database.query(`
         SELECT
           body, user_sentiment as sentiment, likes_count as likes, posted_at as created_at
         FROM stocktwits_messages
         WHERE company_id = $1
-          AND posted_at > datetime('now', '-7 days')
+          AND posted_at > ${interval7days}
         ORDER BY posted_at DESC
         LIMIT 50
       `, [companyId]);
