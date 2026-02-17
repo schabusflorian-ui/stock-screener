@@ -15,7 +15,7 @@ class KnowledgeBundle {
     this.knowledgeRefresher = new KnowledgeBaseRefresh();
   }
 
-  async execute(jobKey, context) {
+  async execute(jobKey, db, context) {
     const { onProgress } = context;
 
     switch (jobKey) {
@@ -92,5 +92,5 @@ class KnowledgeBundle {
 const knowledgeBundle = new KnowledgeBundle();
 
 module.exports = {
-  execute: (jobKey, context) => knowledgeBundle.execute(jobKey, context)
+  execute: (jobKey, db, context) => knowledgeBundle.execute(jobKey, db, context)
 };
