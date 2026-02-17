@@ -526,6 +526,7 @@ class UpdateOrchestrator extends EventEmitter {
    * Called on startup to resume any items that were being processed when the system crashed
    */
   async recoverStalledQueueItems() {
+    this.log('Running queue recovery and deduplication...');
     try {
       const database = await getDatabaseAsync();
       const staleCutoff = dialect.intervalAgo(10, 'minutes');
@@ -565,6 +566,18 @@ class UpdateOrchestrator extends EventEmitter {
       }
 
       // FIXED: Remove duplicate pending entries (keep only oldest per job_key)
+      // First, log how many pending entries exist per job_key for diagnosis
+      const pendingCountResult = await database.query(`
+        SELECT job_key, COUNT(*) as count FROM update_queue
+        WHERE status = 'pending'
+        GROUP BY job_key
+        HAVING COUNT(*) > 1
+      `);
+
+      if (pendingCountResult.rows.length > 0) {
+        this.log(`DEDUP: Found duplicates - ${JSON.stringify(pendingCountResult.rows)}`, 'WARN');
+      }
+
       const dedupResult = await database.query(`
         DELETE FROM update_queue
         WHERE id IN (
@@ -579,6 +592,8 @@ class UpdateOrchestrator extends EventEmitter {
 
       if (dedupResult.rowCount > 0) {
         this.log(`DEDUP: Removed ${dedupResult.rowCount} duplicate pending queue entries`, 'WARN');
+      } else {
+        this.log('DEDUP: No duplicate pending entries found');
       }
 
       return stalled;
