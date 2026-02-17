@@ -69,8 +69,8 @@ const POSTGRES_MIGRATIONS = [
   '030-add-portfolio-eu-bundles-postgres.js',
   '031-add-portfolio-eu-jobs-postgres.js',
   '034-reset-portfolio-eu-bundles-postgres.js',
-  '035-final-fix-portfolio-eu-postgres.js',
-  // 036 fixes the id column to have proper SERIAL behavior (sequence + default + NOT NULL)
+  // 036 fixes the id column to have proper SERIAL behavior (creates sequence + sets default + NOT NULL)
+  // This must run before 035, so we put only 036 here (036 includes all of 035's logic)
   '036-fix-update-bundles-serial-postgres.js',
 ];
 
