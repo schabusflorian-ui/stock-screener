@@ -74,6 +74,8 @@ jest.mock('../../src/lib/db', () => ({
   dialect: {
     intervalFromNow: (amount, unit) => `datetime('now', '+${amount} ${unit}')`,
     intervalAgo: (amount, unit) => `datetime('now', '-${amount} ${unit}')`,
+    isPostgres: () => false,
+    isSQLite: () => true,
   },
 }));
 
