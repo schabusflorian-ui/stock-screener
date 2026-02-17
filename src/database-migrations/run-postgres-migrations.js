@@ -69,8 +69,9 @@ const POSTGRES_MIGRATIONS = [
   '030-add-portfolio-eu-bundles-postgres.js',
   '031-add-portfolio-eu-jobs-postgres.js',
   '034-reset-portfolio-eu-bundles-postgres.js',
-  // 035 uses explicit nextval() and has detailed diagnostics
   '035-final-fix-portfolio-eu-postgres.js',
+  // 036 fixes the id column to have proper SERIAL behavior (sequence + default + NOT NULL)
+  '036-fix-update-bundles-serial-postgres.js',
 ];
 
 async function runMigrations() {
