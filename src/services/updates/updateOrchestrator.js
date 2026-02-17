@@ -578,11 +578,13 @@ class UpdateOrchestrator extends EventEmitter {
         this.log(`DEDUP: Found duplicates - ${JSON.stringify(pendingCountResult.rows)}`, 'WARN');
       }
 
+      // Use ctid (PostgreSQL) or rowid (SQLite) because id column may be NULL for old records
+      const rowId = dialect.isPostgres() ? 'ctid' : 'rowid';
       const dedupResult = await database.query(`
         DELETE FROM update_queue
-        WHERE id IN (
-          SELECT id FROM (
-            SELECT id, ROW_NUMBER() OVER (PARTITION BY job_key ORDER BY scheduled_for ASC) as rn
+        WHERE ${rowId} IN (
+          SELECT ${rowId} FROM (
+            SELECT ${rowId}, ROW_NUMBER() OVER (PARTITION BY job_key ORDER BY scheduled_for ASC) as rn
             FROM update_queue
             WHERE status = 'pending'
           ) ranked
