@@ -69,6 +69,7 @@ const POSTGRES_MIGRATIONS = [
   '030-add-portfolio-eu-bundles-postgres.js',
   '031-add-portfolio-eu-jobs-postgres.js',
   '032-fix-portfolio-eu-jobs-postgres.js',
+  '033-fix-corrupt-bundles-postgres.js',
 ];
 
 async function runMigrations() {
