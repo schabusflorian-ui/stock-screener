@@ -1,8 +1,8 @@
-// 031-add-portfolio-eu-jobs-postgres.js
-// Add missing portfolio and EU jobs (bundles already exist from 030)
+// 032-fix-portfolio-eu-jobs-postgres.js
+// Fix: properly add portfolio and EU jobs (031 failed due to missing unique constraint)
 
 async function migrate(db) {
-  console.log('Adding portfolio and EU jobs...');
+  console.log('Fixing portfolio and EU jobs...');
 
   // First, add unique constraint on update_bundles.name if not exists
   try {
@@ -23,7 +23,7 @@ async function migrate(db) {
   async function getBundleId(name) {
     const result = await db.query('SELECT * FROM update_bundles WHERE name = $1', [name]);
     if (result.rows.length > 0) {
-      console.log(`  getBundleId('${name}'): found row:`, JSON.stringify(result.rows[0]));
+      console.log(`  getBundleId('${name}'): id = ${result.rows[0].id}`);
       return result.rows[0].id;
     }
     console.log(`  getBundleId('${name}'): no rows found`);
@@ -36,15 +36,6 @@ async function migrate(db) {
     if (bundleId) return bundleId;
 
     console.log(`  Creating bundle: ${name}`);
-    // First check if it exists (without unique constraint)
-    const existsResult = await db.query('SELECT id FROM update_bundles WHERE name = $1', [name]);
-    if (existsResult.rows.length > 0) {
-      // Bundle exists but maybe id was null somehow - update it
-      const row = existsResult.rows[0];
-      console.log(`  Bundle exists with id=${row.id}`);
-      return row.id;
-    }
-
     // Insert new bundle
     const insertResult = await db.query(
       `INSERT INTO update_bundles (name, display_name, description, priority, is_automatic)
