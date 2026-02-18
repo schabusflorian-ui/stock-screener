@@ -154,8 +154,8 @@ class SECBundle {
       const result = await database.query(`
         SELECT id, name, cik
         FROM famous_investors
-        WHERE cik IS NOT NULL AND active = true
-        ORDER BY aum DESC
+        WHERE cik IS NOT NULL AND is_active = 1
+        ORDER BY aum_billions DESC NULLS LAST
         LIMIT 50
       `);
       const investors = result.rows;
