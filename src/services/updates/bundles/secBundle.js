@@ -166,7 +166,7 @@ class SECBundle {
       for (let i = 0; i < investors.length; i++) {
         const investor = investors[i];
         try {
-          await refresher.refreshInvestor(investor.cik);
+          await refresher.fetchSingle(investor.id);
           updated++;
         } catch (error) {
           console.error(`Error updating 13F for ${investor.name}:`, error.message);
