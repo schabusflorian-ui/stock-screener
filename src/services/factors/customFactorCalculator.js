@@ -40,10 +40,11 @@ class CustomFactorCalculator {
     }
 
     const database = await getDatabaseAsync();
+    // available_metrics.is_active is INTEGER (0/1) in both SQLite and PostgreSQL
     const result = await database.query(`
       SELECT metric_code, metric_name, category, description, higher_is_better
       FROM available_metrics
-      WHERE is_active = true
+      WHERE is_active = 1
       ORDER BY category, metric_name
     `);
 
@@ -322,7 +323,7 @@ class CustomFactorCalculator {
         ) latest ON sfs1.company_id = latest.company_id AND sfs1.score_date = latest.latest_score
       ) sfs ON c.id = sfs.company_id
       LEFT JOIN price_metrics pm ON c.id = pm.company_id
-      WHERE c.is_active = true
+      WHERE c.is_active = ${isUsingPostgres() ? 'true' : '1'}
     `;
 
     const params = [asOfDate, asOfDate];

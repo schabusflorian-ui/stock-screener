@@ -194,10 +194,13 @@ class AnalyticsBundle {
     await onProgress(5, 'Starting investor style classification...');
 
     // Get all famous investors
+    // famous_investors.is_active is INTEGER in SQLite, BOOLEAN in PostgreSQL
+    const { isUsingPostgres } = require('../../../lib/db');
+    const isActiveCheck = isUsingPostgres() ? 'is_active = true' : 'is_active = 1';
     const result = await database.query(`
       SELECT id, name, investment_style
       FROM famous_investors
-      WHERE is_active = true
+      WHERE ${isActiveCheck}
     `);
     const investors = result.rows;
 

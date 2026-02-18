@@ -126,7 +126,7 @@ class FactorAnalysisService {
     const database = await this._getDatabase();
     const result = await database.query(`
       SELECT * FROM factor_definitions
-      WHERE is_active = true
+      WHERE is_active = 1
       ORDER BY factor_category, factor_name
     `);
     return result.rows;
@@ -551,7 +551,7 @@ class FactorAnalysisService {
     const decisionContexts = decisionContextsResult.rows[0];
 
     const factorDefinitionsResult = await database.query(`
-      SELECT COUNT(*) as count FROM factor_definitions WHERE is_active = true
+      SELECT COUNT(*) as count FROM factor_definitions WHERE is_active = 1
     `);
     const factorDefinitions = factorDefinitionsResult.rows[0];
 

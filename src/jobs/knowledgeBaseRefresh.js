@@ -145,7 +145,12 @@ class KnowledgeBaseRefresh {
         if (code === 0) {
           resolve(result);
         } else {
-          reject(new Error(`Process exited with code ${code}`));
+          // Include stderr and last lines of stdout for better debugging
+          const stderrSummary = stderr.trim().slice(-500) || 'No stderr output';
+          const stdoutSummary = stdout.trim().slice(-500) || 'No stdout output';
+          const errorMsg = `Knowledge base refresh failed (exit code ${code})\nStderr: ${stderrSummary}\nStdout (last 500 chars): ${stdoutSummary}`;
+          console.error('[KnowledgeBaseRefresh] Error details:', errorMsg);
+          reject(new Error(errorMsg));
         }
       });
 

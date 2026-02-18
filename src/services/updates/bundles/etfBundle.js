@@ -41,6 +41,22 @@ class ETFBundle {
     const database = await getDatabaseAsync();
     await onProgress(5, 'Starting Tier 1 ETF update...');
 
+    // Ensure ETF scheduler is initialized
+    if (!this.etfScheduler) {
+      this.etfScheduler = getETFUpdateScheduler();
+    }
+
+    if (!this.etfScheduler || typeof this.etfScheduler.updateTier1 !== 'function') {
+      console.warn('[ETFBundle] ETF scheduler not available, skipping tier 1 update');
+      return {
+        itemsTotal: 0,
+        itemsProcessed: 0,
+        itemsUpdated: 0,
+        itemsFailed: 0,
+        metadata: { skipped: true, reason: 'ETF scheduler not available' }
+      };
+    }
+
     // Use existing ETF scheduler
     await onProgress(10, 'Updating curated ETFs...');
     await this.etfScheduler.updateTier1();
@@ -59,6 +75,22 @@ class ETFBundle {
   async runTier2Update(db, onProgress) {
     const database = await getDatabaseAsync();
     await onProgress(5, 'Starting Tier 2 ETF update...');
+
+    // Ensure ETF scheduler is initialized
+    if (!this.etfScheduler) {
+      this.etfScheduler = getETFUpdateScheduler();
+    }
+
+    if (!this.etfScheduler || typeof this.etfScheduler.updateTier2 !== 'function') {
+      console.warn('[ETFBundle] ETF scheduler not available, skipping tier 2 update');
+      return {
+        itemsTotal: 0,
+        itemsProcessed: 0,
+        itemsUpdated: 0,
+        itemsFailed: 0,
+        metadata: { skipped: true, reason: 'ETF scheduler not available' }
+      };
+    }
 
     await onProgress(10, 'Updating indexed ETFs...');
     await this.etfScheduler.updateTier2();

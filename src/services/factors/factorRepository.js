@@ -2,7 +2,7 @@
 // CRUD operations for user-defined factors
 
 const crypto = require('crypto');
-const { getDatabaseAsync } = require('../../lib/db');
+const { getDatabaseAsync, isUsingPostgres } = require('../../lib/db');
 const { validateFormula } = require('./factorFormulaParser');
 
 /**
@@ -28,10 +28,11 @@ class FactorRepository {
 
     try {
       const database = await getDatabaseAsync();
+      // available_metrics.is_active is INTEGER (0/1) in both SQLite and PostgreSQL
       const result = await database.query(`
         SELECT metric_code, metric_name, category, description, higher_is_better
         FROM available_metrics
-        WHERE is_active = true
+        WHERE is_active = 1
         ORDER BY category, metric_name
       `);
       this._availableMetrics = result.rows;
@@ -155,9 +156,10 @@ class FactorRepository {
    */
   async getActiveFactors(userId = null) {
     const database = await getDatabaseAsync();
+    // user_factors.is_active and is_valid are INTEGER (0/1) in both SQLite and PostgreSQL
     let query = `
       SELECT * FROM user_factors
-      WHERE is_active = true AND is_valid = true
+      WHERE is_active = 1 AND is_valid = 1
     `;
 
     if (userId) {

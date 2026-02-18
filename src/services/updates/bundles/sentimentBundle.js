@@ -85,11 +85,11 @@ class SentimentBundle {
         // Table doesn't exist, skip
       }
 
-      // Try to get tickers from portfolio_holdings (may not exist in all environments)
+      // Try to get tickers from portfolio_positions (may not exist in all environments)
       try {
         const portfolioResult = await database.query(`
-          SELECT DISTINCT c.symbol FROM portfolio_holdings ph
-          JOIN companies c ON ph.company_id = c.id
+          SELECT DISTINCT c.symbol FROM portfolio_positions pp
+          JOIN companies c ON pp.company_id = c.id
         `);
         tickers.push(...portfolioResult.rows);
       } catch {

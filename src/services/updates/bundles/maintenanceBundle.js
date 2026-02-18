@@ -431,11 +431,12 @@ class MaintenanceBundle {
 
       // Check for companies without recent price data
       await onProgress(20, 'Checking for stale price data...');
+      const isActiveCheck = isUsingPostgres() ? 'c.is_active = true' : 'c.is_active = 1';
       const stalePricesResult = await database.query(`
         SELECT c.symbol, MAX(dp.date) as last_date
         FROM companies c
         LEFT JOIN daily_prices dp ON c.id = dp.company_id
-        WHERE c.is_active = 1
+        WHERE ${isActiveCheck}
         GROUP BY c.id, c.symbol
         HAVING MAX(dp.date) < ${date7daysAgo} OR MAX(dp.date) IS NULL
         LIMIT 100
@@ -455,7 +456,7 @@ class MaintenanceBundle {
         SELECT c.symbol, MAX(fd.created_at) as last_update
         FROM companies c
         LEFT JOIN financial_data fd ON c.id = fd.company_id
-        WHERE c.is_active = 1 AND c.cik IS NOT NULL
+        WHERE ${isActiveCheck} AND c.cik IS NOT NULL
         GROUP BY c.id, c.symbol
         HAVING MAX(fd.created_at) < ${timestamp90daysAgo} OR MAX(fd.created_at) IS NULL
         LIMIT 100
