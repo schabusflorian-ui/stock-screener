@@ -434,8 +434,13 @@ class XBRLSyncService {
       priorYearData[key].push(m);
     }
     // Sort each company's data by period descending
+    // Handle both Date objects (PostgreSQL) and strings (SQLite)
     for (const key in priorYearData) {
-      priorYearData[key].sort((a, b) => b.period_end.localeCompare(a.period_end));
+      priorYearData[key].sort((a, b) => {
+        const aDate = a.period_end instanceof Date ? a.period_end.toISOString() : String(a.period_end);
+        const bDate = b.period_end instanceof Date ? b.period_end.toISOString() : String(b.period_end);
+        return bDate.localeCompare(aDate);
+      });
     }
 
 
@@ -522,7 +527,12 @@ class XBRLSyncService {
         // Find prior year data for growth calculations
         const key = `${m.company_id}_${m.period_type || 'annual'}`;
         const companyData = priorYearData[key] || [];
-        const currentIdx = companyData.findIndex(d => d.period_end === m.period_end);
+        // Handle Date objects (PostgreSQL) and strings (SQLite) when comparing period_end
+        const mPeriodEnd = m.period_end instanceof Date ? m.period_end.toISOString() : String(m.period_end);
+        const currentIdx = companyData.findIndex(d => {
+          const dPeriodEnd = d.period_end instanceof Date ? d.period_end.toISOString() : String(d.period_end);
+          return dPeriodEnd === mPeriodEnd;
+        });
         const priorYear = currentIdx >= 0 && currentIdx < companyData.length - 1
           ? companyData[currentIdx + 1]
           : null;

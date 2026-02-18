@@ -418,8 +418,10 @@ class UpdateOrchestrator extends EventEmitter {
 
   async updateProgress(runId, jobKey, progress, step) {
     const database = await getDatabaseAsync();
+    // Ensure progress is an integer for PostgreSQL INTEGER columns
+    const progressInt = Math.round(progress);
     await database.query('UPDATE update_runs SET progress = $1, current_step = $2 WHERE id = $3',
-      [progress, step, runId]);
+      [progressInt, step, runId]);
     await database.query(`
       UPDATE update_jobs SET
         status = $1,
@@ -428,8 +430,8 @@ class UpdateOrchestrator extends EventEmitter {
         current_step = $4,
         updated_at = CURRENT_TIMESTAMP
       WHERE job_key = $5
-    `, ['running', 1, progress, step, jobKey]);
-    this.emit('progress', { jobKey, runId, progress, step });
+    `, ['running', 1, progressInt, step, jobKey]);
+    this.emit('progress', { jobKey, runId, progress: progressInt, step });
   }
 
   // =========================================================================

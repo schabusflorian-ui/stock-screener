@@ -418,10 +418,10 @@ class EUBundle {
       await onProgress(10, 'Finding companies needing valuation update...');
 
       const companiesResult = await database.query(`
-        SELECT DISTINCT c.id, c.symbol, c.name, c.country_code
+        SELECT DISTINCT c.id, c.symbol, c.name, c.country
         FROM companies c
         JOIN xbrl_companies xc ON xc.company_id = c.id
-        WHERE c.country_code IN ('GB', 'DE', 'FR', 'NL', 'CH', 'ES', 'IT', 'SE', 'BE', 'AT')
+        WHERE c.country IN ('GB', 'DE', 'FR', 'NL', 'CH', 'ES', 'IT', 'SE', 'BE', 'AT')
           AND xc.latest_filing_date IS NOT NULL
         ORDER BY c.market_cap DESC NULLS LAST
         LIMIT 200
@@ -532,9 +532,9 @@ class EUBundle {
       await onProgress(10, 'Finding companies needing sector enrichment...');
 
       const companiesResult = await database.query(`
-        SELECT c.id, c.symbol, c.name, c.country_code
+        SELECT c.id, c.symbol, c.name, c.country
         FROM companies c
-        WHERE c.country_code IN ('GB', 'DE', 'FR', 'NL', 'CH', 'ES', 'IT', 'SE', 'BE', 'AT')
+        WHERE c.country IN ('GB', 'DE', 'FR', 'NL', 'CH', 'ES', 'IT', 'SE', 'BE', 'AT')
           AND (c.sector IS NULL OR c.sector = '' OR c.industry IS NULL OR c.industry = '')
           AND c.symbol IS NOT NULL
         ORDER BY c.market_cap DESC NULLS LAST
@@ -566,11 +566,11 @@ class EUBundle {
         try {
           // Construct Yahoo symbol (add exchange suffix)
           let yahooSymbol = company.symbol;
-          if (company.country_code === 'GB' && !yahooSymbol.includes('.L')) {
+          if (company.country === 'GB' && !yahooSymbol.includes('.L')) {
             yahooSymbol = `${company.symbol}.L`;
-          } else if (company.country_code === 'DE' && !yahooSymbol.includes('.DE')) {
+          } else if (company.country === 'DE' && !yahooSymbol.includes('.DE')) {
             yahooSymbol = `${company.symbol}.DE`;
-          } else if (company.country_code === 'FR' && !yahooSymbol.includes('.PA')) {
+          } else if (company.country === 'FR' && !yahooSymbol.includes('.PA')) {
             yahooSymbol = `${company.symbol}.PA`;
           }
 
