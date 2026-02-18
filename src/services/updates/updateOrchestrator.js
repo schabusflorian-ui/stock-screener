@@ -11,7 +11,7 @@ const EventEmitter = require('events');
 const path = require('path');
 const fs = require('fs');
 const sentry = require('../../lib/sentry'); // PHASE 2.4: Sentry integration for job failures
-const { getDatabaseAsync, dialect } = require('../../lib/db');
+const { getDatabaseAsync, dialect, isUsingPostgres } = require('../../lib/db');
 
 class UpdateOrchestrator extends EventEmitter {
   constructor() {
