@@ -281,8 +281,9 @@ class PriceService {
     // Update price_metrics if we have quote data
     if (prices.length > 0) {
       const latest = prices[prices.length - 1];
-      const marketCap = quote?.marketCap || null;
-      const sharesOutstanding = quote?.sharesOutstanding || null;
+      // Ensure values are numbers or null (not booleans)
+      const marketCap = typeof quote?.marketCap === 'number' ? quote.marketCap : null;
+      const sharesOutstanding = typeof quote?.sharesOutstanding === 'number' ? quote.sharesOutstanding : null;
 
       const metricsQuery = isPostgres ? `
         INSERT INTO price_metrics (company_id, last_price, market_cap, shares_outstanding, updated_at)
