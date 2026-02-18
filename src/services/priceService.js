@@ -173,13 +173,13 @@ class PriceService {
         if (data && data.quotes && data.quotes.length > 0) {
           results.set(symbol, data.quotes.map(q => ({
             date: new Date(q.date).toISOString().split('T')[0],
-            open: q.open,
-            high: q.high,
-            low: q.low,
-            close: q.close,
-            adjusted_close: q.adjclose || q.close,
-            volume: q.volume || 0
-          })).filter(q => q.close !== null));
+            open: typeof q.open === 'number' ? q.open : null,
+            high: typeof q.high === 'number' ? q.high : null,
+            low: typeof q.low === 'number' ? q.low : null,
+            close: typeof q.close === 'number' ? q.close : null,
+            adjusted_close: typeof (q.adjclose || q.close) === 'number' ? (q.adjclose || q.close) : null,
+            volume: typeof q.volume === 'number' ? q.volume : 0
+          })).filter(q => typeof q.close === 'number' && isFinite(q.close)));
 
           // Reset error counter on success
           this.consecutiveErrors = 0;
@@ -281,9 +281,15 @@ class PriceService {
     // Update price_metrics if we have quote data
     if (prices.length > 0) {
       const latest = prices[prices.length - 1];
-      // Ensure values are numbers or null (not booleans)
-      const marketCap = typeof quote?.marketCap === 'number' ? quote.marketCap : null;
-      const sharesOutstanding = typeof quote?.sharesOutstanding === 'number' ? quote.sharesOutstanding : null;
+      // Ensure ALL values are numbers or null (not booleans or other types)
+      const lastPrice = typeof latest.close === 'number' && isFinite(latest.close) ? latest.close : null;
+      const marketCap = typeof quote?.marketCap === 'number' && isFinite(quote.marketCap) ? quote.marketCap : null;
+      const sharesOutstanding = typeof quote?.sharesOutstanding === 'number' && isFinite(quote.sharesOutstanding) ? quote.sharesOutstanding : null;
+
+      // Skip if no valid price
+      if (lastPrice === null) {
+        return { newRecords, updatedRecords };
+      }
 
       const metricsQuery = isPostgres ? `
         INSERT INTO price_metrics (company_id, last_price, market_cap, shares_outstanding, updated_at)
@@ -304,9 +310,10 @@ class PriceService {
       `;
 
       try {
-        await db.query(metricsQuery, [companyId, latest.close, marketCap, sharesOutstanding]);
+        await db.query(metricsQuery, [companyId, lastPrice, marketCap, sharesOutstanding]);
       } catch (error) {
-        // Ignore metrics errors
+        // Log metrics errors for debugging
+        console.log(`[PriceService] Metrics error for company ${companyId}: ${error.message}`);
       }
     }
 
