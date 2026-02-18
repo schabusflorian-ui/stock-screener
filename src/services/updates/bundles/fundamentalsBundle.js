@@ -41,18 +41,20 @@ class FundamentalsBundle {
     await onProgress(5, 'Starting quarterly fundamentals update...');
 
     // Get companies that need updating (no recent financial data)
-    // Note: update_queue doesn't have company_id - it tracks jobs not individual company updates
+    // Use LEFT JOIN pattern instead of NOT IN for better PostgreSQL compatibility
     const interval30days = isUsingPostgres()
       ? `CURRENT_TIMESTAMP - INTERVAL '30 days'`
       : `datetime('now', '-30 days')`;
     const result = await database.query(`
       SELECT c.id, c.symbol, c.cik
       FROM companies c
+      LEFT JOIN (
+        SELECT DISTINCT fd.company_id
+        FROM financial_data fd
+        WHERE fd.created_at > ${interval30days}
+      ) recent ON recent.company_id = c.id
       WHERE c.cik IS NOT NULL
-      AND c.id NOT IN (
-        SELECT DISTINCT company_id FROM financial_data
-        WHERE created_at > ${interval30days}
-      )
+        AND recent.company_id IS NULL
       ORDER BY c.market_cap DESC NULLS LAST
       LIMIT 50
     `);
@@ -94,14 +96,16 @@ class FundamentalsBundle {
     await onProgress(5, 'Starting metrics recalculation...');
 
     // Get companies with financial data
+    // Use GROUP BY instead of DISTINCT for better PostgreSQL compatibility
     const interval7days = isUsingPostgres()
       ? `CURRENT_TIMESTAMP - INTERVAL '7 days'`
       : `datetime('now', '-7 days')`;
     const result = await database.query(`
-      SELECT DISTINCT c.id, c.symbol, c.market_cap
+      SELECT c.id, c.symbol, c.market_cap
       FROM companies c
       JOIN financial_data f ON f.company_id = c.id
       WHERE f.updated_at > ${interval7days}
+      GROUP BY c.id, c.symbol, c.market_cap
       ORDER BY c.market_cap DESC NULLS LAST
     `);
     const companies = result.rows;
@@ -142,14 +146,15 @@ class FundamentalsBundle {
     await onProgress(5, 'Starting ratios calculation...');
 
     // Get companies with price and fundamental data
+    // Use EXISTS for better performance with subqueries
     const date7daysAgo = isUsingPostgres()
       ? `CURRENT_DATE - INTERVAL '7 days'`
       : `date('now', '-7 days')`;
     const result = await database.query(`
-      SELECT DISTINCT c.id, c.symbol, c.market_cap
+      SELECT c.id, c.symbol, c.market_cap
       FROM companies c
-      WHERE c.id IN (SELECT company_id FROM financial_data)
-      AND c.id IN (SELECT company_id FROM daily_prices WHERE date > ${date7daysAgo})
+      WHERE EXISTS (SELECT 1 FROM financial_data fd WHERE fd.company_id = c.id)
+      AND EXISTS (SELECT 1 FROM daily_prices dp WHERE dp.company_id = c.id AND dp.date > ${date7daysAgo})
       ORDER BY c.market_cap DESC NULLS LAST
       LIMIT 500
     `);
@@ -290,6 +295,7 @@ class FundamentalsBundle {
 
     try {
       // Get companies that may need earnings updates (those with recent filings)
+      // Use EXISTS for better PostgreSQL compatibility
       const interval30days = isUsingPostgres()
         ? `CURRENT_TIMESTAMP - INTERVAL '30 days'`
         : `datetime('now', '-30 days')`;
@@ -298,9 +304,9 @@ class FundamentalsBundle {
         SELECT c.id, c.symbol, c.cik
         FROM companies c
         WHERE c.cik IS NOT NULL
-        AND c.id IN (
-          SELECT DISTINCT company_id FROM financial_data
-          WHERE updated_at > ${interval30days}
+        AND EXISTS (
+          SELECT 1 FROM financial_data fd
+          WHERE fd.company_id = c.id AND fd.updated_at > ${interval30days}
         )
         ORDER BY c.market_cap DESC NULLS LAST
         LIMIT 100
