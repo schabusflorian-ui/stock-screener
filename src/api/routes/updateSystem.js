@@ -800,4 +800,81 @@ router.post('/bundles/:name/run', async (req, res) => {
   }
 });
 
+// ============================================
+// ADMIN: ENSURE PRICES.ALPHA JOB EXISTS
+// ============================================
+
+/**
+ * POST /api/update-system/admin/ensure-alpha-job
+ * Creates the prices.alpha job if it doesn't exist
+ * Temporary endpoint for migration repair
+ */
+router.post('/admin/ensure-alpha-job', async (req, res) => {
+  try {
+    const database = await getDb();
+    const isPostgres = database.constructor.name === 'PgDatabase' ||
+                       (database.query && database.query.toString().includes('$'));
+
+    // Get prices bundle ID
+    const bundleQuery = isPostgres
+      ? "SELECT id FROM update_bundles WHERE name = $1"
+      : "SELECT id FROM update_bundles WHERE name = ?";
+    const bundleResult = await database.query(bundleQuery, ['prices']);
+    const bundleId = bundleResult.rows?.[0]?.id || bundleResult[0]?.id;
+
+    if (!bundleId) {
+      return res.status(404).json({ error: 'prices bundle not found' });
+    }
+
+    // Check if job already exists
+    const checkQuery = isPostgres
+      ? "SELECT id FROM update_jobs WHERE job_key = $1"
+      : "SELECT id FROM update_jobs WHERE job_key = ?";
+    const existingJob = await database.query(checkQuery, ['prices.alpha']);
+    const existing = existingJob.rows?.[0] || existingJob[0];
+
+    if (existing) {
+      return res.json({ success: true, message: 'Job already exists', jobId: existing.id });
+    }
+
+    // Insert the job
+    const insertQuery = isPostgres ? `
+      INSERT INTO update_jobs (
+        bundle_id, job_key, name, description, cron_expression,
+        is_enabled, is_automatic, batch_size, batch_delay_ms, timeout_seconds
+      ) VALUES (
+        $1, 'prices.alpha', 'Alpha Vantage Critical Update',
+        'Update critical stocks (indices + top 12) via Alpha Vantage API',
+        '0 18 * * 1-5',
+        1, 1, 20, 2000, 600
+      )
+      RETURNING id
+    ` : `
+      INSERT INTO update_jobs (
+        bundle_id, job_key, name, description, cron_expression,
+        is_enabled, is_automatic, batch_size, batch_delay_ms, timeout_seconds
+      ) VALUES (
+        ?, 'prices.alpha', 'Alpha Vantage Critical Update',
+        'Update critical stocks (indices + top 12) via Alpha Vantage API',
+        '0 18 * * 1-5',
+        1, 1, 20, 2000, 600
+      )
+    `;
+
+    const insertResult = await database.query(insertQuery, [bundleId]);
+    const newId = insertResult.rows?.[0]?.id || insertResult.lastInsertRowid;
+
+    res.json({
+      success: true,
+      message: 'Job created successfully',
+      jobId: newId,
+      bundleId: bundleId
+    });
+
+  } catch (error) {
+    console.error('Error creating alpha job:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
