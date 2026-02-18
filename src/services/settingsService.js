@@ -40,7 +40,7 @@ class SettingsService {
     return {
       'stock_prices': 'prices.daily',
       'stock_fundamentals': 'sec.filings',
-      'insider_transactions': 'sec.insiders',
+      'insider_transactions': 'sec.insider',
       'capital_allocation': 'capital.allocation',
       'investor_13f': 'sec.13f',
       'etf_holdings': 'etf.holdings',
@@ -49,7 +49,7 @@ class SettingsService {
       'knowledge_base': 'knowledge.incremental',
       'liquidity_metrics': 'portfolio.liquidity',
       'portfolio_snapshots': 'portfolio.snapshots',
-      'market_regime': 'analytics.regime',
+      'market_regime': 'analytics.market_indicators',
       'xbrl_import': 'eu.xbrl_import',
       'european_prices': 'eu.prices',
       'european_indices': 'eu.indices',
