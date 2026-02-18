@@ -92,7 +92,7 @@ class EUBundle {
 
       for (let i = 0; i < countries.length; i++) {
         const countryCode = countries[i];
-        const baseProgress = 5 + (i / countries.length) * 85;
+        const baseProgress = Math.round(5 + (i / countries.length) * 85);
         await onProgress(baseProgress, `Importing ${countryCode} filings...`);
 
         try {
@@ -303,7 +303,7 @@ class EUBundle {
 
       for (let i = 0; i < euCountries.length; i++) {
         const country = euCountries[i];
-        const baseProgress = 5 + (i / euCountries.length) * 85;
+        const baseProgress = Math.round(5 + (i / euCountries.length) * 85);
         await onProgress(baseProgress, `Updating ${country} prices...`);
 
         try {

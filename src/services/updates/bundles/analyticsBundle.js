@@ -253,7 +253,7 @@ class AnalyticsBundle {
       classified++;
 
       if ((i + 1) % 10 === 0) {
-        const pct = 10 + ((i + 1) / investors.length) * 85;
+        const pct = Math.round(10 + ((i + 1) / investors.length) * 85);
         await onProgress(pct, `Classified ${i + 1}/${investors.length} investors...`);
       }
     }
@@ -346,7 +346,7 @@ class AnalyticsBundle {
       updated++;
 
       if ((i + 1) % 20 === 0) {
-        const pct = 10 + ((i + 1) / investors.length) * 85;
+        const pct = Math.round(10 + ((i + 1) / investors.length) * 85);
         await onProgress(pct, `Updated ${i + 1}/${investors.length} track records...`);
       }
     }
