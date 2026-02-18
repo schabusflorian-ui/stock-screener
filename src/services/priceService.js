@@ -1,16 +1,34 @@
 // src/services/priceService.js
 /**
- * Node.js-native price update service using yahoo-finance2
- * Replaces the Python price_updater.py for PostgreSQL compatibility
+ * Node.js-native price update service using yahoo-finance2 + Alpha Vantage
+ *
+ * Hybrid approach:
+ * - Alpha Vantage: Critical 20 stocks (indices + top stocks) - reliable, 25/day limit
+ * - Yahoo Finance: Everything else - may be rate limited from Railway
  */
 
+const axios = require('axios');
 const YahooFinanceClass = require('yahoo-finance2').default;
 const { getDatabaseAsync, isUsingPostgres } = require('../lib/db');
+const config = require('../config');
 
 // Initialize Yahoo Finance
 const yahooFinance = new YahooFinanceClass({ suppressNotices: ['yahooSurvey'] });
 
-// Configuration
+// Alpha Vantage configuration
+const ALPHA_VANTAGE_KEY = config.apis?.alphaVantage?.apiKey || process.env.ALPHA_VANTAGE_KEY;
+const ALPHA_VANTAGE_URL = 'https://www.alphavantage.co/query';
+const ALPHA_RATE_LIMIT_MS = 2000; // 2 seconds between calls (safe for free tier)
+
+// Critical symbols to update via Alpha Vantage (indices + top stocks)
+const CRITICAL_SYMBOLS = [
+  // Index ETFs (8)
+  'SPY', 'QQQ', 'DIA', 'IWM', 'VTI', 'BND', 'GLD', 'TLT',
+  // Top US stocks (12)
+  'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'BRK-B', 'JPM', 'V', 'UNH', 'JNJ'
+];
+
+// Yahoo Finance configuration
 const BATCH_SIZE = 20;  // Reduced from 50 to avoid rate limits
 const DELAY_BETWEEN_BATCHES_MS = 10000;  // Increased from 5000
 const FETCH_DAYS = 7;
@@ -55,6 +73,7 @@ class PriceService {
     this.rateLimitMs = 2000;  // Increased from 500ms to 2 seconds
     this.lastRequestTime = 0;
     this.consecutiveErrors = 0;
+    this.alphaLastRequestTime = 0;
   }
 
   async throttle() {
@@ -64,6 +83,188 @@ class PriceService {
       await new Promise(resolve => setTimeout(resolve, this.rateLimitMs - timeSinceLastRequest));
     }
     this.lastRequestTime = Date.now();
+  }
+
+  async alphaThrottle() {
+    const now = Date.now();
+    const timeSinceLastRequest = now - this.alphaLastRequestTime;
+    if (timeSinceLastRequest < ALPHA_RATE_LIMIT_MS) {
+      await new Promise(resolve => setTimeout(resolve, ALPHA_RATE_LIMIT_MS - timeSinceLastRequest));
+    }
+    this.alphaLastRequestTime = Date.now();
+  }
+
+  /**
+   * Fetch daily prices from Alpha Vantage
+   */
+  async fetchAlphaVantageDaily(symbol) {
+    if (!ALPHA_VANTAGE_KEY) {
+      console.log('[PriceService] Alpha Vantage API key not configured');
+      return null;
+    }
+
+    try {
+      await this.alphaThrottle();
+
+      const response = await axios.get(ALPHA_VANTAGE_URL, {
+        params: {
+          function: 'TIME_SERIES_DAILY',
+          symbol: symbol,
+          outputsize: 'compact',
+          apikey: ALPHA_VANTAGE_KEY
+        },
+        timeout: 30000
+      });
+
+      const data = response.data;
+
+      // Check for rate limit or error messages
+      if (data.Information || data.Note) {
+        console.log(`[PriceService] Alpha Vantage limit for ${symbol}: ${data.Information || data.Note}`);
+        return null;
+      }
+
+      if (data['Error Message']) {
+        console.log(`[PriceService] Alpha Vantage error for ${symbol}: ${data['Error Message']}`);
+        return null;
+      }
+
+      const timeSeries = data['Time Series (Daily)'];
+      if (!timeSeries) {
+        console.log(`[PriceService] No data from Alpha Vantage for ${symbol}`);
+        return null;
+      }
+
+      // Convert to our format (last 7 days)
+      const prices = [];
+      const dates = Object.keys(timeSeries).sort().reverse().slice(0, 7);
+
+      for (const date of dates) {
+        const day = timeSeries[date];
+        prices.push({
+          date: date,
+          open: parseFloat(day['1. open']),
+          high: parseFloat(day['2. high']),
+          low: parseFloat(day['3. low']),
+          close: parseFloat(day['4. close']),
+          adjusted_close: parseFloat(day['4. close']),
+          volume: parseInt(day['5. volume'], 10)
+        });
+      }
+
+      return prices.reverse(); // Oldest first
+    } catch (error) {
+      console.log(`[PriceService] Alpha Vantage fetch error for ${symbol}: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Fetch current quote from Alpha Vantage
+   */
+  async fetchAlphaVantageQuote(symbol) {
+    if (!ALPHA_VANTAGE_KEY) return null;
+
+    try {
+      await this.alphaThrottle();
+
+      const response = await axios.get(ALPHA_VANTAGE_URL, {
+        params: {
+          function: 'GLOBAL_QUOTE',
+          symbol: symbol,
+          apikey: ALPHA_VANTAGE_KEY
+        },
+        timeout: 30000
+      });
+
+      const data = response.data;
+      if (data.Information || data.Note || data['Error Message']) {
+        return null;
+      }
+
+      const quote = data['Global Quote'];
+      if (!quote || !quote['05. price']) {
+        return null;
+      }
+
+      return {
+        price: parseFloat(quote['05. price']),
+        change: parseFloat(quote['09. change']),
+        changePercent: parseFloat(quote['10. change percent']?.replace('%', '')),
+        volume: parseInt(quote['06. volume'], 10),
+        previousClose: parseFloat(quote['08. previous close'])
+      };
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * Run Alpha Vantage update for critical symbols (20 symbols max)
+   * Uses 20 API calls, leaving 5 for other uses within 25/day limit
+   */
+  async runAlphaUpdate(onProgress) {
+    if (!ALPHA_VANTAGE_KEY) {
+      console.log('[PriceService] Alpha Vantage API key not configured, skipping');
+      await onProgress?.(100, 'Alpha Vantage not configured');
+      return { itemsTotal: 0, itemsProcessed: 0, itemsUpdated: 0, itemsFailed: 0 };
+    }
+
+    const db = await getDatabaseAsync();
+    const startTime = Date.now();
+
+    console.log(`[PriceService] Starting Alpha Vantage update for ${CRITICAL_SYMBOLS.length} critical symbols`);
+    await onProgress?.(5, `Updating ${CRITICAL_SYMBOLS.length} critical symbols via Alpha Vantage...`);
+
+    let successful = 0;
+    let failed = 0;
+
+    for (let i = 0; i < CRITICAL_SYMBOLS.length; i++) {
+      const symbol = CRITICAL_SYMBOLS[i];
+      const progress = 5 + Math.floor(((i + 1) / CRITICAL_SYMBOLS.length) * 90);
+      await onProgress?.(progress, `Alpha Vantage: ${symbol} (${i + 1}/${CRITICAL_SYMBOLS.length})`);
+
+      try {
+        // Fetch daily prices
+        const prices = await this.fetchAlphaVantageDaily(symbol);
+
+        if (prices && prices.length > 0) {
+          // Find company_id for this symbol
+          const isPostgres = isUsingPostgres();
+          const findQuery = isPostgres
+            ? 'SELECT id FROM companies WHERE symbol = $1 LIMIT 1'
+            : 'SELECT id FROM companies WHERE symbol = ? LIMIT 1';
+
+          const result = await db.query(findQuery, [symbol]);
+          const company = (result.rows || result)[0];
+
+          if (company) {
+            await this.upsertPrices(db, company.id, prices, null);
+            successful++;
+            console.log(`[PriceService] Alpha Vantage updated ${symbol}: ${prices.length} days`);
+          } else {
+            console.log(`[PriceService] Symbol ${symbol} not found in companies table`);
+            failed++;
+          }
+        } else {
+          failed++;
+        }
+      } catch (error) {
+        console.log(`[PriceService] Alpha Vantage error for ${symbol}: ${error.message}`);
+        failed++;
+      }
+    }
+
+    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`[PriceService] Alpha Vantage update complete: ${successful}/${CRITICAL_SYMBOLS.length} in ${duration}s`);
+    await onProgress?.(100, `Alpha Vantage: ${successful} updated, ${failed} failed`);
+
+    return {
+      itemsTotal: CRITICAL_SYMBOLS.length,
+      itemsProcessed: successful + failed,
+      itemsUpdated: successful,
+      itemsFailed: failed
+    };
   }
 
   getYahooSymbol(symbol, country) {

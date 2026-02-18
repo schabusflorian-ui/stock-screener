@@ -30,6 +30,8 @@ class PriceBundle {
         return this.priceService.runIntradayUpdate(onProgress);
       case 'prices.index':
         return this.priceService.runIndexUpdate(onProgress);
+      case 'prices.alpha':
+        return this.priceService.runAlphaUpdate(onProgress);
       default:
         throw new Error(`Unknown price job: ${jobKey}`);
     }
