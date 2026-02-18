@@ -110,6 +110,11 @@ class PortfolioService {
     // Refresh position values for each portfolio to ensure current_value is up-to-date
     // This prevents stale values when market prices change between trade executions
     for (const portfolio of portfolios) {
+      // Skip portfolios without valid IDs (defensive check)
+      if (!portfolio.id) {
+        console.warn('Skipping portfolio refresh: missing portfolio ID');
+        continue;
+      }
       try {
         await this.holdingsEngine.refreshPositionValues(portfolio.id);
       } catch (error) {
@@ -839,6 +844,11 @@ class PortfolioService {
     const results = [];
 
     for (const portfolio of portfolios) {
+      // Skip portfolios without valid IDs (defensive check)
+      if (!portfolio.id) {
+        console.warn('Skipping portfolio in refreshAllPortfolios: missing portfolio ID');
+        continue;
+      }
       try {
         const refreshResult = await this.holdingsEngine.refreshPositionValues(portfolio.id);
         results.push({
@@ -865,6 +875,11 @@ class PortfolioService {
     const results = [];
 
     for (const portfolio of portfolios) {
+      // Skip portfolios without valid IDs (defensive check)
+      if (!portfolio.id) {
+        console.warn('Skipping portfolio in takeAllSnapshots: missing portfolio ID');
+        continue;
+      }
       try {
         const snapshotResult = await this.takeSnapshot(portfolio.id, snapshotDate);
         results.push({

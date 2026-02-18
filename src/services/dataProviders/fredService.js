@@ -26,12 +26,13 @@ const FRED_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 const PRIORITY_SERIES = {
   // Daily - fetch every day
   daily: [
-    'DFF',      // Fed Funds
-    'DGS2', 'DGS10', 'DGS30',  // Key Treasury yields
-    'T10Y2Y', 'T10Y3M',         // Yield spreads
-    'BAMLH0A0HYM2',             // High Yield spread
-    'VIXCLS',                    // VIX
-    'DCOILWTICO',               // Oil
+    'DFF',                              // Fed Funds
+    'DGS3MO', 'DGS6MO', 'DGS1',         // Short-term Treasury yields
+    'DGS2', 'DGS5', 'DGS10', 'DGS20', 'DGS30',  // Full yield curve
+    'T10Y2Y', 'T10Y3M',                 // Yield spreads
+    'BAMLH0A0HYM2',                     // High Yield spread
+    'VIXCLS',                           // VIX
+    'DCOILWTICO',                       // Oil
   ],
 
   // Weekly - fetch once per week

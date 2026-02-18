@@ -8,16 +8,19 @@
  */
 
 const { getDatabaseAsync } = require('../../../lib/db');
+const { IPOTracker } = require('../../ipoTracker');
 
 class IPOBundle {
   constructor() {
     this.ipoTracker = null;
+    this.lastDatabase = null;
   }
 
   getIPOTracker(database) {
-    if (!this.ipoTracker) {
-      const { IPOTracker } = require('../../ipoTracker');
+    // Create new instance if database changed or not yet created
+    if (!this.ipoTracker || this.lastDatabase !== database) {
       this.ipoTracker = new IPOTracker(database);
+      this.lastDatabase = database;
     }
     return this.ipoTracker;
   }
