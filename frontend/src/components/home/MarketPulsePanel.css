@@ -7,7 +7,7 @@
   padding: var(--space-5);
   margin-bottom: var(--space-5);
   box-shadow: var(--shadow-sm);
-  overflow: visible;
+  overflow: hidden;
 }
 
 .market-pulse-panel.loading {
@@ -47,7 +47,7 @@
   display: flex;
   gap: var(--space-4);
   align-items: stretch;
-  overflow: visible;
+  overflow: hidden;
 }
 
 /* Indices Grid */
@@ -174,7 +174,8 @@
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: var(--space-3);
-  flex: 0 0 280px;
+  flex: 0 0 300px;
+  min-width: 300px;
 }
 
 /* Risk Link wrapper */
