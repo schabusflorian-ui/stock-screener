@@ -329,7 +329,7 @@ router.patch('/jobs/:key', async (req, res) => {
 router.post('/jobs/:key/run', async (req, res) => {
   try {
     const { key } = req.params;
-    const { force = false, priority = 'normal' } = req.body;
+    const { force = false, priority = 'normal' } = req.body || {};
 
     const database = await getDb();
     const orch = await getOrchestrator();
