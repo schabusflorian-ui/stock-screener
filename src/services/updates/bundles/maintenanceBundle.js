@@ -343,6 +343,20 @@ class MaintenanceBundle {
         }
       };
     } catch (error) {
+      // Handle pg_dump version mismatch gracefully (common on Railway)
+      if (error.message && error.message.includes('version mismatch')) {
+        await onProgress(100, 'Skipped: pg_dump version mismatch (Railway PG17 vs client PG16)');
+        return {
+          itemsTotal: 0,
+          itemsProcessed: 0,
+          itemsUpdated: 0,
+          itemsFailed: 0,
+          metadata: {
+            skipped: true,
+            reason: 'pg_dump version mismatch - server is newer than client'
+          }
+        };
+      }
       throw error;
     }
   }

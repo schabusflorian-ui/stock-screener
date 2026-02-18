@@ -346,9 +346,16 @@ router.post('/jobs/:key/run', async (req, res) => {
 
     // Check if already running
     if (job.status === 'running' && !force) {
+      // Get current run info from database
+      const runResult = await database.query(`
+        SELECT id, started_at, progress, current_step
+        FROM update_runs
+        WHERE job_key = $1 AND status = 'running'
+        ORDER BY started_at DESC LIMIT 1
+      `, [key]);
       return res.status(409).json({
         error: 'Job already running',
-        currentRun: await orch.getCurrentRun(key)
+        currentRun: runResult.rows[0] || null
       });
     }
 
