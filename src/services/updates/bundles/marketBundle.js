@@ -106,23 +106,23 @@ class MarketBundle {
           const priceData = await this.fetchSectorPrice(etf.symbol);
 
           if (priceData) {
-            // Update sector_performance table
+            // Update index_prices table with sector ETF data
             await database.query(`
-              INSERT INTO sector_performance (
-                sector, symbol, close_price, change_percent,
-                volume, date, updated_at
-              ) VALUES ($1, $2, $3, $4, $5, CURRENT_DATE, CURRENT_TIMESTAMP)
-              ON CONFLICT (sector, symbol) DO UPDATE SET
-              close_price = $3,
-              change_percent = $4,
-              volume = $5,
-              updated_at = CURRENT_TIMESTAMP
+              INSERT INTO index_prices (
+                symbol, name, index_type,
+                last_price, last_price_date, change_1d, updated_at
+              ) VALUES ($1, $2, 'sector', $3, CURRENT_DATE, $4, CURRENT_TIMESTAMP)
+              ON CONFLICT (symbol) DO UPDATE SET
+                name = EXCLUDED.name,
+                last_price = EXCLUDED.last_price,
+                last_price_date = EXCLUDED.last_price_date,
+                change_1d = EXCLUDED.change_1d,
+                updated_at = EXCLUDED.updated_at
             `, [
-              etf.sector,
               etf.symbol,
+              etf.sector,
               priceData.close,
-              priceData.changePercent,
-              priceData.volume
+              priceData.changePercent
             ]);
             updated++;
           }
