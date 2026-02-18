@@ -108,15 +108,14 @@ class UpdateOrchestrator extends EventEmitter {
 
   async scheduleAllJobs() {
     const database = await getDatabaseAsync();
-    // Handle boolean columns - PostgreSQL uses true/false, SQLite uses 1/0
-    const enabledVal = isUsingPostgres() ? 'true' : '1';
+    // is_enabled, is_automatic are INTEGER (1/0) columns in both SQLite and PostgreSQL
     const result = await database.query(`
       SELECT j.*, b.name as bundle_name, b.is_automatic as bundle_automatic
       FROM update_jobs j
       JOIN update_bundles b ON j.bundle_id = b.id
-      WHERE j.is_enabled = ${enabledVal}
-        AND b.is_enabled = ${enabledVal}
-        AND COALESCE(j.is_automatic, b.is_automatic) = ${enabledVal}
+      WHERE j.is_enabled = 1
+        AND b.is_enabled = 1
+        AND COALESCE(j.is_automatic, b.is_automatic) = 1
         AND j.cron_expression IS NOT NULL
     `);
     const jobs = result.rows;
@@ -479,11 +478,10 @@ class UpdateOrchestrator extends EventEmitter {
 
   async triggerDependentJobs(jobKey) {
     const database = await getDatabaseAsync();
-    // Handle boolean columns - PostgreSQL uses true/false, SQLite uses 1/0
-    const enabledVal = isUsingPostgres() ? 'true' : '1';
+    // is_enabled, is_automatic are INTEGER (1/0) columns in both SQLite and PostgreSQL
     const result = await database.query(`
       SELECT job_key FROM update_jobs
-      WHERE depends_on LIKE $1 AND is_enabled = ${enabledVal} AND COALESCE(is_automatic, ${enabledVal}) = ${enabledVal}
+      WHERE depends_on LIKE $1 AND is_enabled = 1 AND COALESCE(is_automatic, 1) = 1
     `, [`%"${jobKey}"%`]);
     const dependents = result.rows;
 
