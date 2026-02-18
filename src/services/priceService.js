@@ -11,10 +11,10 @@ const { getDatabaseAsync, isUsingPostgres } = require('../lib/db');
 const yahooFinance = new YahooFinanceClass({ suppressNotices: ['yahooSurvey'] });
 
 // Configuration
-const BATCH_SIZE = 50;
-const DELAY_BETWEEN_BATCHES_MS = 5000;
+const BATCH_SIZE = 20;  // Reduced from 50 to avoid rate limits
+const DELAY_BETWEEN_BATCHES_MS = 10000;  // Increased from 5000
 const FETCH_DAYS = 7;
-const MAX_DAILY_UPDATES = 4500;
+const MAX_DAILY_UPDATES = 2000;  // Reduced from 4500
 
 // Tier definitions
 const TIER_CONFIG = {
@@ -52,8 +52,9 @@ const COUNTRY_YAHOO_SUFFIX = {
 
 class PriceService {
   constructor() {
-    this.rateLimitMs = 500;
+    this.rateLimitMs = 2000;  // Increased from 500ms to 2 seconds
     this.lastRequestTime = 0;
+    this.consecutiveErrors = 0;
   }
 
   async throttle() {
@@ -179,10 +180,21 @@ class PriceService {
             adjusted_close: q.adjclose || q.close,
             volume: q.volume || 0
           })).filter(q => q.close !== null));
+
+          // Reset error counter on success
+          this.consecutiveErrors = 0;
         }
       } catch (error) {
-        if (!error.message?.includes('Not Found') && !error.message?.includes('404')) {
-          console.log(`[PriceService] Error fetching ${symbol}: ${error.message}`);
+        const errMsg = error.message || '';
+
+        // Handle rate limiting
+        if (errMsg.includes('Too Many Requests') || errMsg.includes('429')) {
+          this.consecutiveErrors++;
+          const backoffMs = Math.min(30000, 5000 * this.consecutiveErrors);
+          console.log(`[PriceService] Rate limited, backing off ${backoffMs}ms (attempt ${this.consecutiveErrors})`);
+          await new Promise(resolve => setTimeout(resolve, backoffMs));
+        } else if (!errMsg.includes('Not Found') && !errMsg.includes('404')) {
+          console.log(`[PriceService] Error fetching ${symbol}: ${errMsg}`);
         }
       }
     }
