@@ -76,6 +76,8 @@ const POSTGRES_MIGRATIONS = [
   '037-add-agent-capital-bundles-postgres.js',
   // 038 adds prices.alpha job for Alpha Vantage updates of critical symbols
   '038-add-prices-alpha-job-postgres.js',
+  // 039 ensures prices.alpha job exists (repairs 038 if it ran before bundle existed)
+  '039-fix-prices-alpha-job-postgres.js',
 ];
 
 async function runMigrations() {
