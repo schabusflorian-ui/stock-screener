@@ -11,9 +11,36 @@
 const path = require('path');
 const { getDatabaseAsync } = require('../../../lib/db');
 
+// FMP API rate limiting: 300 req/min for most plans, be conservative
+const FMP_RATE_LIMIT_MS = 250;
+
 class MarketBundle {
   constructor() {
     this.projectRoot = path.join(__dirname, '../../../..');
+    this.lastFmpRequest = 0;
+  }
+
+  /**
+   * Rate limit FMP API requests
+   */
+  async rateLimitFMP() {
+    const now = Date.now();
+    const elapsed = now - this.lastFmpRequest;
+    if (elapsed < FMP_RATE_LIMIT_MS) {
+      await new Promise(resolve => setTimeout(resolve, FMP_RATE_LIMIT_MS - elapsed));
+    }
+    this.lastFmpRequest = Date.now();
+  }
+
+  /**
+   * Check if FMP API key is configured
+   */
+  checkFmpApiKey() {
+    const apiKey = process.env.FMP_API_KEY;
+    if (!apiKey) {
+      return { available: false, reason: 'FMP_API_KEY environment variable not set' };
+    }
+    return { available: true, apiKey };
   }
 
   async execute(jobKey, db, context) {
@@ -77,6 +104,21 @@ class MarketBundle {
   async runSectorsUpdate(db, onProgress) {
     const database = await getDatabaseAsync();
     await onProgress(5, 'Starting sector performance update...');
+
+    // Check for FMP API key
+    const fmpCheck = this.checkFmpApiKey();
+    if (!fmpCheck.available) {
+      console.warn(`[market.sectors] Skipped: ${fmpCheck.reason}`);
+      await onProgress(100, `Skipped: ${fmpCheck.reason}`);
+      return {
+        itemsTotal: 0,
+        itemsProcessed: 0,
+        itemsUpdated: 0,
+        itemsFailed: 0,
+        skipped: true,
+        reason: fmpCheck.reason
+      };
+    }
 
     try {
       // Get sector ETFs
@@ -151,6 +193,21 @@ class MarketBundle {
   async runCalendarUpdate(db, onProgress) {
     const database = await getDatabaseAsync();
     await onProgress(5, 'Starting calendar update...');
+
+    // Check for FMP API key
+    const fmpCheck = this.checkFmpApiKey();
+    if (!fmpCheck.available) {
+      console.warn(`[market.calendar] Skipped: ${fmpCheck.reason}`);
+      await onProgress(100, `Skipped: ${fmpCheck.reason}`);
+      return {
+        itemsTotal: 0,
+        itemsProcessed: 0,
+        itemsUpdated: 0,
+        itemsFailed: 0,
+        skipped: true,
+        reason: fmpCheck.reason
+      };
+    }
 
     try {
       await onProgress(10, 'Fetching earnings calendar...');
@@ -285,9 +342,11 @@ class MarketBundle {
     try {
       const apiKey = process.env.FMP_API_KEY;
       if (!apiKey) {
-        console.warn('FMP_API_KEY not set, skipping sector price fetch');
         return null;
       }
+
+      // Rate limit FMP API calls
+      await this.rateLimitFMP();
 
       const response = await fetch(
         `https://financialmodelingprep.com/api/v3/quote/${symbol}?apikey=${apiKey}`
@@ -316,9 +375,11 @@ class MarketBundle {
     try {
       const apiKey = process.env.FMP_API_KEY;
       if (!apiKey) {
-        console.warn('FMP_API_KEY not set, skipping earnings calendar fetch');
         return [];
       }
+
+      // Rate limit FMP API calls
+      await this.rateLimitFMP();
 
       // Get next 30 days of earnings
       const today = new Date();

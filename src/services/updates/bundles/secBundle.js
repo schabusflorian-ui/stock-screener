@@ -12,9 +12,36 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { getDatabaseAsync } = require('../../../lib/db');
 
+// FMP API rate limiting: 300 req/min for most plans, be conservative
+const FMP_RATE_LIMIT_MS = 250;
+
 class SECBundle {
   constructor() {
     this.projectRoot = path.join(__dirname, '../../../..');
+    this.lastFmpRequest = 0;
+  }
+
+  /**
+   * Rate limit FMP API requests
+   */
+  async rateLimitFMP() {
+    const now = Date.now();
+    const elapsed = now - this.lastFmpRequest;
+    if (elapsed < FMP_RATE_LIMIT_MS) {
+      await new Promise(resolve => setTimeout(resolve, FMP_RATE_LIMIT_MS - elapsed));
+    }
+    this.lastFmpRequest = Date.now();
+  }
+
+  /**
+   * Check if FMP API key is configured
+   */
+  checkFmpApiKey() {
+    const apiKey = process.env.FMP_API_KEY;
+    if (!apiKey) {
+      return { available: false, reason: 'FMP_API_KEY environment variable not set' };
+    }
+    return { available: true, apiKey };
   }
 
   async execute(jobKey, db, context) {
@@ -60,6 +87,21 @@ class SECBundle {
   async runInsiderUpdate(db, onProgress) {
     const database = await getDatabaseAsync();
     await onProgress(5, 'Starting insider trading update...');
+
+    // Check for FMP API key (required for insider trading data)
+    const fmpCheck = this.checkFmpApiKey();
+    if (!fmpCheck.available) {
+      console.warn(`[sec.insider] Skipped: ${fmpCheck.reason}`);
+      await onProgress(100, `Skipped: ${fmpCheck.reason}`);
+      return {
+        itemsTotal: 0,
+        itemsProcessed: 0,
+        itemsUpdated: 0,
+        itemsFailed: 0,
+        skipped: true,
+        reason: fmpCheck.reason
+      };
+    }
 
     try {
       // Get companies to check for insider trading
@@ -253,6 +295,9 @@ class SECBundle {
       if (!apiKey) {
         return [];
       }
+
+      // Rate limit FMP API calls
+      await this.rateLimitFMP();
 
       const response = await fetch(
         `https://financialmodelingprep.com/api/v4/insider-trading?symbol=${symbol}&limit=20&apikey=${apiKey}`
