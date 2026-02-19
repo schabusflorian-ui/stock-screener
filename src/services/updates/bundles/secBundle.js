@@ -12,8 +12,11 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { getDatabaseAsync } = require('../../../lib/db');
 
-// FMP API rate limiting: 300 req/min for most plans, be conservative
-const FMP_RATE_LIMIT_MS = 250;
+// FMP API rate limiting
+// FREE tier: 250 calls/DAY - be very conservative!
+// Paid tiers: 300-3000 calls/min
+const FMP_RATE_LIMIT_MS = 1000; // 1 second between calls to spread usage
+const FMP_FREE_TIER_DAILY_LIMIT = 250;
 
 class SECBundle {
   constructor() {
@@ -105,13 +108,14 @@ class SECBundle {
 
     try {
       // Get companies to check for insider trading
+      // LIMITED to 20 companies to conserve FMP API quota (FREE tier: 250 calls/day)
       const result = await database.query(`
         SELECT c.id, c.symbol, c.cik
         FROM companies c
         WHERE c.cik IS NOT NULL
-        AND c.market_cap > 1000000000
+        AND c.market_cap > 10000000000
         ORDER BY c.market_cap DESC
-        LIMIT 100
+        LIMIT 20
       `);
       const companies = result.rows;
 

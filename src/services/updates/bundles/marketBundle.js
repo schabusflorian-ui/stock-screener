@@ -11,8 +11,11 @@
 const path = require('path');
 const { getDatabaseAsync } = require('../../../lib/db');
 
-// FMP API rate limiting: 300 req/min for most plans, be conservative
-const FMP_RATE_LIMIT_MS = 250;
+// FMP API rate limiting
+// FREE tier: 250 calls/DAY - be very conservative!
+// Paid tiers: 300-3000 calls/min
+const FMP_RATE_LIMIT_MS = 1000; // 1 second between calls to spread usage
+const FMP_FREE_TIER_DAILY_LIMIT = 250;
 
 class MarketBundle {
   constructor() {
@@ -121,19 +124,16 @@ class MarketBundle {
     }
 
     try {
-      // Get sector ETFs
+      // Get sector ETFs - LIMITED to major sectors to conserve FMP API calls
+      // FMP FREE tier: 250 calls/day total across all jobs!
       const sectorETFs = [
         { symbol: 'XLK', sector: 'Technology' },
         { symbol: 'XLF', sector: 'Financials' },
         { symbol: 'XLV', sector: 'Healthcare' },
         { symbol: 'XLE', sector: 'Energy' },
-        { symbol: 'XLI', sector: 'Industrials' },
-        { symbol: 'XLY', sector: 'Consumer Discretionary' },
-        { symbol: 'XLP', sector: 'Consumer Staples' },
-        { symbol: 'XLU', sector: 'Utilities' },
-        { symbol: 'XLB', sector: 'Materials' },
-        { symbol: 'XLRE', sector: 'Real Estate' },
-        { symbol: 'XLC', sector: 'Communication Services' }
+        { symbol: 'XLI', sector: 'Industrials' }
+        // Reduced from 11 to 5 sectors to conserve API quota
+        // Full list: XLY, XLP, XLU, XLB, XLRE, XLC
       ];
 
       await onProgress(10, `Updating ${sectorETFs.length} sector ETFs...`);
