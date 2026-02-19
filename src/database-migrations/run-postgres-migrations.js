@@ -84,6 +84,8 @@ const POSTGRES_MIGRATIONS = [
   '041-fix-ipo-scan-jobs-postgres.js',
   // 042 backfills missing IPOs from ground truth (24 operating companies, no SPACs)
   '042-backfill-ipo-ground-truth-postgres.js',
+  // 043 updates backfilled IPOs with real SEC CIKs (resolved from SEC EDGAR)
+  '043-resolve-backfill-ciks-postgres.js',
 ];
 
 async function runMigrations() {
