@@ -274,6 +274,7 @@ class UpdateOrchestrator extends EventEmitter {
           last_run_items_processed = $3,
           last_run_items_updated = $4,
           last_run_items_failed = $5,
+          last_error = NULL,
           total_runs = total_runs + 1,
           successful_runs = successful_runs + CASE WHEN $6 = 'completed' THEN 1 ELSE 0 END,
           failed_runs = failed_runs + CASE WHEN $7 = 'failed' THEN 1 ELSE 0 END,

@@ -78,6 +78,8 @@ const POSTGRES_MIGRATIONS = [
   '038-add-prices-alpha-job-postgres.js',
   // 039 ensures prices.alpha job exists (repairs 038 if it ran before bundle existed)
   '039-fix-prices-alpha-job-postgres.js',
+  // 040 adds ipo.scan and ipo.scan_eu jobs to discover new IPOs (missing since Dec 2025)
+  '040-add-ipo-scan-jobs-postgres.js',
 ];
 
 async function runMigrations() {

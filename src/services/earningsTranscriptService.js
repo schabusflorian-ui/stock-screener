@@ -1,6 +1,12 @@
 // src/services/earningsTranscriptService.js
 // Fetches and stores earnings call transcripts for PRISM report analysis
 // Uses FMP API for transcript data
+//
+// FMP API Quota Warning (FREE tier: 250 calls/day):
+// - fetchTranscriptList: 1 call per symbol
+// - fetchFullTranscript: 1 call per quarter
+// - fetchAndStoreTranscripts: 1 + N calls (N = quarters to fetch)
+// Budget impact: ~5 calls per PRISM report
 
 require('dotenv').config();
 const https = require('https');

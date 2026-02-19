@@ -3,6 +3,8 @@
  * IPO Tracker Update Bundle
  *
  * Handles all IPO-related update jobs:
+ * - ipo.scan - Scan SEC for new S-1 filings (US IPOs)
+ * - ipo.scan_eu - Scan ESMA/FCA for new prospectuses (EU/UK IPOs)
  * - ipo.sync_trading_companies - Create company records for trading IPOs without company_id
  * - ipo.check_status - Check and update IPO status based on trading dates
  */
@@ -30,12 +32,84 @@ class IPOBundle {
     const database = await getDatabaseAsync();
 
     switch (jobKey) {
+      case 'ipo.scan':
+        return this.scanForNewIPOs(database, onProgress);
+      case 'ipo.scan_eu':
+        return this.scanForEUIPOs(database, onProgress);
       case 'ipo.sync_trading_companies':
         return this.syncTradingCompanies(database, onProgress);
       case 'ipo.check_status':
         return this.checkIPOStatus(database, onProgress);
       default:
         throw new Error(`Unknown IPO job: ${jobKey}`);
+    }
+  }
+
+  /**
+   * Scan SEC for new S-1 filings (US IPOs)
+   * This is the main job that discovers new IPOs
+   */
+  async scanForNewIPOs(database, onProgress) {
+    await onProgress(5, 'Scanning SEC for new IPO filings...');
+
+    try {
+      const tracker = this.getIPOTracker(database);
+
+      await onProgress(10, 'Fetching recent S-1 filings from SEC EDGAR...');
+
+      // Call the IPOTracker's checkForNewFilings method
+      const results = await tracker.checkForNewFilings();
+
+      await onProgress(100, `Scan complete: ${results.newIPOs.length} new, ${results.updates.length} updated`);
+
+      return {
+        itemsTotal: results.newIPOs.length + results.updates.length,
+        itemsProcessed: results.newIPOs.length + results.updates.length,
+        itemsUpdated: results.newIPOs.length,
+        itemsFailed: results.errors.length,
+        metadata: {
+          newIPOs: results.newIPOs.length,
+          updates: results.updates.length,
+          errors: results.errors.slice(0, 10)
+        }
+      };
+    } catch (error) {
+      console.error('Error in scanForNewIPOs:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Scan ESMA/FCA for new EU/UK prospectuses
+   */
+  async scanForEUIPOs(database, onProgress) {
+    await onProgress(5, 'Scanning EU/UK regulatory sources for new IPOs...');
+
+    try {
+      const tracker = this.getIPOTracker(database);
+
+      await onProgress(10, 'Fetching from ESMA and FCA...');
+
+      // Call the IPOTracker's checkForEUFilings method
+      const results = await tracker.checkForEUFilings({ days: 30 });
+
+      await onProgress(100, `EU/UK scan complete: ${results.newIPOs} new IPOs found`);
+
+      return {
+        itemsTotal: results.updates || 0,
+        itemsProcessed: results.updates || 0,
+        itemsUpdated: results.newIPOs || 0,
+        itemsFailed: results.errors?.length || 0,
+        metadata: {
+          newIPOs: results.newIPOs,
+          skipped: results.skipped,
+          sources: results.sources,
+          duration: results.duration
+        }
+      };
+    } catch (error) {
+      console.error('Error in scanForEUIPOs:', error);
+      throw error;
     }
   }
 
