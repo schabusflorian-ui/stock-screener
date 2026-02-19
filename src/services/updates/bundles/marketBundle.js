@@ -257,7 +257,7 @@ class MarketBundle {
       for (let i = 0; i < indicators.length; i++) {
         const indicator = indicators[i];
         try {
-          await fredService.fetchAndStoreSeries(indicator.series);
+          await fredService.updateSeries(indicator.series);
           updated++;
         } catch (error) {
           console.error(`Error fetching ${indicator.name}:`, error.message);
