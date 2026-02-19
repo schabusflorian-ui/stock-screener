@@ -268,22 +268,22 @@ class BuffettTalebRiskManager {
         pm.last_price,
         cm.debt_to_equity,
         cm.roic
-      FROM portfolio_holdings ph
+      FROM portfolio_positions ph
       JOIN companies c ON ph.company_id = c.id
       LEFT JOIN price_metrics pm ON pm.company_id = c.id
       LEFT JOIN calculated_metrics cm ON cm.company_id = c.id AND cm.period_type = 'annual'
       WHERE ph.portfolio_id = $1
-        AND ph.quantity > 0
+        AND ph.shares > 0
     `, [portfolioId]);
 
     const valueResult = await database.query(`
       SELECT
-        SUM(ph.quantity * pm.last_price) as total_value,
+        SUM(ph.shares * pm.last_price) as total_value,
         SUM(ph.cost_basis) as total_cost
-      FROM portfolio_holdings ph
+      FROM portfolio_positions ph
       JOIN price_metrics pm ON pm.company_id = ph.company_id
       WHERE ph.portfolio_id = $1
-        AND ph.quantity > 0
+        AND ph.shares > 0
     `, [portfolioId]);
 
     const cashResult = await database.query(
@@ -333,7 +333,7 @@ class BuffettTalebRiskManager {
     const sectorExposure = {};
     for (const h of holdings) {
       const sector = h.sector || 'Unknown';
-      const value = h.quantity * h.last_price;
+      const value = h.shares * h.last_price;
       sectorExposure[sector] = (sectorExposure[sector] || 0) + value;
     }
 
@@ -368,22 +368,22 @@ class BuffettTalebRiskManager {
         pm.last_price,
         cm.debt_to_equity,
         cm.roic
-      FROM portfolio_holdings ph
+      FROM portfolio_positions ph
       JOIN companies c ON ph.company_id = c.id
       LEFT JOIN price_metrics pm ON pm.company_id = c.id
       LEFT JOIN calculated_metrics cm ON cm.company_id = c.id AND cm.period_type = 'annual'
       WHERE ph.portfolio_id = $1
-        AND ph.quantity > 0
+        AND ph.shares > 0
     `, [portfolioId]);
 
     const valueResult = await database.query(`
       SELECT
-        SUM(ph.quantity * pm.last_price) as total_value,
+        SUM(ph.shares * pm.last_price) as total_value,
         SUM(ph.cost_basis) as total_cost
-      FROM portfolio_holdings ph
+      FROM portfolio_positions ph
       JOIN price_metrics pm ON pm.company_id = ph.company_id
       WHERE ph.portfolio_id = $1
-        AND ph.quantity > 0
+        AND ph.shares > 0
     `, [portfolioId]);
 
     const cashResult = await database.query(
@@ -412,7 +412,7 @@ class BuffettTalebRiskManager {
     const tailHedgeInstruments = config.tailHedgeInstruments || [];
 
     for (const h of holdings) {
-      const positionValue = h.quantity * h.last_price;
+      const positionValue = h.shares * h.last_price;
 
       // Check if it's a tail hedge instrument
       if (tailHedgeInstruments.includes(h.symbol)) {
@@ -494,12 +494,12 @@ class BuffettTalebRiskManager {
 
     const valueResult = await database.query(`
       SELECT
-        SUM(ph.quantity * pm.last_price) as total_value,
+        SUM(ph.shares * pm.last_price) as total_value,
         SUM(ph.cost_basis) as total_cost
-      FROM portfolio_holdings ph
+      FROM portfolio_positions ph
       JOIN price_metrics pm ON pm.company_id = ph.company_id
       WHERE ph.portfolio_id = $1
-        AND ph.quantity > 0
+        AND ph.shares > 0
     `, [portfolioId]);
 
     const cashResult = await database.query(

@@ -10,7 +10,6 @@
  */
 
 const { getDatabaseAsync } = require('../../../lib/db');
-const { IPOTracker } = require('../../ipoTracker');
 
 class IPOBundle {
   constructor() {
@@ -19,6 +18,13 @@ class IPOBundle {
   }
 
   getIPOTracker(database) {
+    // Lazy-load IPOTracker to avoid circular dependency issues
+    const { IPOTracker } = require('../../ipoTracker');
+
+    if (!IPOTracker) {
+      throw new Error('IPOTracker module failed to load - check for circular dependencies');
+    }
+
     // Create new instance if database changed or not yet created
     if (!this.ipoTracker || this.lastDatabase !== database) {
       this.ipoTracker = new IPOTracker(database);

@@ -77,9 +77,13 @@ class SentimentBundle {
       // Get tickers to update - try watchlist/portfolio first, fall back to top companies
       let tickers = [];
 
-      // Try to get tickers from watchlist_items (may not exist in all environments)
+      // Try to get tickers from watchlist (may not exist in all environments)
       try {
-        const watchlistResult = await database.query(`SELECT DISTINCT symbol FROM watchlist_items`);
+        const watchlistResult = await database.query(`
+          SELECT DISTINCT c.symbol
+          FROM watchlist w
+          JOIN companies c ON w.company_id = c.id
+        `);
         tickers.push(...watchlistResult.rows);
       } catch {
         // Table doesn't exist, skip

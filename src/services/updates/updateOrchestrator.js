@@ -868,8 +868,10 @@ class UpdateOrchestrator extends EventEmitter {
   // Toggle job automatic/manual
   async setJobAutomatic(jobKey, isAutomatic) {
     const database = await getDatabaseAsync();
+    // Convert boolean to integer for PostgreSQL INTEGER column
+    const automaticValue = isAutomatic ? 1 : 0;
     await database.query('UPDATE update_jobs SET is_automatic = $1, updated_at = CURRENT_TIMESTAMP WHERE job_key = $2',
-      [isAutomatic, jobKey]);
+      [automaticValue, jobKey]);
 
     if (isAutomatic) {
       const result = await database.query(`
@@ -892,16 +894,20 @@ class UpdateOrchestrator extends EventEmitter {
   // Toggle bundle automatic/manual
   async setBundleAutomatic(bundleName, isAutomatic) {
     const database = await getDatabaseAsync();
+    // Convert boolean to integer for PostgreSQL INTEGER column
+    const automaticValue = isAutomatic ? 1 : 0;
     await database.query('UPDATE update_bundles SET is_automatic = $1, updated_at = CURRENT_TIMESTAMP WHERE name = $2',
-      [isAutomatic, bundleName]);
+      [automaticValue, bundleName]);
     await this.restart();
   }
 
   // Toggle job enabled/disabled
   async setJobEnabled(jobKey, isEnabled) {
     const database = await getDatabaseAsync();
+    // Convert boolean to integer for PostgreSQL INTEGER column
+    const enabledValue = isEnabled ? 1 : 0;
     await database.query('UPDATE update_jobs SET is_enabled = $1, updated_at = CURRENT_TIMESTAMP WHERE job_key = $2',
-      [isEnabled, jobKey]);
+      [enabledValue, jobKey]);
 
     if (!isEnabled && this.cronJobs.has(jobKey)) {
       this.cronJobs.get(jobKey).stop();
