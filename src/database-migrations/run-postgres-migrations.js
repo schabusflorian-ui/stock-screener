@@ -86,6 +86,8 @@ const POSTGRES_MIGRATIONS = [
   '042-backfill-ipo-ground-truth-postgres.js',
   // 043 updates backfilled IPOs with real SEC CIKs (resolved from SEC EDGAR)
   '043-resolve-backfill-ciks-postgres.js',
+  // 044 fixes 043 which was recorded but didn't actually update CIKs
+  '044-fix-backfill-ciks-postgres.js',
 ];
 
 async function runMigrations() {
