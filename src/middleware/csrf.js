@@ -65,6 +65,7 @@ const csrfExcludedPaths = [
   '/api/nl/query',            // Prism AI chat NL query + streaming (authenticated via session / optionalAuth)
   '/api/update-system/jobs/', // Update system job triggers (authenticated via session)
   '/api/update-system/admin/', // Update system admin endpoints (authenticated via session)
+  '/api/prices/import-historical', // Historical price import (admin operation)
 ];
 
 // Conditional CSRF middleware that skips excluded paths
