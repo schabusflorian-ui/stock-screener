@@ -82,6 +82,8 @@ const POSTGRES_MIGRATIONS = [
   '040-add-ipo-scan-jobs-postgres.js',
   // 041 fixes 040 which used wrong export format (migrate instead of run)
   '041-fix-ipo-scan-jobs-postgres.js',
+  // 042 backfills missing IPOs from ground truth (24 operating companies, no SPACs)
+  '042-backfill-ipo-ground-truth-postgres.js',
 ];
 
 async function runMigrations() {
