@@ -483,35 +483,35 @@ class PriceService {
     if (prices.length > 0) {
       const latest = prices[prices.length - 1];
       // Ensure ALL values are numbers or null (not booleans or other types)
-      const lastPrice = typeof latest.close === 'number' && isFinite(latest.close) ? latest.close : null;
-      const marketCap = typeof quote?.marketCap === 'number' && isFinite(quote.marketCap) ? quote.marketCap : null;
-      const sharesOutstanding = typeof quote?.sharesOutstanding === 'number' && isFinite(quote.sharesOutstanding) ? quote.sharesOutstanding : null;
+      // Use parseFloat to force numeric conversion and avoid boolean/type issues
+      const lastPrice = typeof latest.close === 'number' && isFinite(latest.close) ? parseFloat(latest.close) : null;
+      const marketCap = typeof quote?.marketCap === 'number' && isFinite(quote.marketCap) ? parseFloat(quote.marketCap) : null;
 
       // Skip if no valid price
       if (lastPrice === null) {
         return { newRecords, updatedRecords };
       }
 
+      // Use simpler query without shares_outstanding if column might not exist
+      // Cast values explicitly to NUMERIC to avoid type mismatches
       const metricsQuery = isPostgres ? `
-        INSERT INTO price_metrics (company_id, last_price, market_cap, shares_outstanding, updated_at)
-        VALUES ($1, $2, $3, $4, NOW())
+        INSERT INTO price_metrics (company_id, last_price, market_cap, updated_at)
+        VALUES ($1, $2::NUMERIC, $3::NUMERIC, NOW())
         ON CONFLICT(company_id) DO UPDATE SET
           last_price = EXCLUDED.last_price,
           market_cap = COALESCE(EXCLUDED.market_cap, price_metrics.market_cap),
-          shares_outstanding = COALESCE(EXCLUDED.shares_outstanding, price_metrics.shares_outstanding),
           updated_at = NOW()
       ` : `
-        INSERT INTO price_metrics (company_id, last_price, market_cap, shares_outstanding, updated_at)
-        VALUES (?, ?, ?, ?, datetime('now'))
+        INSERT INTO price_metrics (company_id, last_price, market_cap, updated_at)
+        VALUES (?, ?, ?, datetime('now'))
         ON CONFLICT(company_id) DO UPDATE SET
           last_price = excluded.last_price,
           market_cap = COALESCE(excluded.market_cap, price_metrics.market_cap),
-          shares_outstanding = COALESCE(excluded.shares_outstanding, price_metrics.shares_outstanding),
           updated_at = datetime('now')
       `;
 
       try {
-        await db.query(metricsQuery, [companyId, lastPrice, marketCap, sharesOutstanding]);
+        await db.query(metricsQuery, [companyId, lastPrice, marketCap]);
       } catch (error) {
         // Log metrics errors for debugging
         console.log(`[PriceService] Metrics error for company ${companyId}: ${error.message}`);
