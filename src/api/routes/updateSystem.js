@@ -884,4 +884,117 @@ router.post('/admin/ensure-alpha-job', async (req, res) => {
   }
 });
 
+// ============================================
+// ADMIN: ENSURE IPO SCAN JOBS EXIST
+// ============================================
+
+/**
+ * POST /api/update-system/admin/ensure-ipo-scan-jobs
+ * Creates the ipo.scan and ipo.scan_eu jobs if they don't exist
+ * These jobs discover new IPOs from SEC and EU regulatory sources
+ */
+router.post('/admin/ensure-ipo-scan-jobs', async (req, res) => {
+  try {
+    const database = await getDb();
+    const isPostgres = database.constructor.name === 'PgDatabase' ||
+                       (database.query && database.query.toString().includes('$'));
+
+    // Get ipo bundle ID
+    const bundleQuery = isPostgres
+      ? "SELECT id FROM update_bundles WHERE name = $1"
+      : "SELECT id FROM update_bundles WHERE name = ?";
+    const bundleResult = await database.query(bundleQuery, ['ipo']);
+    const bundleId = bundleResult.rows?.[0]?.id || bundleResult[0]?.id;
+
+    if (!bundleId) {
+      return res.status(404).json({ error: 'ipo bundle not found' });
+    }
+
+    const results = { created: [], existing: [] };
+
+    // Create ipo.scan job
+    const checkScan = isPostgres
+      ? "SELECT id FROM update_jobs WHERE job_key = $1"
+      : "SELECT id FROM update_jobs WHERE job_key = ?";
+    const existingScan = await database.query(checkScan, ['ipo.scan']);
+    const scanExists = existingScan.rows?.[0] || existingScan[0];
+
+    if (scanExists) {
+      results.existing.push('ipo.scan');
+    } else {
+      const insertScan = isPostgres ? `
+        INSERT INTO update_jobs (
+          bundle_id, job_key, name, description, cron_expression,
+          is_enabled, is_automatic, batch_size, batch_delay_ms, timeout_seconds
+        ) VALUES (
+          $1, 'ipo.scan', 'US IPO Scan',
+          'Scan SEC EDGAR for new S-1 filings and IPO updates',
+          '0 8 * * 1-5',
+          1, 1, 50, 500, 300
+        )
+        RETURNING id
+      ` : `
+        INSERT INTO update_jobs (
+          bundle_id, job_key, name, description, cron_expression,
+          is_enabled, is_automatic, batch_size, batch_delay_ms, timeout_seconds
+        ) VALUES (
+          ?, 'ipo.scan', 'US IPO Scan',
+          'Scan SEC EDGAR for new S-1 filings and IPO updates',
+          '0 8 * * 1-5',
+          1, 1, 50, 500, 300
+        )
+      `;
+      await database.query(insertScan, [bundleId]);
+      results.created.push('ipo.scan');
+    }
+
+    // Create ipo.scan_eu job
+    const existingScanEU = await database.query(checkScan, ['ipo.scan_eu']);
+    const scanEUExists = existingScanEU.rows?.[0] || existingScanEU[0];
+
+    if (scanEUExists) {
+      results.existing.push('ipo.scan_eu');
+    } else {
+      const insertScanEU = isPostgres ? `
+        INSERT INTO update_jobs (
+          bundle_id, job_key, name, description, cron_expression,
+          is_enabled, is_automatic, batch_size, batch_delay_ms, timeout_seconds
+        ) VALUES (
+          $1, 'ipo.scan_eu', 'EU/UK IPO Scan',
+          'Scan ESMA and FCA for new prospectuses and EU/UK IPO updates',
+          '0 9 * * 1-5',
+          1, 1, 50, 1000, 600
+        )
+        RETURNING id
+      ` : `
+        INSERT INTO update_jobs (
+          bundle_id, job_key, name, description, cron_expression,
+          is_enabled, is_automatic, batch_size, batch_delay_ms, timeout_seconds
+        ) VALUES (
+          ?, 'ipo.scan_eu', 'EU/UK IPO Scan',
+          'Scan ESMA and FCA for new prospectuses and EU/UK IPO updates',
+          '0 9 * * 1-5',
+          1, 1, 50, 1000, 600
+        )
+      `;
+      await database.query(insertScanEU, [bundleId]);
+      results.created.push('ipo.scan_eu');
+    }
+
+    res.json({
+      success: true,
+      message: results.created.length > 0
+        ? `Created ${results.created.length} job(s)`
+        : 'All jobs already exist',
+      created: results.created,
+      existing: results.existing,
+      bundleId: bundleId
+    });
+
+  } catch (error) {
+    console.error('Error creating IPO scan jobs:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
