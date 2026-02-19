@@ -91,6 +91,10 @@ router.get('/env', (req, res) => {
     APP_URL: process.env.APP_URL || 'NOT SET',
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ? 'SET' : 'NOT SET',
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET ? 'SET' : 'NOT SET',
+    // Data provider API keys
+    FMP_API_KEY: process.env.FMP_API_KEY ? 'SET' : 'NOT SET',
+    FRED_API_KEY: process.env.FRED_API_KEY ? 'SET' : 'NOT SET',
+    ALPHA_VANTAGE_API_KEY: process.env.ALPHA_VANTAGE_API_KEY ? 'SET' : 'NOT SET',
   };
 
   res.json({
