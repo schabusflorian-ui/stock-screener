@@ -80,6 +80,8 @@ const POSTGRES_MIGRATIONS = [
   '039-fix-prices-alpha-job-postgres.js',
   // 040 adds ipo.scan and ipo.scan_eu jobs to discover new IPOs (missing since Dec 2025)
   '040-add-ipo-scan-jobs-postgres.js',
+  // 041 fixes 040 which used wrong export format (migrate instead of run)
+  '041-fix-ipo-scan-jobs-postgres.js',
 ];
 
 async function runMigrations() {

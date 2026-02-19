@@ -1,9 +1,9 @@
-// 040-add-ipo-scan-jobs-postgres.js
-// Add ipo.scan and ipo.scan_eu jobs to discover new IPOs
-// These are the missing jobs that caused no new IPOs since December 2025
+// 041-fix-ipo-scan-jobs-postgres.js
+// Fix: Migration 040 used wrong export format, so jobs weren't created
+// This migration creates the ipo.scan and ipo.scan_eu jobs if they don't exist
 
-async function migrate(db) {
-  console.log('Adding IPO scan jobs...');
+async function run(db) {
+  console.log('Fixing IPO scan jobs (040 used wrong export)...');
 
   // Get ipo bundle ID
   const bundleResult = await db.query('SELECT id FROM update_bundles WHERE name = $1', ['ipo']);
@@ -13,6 +13,8 @@ async function migrate(db) {
     console.log('  ⚠ ipo bundle not found, skipping');
     return;
   }
+
+  console.log(`  Found ipo bundle with id=${bundleId}`);
 
   // Add ipo.scan job (US IPOs from SEC)
   const existingScan = await db.query('SELECT id FROM update_jobs WHERE job_key = $1', ['ipo.scan']);
@@ -54,7 +56,7 @@ async function migrate(db) {
     console.log('  ✓ ipo.scan_eu job added (runs 9 AM ET weekdays)');
   }
 
-  console.log('  IPO scan jobs migration complete');
+  console.log('  IPO scan jobs fix complete');
 }
 
-module.exports = { run: migrate };
+module.exports = { run };
