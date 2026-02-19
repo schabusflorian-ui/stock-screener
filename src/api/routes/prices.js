@@ -320,6 +320,52 @@ router.post('/import', (req, res) => {
 });
 
 /**
+ * POST /api/prices/import-historical
+ * Import full historical prices (from 2009) for specific symbols
+ * Uses Node.js yahoo-finance2 - works on Railway/PostgreSQL
+ */
+router.post('/import-historical', async (req, res) => {
+  try {
+    const { symbols, startDate = '2009-01-01' } = req.body || {};
+
+    if (!symbols || !Array.isArray(symbols) || symbols.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'symbols array is required',
+        example: { symbols: ['AAPL', 'MSFT'], startDate: '2009-01-01' }
+      });
+    }
+
+    // Limit to prevent abuse
+    if (symbols.length > 50) {
+      return res.status(400).json({
+        success: false,
+        error: 'Maximum 50 symbols per request'
+      });
+    }
+
+    const { getPriceService } = require('../../services/priceService');
+    const priceService = getPriceService();
+
+    console.log(`[API] Starting historical import for ${symbols.length} symbols from ${startDate}`);
+
+    // Run synchronously for now (could be moved to background job)
+    const result = await priceService.runHistoricalImport(symbols, (progress, message) => {
+      console.log(`[Historical Import] ${progress}% - ${message}`);
+    }, { startDate });
+
+    res.json({
+      success: true,
+      message: `Historical import complete for ${result.itemsUpdated}/${result.itemsTotal} symbols`,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error running historical import:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
  * POST /api/prices/calculate-metrics
  * Calculate/recalculate price metrics for all companies
  */

@@ -845,6 +845,116 @@ class PriceService {
       itemsFailed: failed
     };
   }
+
+  /**
+   * Import full historical prices for specific symbols (from 2009)
+   * This is for backfilling missing historical data
+   */
+  async runHistoricalImport(symbols, onProgress, options = {}) {
+    const db = await getDatabaseAsync();
+    const isPostgres = isUsingPostgres();
+    const startDate = options.startDate || '2009-01-01';
+
+    if (!Array.isArray(symbols)) {
+      symbols = [symbols];
+    }
+
+    console.log(`[PriceService] Starting historical import for ${symbols.length} symbols from ${startDate}`);
+    await onProgress?.(5, `Importing historical data for ${symbols.length} symbols from ${startDate}...`);
+
+    let successful = 0;
+    let failed = 0;
+    let totalRecords = 0;
+
+    for (let i = 0; i < symbols.length; i++) {
+      const symbol = symbols[i].toUpperCase();
+      const progress = 5 + Math.floor(((i + 1) / symbols.length) * 90);
+      await onProgress?.(progress, `Fetching historical data for ${symbol} (${i + 1}/${symbols.length})...`);
+
+      try {
+        // Find company_id for this symbol
+        const findQuery = isPostgres
+          ? 'SELECT id, country FROM companies WHERE UPPER(symbol) = $1 LIMIT 1'
+          : 'SELECT id, country FROM companies WHERE UPPER(symbol) = ? LIMIT 1';
+
+        const result = await db.query(findQuery, [symbol]);
+        const company = (result.rows || result)[0];
+
+        if (!company) {
+          console.log(`[PriceService] Symbol ${symbol} not found in companies table`);
+          failed++;
+          continue;
+        }
+
+        // Get Yahoo Finance symbol
+        const yahooSym = this.getYahooSymbol(symbol, company.country);
+        if (!yahooSym) {
+          console.log(`[PriceService] Could not determine Yahoo symbol for ${symbol}`);
+          failed++;
+          continue;
+        }
+
+        // Fetch historical data with longer range
+        await this.throttle();
+
+        const startDateObj = new Date(startDate);
+        const endDateObj = new Date();
+
+        console.log(`[PriceService] Fetching ${yahooSym} from ${startDate} to now...`);
+
+        const data = await yahooFinance.chart(yahooSym, {
+          period1: startDateObj,
+          period2: endDateObj,
+          interval: '1d'
+        });
+
+        if (data && data.quotes && data.quotes.length > 0) {
+          const prices = data.quotes
+            .map(q => ({
+              date: new Date(q.date).toISOString().split('T')[0],
+              open: typeof q.open === 'number' ? q.open : null,
+              high: typeof q.high === 'number' ? q.high : null,
+              low: typeof q.low === 'number' ? q.low : null,
+              close: typeof q.close === 'number' ? q.close : null,
+              adjusted_close: typeof (q.adjclose || q.close) === 'number' ? (q.adjclose || q.close) : null,
+              volume: typeof q.volume === 'number' ? q.volume : 0
+            }))
+            .filter(q => typeof q.close === 'number' && isFinite(q.close));
+
+          console.log(`[PriceService] Got ${prices.length} price records for ${symbol}`);
+
+          // Upsert all prices
+          const upsertResult = await this.upsertPrices(db, company.id, prices);
+          totalRecords += prices.length;
+          successful++;
+
+          console.log(`[PriceService] Imported ${prices.length} records for ${symbol} (${upsertResult.newRecords} new, ${upsertResult.updatedRecords} updated)`);
+        } else {
+          console.log(`[PriceService] No historical data returned for ${symbol}`);
+          failed++;
+        }
+
+        // Small delay between symbols to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+      } catch (error) {
+        console.log(`[PriceService] Error importing historical data for ${symbol}: ${error.message}`);
+        failed++;
+      }
+    }
+
+    const summary = `Historical import complete: ${successful}/${symbols.length} symbols, ${totalRecords} total records`;
+    console.log(`[PriceService] ${summary}`);
+    await onProgress?.(100, summary);
+
+    return {
+      itemsTotal: symbols.length,
+      itemsProcessed: successful + failed,
+      itemsUpdated: successful,
+      itemsFailed: failed,
+      totalRecords
+    };
+  }
 }
 
 // Singleton
