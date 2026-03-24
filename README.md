@@ -23,6 +23,7 @@ A full-stack stock analysis and portfolio management platform combining value in
 | **Database** | PostgreSQL 15 (production), SQLite (development) |
 | **AI** | Anthropic Claude API with budget controls |
 | **Data Sources** | Alpha Vantage, FRED, SEC EDGAR, Financial Modeling Prep |
+| **ML** | LSTM, XGBoost, TFT, PPO reinforcement learning |
 | **Python Services** | Web scrapers, data fetchers, analytics pipelines |
 | **Infrastructure** | Docker, Railway, GitHub Actions CI/CD |
 
@@ -115,7 +116,9 @@ npm run docker:run
 │       ├── hooks/              # Custom React hooks
 │       ├── context/            # State management
 │       └── services/           # API client layer
+├── python/                     # ML models (LSTM, XGBoost, PPO agents)
 ├── python-services/            # Python data fetchers and scrapers
+├── data/                       # Runtime data (SQLite DBs, auto-created)
 ├── scripts/                    # Operational and utility scripts
 ├── tests/                      # Test suite (Jest)
 ├── docs/                       # Documentation

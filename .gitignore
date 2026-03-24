@@ -15,8 +15,13 @@ frontend/node_modules/
 *.db-journal
 *.db.corrupted*
 *.db.pre_fix_backup
-/data/sec-bulk/
-/data/backups/
+
+# Data directory (runtime data, not source code)
+data/*.json
+data/*.csv
+data/*.db
+data/sec-bulk/
+data/backups/
 
 # Backup files
 *.bak
@@ -47,11 +52,10 @@ coverage/
 htmlcov/
 coverage_report/
 
-# ML Checkpoints (keep only production/final)
-python/checkpoints/*.pkl
-python/checkpoints/training_results_*.json
-!python/checkpoints/*production*
-!python/checkpoints/*final*
+# ML model checkpoints and benchmark results (training outputs, not source code)
+python/checkpoints/
+!python/checkpoints/.gitkeep
+python/benchmarks/results/
 
 # Python
 **/__pycache__/
@@ -76,11 +80,12 @@ frontend/build/
 dist/
 *.tgz
 
-# IDE
+# IDE and local tool config
 .idea/
 *.swp
 *.swo
 .vscode/settings.json
+.mcp.json
 
 # Deprecated
 stock-screener/

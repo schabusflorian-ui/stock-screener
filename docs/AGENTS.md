@@ -6,7 +6,7 @@ This document contains rules and guidelines that all AI agents must follow when 
 
 This is a React-based investment research platform with:
 - **Frontend**: React 19 with vanilla CSS using CSS variables
-- **Backend**: Node.js/Express with SQLite database
+- **Backend**: Node.js/Express with PostgreSQL (production) / SQLite (development)
 - **Styling**: Design system based on CSS custom properties (no Tailwind)
 
 ## Directory Structure
