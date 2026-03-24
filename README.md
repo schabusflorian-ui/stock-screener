@@ -1,40 +1,52 @@
 # Investment Research Platform
 
-A full-stack stock analysis and portfolio management platform combining value investing metrics, AI-powered analysis, and alternative data sources.
+A full-stack investment research and portfolio management platform that combines fundamental analysis, quantitative factor models, AI-powered stock evaluation, and alternative data sources into a single integrated system. Built for investors who want institutional-grade analytics with the flexibility to define their own screening criteria, construct custom factors, and backtest strategies against historical data.
+
+The platform ingests financial data from multiple providers (Alpha Vantage, FRED, SEC EDGAR, Yahoo Finance), enriches it with alternative signals (congressional trading disclosures, insider transactions, short interest), and surfaces it through an interactive React frontend with 50+ pages covering everything from macro regime dashboards to individual company deep-dives.
 
 ## Features
 
-- **Stock Screening** -- Multi-factor screening with 20+ value investing metrics (P/E, P/B, DCF, dividend yield, etc.)
-- **AI Analyst** -- Claude-powered stock analysis using institutional-grade valuation frameworks
-- **Portfolio Management** -- Track holdings, calculate returns, monitor allocation and risk
-- **Congressional Trading** -- Track and analyze US congressional stock transactions
-- **Earnings & SEC Filings** -- Automated earnings transcript ingestion and SEC filing parsing
-- **Dividend Tracking** -- Dividend history, yield analysis, and ex-date monitoring
-- **Quantitative Workbench** -- Custom factor construction, backtesting, and portfolio optimization
-- **Natural Language Queries** -- Ask questions about your portfolio and the market in plain English
-- **Real-Time Data** -- Automated price updates, market indicators, and macroeconomic data via FRED
+- **Multi-Factor Stock Screening** -- Screen the full US/EU equity universe across 50+ metrics (ROIC, FCF yield, P/E, debt ratios, growth rates, alpha vs S&P 500) with range filters, sector/region constraints, and historical lookback. Includes 12 built-in preset screens (Buffett, Magic Formula, Fortress Balance Sheet, Cigar Butts, Compounders, etc.) plus 7 macro-regime-aware screens that auto-adjust criteria based on current market conditions (yield curve, VIX, credit spreads).
+
+- **AI Analyst** -- Claude-powered investment analysis engine with a multi-turn chat interface. The AI has access to company financials, price data, and a curated knowledge base of investor writings (Buffett shareholder letters, Howard Marks memos, Damodaran blog posts). It generates structured PRISM reports -- scorecards that evaluate companies across profitability, risk, intrinsic value, sustainability, and management quality.
+
+- **Quantitative Workbench** -- Build custom factors from any combination of financial metrics using a visual formula editor, then backtest them with walk-forward analysis, information coefficient tracking, and signal decay monitoring. The factor lab supports single-factor and multi-factor strategies with monthly/quarterly/annual rebalancing, long-only or long-short construction, and sector-relative scoring.
+
+- **AI Trading Agents** -- Configurable multi-signal agents that combine 9 signal categories (technical, sentiment, insider activity, fundamentals, alternative data, valuation, 13F super-investor holdings, earnings momentum, and value quality scores like Piotroski F-Score and Altman Z-Score) with user-adjustable weights. Agents support paper trading, regime-adaptive weight shifting, and automated execution with risk management constraints (position limits, VaR, drawdown protection).
+
+- **Portfolio Management** -- Track multiple portfolios with real-time P&L, performance attribution, alpha calculation against benchmarks, and tax-aware return analysis. Supports DCA, DRIP, value averaging, and regime-based rebalancing strategies. Each portfolio has configurable alerts for price levels and metric thresholds.
+
+- **Congressional & Alternative Data** -- Track US congressional stock transactions sourced from Capitol Trades, with filtering by representative, party, committee, and transaction size. Integrates FINRA short interest data, institutional 13F holdings, and insider transaction filings (Forms 3, 4, 5) to surface non-obvious signals that precede price moves.
+
+- **Earnings & SEC Filings** -- Automated ingestion of earnings call transcripts, 10-K/10-Q filings via SEC EDGAR, and earnings calendar tracking with beat/miss streak analysis. Earnings momentum feeds directly into the trading agent signal pipeline.
+
+- **Market Dashboard** -- Homepage displays macro regime classification (Crisis, Late Cycle, Fear, Early Cycle, Neutral), real-time index data (S&P 500, Nasdaq, Russell, Dow), valuation gauges (Buffett Indicator, S&P P/E with historical bands, MSI Score), and a portfolio summary hub.
+
+- **Natural Language Queries** -- Ask questions about your portfolio, the market, or specific companies in plain English. The NL engine translates queries into database lookups, metric calculations, and screening filters.
+
+- **Advanced Visualizations** -- Correlation heatmaps, sector factor exposure maps, multi-metric comparison charts, alpha vs benchmark overlays, variance analysis, and interactive price charts with technical indicators.
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| **Frontend** | React 19, CSS Custom Properties (design system) |
-| **Backend** | Node.js 18+, Express 5 |
+| **Frontend** | React 19, CSS Custom Properties design system, Recharts |
+| **Backend** | Node.js 18+, Express 5, Passport.js (OAuth) |
 | **Database** | PostgreSQL 15 (production), SQLite (development) |
-| **AI** | Anthropic Claude API with budget controls |
-| **Data Sources** | Alpha Vantage, FRED, SEC EDGAR, Financial Modeling Prep |
-| **ML** | LSTM, XGBoost, TFT, PPO reinforcement learning |
-| **Python Services** | Web scrapers, data fetchers, analytics pipelines |
-| **Infrastructure** | Docker, Railway, GitHub Actions CI/CD |
+| **AI** | Anthropic Claude API with daily/monthly budget controls |
+| **Data Sources** | Alpha Vantage, FRED, SEC EDGAR, Yahoo Finance, Capitol Trades, FINRA |
+| **ML** | LSTM, XGBoost, Temporal Fusion Transformer, PPO reinforcement learning |
+| **Python Services** | Web scrapers, data fetchers, NLP pipelines |
+| **Infrastructure** | Docker Compose, Railway (PaaS), GitHub Actions CI/CD |
 
 ## Quick Start
 
 ### Prerequisites
 
 - Node.js >= 18
-- Python 3.x (for data scrapers)
+- Python 3.x (for data scrapers and ML models)
 - PostgreSQL 15 (production) or SQLite (development -- no setup needed)
-- Redis (optional, recommended for production sessions)
+- Redis (optional, recommended for production session storage and rate limiting)
 
 ### Installation
 
@@ -49,47 +61,49 @@ npm install
 # Install frontend dependencies
 cd frontend && npm install && cd ..
 
-# Copy environment template
+# Copy environment template and configure API keys
 cp .env.example .env
 ```
 
 ### Configuration
 
-Edit `.env` and add your API keys:
+Edit `.env` and add your API keys. At minimum you need Alpha Vantage for stock data; the other keys unlock additional features:
 
 ```bash
-# Required
-ALPHA_VANTAGE_KEY=your_key          # https://www.alphavantage.co/support/#api-key
+# Required -- stock prices, financials, technical indicators
+ALPHA_VANTAGE_KEY=your_key          # Free: https://www.alphavantage.co/support/#api-key
 
-# Recommended
-ANTHROPIC_API_KEY=your_key          # https://console.anthropic.com/ (AI features)
-FRED_API_KEY=your_key               # https://fred.stlouisfed.org/docs/api/api_key.html
+# Recommended -- enables AI analysis and macro indicators
+ANTHROPIC_API_KEY=your_key          # https://console.anthropic.com/
+FRED_API_KEY=your_key               # Free: https://fred.stlouisfed.org/docs/api/api_key.html
 
-# Optional
-GOOGLE_CLIENT_ID=your_id            # Google OAuth (production auth)
+# Optional -- enables OAuth login, earnings transcripts
+GOOGLE_CLIENT_ID=your_id            # https://console.cloud.google.com/apis/credentials
 GOOGLE_CLIENT_SECRET=your_secret
-FMP_API_KEY=your_key                # https://financialmodelingprep.com/ (earnings)
+FMP_API_KEY=your_key                # https://financialmodelingprep.com/
 ```
 
-See [`.env.example`](.env.example) for the full list of configuration options.
+See [`.env.example`](.env.example) for the full list of 30+ configuration options including rate limits, LLM budgets, Redis, Sentry, and CORS settings.
 
 ### Running (Development)
 
 ```bash
-# Start the backend (port 3000)
+# Start the backend with hot reload (port 3000)
 npm run dev
 
-# In a separate terminal, start the frontend (port 3001)
+# In a separate terminal, start the React frontend (port 3001)
 cd frontend && npm start
 ```
+
+The backend automatically creates a SQLite database at `./data/stocks.db` on first run -- no database setup required for development. The dev auth bypass (`ALLOW_DEV_AUTH=true` in `.env`) lets you skip OAuth configuration during local development.
 
 ### Running (Docker)
 
 ```bash
-# Start all services (API, PostgreSQL, Redis, Scheduler)
+# Start the full stack: API server, PostgreSQL, Redis, background scheduler
 docker-compose up
 
-# Or build and run standalone
+# Or build and run the API container standalone
 npm run docker:build
 npm run docker:run
 ```
@@ -101,50 +115,61 @@ npm run docker:run
 ├── src/                        # Backend source code
 │   ├── api/
 │   │   ├── server.js           # Express app entry point
-│   │   └── routes/             # 83 API route modules
-│   ├── services/               # Business logic layer (105 services)
-│   ├── lib/                    # Core utilities (db, logger, migrations)
-│   ├── middleware/              # Express middleware (auth, rate limit, CSRF)
-│   ├── jobs/                   # Background job schedulers
+│   │   └── routes/             # 83 API route modules organized by domain
+│   ├── services/               # Business logic layer (105 service modules)
+│   │   ├── agent/              # Trading agent engine, signal optimizer, risk manager
+│   │   ├── ai/                 # Claude integration, prompt management, cost tracking
+│   │   ├── backtesting/        # Factor backtesting, walk-forward analysis
+│   │   ├── factors/            # Custom factor construction, signal generation
+│   │   ├── portfolio/          # Portfolio calculations, optimization, attribution
+│   │   ├── signals/            # Value signals (Piotroski, Altman), congressional signals
+│   │   ├── alternativeData/    # Short interest, options flow, 13F aggregation
+│   │   ├── updates/            # Data update orchestration across 16 data bundles
+│   │   └── ...                 # Screening, dividends, earnings, sentiment, NL query
+│   ├── lib/                    # Core: database abstraction, logger, migration runner
+│   ├── middleware/             # Auth, CSRF, rate limiting, validation, error handling
+│   ├── jobs/                   # Cron-based schedulers (prices, dividends, SEC, knowledge)
 │   ├── scrapers/               # Data scraping modules
-│   ├── config/                 # Configuration management
-│   └── database-migrations/    # 138 database migrations
-├── frontend/                   # React frontend
+│   ├── config/                 # Environment and feature configuration
+│   └── database-migrations/    # 138 numbered migration files
+├── frontend/                   # React 19 single-page application
 │   └── src/
-│       ├── components/         # 103 reusable UI components
-│       ├── pages/              # 64 page components
+│       ├── components/         # 103 UI components (cards, charts, tables, forms)
+│       ├── pages/              # 64 page components (dashboard, screener, company, etc.)
 │       ├── hooks/              # Custom React hooks
-│       ├── context/            # State management
+│       ├── context/            # 12 React contexts (auth, watchlist, preferences, NL query)
 │       └── services/           # API client layer
-├── python/                     # ML models (LSTM, XGBoost, PPO agents)
-├── python-services/            # Python data fetchers and scrapers
-├── data/                       # Runtime data (SQLite DBs, auto-created)
-├── scripts/                    # Operational and utility scripts
-├── tests/                      # Test suite (Jest)
-├── docs/                       # Documentation
-│   ├── architecture/           # System design docs
-│   ├── guides/                 # Developer and deployment guides
-│   ├── api/                    # API reference
-│   └── legal/                  # Legal policies
-└── knowledge_base/             # Investment research reference data
+├── python/                     # ML models: LSTM, XGBoost, TFT, PPO RL agents
+├── python-services/            # Data fetchers: prices, fundamentals, congressional, dividends
+├── data/                       # Runtime data directory (SQLite DBs, auto-created)
+├── scripts/                    # Operational scripts (migrations, deployment, data tools)
+├── tests/                      # Jest test suite, PostgreSQL integration tests
+├── docs/                       # Architecture, API reference, developer and deployment guides
+└── knowledge_base/             # Curated investor writings (Buffett, Marks, Damodaran, etc.)
 ```
 
 ## API Overview
 
-The backend exposes 83 RESTful API endpoints organized by domain. Key endpoint groups:
+The backend serves 83 RESTful endpoints organized by domain. All return JSON and most require authentication (bypassed in dev mode with `ALLOW_DEV_AUTH=true`).
 
 | Group | Path | Description |
 |-------|------|-------------|
-| **Companies** | `/api/companies` | Company data, financials, metrics |
-| **Prices** | `/api/prices` | Stock prices and historical data |
-| **Portfolios** | `/api/portfolios` | Portfolio CRUD and performance |
-| **Screening** | `/api/screening` | Multi-factor stock screening |
-| **AI Analyst** | `/api/analyst` | AI-powered stock analysis |
-| **Factors** | `/api/factors` | Custom factor analysis |
-| **Congressional** | `/api/congressional` | Congressional trading data |
-| **Backtesting** | `/api/backtesting` | Strategy backtesting |
+| **Companies** | `/api/companies` | Company master data, financial statements, calculated metrics |
+| **Prices** | `/api/prices` | Current prices, historical OHLCV, price metrics |
+| **Screening** | `/api/screening` | Multi-factor stock screening with presets and custom filters |
+| **AI Analyst** | `/api/analyst` | Claude-powered analysis, PRISM reports, chat conversations |
+| **Natural Language** | `/api/nl` | Plain-English queries translated to data lookups |
+| **Factors** | `/api/factors` | Custom factor CRUD, scoring, backtesting |
+| **Backtesting** | `/api/backtesting` | Strategy backtests with performance attribution |
+| **Agents** | `/api/agents` | Trading agent configuration, execution, recommendations |
+| **Portfolios** | `/api/portfolios` | Portfolio CRUD, performance, attribution, optimization |
+| **Congressional** | `/api/congressional` | Congressional trading data and politician summaries |
+| **Dividends** | `/api/dividends` | Dividend history, yield analysis, ex-date calendar |
+| **Earnings** | `/api/earnings` | Earnings calendar, transcripts, beat/miss analysis |
+| **Signals** | `/api/signals` | Multi-signal scores (technical, sentiment, value quality) |
+| **Market Data** | `/api/indices`, `/api/macro` | Index prices, ETF data, FRED macro indicators |
 
-See [docs/api/endpoints.md](docs/api/endpoints.md) for the complete API reference.
+See [docs/api/endpoints.md](docs/api/endpoints.md) for the complete endpoint reference with request/response formats.
 
 ## Development
 
@@ -153,62 +178,55 @@ See [docs/api/endpoints.md](docs/api/endpoints.md) for the complete API referenc
 ```bash
 npm test                    # Run Jest test suite
 npm run test:coverage       # Run with coverage report
-npm run test:postgresql     # PostgreSQL integration tests
-npm run test:unified        # Unified strategy tests
+npm run test:postgresql     # PostgreSQL-specific integration tests
+npm run test:unified        # Unified strategy framework tests
+npm run test:updates        # Data update service tests
 ```
 
-### Linting
+### Code Quality
 
 ```bash
 npm run lint                # ESLint check
 npm run lint:fix            # Auto-fix lint issues
 npm run format:check        # Prettier format check
+npm run format              # Auto-format all source files
 ```
 
-### Database Migrations
+Pre-commit hooks (via Husky + lint-staged) automatically run Prettier and ESLint on staged files.
+
+### Database
 
 ```bash
-npm run db:migrate          # Run pending migrations
-npm run db:migrate:status   # Show migration status
+npm run db:migrate          # Run pending migrations (auto-runs on production startup)
+npm run db:migrate:status   # Show which migrations have been applied
 ```
+
+The database abstraction layer (`src/lib/db.js`) transparently converts SQL between SQLite and PostgreSQL dialects -- write PostgreSQL-style queries with `$1` placeholders and the layer handles the rest. See [docs/guides/development.md](docs/guides/development.md) for the full coding conventions.
 
 ### Background Jobs
 
 ```bash
-npm run scheduler           # Start the master scheduler
-npm run price-update        # Run a one-off price update
+npm run scheduler           # Start the master scheduler (prices, dividends, SEC, etc.)
+npm run price-update        # Trigger a one-off price update for all tracked companies
+npm run knowledge:refresh   # Refresh the AI knowledge base
 ```
-
-### Coding Conventions
-
-See [docs/AGENTS.md](docs/AGENTS.md) for detailed coding conventions, including:
-- Frontend: React components, CSS design system, PropTypes
-- Backend: Async database access patterns, service layer architecture
-- Database: PostgreSQL-compatible SQL with automatic SQLite dialect conversion
 
 ## Deployment
 
-The application is configured for deployment on [Railway](https://railway.app):
+The application is production-deployed on [Railway](https://railway.app) with automatic builds via Nixpacks (Node.js + Python). The production startup script (`scripts/start-production.js`) validates environment variables, runs pending migrations, starts the background scheduler, and launches the Express server with graceful shutdown handling.
 
 ```bash
-# Production start (validates env, runs migrations, starts scheduler + API)
-npm run start:production
+npm run start:production    # Full production startup sequence
 ```
 
-See [docs/guides/deployment.md](docs/guides/deployment.md) for the full deployment guide including:
-- Railway configuration
-- Environment variable setup
-- Docker deployment
-- CI/CD pipeline
+See [docs/guides/deployment.md](docs/guides/deployment.md) for Railway configuration, environment variables, Docker Compose setup, and CI/CD pipeline details.
 
 ## Architecture
-
-The system follows a layered architecture:
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌─────────────────┐
 │   React UI  │────▶│  Express API │────▶│    Services      │
-│  (frontend) │     │  (83 routes) │     │  (business logic)│
+│  (64 pages) │     │  (83 routes) │     │  (105 modules)   │
 └─────────────┘     └──────┬───────┘     └────────┬────────┘
                            │                       │
                     ┌──────┴───────┐        ┌──────┴────────┐
@@ -219,23 +237,29 @@ The system follows a layered architecture:
                                                    ▲
                     ┌──────────────┐                │
                     │  Scheduler   │────────────────┘
-                    │ (background  │
-                    │   jobs)      │     ┌──────────────────┐
+                    │ (16 data     │
+                    │  bundles)    │     ┌──────────────────┐
                     └──────────────┘     │  Python Services │
-                                        │  (scrapers, data │
-                    ┌──────────────┐     │   fetchers)      │
+                                        │  (scrapers, ML   │
+                    ┌──────────────┐     │   models)        │
                     │  Claude API  │     └──────────────────┘
-                    │  (AI analyst)│
-                    └──────────────┘
+                    │  (AI analyst │
+                    │   + agents)  │     ┌──────────────────┐
+                    └──────────────┘     │  Knowledge Base  │
+                                        │  (investor       │
+                                        │   writings, RAG) │
+                                        └──────────────────┘
 ```
 
-See [docs/architecture/overview.md](docs/architecture/overview.md) for detailed architecture documentation.
+The database abstraction layer supports dual-database operation: SQLite for zero-setup local development and PostgreSQL for production with connection pooling, full MVCC concurrency, and JSONB support. The layer automatically translates SQL dialects, placeholder syntax, and date functions.
+
+See [docs/architecture/overview.md](docs/architecture/overview.md) for the full architecture documentation including the middleware chain, service layer organization, data pipeline, and AI integration details.
 
 ## Contributing
 
-1. Follow the coding conventions in [docs/AGENTS.md](docs/AGENTS.md)
+1. Follow the coding conventions in [docs/AGENTS.md](docs/AGENTS.md) (covers frontend design system, backend patterns, database access rules)
 2. Write tests for new features
-3. Run `npm test` and `npm run lint` before committing
+3. Run `npm test` and `npm run lint` before committing (pre-commit hooks enforce formatting)
 4. Use conventional commit messages (`feat:`, `fix:`, `chore:`, `docs:`)
 
 ## License
