@@ -8,10 +8,10 @@ const API_BASE = process.env.REACT_APP_API_URL || '';
 // Admin access expiry: 24 hours
 const ADMIN_ACCESS_EXPIRY = 24 * 60 * 60 * 1000;
 
-// Admin access code - can be set via environment variable or use default
-// For production: Set REACT_APP_ADMIN_CODE environment variable
-// For development: Auto-enabled on localhost
-const ADMIN_CODE = process.env.REACT_APP_ADMIN_CODE || 'prism-admin-2024';
+// Admin access code - must be set via REACT_APP_ADMIN_CODE environment variable
+// For production: Set a unique, secure code in your environment
+// For development: Auto-enabled on localhost (no code needed)
+const ADMIN_CODE = process.env.REACT_APP_ADMIN_CODE || '';
 
 // Auto-enable admin for localhost development
 const isLocalDev = typeof window !== 'undefined' &&

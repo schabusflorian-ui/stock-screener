@@ -1,70 +1,67 @@
-# Getting Started with Create React App
+# Investment Research Platform -- Frontend
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+React 19 single-page application providing the interactive UI for the Investment Research Platform. Communicates with the Express API backend via REST endpoints.
 
-## Available Scripts
+## Quick Start
 
-In the project directory, you can run:
+```bash
+# Install dependencies
+npm install
 
-### `npm start`
+# Start development server (port 3001, proxies API requests to port 3000)
+npm start
+```
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+The backend must be running on port 3000 for API calls to work. See the root [README](../README.md) for full setup instructions.
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## Architecture
 
-### `npm test`
+- **64 pages** covering: macro dashboard, stock screener, company deep-dives, AI analyst chat, quantitative workbench, portfolio management, congressional trading, earnings calendar, and more
+- **103 reusable components** including a design system of UI primitives (`frontend/src/components/ui/`)
+- **12 React contexts** for state management (auth, watchlist, preferences, notifications, NL query, etc.)
+- **CSS Custom Properties design system** with glassmorphism aesthetic -- no CSS framework dependency
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## Project Structure
 
-### `npm run build`
+```
+src/
+├── components/           # Reusable UI components
+│   ├── ui/               # Design system primitives (Card, Button, Badge, Grid, Table, etc.)
+│   ├── charts/           # Recharts-based visualization components
+│   └── ...               # Domain-specific components (screener, portfolio, agent, etc.)
+├── pages/                # Route-level page components (64 pages)
+├── context/              # React contexts (auth, watchlist, preferences, etc.)
+├── hooks/                # Custom React hooks
+├── services/             # API client layer (axios-based)
+└── styles/               # Global CSS and design system variables
+```
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+## Design System
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+All styling uses CSS Custom Properties defined in the design system. See [docs/AGENTS.md](../docs/AGENTS.md) for the full convention reference:
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+- **Spacing**: `var(--space-1)` through `var(--space-12)` (4px to 48px scale)
+- **Typography**: `var(--text-xs)` through `var(--text-3xl)` (12px to 30px)
+- **Colors**: `var(--text-primary)`, `var(--bg-elevated)`, `var(--positive)`, `var(--negative)`, `var(--brand-primary)`
+- **Radii**: `var(--radius-sm)` through `var(--radius-full)`
+- **Components**: Card (base/elevated/interactive/glass), Button (primary/secondary/ghost/danger), Badge, Grid, Table, DataCard, PageHeader, Section, EmptyState, Typography
 
-### `npm run eject`
+## Scripts
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+```bash
+npm start           # Development server with hot reload
+npm run build       # Production build (output to build/)
+npm test            # Run React component tests
+npm run lint:css    # Audit CSS design system compliance
+npm run fix:css     # Auto-fix design system violations
+npm run analyze     # Bundle size analysis (requires build first)
+```
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+## Environment Variables
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+Set in `.env.local` (copy from `.env.example`):
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+| Variable | Description |
+|----------|-------------|
+| `REACT_APP_API_URL` | Backend API URL. Empty for local dev (uses proxy), full URL for production |
+| `REACT_APP_ADMIN_CODE` | Admin bypass code. Leave empty for local dev (auto-enabled on localhost) |

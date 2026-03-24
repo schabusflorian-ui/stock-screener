@@ -66,17 +66,28 @@
     "stocks",
     "analysis",
     "value-investing",
-    "financial-data"
+    "financial-data",
+    "react",
+    "express",
+    "postgresql",
+    "portfolio-management",
+    "backtesting",
+    "factor-investing",
+    "stock-screener"
   ],
   "author": "Florian Schabus",
   "repository": {
     "type": "git",
     "url": "https://github.com/schabusflorian-ui/stock-screener.git"
   },
+  "homepage": "https://github.com/schabusflorian-ui/stock-screener#readme",
+  "bugs": {
+    "url": "https://github.com/schabusflorian-ui/stock-screener/issues"
+  },
   "license": "ISC",
   "type": "commonjs",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
