@@ -36,6 +36,10 @@ jobs:
         run: npm run lint --if-present
         continue-on-error: true
 
+      - name: Check formatting
+        run: npx prettier --check 'src/**/*.js'
+        continue-on-error: true
+
       - name: Check sync DB usage
         run: npm run check:sync-db:warn
         continue-on-error: true

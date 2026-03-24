@@ -14,7 +14,7 @@ module.exports = {
     // Error prevention
     'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     'no-undef': 'error',
-    'no-console': 'off', // Allow console in Node.js
+    'no-console': ['warn', { allow: ['warn', 'error'] }], // Use logger instead of console.log
     'no-constant-condition': ['error', { checkLoops: false }],
 
     // Code style (warnings, not errors)

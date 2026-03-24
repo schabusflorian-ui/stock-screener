@@ -1,7 +1,7 @@
 {
   "name": "investment-project",
   "version": "1.0.1",
-  "description": "A tool for analyzing stocks using value investing metrics.",
+  "description": "Full-stack investment research platform with AI-powered stock analysis, portfolio management, and alternative data sources.",
   "main": "src/api/server.js",
   "directories": {
     "doc": "docs"
@@ -29,6 +29,8 @@
     "test:updates:orchestrator": "jest --config jest.config.js --testPathPattern=updateOrchestrator --forceExit",
     "lint": "eslint src/ --ext .js",
     "lint:fix": "eslint src/ --ext .js --fix",
+    "format": "prettier --write 'src/**/*.js'",
+    "format:check": "prettier --check 'src/**/*.js'",
     "check:sync-db": "bash scripts/check-sync-db-usage.sh",
     "check:sync-db:warn": "bash scripts/check-sync-db-usage.sh --warn",
     "db:migrate": "node src/lib/migrationRunner.js run",
@@ -43,8 +45,6 @@
     "scheduler:status": "node src/jobs/masterScheduler.js --status",
     "scheduler:list": "node src/jobs/masterScheduler.js --list",
     "scheduler:run-all": "node src/jobs/masterScheduler.js --run-all",
-    "scheduler:install": "cp com.investment-project.scheduler.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/com.investment-project.scheduler.plist",
-    "scheduler:uninstall": "launchctl unload ~/Library/LaunchAgents/com.investment-project.scheduler.plist && rm ~/Library/LaunchAgents/com.investment-project.scheduler.plist",
     "price-update": "node src/jobs/priceUpdateScheduler.js --now",
     "price-update:status": "node src/jobs/priceUpdateScheduler.js --status",
     "price-update:scheduler": "node src/jobs/priceUpdateScheduler.js",
@@ -58,7 +58,8 @@
     "docker:compose:down": "docker-compose down",
     "docker:compose:logs": "docker-compose logs -f",
     "health": "curl -s http://localhost:3000/api/health | node -e \"process.stdin.on('data', d => console.log(JSON.parse(d)))\"",
-    "health:detailed": "curl -s http://localhost:3000/api/health/detailed | node -e \"process.stdin.on('data', d => console.log(JSON.stringify(JSON.parse(d), null, 2)))\""
+    "health:detailed": "curl -s http://localhost:3000/api/health/detailed | node -e \"process.stdin.on('data', d => console.log(JSON.stringify(JSON.parse(d), null, 2)))\"",
+    "prepare": "husky"
   },
   "keywords": [
     "investment",
@@ -67,7 +68,11 @@
     "value-investing",
     "financial-data"
   ],
-  "author": "",
+  "author": "Florian Schabus",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/schabusflorian-ui/stock-screener.git"
+  },
   "license": "ISC",
   "type": "commonjs",
   "engines": {
@@ -104,8 +109,17 @@
   },
   "devDependencies": {
     "eslint": "^8.57.0",
+    "husky": "^9.1.7",
     "jest": "^29.7.0",
-    "nodemon": "^3.1.11"
+    "lint-staged": "^16.4.0",
+    "nodemon": "^3.1.11",
+    "prettier": "^3.8.1"
+  },
+  "lint-staged": {
+    "src/**/*.js": [
+      "prettier --write",
+      "eslint --fix --max-warnings=0"
+    ]
   },
   "optionalDependencies": {
     "@sentry/node": "^7.100.0",
