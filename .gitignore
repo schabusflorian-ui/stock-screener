@@ -7,16 +7,23 @@ frontend/node_modules/
 .env.local
 .env.*.local
 
-# Databases (only root-level data directory)
-/data/*.db
-/data/sec-bulk/
-/data/backups/
+# Databases
+*.db
+*.sqlite
 *.db-shm
 *.db-wal
 *.db-journal
 *.db.corrupted*
 *.db.pre_fix_backup
-*.db.backup*
+/data/sec-bulk/
+/data/backups/
+
+# Backup files
+*.bak
+*.bak2
+*.bak3
+*.backup
+*.js-f
 
 # Logs
 *.log
@@ -26,7 +33,7 @@ logs/
 .DS_Store
 Thumbs.db
 
-# Generated reports (not source code)
+# Generated reports
 docs/reports/
 
 # Temporary files
@@ -55,12 +62,14 @@ python/checkpoints/training_results_*.json
 # Playwright test artifacts
 .playwright-mcp/
 
-# Test outputs at root
+# Test outputs
 BENCHMARK_RESULTS.json
 validation-results-*.json
 fmp-validation-*.json
 *_PRISM_REPORT*.json
 *_AUDIT_*.md
+synthetic_test_results/
+benchmark_results/
 
 # Build artifacts
 frontend/build/
@@ -73,12 +82,5 @@ dist/
 *.swo
 .vscode/settings.json
 
-# Misc generated files
-synthetic_test_results/
-benchmark_results/
-
-# Python virtual environments (should never be committed)
-python-services/venv/
-**/venv/
-**/__pycache__/
+# Deprecated
 stock-screener/
